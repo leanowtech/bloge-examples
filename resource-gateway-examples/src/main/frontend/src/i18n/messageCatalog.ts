@@ -160,6 +160,10 @@ export const MESSAGE_CATALOG = {
     en: 'Autosave did not complete. Review the technical details and retry.',
     'zh-CN': '自动保存未完成，请检查技术详情后重试。',
   },
+  'library.save.recoveredDraft': {
+    en: 'Recovered unsaved work captured at {capturedAt}.',
+    'zh-CN': '已恢复 {capturedAt} 捕获的未保存工作。',
+  },
   'library.save.commitFailed': {
     en: 'The Design Catalog could not be imported.',
     'zh-CN': '无法导入设计目录。',

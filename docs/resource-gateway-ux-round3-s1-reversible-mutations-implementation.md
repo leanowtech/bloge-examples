@@ -6,6 +6,8 @@
 >
 > 实施范围：`WP-04 MutationJournal Core`、`WP-05 Destructive Impact Policy`
 
+> 最新压力证据：[S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)
+
 ## 1. 本轮关闭的问题
 
 原来的 Author 允许 Delete / Backspace 直接删除节点，并同步清除关联连线、fixture、算子测试套件、
@@ -100,6 +102,8 @@ S1 将作者操作提升为原子、可逆 mutation：
 | 层级 | 覆盖 |
 |---|---|
 | journal unit | 20 类 mutation round-trip、coalescing、100 次 Undo/Redo、checkpoint、count/byte budget |
+| property sequence | 200 组 1-40 步确定性合法序列，完整 inverse/redo 后 canonical fingerprint 相等 |
+| production pressure | 默认 100 entries / 20MiB 大型 fixture snapshot 压力，saved checkpoint 保持 |
 | recovery trust | malformed envelope、未知 enum、旧 fingerprint 重算、24 条/1.5MB 恢复预算 |
 | impact unit | edge、fixture input/output、test case/result/publication、output binding 完整投影 |
 | component | 中英文影响浮层、确认/取消、Undo 与 Redo 上下文动作 |

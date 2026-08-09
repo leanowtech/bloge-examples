@@ -57,11 +57,22 @@ import {
   type LibraryTaskIntent,
 } from '../ux/responsiveTaskProjection';
 import { useCompactTaskViewport } from '../ux/useCompactTaskViewport';
+import { useWorkspaceContinuity } from '../author/continuity/useWorkspaceContinuity';
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'conflict' | 'error';
 
+interface LibraryRecoveryPayload {
+  schemaVersion: 'bloge.libraryRecovery.v1';
+  draftId: string;
+  revision: number;
+  document: VisualLibraryAuthoringDocument;
+  selection: LibraryAssetSelection;
+  startSource: string;
+  authoritativeDraft: VisualLibraryAuthoringDraft | null;
+}
+
 export default function LibraryWorkbench() {
-  const { t, m } = useI18n();
+  const { d, t, m } = useI18n();
   const [document, setDocument] = useState<VisualLibraryAuthoringDocument | null>(null);
   const [draftId, setDraftId] = useState('');
   const [revision, setRevision] = useState(0);
@@ -78,6 +89,7 @@ export default function LibraryWorkbench() {
   const [testLaunch, setTestLaunch] = useState<AssetTestLaunch | null>(null);
   const [fixtureAvailable, setFixtureAvailable] = useState(false);
   const [homeContext, setHomeContext] = useState<VisualLibraryAuthoringHomeContext | null>(null);
+  const [homeContextResolved, setHomeContextResolved] = useState(false);
   const [startSource, setStartSource] = useState('');
   const [historicalDraft, setHistoricalDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
   const [latestDraft, setLatestDraft] = useState<VisualLibraryAuthoringDraft | null>(null);
@@ -161,6 +173,9 @@ export default function LibraryWorkbench() {
       })
       .catch(() => {
         if (active) setHomeContext(null);
+      })
+      .finally(() => {
+        if (active) setHomeContextResolved(true);
       });
     return () => {
       active = false;
@@ -301,17 +316,6 @@ export default function LibraryWorkbench() {
     }
   }, [persist]);
 
-  useEffect(() => {
-    if (!document || !draftId || saveState === 'conflict') {
-      return undefined;
-    }
-    const epoch = editEpochRef.current;
-    const timer = window.setTimeout(() => {
-      void runPreview(document, epoch);
-    }, 700);
-    return () => window.clearTimeout(timer);
-  }, [document, draftId, runPreview]);
-
   const changeDocument = useCallback((
     update: (current: VisualLibraryAuthoringDocument) => VisualLibraryAuthoringDocument,
   ) => {
@@ -326,6 +330,85 @@ export default function LibraryWorkbench() {
     setPreview(null);
     setCommitResult(null);
   }, [mutationPolicy.enabled]);
+
+  const libraryAuthoritativelySaved = Boolean(
+    document
+    && currentDraftRef.current
+    && revisionRef.current > 0
+    && JSON.stringify(document) === lastSavedJsonRef.current,
+  );
+  const libraryRecoveryPayload = useMemo<LibraryRecoveryPayload | null>(() => document && draftId ? ({
+    schemaVersion: 'bloge.libraryRecovery.v1',
+    draftId,
+    revision,
+    document,
+    selection,
+    startSource,
+    authoritativeDraft: currentDraftRef.current,
+  }) : null, [document, draftId, revision, selection, startSource]);
+  const restoreLibraryWorkspace = useCallback((recovered: LibraryRecoveryPayload, capturedAt: string) => {
+    currentDraftRef.current = recovered.authoritativeDraft;
+    revisionRef.current = recovered.revision;
+    lastSavedJsonRef.current = recovered.authoritativeDraft
+      ? JSON.stringify(recovered.authoritativeDraft.document)
+      : '';
+    editEpochRef.current += 1;
+    setDraftId(recovered.draftId);
+    setRevision(recovered.revision);
+    setDocument(recovered.document);
+    setSelection(recovered.selection);
+    setStartSource(recovered.startSource);
+    setLatestDraft(recovered.authoritativeDraft);
+    setHistoricalDraft(null);
+    setPreview(null);
+    setCommitResult(null);
+    setSaveState('dirty');
+    setSaveNotice({
+      messageId: 'library.save.recoveredDraft',
+      params: { capturedAt: new Date(capturedAt).toLocaleString() },
+    });
+    replaceLibraryAssetLocation(recovered.draftId, recovered.revision, recovered.selection);
+  }, []);
+  const libraryContinuity = useWorkspaceContinuity<LibraryRecoveryPayload | null>({
+    enabled: true,
+    ready: homeContextResolved,
+    allowRecovery: !new URLSearchParams(window.location.search).get('draftId'),
+    hasContent: Boolean(libraryRecoveryPayload),
+    coordinate: {
+      tenantId: homeContext?.tenantId ?? initialTaskCoordinate.tenantId,
+      namespace: homeContext?.projectId ?? initialTaskCoordinate.namespace,
+      environment: homeContext?.environmentId ?? initialTaskCoordinate.environment,
+      ...(draftId ? { draftId } : {}),
+    },
+    payload: libraryRecoveryPayload,
+    fingerprintValue: document,
+    authoritativelySaved: libraryAuthoritativelySaved,
+    savedRevision: revision,
+    canAutosave: Boolean(
+      document
+      && draftId
+      && !historicalDraft
+      && !loading
+      && saveState !== 'conflict'
+      && !libraryAuthoritativelySaved
+      && mutationPolicy.enabled
+    ),
+    onRestore: (recovered, capturedAt) => {
+      if (isLibraryRecoveryPayload(recovered)) restoreLibraryWorkspace(recovered, capturedAt);
+    },
+    onSave: async () => {
+      if (!document) throw new Error('RG.AUTHOR.LIBRARY.DRAFT_MISSING');
+      const snapshot = document;
+      const epoch = editEpochRef.current;
+      await persist(snapshot, epoch);
+      void runPreview(snapshot, epoch);
+    },
+    recoveryPayloadGuard: isLibraryRecoveryPayload,
+    recoveryFingerprintValue: (recovered) => (
+      isLibraryRecoveryPayload(recovered) ? recovered.document : null
+    ),
+    autosaveMs: 700,
+  });
 
   const start = (
     nextDocument: VisualLibraryAuthoringDocument,
@@ -574,7 +657,17 @@ export default function LibraryWorkbench() {
           objectLabel={document.library.name || document.library.id}
           objectMeta={startSource.startsWith('example:') ? t('Design-only example') : draftId}
           owner={document.library.owner || homeContext?.actorId || ''}
-          lifecycle={{ label: m(saveStateMessageId(saveState)), state: saveState }}
+          lifecycle={{
+            label: d(libraryContinuity.state.lifecycle),
+            state: libraryContinuity.state.lifecycle.toLowerCase(),
+            title: libraryContinuity.state.recoveryCapturedAt
+              ? t('Recovery captured at {capturedAt} via {security}.', {
+                  capturedAt: new Date(libraryContinuity.state.recoveryCapturedAt).toLocaleTimeString(),
+                  security: d(libraryContinuity.recoverySecurity),
+                })
+              : t('No recovery snapshot has been captured yet.'),
+          }}
+          lifecycleTestId="library-continuity-status"
           commandScope={{ kind: taskCoordinate.subjectKind, count: taskCoordinate.subjectRef ? 1 : 0 }}
           commandPolicy={mutationPolicy}
           actions={(
@@ -856,6 +949,31 @@ function draftSuffix(): string {
     return crypto.randomUUID().slice(0, 8);
   }
   return Date.now().toString(36);
+}
+
+function isLibraryRecoveryPayload(value: unknown): value is LibraryRecoveryPayload {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Partial<LibraryRecoveryPayload>;
+  return candidate.schemaVersion === 'bloge.libraryRecovery.v1'
+    && typeof candidate.draftId === 'string'
+    && candidate.draftId.trim().length > 0
+    && Number.isSafeInteger(candidate.revision)
+    && (candidate.revision ?? -1) >= 0
+    && Boolean(candidate.document)
+    && typeof candidate.document === 'object'
+    && Boolean(candidate.selection)
+    && typeof candidate.selection === 'object'
+    && (candidate.selection?.kind === 'library'
+      || candidate.selection?.kind === 'operator'
+      || candidate.selection?.kind === 'function'
+      || candidate.selection?.kind === 'type')
+    && typeof candidate.selection?.key === 'string'
+    && typeof candidate.startSource === 'string'
+    && (candidate.authoritativeDraft === null
+      || Boolean(candidate.authoritativeDraft)
+        && typeof candidate.authoritativeDraft === 'object'
+        && candidate.authoritativeDraft.draftId === candidate.draftId
+        && candidate.authoritativeDraft.revision === candidate.revision);
 }
 
 function documentQueryAll<TElement extends Element>(selector: string): NodeListOf<TElement> {

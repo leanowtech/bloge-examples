@@ -833,6 +833,54 @@ interface AuthoringRecoveryPayload {
   mutationJournal?: MutationJournalState<AuthoringMutationSnapshot>;
 }
 
+function authoringRecoveryFingerprintValue(payload: AuthoringRecoveryPayload): unknown {
+  return {
+    graphDraft: payload.graphDraft,
+    scenarioDraftSet: payload.scenarioDraftSet,
+    fixtureDrafts: payload.fixtureDrafts,
+    fixtureInputDrafts: payload.fixtureInputDrafts,
+    operatorTestSuites: payload.operatorTestSuites,
+    simulationTableRows: payload.simulationTableRows,
+    runInputValue: payload.runInputValue,
+    simulationContextDraft: payload.simulationContextDraft,
+    rawContextMode: payload.rawContextMode,
+    contextVariables: payload.contextVariables,
+  };
+}
+
+function isAuthoringRecoveryPayload(value: unknown): value is AuthoringRecoveryPayload {
+  if (!isRecord(value) || !isRecord(value.graphDraft)) return false;
+  const graphDraft = value.graphDraft;
+  return typeof graphDraft.graphName === 'string'
+    && Array.isArray(graphDraft.nodes)
+    && Array.isArray(graphDraft.edges)
+    && (value.scenarioDraftSet === null || isRecord(value.scenarioDraftSet))
+    && isRecoveryStringRecord(value.fixtureDrafts)
+    && isRecoveryStringRecord(value.fixtureInputDrafts)
+    && isRecoveryArrayRecord(value.operatorTestSuites)
+    && Array.isArray(value.simulationTableRows)
+    && isRecord(value.runInputValue)
+    && typeof value.simulationContextDraft === 'string'
+    && typeof value.rawContextMode === 'boolean'
+    && Array.isArray(value.contextVariables)
+    && typeof value.selectedNodeId === 'string'
+    && typeof value.explicitOutputNodeId === 'string'
+    && (value.authorMode === 'compose'
+      || value.authorMode === 'contract'
+      || value.authorMode === 'scenarios'
+      || value.authorMode === 'evidence')
+    && typeof value.loadedExampleKey === 'string'
+    && typeof value.workspaceForkIdempotencyKey === 'string';
+}
+
+function isRecoveryStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string');
+}
+
+function isRecoveryArrayRecord(value: unknown): value is Record<string, unknown[]> {
+  return isRecord(value) && Object.values(value).every(Array.isArray);
+}
+
 interface AuthoringMutationSnapshot {
   nodes: Node<NodeData>[];
   edges: Edge<CanvasEdgeData>[];
@@ -10120,6 +10168,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     ),
     onRestore: restoreAuthoringWorkspace,
     onSave: saveGraphForScenario,
+    recoveryPayloadGuard: isAuthoringRecoveryPayload,
+    recoveryFingerprintValue: authoringRecoveryFingerprintValue,
   });
   const authorReadiness = projectAuthorReadiness({
     draft: {

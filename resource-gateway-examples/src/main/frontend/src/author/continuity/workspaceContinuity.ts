@@ -77,6 +77,9 @@ export function reduceContinuityState(
   switch (event.type) {
     case 'CONTENT_CHANGED':
       if (event.epoch < state.contentEpoch) return state;
+      if (event.epoch === state.contentEpoch && event.fingerprint === state.contentFingerprint) {
+        return state;
+      }
       return {
         ...state,
         lifecycle: event.fingerprint === state.savedFingerprint ? 'SAVED' : 'DIRTY',
@@ -88,6 +91,9 @@ export function reduceContinuityState(
       if (event.epoch < state.contentEpoch) return state;
       return { ...state, lifecycle: 'SAVING', errorCode: '' };
     case 'SAVE_SUCCEEDED': {
+      if (event.epoch < state.savedEpoch || event.revision < state.savedRevision) {
+        return state;
+      }
       const newerContentExists = state.contentEpoch > event.epoch
         || state.contentFingerprint !== event.fingerprint;
       return {
@@ -172,10 +178,15 @@ export function parseRecoveryEnvelope<TPayload>(
       envelope.schemaVersion !== 'bloge.authoringRecovery.v1'
       || !envelope.sessionId
       || !envelope.contentFingerprint
+      || !Number.isSafeInteger(envelope.contentEpoch)
+      || (envelope.contentEpoch ?? -1) < 0
       || !envelope.capturedAt
       || !envelope.expiresAt
       || envelope.payload === undefined
       || !sameRecoveryScope(envelope.coordinate, expectedCoordinate)
+      || !Number.isFinite(Date.parse(envelope.capturedAt))
+      || !Number.isFinite(Date.parse(envelope.expiresAt))
+      || Date.parse(envelope.expiresAt) <= Date.parse(envelope.capturedAt)
       || Date.parse(envelope.expiresAt) <= now.getTime()
     ) {
       return null;

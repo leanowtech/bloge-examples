@@ -73,6 +73,7 @@ describe('LibraryWorkbench', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean })
       .IS_REACT_ACT_ENVIRONMENT = true;
     window.history.replaceState({}, '', '/libraries/');
+    window.sessionStorage.clear();
     host = document.createElement('div');
     document.body.appendChild(host);
     apiMocks.commit.mockReset();
@@ -308,6 +309,49 @@ describe('LibraryWorkbench', () => {
       .toContain('Imported customer-support-authoring revision 8');
   });
 
+  it('recovers an unsaved Library edit after leaving before the 700ms autosave deadline', async () => {
+    apiMocks.save.mockImplementation(async (
+      draftId: string,
+      _revision: number,
+      document: VisualLibraryAuthoringDocument,
+    ) => storedDraft(draftId, 1, document));
+    apiMocks.preview.mockImplementation(async (draftId: string) => readyPreview(draftId, 1));
+
+    await renderWorkbench();
+    await click(query('[data-testid="library-start-example:customer-support"]'));
+    const name = inputForLabel('Name');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        ?.call(name, 'Recovered Support Library');
+      name.dispatchEvent(new Event('input', { bubbles: true }));
+      name.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(360);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(apiMocks.save).not.toHaveBeenCalled();
+    expect(window.sessionStorage.length).toBe(1);
+    await act(async () => root?.unmount());
+    root = null;
+    window.history.replaceState({}, '', '/libraries/');
+
+    await renderWorkbench();
+    await settle();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(inputForLabel('Name').value).toBe('Recovered Support Library');
+    expect(query('[data-testid="library-save-state"]').textContent)
+      .toContain('Recovered unsaved work');
+    expect(query('[data-testid="workspace-context-bar"]').textContent).toContain('RECOVERED');
+  });
+
   it('projects mobile Library work into review and basic metadata editing', async () => {
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({
       matches: true,
@@ -471,6 +515,7 @@ describe('LibraryWorkbench', () => {
     await click(query('[data-testid="library-quick-create"]'));
     await flushAutosave();
 
+    expect(apiMocks.save).toHaveBeenCalledOnce();
     expect(query('[data-testid="library-save-state"]').textContent).toContain('Conflict');
     expect(query('[data-testid="library-save-state"]').textContent)
       .toContain('newer revision exists');
@@ -817,11 +862,15 @@ async function click(element: Element): Promise<void> {
 }
 
 async function flushAutosave(): Promise<void> {
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(710);
-    await Promise.resolve();
-    await Promise.resolve();
-  });
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await act(async () => {
+      await crypto.subtle.digest('SHA-256', new Uint8Array([attempt]));
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(710);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
 }
 
 async function settle(): Promise<void> {

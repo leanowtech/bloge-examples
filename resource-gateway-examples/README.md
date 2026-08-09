@@ -324,6 +324,12 @@ diagnostics jump back to their source field, and **Import Design Catalog** is en
 that exact preview remains importable. An ETag conflict blocks further commit until **Reload**
 restores the latest stored revision.
 
+Library edits share the Author continuity kernel: a recovery checkpoint is captured before the
+700ms authoritative autosave, route/page/VS Code disposal uses the same leave guard, and the
+Workspace Context Bar distinguishes recoverable local work from a saved revision. Returning to
+**Libraries** after an immediate route change restores the draft, selection, and expected revision.
+See the [S0/S1 resilience closure](../docs/resource-gateway-ux-round3-s0-s1-resilience-closure.md).
+
 To experience schema inference, choose **Infer from Samples** on the Library start page and keep
 the two prefilled JSON records. **Create and analyze** creates a minimal operator draft; then
 **Analyze samples** shows the nested candidate, payload-free field observations, and every

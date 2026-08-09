@@ -128,6 +128,49 @@ describe('ReversibleMutationJournal', () => {
     expect(journal.past).toHaveLength(1);
   });
 
+  it('restores the canonical fingerprint for deterministic arbitrary mutation sequences', () => {
+    for (let sequence = 0; sequence < 200; sequence += 1) {
+      const initial: TestSnapshot = structuredClone(before);
+      let snapshot = initial;
+      let journal = initialMutationJournal<TestSnapshot>();
+      const length = 1 + sequence % 40;
+      for (let step = 0; step < length; step += 1) {
+        const next: TestSnapshot = {
+          ...snapshot,
+          nodes: [...snapshot.nodes, `node-${sequence}-${step}`],
+          fixtures: {
+            ...snapshot.fixtures,
+            [`node-${sequence}-${step}`]: JSON.stringify({ sequence, step }),
+          },
+          outputNodeId: `node-${sequence}-${step}`,
+        };
+        journal = recordMutation(journal, createMutation({
+          mutationId: `mutation-${sequence}-${step}`,
+          kind: step % 2 === 0 ? 'ADD_NODE' : 'NODE_CONFIG',
+          label: `Step ${step}`,
+          subjectRef: next.outputNodeId,
+          before: snapshot,
+          after: next,
+          occurredAt: step * 1_000,
+        }));
+        snapshot = next;
+      }
+      const finalFingerprint = mutationFingerprint(snapshot);
+      while (journal.past.length > 0) {
+        const transition = undoMutation(journal)!;
+        snapshot = transition.snapshot;
+        journal = transition.journal;
+      }
+      expect(mutationFingerprint(snapshot)).toBe(mutationFingerprint(initial));
+      while (journal.future.length > 0) {
+        const transition = redoMutation(journal)!;
+        snapshot = transition.snapshot;
+        journal = transition.journal;
+      }
+      expect(mutationFingerprint(snapshot)).toBe(finalFingerprint);
+    }
+  });
+
   it('coalesces rapid edits on the same subject while preserving the first before-state', () => {
     const first = createMutation({
       mutationId: 'mutation-1',
@@ -176,6 +219,30 @@ describe('ReversibleMutationJournal', () => {
     expect(journal.past.length).toBeLessThanOrEqual(2);
     expect(journal.totalBytes).toBeLessThanOrEqual(2_000);
     expect(journal.droppedMutationCount).toBeGreaterThan(0);
+  });
+
+  it('holds the production 100-entry and 20MiB budgets under large snapshot pressure', () => {
+    let journal = markSavedCheckpoint(
+      initialMutationJournal<TestSnapshot>(),
+      mutationFingerprint(before),
+    );
+    const largeField = 'x'.repeat(140_000);
+    for (let index = 0; index < 110; index += 1) {
+      journal = recordMutation(journal, createMutation({
+        mutationId: `large-${index}`,
+        kind: 'FIXTURE',
+        label: `Large fixture ${index}`,
+        subjectRef: `fixture-${index}`,
+        before: { ...before, fixtures: { value: `${index}:${largeField}` } },
+        after: { ...before, fixtures: { value: `${index + 1}:${largeField}` } },
+        occurredAt: index * 1_000,
+      }));
+    }
+
+    expect(journal.past.length).toBeLessThanOrEqual(100);
+    expect(journal.totalBytes).toBeLessThanOrEqual(20 * 1024 * 1024);
+    expect(journal.droppedMutationCount).toBeGreaterThan(0);
+    expect(journal.savedCheckpointFingerprint).toBe(mutationFingerprint(before));
   });
 
   it('marks the authoritative saved checkpoint without clearing undo history', () => {

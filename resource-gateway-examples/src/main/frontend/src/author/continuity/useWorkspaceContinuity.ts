@@ -34,6 +34,8 @@ export interface WorkspaceContinuityOptions<TPayload> {
   canAutosave: boolean;
   onRestore: (payload: TPayload, capturedAt: string) => void;
   onSave: () => Promise<void>;
+  recoveryPayloadGuard?: (payload: unknown) => payload is TPayload;
+  recoveryFingerprintValue?: (payload: TPayload) => unknown;
   recoveryStore?: WorkspaceRecoveryStore;
   debounceMs?: number;
   maxWaitMs?: number;
@@ -64,6 +66,8 @@ export function useWorkspaceContinuity<TPayload>({
   canAutosave,
   onRestore,
   onSave,
+  recoveryPayloadGuard,
+  recoveryFingerprintValue = (recoveredPayload) => recoveredPayload,
   recoveryStore: suppliedStore,
   debounceMs = 350,
   maxWaitMs = 5_000,
@@ -91,14 +95,19 @@ export function useWorkspaceContinuity<TPayload>({
   const maxWaitTimerRef = useRef<number | null>(null);
   const autosaveTimerRef = useRef<number | null>(null);
   const latestEnvelopeRef = useRef('');
+  const saveInFlightRef = useRef<Promise<boolean> | null>(null);
   const onRestoreRef = useRef(onRestore);
   const onSaveRef = useRef(onSave);
+  const recoveryPayloadGuardRef = useRef(recoveryPayloadGuard);
+  const recoveryFingerprintValueRef = useRef(recoveryFingerprintValue);
 
   payloadRef.current = payload;
   fingerprintValueRef.current = fingerprintValue;
   coordinateRef.current = coordinate;
   onRestoreRef.current = onRestore;
   onSaveRef.current = onSave;
+  recoveryPayloadGuardRef.current = recoveryPayloadGuard;
+  recoveryFingerprintValueRef.current = recoveryFingerprintValue;
 
   useEffect(() => {
     if (!enabled || !ready || restoreAttemptedRef.current) return;
@@ -109,6 +118,18 @@ export function useWorkspaceContinuity<TPayload>({
         const raw = await store.load(coordinateRef.current);
         const envelope = parseRecoveryEnvelope<TPayload>(raw, coordinateRef.current);
         if (!active || !envelope) return;
+        if (recoveryPayloadGuardRef.current
+          && !recoveryPayloadGuardRef.current(envelope.payload)) {
+          await store.remove(coordinateRef.current);
+          return;
+        }
+        const verifiedFingerprint = await sha256Fingerprint(
+          recoveryFingerprintValueRef.current(envelope.payload),
+        );
+        if (!active || verifiedFingerprint !== envelope.contentFingerprint) {
+          await store.remove(coordinateRef.current);
+          return;
+        }
         sessionIdRef.current = envelope.sessionId;
         epochRef.current = envelope.contentEpoch;
         fingerprintRef.current = envelope.contentFingerprint;
@@ -206,27 +227,35 @@ export function useWorkspaceContinuity<TPayload>({
     void flushRecovery();
   }, [authoritativelySaved, enabled, flushRecovery, hasContent, restoreChecked, savedRevision]);
 
-  const save = useCallback(async (): Promise<boolean> => {
-    if (!enabled || !hasContent) return true;
-    const epoch = epochRef.current;
-    const fingerprint = fingerprintRef.current || await sha256Fingerprint(fingerprintValueRef.current);
-    dispatch({ type: 'SAVE_STARTED', epoch });
-    try {
-      await onSaveRef.current();
-      dispatch({
-        type: 'SAVE_SUCCEEDED',
-        epoch,
-        fingerprint,
-        revision: Math.max(1, savedRevision),
-      });
-      return true;
-    } catch (cause: unknown) {
-      const conflicted = /conflict|revision|409/i.test(String(cause));
-      dispatch(conflicted
-        ? { type: 'SAVE_CONFLICTED', errorCode: 'RG.AUTHOR.SAVE.CONFLICT' }
-        : { type: 'SAVE_FAILED', offline: isOfflineError(cause), errorCode: 'RG.AUTHOR.SAVE.FAILED' });
-      return false;
-    }
+  const save = useCallback((): Promise<boolean> => {
+    if (!enabled || !hasContent) return Promise.resolve(true);
+    if (saveInFlightRef.current) return saveInFlightRef.current;
+    const task = (async (): Promise<boolean> => {
+      const epoch = epochRef.current;
+      const fingerprint = fingerprintRef.current || await sha256Fingerprint(fingerprintValueRef.current);
+      dispatch({ type: 'SAVE_STARTED', epoch });
+      try {
+        await onSaveRef.current();
+        dispatch({
+          type: 'SAVE_SUCCEEDED',
+          epoch,
+          fingerprint,
+          revision: Math.max(1, savedRevision),
+        });
+        return true;
+      } catch (cause: unknown) {
+        const conflicted = /conflict|revision|409|412/i.test(String(cause));
+        dispatch(conflicted
+          ? { type: 'SAVE_CONFLICTED', errorCode: 'RG.AUTHOR.SAVE.CONFLICT' }
+          : { type: 'SAVE_FAILED', offline: isOfflineError(cause), errorCode: 'RG.AUTHOR.SAVE.FAILED' });
+        return false;
+      }
+    })();
+    saveInFlightRef.current = task;
+    void task.finally(() => {
+      if (saveInFlightRef.current === task) saveInFlightRef.current = null;
+    });
+    return task;
   }, [enabled, hasContent, savedRevision]);
 
   const discard = useCallback(async () => {
@@ -261,14 +290,23 @@ export function useWorkspaceContinuity<TPayload>({
     };
   }, [debounceMs, flushRecovery, maxWaitMs, state.contentEpoch, state.lifecycle]);
 
+  const autosaveBlocked = state.lifecycle === 'CONFLICTED'
+    || state.lifecycle === 'RECOVERABLE_OFFLINE';
   useEffect(() => {
-    if (!canAutosave || state.lifecycle !== 'RECOVERABLE') return undefined;
+    if (!canAutosave || autosaveBlocked || state.contentEpoch < 1) return undefined;
     autosaveTimerRef.current = window.setTimeout(() => void save(), autosaveMs);
     return () => {
       if (autosaveTimerRef.current !== null) window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     };
-  }, [autosaveMs, canAutosave, save, state.lifecycle]);
+  }, [autosaveBlocked, autosaveMs, canAutosave, save, state.contentEpoch]);
+
+  useEffect(() => {
+    if (!canAutosave || state.lifecycle !== 'RECOVERABLE_OFFLINE') return undefined;
+    const retryWhenOnline = () => void save();
+    window.addEventListener('online', retryWhenOnline);
+    return () => window.removeEventListener('online', retryWhenOnline);
+  }, [canAutosave, save, state.lifecycle]);
 
   useEffect(() => {
     const flushWhenHidden = () => {

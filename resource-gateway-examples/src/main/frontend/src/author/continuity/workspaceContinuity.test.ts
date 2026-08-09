@@ -38,6 +38,28 @@ describe('workspace continuity', () => {
     expect(afterStaleReceipt.savedFingerprint).toBe('sha256:newer');
   });
 
+  it('does not let an older receipt replace an already newer authoritative checkpoint', () => {
+    const changed = reduceContinuityState(initialContinuityState('session-a'), {
+      type: 'CONTENT_CHANGED',
+      epoch: 7,
+      fingerprint: 'sha256:seven',
+    });
+    const saved = reduceContinuityState(changed, {
+      type: 'SAVE_SUCCEEDED',
+      epoch: 7,
+      fingerprint: 'sha256:seven',
+      revision: 11,
+    });
+    const stale = reduceContinuityState(saved, {
+      type: 'SAVE_SUCCEEDED',
+      epoch: 6,
+      fingerprint: 'sha256:six',
+      revision: 10,
+    });
+
+    expect(stale).toEqual(saved);
+  });
+
   it('records recoverability without pretending the draft is authoritatively saved', () => {
     const dirty = reduceContinuityState(initialContinuityState('session-a'), {
       type: 'CONTENT_CHANGED',
@@ -92,6 +114,11 @@ describe('workspace continuity', () => {
       contentEpoch: 7,
       contentFingerprint: 'sha256:recovered',
     });
+    expect(reduceContinuityState(recovered, {
+      type: 'CONTENT_CHANGED',
+      epoch: 7,
+      fingerprint: 'sha256:recovered',
+    })).toEqual(recovered);
   });
 
   it('rejects expired and cross-tenant recovery envelopes', () => {
@@ -125,6 +152,68 @@ describe('workspace continuity', () => {
       namespace: 'credit',
       environment: 'test',
     }, new Date('2026-08-09T08:01:01.000Z'))).toBeNull();
+  });
+
+  it('rejects invalid epochs and malformed or reversed recovery times', () => {
+    const base = createRecoveryEnvelope({
+      sessionId: 'session-a',
+      coordinate: { tenantId: 'tenant-a', namespace: 'credit', environment: 'test' },
+      contentEpoch: 3,
+      contentFingerprint: 'sha256:draft',
+      payload: { graphName: 'creditDecision' },
+      now: new Date('2026-08-09T08:00:00.000Z'),
+    });
+    const coordinate = { tenantId: 'tenant-a', namespace: 'credit', environment: 'test' };
+
+    expect(parseRecoveryEnvelope(JSON.stringify({ ...base, contentEpoch: -1 }), coordinate)).toBeNull();
+    expect(parseRecoveryEnvelope(JSON.stringify({ ...base, contentEpoch: 1.5 }), coordinate)).toBeNull();
+    expect(parseRecoveryEnvelope(JSON.stringify({ ...base, capturedAt: 'not-a-date' }), coordinate)).toBeNull();
+    expect(parseRecoveryEnvelope(JSON.stringify({
+      ...base,
+      expiresAt: '2026-08-09T07:59:59.000Z',
+    }), coordinate, new Date('2026-08-09T07:00:00.000Z'))).toBeNull();
+  });
+
+  it('preserves a visible recovery boundary through 1000 deterministic fault interleavings', () => {
+    for (let scenario = 0; scenario < 1_000; scenario += 1) {
+      let state = initialContinuityState(`session-${scenario}`);
+      const latestEpoch = 2 + scenario % 7;
+      for (let epoch = 1; epoch <= latestEpoch; epoch += 1) {
+        state = reduceContinuityState(state, {
+          type: 'CONTENT_CHANGED',
+          epoch,
+          fingerprint: `sha256:${scenario}:${epoch}`,
+        });
+        if ((scenario + epoch) % 3 === 0) {
+          state = reduceContinuityState(state, {
+            type: 'RECOVERY_STORED',
+            epoch,
+            capturedAt: `2026-08-09T08:00:${String(epoch).padStart(2, '0')}.000Z`,
+          });
+        }
+      }
+      const staleEpoch = Math.max(1, latestEpoch - 1);
+      state = reduceContinuityState(state, { type: 'SAVE_STARTED', epoch: staleEpoch });
+      state = scenario % 2 === 0
+        ? reduceContinuityState(state, {
+            type: 'SAVE_FAILED',
+            offline: scenario % 4 === 0,
+            errorCode: 'RG.TEST.INJECTED',
+          })
+        : reduceContinuityState(state, {
+            type: 'SAVE_SUCCEEDED',
+            epoch: staleEpoch,
+            fingerprint: `sha256:${scenario}:${staleEpoch}`,
+            revision: staleEpoch,
+          });
+
+      if (state.lifecycle === 'SAVED') {
+        expect(state.contentFingerprint).toBe(state.savedFingerprint);
+        expect(state.contentEpoch).toBe(state.savedEpoch);
+      } else {
+        expect(['DIRTY', 'RECOVERABLE', 'RECOVERABLE_OFFLINE']).toContain(state.lifecycle);
+      }
+    }
   });
 
   it('partitions browser recovery by the complete tenant, namespace, and environment coordinate', async () => {

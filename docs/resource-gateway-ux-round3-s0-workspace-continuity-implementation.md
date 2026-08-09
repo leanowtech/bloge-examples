@@ -1,10 +1,12 @@
 # Resource Gateway UX Round 3 S0 工作区连续性实现说明
 
-> 状态：Implemented / E2 desktop browser verification passed
+> 状态：Core implemented / resilience closure added / save idempotency P1 pending
 >
 > 对应方案：[Round 3 资深体验审阅与演进计划](resource-gateway-ux-round3-expert-audit-and-evolution-plan.md)
 >
 > 实施范围：`WP-01 AuthoringSessionSnapshot`、`WP-02 WorkspaceContinuityKernel`、`WP-03 SafeNavigationBoundary` 的浏览器与宿主接口部分
+
+> 最新补强：[S0/S1 连续性与压力门禁补强](resource-gateway-ux-round3-s0-s1-resilience-closure.md)
 
 ## 1. 本轮关闭的问题
 
@@ -106,6 +108,11 @@ setWorkspaceRecoveryStore({
 | reducer | stale save receipt、dirty/recoverable 分离、恢复 session identity |
 | storage | tenant/namespace/environment 分区、remove 隔离 |
 | envelope | 正常读取、TTL 过期、跨租户拒绝、畸形 JSON 拒绝 |
+| integrity | 内容 SHA-256 复算、非法 epoch/time 拒绝、损坏候选删除 |
+| fault injection | 1000 组 save/recovery/failure 交错不产生伪 `SAVED` |
+| autosave timing | deadline 从 edit epoch 计时；1500ms deadline 与 5000ms max-wait |
+| concurrency | 手动/自动/online/lifecycle 并发 Save 合并；离线恢复后单次重试 |
+| Library integration | 700ms autosave 前卸载，重挂恢复同一字段、selection 与 expected revision |
 | navigation | flush 成功直接离开、flush 失败停留、Save and leave |
 | unload race | 已授权离页仅放行一次，后续未授权 `beforeunload` 继续被保护 |
 | saved snapshot | 新权威 `draftId/revision` 刷新 recovery，`SAVED` lifecycle 不降级 |
@@ -140,14 +147,12 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend package -DskipTests
 
 | Round 3 目标 | S0 后状态 | 证据 | 剩余 |
 |---|---|---|---|
-| 跨工作区不静默丢失 | 已实现 | 导航 flush + 5/12 remount + E2 desktop 跨页恢复 | Safari/Firefox/VS Code host 矩阵待产品化阶段 |
-| reload/session recovery | 已实现 | TTL envelope + Author remount | VS Code dispose 需要宿主实现接线 |
+| 跨工作区不静默丢失 | 已实现 | Author 5/12 + Library pre-autosave remount + E2 desktop/VS Code 恢复 | 多设备 X/kill 矩阵待 E3 |
+| reload/session recovery | 已实现 | TTL、SHA-256 完整性、Author/Library remount、VS Code AES-GCM/dispose receipt | 真实企业宿主矩阵待 E3 |
 | 明确 lifecycle | 已实现 | Command Bar 状态与 Save | conflict compare/fork/reload UI 仍需强化 |
-| 服务端保存 | 已接入 | 复用现有 optimistic revision Save | autosave 压测与 P95 观测待性能阶段 |
+| 服务端保存 | 部分闭合 | optimistic revision、并发合并、edit-to-deadline 门禁 | 网络不确定结果的持久 idempotency receipt 与真实 P95 待完成 |
 | 破坏性编辑可恢复 | 未实现 | 无统一 mutation history | S1 首要工作 |
 
-基于 E1 自动化与 E2 桌面浏览器证据，本轮将工业任务成熟度从 `72` 调整为 `82`。两个原始 P0 中，
-静默跨工作区丢失已在代码路径关闭，删除节点级联丢失仍是 P0；移动端真实浏览器视觉验收也尚未完成，
-因此距 Round 3 完整目标仍约 `18%`，不能停止实施。
-
-下一轮严格进入 S1：统一 mutation journal、删除影响预览、Undo/Redo、evidence currentness 原子联动。
+该段的 `82` 是 S0 初始实现时的历史评分。完成度复核后，Library 也已接入共享 continuity，S1-S5 主路径
+均已落地；当前不能停止的原因已收敛为两个 E2 P1：持久 idempotent save receipt 与完整
+Compare/Fork/Reload conflict resolution，以及不能由代码替代的 E3/E4 现场证据。
