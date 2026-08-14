@@ -1,0 +1,52 @@
+{
+  "schemaVersion" : "resourceGateway.runtimeCertificationExecutionAuthorization.v1",
+  "authorizationFingerprint" : "sha256:f0dc91bf5fa418568a0bbc25ca8712797918b4303f46393694135a2eb431cd5a",
+  "authorizationId" : "runtime-authorization:sg:3",
+  "revision" : 7,
+  "manifestRef" : {
+    "kind" : "RUNTIME_CERTIFICATION_MANIFEST",
+    "id" : "runtime-certification:sg",
+    "revision" : 3,
+    "fingerprint" : "sha256:8db5d571e4a4e78e1dbe5dbe5db76b4dffa93466ec98da2dc44d09f7936f989e"
+  },
+  "scope" : {
+    "tenantId" : "tenant-demo",
+    "organizationId" : "org-support",
+    "projectId" : "project-business-mirror",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "environmentClass" : "SANDBOX",
+  "environmentFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deployment" : {
+    "deploymentScopeId" : "mirror-staging-sg",
+    "clusterId" : "cluster-sg-01",
+    "namespace" : "resource-gateway-mirror",
+    "workloadName" : "resource-gateway",
+    "serviceAccount" : "resource-gateway-mirror",
+    "imageDigest" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "allowedScenarios" : [ "POSTGRES_PRIMARY_KILL_BEFORE_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_APPLY", "POSTGRES_PRIMARY_KILL_AFTER_COMMIT", "NETWORK_PARTITION", "LEASE_TAKEOVER", "ROLLING_UPGRADE", "BACKUP_RESTORE", "KMS_KEY_ROTATION", "MTLS_CA_ROTATION", "VAULT_UNAVAILABLE", "WRITE_ESCAPE_PROBE" ],
+  "destructiveActionsAllowed" : true,
+  "productionExecutionDenied" : true,
+  "singleUse" : true,
+  "nonceFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "issuedAt" : "2026-08-10T00:00:00Z",
+  "validFrom" : "2026-08-10T00:00:01Z",
+  "expiresAt" : "2026-08-10T00:20:01Z",
+  "issuer" : "change-authority:runtime-certification",
+  "approvalRefs" : [ {
+    "kind" : "CHANGE_APPROVAL",
+    "id" : "chg-103",
+    "revision" : 4,
+    "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  } ],
+  "authorizationSeal" : {
+    "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint" : "sha256:08cc723a44a6eaacb8aca9ff3844b8b3be31ce706877c213b09f68973f162345",
+    "algorithm" : "Ed25519",
+    "keyId" : "runtime-authorization-fixture-key",
+    "signedAt" : "2026-08-10T00:00:00Z",
+    "signature" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  }
+}

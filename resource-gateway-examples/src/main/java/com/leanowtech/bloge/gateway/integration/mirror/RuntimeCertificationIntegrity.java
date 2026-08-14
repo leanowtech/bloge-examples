@@ -243,10 +243,16 @@ public final class RuntimeCertificationIntegrity {
                         "SCENARIO_INVARIANT_DENOMINATOR_MISMATCH");
             }
             Duration elapsed = Duration.between(observed.startedAt(), observed.completedAt());
+            Duration recovery = observed.faultRemovedAt() == null
+                    || observed.recoveryObservedAt() == null ? Duration.ZERO
+                    : Duration.between(observed.faultRemovedAt(),
+                    observed.recoveryObservedAt());
             if (observed.startedAt().isBefore(report.startedAt())
                     || observed.completedAt().isAfter(report.completedAt())
                     || elapsed.compareTo(Duration.ofSeconds(
-                    requirement.maximumExecutionSeconds())) > 0) {
+                    requirement.maximumExecutionSeconds())) > 0
+                    || recovery.compareTo(Duration.ofSeconds(
+                    requirement.maximumRecoverySeconds())) > 0) {
                 return result(Outcome.SCENARIO_REJECTED,
                         "SCENARIO_EXECUTION_WINDOW_REJECTED");
             }

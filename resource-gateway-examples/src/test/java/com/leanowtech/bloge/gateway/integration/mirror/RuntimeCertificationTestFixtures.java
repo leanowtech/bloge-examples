@@ -53,6 +53,13 @@ final class RuntimeCertificationTestFixtures {
     RuntimeCertificationReport report(
             List<RuntimeCertificationReport.ScenarioResult> results,
             MirrorArtifactRef authorizationConsumptionRef) {
+        return report(results, authorizationConsumptionRef, now.plusSeconds(120));
+    }
+
+    RuntimeCertificationReport report(
+            List<RuntimeCertificationReport.ScenarioResult> results,
+            MirrorArtifactRef authorizationConsumptionRef,
+            Instant completedAt) {
         long writeAttempts = results.stream().mapToLong(
                 RuntimeCertificationReport.ScenarioResult
                         ::externalBusinessWriteAttemptCount).sum();
@@ -72,7 +79,7 @@ final class RuntimeCertificationTestFixtures {
                 regional.isolationV2.attestation().artifactRef(), scope, manifest.region(),
                 deployment,
                 manifest.environmentClass(), manifest.environmentFingerprint(), adapter,
-                components(), now, now.plusSeconds(120), results, verdict, writeAttempts,
+                components(), now, completedAt, results, verdict, writeAttempts,
                 writeEscapes, "runtime-certification-authority:sg",
                 List.of(ref("RUNTIME_CERTIFICATION_EVIDENCE_INDEX", "index:sg", 5, 'f'))),
                 reportSigner);

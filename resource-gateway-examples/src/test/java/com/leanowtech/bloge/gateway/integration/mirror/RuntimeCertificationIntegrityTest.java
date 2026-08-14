@@ -116,6 +116,32 @@ class RuntimeCertificationIntegrityTest {
                 .isEqualTo(RuntimeCertificationIntegrity.Outcome.NOT_CERTIFIED);
     }
 
+    @Test
+    void recoveryOutsideManifestSloCannotPassOfflineVerification() {
+        ArrayList<RuntimeCertificationReport.ScenarioResult> results =
+                new ArrayList<>(fixtures.results(null));
+        RuntimeCertificationReport.ScenarioResult source = results.getFirst();
+        results.set(0, new RuntimeCertificationReport.ScenarioResult(
+                source.scenario(), source.attemptId(), source.status(), source.startedAt(),
+                source.faultAppliedAt(), source.faultRemovedAt(),
+                source.faultRemovedAt().plusSeconds(121),
+                source.faultRemovedAt().plusSeconds(122), source.faultApplied(),
+                source.recoveryObserved(), source.externalBusinessWriteAttemptCount(),
+                source.writeEscapeCount(), source.commandTranscriptFingerprint(),
+                source.observationFingerprint(), source.invariantObservations(),
+                source.proofRefs(), source.reasonCode()));
+        RuntimeCertificationReport report = fixtures.report(results,
+                RuntimeCertificationTestFixtures.ref(
+                        "RUNTIME_CERTIFICATION_AUTHORIZATION_CONSUMPTION",
+                        "runtime-authorization:sg:3", 1, 'e'),
+                fixtures.now.plusSeconds(200));
+
+        assertThat(verify(report).outcome())
+                .isEqualTo(RuntimeCertificationIntegrity.Outcome.SCENARIO_REJECTED);
+        assertThat(verify(report).reasonCode())
+                .isEqualTo("SCENARIO_EXECUTION_WINDOW_REJECTED");
+    }
+
     private RuntimeCertificationIntegrity.VerificationResult verify(
             RuntimeCertificationReport report) {
         return fixtures.integrity.verifyReport(fixtures.manifest, fixtures.authorization, report,

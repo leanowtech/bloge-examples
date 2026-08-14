@@ -1,0 +1,707 @@
+{
+  "schemaVersion" : "resourceGateway.runtimeCertificationReport.v1",
+  "reportFingerprint" : "sha256:c2cb8eda8a071ecb56246cc4fac5d165eb017b2f0718d09b783af76ca9b3d1c4",
+  "reportId" : "runtime-report:sg:3",
+  "revision" : 5,
+  "manifestRef" : {
+    "kind" : "RUNTIME_CERTIFICATION_MANIFEST",
+    "id" : "runtime-certification:sg",
+    "revision" : 3,
+    "fingerprint" : "sha256:8db5d571e4a4e78e1dbe5dbe5db76b4dffa93466ec98da2dc44d09f7936f989e"
+  },
+  "authorizationRef" : {
+    "kind" : "RUNTIME_CERTIFICATION_EXECUTION_AUTHORIZATION",
+    "id" : "runtime-authorization:sg:3",
+    "revision" : 7,
+    "fingerprint" : "sha256:f0dc91bf5fa418568a0bbc25ca8712797918b4303f46393694135a2eb431cd5a"
+  },
+  "authorizationConsumptionRef" : {
+    "kind" : "RUNTIME_CERTIFICATION_AUTHORIZATION_CONSUMPTION",
+    "id" : "runtime-authorization:sg:3:runtime-report:sg:3",
+    "revision" : 1,
+    "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "regionalDataPlaneCertificationRef" : {
+    "kind" : "REGIONAL_DATA_PLANE_CERTIFICATION",
+    "id" : "regional-certification:sg",
+    "revision" : 11,
+    "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "isolationDecisionRef" : {
+    "kind" : "DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE",
+    "id" : "mirror-staging-isolation:decision",
+    "revision" : 7,
+    "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+  },
+  "isolationAttestationRef" : {
+    "kind" : "DEPLOYMENT_ISOLATION_ATTESTATION",
+    "id" : "mirror-staging-isolation",
+    "revision" : 7,
+    "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+  },
+  "scope" : {
+    "tenantId" : "tenant-demo",
+    "organizationId" : "org-support",
+    "projectId" : "project-business-mirror",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "region" : "ap-southeast-1",
+  "deployment" : {
+    "deploymentScopeId" : "mirror-staging-sg",
+    "clusterId" : "cluster-sg-01",
+    "namespace" : "resource-gateway-mirror",
+    "workloadName" : "resource-gateway",
+    "serviceAccount" : "resource-gateway-mirror",
+    "imageDigest" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "environmentClass" : "SANDBOX",
+  "environmentFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "adapter" : {
+    "schemaVersion" : "resourceGateway.runtimeCertificationAdapterDescriptor.v1",
+    "adapterId" : "adapter:chaos-lab",
+    "adapterFingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "provider" : "customer-platform:sandbox",
+    "environmentClass" : "SANDBOX",
+    "environmentFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "supportedScenarios" : [ "POSTGRES_PRIMARY_KILL_BEFORE_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_APPLY", "POSTGRES_PRIMARY_KILL_AFTER_COMMIT", "NETWORK_PARTITION", "LEASE_TAKEOVER", "ROLLING_UPGRADE", "BACKUP_RESTORE", "KMS_KEY_ROTATION", "MTLS_CA_ROTATION", "VAULT_UNAVAILABLE", "WRITE_ESCAPE_PROBE" ],
+    "isolatedControlPlane" : true,
+    "productionExecutionDenied" : true,
+    "externalAuthorizationRequired" : true,
+    "durableReplayProtection" : true,
+    "available" : true
+  },
+  "observedComponents" : [ {
+    "kind" : "RESOURCE_GATEWAY",
+    "componentId" : "component:resource_gateway",
+    "version" : "1.0.0",
+    "buildFingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  }, {
+    "kind" : "BLOGE_ENGINE",
+    "componentId" : "component:bloge_engine",
+    "version" : "0.8.9-RC2",
+    "buildFingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  }, {
+    "kind" : "DATABASE",
+    "componentId" : "component:database",
+    "version" : "postgresql-16.4",
+    "buildFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  }, {
+    "kind" : "JVM",
+    "componentId" : "component:jvm",
+    "version" : "openjdk-25.0.3",
+    "buildFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  } ],
+  "startedAt" : "2026-08-10T00:00:02Z",
+  "completedAt" : "2026-08-10T00:03:00Z",
+  "scenarioResults" : [ {
+    "scenario" : "POSTGRES_PRIMARY_KILL_BEFORE_STAGE",
+    "attemptId" : "attempt:0",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:05Z",
+    "faultAppliedAt" : "2026-08-10T00:00:06Z",
+    "faultRemovedAt" : "2026-08-10T00:00:07Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:08Z",
+    "completedAt" : "2026-08-10T00:00:09Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "observationFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "invariantObservations" : [ {
+      "code" : "EXACT_REPLAY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_before_stage:exact_replay",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    }, {
+      "code" : "NO_COMMITTED_STATE_LOSS",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_before_stage:no_committed_state_loss",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    }, {
+      "code" : "NO_PARTIAL_VISIBILITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_before_stage:no_partial_visibility",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "postgres_primary_kill_before_stage",
+      "revision" : 1,
+      "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_STAGE",
+    "attemptId" : "attempt:1",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:15Z",
+    "faultAppliedAt" : "2026-08-10T00:00:16Z",
+    "faultRemovedAt" : "2026-08-10T00:00:17Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:18Z",
+    "completedAt" : "2026-08-10T00:00:19Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "observationFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "invariantObservations" : [ {
+      "code" : "EXACT_REPLAY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_stage:exact_replay",
+        "revision" : 1,
+        "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      } ]
+    }, {
+      "code" : "NO_COMMITTED_STATE_LOSS",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_stage:no_committed_state_loss",
+        "revision" : 1,
+        "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      } ]
+    }, {
+      "code" : "NO_PARTIAL_VISIBILITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_stage:no_partial_visibility",
+        "revision" : 1,
+        "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "postgres_primary_kill_after_stage",
+      "revision" : 1,
+      "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_APPLY",
+    "attemptId" : "attempt:2",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:25Z",
+    "faultAppliedAt" : "2026-08-10T00:00:26Z",
+    "faultRemovedAt" : "2026-08-10T00:00:27Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:28Z",
+    "completedAt" : "2026-08-10T00:00:29Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "observationFingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "invariantObservations" : [ {
+      "code" : "EXACT_REPLAY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_apply:exact_replay",
+        "revision" : 1,
+        "fingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      } ]
+    }, {
+      "code" : "NO_COMMITTED_STATE_LOSS",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_apply:no_committed_state_loss",
+        "revision" : 1,
+        "fingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      } ]
+    }, {
+      "code" : "NO_PARTIAL_VISIBILITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_apply:no_partial_visibility",
+        "revision" : 1,
+        "fingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "postgres_primary_kill_after_apply",
+      "revision" : 1,
+      "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_COMMIT",
+    "attemptId" : "attempt:3",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:35Z",
+    "faultAppliedAt" : "2026-08-10T00:00:36Z",
+    "faultRemovedAt" : "2026-08-10T00:00:37Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:38Z",
+    "completedAt" : "2026-08-10T00:00:39Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "observationFingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "invariantObservations" : [ {
+      "code" : "COMMITTED_STATE_VISIBLE",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_commit:committed_state_visible",
+        "revision" : 1,
+        "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      } ]
+    }, {
+      "code" : "EXACT_REPLAY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_commit:exact_replay",
+        "revision" : 1,
+        "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      } ]
+    }, {
+      "code" : "NO_DUPLICATE_EFFECT",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "postgres_primary_kill_after_commit:no_duplicate_effect",
+        "revision" : 1,
+        "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "postgres_primary_kill_after_commit",
+      "revision" : 1,
+      "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "NETWORK_PARTITION",
+    "attemptId" : "attempt:4",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:45Z",
+    "faultAppliedAt" : "2026-08-10T00:00:46Z",
+    "faultRemovedAt" : "2026-08-10T00:00:47Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:48Z",
+    "completedAt" : "2026-08-10T00:00:49Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "observationFingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "invariantObservations" : [ {
+      "code" : "EVENTUAL_RECOVERY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "network_partition:eventual_recovery",
+        "revision" : 1,
+        "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      } ]
+    }, {
+      "code" : "OLD_EPOCH_FENCED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "network_partition:old_epoch_fenced",
+        "revision" : 1,
+        "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      } ]
+    }, {
+      "code" : "SINGLE_ACTIVE_OWNER",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "network_partition:single_active_owner",
+        "revision" : 1,
+        "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "network_partition",
+      "revision" : 1,
+      "fingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "LEASE_TAKEOVER",
+    "attemptId" : "attempt:5",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:00:55Z",
+    "faultAppliedAt" : "2026-08-10T00:00:56Z",
+    "faultRemovedAt" : "2026-08-10T00:00:57Z",
+    "recoveryObservedAt" : "2026-08-10T00:00:58Z",
+    "completedAt" : "2026-08-10T00:00:59Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+    "observationFingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "invariantObservations" : [ {
+      "code" : "EVENTUAL_RECOVERY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "lease_takeover:eventual_recovery",
+        "revision" : 1,
+        "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      } ]
+    }, {
+      "code" : "OLD_EPOCH_FENCED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "lease_takeover:old_epoch_fenced",
+        "revision" : 1,
+        "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      } ]
+    }, {
+      "code" : "SINGLE_ACTIVE_OWNER",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "lease_takeover:single_active_owner",
+        "revision" : 1,
+        "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "lease_takeover",
+      "revision" : 1,
+      "fingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "ROLLING_UPGRADE",
+    "attemptId" : "attempt:6",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:05Z",
+    "faultAppliedAt" : "2026-08-10T00:01:06Z",
+    "faultRemovedAt" : "2026-08-10T00:01:07Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:08Z",
+    "completedAt" : "2026-08-10T00:01:09Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+    "observationFingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "invariantObservations" : [ {
+      "code" : "EVENTUAL_RECOVERY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "rolling_upgrade:eventual_recovery",
+        "revision" : 1,
+        "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      } ]
+    }, {
+      "code" : "MIXED_VERSION_COMPATIBLE",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "rolling_upgrade:mixed_version_compatible",
+        "revision" : 1,
+        "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      } ]
+    }, {
+      "code" : "NO_COMMITTED_STATE_LOSS",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "rolling_upgrade:no_committed_state_loss",
+        "revision" : 1,
+        "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "rolling_upgrade",
+      "revision" : 1,
+      "fingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "BACKUP_RESTORE",
+    "attemptId" : "attempt:7",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:15Z",
+    "faultAppliedAt" : "2026-08-10T00:01:16Z",
+    "faultRemovedAt" : "2026-08-10T00:01:17Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:18Z",
+    "completedAt" : "2026-08-10T00:01:19Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "observationFingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "invariantObservations" : [ {
+      "code" : "MONOTONIC_FENCE_PRESERVED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "backup_restore:monotonic_fence_preserved",
+        "revision" : 1,
+        "fingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      } ]
+    }, {
+      "code" : "NO_COMMITTED_STATE_LOSS",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "backup_restore:no_committed_state_loss",
+        "revision" : 1,
+        "fingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      } ]
+    }, {
+      "code" : "RESTORE_CONTINUITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "backup_restore:restore_continuity",
+        "revision" : 1,
+        "fingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "backup_restore",
+      "revision" : 1,
+      "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "KMS_KEY_ROTATION",
+    "attemptId" : "attempt:8",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:25Z",
+    "faultAppliedAt" : "2026-08-10T00:01:26Z",
+    "faultRemovedAt" : "2026-08-10T00:01:27Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:28Z",
+    "completedAt" : "2026-08-10T00:01:29Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "observationFingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "invariantObservations" : [ {
+      "code" : "KEY_ROTATION_CONTINUITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "kms_key_rotation:key_rotation_continuity",
+        "revision" : 1,
+        "fingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      } ]
+    }, {
+      "code" : "OLD_GENERATION_REJECTED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "kms_key_rotation:old_generation_rejected",
+        "revision" : 1,
+        "fingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      } ]
+    }, {
+      "code" : "RESTART_FREE",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "kms_key_rotation:restart_free",
+        "revision" : 1,
+        "fingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "kms_key_rotation",
+      "revision" : 1,
+      "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "MTLS_CA_ROTATION",
+    "attemptId" : "attempt:9",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:35Z",
+    "faultAppliedAt" : "2026-08-10T00:01:36Z",
+    "faultRemovedAt" : "2026-08-10T00:01:37Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:38Z",
+    "completedAt" : "2026-08-10T00:01:39Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "observationFingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "invariantObservations" : [ {
+      "code" : "CA_ROTATION_CONTINUITY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "mtls_ca_rotation:ca_rotation_continuity",
+        "revision" : 1,
+        "fingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      } ]
+    }, {
+      "code" : "OLD_GENERATION_REJECTED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "mtls_ca_rotation:old_generation_rejected",
+        "revision" : 1,
+        "fingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      } ]
+    }, {
+      "code" : "RESTART_FREE",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "mtls_ca_rotation:restart_free",
+        "revision" : 1,
+        "fingerprint" : "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "mtls_ca_rotation",
+      "revision" : 1,
+      "fingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "VAULT_UNAVAILABLE",
+    "attemptId" : "attempt:10",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:45Z",
+    "faultAppliedAt" : "2026-08-10T00:01:46Z",
+    "faultRemovedAt" : "2026-08-10T00:01:47Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:48Z",
+    "completedAt" : "2026-08-10T00:01:49Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "observationFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "invariantObservations" : [ {
+      "code" : "EVENTUAL_RECOVERY",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "vault_unavailable:eventual_recovery",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    }, {
+      "code" : "FAIL_CLOSED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "vault_unavailable:fail_closed",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    }, {
+      "code" : "NO_SECRET_FALLBACK",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "vault_unavailable:no_secret_fallback",
+        "revision" : 1,
+        "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "vault_unavailable",
+      "revision" : 1,
+      "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    } ],
+    "reasonCode" : "PASSED"
+  }, {
+    "scenario" : "WRITE_ESCAPE_PROBE",
+    "attemptId" : "attempt:11",
+    "status" : "PASSED",
+    "startedAt" : "2026-08-10T00:01:55Z",
+    "faultAppliedAt" : "2026-08-10T00:01:56Z",
+    "faultRemovedAt" : "2026-08-10T00:01:57Z",
+    "recoveryObservedAt" : "2026-08-10T00:01:58Z",
+    "completedAt" : "2026-08-10T00:01:59Z",
+    "faultApplied" : true,
+    "recoveryObserved" : true,
+    "externalBusinessWriteAttemptCount" : 0,
+    "writeEscapeCount" : 0,
+    "commandTranscriptFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "observationFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "invariantObservations" : [ {
+      "code" : "FAIL_CLOSED",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "write_escape_probe:fail_closed",
+        "revision" : 1,
+        "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      } ]
+    }, {
+      "code" : "ZERO_EXTERNAL_BUSINESS_WRITES",
+      "status" : "PASSED",
+      "proofRefs" : [ {
+        "kind" : "RUNTIME_INVARIANT_PROOF",
+        "id" : "write_escape_probe:zero_external_business_writes",
+        "revision" : 1,
+        "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      } ]
+    } ],
+    "proofRefs" : [ {
+      "kind" : "RUNTIME_SCENARIO_PROOF",
+      "id" : "write_escape_probe",
+      "revision" : 1,
+      "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    } ],
+    "reasonCode" : "PASSED"
+  } ],
+  "verdict" : "CERTIFIED",
+  "externalBusinessWriteAttemptCount" : 0,
+  "writeEscapeCount" : 0,
+  "issuer" : "runtime-certification-authority:sg",
+  "proofRefs" : [ {
+    "kind" : "RUNTIME_CERTIFICATION_EVIDENCE_INDEX",
+    "id" : "index:sg",
+    "revision" : 5,
+    "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  } ],
+  "reportSeal" : {
+    "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint" : "sha256:6b14f0e9720134cc67a698ce89288126c54772e3c20ad2b09c8f6db484aa71e1",
+    "algorithm" : "Ed25519",
+    "keyId" : "runtime-report-fixture-key",
+    "signedAt" : "2026-08-10T00:00:00Z",
+    "signature" : "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  }
+}

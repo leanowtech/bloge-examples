@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/runtime-certification-execution-authorization-v1.schema.json",
+  "title": "Resource Gateway Runtime Certification Execution Authorization v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "authorizationFingerprint", "authorizationId", "revision",
+    "manifestRef", "scope", "environmentClass", "environmentFingerprint", "deployment",
+    "allowedScenarios", "destructiveActionsAllowed", "productionExecutionDenied",
+    "singleUse", "nonceFingerprint", "issuedAt", "validFrom", "expiresAt", "issuer",
+    "approvalRefs", "authorizationSeal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.runtimeCertificationExecutionAuthorization.v1"
+    },
+    "authorizationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "authorizationId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "manifestRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "RUNTIME_CERTIFICATION_MANIFEST" } } }
+      ]
+    },
+    "scope": { "$ref": "#/$defs/scope" },
+    "environmentClass": { "enum": ["SANDBOX", "PRE_PRODUCTION"] },
+    "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "deployment": { "$ref": "#/$defs/deployment" },
+    "allowedScenarios": {
+      "type": "array", "minItems": 12, "maxItems": 12, "uniqueItems": true,
+      "items": { "$ref": "#/$defs/scenario" }
+    },
+    "destructiveActionsAllowed": { "const": true },
+    "productionExecutionDenied": { "const": true },
+    "singleUse": { "const": true },
+    "nonceFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "issuedAt": { "type": "string", "format": "date-time" },
+    "validFrom": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "issuer": { "$ref": "#/$defs/identifier" },
+    "approvalRefs": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": { "$ref": "#/$defs/artifactRef" }
+    },
+    "authorizationSeal": { "$ref": "#/$defs/seal" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "scenario": {
+      "enum": [
+        "POSTGRES_PRIMARY_KILL_BEFORE_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_STAGE",
+        "POSTGRES_PRIMARY_KILL_AFTER_APPLY", "POSTGRES_PRIMARY_KILL_AFTER_COMMIT",
+        "NETWORK_PARTITION", "LEASE_TAKEOVER", "ROLLING_UPGRADE", "BACKUP_RESTORE",
+        "KMS_KEY_ROTATION", "MTLS_CA_ROTATION", "VAULT_UNAVAILABLE", "WRITE_ESCAPE_PROBE"
+      ]
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "seal": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunEvidenceSeal.v1" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    }
+  }
+}

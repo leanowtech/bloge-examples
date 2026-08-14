@@ -1,0 +1,109 @@
+{
+  "schemaVersion" : "resourceGateway.runtimeCertificationManifest.v1",
+  "manifestFingerprint" : "sha256:8db5d571e4a4e78e1dbe5dbe5db76b4dffa93466ec98da2dc44d09f7936f989e",
+  "manifestId" : "runtime-certification:sg",
+  "revision" : 3,
+  "scope" : {
+    "tenantId" : "tenant-demo",
+    "organizationId" : "org-support",
+    "projectId" : "project-business-mirror",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "region" : "ap-southeast-1",
+  "deployment" : {
+    "deploymentScopeId" : "mirror-staging-sg",
+    "clusterId" : "cluster-sg-01",
+    "namespace" : "resource-gateway-mirror",
+    "workloadName" : "resource-gateway",
+    "serviceAccount" : "resource-gateway-mirror",
+    "imageDigest" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "environmentClass" : "SANDBOX",
+  "environmentFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "components" : [ {
+    "kind" : "RESOURCE_GATEWAY",
+    "componentId" : "component:resource_gateway",
+    "version" : "1.0.0",
+    "buildFingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  }, {
+    "kind" : "BLOGE_ENGINE",
+    "componentId" : "component:bloge_engine",
+    "version" : "0.8.9-RC2",
+    "buildFingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  }, {
+    "kind" : "DATABASE",
+    "componentId" : "component:database",
+    "version" : "postgresql-16.4",
+    "buildFingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  }, {
+    "kind" : "JVM",
+    "componentId" : "component:jvm",
+    "version" : "openjdk-25.0.3",
+    "buildFingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  } ],
+  "scenarios" : [ {
+    "scenario" : "POSTGRES_PRIMARY_KILL_BEFORE_STAGE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EXACT_REPLAY", "NO_COMMITTED_STATE_LOSS", "NO_PARTIAL_VISIBILITY" ]
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_STAGE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EXACT_REPLAY", "NO_COMMITTED_STATE_LOSS", "NO_PARTIAL_VISIBILITY" ]
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_APPLY",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EXACT_REPLAY", "NO_COMMITTED_STATE_LOSS", "NO_PARTIAL_VISIBILITY" ]
+  }, {
+    "scenario" : "POSTGRES_PRIMARY_KILL_AFTER_COMMIT",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "COMMITTED_STATE_VISIBLE", "EXACT_REPLAY", "NO_DUPLICATE_EFFECT" ]
+  }, {
+    "scenario" : "NETWORK_PARTITION",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EVENTUAL_RECOVERY", "OLD_EPOCH_FENCED", "SINGLE_ACTIVE_OWNER" ]
+  }, {
+    "scenario" : "LEASE_TAKEOVER",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EVENTUAL_RECOVERY", "OLD_EPOCH_FENCED", "SINGLE_ACTIVE_OWNER" ]
+  }, {
+    "scenario" : "ROLLING_UPGRADE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EVENTUAL_RECOVERY", "MIXED_VERSION_COMPATIBLE", "NO_COMMITTED_STATE_LOSS" ]
+  }, {
+    "scenario" : "BACKUP_RESTORE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "MONOTONIC_FENCE_PRESERVED", "NO_COMMITTED_STATE_LOSS", "RESTORE_CONTINUITY" ]
+  }, {
+    "scenario" : "KMS_KEY_ROTATION",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "KEY_ROTATION_CONTINUITY", "OLD_GENERATION_REJECTED", "RESTART_FREE" ]
+  }, {
+    "scenario" : "MTLS_CA_ROTATION",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "CA_ROTATION_CONTINUITY", "OLD_GENERATION_REJECTED", "RESTART_FREE" ]
+  }, {
+    "scenario" : "VAULT_UNAVAILABLE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "EVENTUAL_RECOVERY", "FAIL_CLOSED", "NO_SECRET_FALLBACK" ]
+  }, {
+    "scenario" : "WRITE_ESCAPE_PROBE",
+    "maximumExecutionSeconds" : 300,
+    "maximumRecoverySeconds" : 120,
+    "requiredInvariantCodes" : [ "FAIL_CLOSED", "ZERO_EXTERNAL_BUSINESS_WRITES" ]
+  } ],
+  "validFrom" : "2026-08-09T23:59:00Z",
+  "expiresAt" : "2026-08-11T00:00:00Z",
+  "owner" : "sre:mirror-runtime"
+}

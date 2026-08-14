@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/runtime-certification-manifest-v1.schema.json",
+  "title": "Resource Gateway Runtime Certification Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "manifestFingerprint", "manifestId", "revision", "scope",
+    "region", "deployment", "environmentClass", "environmentFingerprint",
+    "components", "scenarios", "validFrom", "expiresAt", "owner"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.runtimeCertificationManifest.v1" },
+    "manifestFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "manifestId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "scope": { "$ref": "#/$defs/scope" },
+    "region": { "$ref": "#/$defs/identifier" },
+    "deployment": { "$ref": "#/$defs/deployment" },
+    "environmentClass": { "enum": ["SANDBOX", "PRE_PRODUCTION", "PRODUCTION"] },
+    "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "components": {
+      "type": "array", "minItems": 4, "maxItems": 4,
+      "items": { "$ref": "#/$defs/component" }
+    },
+    "scenarios": {
+      "type": "array", "minItems": 12, "maxItems": 12,
+      "items": { "$ref": "#/$defs/scenarioRequirement" }
+    },
+    "validFrom": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "owner": { "$ref": "#/$defs/identifier" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "component": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "componentId", "version", "buildFingerprint"],
+      "properties": {
+        "kind": { "enum": ["RESOURCE_GATEWAY", "BLOGE_ENGINE", "DATABASE", "JVM"] },
+        "componentId": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/identifier" },
+        "buildFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "scenario": {
+      "enum": [
+        "POSTGRES_PRIMARY_KILL_BEFORE_STAGE", "POSTGRES_PRIMARY_KILL_AFTER_STAGE",
+        "POSTGRES_PRIMARY_KILL_AFTER_APPLY", "POSTGRES_PRIMARY_KILL_AFTER_COMMIT",
+        "NETWORK_PARTITION", "LEASE_TAKEOVER", "ROLLING_UPGRADE", "BACKUP_RESTORE",
+        "KMS_KEY_ROTATION", "MTLS_CA_ROTATION", "VAULT_UNAVAILABLE", "WRITE_ESCAPE_PROBE"
+      ]
+    },
+    "scenarioRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "scenario", "maximumExecutionSeconds", "maximumRecoverySeconds",
+        "requiredInvariantCodes"
+      ],
+      "properties": {
+        "scenario": { "$ref": "#/$defs/scenario" },
+        "maximumExecutionSeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },
+        "maximumRecoverySeconds": { "type": "integer", "minimum": 1, "maximum": 7200 },
+        "requiredInvariantCodes": {
+          "type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }
+        }
+      }
+    }
+  }
+}
