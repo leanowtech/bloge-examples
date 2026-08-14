@@ -84,6 +84,7 @@ public class ToolStudioIntegrationService {
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
     private boolean suiteStabilityJobSubmissionEnabled;
+    private boolean businessMirrorProposalSimulationApi;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
     private DomainFidelityRuntimeAvailability
@@ -235,6 +236,14 @@ public class ToolStudioIntegrationService {
     @Autowired(required = false)
     void configureLegacyGraphPackageProjector(LegacyGraphPackageProjector projector) {
         this.legacyGraphPackageProjectorReady = projector != null && projector.ready();
+    }
+
+    /** Advertises Proposal simulation only when the protected application service is assembled. */
+    @Autowired(required = false)
+    void configureBusinessMirrorProposalSimulation(
+            com.leanowtech.bloge.gateway.businessmirror.simulation
+                    .CapabilityProposalSimulationService service) {
+        this.businessMirrorProposalSimulationApi = service != null;
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -594,6 +603,8 @@ public class ToolStudioIntegrationService {
                 packageCompilationAuthority.ready());
         features.put("businessMirrorLegacyMigrationAuthorityReady",
                 legacyGraphPackageProjectorReady);
+        features.put("businessMirrorProposalSimulation",
+                businessMirrorProposalSimulationApi);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2204,6 +2215,14 @@ public class ToolStudioIntegrationService {
         if (mirrorRuntimeAvailability.corpusClusterApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/mirror/corpus-clusters"));
+        }
+        if (businessMirrorProposalSimulationApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations/{simulationId}"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

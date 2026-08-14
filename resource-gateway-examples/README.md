@@ -149,9 +149,11 @@ To exercise the new Business Mirror Package authoring API with the cancellation-
 It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
 PostgreSQL migration boundary, compile/read commands, and stop command. The
 [Capability Proposal Authoring guide](../docs/resource-gateway-business-mirror-proposal-authoring-guide.md)
-covers create/save/history, exact replay, strict isolation and offline verification. Proposal
-authoring is available now; Proposal simulation remains explicitly unavailable until the next
-runtime work package. The
+covers create/save/history, exact replay, strict isolation and offline verification. The
+[Capability Proposal Simulation guide](../docs/resource-gateway-business-mirror-proposal-simulation-guide.md)
+covers exact Package/Graph/Capability/Suite/Fixture prerequisites, isolated execution, durable
+replay, layered evidence, offline verification, PostgreSQL deployment, and the hard boundary between
+`SIMULATED` and implementation/conformance. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

@@ -18,6 +18,9 @@ import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackag
 import com.leanowtech.bloge.gateway.businessmirror.domain.PackageReadinessReport;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjection;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjectionCatalog;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationEvidence;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRequest;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.StoredCapabilityProposalSimulation;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,7 +62,13 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("capabilityProposalPage", java.util.List.of(
                         CapabilityProposalPage.SCHEMA_VERSION))
                 .containsEntry("capabilityProposalSnapshot", java.util.List.of(
-                        CapabilityProposalSnapshot.SCHEMA_VERSION));
+                        CapabilityProposalSnapshot.SCHEMA_VERSION))
+                .containsEntry("capabilityProposalSimulationRequest", java.util.List.of(
+                        CapabilityProposalSimulationRequest.SCHEMA_VERSION))
+                .containsEntry("capabilityProposalSimulationEvidence", java.util.List.of(
+                        CapabilityProposalSimulationEvidence.SCHEMA_VERSION))
+                .containsEntry("storedCapabilityProposalSimulation", java.util.List.of(
+                        StoredCapabilityProposalSimulation.SCHEMA_VERSION));
         assertThat(capabilities.features())
                 .containsEntry("businessMirrorProtocol", true)
                 .containsEntry("businessMirrorPackageApi", true)

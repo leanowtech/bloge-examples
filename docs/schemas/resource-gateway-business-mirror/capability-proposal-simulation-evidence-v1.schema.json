@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-proposal-simulation-evidence-v1.schema.json",
+  "title": "Capability Proposal Simulation Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "simulationId", "fingerprint", "scope", "proposalDraftRef", "packageRef", "graphRef", "baseCapabilityClosureRef", "simulatedCapabilityClosureRef", "targetCapabilityRef", "temporaryCapabilityRef", "acceptanceSuiteRefs", "status", "cases", "startedAt", "completedAt", "limitations", "uncertainties"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityProposalSimulationEvidence.v1" },
+    "simulationId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "proposalDraftRef": { "$ref": "#/$defs/proposalDraftRef" },
+    "packageRef": { "$ref": "#/$defs/packageRef" },
+    "graphRef": { "$ref": "#/$defs/graphRef" },
+    "baseCapabilityClosureRef": { "$ref": "#/$defs/closureRef" },
+    "simulatedCapabilityClosureRef": { "$ref": "#/$defs/closureRef" },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "temporaryCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "acceptanceSuiteRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/suiteRef" }
+    },
+    "status": { "enum": ["PASSED", "FAILED"] },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/caseEvidence" }
+    },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" },
+    "limitations": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" },
+    "uncertainties": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" }
+  },
+  "$defs": {
+    "typedRef": {
+      "allOf": [{ "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" }]
+    },
+    "proposalDraftRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "CAPABILITY_PROPOSAL_DRAFT" } }, "required": ["kind"] }]
+    },
+    "packageRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } }, "required": ["kind"] }]
+    },
+    "graphRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "GRAPH_DRAFT" } }, "required": ["kind"] }]
+    },
+    "closureRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "CAPABILITY_CLOSURE" } }, "required": ["kind"] }]
+    },
+    "capabilityRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "CAPABILITY" } }, "required": ["kind"] }]
+    },
+    "suiteRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "TEST_SUITE" } }, "required": ["kind"] }]
+    },
+    "fixtureRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } }, "required": ["kind"] }]
+    },
+    "planRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "MIRROR_PLAN" } }, "required": ["kind"] }]
+    },
+    "bundleRef": {
+      "allOf": [{ "$ref": "#/$defs/typedRef" }, { "properties": { "kind": { "const": "MIRROR_EVIDENCE_BUNDLE" } }, "required": ["kind"] }]
+    },
+    "caseEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseType", "suiteRef", "fixtureRef", "mirrorPlanRef", "mirrorEvidenceBundleRef", "runStatus", "resolverSources", "matchedRuleRefs", "proposalCallCount", "limitations"],
+      "properties": {
+        "caseId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "caseType": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"] },
+        "suiteRef": { "$ref": "#/$defs/suiteRef" },
+        "fixtureRef": { "$ref": "#/$defs/fixtureRef" },
+        "mirrorPlanRef": { "$ref": "#/$defs/planRef" },
+        "mirrorEvidenceBundleRef": { "$ref": "#/$defs/bundleRef" },
+        "runStatus": { "enum": ["PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"] },
+        "resolverSources": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "enum": ["SESSION_STATE", "OWNER_SPECIFIED", "RECORDED_EXACT", "RECORDED_TRAJECTORY", "RECORDED_CLUSTER", "GOVERNED_REPLAY", "SCHEMA_SYNTHESIZED", "CONTRACT_MOCK", "ABSTAINED"] } },
+        "matchedRuleRefs": { "type": "array", "maxItems": 100000, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 512 } },
+        "proposalCallCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "limitations": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" }
+      }
+    }
+  }
+}

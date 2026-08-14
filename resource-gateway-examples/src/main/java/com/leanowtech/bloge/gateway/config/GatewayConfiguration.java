@@ -37,8 +37,12 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependency
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationService;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractCatalog;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
@@ -66,11 +70,15 @@ import com.leanowtech.bloge.gateway.integration.SideEffectReconciliationReposito
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilitySnapshotRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.testing.security.ExecutionControlBoundaryGuardFilter;
+import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
@@ -609,6 +617,39 @@ public class GatewayConfiguration {
             CapabilityProposalSaveCoordinator saves,
             ObjectMapper objectMapper) {
         return new CapabilityProposalAuthoringService(drafts, saves, objectMapper);
+    }
+
+    /** Durable lease, retry and aggregate-result authority for isolated Proposal simulation. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityProposalSimulationRepository capabilityProposalSimulationRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCapabilityProposalSimulationRepository(jdbc, objectMapper);
+    }
+
+    /** Proposal overlay, acceptance-suite execution and signed aggregate evidence boundary. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityProposalSimulationService capabilityProposalSimulationService(
+            CapabilityProposalDraftRepository proposals,
+            PackageCompilationFactRepository packages,
+            BuiltInGraphAssetAuthority graphAssets,
+            GatewayGraphService graphs,
+            TestSuiteRepository suites,
+            FixtureBundleRepository fixtures,
+            CapabilityProposalSimulationRepository simulations,
+            MirrorPlanIntegrationService plans,
+            MirrorRunIntegrationService runs,
+            VisualEvidenceSigner signer,
+            ObjectMapper objectMapper) {
+        return new CapabilityProposalSimulationService(proposals, packages, graphAssets, graphs,
+                suites, fixtures, simulations, plans, runs, signer, objectMapper);
     }
 
     /** Exact read adapter over the shipped Graph, Contract, test-suite and capability authorities. */

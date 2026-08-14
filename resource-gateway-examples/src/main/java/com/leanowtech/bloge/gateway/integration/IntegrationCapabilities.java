@@ -366,6 +366,15 @@ public record IntegrationCapabilities(
         objects.put("capabilityProposalSnapshot", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .CapabilityProposalSnapshot.SCHEMA_VERSION));
+        objects.put("capabilityProposalSimulationRequest", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.simulation
+                        .CapabilityProposalSimulationRequest.SCHEMA_VERSION));
+        objects.put("capabilityProposalSimulationEvidence", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.simulation
+                        .CapabilityProposalSimulationEvidence.SCHEMA_VERSION));
+        objects.put("storedCapabilityProposalSimulation", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.simulation
+                        .StoredCapabilityProposalSimulation.SCHEMA_VERSION));
         objects.put("mirrorPlan", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION_V1,
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));

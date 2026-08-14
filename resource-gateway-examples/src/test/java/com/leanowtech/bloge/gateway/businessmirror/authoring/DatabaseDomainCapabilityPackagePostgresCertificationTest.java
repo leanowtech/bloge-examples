@@ -7,6 +7,9 @@ import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
+import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 
 import org.junit.jupiter.api.AfterAll;
@@ -22,6 +25,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -149,6 +153,49 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    void appliesProposalSimulationDdlAndFencesTwoIndependentReplicas() throws Exception {
+        DataSource firstDataSource = postgres.getPostgresDatabase();
+        DataSource secondDataSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260814_004__business_mirror_proposal_simulation.sql"))
+                .execute(firstDataSource);
+        SimulationReplica first = simulationReplica(firstDataSource);
+        SimulationReplica second = simulationReplica(secondDataSource);
+        CapabilitySnapshot.Scope scope = new CapabilitySnapshot.Scope(
+                "tenant", "customer-service", "refund", "test", "sg");
+        CapabilityProposalSimulationRepository.Registration registration =
+                new CapabilityProposalSimulationRepository.Registration(scope,
+                        "simulation-postgres-1", "proposal-postgres-1", 1,
+                        "sha256:" + "a".repeat(64));
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<CapabilityProposalSimulationRepository.Claim> left =
+                CompletableFuture.supplyAsync(() -> claimAfter(
+                        start, first, registration, "replica-a"));
+        CompletableFuture<CapabilityProposalSimulationRepository.Claim> right =
+                CompletableFuture.supplyAsync(() -> claimAfter(
+                        start, second, registration, "replica-b"));
+        start.countDown();
+
+        var claims = List.of(left.get(15, TimeUnit.SECONDS), right.get(15, TimeUnit.SECONDS));
+        assertThat(claims).extracting(CapabilityProposalSimulationRepository.Claim::outcome)
+                .containsExactlyInAnyOrder(
+                        CapabilityProposalSimulationRepository.Outcome.ACQUIRED,
+                        CapabilityProposalSimulationRepository.Outcome.IN_PROGRESS);
+        CapabilityProposalSimulationRepository.Claim acquired = claims.stream()
+                .filter(value -> value.outcome()
+                        == CapabilityProposalSimulationRepository.Outcome.ACQUIRED)
+                .findFirst().orElseThrow();
+        assertThat(first.transactions().execute(status ->
+                first.repository().renew(acquired.lease(), Duration.ofMinutes(10)))
+                || second.transactions().execute(status ->
+                second.repository().renew(acquired.lease(), Duration.ofMinutes(10)))).isTrue();
+        assertThat(new JdbcTemplate(firstDataSource).queryForObject(
+                "SELECT COUNT(*) FROM rg_bm_proposal_simulation WHERE proposal_id = ?",
+                Long.class, registration.proposalId())).isEqualTo(1);
+    }
+
     private DomainCapabilityPackageSaveCoordinator.Outcome executeAfter(
             CountDownLatch start, Replica replica) {
         try {
@@ -226,6 +273,29 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
     }
 
+    private CapabilityProposalSimulationRepository.Claim claimAfter(
+            CountDownLatch start,
+            SimulationReplica replica,
+            CapabilityProposalSimulationRepository.Registration registration,
+            String owner) {
+        try {
+            start.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failure);
+        }
+        return replica.transactions().execute(status -> replica.repository().claim(
+                registration, owner, Duration.ofMinutes(5)));
+    }
+
+    private SimulationReplica simulationReplica(DataSource dataSource) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        var repository = new DatabaseCapabilityProposalSimulationRepository(jdbc, mapper);
+        repository.init();
+        return new SimulationReplica(repository,
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
+
     private record Replica(
             DomainCapabilityPackageAuthoringService service,
             TransactionTemplate transactions) {
@@ -238,6 +308,11 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
 
     private record ProposalReplica(
             CapabilityProposalAuthoringService service,
+            TransactionTemplate transactions) {
+    }
+
+    private record SimulationReplica(
+            DatabaseCapabilityProposalSimulationRepository repository,
             TransactionTemplate transactions) {
     }
 }

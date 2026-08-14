@@ -10,7 +10,7 @@ Capability Proposal 用于表达“业务已经把缺失能力定义到可验收
 - strict Schema、canonical fingerprint 和独立 Test Kit 验证；
 - 固定 `SIMULATION_ONLY` binding，真实网络、外部凭据和 egress 必须为 `false`。
 
-当前迭代**不提供** Proposal 模拟运行。能力探针中的 `businessMirrorProposalApi=true` 仅表示作者 API 可用；`businessMirrorProposalSimulation=false` 表示 `/simulate` 尚不可调用。保存成功也不表示能力已实现、通过治理或可进入生产。
+Proposal 作者态与模拟运行保持两个独立边界。`businessMirrorProposalApi=true` 表示本指南中的作者 API 可用；只有受控 test/staging runtime 完整装配时，`businessMirrorProposalSimulation=true` 才表示可执行 [Proposal 模拟运行](resource-gateway-business-mirror-proposal-simulation-guide.md)。保存成功仍不表示能力已模拟、已实现、通过治理或可进入生产。
 
 ## 2. 启动与检查
 
@@ -35,9 +35,11 @@ curl -s http://localhost:8080/api/integration/capabilities \
 ```json
 {
   "businessMirrorProposalApi": true,
-  "businessMirrorProposalSimulation": false
+  "businessMirrorProposalSimulation": true
 }
 ```
+
+若第二项为 `false`，作者 API 仍可使用，但当前部署没有装配隔离模拟运行面。
 
 ## 3. 五分钟创建流程
 
@@ -120,7 +122,7 @@ curl -sS 'http://localhost:8080/api/business-mirror/proposals?limit=25' \
 }
 ```
 
-Java 领域对象和 JSON Schema 都会拒绝任何 `true` 值。Proposal draft 只保存 Fixture、acceptance suite 和 resolver policy 的 exact ref，不保存真实凭据或业务 payload。未匹配 Fixture 的失败关闭语义将在 Proposal simulation 工作包中进入运行根；在该工作包完成前，能力探针不会广告模拟可用。
+Java 领域对象和 JSON Schema 都会拒绝任何 `true` 值。Proposal draft 只保存 Fixture、acceptance suite 和 resolver policy 的 exact ref，不保存真实凭据或业务 payload。模拟运行会再次解析并复验每个 exact ref；未匹配 Fixture、真实调用、Secret、写副作用和网络回退均失败关闭。
 
 ## 6. 独立消费者验证
 
@@ -157,6 +159,12 @@ db/postgresql/V20260814_003__business_mirror_proposal_authoring.sql
 ```
 
 DDL 创建 current、append-only history、command lock 和 exact receipt 四类表。`Scope + proposalId` 与 `Scope + idempotencyKey` 均进入数据库主键，不依赖查询后的应用层过滤。
+
+若启用 Proposal simulation，还要应用：
+
+```text
+db/postgresql/V20260814_004__business_mirror_proposal_simulation.sql
+```
 
 停止演示服务：
 

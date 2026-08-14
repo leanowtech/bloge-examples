@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-006 CapabilityProposal durable authoring 已完成；下一迭代 BM-007 Proposal simulation
+> 当前迭代：BM-007 Proposal simulation 已完成；下一迭代 BM-008 实现交付与 Conformance
 >
 > 最近更新：2026-08-14
 
@@ -595,3 +595,93 @@ BM-006 关闭了 Proposal 只能以领域 record 或固定 JSON 存在、无法�
 风险加权差距由约 `14%` 降至约 `12%`。降幅保持克制：Proposal 仍不能解析 Fixture/Suite Authority、不能生成 temporary snapshot/MirrorPlan、不能试跑 acceptance suite，也没有分层 simulation evidence；Visual Graph、Scenario、Fidelity 与 Outcome 的完整持久 Authority，以及生产 KMS、HA/DR、容量、多区域和组织运营认证仍未完成。
 
 下一迭代进入 BM-007：从一个 exact Proposal revision 冻结 temporary snapshot，解析并 pin Fixture/acceptance suite，复用既有 `MirrorPlanCompiler`、Fixture runtime 和 Test evidence 内核执行模拟。未匹配调用必须 `ABSTAINED/FIXTURE_NOT_FOUND`，物理禁止真实网络、Secret 和 External Write；证据必须标注 `SIMULATED`、fixture 来源、匹配规则、调用次数、限制与不确定性，并且不能被实现或发布门禁当成 conformance evidence。
+
+## 14. Iteration 7：BM-007 Proposal simulation
+
+### 14.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 纯 temporary snapshot compiler | `CapabilityProposalSimulationCompiler` 将候选 Contract 仅覆盖到一个 exact external Capability，递归重封受影响祖先和 root runtime Graph fingerprint；原 DSL、base closure 和各 Authority 均不被修改 |
+| 完整运行前置复验 | Proposal revision/fingerprint/expiry/readiness、Package snapshot/manifest/closure、built-in Graph、target capability、TestSuite、Fixture 和 Region 全部 exact-match；不接受 `latest` |
+| 物理隔离准入 | V1 只接受只读、无状态、无 Secret、当前 Region 合法的 Contract/closure；Fixture 的 `REAL`、`SPY`、`STREAM`、`FALLBACK_TO_REAL`、`ALLOW_REAL` 全部失败关闭 |
+| 复用 Mirror runtime | 每个 acceptance Case 生成确定性 `MirrorPlan` 和 `MirrorRun`，复用现有 Graph materialization、Fixture resolver、测试断言、未匹配失败和 payload-free evidence 内核 |
+| 分层模拟证据 | Case 层记录 Suite/Fixture/Plan/Evidence exact refs、状态、resolver source、rule refs 和 Proposal 调用次数；Aggregate 层绑定 Proposal/Package/Graph/base/simulated closure、限制和不确定性 |
+| 严格证据状态 | 运行结束只派生 `CapabilityProposalSnapshot.evidenceState=SIMULATED`；`implementationBindingRef` 保持 `null`，成功也不会产生 IMPLEMENTED/CONFORMANT/CALIBRATED 事实 |
+| Durable exact replay | PostgreSQL/H2 repository 使用完整五段 Scope、Proposal revision、simulation id、command fingerprint、数据库时钟、30 分钟 lease、Case 间续租和 epoch fencing；完成结果重启后原样返回 |
+| 认证运行 API | 新增 simulate 与 exact evidence read；分别使用 `MIRROR_REHEARSAL` 和 `GOVERNANCE_EVIDENCE_INGESTION` operation；Controller 只在 test/staging + mirror enabled 时装配 |
+| 动态能力发现 | 三类协议对象始终可协商；`businessMirrorProposalSimulation` 与两个 endpoints 只有应用服务真实装配时才广告 |
+| 跨语言协议与固定样例 | request/evidence/stored result 三份 strict Draft 2020-12 Schema；固定服务端结果；Test Kit 可离线复算 evidence/Snapshot fingerprint、覆盖、排序、时间和 identity closure |
+| 部署与使用文档 | 新增 Proposal simulation 指南，更新作者指南、Resource Gateway/Test Kit README；新增 `V20260814_004` PostgreSQL migration |
+
+### 14.2 运行与证据不变量
+
+```text
+authenticate complete Scope + MIRROR_REHEARSAL
+  -> durable claim(Scope, proposalId, revision, simulationId, requestFingerprint)
+  -> resolve exact Proposal + Package + Graph + base closure
+  -> verify exact direct Suites + Fixtures and isolation policy
+  -> overlay one temporary SIMULATION_ONLY capability and reseal ancestors
+  -> for each Case: renew lease -> create exact MirrorPlan -> execute MirrorRun
+                    -> read signed payload-free MirrorEvidenceBundle -> renew lease
+  -> verify structural suite coverage and Proposal call count
+  -> seal aggregate -> sign and immediately verify
+  -> derive SIMULATED ProposalSnapshot
+  -> renew + epoch-fenced durable complete
+```
+
+关键边界：
+
+1. Proposal target 是本次 Graph context 中的 exact external Capability，不会覆盖全局 Capability registry。
+2. Temporary Capability 使用 `SIMULATION_ONLY` runtime binding；其内容地址进入 simulated closure 与每个 MirrorPlan。
+3. Case input 只进入瞬时 Mirror execution context；Aggregate 不存 input、output、node value 或 Fixture return payload。
+4. `PASSED` 要求全部 Case 的 Mirror status 为 `PASSED` 且 Proposal temporary capability 至少被调用一次。套件全部通过但没有触达候选能力时 Aggregate 为 `FAILED`。
+5. 同一个 Proposal exact revision 只有一个权威模拟结果。改变 Package、Graph、target 或 suite/fixture material 时必须先保存新 Proposal revision。
+6. Aggregate attestation 的结构与 material binding 可离线复验；签名来源真实性仍由部署 evidence trust/key set 验证，Test Kit 不伪造部署信任。
+
+### 14.3 并发、恢复和数据库语义
+
+1. 主键是完整 Scope + Proposal id + Proposal revision；simulation id 在完整 Scope 内唯一，杜绝跨组织碰撞。
+2. `INSERT ... ON CONFLICT DO NOTHING` 避免 PostgreSQL 唯一约束异常把当前事务标成 aborted；竞争副本随后锁定同一行并返回 `IN_PROGRESS` 或 exact completed result。
+3. lease 使用数据库时钟，不依赖副本系统时钟；每个 Case 前后及最终提交前续租。
+4. epoch、owner 和当前 lease expiry 共同参与 renew/release/complete 条件，旧 worker 不能覆盖接管者结果。
+5. 失败释放只保存有界 reason code，不保存异常、业务 payload 或凭据。
+6. runtime fallback DDL 与正式 migration 都使用 H2/PostgreSQL 兼容的 `TEXT`；原生 PostgreSQL 测试同时执行 migration 和 repository `init()`。
+
+### 14.4 开发红灯与根治
+
+| 红灯 | 病根 | 根治与回归保护 |
+|---|---|---|
+| Full Spring context 首次无法启动 | 新测试遗漏 durable quarantine 的 claim/request key 测试配置，触发既有安全边界 fail closed | 使用与完整 runtime integration test 相同的两组 key-ring、write mode 和 rollout identity；保留完整 Spring 装配测试 |
+| unsafe Contract 测试预期错误 | 测试假定 readiness blocker 总先于运行准入，但该构造的 draft blocker 为空，真正拒绝来自运行时 read-only/secret policy | 断言稳定的安全拒绝原因，不伪造不存在的 blocker |
+| PostgreSQL fallback DDL 隐患 | repository fallback 表使用 H2 `CLOB`，且捕获 duplicate key 后继续查询会使 PostgreSQL 事务处于 aborted 状态 | 改为双数据库 `TEXT`，以 `ON CONFLICT DO NOTHING` 完成无异常仲裁；加入原生 PostgreSQL 双副本并发认证 |
+| 大闭包收集潜在二次复杂度 | changed snapshot 以旧 ref 索引，收集新 ref 时逐项扫描 rewritten values | 构建 materialized ref index，closure collect 变为 O(V+E) |
+| 长批次可能丢失提交权 | 初版只在运行开始领取 30 分钟 lease，多 Case 批次可能超过 lease | 增加数据库时钟续租，Case 前后和 final commit 前检查；续租失败立即拒绝提交 |
+
+### 14.5 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---|---|
+| Simulation focused server suite | `53/53` 通过 | overlay/reseal、unsafe/target rejection、service composition、payload omission、exact replay、lease renew/fence、Controller operation、Spring profile wiring、capability probe regression，以及生产行为与 real fallback 双重 fail-closed |
+| Native PostgreSQL certification | `1/1` 通过 | migration + fallback DDL、两个独立 DataSource/transaction manager 并发 claim、唯一行和续租 |
+| Test Kit Business Mirror suite | `23/23` 通过 | 三份新 Schema、服务端固定结果、evidence/Snapshot fingerprint、identity closure、tamper rejection、严格 request kinds |
+| Resource Gateway | `5993` tests，`0` failures，`0` errors，`13` skipped | 完整 `clean verify`、原生 PostgreSQL、真实 Chromium E2E 与可执行 Spring Boot JAR 全绿 |
+| Resource Gateway Test Kit | `549` tests，`0` failures，`0` errors，`0` skipped | 完整 `clean verify`、Schema packaging、shade、Javadoc 与 JAR 全绿 |
+
+服务端与 Test Kit 的完整发布门禁均通过；跳过项是既有环境条件测试，不包含本迭代新增测试。
+
+### 14.6 架构漂移审计
+
+1. Proposal simulation 只编排现有 Proposal、Package compilation fact、Graph Authority、Fixture/TestSuite registry 和 Mirror runtime，没有成为这些对象的新 Authority。
+2. Overlay compiler 是纯函数，不更新 DSL、Graph registry、Capability registry 或 compiled Package。
+3. 每个 Case 通过现有 `MirrorPlanIntegrationService` 和 `MirrorRunIntegrationService` 执行，没有复制 resolver、测试运行或 evidence signing 内核。
+4. HTTP 只负责认证和传输；事务、lease、运行编排、纯编译和 protocol records 保持独立。
+5. ANEKE 的 registry、publish gate、owner approval 和 TEE 治理未被引入 Resource Gateway；Aggregate 只输出可供治理消费的模拟事实。
+
+### 14.7 差距复评
+
+BM-007 关闭了 Proposal 只能编辑但不能试跑、候选 Contract 无法进入真实 Graph context、Suite/Fixture exact refs 未解析、模拟结果无持久身份和外部消费者无法辨别 SIMULATED/IMPLEMENTED 的主要缺口。
+
+风险加权差距由约 `12%` 降至约 `10%`。剩余差距主要集中在：实现绑定与同源 Conformance diff（BM-008）、L0-L3 reverse impact（BM-009）、Package evidence/Fidelity 聚合（BM-010）、生产 Outcome/Regional Data Plane/HA-DR 认证（BM-011/012/013）、ANEKE 持续集成（BM-014）和真实取消费域试点（BM-015）。此外，V1 仍只支持 built-in Graph、direct TestSuite 和只读无状态候选能力，默认 demo 不伪造客户 Authority 数据。
+
+下一迭代进入 BM-008：建立 Proposal implementation binding、SDK/runtime port 和同源 acceptance suite conformance report，保证“模拟通过”与“真实实现通过”是两个可比较但不可混淆的证据阶段。

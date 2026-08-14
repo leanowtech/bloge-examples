@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-proposal-simulation-request-v1.schema.json",
+  "title": "Capability Proposal Simulation Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "expectedProposalDraftFingerprint", "packageRef", "graphRef", "targetCapabilityRef"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityProposalSimulationRequest.v1" },
+    "expectedProposalDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "packageRef": { "$ref": "#/$defs/packageRef" },
+    "graphRef": { "$ref": "#/$defs/graphRef" },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" }
+  },
+  "$defs": {
+    "packageRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } }, "required": ["kind"] }
+      ]
+    },
+    "graphRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "GRAPH_DRAFT" } }, "required": ["kind"] }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } }, "required": ["kind"] }
+      ]
+    }
+  }
+}

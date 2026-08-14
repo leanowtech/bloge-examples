@@ -90,6 +90,20 @@ public final class BuiltInGraphAssetAuthority {
                 closureRef, suiteRefs);
     }
 
+    /**
+     * Resolves the exact content-addressed closure behind a built-in GraphDraft reference.
+     *
+     * <p>The returned value is a fresh deterministic projection. Callers still bind it to
+     * {@link #resolve(CapabilitySnapshot.Scope, String)} before treating it as reviewed input.</p>
+     */
+    public CapabilityClosure resolveClosure(
+            CapabilitySnapshot.Scope scope, String graphName) {
+        Objects.requireNonNull(scope, "scope");
+        CapabilityClosure closure = closures.project(graphName, projectionContext(scope));
+        CapabilityClosureIntegrity.verify(mapper, closure);
+        return closure;
+    }
+
     /** Converts a built-in graph name to the exact source id used by capability projection. */
     public static String graphId(String graphName) {
         return GRAPH_ID_PREFIX + required(graphName, "graphName");

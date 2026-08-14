@@ -61,6 +61,15 @@ public final class BusinessMirrorProtocol {
     /** Immutable evidence-derived Capability Proposal v1 wire version. */
     public static final String CAPABILITY_PROPOSAL_SNAPSHOT_V1 =
             "resourceGateway.capabilityProposalSnapshot.v1";
+    /** Payload-free exact Proposal simulation command v1 wire version. */
+    public static final String CAPABILITY_PROPOSAL_SIMULATION_REQUEST_V1 =
+            "resourceGateway.capabilityProposalSimulationRequest.v1";
+    /** Content-addressed aggregate Proposal simulation evidence v1 wire version. */
+    public static final String CAPABILITY_PROPOSAL_SIMULATION_EVIDENCE_V1 =
+            "resourceGateway.capabilityProposalSimulationEvidence.v1";
+    /** Durable exact Proposal simulation result v1 wire version. */
+    public static final String STORED_CAPABILITY_PROPOSAL_SIMULATION_V1 =
+            "resourceGateway.storedCapabilityProposalSimulation.v1";
 
     /** Complete cancellation-fee Package example packaged with the client. */
     public static final String PACKAGE_FIXTURE_RESOURCE =
@@ -79,6 +88,9 @@ public final class BusinessMirrorProtocol {
     /** Server-produced fail-closed Legacy Graph projection example. */
     public static final String LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "loan-decision-legacy-graph-projection-v1.fixture.json";
+    /** Server-produced, signed and payload-free Proposal simulation result example. */
+    public static final String PROPOSAL_SIMULATION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "refund-proposal-simulation-stage1-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
@@ -112,6 +124,12 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "capability-proposal-page-v1.schema.json";
     static final String PROPOSAL_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-proposal-snapshot-v1.schema.json";
+    static final String PROPOSAL_SIMULATION_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-proposal-simulation-request-v1.schema.json";
+    static final String PROPOSAL_SIMULATION_EVIDENCE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-proposal-simulation-evidence-v1.schema.json";
+    static final String STORED_PROPOSAL_SIMULATION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stored-capability-proposal-simulation-v1.schema.json";
 
     private BusinessMirrorProtocol() {
     }
@@ -274,6 +292,36 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireProposalSnapshot(JsonNode value) {
         require(value, PROPOSAL_SNAPSHOT_SCHEMA_RESOURCE, "PROPOSAL_SNAPSHOT_INVALID");
+    }
+
+    /**
+     * Requires a strict payload-free exact Proposal simulation command.
+     *
+     * @param value decoded simulation command
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requireProposalSimulationRequest(JsonNode value) {
+        BusinessMirrorSimulationVerifier.verifyRequest(value);
+    }
+
+    /**
+     * Requires content-addressed Proposal simulation aggregate evidence.
+     *
+     * @param value decoded aggregate evidence
+     * @throws IllegalArgumentException when Schema, fingerprint, order, or coverage checks fail
+     */
+    public static void requireProposalSimulationEvidence(JsonNode value) {
+        BusinessMirrorSimulationVerifier.verifyEvidence(value);
+    }
+
+    /**
+     * Requires a durable simulation result with a complete Proposal identity closure.
+     *
+     * @param value decoded stored simulation result
+     * @throws IllegalArgumentException when Schema, content, state, or identity checks fail
+     */
+    public static void requireStoredProposalSimulation(JsonNode value) {
+        BusinessMirrorSimulationVerifier.verifyStoredSimulation(value);
     }
 
     private static void require(JsonNode value, String schema, String failureCode) {

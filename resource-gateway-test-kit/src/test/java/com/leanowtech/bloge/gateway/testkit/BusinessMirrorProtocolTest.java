@@ -146,6 +146,57 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void verifiesServerProducedProposalSimulationWithoutBusinessPayloads() throws Exception {
+        ObjectNode stored = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PROPOSAL_SIMULATION_FIXTURE_RESOURCE);
+        var verified = BusinessMirrorSimulationVerifier.verifyStoredSimulation(stored);
+
+        assertThat(verified.simulationId()).isEqualTo("simulation-1");
+        assertThat(verified.proposalId()).isEqualTo("refund-proposal");
+        assertThat(verified.status()).isEqualTo("PASSED");
+        assertThat(verified.caseCount()).isOne();
+        assertThat(verified.proposalCallCount()).isOne();
+        assertThat(stored.toString()).doesNotContain("requestPayload", "responsePayload");
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalSimulationEvidence(
+                        stored.path("evidence")));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredProposalSimulation(stored));
+    }
+
+    @Test
+    void rejectsSchemaValidSimulationEvidenceTampering() throws Exception {
+        ObjectNode stored = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PROPOSAL_SIMULATION_FIXTURE_RESOURCE);
+        ((ObjectNode) stored.path("evidence").path("cases").get(0))
+                .put("proposalCallCount", 2);
+
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredProposalSimulation(stored))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PROPOSAL_SIMULATION_EVIDENCE_FINGERPRINT_MISMATCH");
+    }
+
+    @Test
+    void validatesStrictProposalSimulationCommandKinds() {
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                BusinessMirrorProtocol.CAPABILITY_PROPOSAL_SIMULATION_REQUEST_V1);
+        request.put("expectedProposalDraftFingerprint", fingerprint('1'));
+        request.set("packageRef", artifactRef("DOMAIN_CAPABILITY_PACKAGE", "refund", '2'));
+        request.set("graphRef", artifactRef("GRAPH_DRAFT", "built-in:refundGraph", '3'));
+        request.set("targetCapabilityRef", artifactRef("CAPABILITY", "refundLookup", '4'));
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalSimulationRequest(request));
+        ((ObjectNode) request.path("targetCapabilityRef")).put("kind", "GRAPH_DRAFT");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalSimulationRequest(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PROPOSAL_SIMULATION_REQUEST_INVALID");
+    }
+
+    @Test
     void rejectsTamperedProposalFingerprintAndDuplicateProposalPages() throws Exception {
         ObjectNode receipt = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);
@@ -357,6 +408,8 @@ class BusinessMirrorProtocolTest {
                 .isEqualTo("resourceGateway.domainCapabilityPackageSaveReceipt.v1");
         assertThat(BusinessMirrorProtocol.LEGACY_GRAPH_PACKAGE_PROJECTION_V1)
                 .isEqualTo("resourceGateway.legacyGraphPackageProjection.v1");
+        assertThat(BusinessMirrorProtocol.STORED_CAPABILITY_PROPOSAL_SIMULATION_V1)
+                .isEqualTo("resourceGateway.storedCapabilityProposalSimulation.v1");
         assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_INVALID");

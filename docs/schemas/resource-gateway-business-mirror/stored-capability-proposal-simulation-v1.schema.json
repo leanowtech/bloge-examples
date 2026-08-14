@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/stored-capability-proposal-simulation-v1.schema.json",
+  "title": "Stored Capability Proposal Simulation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestFingerprint", "evidence", "attestation", "proposalSnapshot", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.storedCapabilityProposalSimulation.v1" },
+    "requestFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "evidence": { "$ref": "capability-proposal-simulation-evidence-v1.schema.json" },
+    "attestation": { "$ref": "#/$defs/evidenceSeal" },
+    "proposalSnapshot": { "$ref": "capability-proposal-snapshot-v1.schema.json" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "evidenceSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunEvidenceSeal.v1" },
+        "materialFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+        "algorithm": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "keyId": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 16384 }
+      }
+    }
+  }
+}
