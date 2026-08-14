@@ -94,6 +94,8 @@ public class ToolStudioIntegrationService {
             new MirrorRuntimeAvailability(false, false);
     private RegionalDataPlaneCertificationAuthority regionalDataPlaneCertificationAuthority =
             RegionalDataPlaneCertificationAuthority.unavailable();
+    private RuntimeCertificationRuntimeAvailability runtimeCertificationAvailability =
+            RuntimeCertificationRuntimeAvailability.unavailable();
     private DomainFidelityRuntimeAvailability
             domainFidelityRuntimeAvailability =
             new DomainFidelityRuntimeAvailability(
@@ -292,6 +294,14 @@ public class ToolStudioIntegrationService {
             RegionalDataPlaneCertificationAuthority authority) {
         this.regionalDataPlaneCertificationAuthority = authority == null
                 ? RegionalDataPlaneCertificationAuthority.unavailable() : authority;
+    }
+
+    /** Receives the marker only when runtime-certification surfaces are deliberately assembled. */
+    @Autowired(required = false)
+    void configureRuntimeCertification(
+            RuntimeCertificationRuntimeAvailability availability) {
+        this.runtimeCertificationAvailability = availability == null
+                ? RuntimeCertificationRuntimeAvailability.unavailable() : availability;
     }
 
     /** Receives the marker only when protected Domain Fidelity routes are assembled. */
@@ -763,6 +773,13 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.certificationReady());
         features.put("mirrorRegionalDataPlaneCertificationReady",
                 regionalDataPlaneCertificationReady());
+        features.put("mirrorRuntimeCertificationPlanReady",
+                runtimeCertificationAvailability.planReady());
+        features.put("mirrorRuntimeCertificationDurableJournalReady",
+                runtimeCertificationAvailability.journalReady());
+        features.put("mirrorRuntimeCertificationExecutionReady",
+                runtimeCertificationAvailability.executionReady()
+                        && regionalDataPlaneCertificationReady());
         features.put("mirrorCertifiableEvidenceServingReady",
                 mirrorExecutionReady && mirrorRuntimeAvailability.certificationReady());
         features.put("mirrorObservationAdmissionApi",

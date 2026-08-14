@@ -1402,6 +1402,8 @@ class ToolStudioIntegrationServiceTest {
         java.util.concurrent.atomic.AtomicBoolean ready =
                 new java.util.concurrent.atomic.AtomicBoolean(false);
         service.configureMirrorRuntime(new MirrorRuntimeAvailability(true, true, () -> true));
+        service.configureRuntimeCertification(new RuntimeCertificationRuntimeAvailability(
+                true, true, () -> true, () -> true, () -> true, () -> true));
         service.configureRegionalDataPlaneCertification(
                 new com.leanowtech.bloge.gateway.integration.mirror
                         .RegionalDataPlaneCertificationAuthority() {
@@ -1429,7 +1431,10 @@ class ToolStudioIntegrationServiceTest {
 
         assertThat(service.capabilities().payload().features())
                 .containsEntry("mirrorIsolationRunTrustReady", false)
-                .containsEntry("mirrorRegionalDataPlaneCertificationReady", false);
+                .containsEntry("mirrorRegionalDataPlaneCertificationReady", false)
+                .containsEntry("mirrorRuntimeCertificationPlanReady", true)
+                .containsEntry("mirrorRuntimeCertificationDurableJournalReady", true)
+                .containsEntry("mirrorRuntimeCertificationExecutionReady", false);
         assertThat(service.capabilities().payload().supportedObjects())
                 .containsEntry("regionalDataPlaneDeploymentContract", java.util.List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -1437,6 +1442,15 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("regionalDataPlaneCertification", java.util.List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .RegionalDataPlaneCertification.SCHEMA_VERSION))
+                .containsEntry("runtimeCertificationManifest", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RuntimeCertificationManifest.SCHEMA_VERSION))
+                .containsEntry("runtimeCertificationExecutionAuthorization", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RuntimeCertificationExecutionAuthorization.SCHEMA_VERSION))
+                .containsEntry("runtimeCertificationReport", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RuntimeCertificationReport.SCHEMA_VERSION))
                 .containsEntry("mirrorDeploymentIsolationAttestationBundle",
                         java.util.List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
@@ -1446,7 +1460,8 @@ class ToolStudioIntegrationServiceTest {
                                         .REGIONAL_DATA_PLANE_SCHEMA_VERSION));
         ready.set(true);
         assertThat(service.capabilities().payload().features())
-                .containsEntry("mirrorRegionalDataPlaneCertificationReady", true);
+                .containsEntry("mirrorRegionalDataPlaneCertificationReady", true)
+                .containsEntry("mirrorRuntimeCertificationExecutionReady", true);
     }
 
     @Test

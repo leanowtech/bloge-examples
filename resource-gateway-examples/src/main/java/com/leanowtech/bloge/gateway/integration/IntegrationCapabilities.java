@@ -464,6 +464,15 @@ public record IntegrationCapabilities(
         objects.put("regionalDataPlaneCertificationAuthorityDescriptor", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .RegionalDataPlaneCertificationAuthority.Descriptor.SCHEMA_VERSION));
+        objects.put("runtimeCertificationManifest", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RuntimeCertificationManifest.SCHEMA_VERSION));
+        objects.put("runtimeCertificationExecutionAuthorization", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RuntimeCertificationExecutionAuthorization.SCHEMA_VERSION));
+        objects.put("runtimeCertificationReport", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RuntimeCertificationReport.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAgentSnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAgentSnapshot.SCHEMA_VERSION));
@@ -1045,6 +1054,10 @@ public record IntegrationCapabilities(
         features.put("businessMirrorAssetImpactRebuild", true);
         features.put("businessMirrorAssetImpactFreshness", true);
         features.put("businessMirrorPackageEvidenceProtocol", true);
+        features.put("mirrorRuntimeCertificationProtocol", true);
+        features.put("mirrorRuntimeCertificationPlanReady", false);
+        features.put("mirrorRuntimeCertificationDurableJournalReady", false);
+        features.put("mirrorRuntimeCertificationExecutionReady", false);
         features.put("businessMirrorPackageEvidenceApi", false);
         features.put("businessMirrorDomainEvidencePortfolioApi", false);
         features.put("businessMirrorEvidenceOwnerTaskApi", false);
