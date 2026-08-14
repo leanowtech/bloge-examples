@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/package-registry-ingest-bundle-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Package Registry Ingest Bundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "bundleFingerprint", "bundleId", "revision", "scope",
+    "packageSnapshot", "readinessReport", "businessAssetLinkClosure", "evidenceIndex",
+    "dependencyManifest", "exportedAt", "exporter"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "toolStudio.resourceGateway.packageRegistryIngestBundle.v1"
+    },
+    "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "bundleId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "scope": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-mirror-common-v1.schema.json#/$defs/scope"
+    },
+    "packageSnapshot": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/domain-capability-package-snapshot-v1.schema.json"
+    },
+    "readinessReport": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/package-readiness-report-v1.schema.json"
+    },
+    "businessAssetLinkClosure": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-asset-link-closure-v1.schema.json"
+    },
+    "evidenceIndex": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/package-evidence-index-v1.schema.json"
+    },
+    "dependencyManifest": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-mirror-common-v1.schema.json#/$defs/artifactRef"
+      }
+    },
+    "exportedAt": { "type": "string", "format": "date-time" },
+    "exporter": { "$ref": "#/$defs/identifier" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    }
+  }
+}

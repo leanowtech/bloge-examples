@@ -25,15 +25,15 @@ import java.time.ZoneOffset;
 import java.util.List;
 
 /** Deterministic fixtures for package evidence-index tests. */
-final class PackageEvidenceFixtures {
-    static final Instant NOW = Instant.parse("2026-08-14T17:00:00Z");
-    static final CapabilitySnapshot.Scope SCOPE = new CapabilitySnapshot.Scope(
+public final class PackageEvidenceFixtures {
+    public static final Instant NOW = Instant.parse("2026-08-14T17:00:00Z");
+    public static final CapabilitySnapshot.Scope SCOPE = new CapabilitySnapshot.Scope(
             "tenant-a", "mobility", "customer-service", "staging", "sg");
 
     private PackageEvidenceFixtures() {
     }
 
-    static PackageCompilationReceipt receipt(ObjectMapper mapper) {
+    public static PackageCompilationReceipt receipt(ObjectMapper mapper) {
         String sourceFingerprint = fingerprint('a');
         BusinessAssetRef resource = asset(BusinessAssetRef.Layer.L0_RESOURCE,
                 BusinessAssetRef.Kind.RESOURCE, "trip-api", 'a');

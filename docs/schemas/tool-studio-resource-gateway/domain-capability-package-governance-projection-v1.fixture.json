@@ -1,0 +1,58 @@
+{
+  "schemaVersion" : "toolStudio.domainCapabilityPackageGovernanceProjection.v1",
+  "projectionFingerprint" : "sha256:495c7eeb9194b8e0c87e799eacdf530055f63a9416f9e877eba055991c71d4da",
+  "projectionId" : "aneke-governance:cancellation-package:1",
+  "revision" : 1,
+  "externalGeneration" : 1,
+  "scope" : {
+    "tenantId" : "tenant-a",
+    "organizationId" : "mobility",
+    "projectId" : "customer-service",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "packageSnapshotRef" : {
+    "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+    "id" : "cancellation-package",
+    "revision" : 7,
+    "fingerprint" : "sha256:131279a278840732b8a6e1cbf954945b270729220a03df4ca11cfc1b44b90fe1"
+  },
+  "registryIngestBundleRef" : {
+    "kind" : "PACKAGE_REGISTRY_INGEST_BUNDLE",
+    "id" : "package-registry-ingest:cancellation-package",
+    "revision" : 7,
+    "fingerprint" : "sha256:02e3441e2989c88f8a1c45d63d8c90d00437b507ea505b47fb3e7eb15a4c313b"
+  },
+  "evidenceIndexRef" : {
+    "kind" : "PACKAGE_EVIDENCE_INDEX",
+    "id" : "cancellation-package",
+    "revision" : 3,
+    "fingerprint" : "sha256:b0b55653f6ed236986e98bd253f7f3e16c66aed4c632a80d6877be4ed9a6c8fe"
+  },
+  "registryRecordRef" : {
+    "kind" : "ANEKE_PACKAGE_REGISTRY_RECORD",
+    "id" : "registry:cancellation-package",
+    "revision" : 1,
+    "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "status" : "ACCEPTED",
+  "gateDecisionRef" : {
+    "kind" : "ANEKE_PACKAGE_GATE_DECISION",
+    "id" : "gate:cancellation-package:1",
+    "revision" : 1,
+    "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "sourceCursorFingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "producedAt" : "2026-08-14T17:00:20Z",
+  "validFrom" : "2026-08-14T17:00:20Z",
+  "expiresAt" : "2026-08-15T17:00:20Z",
+  "issuer" : "aneke:tool-studio",
+  "projectionSeal" : {
+    "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint" : "sha256:927f8a794c04a439523e9b8c1df1776636f3a351ebabef29e67d08f174560079",
+    "algorithm" : "Ed25519",
+    "keyId" : "fixture-ed25519:package-governance-v1",
+    "signedAt" : "2026-08-14T17:00:20Z",
+    "signature" : "7F9OKl3Q35Axk+2wgyrjZBRo9Ukm6yNtsp5wqc3+r5xXxq6hrWejPoLJzVaQG+yATHvzCYWTKo0qUjabruAACw=="
+  }
+}

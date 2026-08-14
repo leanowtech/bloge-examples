@@ -63,12 +63,16 @@ public record IntegrationEnvelope<T>(
     ) {
         public Compatibility {
             minConsumerVersion = minConsumerVersion == null || minConsumerVersion.isBlank()
-                    ? ToolStudioResourceGatewayProtocol.VERSION : minConsumerVersion;
+                    ? ToolStudioResourceGatewayProtocol.MINIMUM_CONSUMER_VERSION
+                    : minConsumerVersion;
             breakingChanges = breakingChanges == null ? List.of() : List.copyOf(breakingChanges);
         }
 
         public static Compatibility current() {
-            return new Compatibility(ToolStudioResourceGatewayProtocol.VERSION, true, List.of());
+            return new Compatibility(
+                    ToolStudioResourceGatewayProtocol.MINIMUM_CONSUMER_VERSION,
+                    true,
+                    List.of());
         }
     }
 }

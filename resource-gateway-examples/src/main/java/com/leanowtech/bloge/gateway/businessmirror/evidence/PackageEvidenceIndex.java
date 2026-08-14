@@ -141,6 +141,15 @@ public record PackageEvidenceIndex(
                 driftSignals, projectedAt, validUntil);
     }
 
+    /** @return exact immutable evidence-index reference used by registry and governance protocols */
+    public MirrorArtifactRef artifactRef() {
+        if (indexFingerprint.isBlank()) {
+            throw new IllegalStateException("Package evidence index is not content-addressed");
+        }
+        return new MirrorArtifactRef(
+                "PACKAGE_EVIDENCE_INDEX", packageId, projectionRevision, indexFingerprint);
+    }
+
     /** One immutable source coordinate; supports revisioned artifacts and measured profile cuts. */
     public record EvidenceSource(
             String kind,
