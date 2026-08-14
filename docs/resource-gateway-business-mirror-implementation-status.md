@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-010 Package Evidence/Fidelity 仓库内工程实现已完成；下一步进入 BM-011 Production Outcome Connector
+> 当前迭代：BM-013 Runtime Certification Harness 仓库内工程实现已完成；下一步进入 BM-014 ANEKE protocol 1.1 持续集成
 >
 > 最近更新：2026-08-15
 
@@ -1049,3 +1049,68 @@ BM-012 关闭了仓库内“区域运行面只有散落配置、没有形式化�
 风险加权差距由约 `5.5%` 降至约 `4.5%`。该数字不包含客户基础设施已经通过认证的承诺：真实 KMS/Vault/PKI/State/Resolver/egress Adapter、私有 Authority、rotation 观察窗和 write-escape 探测必须由部署方完成。仓库剩余差距集中在三处：可移植的 HA/kill/partition/upgrade/backup 运行时认证包（BM-013）、ANEKE protocol 1.1 与 freshness-aware gate projection（BM-014），以及由客户业务 Owner 冻结分母并完成观察窗的取消费申诉试点（BM-015）。
 
 下一迭代进入 BM-013。目标是把故障注入从不可审计的运维脚本升级为显式 manifest、受保护环境 Adapter、逐场景证据和严格离线 verifier；默认只生成计划，任何破坏性动作都必须由客户沙箱授权，禁止在生产环境执行。
+
+## 21. Iteration 13：BM-013 Runtime Certification Harness
+
+### 21.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 固定认证分母 | `RuntimeCertificationManifest` 精确冻结 Scope、region、deployment、环境指纹、Resource Gateway/BLOGE/数据库/JVM 四类 build 和 12 个不可删除的故障场景；部署只能增加 invariant，不能缩减困难场景 |
+| Plan-first Harness | `plan()` 只生成完整计划并检查 Adapter 描述，永不调用 Adapter；`PRODUCTION` 在 Manifest、Authorization 和执行三层被拒绝 |
+| 单次外部授权 | Authorization 最长 30 分钟，绑定 exact Manifest、环境、deployment、完整场景集合、nonce 和审批 refs；授权 Authority 与 Report signer 分离 |
+| 客户 Adapter port | `RuntimeCertificationEnvironmentAdapter` 由客户部署实现；必须独立验签、持久防重放、校验 epoch 和提供 deadline/kill switch，仓库没有可误用的默认实现 |
+| Durable Journal | 数据库时钟、authorization/nonce 唯一消费、事务行锁、epoch-fenced lease、逐场景有序前缀、完整签名 Report 和 exact replay；无进程内生产 fallback |
+| 恢复 SLO 与失败语义 | `faultAppliedAt / faultRemovedAt / recoveryObservedAt` 形成可计算时间线；Harness 与离线 verifier 同时验证执行期限和恢复 SLO；失败后停止继续注入，但用 `ABORTED` 补齐固定分母 |
+| 区域信任闭包 | 执行前和完整运行窗口后复验 BM-012 Regional Certification 与 Isolation Decision；Report 固定 exact certification/decision/attestation refs |
+| 自包含回放证据 | Replay Bundle 内嵌 Manifest、Authorization、Report、Regional Contract/Certification 和 v2 Isolation Decision；Bundle 不新增 Authority，消费者仍逐件验址、验签并推导交叉引用 |
+| 跨语言协议 | 四份 strict Schema、四份 server-produced fixed fixture，以及不依赖服务端/Spring 的 `RuntimeCertificationVerifier` 已完成；未知字段、Payload、缩减分母、地址或签名漂移均失败关闭 |
+| 动态能力探针 | protocol support 与 plan/journal/execution readiness 分离；execution 还合取当前 Regional Data Plane readiness，默认演示部署只广告协议，不冒充可执行 |
+| 接入与运维资产 | [运行时认证指南](resource-gateway-runtime-certification-guide.md)覆盖责任边界、12 场景、Adapter、迁移、探针、CI/nightly、事故与现场准入；`scripts/verify-runtime-certification.sh` 提供无故障协议与 PostgreSQL 门禁 |
+
+### 21.2 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 单靠 Harness 消费授权，危险 Adapter 仍可能被绕过或重放 | 把编排器的信任域误当成基础设施动作的信任域 | Adapter contract 强制独立验签和持久消费授权/nonce/run/scenario/epoch；Harness Journal 再做全局单次消费，形成双层防线 |
+| 进程崩溃后从头执行会重复注入已经完成的故障 | 执行进度只存在内存，授权单次语义与场景前缀没有同一持久权威 | Journal 逐场景先提交终态再进入下一项；重启从 exact prefix 恢复；completed authorization 精确返回同一签名 Report |
+| 调用方时间可伪造租约有效性 | 把跨副本所有权建立在应用时钟上 | 数据库实现忽略 caller time，使用 DB clock 和事务行锁；旧 epoch、过期 lease、并发副本和 restart 纳入 H2/PostgreSQL 回归 |
+| “故障已恢复”曾只有布尔断言，无法验收恢复 SLO | 状态结果缺乏因果时间线 | 场景结果增加 apply/remove/recovery 三时刻；Harness、服务端 integrity 和 Test Kit 计算窗口并拒绝慢恢复 |
+| 只导出 Report 会让独立消费者依赖外部查找 BM-012 证据 | Report 引用闭合，但发布包不是自包含 | 新增内容寻址 Replay Bundle，内嵌完整区域与隔离信任链；Test Kit 从内嵌对象独立推导三个 Report ref，而非相信生产者 |
+| JSON `IntNode` 与 `LongNode` 让语义相同引用误判 | 用 Jackson 节点实现类型代替 wire-level 数值语义 | Test Kit 对 ArtifactRef 显式比较 kind/id/long revision/fingerprint，fixture 回归覆盖小整数 revision |
+| 能力对象存在容易被运维误读为故障注入已启用 | 静态协议支持与客户 Adapter、Journal、双 signer、Regional trust 当前可用性混在一个布尔值 | 四个独立能力事实；execution readiness 是全部动态条件的合取，任一探针异常只返回 false |
+
+### 21.3 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| Harness / Integrity / H2 Journal / Schema / capability | `26/26` 通过 | 计划不执行、生产拒绝、签名与 identity closure、12 场景、首错停止、完整分母、恢复 SLO、write escape、DB clock、双副本、restart、exact replay、nonce fork、stale epoch、状态篡改和能力边界 |
+| 原生 PostgreSQL | `1/1` 通过 | `V20260815_003`、两个独立 DataSource/transaction manager 并发 claim、单次授权消费、逐场景 append、完整 Report 和 exact replay |
+| Schema 与能力探针 | 聚焦门禁通过 | 四类 strict Schema/fixture 精确一致、Payload/credential 字段拒绝、协议支持与动态 readiness 分离 |
+| 独立 Test Kit | `7/7` Runtime Certification 用例通过 | 四对象内容地址、两类签名材料、固定分母、恢复 SLO、zero-write、区域/隔离闭包、未知字段和 tamper 失败关闭 |
+
+最终整库 `clean verify` 数字在 BM-015 收口时统一更新，避免用聚焦测试冒充完整发布门禁。
+
+### 21.4 架构漂移审计
+
+1. Harness 只编排认证动作与证据，不部署或控制客户 PostgreSQL、KMS、Vault、PKI、Service Mesh 和故障平台。
+2. Adapter、执行授权和现场 proof 由客户拥有；Resource Gateway 不取得云管理员权限，也不新增生产故障 API。
+3. BM-012 Regional Certification 保持基础设施当前事实 Authority；BM-013 Report 只证明一次完整故障窗口，不改写区域 Contract 或 Isolation Decision。
+4. Report/Bundle payload-free；原始日志和业务数据留在客户证据库，跨系统只传内容地址、状态、时间、计数与签名。
+5. 没有综合分数，也不允许省略失败/未执行场景；`CERTIFIED` 只能由固定分母全部通过推导。
+6. 默认演示 profile 不装配危险 Adapter；本地 fixed fixture 和 PostgreSQL 测试不能产生客户现场认证声明。
+
+### 21.5 差距复评
+
+BM-013 关闭了仓库内“故障场景分母可任意缩减”“危险动作没有单次外部授权”“崩溃后重复注入”“跨副本旧 Owner
+仍可写”“恢复只有布尔声明”“运行报告缺区域信任闭包”“消费者不能离线复验完整认证包”和“能力探针冒充执行就绪”
+八类工程缺口。
+
+风险加权差距由约 `4.5%` 降至约 `3.5%`。降幅保持克制：仓库提供的是认证协议与 Harness，不是客户现场认证。
+真实 PostgreSQL HA、网络分区、云/机房故障、滚动升级、备份恢复、KMS/Vault/PKI 轮转、write escape、容量和
+长时间 soak 必须在客户批准的隔离环境形成证据。仓库剩余差距集中在 ANEKE protocol 1.1 的 registry ingest、
+freshness-aware gate projection 与 mixed-version 兼容（BM-014），以及取消费申诉业务 Owner 冻结分母并完成
+完整观察窗的首个试点验收包（BM-015）。
+
+下一迭代进入 BM-014。目标不是把 ANEKE 治理复制到 Resource Gateway，而是让 Package Snapshot、Evidence、
+Runtime Certification 与外部 gate result 通过 additive 1.1 协议形成可独立升级、可检测陈旧、可审计重放的持续集成闭环。

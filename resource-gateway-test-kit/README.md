@@ -32,6 +32,7 @@ discover exact target
 | Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
 | Validate Business Mirror Package, Proposal, binding, Conformance, or Legacy Graph files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
 | Verify Outcome source pages, commands, and checkpoints offline | `AuthoritativeOutcomeSourceProtocolVerifier` + caller-owned Source trust callback |
+| Verify a self-contained HA/failure certification package | `RuntimeCertificationVerifier.requireReplayBundle` + caller-owned regional, approval, and evidence trust callbacks |
 
 Build the library and start the local test-profile Gateway:
 
@@ -46,6 +47,12 @@ The local demo uses `http://localhost:8080` and the test-only bearer token
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:
+
+- strict runtime-certification Manifest, single-use Authorization, complete 12-scenario Report,
+  and self-contained Replay Bundle Schemas plus server-produced fixtures;
+  `RuntimeCertificationVerifier` independently reconstructs all content addresses, signing
+  materials, recovery SLOs, zero-write constraints, Regional Data Plane and isolation-reference
+  closure without linking Spring or Resource Gateway server classes;
 
 - strict production Outcome Source page, Backfill/revocation command, and payload-free checkpoint
   Schemas plus server-produced compatibility fixtures; `AuthoritativeOutcomeSourceProtocolVerifier`
