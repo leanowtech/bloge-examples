@@ -19,7 +19,8 @@ class RuntimeCertificationCapabilityTest {
         assertThat(capabilities.supportedObjects())
                 .containsKeys("runtimeCertificationManifest",
                         "runtimeCertificationExecutionAuthorization",
-                        "runtimeCertificationReport");
+                        "runtimeCertificationReport",
+                        "runtimeCertificationReplayBundle");
     }
 
     @Test

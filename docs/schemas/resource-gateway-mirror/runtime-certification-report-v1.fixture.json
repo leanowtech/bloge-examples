@@ -1,6 +1,6 @@
 {
   "schemaVersion" : "resourceGateway.runtimeCertificationReport.v1",
-  "reportFingerprint" : "sha256:c2cb8eda8a071ecb56246cc4fac5d165eb017b2f0718d09b783af76ca9b3d1c4",
+  "reportFingerprint" : "sha256:54a208cc2bbc66bfabd225935b8b2ccc06dc7b44d508e408510f52319481cd55",
   "reportId" : "runtime-report:sg:3",
   "revision" : 5,
   "manifestRef" : {
@@ -25,19 +25,19 @@
     "kind" : "REGIONAL_DATA_PLANE_CERTIFICATION",
     "id" : "regional-certification:sg",
     "revision" : 11,
-    "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    "fingerprint" : "sha256:cb5c1c1224f03bf683254896cd6469abbf95424844cc30fbec4ee0b8d7c8d287"
   },
   "isolationDecisionRef" : {
     "kind" : "DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE",
-    "id" : "mirror-staging-isolation:decision",
-    "revision" : 7,
-    "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    "id" : "mirror-staging-isolation#revision:7",
+    "revision" : 1,
+    "fingerprint" : "sha256:92f8e8817a7b8ffb817d7f55bc3a02127f94cd4b5374c779b1a6c3bdd7fe880e"
   },
   "isolationAttestationRef" : {
     "kind" : "DEPLOYMENT_ISOLATION_ATTESTATION",
     "id" : "mirror-staging-isolation",
     "revision" : 7,
-    "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    "fingerprint" : "sha256:f53b75c5141beb60c3c19c0c00f7ee234eedb7830e897d8631733d38f8782e5a"
   },
   "scope" : {
     "tenantId" : "tenant-demo",
@@ -698,7 +698,7 @@
   } ],
   "reportSeal" : {
     "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
-    "materialFingerprint" : "sha256:6b14f0e9720134cc67a698ce89288126c54772e3c20ad2b09c8f6db484aa71e1",
+    "materialFingerprint" : "sha256:9c71bd55acb672fb6822da5d0261ef9f30d6c2846c1166c7133220af84e89a60",
     "algorithm" : "Ed25519",
     "keyId" : "runtime-report-fixture-key",
     "signedAt" : "2026-08-10T00:00:00Z",

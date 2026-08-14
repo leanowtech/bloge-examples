@@ -473,6 +473,9 @@ public record IntegrationCapabilities(
         objects.put("runtimeCertificationReport", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .RuntimeCertificationReport.SCHEMA_VERSION));
+        objects.put("runtimeCertificationReplayBundle", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RuntimeCertificationReplayBundle.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAgentSnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAgentSnapshot.SCHEMA_VERSION));

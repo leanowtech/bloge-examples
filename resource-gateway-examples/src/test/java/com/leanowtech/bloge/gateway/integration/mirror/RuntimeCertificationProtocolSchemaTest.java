@@ -22,10 +22,14 @@ class RuntimeCertificationProtocolSchemaTest {
         JsonNode authorization = mapper.valueToTree(
                 RuntimeCertificationProtocolFixtures.authorization());
         JsonNode report = mapper.valueToTree(RuntimeCertificationProtocolFixtures.report());
+        JsonNode bundle = mapper.valueToTree(
+                RuntimeCertificationProtocolFixtures.replayBundle());
         JsonNode manifestSchema = schema("runtime-certification-manifest-v1.schema.json");
         JsonNode authorizationSchema = schema(
                 "runtime-certification-execution-authorization-v1.schema.json");
         JsonNode reportSchema = schema("runtime-certification-report-v1.schema.json");
+        JsonNode bundleSchema = schema(
+                "runtime-certification-replay-bundle-v1.schema.json");
 
         assertExact(manifest, manifestSchema);
         assertExact(manifest.path("scope"), manifestSchema.at("/$defs/scope"));
@@ -47,6 +51,7 @@ class RuntimeCertificationProtocolSchemaTest {
                         .path("invariantObservations").get(0),
                 reportSchema.at("/$defs/invariantObservation"));
         assertExact(report.path("reportSeal"), reportSchema.at("/$defs/seal"));
+        assertExact(bundle, bundleSchema);
     }
 
     @Test
@@ -63,6 +68,10 @@ class RuntimeCertificationProtocolSchemaTest {
                 RuntimeCertificationProtocolFixtures.report()), fixture(
                 "runtime-certification-report-v1.fixture.json"), "$"))
                 .isEmpty();
+        assertThat(firstDifference(mapper.valueToTree(
+                RuntimeCertificationProtocolFixtures.replayBundle()), fixture(
+                "runtime-certification-replay-bundle-v1.fixture.json"), "$"))
+                .isEmpty();
     }
 
     @Test
@@ -71,6 +80,8 @@ class RuntimeCertificationProtocolSchemaTest {
                 + Files.readString(path(
                 "runtime-certification-execution-authorization-v1.schema.json"))
                 + Files.readString(path("runtime-certification-report-v1.schema.json"));
+        source += Files.readString(path(
+                "runtime-certification-replay-bundle-v1.schema.json"));
         for (String forbidden : Set.of(
                 "requestPayload", "responsePayload", "businessPayload", "customerId",
                 "credential", "secretValue", "password", "endpointUri", "privateKey",

@@ -52,18 +52,18 @@ public final class RuntimeCertificationProtocolFixtures {
     static RuntimeCertificationReport report() {
         RuntimeCertificationManifest manifest = manifest();
         RuntimeCertificationExecutionAuthorization authorization = authorization();
+        RegionalDataPlaneCertification regionalCertification =
+                RegionalDataPlaneProtocolFixtures.certification();
+        MirrorDeploymentIsolationAttestationBundle isolationDecision =
+                RegionalDataPlaneProtocolFixtures.isolationBundle();
         List<RuntimeCertificationReport.ScenarioResult> results = results(manifest);
         return INTEGRITY.sealReport(new RuntimeCertificationIntegrity.ReportMaterial(
                 "runtime-report:sg:3", 5, manifest.artifactRef(),
                 authorization.artifactRef(),
                 ref("RUNTIME_CERTIFICATION_AUTHORIZATION_CONSUMPTION",
                         "runtime-authorization:sg:3:runtime-report:sg:3", 1, 'e'),
-                ref(RegionalDataPlaneCertification.ARTIFACT_KIND,
-                        "regional-certification:sg", 11, 'd'),
-                ref(MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
-                        "mirror-staging-isolation:decision", 7, '6'),
-                ref(MirrorDeploymentIsolationAttestation.ARTIFACT_KIND,
-                        "mirror-staging-isolation", 7, '7'),
+                regionalCertification.artifactRef(), isolationDecision.artifactRef(),
+                isolationDecision.attestation().artifactRef(),
                 SCOPE, manifest.region(), DEPLOYMENT, manifest.environmentClass(),
                 manifest.environmentFingerprint(), adapter(manifest), components(),
                 NOW.plusSeconds(2), NOW.plusSeconds(180), results,
@@ -73,15 +73,27 @@ public final class RuntimeCertificationProtocolFixtures {
                 new FixedSigner("runtime-report-fixture-key"));
     }
 
+    static RuntimeCertificationReplayBundle replayBundle() {
+        return new RuntimeCertificationReplayBundleIntegrity(MAPPER).address(
+                new RuntimeCertificationReplayBundleIntegrity.Material(
+                        "runtime-replay-bundle:sg:3", 2, manifest(), authorization(), report(),
+                        RegionalDataPlaneProtocolFixtures.contract(),
+                        RegionalDataPlaneProtocolFixtures.certification(),
+                        RegionalDataPlaneProtocolFixtures.isolationBundle(),
+                        NOW.plusSeconds(181), "runtime-certification-exporter:sg"));
+    }
+
     /** Prints fixtures for deterministic source-controlled regeneration. */
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
-            throw new IllegalArgumentException("expected manifest, authorization, or report");
+            throw new IllegalArgumentException(
+                    "expected manifest, authorization, report, or bundle");
         }
         Object value = switch (args[0]) {
             case "manifest" -> manifest();
             case "authorization" -> authorization();
             case "report" -> report();
+            case "bundle" -> replayBundle();
             default -> throw new IllegalArgumentException("unknown fixture kind: " + args[0]);
         };
         System.out.println(MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(value));

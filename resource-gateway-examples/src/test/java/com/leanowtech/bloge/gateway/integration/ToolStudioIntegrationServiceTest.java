@@ -1451,6 +1451,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("runtimeCertificationReport", java.util.List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
                                 .RuntimeCertificationReport.SCHEMA_VERSION))
+                .containsEntry("runtimeCertificationReplayBundle", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RuntimeCertificationReplayBundle.SCHEMA_VERSION))
                 .containsEntry("mirrorDeploymentIsolationAttestationBundle",
                         java.util.List.of(
                                 com.leanowtech.bloge.gateway.integration.mirror
