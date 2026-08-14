@@ -70,6 +70,15 @@ public final class BusinessMirrorProtocol {
     /** Durable exact Proposal simulation result v1 wire version. */
     public static final String STORED_CAPABILITY_PROPOSAL_SIMULATION_V1 =
             "resourceGateway.storedCapabilityProposalSimulation.v1";
+    /** Payload-free implementation-binding command v1 wire version. */
+    public static final String CAPABILITY_IMPLEMENTATION_BINDING_REQUEST_V1 =
+            "resourceGateway.capabilityImplementationBindingRequest.v1";
+    /** Immutable server-attested Proposal implementation binding v1 wire version. */
+    public static final String CAPABILITY_IMPLEMENTATION_BINDING_V1 =
+            "resourceGateway.capabilityImplementationBinding.v1";
+    /** Durable signed implementation-binding result v1 wire version. */
+    public static final String STORED_CAPABILITY_IMPLEMENTATION_BINDING_V1 =
+            "resourceGateway.storedCapabilityImplementationBinding.v1";
 
     /** Complete cancellation-fee Package example packaged with the client. */
     public static final String PACKAGE_FIXTURE_RESOURCE =
@@ -91,6 +100,9 @@ public final class BusinessMirrorProtocol {
     /** Server-produced, signed and payload-free Proposal simulation result example. */
     public static final String PROPOSAL_SIMULATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "refund-proposal-simulation-stage1-v1.fixture.json";
+    /** Server-produced, signed and payload-free implementation-binding result example. */
+    public static final String IMPLEMENTATION_BINDING_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "refund-implementation-binding-stage1-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
@@ -130,6 +142,12 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "capability-proposal-simulation-evidence-v1.schema.json";
     static final String STORED_PROPOSAL_SIMULATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stored-capability-proposal-simulation-v1.schema.json";
+    static final String IMPLEMENTATION_BINDING_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-implementation-binding-request-v1.schema.json";
+    static final String IMPLEMENTATION_BINDING_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-implementation-binding-v1.schema.json";
+    static final String STORED_IMPLEMENTATION_BINDING_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stored-capability-implementation-binding-v1.schema.json";
 
     private BusinessMirrorProtocol() {
     }
@@ -322,6 +340,36 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireStoredProposalSimulation(JsonNode value) {
         BusinessMirrorSimulationVerifier.verifyStoredSimulation(value);
+    }
+
+    /**
+     * Requires a strict exact implementation-binding command.
+     *
+     * @param value decoded binding command
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requireImplementationBindingRequest(JsonNode value) {
+        BusinessMirrorImplementationVerifier.verifyRequest(value);
+    }
+
+    /**
+     * Requires a content-addressed, read-only, stateless implementation binding.
+     *
+     * @param value decoded implementation binding
+     * @throws IllegalArgumentException when Schema, content address, Scope, region, or time fails
+     */
+    public static void requireImplementationBinding(JsonNode value) {
+        BusinessMirrorImplementationVerifier.verifyBinding(value);
+    }
+
+    /**
+     * Requires a durable implementation binding with exact detached-attestation material binding.
+     *
+     * @param value decoded stored implementation binding
+     * @throws IllegalArgumentException when Schema, fingerprint, or attestation closure fails
+     */
+    public static void requireStoredImplementationBinding(JsonNode value) {
+        BusinessMirrorImplementationVerifier.verifyStoredBinding(value);
     }
 
     private static void require(JsonNode value, String schema, String failureCode) {

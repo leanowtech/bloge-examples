@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-implementation-binding-v1.schema.json",
+  "title": "Capability Implementation Binding v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "bindingId", "revision", "fingerprint", "scope", "proposalDraftRef", "simulationEvidenceRef", "targetCapabilityRef", "candidateContractFingerprint", "runtimePortRef", "runtimePortFingerprint", "implementationVersion", "implementationFingerprint", "runtimeOwner", "allowedRegions", "readOnly", "stateless", "runtimeAttestedAt", "expiresAt", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityImplementationBinding.v1" },
+    "bindingId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "revision": { "const": 1 },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "proposalDraftRef": { "$ref": "#/$defs/proposalDraftRef" },
+    "simulationEvidenceRef": { "$ref": "#/$defs/simulationEvidenceRef" },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "candidateContractFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "runtimePortRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "runtimePortFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "implementationVersion": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "implementationFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "runtimeOwner": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "allowedRegions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+    },
+    "readOnly": { "const": true },
+    "stateless": { "const": true },
+    "runtimeAttestedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "proposalDraftRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY_PROPOSAL_DRAFT" } }, "required": ["kind"] }
+      ]
+    },
+    "simulationEvidenceRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PROPOSAL_SIMULATION_EVIDENCE" } }, "required": ["kind"] }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } }, "required": ["kind"] }
+      ]
+    }
+  }
+}

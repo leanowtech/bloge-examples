@@ -277,6 +277,23 @@ projection that hides Scenario governance debt. The fixed fixture is exposed as
 `BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE`. The end-to-end API flow is in the
 [Legacy Graph migration guide](../docs/resource-gateway-business-mirror-legacy-migration-guide.md).
 
+Implementation binding artifacts can be checked without loading Resource Gateway server classes:
+
+```java
+BusinessMirrorProtocol.requireImplementationBindingRequest(request);
+BusinessMirrorProtocol.requireImplementationBinding(binding);
+BusinessMirrorProtocol.requireStoredImplementationBinding(storedBinding);
+```
+
+The semantic verifier independently recomputes the binding content address and checks exact artifact
+kinds, sorted Region admission, read-only/stateless safety, validity time ordering, and detached-seal
+material closure. Cryptographic signer trust remains deployment-owned. The packaged
+`refund-implementation-binding-stage1-v1.fixture.json` is exposed as
+`BusinessMirrorProtocol.IMPLEMENTATION_BINDING_FIXTURE_RESOURCE`; it contains no request/response
+payloads or credentials. See the
+[Implementation Binding guide](../docs/resource-gateway-business-mirror-implementation-binding-guide.md)
+for runtime adapter and API semantics.
+
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope
 is not part of this method's input:

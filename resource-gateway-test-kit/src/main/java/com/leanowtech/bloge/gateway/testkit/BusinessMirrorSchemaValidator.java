@@ -42,7 +42,10 @@ final class BusinessMirrorSchemaValidator {
             "capability-proposal-snapshot-v1.schema.json",
             "capability-proposal-simulation-request-v1.schema.json",
             "capability-proposal-simulation-evidence-v1.schema.json",
-            "stored-capability-proposal-simulation-v1.schema.json");
+            "stored-capability-proposal-simulation-v1.schema.json",
+            "capability-implementation-binding-request-v1.schema.json",
+            "capability-implementation-binding-v1.schema.json",
+            "stored-capability-implementation-binding-v1.schema.json");
     private static final List<String> MIRROR_SCHEMA_NAMES = List.of(
             "artifact-provenance-v1.schema.json",
             "effect-contract-v1.schema.json",

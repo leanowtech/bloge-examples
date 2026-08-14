@@ -154,6 +154,10 @@ covers create/save/history, exact replay, strict isolation and offline verificat
 covers exact Package/Graph/Capability/Suite/Fixture prerequisites, isolated execution, durable
 replay, layered evidence, offline verification, PostgreSQL deployment, and the hard boundary between
 `SIMULATED` and implementation/conformance. The
+[Implementation Binding guide](../docs/resource-gateway-business-mirror-implementation-binding-guide.md)
+covers the runtime-owned adapter, exact Proposal/Simulation/Contract/implementation closure,
+immutable signed binding, PostgreSQL deployment, independent verification, and the separate
+capability signals for binding API versus customer runtime readiness. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

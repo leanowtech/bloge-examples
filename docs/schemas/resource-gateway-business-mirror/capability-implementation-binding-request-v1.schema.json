@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-implementation-binding-request-v1.schema.json",
+  "title": "Capability Implementation Binding Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "expectedProposalDraftFingerprint", "simulationEvidenceRef", "targetCapabilityRef", "runtimePortRef", "expectedRuntimePortFingerprint", "expectedImplementationVersion", "expectedImplementationFingerprint"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityImplementationBindingRequest.v1" },
+    "expectedProposalDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "simulationEvidenceRef": { "$ref": "#/$defs/simulationEvidenceRef" },
+    "targetCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "runtimePortRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "expectedRuntimePortFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "expectedImplementationVersion": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "expectedImplementationFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "simulationEvidenceRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PROPOSAL_SIMULATION_EVIDENCE" } }, "required": ["kind"] }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } }, "required": ["kind"] }
+      ]
+    }
+  }
+}

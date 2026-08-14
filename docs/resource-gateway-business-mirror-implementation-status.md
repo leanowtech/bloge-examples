@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-007 Proposal simulation 已完成；下一迭代 BM-008 实现交付与 Conformance
+> 当前迭代：BM-008A 实现绑定已完成；正在实施 BM-008B 同套件 Conformance
 >
 > 最近更新：2026-08-14
 
@@ -685,3 +685,52 @@ BM-007 关闭了 Proposal 只能编辑但不能试跑、候选 Contract 无法�
 风险加权差距由约 `12%` 降至约 `10%`。剩余差距主要集中在：实现绑定与同源 Conformance diff（BM-008）、L0-L3 reverse impact（BM-009）、Package evidence/Fidelity 聚合（BM-010）、生产 Outcome/Regional Data Plane/HA-DR 认证（BM-011/012/013）、ANEKE 持续集成（BM-014）和真实取消费域试点（BM-015）。此外，V1 仍只支持 built-in Graph、direct TestSuite 和只读无状态候选能力，默认 demo 不伪造客户 Authority 数据。
 
 下一迭代进入 BM-008：建立 Proposal implementation binding、SDK/runtime port 和同源 acceptance suite conformance report，保证“模拟通过”与“真实实现通过”是两个可比较但不可混淆的证据阶段。
+
+## 15. Iteration 8A：BM-008 implementation binding
+
+### 15.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Runtime-owned port | `CapabilityImplementationRuntimePort` 将部署方 Descriptor/调用适配器与 Proposal、HTTP 和 repository 解耦；默认实现物理失败关闭 |
+| Exact binding command | 请求固定 Proposal draft fingerprint、PASSED simulation evidence、target Capability、runtime port generation 和 implementation generation，不接受 `latest` |
+| Server-attested binding | 服务端重新读取 Proposal/Simulation/Contract/Runtime authority，派生 Scope、Region、Owner、安全属性、有效期和 content address，再签发 detached attestation |
+| Durable immutable repository | 完整五段 Scope + binding id；相同材料 exact replay，不同材料冲突；JSON 与索引列、fingerprint 和签名读取时复验 |
+| 认证 API | test/staging 下提供 bind/read；固定用途白名单，调用方不能以自报 purpose 绕过应用服务授权 |
+| PostgreSQL 协议 | `V20260814_005` 提供部署 DDL；原生 PostgreSQL 两独立连接并发写只产生一条绑定事实 |
+| 独立协议 | 三份 strict Schema、payload-free fixed fixture、Test Kit canonical fingerprint/region/time/attestation closure verifier |
+| 诚实能力探针 | 区分对象协议、binding API 和 customer runtime adapter readiness；默认演示不会假装安装客户实现 |
+| 接入文档 | [实现绑定与交付接入指南](resource-gateway-business-mirror-implementation-binding-guide.md) 说明 Adapter、命令、验证、迁移和失败语义 |
+
+### 15.2 不变量
+
+1. 绑定不能由调用方单方面声明：Proposal、Simulation 和 runtime Descriptor 都由服务端 Authority 重新读取。
+2. 只有 `COMPLETED + PASSED` 的 exact Simulation 才能进入绑定；target 必须与模拟证据完全一致。
+3. V1 只允许当前 Region 内、只读、无状态、未过期的实现；Descriptor 或 Contract 漂移失败关闭。
+4. Binding repository 不保存实现输入、输出、凭据或业务 payload，只保存身份、内容地址和证明材料。
+5. `binding created` 不等于 `CONFORMANT`。本迭代不晋级 Proposal Snapshot，也不产生实现试跑通过事实。
+
+### 15.3 验证与开发红灯
+
+聚焦门禁覆盖领域安全、服务 exact closure、runtime/signer unavailable、purpose 白名单、H2 repository、Controller、capability probe、strict Schema 和跨 JVM fixture。原生 PostgreSQL 门禁额外执行 V005 并让两个独立 repository 竞争同一绑定。
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| BM-008A 服务端聚焦门禁 | `20/20` 通过 | exact binding、runtime drift、过期、用途白名单、H2/PostgreSQL、Controller、Spring 与 capability probe |
+| Resource Gateway Test Kit | `550` tests，全部通过 | strict Schema、固定 fixture、canonical fingerprint、Scope/Region/time 和 attestation closure；JAR、shade 与 Javadoc 门禁通过 |
+| Resource Gateway | `6006` tests，`0` failures，`0` errors，`13` skipped | 完整 `clean verify`、原生 PostgreSQL、真实 Chromium E2E 和可执行 Spring Boot JAR 全绿 |
+
+实现过程中主动发现并根治四处边界问题：初版读取服务把 `identity.purpose()` 同时当作期望用途和实际用途，形成直接服务调用时的自证授权风险；现已改为固定三项白名单并添加反例。Spring 完整装配门禁发现 repository 被声明为 `final`，导致 `@Transactional` 无法代理；已恢复可代理类型并保留上下文测试。数据库复核发现查询只取 JSON，无法发现索引列被篡改；现已交叉核对 Proposal、revision、request fingerprint 和时间列。原生 PostgreSQL 认证不复用 H2-only demo signer DDL，只对 V005 repository 使用已签名的 payload-free test seal。固定 fixture 的 fingerprint 使用与服务端一致的排序 canonical JSON 独立生成，并由 Test Kit 从 JAR 资源重新计算，而不是复制服务端 verifier。
+
+### 15.4 架构漂移审计
+
+1. Runtime port 归客户部署实现，Resource Gateway 只拥有 binding 和后续 Conformance 编排，不接管业务实现 Registry。
+2. Binding 精确引用现有 Proposal/Simulation/Capability/Contract 事实，没有复制或改写它们。
+3. 默认 unavailable adapter 与动态 readiness 分离，协议存在不会被误报为客户实现可运行。
+4. Test Kit 继续不依赖 Spring 或服务端 artifact；部署 signer trust 仍由独立 key-set 验证承担。
+
+### 15.5 差距复评
+
+BM-008A 关闭了“实现只有一个 URL/名称、无法绑定评审代次”“模拟证据与实现代次可错配”“客户 runtime 未安装却被误报 ready”和“绑定结果不能跨语言复验”的问题。风险加权差距由约 `10%` 降至约 `9.5%`。
+
+降幅保持克制，因为绑定尚未执行实现，也没有复用原 acceptance suite、Case 配对、结构化 Diff 或 `CONFORMANT` Snapshot。BM-008B 将只把原模拟中 Proposal target 的 invocation sites 反转到 exact implementation binding，所有其他外部依赖继续 Fixture-only；共用规则、真实 fallback、绑定过期和调用未触达必须失败关闭。报告必须 payload-free、签名、durable、可重放，并明确“同套件 assertion 一致”不等于未声明业务语义也完全一致。

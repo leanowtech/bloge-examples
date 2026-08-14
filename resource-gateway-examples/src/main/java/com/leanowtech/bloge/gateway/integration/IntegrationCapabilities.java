@@ -375,6 +375,15 @@ public record IntegrationCapabilities(
         objects.put("storedCapabilityProposalSimulation", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.simulation
                         .StoredCapabilityProposalSimulation.SCHEMA_VERSION));
+        objects.put("capabilityImplementationBindingRequest", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.implementation
+                        .CapabilityImplementationBindingRequest.SCHEMA_VERSION));
+        objects.put("capabilityImplementationBinding", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .CapabilityImplementationBinding.SCHEMA_VERSION));
+        objects.put("storedCapabilityImplementationBinding", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.implementation
+                        .StoredCapabilityImplementationBinding.SCHEMA_VERSION));
         objects.put("mirrorPlan", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION_V1,
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));
@@ -985,6 +994,8 @@ public record IntegrationCapabilities(
         features.put("businessMirrorWorkspace", true);
         features.put("businessMirrorProposalApi", true);
         features.put("businessMirrorProposalSimulation", false);
+        features.put("businessMirrorImplementationBindingApi", false);
+        features.put("businessMirrorImplementationRuntimeReady", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
         features.put("visualCapabilityClosureProjection", true);

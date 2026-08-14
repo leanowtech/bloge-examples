@@ -85,6 +85,8 @@ public class ToolStudioIntegrationService {
     private boolean testExecutionEndpointEnabled;
     private boolean suiteStabilityJobSubmissionEnabled;
     private boolean businessMirrorProposalSimulationApi;
+    private boolean businessMirrorImplementationBindingApi;
+    private boolean businessMirrorImplementationRuntimeReady;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
     private DomainFidelityRuntimeAvailability
@@ -244,6 +246,17 @@ public class ToolStudioIntegrationService {
             com.leanowtech.bloge.gateway.businessmirror.simulation
                     .CapabilityProposalSimulationService service) {
         this.businessMirrorProposalSimulationApi = service != null;
+    }
+
+    /** Advertises exact binding separately from customer implementation runtime readiness. */
+    @Autowired(required = false)
+    void configureBusinessMirrorImplementation(
+            com.leanowtech.bloge.gateway.businessmirror.implementation
+                    .CapabilityImplementationBindingService service,
+            com.leanowtech.bloge.gateway.businessmirror.implementation
+                    .CapabilityImplementationRuntimePort runtime) {
+        this.businessMirrorImplementationBindingApi = service != null;
+        this.businessMirrorImplementationRuntimeReady = runtime != null && runtime.available();
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -605,6 +618,10 @@ public class ToolStudioIntegrationService {
                 legacyGraphPackageProjectorReady);
         features.put("businessMirrorProposalSimulation",
                 businessMirrorProposalSimulationApi);
+        features.put("businessMirrorImplementationBindingApi",
+                businessMirrorImplementationBindingApi);
+        features.put("businessMirrorImplementationRuntimeReady",
+                businessMirrorImplementationRuntimeReady);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2223,6 +2240,13 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations/{simulationId}"));
+        }
+        if (businessMirrorImplementationBindingApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-bindings"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/business-mirror/implementation-bindings/{bindingId}"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

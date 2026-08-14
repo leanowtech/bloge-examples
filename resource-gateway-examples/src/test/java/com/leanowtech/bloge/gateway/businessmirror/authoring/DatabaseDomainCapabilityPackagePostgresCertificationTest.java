@@ -7,9 +7,14 @@ import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityImplementationBinding;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationBindingRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationBinding;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualRunEvidenceSeal;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 
 import org.junit.jupiter.api.AfterAll;
@@ -26,6 +31,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -196,6 +202,55 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 Long.class, registration.proposalId())).isEqualTo(1);
     }
 
+    @Test
+    void appliesImplementationBindingDdlAndExactlyReplaysAcrossReplicas() throws Exception {
+        DataSource firstDataSource = postgres.getPostgresDatabase();
+        DataSource secondDataSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260814_005__business_mirror_implementation_binding.sql"))
+                .execute(firstDataSource);
+        var first = new DatabaseCapabilityImplementationBindingRepository(
+                new JdbcTemplate(firstDataSource), mapper);
+        var second = new DatabaseCapabilityImplementationBindingRepository(
+                new JdbcTemplate(secondDataSource), mapper);
+        first.init();
+        second.init();
+        CapabilitySnapshot.Scope scope = new CapabilitySnapshot.Scope(
+                "tenant", "customer-service", "refund", "test", "sg");
+        Instant now = Instant.parse("2026-08-14T10:00:00Z");
+        CapabilityImplementationBinding binding = new CapabilityImplementationBinding(
+                "", "binding-postgres-1", 1, "", scope,
+                implementationRef("CAPABILITY_PROPOSAL_DRAFT", "proposal-1", '1'),
+                implementationRef("PROPOSAL_SIMULATION_EVIDENCE", "simulation-1", '2'),
+                implementationRef("CAPABILITY", "refund-lookup", '3'),
+                implementationFingerprint('4'), "runtime:refund:v1",
+                implementationFingerprint('5'), "1.0.0", implementationFingerprint('6'),
+                "refund-platform", List.of("sg"), true, true, now.minusSeconds(1),
+                now.plusSeconds(3600), now).seal(mapper);
+        StoredCapabilityImplementationBinding stored =
+                new StoredCapabilityImplementationBinding("", implementationFingerprint('7'),
+                        binding, new VisualRunEvidenceSeal("", binding.fingerprint(), "TEST",
+                        "postgres-certification-key", now, "detached-signature"));
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<Boolean> left = CompletableFuture.supplyAsync(() -> {
+            await(start);
+            return first.create(stored).created();
+        });
+        CompletableFuture<Boolean> right = CompletableFuture.supplyAsync(() -> {
+            await(start);
+            return second.create(stored).created();
+        });
+        start.countDown();
+
+        assertThat(List.of(left.get(15, TimeUnit.SECONDS), right.get(15, TimeUnit.SECONDS)))
+                .containsExactlyInAnyOrder(false, true);
+        assertThat(first.find(scope, binding.bindingId())).contains(stored);
+        assertThat(new JdbcTemplate(firstDataSource).queryForObject(
+                "SELECT COUNT(*) FROM rg_bm_implementation_binding WHERE binding_id = ?",
+                Long.class, binding.bindingId())).isEqualTo(1);
+    }
+
     private DomainCapabilityPackageSaveCoordinator.Outcome executeAfter(
             CountDownLatch start, Replica replica) {
         try {
@@ -294,6 +349,24 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
         repository.init();
         return new SimulationReplica(repository,
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
+
+    private static void await(CountDownLatch start) {
+        try {
+            start.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static MirrorArtifactRef implementationRef(
+            String kind, String id, char fingerprint) {
+        return new MirrorArtifactRef(kind, id, 1, implementationFingerprint(fingerprint));
+    }
+
+    private static String implementationFingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
     }
 
     private record Replica(

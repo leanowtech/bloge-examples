@@ -37,6 +37,10 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependency
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationService;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
@@ -650,6 +654,44 @@ public class GatewayConfiguration {
             ObjectMapper objectMapper) {
         return new CapabilityProposalSimulationService(proposals, packages, graphAssets, graphs,
                 suites, fixtures, simulations, plans, runs, signer, objectMapper);
+    }
+
+    /** Runtime-owned customer implementation port; deployments replace the fail-closed default. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityImplementationRuntimePort capabilityImplementationRuntimePort() {
+        return CapabilityImplementationRuntimePort.unavailable();
+    }
+
+    /** Immutable, Scope-complete Proposal implementation-binding authority. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityImplementationBindingRepository capabilityImplementationBindingRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCapabilityImplementationBindingRepository(jdbc, objectMapper);
+    }
+
+    /** Server-attested binding application boundary over exact Proposal simulation evidence. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityImplementationBindingService capabilityImplementationBindingService(
+            CapabilityProposalDraftRepository proposals,
+            CapabilityProposalSimulationRepository simulations,
+            CapabilityImplementationBindingRepository bindings,
+            CapabilityImplementationRuntimePort runtime,
+            VisualEvidenceSigner signer,
+            ObjectMapper objectMapper) {
+        return new CapabilityImplementationBindingService(
+                proposals, simulations, bindings, runtime, signer, objectMapper);
     }
 
     /** Exact read adapter over the shipped Graph, Contract, test-suite and capability authorities. */

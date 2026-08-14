@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "resourceGateway.storedCapabilityImplementationBinding.v1",
+  "requestFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "binding": {
+    "schemaVersion": "resourceGateway.capabilityImplementationBinding.v1",
+    "bindingId": "refund-implementation-binding-1",
+    "revision": 1,
+    "fingerprint": "sha256:879d7c5583630085e4b44673bf9a51b3336f1581f18e60d225ac9313dd2020f3",
+    "scope": {
+      "tenantId": "tenant-1",
+      "organizationId": "customer-service",
+      "projectId": "refund-service-design",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "proposalDraftRef": {
+      "kind": "CAPABILITY_PROPOSAL_DRAFT",
+      "id": "refund-proposal",
+      "revision": 1,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "simulationEvidenceRef": {
+      "kind": "PROPOSAL_SIMULATION_EVIDENCE",
+      "id": "simulation-1",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "refund-lookup",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "candidateContractFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "runtimePortRef": "runtime:refund:v1",
+    "runtimePortFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+    "implementationVersion": "1.0.0",
+    "implementationFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "runtimeOwner": "refund-platform",
+    "allowedRegions": ["sg"],
+    "readOnly": true,
+    "stateless": true,
+    "runtimeAttestedAt": "2026-08-14T09:59:59Z",
+    "expiresAt": "2026-08-15T10:00:00Z",
+    "createdAt": "2026-08-14T10:00:00Z"
+  },
+  "attestation": {
+    "schemaVersion": "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint": "sha256:879d7c5583630085e4b44673bf9a51b3336f1581f18e60d225ac9313dd2020f3",
+    "algorithm": "TEST",
+    "keyId": "compatibility-fixture-key",
+    "signedAt": "2026-08-14T10:00:00Z",
+    "signature": "detached-compatibility-signature"
+  }
+}

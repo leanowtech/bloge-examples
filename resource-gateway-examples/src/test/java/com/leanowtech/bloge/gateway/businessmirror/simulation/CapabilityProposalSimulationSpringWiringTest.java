@@ -1,6 +1,10 @@
 package com.leanowtech.bloge.gateway.businessmirror.simulation;
 
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingController;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
 import com.leanowtech.bloge.gateway.integration.ToolStudioIntegrationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.base-url=http://127.0.0.1:1",
                 "gateway.integration.identity.environment-id=test",
                 "gateway.integration.identity.region=sg",
-                "gateway.integration.identity.allowed-purposes=MIRROR_REHEARSAL,GOVERNANCE_EVIDENCE_INGESTION",
+                "gateway.integration.identity.allowed-purposes=MIRROR_REHEARSAL,GOVERNANCE_EVIDENCE_INGESTION,CAPABILITY_IMPLEMENTATION,CAPABILITY_CONFORMANCE",
                 "spring.datasource.url=jdbc:h2:mem:proposal-simulation-wiring;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:proposal-simulation-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=proposal-test-v1",
@@ -43,8 +47,14 @@ class CapabilityProposalSimulationSpringWiringTest {
         assertThat(context.getBean(CapabilityProposalSimulationController.class)).isNotNull();
         assertThat(context.getBean(CapabilityProposalSimulationService.class)).isNotNull();
         assertThat(context.getBean(CapabilityProposalSimulationRepository.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationBindingController.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationBindingService.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationBindingRepository.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationRuntimePort.class).available()).isFalse();
         assertThat(integration.capabilities().payload().features())
-                .containsEntry("businessMirrorProposalSimulation", true);
+                .containsEntry("businessMirrorProposalSimulation", true)
+                .containsEntry("businessMirrorImplementationBindingApi", true)
+                .containsEntry("businessMirrorImplementationRuntimeReady", false);
         assertThat(integration.capabilities().payload().endpoints())
                 .contains(new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
                         "POST",

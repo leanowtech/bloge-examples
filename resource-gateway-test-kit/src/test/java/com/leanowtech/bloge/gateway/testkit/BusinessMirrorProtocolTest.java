@@ -197,6 +197,35 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void verifiesServerAttestedImplementationBindingAndRejectsMaterialDrift() throws Exception {
+        ObjectNode request = implementationBindingRequest();
+        ObjectNode stored = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_BINDING_FIXTURE_RESOURCE);
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireImplementationBindingRequest(request));
+        var verified = BusinessMirrorImplementationVerifier.verifyStoredBinding(stored);
+        assertThat(verified.bindingId()).isEqualTo("refund-implementation-binding-1");
+        assertThat(verified.runtimePortRef()).isEqualTo("runtime:refund:v1");
+
+        ((ObjectNode) stored.path("binding")).put("runtimeOwner", "tampered-owner");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredImplementationBinding(stored))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPLEMENTATION_BINDING_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("tampered-owner");
+
+        ObjectNode invalidSealTime = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_BINDING_FIXTURE_RESOURCE);
+        ((ObjectNode) invalidSealTime.path("attestation"))
+                .put("signedAt", "2026-08-14T09:00:00Z");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredImplementationBinding(invalidSealTime))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.STORED_IMPLEMENTATION_BINDING_INCONSISTENT");
+    }
+
+    @Test
     void rejectsTamperedProposalFingerprintAndDuplicateProposalPages() throws Exception {
         ObjectNode receipt = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);
@@ -566,6 +595,21 @@ class BusinessMirrorProtocolTest {
         draft.remove("createdAt");
         draft.put("lifecycle", "READY_FOR_REVIEW");
         return draft;
+    }
+
+    private static ObjectNode implementationBindingRequest() {
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                BusinessMirrorProtocol.CAPABILITY_IMPLEMENTATION_BINDING_REQUEST_V1);
+        request.put("expectedProposalDraftFingerprint", fingerprint('1'));
+        request.set("simulationEvidenceRef", artifactRef(
+                "PROPOSAL_SIMULATION_EVIDENCE", "simulation-1", '2'));
+        request.set("targetCapabilityRef", artifactRef("CAPABILITY", "refund-lookup", '3'));
+        request.put("runtimePortRef", "runtime:refund:v1");
+        request.put("expectedRuntimePortFingerprint", fingerprint('4'));
+        request.put("expectedImplementationVersion", "1.0.0");
+        request.put("expectedImplementationFingerprint", fingerprint('5'));
+        return request;
     }
 
     private static ObjectNode artifactRef(String kind, String id, char value) {
