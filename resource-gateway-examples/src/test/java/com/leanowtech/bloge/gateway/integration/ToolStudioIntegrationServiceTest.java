@@ -1397,6 +1397,59 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void regionalCertificationCapabilityUsesItsIndependentDynamicAuthority() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        java.util.concurrent.atomic.AtomicBoolean ready =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+        service.configureMirrorRuntime(new MirrorRuntimeAvailability(true, true, () -> true));
+        service.configureRegionalDataPlaneCertification(
+                new com.leanowtech.bloge.gateway.integration.mirror
+                        .RegionalDataPlaneCertificationAuthority() {
+                    @Override
+                    public void require(
+                            com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.Scope scope,
+                            com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef decision,
+                            com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef attestation,
+                            java.time.Instant startedAt,
+                            java.time.Instant completedAt) {
+                    }
+
+                    @Override
+                    public boolean available() {
+                        return ready.get();
+                    }
+
+                    @Override
+                    public Descriptor descriptor() {
+                        return new Descriptor("", ready.get(),
+                                ready.get() ? "READY" : "UNAVAILABLE",
+                                "contract-v1", "cert-v1");
+                    }
+                });
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("mirrorIsolationRunTrustReady", false)
+                .containsEntry("mirrorRegionalDataPlaneCertificationReady", false);
+        assertThat(service.capabilities().payload().supportedObjects())
+                .containsEntry("regionalDataPlaneDeploymentContract", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RegionalDataPlaneDeploymentContract.SCHEMA_VERSION))
+                .containsEntry("regionalDataPlaneCertification", java.util.List.of(
+                        com.leanowtech.bloge.gateway.integration.mirror
+                                .RegionalDataPlaneCertification.SCHEMA_VERSION))
+                .containsEntry("mirrorDeploymentIsolationAttestationBundle",
+                        java.util.List.of(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION,
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .MirrorDeploymentIsolationAttestationBundle
+                                        .REGIONAL_DATA_PLANE_SCHEMA_VERSION));
+        ready.set(true);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("mirrorRegionalDataPlaneCertificationReady", true);
+    }
+
+    @Test
     void capabilitiesAdvertiseStateResolverOnlyWhenExecutionAndStoreAreReady() {
         ToolStudioIntegrationService service =
                 service(null, null, null, null);

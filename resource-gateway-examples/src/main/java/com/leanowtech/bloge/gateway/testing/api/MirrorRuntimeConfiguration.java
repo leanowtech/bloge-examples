@@ -73,6 +73,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationIntegrity;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationMaterialSource;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertifiedRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.VerifiedRegionalDataPlaneCertificationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationTrustAgent;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepository;
@@ -243,6 +248,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.Objects;
 
 /**
  * Physically isolated composition root for stateless mirror planning and execution.
@@ -327,11 +333,42 @@ public class MirrorRuntimeConfiguration {
     @ConditionalOnMissingBean
     public MirrorDeploymentIsolationRunTrustAuthority
     mirrorDeploymentIsolationRunTrustAuthority(
-            ObjectProvider<MirrorDeploymentIsolationTrustAgent> agents) {
+            ObjectProvider<MirrorDeploymentIsolationTrustAgent> agents,
+            ObjectProvider<RegionalDataPlaneCertificationAuthority> regionalAuthorities,
+            @Value("${gateway.testing.mirror.regional-data-plane.required:false}")
+            boolean regionalCertificationRequired) {
         MirrorDeploymentIsolationTrustAgent agent = agents.getIfAvailable();
-        return agent == null ? MirrorDeploymentIsolationRunTrustAuthority.unavailable()
+        MirrorDeploymentIsolationRunTrustAuthority isolation = agent == null
+                ? MirrorDeploymentIsolationRunTrustAuthority.unavailable()
                 : new AgentBackedMirrorDeploymentIsolationRunTrustAuthority(
                 agent, Clock.systemUTC());
+        RegionalDataPlaneCertificationAuthority regional =
+                regionalAuthorities.getIfAvailable();
+        if (regional == null && !regionalCertificationRequired) {
+            return isolation;
+        }
+        return new RegionalDataPlaneCertifiedRunTrustAuthority(isolation,
+                regional == null
+                        ? RegionalDataPlaneCertificationAuthority.unavailable() : regional);
+    }
+
+    /**
+     * Creates the independent regional certification verifier only when a customer adapter exists.
+     *
+     * @param sources customer-owned atomic regional material source
+     * @param objectMapper canonical protocol mapper
+     * @return fail-closed regional certification authority
+     */
+    @Bean
+    @ConditionalOnBean(RegionalDataPlaneCertificationMaterialSource.class)
+    @ConditionalOnMissingBean
+    public RegionalDataPlaneCertificationAuthority regionalDataPlaneCertificationAuthority(
+            ObjectProvider<RegionalDataPlaneCertificationMaterialSource> sources,
+            ObjectMapper objectMapper) {
+        return new VerifiedRegionalDataPlaneCertificationAuthority(
+                Objects.requireNonNull(sources.getIfAvailable(),
+                        "regionalDataPlaneCertificationMaterialSource"),
+                new RegionalDataPlaneCertificationIntegrity(objectMapper));
     }
 
     /**

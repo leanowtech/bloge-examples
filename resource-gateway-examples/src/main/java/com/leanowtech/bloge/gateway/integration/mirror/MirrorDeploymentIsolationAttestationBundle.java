@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration.mirror;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -17,6 +19,7 @@ import java.util.regex.Pattern;
  * @param authorityKeySetRef exact authority publication used to admit the proof
  * @param attestation externally signed deployment-isolation proof
  * @param status current append-only local status publication
+ * @param regionalDataPlaneCertificationRef exact regional data-plane certification for v2 bundles
  */
 public record MirrorDeploymentIsolationAttestationBundle(
         String schemaVersion,
@@ -24,11 +27,16 @@ public record MirrorDeploymentIsolationAttestationBundle(
         CapabilitySnapshot.Scope scope,
         MirrorArtifactRef authorityKeySetRef,
         MirrorDeploymentIsolationAttestation attestation,
-        MirrorDeploymentIsolationAttestationStatusPublication status
+        MirrorDeploymentIsolationAttestationStatusPublication status,
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        MirrorArtifactRef regionalDataPlaneCertificationRef
 ) {
-    /** Current atomic attestation-bundle protocol version. */
+    /** Legacy isolation-only atomic bundle protocol version. */
     public static final String SCHEMA_VERSION =
             "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v1";
+    /** Regional data-plane certified atomic bundle protocol version. */
+    public static final String REGIONAL_DATA_PLANE_SCHEMA_VERSION =
+            "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v2";
     /** Artifact kind used by exact bundle references. */
     public static final String ARTIFACT_KIND = "DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE";
 
@@ -37,8 +45,11 @@ public record MirrorDeploymentIsolationAttestationBundle(
     /** Validates cross-record coordinates without treating fingerprints as trusted. */
     public MirrorDeploymentIsolationAttestationBundle {
         schemaVersion = schemaVersion == null || schemaVersion.isBlank()
-                ? SCHEMA_VERSION : schemaVersion.trim();
-        if (!SCHEMA_VERSION.equals(schemaVersion)) {
+                ? regionalDataPlaneCertificationRef == null
+                ? SCHEMA_VERSION : REGIONAL_DATA_PLANE_SCHEMA_VERSION
+                : schemaVersion.trim();
+        if (!SCHEMA_VERSION.equals(schemaVersion)
+                && !REGIONAL_DATA_PLANE_SCHEMA_VERSION.equals(schemaVersion)) {
             throw new IllegalArgumentException(
                     "unsupported deployment isolation attestation bundle schemaVersion");
         }
@@ -55,6 +66,29 @@ public record MirrorDeploymentIsolationAttestationBundle(
             throw new IllegalArgumentException(
                     "deployment isolation attestation bundle coordinates are inconsistent");
         }
+        if (SCHEMA_VERSION.equals(schemaVersion)
+                && regionalDataPlaneCertificationRef != null
+                || REGIONAL_DATA_PLANE_SCHEMA_VERSION.equals(schemaVersion)
+                && (regionalDataPlaneCertificationRef == null
+                || !RegionalDataPlaneCertification.ARTIFACT_KIND.equals(
+                regionalDataPlaneCertificationRef.kind()))) {
+            throw new IllegalArgumentException(
+                    "deployment isolation bundle regional certification is inconsistent");
+        }
+    }
+
+    /**
+     * Preserves the v1 constructor for isolation-only producers and consumers.
+     */
+    public MirrorDeploymentIsolationAttestationBundle(
+            String schemaVersion,
+            String bundleFingerprint,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef authorityKeySetRef,
+            MirrorDeploymentIsolationAttestation attestation,
+            MirrorDeploymentIsolationAttestationStatusPublication status) {
+        this(schemaVersion, bundleFingerprint, scope, authorityKeySetRef,
+                attestation, status, null);
     }
 
     /**

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/mirror-deployment-isolation-attestation-bundle-v2.schema.json",
+  "title": "Resource Gateway Mirror Deployment Isolation Attestation Bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "bundleFingerprint", "scope", "authorityKeySetRef",
+    "attestation", "status", "regionalDataPlaneCertificationRef"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v2"
+    },
+    "bundleFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "authorityKeySetRef": { "$ref": "#/$defs/authorityRef" },
+    "attestation": {
+      "$ref": "mirror-deployment-isolation-attestation-v1.schema.json"
+    },
+    "status": {
+      "$ref": "mirror-deployment-isolation-attestation-status-v1.schema.json"
+    },
+    "regionalDataPlaneCertificationRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "REGIONAL_DATA_PLANE_CERTIFICATION" } } }
+      ]
+    }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "authorityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET" } } }
+      ]
+    }
+  }
+}

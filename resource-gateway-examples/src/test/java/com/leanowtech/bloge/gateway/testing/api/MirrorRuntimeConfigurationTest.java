@@ -133,6 +133,11 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationBundleIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationMaterialSource;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertifiedRunTrustAuthority;
+import com.leanowtech.bloge.gateway.integration.mirror.VerifiedRegionalDataPlaneCertificationAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalRuntimeService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionIntegrity;
@@ -200,6 +205,40 @@ class MirrorRuntimeConfigurationTest {
              var staging = context(true, "staging")) {
             assertMirrorKernelPresent(test);
             assertMirrorKernelPresent(staging);
+        }
+    }
+
+    @Test
+    void regionalCertificationIsOptInAndFailsClosedWhenRequiredWithoutAdapter() {
+        try (var compatible = context(true, "staging");
+             var required = context(Map.of(
+                     "gateway.testing.mirror.enabled", true,
+                     "gateway.testing.mirror.regional-data-plane.required", true),
+                     "staging")) {
+            assertThat(compatible.getBean(
+                    MirrorDeploymentIsolationRunTrustAuthority.class))
+                    .isSameAs(MirrorDeploymentIsolationRunTrustAuthority.unavailable());
+            assertThat(required.getBean(
+                    MirrorDeploymentIsolationRunTrustAuthority.class))
+                    .isInstanceOf(RegionalDataPlaneCertifiedRunTrustAuthority.class)
+                    .extracting(MirrorDeploymentIsolationRunTrustAuthority::available)
+                    .isEqualTo(false);
+            assertThat(required.getBeansOfType(
+                    RegionalDataPlaneCertificationAuthority.class)).isEmpty();
+        }
+    }
+
+    @Test
+    void customerRegionalMaterialSourceAssemblesIndependentVerifierAndRunTrust() {
+        try (var context = context(Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.regional-material-source", true), "staging")) {
+            assertThat(context.getBean(RegionalDataPlaneCertificationAuthority.class))
+                    .isInstanceOf(VerifiedRegionalDataPlaneCertificationAuthority.class)
+                    .extracting(RegionalDataPlaneCertificationAuthority::available)
+                    .isEqualTo(true);
+            assertThat(context.getBean(MirrorDeploymentIsolationRunTrustAuthority.class))
+                    .isInstanceOf(RegionalDataPlaneCertifiedRunTrustAuthority.class);
         }
     }
 
@@ -919,6 +958,13 @@ class MirrorRuntimeConfigurationTest {
                                         observation) {
                         }
                     });
+        }
+        if (Boolean.TRUE.equals(properties.get("test.regional-material-source"))) {
+            RegionalDataPlaneCertificationMaterialSource source = mock(
+                    RegionalDataPlaneCertificationMaterialSource.class);
+            when(source.available()).thenReturn(true);
+            context.registerBean(RegionalDataPlaneCertificationMaterialSource.class,
+                    () -> source);
         }
         if (Boolean.TRUE.equals(
                 properties.get(

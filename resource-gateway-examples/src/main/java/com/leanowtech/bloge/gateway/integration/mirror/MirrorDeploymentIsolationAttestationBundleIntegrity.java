@@ -99,14 +99,38 @@ public final class MirrorDeploymentIsolationAttestationBundleIntegrity {
             MirrorArtifactRef authorityKeySetRef,
             MirrorDeploymentIsolationAttestation attestation,
             MirrorDeploymentIsolationAttestationStatusPublication status) {
+        return bundle(scope, authorityKeySetRef, attestation, status, null);
+    }
+
+    /**
+     * Creates one canonical atomic view that also binds an exact regional certification.
+     *
+     * @param scope complete enterprise scope
+     * @param authorityKeySetRef exact isolation authority publication
+     * @param attestation externally signed isolation attestation
+     * @param status exact current local status
+     * @param regionalCertificationRef exact externally signed regional certification
+     * @return canonical v2 atomic bundle
+     */
+    public MirrorDeploymentIsolationAttestationBundle bundle(
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef authorityKeySetRef,
+            MirrorDeploymentIsolationAttestation attestation,
+            MirrorDeploymentIsolationAttestationStatusPublication status,
+            MirrorArtifactRef regionalCertificationRef) {
         if (!attestationIntegrity.canonicalFingerprintVerified(attestation)
                 || !canonicalStatusVerified(status)) {
             throw new IllegalArgumentException(
                     "canonical attestation and status are required");
         }
-        String fingerprint = bundleFingerprint(scope, authorityKeySetRef, attestation, status);
-        return new MirrorDeploymentIsolationAttestationBundle("", fingerprint, scope,
-                authorityKeySetRef, attestation, status);
+        String schemaVersion = regionalCertificationRef == null
+                ? MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION
+                : MirrorDeploymentIsolationAttestationBundle
+                .REGIONAL_DATA_PLANE_SCHEMA_VERSION;
+        String fingerprint = bundleFingerprint(schemaVersion, scope, authorityKeySetRef,
+                attestation, status, regionalCertificationRef);
+        return new MirrorDeploymentIsolationAttestationBundle(schemaVersion, fingerprint, scope,
+                authorityKeySetRef, attestation, status, regionalCertificationRef);
     }
 
     /**
@@ -121,8 +145,9 @@ public final class MirrorDeploymentIsolationAttestationBundleIntegrity {
             return false;
         }
         try {
-            return bundle.bundleFingerprint().equals(bundleFingerprint(bundle.scope(),
-                    bundle.authorityKeySetRef(), bundle.attestation(), bundle.status()));
+            return bundle.bundleFingerprint().equals(bundleFingerprint(bundle.schemaVersion(),
+                    bundle.scope(), bundle.authorityKeySetRef(), bundle.attestation(),
+                    bundle.status(), bundle.regionalDataPlaneCertificationRef()));
         } catch (RuntimeException invalid) {
             return false;
         }
@@ -162,13 +187,21 @@ public final class MirrorDeploymentIsolationAttestationBundleIntegrity {
     }
 
     private String bundleFingerprint(
+            String schemaVersion,
             CapabilitySnapshot.Scope scope,
             MirrorArtifactRef authorityKeySetRef,
             MirrorDeploymentIsolationAttestation attestation,
-            MirrorDeploymentIsolationAttestationStatusPublication status) {
+            MirrorDeploymentIsolationAttestationStatusPublication status,
+            MirrorArtifactRef regionalCertificationRef) {
+        if (regionalCertificationRef != null) {
+            return VisualBundleFingerprint.fromCanonicalValue(mapper,
+                    new RegionalBundleFingerprintMaterial(schemaVersion, "", scope,
+                            authorityKeySetRef, attestation, status,
+                            regionalCertificationRef), MAXIMUM_BUNDLE_BYTES);
+        }
         return VisualBundleFingerprint.fromCanonicalValue(mapper,
                 new BundleFingerprintMaterial(
-                        MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION, "",
+                        schemaVersion, "",
                         scope, authorityKeySetRef, attestation, status), MAXIMUM_BUNDLE_BYTES);
     }
 
@@ -185,5 +218,15 @@ public final class MirrorDeploymentIsolationAttestationBundleIntegrity {
             MirrorArtifactRef authorityKeySetRef,
             MirrorDeploymentIsolationAttestation attestation,
             MirrorDeploymentIsolationAttestationStatusPublication status) {
+    }
+
+    private record RegionalBundleFingerprintMaterial(
+            String schemaVersion,
+            String bundleFingerprint,
+            CapabilitySnapshot.Scope scope,
+            MirrorArtifactRef authorityKeySetRef,
+            MirrorDeploymentIsolationAttestation attestation,
+            MirrorDeploymentIsolationAttestationStatusPublication status,
+            MirrorArtifactRef regionalDataPlaneCertificationRef) {
     }
 }

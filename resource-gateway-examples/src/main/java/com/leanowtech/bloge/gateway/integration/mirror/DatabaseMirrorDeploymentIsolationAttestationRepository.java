@@ -70,6 +70,9 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
                 authority_generation BIGINT NOT NULL,
                 authority_publication_fingerprint VARCHAR(71) NOT NULL,
                 schema_version VARCHAR(128) NOT NULL,
+                bundle_schema_version VARCHAR(128) NOT NULL DEFAULT
+                    'resourceGateway.mirrorDeploymentIsolationAttestationBundle.v1',
+                regional_certification_ref_json CLOB,
                 attestation_json CLOB NOT NULL,
                 PRIMARY KEY (
                     tenant_id, organization_id, project_id, environment_id, region,
@@ -116,7 +119,8 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
     private static final String SELECT_ATTESTATION = """
             SELECT revision, attestation_fingerprint, material_fingerprint,
                    authority_generation, authority_publication_fingerprint,
-                   schema_version, attestation_json
+                   schema_version, bundle_schema_version,
+                   regional_certification_ref_json, attestation_json
             FROM mirror_isolation_attestations
             WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
               AND environment_id = ? AND region = ? AND deployment_scope_id = ?
@@ -169,6 +173,15 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
         jdbc.execute(CREATE_HEADS);
         jdbc.execute(CREATE_ATTESTATIONS);
         jdbc.execute(CREATE_STATUSES);
+        jdbc.execute("""
+                ALTER TABLE mirror_isolation_attestations
+                ADD COLUMN IF NOT EXISTS bundle_schema_version VARCHAR(128) NOT NULL DEFAULT
+                    'resourceGateway.mirrorDeploymentIsolationAttestationBundle.v1'
+                """);
+        jdbc.execute("""
+                ALTER TABLE mirror_isolation_attestations
+                ADD COLUMN IF NOT EXISTS regional_certification_ref_json CLOB
+                """);
     }
 
     @Override
@@ -209,7 +222,10 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
             if (candidateRevision == head.floorRevision()) {
                 if (candidate.attestation().attestationFingerprint().equals(
                         current.attestation().attestationFingerprint())
-                        && candidate.authorityKeySetRef().equals(current.authorityKeySetRef())) {
+                        && candidate.authorityKeySetRef().equals(current.authorityKeySetRef())
+                        && candidate.schemaVersion().equals(current.schemaVersion())
+                        && Objects.equals(candidate.regionalDataPlaneCertificationRef(),
+                        current.regionalDataPlaneCertificationRef())) {
                     return current;
                 }
                 throw violation(Reason.REVISION_FORK);
@@ -279,7 +295,8 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
                 throw violation(Reason.STATUS_CONFLICT);
             }
             return bundleIntegrity.bundle(current.scope(), current.authorityKeySetRef(),
-                    current.attestation(), revoked);
+                    current.attestation(), revoked,
+                    current.regionalDataPlaneCertificationRef());
         });
         if (stored == null) {
             throw violation(Reason.STORED_STATE_CORRUPT);
@@ -329,7 +346,8 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
         }
         try {
             MirrorDeploymentIsolationAttestationBundle bundle = bundleIntegrity.bundle(
-                    stream.scope(), stored.authorityKeySetRef(), stored.attestation(), status);
+                    stream.scope(), stored.authorityKeySetRef(), stored.attestation(), status,
+                    stored.regionalDataPlaneCertificationRef());
             if (!bundleIntegrity.canonicalBundleVerified(bundle)) {
                 throw violation(Reason.STORED_STATE_CORRUPT);
             }
@@ -375,14 +393,17 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
                                 deployment_scope_id, key_set_id, attestation_id, revision,
                                 attestation_fingerprint, material_fingerprint,
                                 authority_generation, authority_publication_fingerprint,
-                                schema_version, attestation_json
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                schema_version, bundle_schema_version,
+                                regional_certification_ref_json, attestation_json
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     scope.tenantId(), scope.organizationId(), scope.projectId(),
                     scope.environmentId(), scope.region(), stream.deployment().deploymentScopeId(),
                     stream.keySetId(), stream.attestationId(), attestation.material().revision(),
                     attestation.attestationFingerprint(), attestation.seal().materialFingerprint(),
                     authority.revision(), authority.fingerprint(), attestation.schemaVersion(),
+                    bundle.schemaVersion(), bundle.regionalDataPlaneCertificationRef() == null
+                            ? null : serialize(bundle.regionalDataPlaneCertificationRef()),
                     serialize(attestation));
         } catch (DuplicateKeyException collision) {
             throw violation(Reason.CONTENT_ADDRESS_CONFLICT);
@@ -523,6 +544,10 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
                     MirrorDeploymentIsolationAuthorityKeySetPublication.ARTIFACT_KIND,
                     expected.keySetId(), rs.getLong("authority_generation"),
                     rs.getString("authority_publication_fingerprint"));
+            String bundleSchemaVersion = rs.getString("bundle_schema_version");
+            String regionalRefJson = rs.getString("regional_certification_ref_json");
+            MirrorArtifactRef regionalRef = regionalRefJson == null
+                    ? null : mapper.readValue(regionalRefJson, MirrorArtifactRef.class);
             if (!attestationIntegrity.canonicalFingerprintVerified(attestation)
                     || !attestation.material().deployment().equals(expected.deployment())
                     || !attestation.material().attestationId().equals(expected.attestationId())
@@ -531,10 +556,11 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
                     rs.getString("attestation_fingerprint"))
                     || !attestation.seal().materialFingerprint().equals(
                     rs.getString("material_fingerprint"))
-                    || !attestation.schemaVersion().equals(rs.getString("schema_version"))) {
+                    || !attestation.schemaVersion().equals(rs.getString("schema_version"))
+                    || !validBundleCoordinates(bundleSchemaVersion, regionalRef)) {
                 throw violation(Reason.STORED_STATE_CORRUPT);
             }
-            return new StoredAttestation(attestation, authorityRef);
+            return new StoredAttestation(attestation, authorityRef, regionalRef);
         } catch (JsonProcessingException | IllegalArgumentException malformed) {
             throw violation(Reason.STORED_STATE_CORRUPT);
         }
@@ -602,6 +628,17 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
         }
     }
 
+    private static boolean validBundleCoordinates(
+            String schemaVersion, MirrorArtifactRef regionalRef) {
+        if (MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION.equals(schemaVersion)) {
+            return regionalRef == null;
+        }
+        return MirrorDeploymentIsolationAttestationBundle.REGIONAL_DATA_PLANE_SCHEMA_VERSION
+                .equals(schemaVersion)
+                && regionalRef != null
+                && RegionalDataPlaneCertification.ARTIFACT_KIND.equals(regionalRef.kind());
+    }
+
     private static MirrorDeploymentIsolationAttestation.DeploymentIdentity deployment(
             ResultSet rs, String deploymentScopeId) throws SQLException {
         return new MirrorDeploymentIsolationAttestation.DeploymentIdentity(
@@ -620,7 +657,8 @@ public final class DatabaseMirrorDeploymentIsolationAttestationRepository
 
     private record StoredAttestation(
             MirrorDeploymentIsolationAttestation attestation,
-            MirrorArtifactRef authorityKeySetRef) {
+            MirrorArtifactRef authorityKeySetRef,
+            MirrorArtifactRef regionalDataPlaneCertificationRef) {
     }
 
     private record Head(

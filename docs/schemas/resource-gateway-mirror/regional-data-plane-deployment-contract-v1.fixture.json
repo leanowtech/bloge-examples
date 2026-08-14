@@ -1,0 +1,104 @@
+{
+  "schemaVersion": "resourceGateway.regionalDataPlaneDeploymentContract.v1",
+  "contractFingerprint": "sha256:045b6593cff88a5207d3314596b73bbf7bcfb82a403b41fd811a1375f99860e2",
+  "contractId": "regional-data-plane:sg",
+  "revision": 4,
+  "scope": {
+    "tenantId": "tenant-demo",
+    "organizationId": "org-support",
+    "projectId": "project-business-mirror",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "region": "ap-southeast-1",
+  "deployment": {
+    "deploymentScopeId": "mirror-staging-sg",
+    "clusterId": "cluster-sg-01",
+    "namespace": "resource-gateway-mirror",
+    "workloadName": "resource-gateway",
+    "serviceAccount": "resource-gateway-mirror",
+    "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "requiredComponents": [
+    {
+      "kind": "EVIDENCE_KMS",
+      "authorityId": "authority:evidence_kms",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "evidence_kms", "revision": 3, "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "PAYLOAD_VAULT",
+      "authorityId": "authority:payload_vault",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "payload_vault", "revision": 3, "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "SECRET_AUTHORITY",
+      "authorityId": "authority:secret_authority",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "secret_authority", "revision": 3, "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "SESSION_STATE_STORE",
+      "authorityId": "authority:session_state_store",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "session_state_store", "revision": 3, "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "FIXTURE_RESOLVER",
+      "authorityId": "authority:fixture_resolver",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "fixture_resolver", "revision": 3, "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "MUTUAL_TLS",
+      "authorityId": "authority:mutual_tls",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "mutual_tls", "revision": 3, "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    },
+    {
+      "kind": "EGRESS_ISOLATION",
+      "authorityId": "authority:egress_isolation",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "egress_isolation", "revision": 3, "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777" },
+      "minimumGeneration": 1,
+      "maximumObservationAgeSeconds": 60,
+      "privateTransportRequired": true,
+      "failClosedRequired": true,
+      "regionalResidencyRequired": true
+    }
+  ],
+  "rotationPolicy": {
+    "maximumKmsKeyAgeSeconds": 7776000,
+    "maximumCaAgeSeconds": 7776000,
+    "minimumOverlapSeconds": 600,
+    "restartFreeRequired": true,
+    "staleSessionDrainRequired": true
+  },
+  "validFrom": "2026-08-01T00:00:00Z",
+  "expiresAt": "2026-12-31T00:00:00Z",
+  "owner": "security:mirror-platform"
+}

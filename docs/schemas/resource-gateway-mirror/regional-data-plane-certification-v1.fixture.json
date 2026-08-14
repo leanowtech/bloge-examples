@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "resourceGateway.regionalDataPlaneCertification.v1",
+  "certificationFingerprint": "sha256:cb5c1c1224f03bf683254896cd6469abbf95424844cc30fbec4ee0b8d7c8d287",
+  "certificationId": "regional-certification:sg",
+  "revision": 11,
+  "contractRef": {
+    "kind": "REGIONAL_DATA_PLANE_DEPLOYMENT_CONTRACT",
+    "id": "regional-data-plane:sg",
+    "revision": 4,
+    "fingerprint": "sha256:045b6593cff88a5207d3314596b73bbf7bcfb82a403b41fd811a1375f99860e2"
+  },
+  "scope": {
+    "tenantId": "tenant-demo",
+    "organizationId": "org-support",
+    "projectId": "project-business-mirror",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "region": "ap-southeast-1",
+  "deployment": {
+    "deploymentScopeId": "mirror-staging-sg",
+    "clusterId": "cluster-sg-01",
+    "namespace": "resource-gateway-mirror",
+    "workloadName": "resource-gateway",
+    "serviceAccount": "resource-gateway-mirror",
+    "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "observedAt": "2026-08-10T00:00:00Z",
+  "validFrom": "2026-08-10T00:00:01Z",
+  "expiresAt": "2026-08-10T00:10:01Z",
+  "componentObservations": [
+    {
+      "kind": "EVIDENCE_KMS",
+      "authorityId": "authority:evidence_kms",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "evidence_kms", "revision": 3, "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+      "generation": 2,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "evidence_kms", "revision": 2, "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888" } ]
+    },
+    {
+      "kind": "PAYLOAD_VAULT",
+      "authorityId": "authority:payload_vault",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "payload_vault", "revision": 3, "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222" },
+      "generation": 1,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "payload_vault", "revision": 1, "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777" } ]
+    },
+    {
+      "kind": "SECRET_AUTHORITY",
+      "authorityId": "authority:secret_authority",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "secret_authority", "revision": 3, "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333" },
+      "generation": 1,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "secret_authority", "revision": 1, "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666" } ]
+    },
+    {
+      "kind": "SESSION_STATE_STORE",
+      "authorityId": "authority:session_state_store",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "session_state_store", "revision": 3, "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444" },
+      "generation": 1,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "session_state_store", "revision": 1, "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555" } ]
+    },
+    {
+      "kind": "FIXTURE_RESOLVER",
+      "authorityId": "authority:fixture_resolver",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "fixture_resolver", "revision": 3, "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555" },
+      "generation": 1,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "fixture_resolver", "revision": 1, "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444" } ]
+    },
+    {
+      "kind": "MUTUAL_TLS",
+      "authorityId": "authority:mutual_tls",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "mutual_tls", "revision": 3, "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666" },
+      "generation": 2,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "mutual_tls", "revision": 2, "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333" } ]
+    },
+    {
+      "kind": "EGRESS_ISOLATION",
+      "authorityId": "authority:egress_isolation",
+      "policyRef": { "kind": "REGIONAL_COMPONENT_POLICY", "id": "egress_isolation", "revision": 3, "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777" },
+      "generation": 1,
+      "status": "READY",
+      "observedAt": "2026-08-09T23:59:59Z",
+      "privateTransportEnforced": true,
+      "failClosed": true,
+      "regionalResidencyEnforced": true,
+      "externalBusinessWriteDenied": true,
+      "identityFingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "proofRefs": [ { "kind": "REGIONAL_COMPONENT_PROOF", "id": "egress_isolation", "revision": 1, "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222" } ]
+    }
+  ],
+  "rotationObservations": [
+    {
+      "kind": "EVIDENCE_KMS_KEY",
+      "previousGeneration": 1,
+      "activeGeneration": 2,
+      "activeGenerationActivatedAt": "2026-08-09T23:59:30Z",
+      "overlapAchievedSeconds": 600,
+      "previousGenerationRevoked": true,
+      "allReplicasConverged": true,
+      "staleSessionsDrained": true,
+      "restartFree": true,
+      "observedAt": "2026-08-09T23:59:58Z",
+      "proofRefs": [ { "kind": "REGIONAL_ROTATION_PROOF", "id": "kms", "revision": 2, "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888" } ]
+    },
+    {
+      "kind": "MUTUAL_TLS_CA",
+      "previousGeneration": 1,
+      "activeGeneration": 2,
+      "activeGenerationActivatedAt": "2026-08-09T23:59:30Z",
+      "overlapAchievedSeconds": 600,
+      "previousGenerationRevoked": true,
+      "allReplicasConverged": true,
+      "staleSessionsDrained": true,
+      "restartFree": true,
+      "observedAt": "2026-08-09T23:59:58Z",
+      "proofRefs": [ { "kind": "REGIONAL_ROTATION_PROOF", "id": "mtls-ca", "revision": 2, "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999" } ]
+    }
+  ],
+  "externalBusinessWriteAttemptCount": 0,
+  "writeEscapeCount": 0,
+  "issuer": "security:regional-certification",
+  "proofRefs": [ { "kind": "REGIONAL_CERTIFICATION_REPORT", "id": "report-20260810", "revision": 9, "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" } ],
+  "certificationSeal": {
+    "schemaVersion": "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint": "sha256:0cf14c2e139e4c0ae9d84ef94ffe40519c893061ffba22e8c34906d18204689c",
+    "algorithm": "Ed25519",
+    "keyId": "regional-fixture-key",
+    "signedAt": "2026-08-10T00:00:00Z",
+    "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  }
+}

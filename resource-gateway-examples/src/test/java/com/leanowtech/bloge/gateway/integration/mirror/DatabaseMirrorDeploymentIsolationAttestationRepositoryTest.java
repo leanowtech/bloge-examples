@@ -63,6 +63,42 @@ class DatabaseMirrorDeploymentIsolationAttestationRepositoryTest {
     }
 
     @Test
+    void preservesRegionalCertificationBindingAcrossRestartAndRevocation() {
+        var legacy = fixtures.bundle(7);
+        var certificationRef = new MirrorArtifactRef(
+                RegionalDataPlaneCertification.ARTIFACT_KIND,
+                "regional-certification:sg", 11,
+                MirrorDeploymentIsolationAttestationRepositoryTestFixtures.fingerprint('c'));
+        var certified = fixtures.bundleIntegrity.bundle(legacy.scope(),
+                legacy.authorityKeySetRef(), legacy.attestation(), legacy.status(),
+                certificationRef);
+
+        repository.append(certified, 7);
+        var restarted = repository();
+        var restored = restarted.current(stream(certified)).orElseThrow();
+
+        assertThat(restored).isEqualTo(certified);
+        assertThat(restored.schemaVersion()).isEqualTo(
+                MirrorDeploymentIsolationAttestationBundle
+                        .REGIONAL_DATA_PLANE_SCHEMA_VERSION);
+        assertThat(restored.regionalDataPlaneCertificationRef())
+                .isEqualTo(certificationRef);
+        var driftedRef = new MirrorArtifactRef(
+                RegionalDataPlaneCertification.ARTIFACT_KIND,
+                "regional-certification:sg", 12,
+                MirrorDeploymentIsolationAttestationRepositoryTestFixtures.fingerprint('d'));
+        var fork = fixtures.bundleIntegrity.bundle(legacy.scope(),
+                legacy.authorityKeySetRef(), legacy.attestation(), legacy.status(), driftedRef);
+        assertReason(() -> restarted.append(fork, 7), Reason.REVISION_FORK);
+
+        var revoked = restarted.revoke(stream(restored), expectation(restored),
+                MirrorDeploymentIsolationAttestationStatusPublication.Reason.SECURITY_INCIDENT,
+                restored.status().material().effectiveAt().plusSeconds(1));
+        assertThat(revoked.regionalDataPlaneCertificationRef()).isEqualTo(certificationRef);
+        assertThat(repository().current(stream(certified))).contains(revoked);
+    }
+
+    @Test
     void rejectsTofuBootstrapRollbackGapAndSameRevisionFork() {
         assertReason(() -> repository.append(fixtures.bundle(6), 7),
                 Reason.BOOTSTRAP_REVISION_MISMATCH);

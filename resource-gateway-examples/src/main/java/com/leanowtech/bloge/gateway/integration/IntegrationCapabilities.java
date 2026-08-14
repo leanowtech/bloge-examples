@@ -451,7 +451,19 @@ public record IntegrationCapabilities(
                         .MirrorDeploymentIsolationAttestationStatusPublication.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAttestationBundle", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
-                        .MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION));
+                        .MirrorDeploymentIsolationAttestationBundle.SCHEMA_VERSION,
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .MirrorDeploymentIsolationAttestationBundle
+                        .REGIONAL_DATA_PLANE_SCHEMA_VERSION));
+        objects.put("regionalDataPlaneDeploymentContract", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RegionalDataPlaneDeploymentContract.SCHEMA_VERSION));
+        objects.put("regionalDataPlaneCertification", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RegionalDataPlaneCertification.SCHEMA_VERSION));
+        objects.put("regionalDataPlaneCertificationAuthorityDescriptor", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .RegionalDataPlaneCertificationAuthority.Descriptor.SCHEMA_VERSION));
         objects.put("mirrorDeploymentIsolationAgentSnapshot", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .MirrorDeploymentIsolationAgentSnapshot.SCHEMA_VERSION));

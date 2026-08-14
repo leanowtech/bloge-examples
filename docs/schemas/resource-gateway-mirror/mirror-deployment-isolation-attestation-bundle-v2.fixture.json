@@ -1,0 +1,113 @@
+{
+  "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAttestationBundle.v2",
+  "bundleFingerprint": "sha256:92f8e8817a7b8ffb817d7f55bc3a02127f94cd4b5374c779b1a6c3bdd7fe880e",
+  "scope": {
+    "tenantId": "tenant-demo",
+    "organizationId": "org-support",
+    "projectId": "project-business-mirror",
+    "environmentId": "staging",
+    "region": "sg"
+  },
+  "authorityKeySetRef": {
+    "kind": "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET",
+    "id": "mirror-isolation-authority",
+    "revision": 3,
+    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "attestation": {
+    "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAttestation.v1",
+    "attestationFingerprint": "sha256:f53b75c5141beb60c3c19c0c00f7ee234eedb7830e897d8631733d38f8782e5a",
+    "material": {
+      "attestationId": "mirror-staging-isolation",
+      "revision": 7,
+      "deployment": {
+        "deploymentScopeId": "mirror-staging-sg",
+        "clusterId": "cluster-sg-01",
+        "namespace": "resource-gateway-mirror",
+        "workloadName": "resource-gateway",
+        "serviceAccount": "resource-gateway-mirror",
+        "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "enforcement": {
+        "enforcementLayers": [
+          "KUBERNETES_NETWORK_POLICY",
+          "SERVICE_MESH_AUTHORIZATION",
+          "WORKLOAD_SANDBOX"
+        ],
+        "failClosed": true,
+        "defaultDenyEgress": true,
+        "externalBusinessEgressDenied": true,
+        "productionCredentialsDenied": true,
+        "productionIdentityDenied": true,
+        "continuousEnforcement": true,
+        "networkPolicyFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+        "credentialPolicyFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "allowedDestinationsFingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "allowedEgressClasses": [ "DNS", "EVIDENCE_SIGNER", "PAYLOAD_FREE_DATABASE" ],
+        "proofRefs": [
+          {
+            "kind": "DEPLOYMENT_POLICY_PROOF",
+            "id": "policy-evaluation:staging",
+            "revision": 19,
+            "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+          }
+        ]
+      },
+      "observedAt": "2026-08-09T23:59:59Z",
+      "validFrom": "2026-08-10T00:00:00Z",
+      "expiresAt": "2026-08-10T00:10:00Z",
+      "issuer": "sre:mirror-isolation"
+    },
+    "seal": {
+      "materialFingerprint": "sha256:09431651a9139e5e25e4fa479c4827001df55e8575084208e5fcb833f9b910ba",
+      "algorithm": "Ed25519",
+      "keyId": "regional-fixture-key",
+      "signedAt": "2026-08-10T00:00:00Z",
+      "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    }
+  },
+  "status": {
+    "schemaVersion": "resourceGateway.mirrorDeploymentIsolationAttestationStatus.v1",
+    "statusFingerprint": "sha256:d56da7e025901ce3922fa83b6e544db70f0cca8205ae9560df4d61a5b6cc6add",
+    "material": {
+      "scope": {
+        "tenantId": "tenant-demo",
+        "organizationId": "org-support",
+        "projectId": "project-business-mirror",
+        "environmentId": "staging",
+        "region": "sg"
+      },
+      "deployment": {
+        "deploymentScopeId": "mirror-staging-sg",
+        "clusterId": "cluster-sg-01",
+        "namespace": "resource-gateway-mirror",
+        "workloadName": "resource-gateway",
+        "serviceAccount": "resource-gateway-mirror",
+        "imageDigest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "authorityKeySetRef": {
+        "kind": "DEPLOYMENT_ISOLATION_AUTHORITY_KEY_SET",
+        "id": "mirror-isolation-authority",
+        "revision": 3,
+        "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "attestationRef": {
+        "kind": "DEPLOYMENT_ISOLATION_ATTESTATION",
+        "id": "mirror-staging-isolation",
+        "revision": 7,
+        "fingerprint": "sha256:f53b75c5141beb60c3c19c0c00f7ee234eedb7830e897d8631733d38f8782e5a"
+      },
+      "statusRevision": 1,
+      "previousStatusFingerprint": "",
+      "state": "ACTIVE",
+      "reason": "ACCEPTED",
+      "effectiveAt": "2026-08-10T00:00:00Z"
+    }
+  },
+  "regionalDataPlaneCertificationRef": {
+    "kind": "REGIONAL_DATA_PLANE_CERTIFICATION",
+    "id": "regional-certification:sg",
+    "revision": 11,
+    "fingerprint": "sha256:cb5c1c1224f03bf683254896cd6469abbf95424844cc30fbec4ee0b8d7c8d287"
+  }
+}

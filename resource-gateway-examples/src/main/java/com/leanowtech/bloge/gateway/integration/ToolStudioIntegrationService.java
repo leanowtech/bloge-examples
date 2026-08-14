@@ -31,6 +31,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchSch
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.ScenarioRehearsalBatchFinalizationSloMonitor;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelitySourceAvailability;
+import com.leanowtech.bloge.gateway.integration.mirror.RegionalDataPlaneCertificationAuthority;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftDependencyReport;
@@ -91,6 +92,8 @@ public class ToolStudioIntegrationService {
     private boolean businessMirrorPackageEvidenceApi;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
+    private RegionalDataPlaneCertificationAuthority regionalDataPlaneCertificationAuthority =
+            RegionalDataPlaneCertificationAuthority.unavailable();
     private DomainFidelityRuntimeAvailability
             domainFidelityRuntimeAvailability =
             new DomainFidelityRuntimeAvailability(
@@ -281,6 +284,14 @@ public class ToolStudioIntegrationService {
     void configureMirrorRuntime(MirrorRuntimeAvailability availability) {
         this.mirrorRuntimeAvailability = availability == null
                 ? new MirrorRuntimeAvailability(false, false) : availability;
+    }
+
+    /** Receives the customer-owned regional certification boundary when one is assembled. */
+    @Autowired(required = false)
+    void configureRegionalDataPlaneCertification(
+            RegionalDataPlaneCertificationAuthority authority) {
+        this.regionalDataPlaneCertificationAuthority = authority == null
+                ? RegionalDataPlaneCertificationAuthority.unavailable() : authority;
     }
 
     /** Receives the marker only when protected Domain Fidelity routes are assembled. */
@@ -750,6 +761,8 @@ public class ToolStudioIntegrationService {
                 mirrorRuntimeAvailability.attestationDistributionReady());
         features.put("mirrorIsolationRunTrustReady",
                 mirrorRuntimeAvailability.certificationReady());
+        features.put("mirrorRegionalDataPlaneCertificationReady",
+                regionalDataPlaneCertificationReady());
         features.put("mirrorCertifiableEvidenceServingReady",
                 mirrorExecutionReady && mirrorRuntimeAvailability.certificationReady());
         features.put("mirrorObservationAdmissionApi",
@@ -2353,6 +2366,14 @@ public class ToolStudioIntegrationService {
                 endpoints);
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
+    }
+
+    private boolean regionalDataPlaneCertificationReady() {
+        try {
+            return regionalDataPlaneCertificationAuthority.available();
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
     }
 
     private ControlPlaneCertificateRotationRuntime.Descriptor

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/regional-data-plane-deployment-contract-v1.schema.json",
+  "title": "Resource Gateway Regional Data Plane Deployment Contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "contractFingerprint", "contractId", "revision", "scope",
+    "region", "deployment", "requiredComponents", "rotationPolicy", "validFrom",
+    "expiresAt", "owner"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.regionalDataPlaneDeploymentContract.v1" },
+    "contractFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "contractId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "scope": { "$ref": "#/$defs/scope" },
+    "region": { "$ref": "#/$defs/identifier" },
+    "deployment": { "$ref": "#/$defs/deployment" },
+    "requiredComponents": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "items": { "$ref": "#/$defs/componentRequirement" }
+    },
+    "rotationPolicy": { "$ref": "#/$defs/rotationPolicy" },
+    "validFrom": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "owner": { "$ref": "#/$defs/identifier" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "componentRequirement": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "authorityId", "policyRef", "minimumGeneration",
+        "maximumObservationAgeSeconds", "privateTransportRequired",
+        "failClosedRequired", "regionalResidencyRequired"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "EVIDENCE_KMS", "PAYLOAD_VAULT", "SECRET_AUTHORITY",
+            "SESSION_STATE_STORE", "FIXTURE_RESOLVER", "MUTUAL_TLS",
+            "EGRESS_ISOLATION"
+          ]
+        },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "policyRef": { "$ref": "#/$defs/artifactRef" },
+        "minimumGeneration": { "type": "integer", "minimum": 1 },
+        "maximumObservationAgeSeconds": { "type": "integer", "minimum": 1, "maximum": 86400 },
+        "privateTransportRequired": { "const": true },
+        "failClosedRequired": { "const": true },
+        "regionalResidencyRequired": { "const": true }
+      }
+    },
+    "rotationPolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "maximumKmsKeyAgeSeconds", "maximumCaAgeSeconds", "minimumOverlapSeconds",
+        "restartFreeRequired", "staleSessionDrainRequired"
+      ],
+      "properties": {
+        "maximumKmsKeyAgeSeconds": { "type": "integer", "minimum": 60, "maximum": 31622400 },
+        "maximumCaAgeSeconds": { "type": "integer", "minimum": 60, "maximum": 31622400 },
+        "minimumOverlapSeconds": { "type": "integer", "minimum": 1 },
+        "restartFreeRequired": { "const": true },
+        "staleSessionDrainRequired": { "const": true }
+      }
+    }
+  }
+}

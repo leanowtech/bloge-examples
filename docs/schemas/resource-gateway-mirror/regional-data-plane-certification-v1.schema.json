@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/regional-data-plane-certification-v1.schema.json",
+  "title": "Resource Gateway Regional Data Plane Certification v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "certificationFingerprint", "certificationId", "revision",
+    "contractRef", "scope", "region", "deployment", "observedAt", "validFrom",
+    "expiresAt", "componentObservations", "rotationObservations",
+    "externalBusinessWriteAttemptCount", "writeEscapeCount", "issuer", "proofRefs",
+    "certificationSeal"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.regionalDataPlaneCertification.v1" },
+    "certificationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "certificationId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "contractRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "REGIONAL_DATA_PLANE_DEPLOYMENT_CONTRACT" } } }
+      ]
+    },
+    "scope": { "$ref": "#/$defs/scope" },
+    "region": { "$ref": "#/$defs/identifier" },
+    "deployment": { "$ref": "#/$defs/deployment" },
+    "observedAt": { "type": "string", "format": "date-time" },
+    "validFrom": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "componentObservations": {
+      "type": "array", "minItems": 7, "maxItems": 7,
+      "items": { "$ref": "#/$defs/componentObservation" }
+    },
+    "rotationObservations": {
+      "type": "array", "minItems": 2, "maxItems": 2,
+      "items": { "$ref": "#/$defs/rotationObservation" }
+    },
+    "externalBusinessWriteAttemptCount": { "type": "integer", "minimum": 0 },
+    "writeEscapeCount": { "type": "integer", "minimum": 0 },
+    "issuer": { "$ref": "#/$defs/identifier" },
+    "proofRefs": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": { "$ref": "#/$defs/artifactRef" }
+    },
+    "certificationSeal": { "$ref": "#/$defs/seal" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,511}$"
+    },
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "deployment": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "deploymentScopeId", "clusterId", "namespace", "workloadName",
+        "serviceAccount", "imageDigest"
+      ],
+      "properties": {
+        "deploymentScopeId": { "$ref": "#/$defs/identifier" },
+        "clusterId": { "$ref": "#/$defs/identifier" },
+        "namespace": { "$ref": "#/$defs/identifier" },
+        "workloadName": { "$ref": "#/$defs/identifier" },
+        "serviceAccount": { "$ref": "#/$defs/identifier" },
+        "imageDigest": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "componentObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "authorityId", "policyRef", "generation", "status", "observedAt",
+        "privateTransportEnforced", "failClosed", "regionalResidencyEnforced",
+        "externalBusinessWriteDenied", "identityFingerprint", "proofRefs"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "EVIDENCE_KMS", "PAYLOAD_VAULT", "SECRET_AUTHORITY",
+            "SESSION_STATE_STORE", "FIXTURE_RESOLVER", "MUTUAL_TLS",
+            "EGRESS_ISOLATION"
+          ]
+        },
+        "authorityId": { "$ref": "#/$defs/identifier" },
+        "policyRef": { "$ref": "#/$defs/artifactRef" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["READY", "DEGRADED", "UNAVAILABLE", "REVOKED"] },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "privateTransportEnforced": { "type": "boolean" },
+        "failClosed": { "type": "boolean" },
+        "regionalResidencyEnforced": { "type": "boolean" },
+        "externalBusinessWriteDenied": { "type": "boolean" },
+        "identityFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "proofRefs": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": { "$ref": "#/$defs/artifactRef" }
+        }
+      }
+    },
+    "rotationObservation": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "kind", "previousGeneration", "activeGeneration", "activeGenerationActivatedAt",
+        "overlapAchievedSeconds", "previousGenerationRevoked",
+        "allReplicasConverged", "staleSessionsDrained", "restartFree", "observedAt",
+        "proofRefs"
+      ],
+      "properties": {
+        "kind": { "enum": ["EVIDENCE_KMS_KEY", "MUTUAL_TLS_CA"] },
+        "previousGeneration": { "type": "integer", "minimum": 1 },
+        "activeGeneration": { "type": "integer", "minimum": 2 },
+        "activeGenerationActivatedAt": { "type": "string", "format": "date-time" },
+        "overlapAchievedSeconds": { "type": "integer", "minimum": 0 },
+        "previousGenerationRevoked": { "type": "boolean" },
+        "allReplicasConverged": { "type": "boolean" },
+        "staleSessionsDrained": { "type": "boolean" },
+        "restartFree": { "type": "boolean" },
+        "observedAt": { "type": "string", "format": "date-time" },
+        "proofRefs": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": { "$ref": "#/$defs/artifactRef" }
+        }
+      }
+    },
+    "seal": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "bloge.visualRunEvidenceSeal.v1" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "algorithm": { "const": "Ed25519" },
+        "keyId": { "$ref": "#/$defs/identifier" },
+        "signedAt": { "type": "string", "format": "date-time" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 4096 }
+      }
+    }
+  }
+}
