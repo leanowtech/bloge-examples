@@ -1398,13 +1398,15 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         AttemptContext context = retainedStart('a', true);
         AtomicInteger descriptorCalls = new AtomicInteger();
         AtomicInteger observationCalls = new AtomicInteger();
-        var authority = authority(descriptorCalls, observationCalls,
+        var authority = authority(descriptor(Duration.ofMillis(400)),
+                descriptorCalls, observationCalls,
                 command -> uncheckedObservation(
                         command, 101, 1,
                         TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
 
         try (var supervisor = supervisor(Duration.ofMillis(500))) {
-            var result = reconciler(supervisor, (provider, deployment) -> authority)
+            var result = reconciler(supervisor, (provider, deployment) -> authority,
+                            Duration.ofMillis(800))
                     .reconcileNext("reconciler-a");
 
             assertThat(result.stage()).isEqualTo(
@@ -2048,13 +2050,20 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     private TestSuiteStabilityPhysicalAttemptObservationReconciler reconciler(
             TestSuiteStabilityPhysicalAttemptObservationCallSupervisor supervisor,
             TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver resolver) {
+        return reconciler(supervisor, resolver, Duration.ofMillis(500));
+    }
+
+    private TestSuiteStabilityPhysicalAttemptObservationReconciler reconciler(
+            TestSuiteStabilityPhysicalAttemptObservationCallSupervisor supervisor,
+            TestSuiteStabilityPhysicalAttemptObservationReconciler.AuthorityResolver resolver,
+            Duration confirmationWindow) {
         return new TestSuiteStabilityPhysicalAttemptObservationReconciler(
                 mapper, reconciliations, starts, journal,
                 new TestSuiteStabilityPhysicalAttemptObservationCoordinator(
                         journal, supervisor),
                 resolver,
                 new TestSuiteStabilityPhysicalAttemptObservationReconciler.Policy(
-                        Duration.ofMillis(500), Duration.ofMillis(100)));
+                        confirmationWindow, Duration.ofMillis(100)));
     }
 
     private TestSuiteStabilityPhysicalAttemptObservationAuthority authority(

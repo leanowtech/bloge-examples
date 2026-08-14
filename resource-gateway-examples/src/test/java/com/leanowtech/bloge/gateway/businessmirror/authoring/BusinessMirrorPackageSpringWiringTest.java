@@ -9,6 +9,10 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageController;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactController;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactProjectionWorker;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactService;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
@@ -38,7 +42,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
                 "gateway.integration.identity.environment-id=test",
                 "gateway.integration.identity.region=sg",
                 "gateway.integration.identity.actor-id=alice",
-                "gateway.integration.identity.allowed-purposes=BUSINESS_MIRROR_AUTHORING",
+                "gateway.integration.identity.allowed-purposes="
+                        + "BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE",
                 "spring.datasource.url=jdbc:h2:mem:business-mirror-package-wiring;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })
 class BusinessMirrorPackageSpringWiringTest {
@@ -65,6 +70,9 @@ class BusinessMirrorPackageSpringWiringTest {
         assertThat(context.getBean(PackageCompilationController.class)).isNotNull();
         assertThat(context.getBean(PackageCompilationFactRepository.class)).isNotNull();
         assertThat(context.getBean(PackageCompilationReceiptRepository.class)).isNotNull();
+        assertThat(context.getBean(BusinessAssetImpactController.class)).isNotNull();
+        assertThat(context.getBean(BusinessAssetImpactRepository.class)).isNotNull();
+        assertThat(context.getBean(BusinessAssetImpactProjectionWorker.class)).isNotNull();
         assertThat(context.getBean(LegacyGraphPackageController.class)).isNotNull();
         assertThat(context.getBean(CapabilityProposalController.class)).isNotNull();
         assertThat(context.getBean(CapabilityProposalDraftRepository.class)).isNotNull();
@@ -72,6 +80,42 @@ class BusinessMirrorPackageSpringWiringTest {
         assertThat(context.getBean(LegacyGraphPackageProjector.class).ready()).isTrue();
         assertThat(AopUtils.isAopProxy(service)).isTrue();
         assertThat(AopUtils.isAopProxy(compilationService)).isTrue();
+        assertThat(AopUtils.isAopProxy(context.getBean(BusinessAssetImpactService.class))).isTrue();
+    }
+
+    @Test
+    void exposesASealedScopeIsolatedImpactReportThroughTheAuthenticatedHttpBoundary()
+            throws Exception {
+        mockMvc.perform(get("/api/business-mirror/business-assets/RESOURCE/trip-api/impact")
+                        .queryParam("authority", "customer-registry")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value("resourceGateway.businessAssetImpactReport.v1"))
+                .andExpect(jsonPath("$.scope.tenantId").value("ride-hailing"))
+                .andExpect(jsonPath("$.selector.kind").value("RESOURCE"))
+                .andExpect(jsonPath("$.selector.id").value("trip-api"))
+                .andExpect(jsonPath("$.status").value("CURRENT"))
+                .andExpect(jsonPath("$.items.length()").value(0))
+                .andExpect(jsonPath("$.fingerprint").value(
+                        org.hamcrest.Matchers.matchesPattern("sha256:[a-f0-9]{64}")));
+    }
+
+    @Test
+    void rebuildsTheImpactIndexThroughTheAuthenticatedMaintenanceBoundary() throws Exception {
+        mockMvc.perform(post("/api/business-mirror/impact-index/rebuild")
+                        .queryParam("limit", "25")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_MAINTENANCE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion")
+                        .value("resourceGateway.businessAssetImpactRebuildReport.v1"))
+                .andExpect(jsonPath("$.projectedCount").value(0))
+                .andExpect(jsonPath("$.replayedCount").value(0))
+                .andExpect(jsonPath("$.packageIds.length()").value(0))
+                .andExpect(jsonPath("$.nextCursor").value(""))
+                .andExpect(jsonPath("$.completedAt").isNotEmpty());
     }
 
     @Test

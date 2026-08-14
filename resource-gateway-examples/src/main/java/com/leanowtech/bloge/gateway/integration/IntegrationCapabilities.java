@@ -324,6 +324,12 @@ public record IntegrationCapabilities(
         objects.put("businessAssetLinkClosure", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .BusinessAssetLinkClosure.SCHEMA_VERSION));
+        objects.put("businessAssetImpactReport", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.impact
+                        .BusinessAssetImpactReport.SCHEMA_VERSION));
+        objects.put("businessAssetImpactRebuildReport", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.impact
+                        .BusinessAssetImpactRebuildReport.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageDraft", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageDraft.SCHEMA_VERSION));
@@ -1001,6 +1007,10 @@ public record IntegrationCapabilities(
         features.put("businessMirrorProtocol", true);
         features.put("businessMirrorPackageApi", true);
         features.put("businessMirrorPackageCompilerApi", true);
+        features.put("businessMirrorAssetImpactApi", true);
+        features.put("businessMirrorAssetImpactRebuild", true);
+        features.put("businessMirrorAssetImpactFreshness", true);
+        features.put("businessMirrorDeepLinks", true);
         features.put("businessMirrorPackageCompilerAuthorityReady", false);
         features.put("businessMirrorLegacyMigrationApi", true);
         features.put("businessMirrorLegacyMigrationAuthorityReady", false);
@@ -1484,6 +1494,9 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/business-mirror/packages/{packageId}/revisions/{revision}"),
                 new Endpoint("POST", "/api/business-mirror/packages/{packageId}/compile"),
                 new Endpoint("GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"),
+                new Endpoint("GET", "/api/business-mirror/business-assets/{kind}/{id}/impact"),
+                new Endpoint("GET", "/api/integration/business-assets/{kind}/{id}/impact"),
+                new Endpoint("POST", "/api/business-mirror/impact-index/rebuild"),
                 new Endpoint("GET", "/api/business-mirror/legacy-graphs"),
                 new Endpoint("GET", "/api/business-mirror/legacy-graphs/{graphName}"),
                 new Endpoint("POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"),

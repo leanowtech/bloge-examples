@@ -25,6 +25,8 @@ import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImpl
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationBinding;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationConformance;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactReport;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactRebuildReport;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjection;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjectionCatalog;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationEvidence;
@@ -45,6 +47,10 @@ class BusinessMirrorCapabilityTest {
                         BusinessAssetLink.SCHEMA_VERSION))
                 .containsEntry("businessAssetLinkClosure", java.util.List.of(
                         BusinessAssetLinkClosure.SCHEMA_VERSION))
+                .containsEntry("businessAssetImpactReport", java.util.List.of(
+                        BusinessAssetImpactReport.SCHEMA_VERSION))
+                .containsEntry("businessAssetImpactRebuildReport", java.util.List.of(
+                        BusinessAssetImpactRebuildReport.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageDraft", java.util.List.of(
                         DomainCapabilityPackageDraft.SCHEMA_VERSION))
                 .containsEntry("storedDomainCapabilityPackageDraft", java.util.List.of(
@@ -98,6 +104,10 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorProtocol", true)
                 .containsEntry("businessMirrorPackageApi", true)
                 .containsEntry("businessMirrorPackageCompilerApi", true)
+                .containsEntry("businessMirrorAssetImpactApi", true)
+                .containsEntry("businessMirrorAssetImpactRebuild", true)
+                .containsEntry("businessMirrorAssetImpactFreshness", true)
+                .containsEntry("businessMirrorDeepLinks", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
                 .containsEntry("businessMirrorWorkspace", true)
@@ -118,6 +128,13 @@ class BusinessMirrorCapabilityTest {
                         "GET", "/api/business-mirror/legacy-graphs/{graphName}"))
                 .contains(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"));
+        assertThat(capabilities.endpoints())
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/business-assets/{kind}/{id}/impact"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/integration/business-assets/{kind}/{id}/impact"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/business-mirror/impact-index/rebuild"));
         assertThat(capabilities.endpoints())
                 .contains(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/business-mirror/proposals"))

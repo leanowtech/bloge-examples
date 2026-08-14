@@ -1,0 +1,216 @@
+{
+  "schemaVersion": "resourceGateway.businessAssetImpactReport.v1",
+  "scope": {
+    "tenantId": "ride-hailing",
+    "organizationId": "customer-service",
+    "projectId": "cancellation",
+    "environmentId": "test",
+    "region": "sg"
+  },
+  "selector": {
+    "kind": "RESOURCE",
+    "id": "trip-api",
+    "authority": "customer-registry"
+  },
+  "status": "CURRENT",
+  "stalePackageIds": [],
+  "stalePackageIdsTruncated": false,
+  "items": [
+    {
+      "scope": {
+        "tenantId": "ride-hailing",
+        "organizationId": "customer-service",
+        "projectId": "cancellation",
+        "environmentId": "test",
+        "region": "sg"
+      },
+      "packageId": "cancellation-fee-resolution",
+      "compilationRevision": 7,
+      "packageSnapshotRef": {
+        "kind": "DOMAIN_CAPABILITY_PACKAGE",
+        "id": "cancellation-fee-resolution",
+        "revision": 7,
+        "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "businessAssetLinkClosureRef": {
+        "kind": "BUSINESS_ASSET_LINK_CLOSURE",
+        "id": "cancellation-fee-resolution:business-assets",
+        "revision": 7,
+        "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "matches": [
+        {
+          "sourceRef": {
+            "layer": "L0_RESOURCE",
+            "kind": "RESOURCE",
+            "id": "trip-api",
+            "revision": 3,
+            "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "authority": "customer-registry",
+            "scope": {
+              "tenantId": "ride-hailing",
+              "organizationId": "customer-service",
+              "projectId": "cancellation",
+              "environmentId": "test",
+              "region": "sg"
+            }
+          },
+          "paths": [
+            {
+              "impactedRef": {
+                "layer": "L0_RESOURCE",
+                "kind": "OPERATOR",
+                "id": "trip-query",
+                "revision": 5,
+                "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "authority": "customer-registry",
+                "scope": {
+                  "tenantId": "ride-hailing", "organizationId": "customer-service",
+                  "projectId": "cancellation", "environmentId": "test", "region": "sg"
+                }
+              },
+              "depth": 1,
+              "pathCount": 1,
+              "highestRisk": "HIGH",
+              "representativePath": [
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": {
+                    "layer": "L0_RESOURCE", "kind": "RESOURCE", "id": "trip-api", "revision": 3,
+                    "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "authority": "customer-registry",
+                    "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" }
+                  },
+                  "targetRef": {
+                    "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5,
+                    "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "authority": "customer-registry",
+                    "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" }
+                  },
+                  "relation": "IMPLEMENTS", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": {
+                    "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [],
+                    "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null,
+                    "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "",
+                    "approvedAt": null, "expiresAt": null, "revocationRef": ""
+                  }
+                }
+              ],
+              "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities&assetKind=OPERATOR&assetId=trip-query&assetRevision=5&assetAuthority=customer-registry"
+            },
+            {
+              "impactedRef": {
+                "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2,
+                "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "authority": "customer-registry",
+                "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" }
+              },
+              "depth": 2,
+              "pathCount": 1,
+              "highestRisk": "HIGH",
+              "representativePath": [
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "RESOURCE", "id": "trip-api", "revision": 3, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "IMPLEMENTS", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "USES", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                }
+              ],
+              "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities&assetKind=SOLUTION&assetId=cancellation-fee-solution&assetRevision=2&assetAuthority=customer-registry"
+            },
+            {
+              "impactedRef": {
+                "layer": "L2_SERVICE_CARRIER", "kind": "WORKFLOW", "id": "cancellation-fee-workflow", "revision": 4,
+                "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "authority": "customer-registry",
+                "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" }
+              },
+              "depth": 3,
+              "pathCount": 1,
+              "highestRisk": "HIGH",
+              "representativePath": [
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "RESOURCE", "id": "trip-api", "revision": 3, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "IMPLEMENTS", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "USES", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L2_SERVICE_CARRIER", "kind": "WORKFLOW", "id": "cancellation-fee-workflow", "revision": 4, "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "DELIVERED_BY", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                }
+              ],
+              "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities&assetKind=WORKFLOW&assetId=cancellation-fee-workflow&assetRevision=4&assetAuthority=customer-registry"
+            },
+            {
+              "impactedRef": {
+                "layer": "L3_APPLICATION", "kind": "CHANNEL_APPLICATION", "id": "support-console", "revision": 6,
+                "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "authority": "customer-registry",
+                "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" }
+              },
+              "depth": 4,
+              "pathCount": 1,
+              "highestRisk": "CRITICAL",
+              "representativePath": [
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "RESOURCE", "id": "trip-api", "revision": 3, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "IMPLEMENTS", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L0_RESOURCE", "kind": "OPERATOR", "id": "trip-query", "revision": 5, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "USES", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 2, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L2_SERVICE_CARRIER", "kind": "WORKFLOW", "id": "cancellation-fee-workflow", "revision": 4, "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "DELIVERED_BY", "condition": "", "risk": "HIGH", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                },
+                {
+                  "schemaVersion": "resourceGateway.businessAssetLink.v1",
+                  "sourceRef": { "layer": "L2_SERVICE_CARRIER", "kind": "WORKFLOW", "id": "cancellation-fee-workflow", "revision": 4, "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "targetRef": { "layer": "L3_APPLICATION", "kind": "CHANNEL_APPLICATION", "id": "support-console", "revision": 6, "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "authority": "customer-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } },
+                  "relation": "EXPOSED_ON", "condition": "", "risk": "CRITICAL", "owner": "cancellation-owner",
+                  "provenance": { "schemaVersion": "resourceGateway.artifactProvenance.v1", "sourceType": "OWNER", "sourceRefs": [], "tenantId": "ride-hailing", "purpose": "business-asset-impact", "sampleFrom": null, "sampleTo": null, "sampleCount": null, "confidence": null, "biasRisks": [], "approvedBy": "", "approvedAt": null, "expiresAt": null, "revocationRef": "" }
+                }
+              ],
+              "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities&assetKind=CHANNEL_APPLICATION&assetId=support-console&assetRevision=6&assetAuthority=customer-registry"
+            }
+          ],
+          "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities&assetKind=RESOURCE&assetId=trip-api&assetRevision=3&assetAuthority=customer-registry"
+        }
+      ],
+      "deepLink": "/business-mirror/?packageId=cancellation-fee-resolution&compilationRevision=7&task=capabilities"
+    }
+  ],
+  "nextCursor": "",
+  "projectedThrough": "2026-08-14T11:00:00Z",
+  "fingerprint": "sha256:928a53cf9c61bb7fa6aa0671ed626f07ac54fdb8715ea228f2d64c51e73b6453"
+}

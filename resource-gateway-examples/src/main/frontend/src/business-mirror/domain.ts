@@ -15,8 +15,9 @@ export interface BusinessMirrorArtifactRef {
 
 export interface BusinessMirrorAssetRef extends BusinessMirrorArtifactRef {
   scope: BusinessMirrorScope;
-  layer: 'L0_FOUNDATION' | 'L1_SERVICE_DESIGN' | 'L2_SERVICE_CARRIER' | 'L3_APPLICATION';
+  layer: 'L0_RESOURCE' | 'L1_SERVICE_DESIGN' | 'L2_SERVICE_CARRIER' | 'L3_APPLICATION';
   kind: string;
+  authority: string;
 }
 
 export interface BusinessMirrorBusinessDefinition {
@@ -188,7 +189,13 @@ export interface BusinessMirrorPortfolioItem {
 
 export interface BusinessMirrorCapabilityLayer {
   id: 'L0' | 'L1' | 'L2' | 'L3';
-  refs: Array<{ id: string; kind: string; missing: boolean }>;
+  refs: Array<{
+    id: string;
+    kind: string;
+    missing: boolean;
+    revision?: number;
+    authority?: string;
+  }>;
 }
 
 const BLOCKER_TASKS: Record<string, BusinessMirrorTaskId> = {
@@ -345,8 +352,14 @@ function uniqueSortedGaps(gaps: BusinessMirrorGap[]): BusinessMirrorGap[] {
   return [...unique.values()].sort((left, right) => left.code.localeCompare(right.code));
 }
 
-function assetRef(ref: BusinessMirrorAssetRef): { id: string; kind: string; missing: boolean } {
-  return { id: ref.id, kind: ref.kind, missing: false };
+function assetRef(ref: BusinessMirrorAssetRef): BusinessMirrorCapabilityLayer['refs'][number] {
+  return {
+    id: ref.id,
+    kind: ref.kind,
+    missing: false,
+    revision: ref.revision,
+    authority: ref.authority,
+  };
 }
 
 function missingRef(kind: string): { id: string; kind: string; missing: boolean } {

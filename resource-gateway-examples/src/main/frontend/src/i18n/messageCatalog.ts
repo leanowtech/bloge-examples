@@ -913,6 +913,14 @@ export const MESSAGE_CATALOG = {
   'businessMirror.capability.l3': { en: 'L3 Application', 'zh-CN': 'L3 业务应用层' },
   'businessMirror.capability.missing': { en: 'Missing {kind}', 'zh-CN': '缺少 {kind}' },
   'businessMirror.capability.openGraph': { en: 'Open exact Graph', 'zh-CN': '打开精确编排图' },
+  'businessMirror.capability.focus': {
+    en: 'Impact target located',
+    'zh-CN': '已定位影响目标',
+  },
+  'businessMirror.capability.focusCoordinate': {
+    en: '{kind} r{revision} · {authority} · Package compilation r{compilationRevision}',
+    'zh-CN': '{kind} r{revision} · {authority} · 能力包编译 r{compilationRevision}',
+  },
   'businessMirror.scenario.title': { en: 'Scenario denominator', 'zh-CN': '场景覆盖分母' },
   'businessMirror.scenario.discovered': {
     en: '{count} executable Contract suites were discovered',

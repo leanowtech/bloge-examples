@@ -19,6 +19,12 @@ public final class BusinessMirrorProtocol {
     /** Immutable Business Asset Link Closure v1 wire version. */
     public static final String BUSINESS_ASSET_LINK_CLOSURE_V1 =
             "resourceGateway.businessAssetLinkClosure.v1";
+    /** Content-addressed, freshness-aware Business Asset impact report v1. */
+    public static final String BUSINESS_ASSET_IMPACT_REPORT_V1 =
+            "resourceGateway.businessAssetImpactReport.v1";
+    /** Bounded reverse-index maintenance result v1. */
+    public static final String BUSINESS_ASSET_IMPACT_REBUILD_REPORT_V1 =
+            "resourceGateway.businessAssetImpactRebuildReport.v1";
     /** Mutable Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_DRAFT_V1 =
             "bloge.domainCapabilityPackageDraft.v1";
@@ -118,11 +124,18 @@ public final class BusinessMirrorProtocol {
     /** Server-produced, signed implementation-conformance result example. */
     public static final String IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "refund-implementation-conformance-stage1-v1.fixture.json";
+    /** Complete L0-L3 reverse-impact query example. */
+    public static final String BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "trip-api-impact-stage1-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
     static final String BUSINESS_ASSET_LINK_CLOSURE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-closure-v1.schema.json";
+    static final String BUSINESS_ASSET_IMPACT_REPORT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "business-asset-impact-report-v1.schema.json";
+    static final String BUSINESS_ASSET_IMPACT_REBUILD_REPORT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "business-asset-impact-rebuild-report-v1.schema.json";
     static final String PACKAGE_DRAFT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-draft-v1.schema.json";
     static final String STORED_PACKAGE_DRAFT_SCHEMA_RESOURCE =
@@ -193,6 +206,26 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireBusinessAssetLinkClosure(JsonNode value) {
         BusinessMirrorCompilationVerifier.verifyBusinessAssetLinkClosure(value);
+    }
+
+    /**
+     * Requires a content-addressed, freshness-aware, semantically connected impact report.
+     *
+     * @param value decoded Business Asset impact report
+     * @throws IllegalArgumentException when Schema, fingerprint, path, or Deep Link checks fail
+     */
+    public static void requireBusinessAssetImpactReport(JsonNode value) {
+        BusinessMirrorImpactVerifier.verify(value);
+    }
+
+    /**
+     * Requires a strict bounded impact-index rebuild result.
+     *
+     * @param value decoded impact-index rebuild report
+     */
+    public static void requireBusinessAssetImpactRebuildReport(JsonNode value) {
+        require(value, BUSINESS_ASSET_IMPACT_REBUILD_REPORT_SCHEMA_RESOURCE,
+                "BUSINESS_ASSET_IMPACT_REBUILD_REPORT_INVALID");
     }
 
     /**

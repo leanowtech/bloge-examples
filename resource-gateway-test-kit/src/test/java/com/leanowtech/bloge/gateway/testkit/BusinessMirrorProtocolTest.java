@@ -21,6 +21,8 @@ class BusinessMirrorProtocolTest {
         JsonNode proposalSnapshot = fixture(BusinessMirrorProtocol.PROPOSAL_FIXTURE_RESOURCE);
         JsonNode legacyProjection = fixture(
                 BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
+        JsonNode impact = fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
 
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requirePackageDraft(packageDraft));
@@ -28,11 +30,94 @@ class BusinessMirrorProtocolTest {
                 () -> BusinessMirrorProtocol.requireProposalSnapshot(proposalSnapshot));
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requireLegacyGraphPackageProjection(legacyProjection));
+        assertThatNoException().isThrownBy(
+                () -> BusinessMirrorProtocol.requireBusinessAssetImpactReport(impact));
         assertThat(packageDraft.path("businessDefinition").path("problemCode").asText())
                 .isEqualTo("TRIP.CANCELLATION.FEE");
         assertThat(proposalSnapshot.path("simulationRuntimeBinding")
                 .path("networkEgressAllowed").asBoolean()).isFalse();
         assertThat(legacyProjection.path("status").asText()).isEqualTo("BLOCKED");
+    }
+
+    @Test
+    void verifiesCompleteL0ToL3ImpactPathsAndDeepLinksOffline() throws Exception {
+        ObjectNode impact = (ObjectNode) fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+
+        var verified = BusinessMirrorImpactVerifier.verify(impact);
+
+        assertThat(verified.selectorKind()).isEqualTo("RESOURCE");
+        assertThat(verified.selectorId()).isEqualTo("trip-api");
+        assertThat(verified.status()).isEqualTo("CURRENT");
+        assertThat(verified.packageCount()).isOne();
+        assertThat(verified.sourceMatchCount()).isOne();
+        assertThat(verified.impactPathCount()).isEqualTo(4);
+        assertThat(verified.stalePackageCount()).isZero();
+    }
+
+    @Test
+    void rejectsSchemaValidDisconnectedImpactPathAndDeepLinkDrift() throws Exception {
+        ObjectNode disconnected = (ObjectNode) fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+        ObjectNode secondLink = (ObjectNode) disconnected.path("items").get(0)
+                .path("matches").get(0).path("paths").get(1)
+                .path("representativePath").get(1);
+        secondLink.set("sourceRef", disconnected.path("items").get(0)
+                .path("matches").get(0).path("sourceRef").deepCopy());
+        seal(disconnected);
+
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireBusinessAssetImpactReport(disconnected))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPACT_PATH_DISCONNECTED");
+
+        ObjectNode badLink = (ObjectNode) fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+        ((ObjectNode) badLink.path("items").get(0).path("matches").get(0))
+                .put("deepLink", "/business-mirror/?packageId=another-package"
+                        + "&compilationRevision=7&task=capabilities&assetKind=RESOURCE"
+                        + "&assetId=trip-api&assetRevision=3&assetAuthority=customer-registry");
+        seal(badLink);
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireBusinessAssetImpactReport(badLink))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPACT_DEEP_LINK_INVALID");
+    }
+
+    @Test
+    void rejectsImpactFingerprintTamperingAndFreshnessContradiction() throws Exception {
+        ObjectNode tampered = (ObjectNode) fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+        ((ObjectNode) tampered.path("selector")).put("id", "schema-valid-tamper");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireBusinessAssetImpactReport(tampered))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPACT_REPORT_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("schema-valid-tamper");
+
+        ObjectNode stale = (ObjectNode) fixture(
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+        stale.put("status", "STALE");
+        seal(stale);
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireBusinessAssetImpactReport(stale))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.BUSINESS_ASSET_IMPACT_REPORT_INVALID");
+    }
+
+    @Test
+    void validatesBoundedImpactRebuildResult() {
+        ObjectNode rebuild = JSON.createObjectNode();
+        rebuild.put("schemaVersion",
+                BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_REBUILD_REPORT_V1);
+        rebuild.put("projectedCount", 1);
+        rebuild.put("replayedCount", 0);
+        rebuild.putArray("packageIds").add("cancellation-fee-resolution");
+        rebuild.put("nextCursor", "");
+        rebuild.put("completedAt", "2026-08-14T11:00:00Z");
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireBusinessAssetImpactRebuildReport(rebuild));
     }
 
     @Test
@@ -509,6 +594,8 @@ class BusinessMirrorProtocolTest {
                 .isEqualTo("resourceGateway.domainCapabilityPackageSaveReceipt.v1");
         assertThat(BusinessMirrorProtocol.LEGACY_GRAPH_PACKAGE_PROJECTION_V1)
                 .isEqualTo("resourceGateway.legacyGraphPackageProjection.v1");
+        assertThat(BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_REPORT_V1)
+                .isEqualTo("resourceGateway.businessAssetImpactReport.v1");
         assertThat(BusinessMirrorProtocol.STORED_CAPABILITY_PROPOSAL_SIMULATION_V1)
                 .isEqualTo("resourceGateway.storedCapabilityProposalSimulation.v1");
         assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(null))

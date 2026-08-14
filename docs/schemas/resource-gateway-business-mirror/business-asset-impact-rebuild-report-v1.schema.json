@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-asset-impact-rebuild-report-v1.schema.json",
+  "title": "Resource Gateway Business Asset Impact Rebuild Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "projectedCount", "replayedCount", "packageIds", "nextCursor", "completedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.businessAssetImpactRebuildReport.v1" },
+    "projectedCount": { "type": "integer", "minimum": 0, "maximum": 200 },
+    "replayedCount": { "type": "integer", "minimum": 0, "maximum": 200 },
+    "packageIds": {
+      "type": "array", "maxItems": 200, "uniqueItems": true,
+      "items": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" }
+    },
+    "nextCursor": {
+      "type": "string", "pattern": "^(|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+    },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

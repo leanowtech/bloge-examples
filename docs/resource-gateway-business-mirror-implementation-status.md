@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-008 实现绑定与同套件 Conformance 已完成；下一步进入 BM-009 L0-L3 reverse impact
+> 当前迭代：BM-009 L0-L3 reverse impact 仓库内工程实现已完成；下一步进入 BM-010 Package Evidence/Fidelity
 >
 > 最近更新：2026-08-14
 
@@ -790,3 +790,99 @@ Test Kit 首次 `verify` 还在 552 个行为测试全绿后被 Javadoc 门禁�
 BM-008 完整关闭了“模拟通过后没有精确实现身份”“真实实现无法复用原验收分母”“fixture 与实现职责串线”“结果不可解释、不可重放、不可离线复验”的仓库内工程差距。风险加权差距由约 `9.5%` 降至约 `8.5%`。
 
 降幅仍受生产边界约束：V1 仅覆盖只读、无状态候选实现；尚无 L0-L3 reverse impact（BM-009）、Package Evidence/Fidelity 聚合（BM-010）、生产 Outcome/Regional Data Plane/HA-DR 认证（BM-011/012/013）、ANEKE 持续集成（BM-014）和真实取消费域试点（BM-015）。下一迭代进入 BM-009。
+
+## 17. Iteration 9：BM-009 L0-L3 reverse impact
+
+### 17.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 确定性传递内核 | `BusinessAssetImpactProjection` 从已封存 `BusinessAssetLinkClosure` 计算每个 exact source 到全部 downstream target 的 depth、path count、highest risk 和稳定代表路径；拒绝超过 `4096` 个 target 的单源爆炸 |
+| 权威/派生解耦 | Package 编译事务只追加 immutable facts、projection outbox command 和 `DOMAIN_CAPABILITY_PACKAGE_SNAPSHOT_COMPILED`；索引计算失败不撤销权威 Snapshot |
+| Durable projection outbox | 完整五段 Scope + Package/revision 主键；数据库时钟、owner、epoch、expiry、attempt、指数退避和第 `8` 次 quarantine；只保存稳定失败码 |
+| 跨副本 worker | 每次短事务领取一个租约；impact rows、current head、`BUSINESS_ASSET_IMPACT_CHANGED` 和 job completion 在第二个事务原子提交；重放不重复事件 |
+| 追加索引与 current head | 历史 projection 不删除；query 只 join 每个 Package current head；相同 revision/fingerprint exact replay，旧 revision 与同坐标事实漂移失败关闭 |
+| Freshness 与重建 | query 对比最新 immutable Package Snapshot，返回 `CURRENT/STALE`、有界 stale Package inventory 和 `projectedThrough`；维护 API 从 immutable facts 有界重建 |
+| 认证 API | 作者侧和 Integration 侧 impact read；独立 maintenance rebuild；selector 支持 logical kind/id + optional authority，多 revision 返回 exact matches |
+| 严格报告协议 | report/rebuild 两份 Draft 2020-12 Schema；服务端对象拒绝超页、重复 coordinate、断裂路径、错误 risk summary、Scope 漂移和 cursor/count 矛盾 |
+| 独立消费者 | Test Kit 复算 canonical fingerprint，并验证 exact Snapshot/Closure/source/path/Deep Link、排序、freshness 与 rebuild 不变量 |
+| 完整业务样例 | `trip-api-impact-stage1-v1.fixture.json` 从 L0 Resource 经 Operator、L1 Solution、L2 Workflow 到 L3 Channel，包含四个下游 path 和可回画布的准确坐标 |
+| Deep Link UX | `/business-mirror/` 解析 Package compilation 与 asset kind/id/revision/authority，直接打开 Capability Map；只对完整 exact coordinate 高亮，不把缺 revision 的 Legacy ref 当作命中 |
+| 部署与运维 | `V20260814_007`、能力探针、默认/test/staging maintenance purpose、worker 配置、查询/重建/排障/Test Kit/启停操作指南 |
+
+### 17.2 一致性和失败语义
+
+```text
+Package compilation transaction
+  -> append Readiness / Link Closure / optional Snapshot
+  -> enqueue exact impact projection coordinate
+  -> append SNAPSHOT_COMPILED event
+  -> append exact compile receipt
+  -> commit once
+
+projection worker transaction
+  -> load exact immutable compilation receipt
+  -> verify Snapshot fingerprint and Scope
+  -> compile deterministic transitive impact
+  -> append projection rows + advance current head
+  -> append IMPACT_CHANGED event
+  -> epoch-fenced job completion
+  -> commit once
+```
+
+该结构修正了实现中途识别出的一处架构漂移风险：初版让反向索引在 Package 编译事务中同步计算，虽然强一致，却会让可重建投影的数据库、容量或代码故障回滚权威 Snapshot。最终实现保留事务 outbox admission 强保证，把投影计算和权威写入拆开，并通过显式 Freshness 让 eventual consistency 对消费者可见。
+
+以下不变量已进入代码和测试：
+
+1. outbox command 与 Snapshot 在同一编译事务提交，不能出现已提交 Snapshot 却完全没有投影意图。
+2. projection failure、worker crash 或响应丢失不会修改或删除 Snapshot；lease 到期后新 epoch 可接管。
+3. 旧 owner 不能完成新 epoch；projection 已提交但 job completion 重试时，projection exact replay 且不重复 `IMPACT_CHANGED`。
+4. 相同 Package compilation revision 不能绑定不同 Snapshot 或 Closure fingerprint。
+5. report 若 `STALE` inventory、Scope、selector、path、risk、Deep Link 或 fingerprint 不闭合，服务端和 Test Kit 均失败关闭。
+6. `STALE` 结果可用于排障，但 ANEKE publish gate、破坏性变更批准和完整回归分母选择不得消费为 current fact。
+
+### 17.3 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 同步 projection 会拖垮 Package compile | 把派生视图误放进权威写事务 | 改为 transaction outbox + leased worker；Freshness/rebuild 保持索引可重建 |
+| 默认演示 rebuild 返回 403 | endpoint 和 capability 已存在，但默认 purpose allowlist 未登记 maintenance | default/test/staging 明确加入 `BUSINESS_MIRROR_MAINTENANCE`；指南按真实启停脚本操作 |
+| 前端行为测试通过但发布构建失败 | TypeScript `BusinessMirrorAssetRef` 漏了 wire protocol 已要求的 `authority`，映射返回类型也落后 | 修正领域类型和 capability ref projection；保留 `tsc --noEmit` 发布门禁 |
+| Deep Link 可能高亮同 id 的旧逻辑 ref | UI 只比较 kind/id，忽略 revision/authority | exact 四元坐标匹配；不完整 Legacy ref 与精确目标并列显示，只高亮后者 |
+| PostgreSQL 竞争测试出现 NPE | 数据库正确返回一份 lease + 一份空结果，测试却用拒绝 null 的 `List.of` 收集 | 使用允许空占位的测试集合，继续严格断言只有一个 replica 获得租约 |
+| worker 控制库不可用时会继续空转当前 batch | drain 只把 `NO_WORK` 当停止信号 | `CONTROL_UNAVAILABLE` 立即结束当前批次，避免一次调度放大数据库故障 |
+| 完整 capability 端点全集断言落后 | 新 API 已进入 capability payload，但固定全集仍停在 BM-008 | 把 impact read/integration read/rebuild 三个端点纳入 exact-set 门禁，防止服务声明与消费者预期漂移 |
+| 正向 observation 集成夹具在整库压力下偶发 quarantine | 夹具把端到端命令计时与供应方最大响应都压到 `100 ms`，把数据库准备时间误算成供应方超时 | 正向路径改为同一租约内的 `800 ms` confirmation window 与 `400 ms` provider budget；专用 `100 ms` timeout 测试继续固定严格失败语义 |
+| 260 节点真实浏览器用例在整库尾段被通用时限中断 | 该用例串行覆盖服务端分页、键盘窗口、四维筛选、清空、移动视口，复杂度显著高于普通 DOM 用例 | 仅该方法使用 `150 s` 上限；其余真实浏览器用例继续执行类级 `90 s` 门禁，避免整体放宽掩盖性能回退 |
+| Test Kit 语义测试全绿但发布失败 | 新公共 verifier record 与 rebuild helper 缺少完整 Javadoc 参数契约 | 补齐 13 个公共 API 文档项并保留 `failOnWarnings`，保证独立消费者的 DX 与二进制产物同时达标 |
+
+### 17.4 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| 服务端 impact 聚焦门禁 | `37/37` 通过 | 传递、上限、不变量、H2 current/stale/replay/tamper、outbox lease/retry/quarantine、service/event、worker、Controller、Spring HTTP、maintenance rebuild 和 capability probe |
+| 原生 PostgreSQL 14 | `1/1` 通过 | V002 + V007、`fsync=on`、`synchronous_commit=on`、两个独立 DataSource 竞争唯一 lease、projection/head/job completion 与查询 |
+| Test Kit Business Mirror | `30/30` 通过 | 两份 strict Schema、完整 L0-L3 fixture、fingerprint、path/Deep Link/freshness/tamper/rebuild 语义 |
+| Frontend production build | 通过 | i18n `34`、UX `40`、host `13`、TypeScript、Vite `1869` modules 和 route chunk budget 全绿；Business Mirror startup closure `171.58 KiB` |
+| 实机 Deep Link 视觉检查 | 通过 | 完整演示 JAR 在真实浏览器直接打开 exact impact URL；桌面唯一高亮 `trip-api / RESOURCE r3 / customer-registry / compilation r7`，390px 文档宽度等于视口、控制台零错误、页面无横向滚动 |
+| Resource Gateway 完整发布门禁 | `6039` 项，`0` failure，`0` error，`13` skipped | 干净编译、全部 H2/原生 PostgreSQL/事务/认证/协议/真实浏览器回归和 Spring Boot JAR 打包 |
+| Test Kit 完整发布门禁 | `556/556` 通过 | `134` 个主源码、`89` 个测试源码、`38` 份 Business Mirror 资源、shaded JAR 和零警告公共 API Javadoc |
+
+两项完整结果均来自 `clean verify`，聚焦结果只用于快速定位，不能替代发布门禁。Test Kit 的首次完整运行因新增公共 API Javadoc 缺项被门禁拒绝；补齐文档后从干净目录重跑通过，没有关闭或降低该门禁。
+
+### 17.5 架构漂移审计
+
+1. 反向索引只从 immutable `BusinessAssetLinkClosure` 构建，不解析 DSL、不读取 mutable Registry、不成为 L0-L3 新 Authority。
+2. Graph edge 继续表达执行依赖，Business Asset Link 继续表达业务关系；没有把两类边混成一个万能 DAG。
+3. report 只返回 exact refs、路径结构、risk summary 和 Deep Link，不复制 Package、Fixture、input/output 或业务 payload。
+4. Resource Gateway 负责 impact projection 和 authoring context；ANEKE 继续拥有 Registry、publish gate、breaking migration 和治理批准。
+5. Deep Link 只提供定位，不绕过企业 Scope 或授权检查。
+6. H2 runtime DDL 只服务示例启动；正式 PostgreSQL migration 与原生认证独立存在，本地通过不冒充 HA/DR。
+
+### 17.6 差距复评
+
+BM-009 关闭了“L0-L3 关系只有正向 Closure、无法从变更反查下游业务资产”“索引落后不可见”“影响结论没有 exact Snapshot/Closure 证据”“治理告警不能回到画布上下文”和“独立消费者无法验证报告”的仓库内工程差距。
+
+风险加权差距由约 `8.5%` 降至约 `7.5%`。降幅保持克制：尚缺 Package Evidence/Fidelity 聚合与 drift task（BM-010）、生产 Outcome Connector（BM-011）、Regional Data Plane（BM-012）、PostgreSQL HA/kill/partition/upgrade/backup certification（BM-013）、ANEKE protocol 1.1 持续集成（BM-014）和真实取消费域试点（BM-015）。当前 PostgreSQL 证据只证明单进程原生数据库的双连接竞争，不证明客户生产拓扑。
+
+下一迭代进入 BM-010：建立 Package Evidence Index 与多维 Portfolio Fidelity projection。每个结论必须回到 exact source；freshness、confidence、abstention 和 denominator 分开显示，禁止用单一总分掩盖未知范围。

@@ -316,6 +316,20 @@ binding closure, report evidence reference, and detached-seal material identity.
 the correctness of undeclared production semantics remain deployment-owned. See the
 [Implementation Conformance guide](../docs/resource-gateway-business-mirror-implementation-conformance-guide.md).
 
+L0-L3 Business Asset impact reports and bounded rebuild receipts can be verified offline:
+
+```java
+BusinessMirrorProtocol.requireBusinessAssetImpactReport(impactReport);
+BusinessMirrorProtocol.requireBusinessAssetImpactRebuildReport(rebuildReport);
+```
+
+The verifier checks canonical fingerprint, exact Snapshot/Closure/source coordinates, complete
+ordered impact paths, scope closure, deterministic risk/depth/path-count summaries, Deep Link
+coordinates, freshness contradictions, and rebuild count/cursor consistency. The complete
+Resource-to-Channel fixture is exposed as
+`BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE`. See the
+[Business Asset Impact guide](../docs/resource-gateway-business-asset-impact-index-guide.md).
+
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope
 is not part of this method's input:

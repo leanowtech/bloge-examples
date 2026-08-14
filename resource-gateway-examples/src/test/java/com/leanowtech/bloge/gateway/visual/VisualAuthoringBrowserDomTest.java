@@ -3047,6 +3047,7 @@ class VisualAuthoringBrowserDomTest {
     }
 
     @Test
+    @Timeout(150)
     void composerConnectabilityHandlesLargeTargetWindowInRealBrowser()
             throws JsonProcessingException {
         driver = newChromeDriverOrSkip();

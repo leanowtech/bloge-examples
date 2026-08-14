@@ -26,6 +26,8 @@ final class BusinessMirrorSchemaValidator {
             "business-mirror-common-v1.schema.json",
             "business-asset-link-v1.schema.json",
             "business-asset-link-closure-v1.schema.json",
+            "business-asset-impact-report-v1.schema.json",
+            "business-asset-impact-rebuild-report-v1.schema.json",
             "domain-capability-package-draft-v1.schema.json",
             "stored-domain-capability-package-draft-v1.schema.json",
             "domain-capability-package-save-receipt-v1.schema.json",

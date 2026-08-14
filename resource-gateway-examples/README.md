@@ -162,6 +162,10 @@ capability signals for binding API versus customer runtime readiness. The
 covers target-only plan derivation, exact same-suite execution, fixture-to-real behavior
 fingerprints, signed durable reports, `CONFORMANT` Proposal state, PostgreSQL fencing, offline
 verification, and failure recovery. The
+[Business Asset Impact guide](../docs/resource-gateway-business-asset-impact-index-guide.md)
+covers deterministic L0-L3 transitive impact, transactional projection outbox, cross-replica
+worker leases, `CURRENT/STALE` freshness, bounded rebuild, exact Deep Links, PostgreSQL deployment,
+and Test Kit offline verification. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

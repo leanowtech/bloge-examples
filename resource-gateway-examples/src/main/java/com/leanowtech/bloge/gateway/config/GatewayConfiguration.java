@@ -25,6 +25,7 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPac
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveCoordinator;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationFactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabaseBusinessAssetImpactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPackageDependencyAdapter;
@@ -35,6 +36,9 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependencyAuthorityAdapter;
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactProjectionWorker;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
@@ -408,7 +412,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
@@ -794,6 +798,34 @@ public class GatewayConfiguration {
         return new DatabasePackageCompilationFactRepository(jdbc, objectMapper);
     }
 
+    /** Rebuildable reverse index from exact Business Asset refs to current Package Snapshots. */
+    @Bean
+    @ConditionalOnMissingBean
+    public BusinessAssetImpactRepository businessAssetImpactRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseBusinessAssetImpactRepository(jdbc, objectMapper);
+    }
+
+    /** Authenticated impact query, durable projection admission, and rebuild boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public BusinessAssetImpactService businessAssetImpactService(
+            BusinessAssetImpactRepository impacts,
+            PackageCompilationFactRepository facts,
+            IntegrationChangeEventOutbox outbox,
+            ObjectMapper objectMapper) {
+        return new BusinessAssetImpactService(
+                impacts, facts, outbox, objectMapper, Clock.systemUTC());
+    }
+
+    /** Database-leased asynchronous worker for the Business Asset projection outbox. */
+    @Bean
+    @ConditionalOnMissingBean
+    public BusinessAssetImpactProjectionWorker businessAssetImpactProjectionWorker(
+            BusinessAssetImpactService service) {
+        return new BusinessAssetImpactProjectionWorker(service);
+    }
+
     /** Restart-safe exact-response journal for Package compile commands. */
     @Bean
     @ConditionalOnMissingBean
@@ -809,9 +841,10 @@ public class GatewayConfiguration {
             PackageCompilationReceiptRepository receipts,
             PackageCompilationFactRepository facts,
             PackageCompiler compiler,
+            BusinessAssetImpactService impacts,
             ObjectMapper objectMapper) {
         return new PackageCompilationCoordinator(
-                receipts, facts, compiler, objectMapper, Clock.systemUTC());
+                receipts, facts, compiler, impacts, objectMapper, Clock.systemUTC());
     }
 
     /** Authenticated Package compilation command/query boundary. */

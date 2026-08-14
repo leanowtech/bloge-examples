@@ -92,9 +92,12 @@ authenticate + exact source read
   -> reserve compilation revision
   -> compile under Authority freeze/fence
   -> append Readiness + Link Closure + optional Snapshot
+  -> when Snapshot exists, append impact projection command + Snapshot-compiled change event
   -> append exact compile receipt
   -> commit once
 ```
+
+反向影响索引不在权威编译事务内计算。编译事务只追加 projection outbox command；数据库租约 worker 在提交后读取 immutable compilation facts，构建可重建索引，并将 impact rows、current head、`BUSINESS_ASSET_IMPACT_CHANGED` 和 outbox completion 原子提交。投影失败不会撤销 Package Snapshot，查询通过 `CURRENT/STALE` 明确暴露追平状态。详见 [Business Asset Impact 指南](resource-gateway-business-asset-impact-index-guide.md)。
 
 ## 5. 依赖状态与 Assurance
 
@@ -179,6 +182,7 @@ BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceiptJson);
 - 七个内置 Graph 的 DSL/Contract/Operator/Resource/Test Suite 权威解析；
 - `GRAPH_DRAFT` → immutable root `CAPABILITY`/`CAPABILITY_CLOSURE` 与 `CONTRACT` exact materialization；
 - 七个内置 Graph 的 fail-closed Legacy Package preview、gap inventory 和 durable idempotent import。
+- L0-L3 transitive impact、事务 projection outbox、跨副本租约 worker、freshness、重建和 exact Deep Link。
 
 尚不可用：
 

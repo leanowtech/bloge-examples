@@ -137,6 +137,21 @@ describe('Business Mirror Workspace', () => {
     expect(button('导入能力包').getAttribute('type')).toBe('button');
   });
 
+  it('opens an impact deep link on Capability Map and highlights the exact target', async () => {
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy'
+      + '&compilationRevision=7&task=capabilities&assetKind=RESOURCE&assetId=trip-api'
+      + '&assetRevision=3&assetAuthority=customer-registry');
+
+    await render();
+
+    expect(document.body.textContent).toContain('L0-L3 capability map');
+    expect(document.body.textContent).toContain('Impact target located');
+    expect(document.body.textContent).toContain('Package compilation r7');
+    const focused = document.querySelector('[data-focused-asset="true"]');
+    expect(focused?.textContent).toContain('trip-api');
+    expect(focused?.closest('.capability-layer')?.textContent).toContain('L0 Foundation');
+  });
+
   async function render() {
     await act(async () => root?.render(<I18nProvider><BusinessMirrorWorkspace /></I18nProvider>));
     await act(async () => Promise.resolve());

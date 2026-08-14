@@ -650,6 +650,26 @@
   margin: 24px 0 18px;
 }
 
+.business-mirror-focus-coordinate {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border-left: 3px solid #1769aa;
+  background: #eef6fb;
+  color: #214d70;
+}
+
+.business-mirror-focus-coordinate span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.business-mirror-focus-coordinate small {
+  overflow-wrap: anywhere;
+}
+
 .capability-layer {
   position: relative;
   min-width: 0;
@@ -712,6 +732,14 @@
   border-color: #d3b47d;
   background: #fff9ed;
   color: #775009;
+}
+
+.capability-layer-assets > div.focused {
+  border-color: #0b63a5;
+  outline: 3px solid #b9daf1;
+  background: #e5f3fc;
+  color: #123f61;
+  font-weight: 800;
 }
 
 .capability-layer-arrow {

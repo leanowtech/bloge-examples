@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredDomainCapabil
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationFactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceipt;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationProjection;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationResult;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompileCommand;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
@@ -26,6 +27,7 @@ public final class PackageCompilationCoordinator {
     private final PackageCompilationReceiptRepository receipts;
     private final PackageCompilationFactRepository facts;
     private final PackageCompiler compiler;
+    private final PackageCompilationProjection projection;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -35,9 +37,20 @@ public final class PackageCompilationCoordinator {
             PackageCompiler compiler,
             ObjectMapper mapper,
             Clock clock) {
+        this(receipts, facts, compiler, PackageCompilationProjection.none(), mapper, clock);
+    }
+
+    public PackageCompilationCoordinator(
+            PackageCompilationReceiptRepository receipts,
+            PackageCompilationFactRepository facts,
+            PackageCompiler compiler,
+            PackageCompilationProjection projection,
+            ObjectMapper mapper,
+            Clock clock) {
         this.receipts = Objects.requireNonNull(receipts, "receipts");
         this.facts = Objects.requireNonNull(facts, "facts");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
+        this.projection = Objects.requireNonNull(projection, "projection");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -73,6 +86,9 @@ public final class PackageCompilationCoordinator {
             PackageCompilationReceipt receipt = PackageCompilationReceipt.completed(
                     requestFingerprint, compiler.compile(source, revision, compiledAt));
             facts.append(command.scope(), receipt);
+            if (receipt.snapshot() != null) {
+                projection.enqueue(command.scope(), receipt);
+            }
             receipts.save(command.scope(), key, receipt);
             return new Outcome(receipt, false);
         });

@@ -16,6 +16,8 @@ import java.util.PriorityQueue;
 public final class BusinessAssetImpactProjection {
     /** Maximum transitive source/target entries admitted for one Package snapshot. */
     public static final int MAXIMUM_IMPACT_ENTRIES = 100_000;
+    /** Maximum affected assets exposed for one source before a paged v2 protocol is required. */
+    public static final int MAXIMUM_SOURCE_IMPACT_ENTRIES = 4_096;
     /** Maximum representative path depth admitted by the L0-L3 projection. */
     public static final int MAXIMUM_PATH_DEPTH = 64;
 
@@ -75,6 +77,9 @@ public final class BusinessAssetImpactProjection {
                             entry.getValue().pathCount(), entry.getValue().highestRisk(),
                             entry.getValue().representativePath()))
                     .toList();
+            if (paths.size() > MAXIMUM_SOURCE_IMPACT_ENTRIES) {
+                throw new ProjectionLimitException("BUSINESS_ASSET_IMPACT_SOURCE_LIMIT_EXCEEDED");
+            }
             entries += paths.size();
             if (entries > MAXIMUM_IMPACT_ENTRIES) {
                 throw new ProjectionLimitException("BUSINESS_ASSET_IMPACT_ENTRY_LIMIT_EXCEEDED");

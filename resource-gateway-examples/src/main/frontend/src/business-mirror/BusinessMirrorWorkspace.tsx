@@ -50,6 +50,14 @@ type CommandState =
   | { kind: 'success'; messageId: MessageId; values: Record<string, string | number> }
   | { kind: 'error'; detail: string };
 
+interface BusinessAssetFocus {
+  kind: string;
+  id: string;
+  revision: number;
+  authority: string;
+  compilationRevision: number;
+}
+
 const TASKS: Array<{
   id: BusinessMirrorTaskId;
   label: MessageId;
@@ -84,6 +92,8 @@ export default function BusinessMirrorWorkspace() {
     new URLSearchParams(window.location.search).get('packageId') ?? '');
   const [activeTask, setActiveTask] = useState<BusinessMirrorTaskId>(() =>
     parseTask(new URLSearchParams(window.location.search).get('task')));
+  const [assetFocus, setAssetFocus] = useState<BusinessAssetFocus | null>(() =>
+    parseAssetFocus(new URLSearchParams(window.location.search)));
   const [editor, setEditor] = useState<BusinessMirrorPackageDraft | null>(null);
   const [compilation, setCompilation] = useState<BusinessMirrorCompilationReceipt | null>(null);
   const [command, setCommand] = useState<CommandState>({ kind: 'idle' });
@@ -153,6 +163,7 @@ export default function BusinessMirrorWorkspace() {
         onOpen={(item) => {
           setSelectedPackageId(item.packageId);
           setActiveTask('problem');
+          setAssetFocus(null);
           replaceWorkspaceQuery(item.packageId, 'problem');
         }}
       />
@@ -168,6 +179,7 @@ export default function BusinessMirrorWorkspace() {
 
   const selectTask = (task: BusinessMirrorTaskId) => {
     setActiveTask(task);
+    setAssetFocus(null);
     replaceWorkspaceQuery(selected.packageId, task);
   };
   const upsertStored = (stored: StoredBusinessMirrorPackage) => {
@@ -242,6 +254,7 @@ export default function BusinessMirrorWorkspace() {
           className="business-mirror-back"
           onClick={() => {
             setSelectedPackageId('');
+            setAssetFocus(null);
             replaceWorkspaceQuery('', 'problem');
           }}
         >
@@ -319,6 +332,7 @@ export default function BusinessMirrorWorkspace() {
             draft={editor}
             gaps={gaps}
             editable={selected.stored !== null}
+            assetFocus={assetFocus}
             onDraft={setEditor}
           />
         </section>
@@ -505,6 +519,7 @@ function TaskSurface({
   draft,
   gaps,
   editable,
+  assetFocus,
   onDraft,
 }: {
   task: BusinessMirrorTaskId;
@@ -512,13 +527,16 @@ function TaskSurface({
   draft: BusinessMirrorPackageDraft;
   gaps: BusinessMirrorGap[];
   editable: boolean;
+  assetFocus: BusinessAssetFocus | null;
   onDraft(draft: BusinessMirrorPackageDraft): void;
 }) {
   if (task === 'problem') {
     return <ProblemTask draft={draft} editable={editable} onDraft={onDraft} />;
   }
   if (task === 'boundary') return <BoundaryTask draft={draft} gaps={gaps} />;
-  if (task === 'capabilities') return <CapabilityTask item={item} draft={draft} />;
+  if (task === 'capabilities') {
+    return <CapabilityTask item={item} draft={draft} focus={assetFocus} />;
+  }
   if (task === 'scenarios') return <ScenarioTask item={item} draft={draft} />;
   if (task === 'rehearsal') return <RehearsalTask draft={draft} />;
   return <CalibrateTask draft={draft} />;
@@ -614,9 +632,29 @@ function BoundaryTask({ draft, gaps }: { draft: BusinessMirrorPackageDraft; gaps
   );
 }
 
-function CapabilityTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draft: BusinessMirrorPackageDraft }) {
+function CapabilityTask({
+  item,
+  draft,
+  focus,
+}: {
+  item: BusinessMirrorPortfolioItem;
+  draft: BusinessMirrorPackageDraft;
+  focus: BusinessAssetFocus | null;
+}) {
   const { m } = useI18n();
-  const layers = businessMirrorCapabilityLayers(item.projection, draft);
+  const layers = businessMirrorCapabilityLayers(item.projection, draft).map((layer) => ({
+    ...layer,
+    refs: [...layer.refs],
+  }));
+  if (focus && !layers.some((layer) => layer.refs.some((ref) => isExactAssetFocus(ref, focus)))) {
+    layers.find((layer) => layer.id === layerForAssetKind(focus.kind))?.refs.push({
+      id: focus.id,
+      kind: focus.kind,
+      missing: false,
+      revision: focus.revision,
+      authority: focus.authority,
+    });
+  }
   const labels: Record<string, MessageId> = {
     L0: 'businessMirror.capability.l0', L1: 'businessMirror.capability.l1',
     L2: 'businessMirror.capability.l2', L3: 'businessMirror.capability.l3',
@@ -624,13 +662,35 @@ function CapabilityTask({ item, draft }: { item: BusinessMirrorPortfolioItem; dr
   return (
     <>
       <TaskHeading heading="businessMirror.capability.title" detail="businessMirror.capability.detail" />
+      {focus && (
+        <div className="business-mirror-focus-coordinate" role="status">
+          <Network aria-hidden="true" size={18} />
+          <span>
+            <strong>{m('businessMirror.capability.focus')}</strong>
+            <small>{m('businessMirror.capability.focusCoordinate', {
+              kind: focus.kind,
+              revision: focus.revision,
+              authority: focus.authority,
+              compilationRevision: focus.compilationRevision,
+            })}</small>
+          </span>
+        </div>
+      )}
       <div className="business-mirror-capability-map">
         {layers.map((layer, index) => (
           <div key={layer.id} className="capability-layer">
             <header><span>{layer.id}</span><strong>{m(labels[layer.id])}</strong></header>
             <div className="capability-layer-assets">
               {layer.refs.map((ref, refIndex) => (
-                <div key={`${ref.kind}:${ref.id}:${refIndex}`} className={ref.missing ? 'missing' : ''}>
+                <div
+                  key={`${ref.kind}:${ref.id}:${refIndex}`}
+                  className={[
+                    ref.missing ? 'missing' : '',
+                    focus && isExactAssetFocus(ref, focus) ? 'focused' : '',
+                  ].filter(Boolean).join(' ')}
+                  data-focused-asset={focus && isExactAssetFocus(ref, focus)
+                    ? 'true' : undefined}
+                >
                   {ref.missing ? <CircleAlert aria-hidden="true" size={16} /> : <Boxes aria-hidden="true" size={16} />}
                   <span>{ref.missing ? m('businessMirror.capability.missing', { kind: ref.kind }) : ref.id}</span>
                 </div>
@@ -770,6 +830,32 @@ function parseTask(value: string | null): BusinessMirrorTaskId {
   return TASKS.some((task) => task.id === value) ? value as BusinessMirrorTaskId : 'problem';
 }
 
+function parseAssetFocus(params: URLSearchParams): BusinessAssetFocus | null {
+  const kind = params.get('assetKind')?.trim() ?? '';
+  const id = params.get('assetId')?.trim() ?? '';
+  const authority = params.get('assetAuthority')?.trim() ?? '';
+  const revision = Number(params.get('assetRevision'));
+  const compilationRevision = Number(params.get('compilationRevision'));
+  if (!kind || !id || !authority || !Number.isSafeInteger(revision) || revision < 1
+      || !Number.isSafeInteger(compilationRevision) || compilationRevision < 1) return null;
+  return { kind, id, authority, revision, compilationRevision };
+}
+
+function layerForAssetKind(kind: string): 'L0' | 'L1' | 'L2' | 'L3' {
+  if (['RESOURCE', 'OPERATOR', 'BUILT_IN_FUNCTION'].includes(kind)) return 'L0';
+  if (['FEATURE', 'SCENARIO', 'SOLUTION'].includes(kind)) return 'L1';
+  if (['SOP', 'AGENT', 'WORKFLOW'].includes(kind)) return 'L2';
+  return 'L3';
+}
+
+function isExactAssetFocus(
+  ref: { kind: string; id: string; revision?: number; authority?: string },
+  focus: BusinessAssetFocus,
+): boolean {
+  return ref.kind === focus.kind && ref.id === focus.id
+    && ref.revision === focus.revision && ref.authority === focus.authority;
+}
+
 function replaceWorkspaceQuery(packageId: string, task: BusinessMirrorTaskId): void {
   const params = new URLSearchParams(window.location.search);
   if (packageId) {
@@ -779,6 +865,8 @@ function replaceWorkspaceQuery(packageId: string, task: BusinessMirrorTaskId): v
     params.delete('packageId');
     params.delete('task');
   }
+  ['compilationRevision', 'assetKind', 'assetId', 'assetRevision', 'assetAuthority']
+    .forEach((key) => params.delete(key));
   const search = params.toString();
   window.history.replaceState({}, '', `${window.location.pathname}${search ? `?${search}` : ''}`);
 }
@@ -789,6 +877,8 @@ function workspaceHref(route: string): string {
   params.set('workspaceRoute', route);
   params.delete('packageId');
   params.delete('task');
+  ['compilationRevision', 'assetKind', 'assetId', 'assetRevision', 'assetAuthority']
+    .forEach((key) => params.delete(key));
   return `?${params.toString()}`;
 }
 

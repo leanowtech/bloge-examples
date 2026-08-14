@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-asset-impact-report-v1.schema.json",
+  "title": "Resource Gateway Business Asset Impact Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scope", "selector", "status", "stalePackageIds",
+    "stalePackageIdsTruncated", "items", "nextCursor", "projectedThrough", "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.businessAssetImpactReport.v1" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "selector": { "$ref": "#/$defs/selector" },
+    "status": { "enum": ["CURRENT", "STALE"] },
+    "stalePackageIds": {
+      "type": "array", "maxItems": 200, "uniqueItems": true,
+      "items": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" }
+    },
+    "stalePackageIdsTruncated": { "type": "boolean" },
+    "items": {
+      "type": "array", "maxItems": 200,
+      "items": { "$ref": "#/$defs/packageImpact" }
+    },
+    "nextCursor": {
+      "type": "string", "pattern": "^(|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+    },
+    "projectedThrough": {
+      "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "status": { "const": "CURRENT" },
+        "stalePackageIds": { "maxItems": 0 },
+        "stalePackageIdsTruncated": { "const": false }
+      }
+    },
+    {
+      "properties": { "status": { "const": "STALE" } },
+      "anyOf": [
+        { "properties": { "stalePackageIds": { "minItems": 1 } } },
+        { "properties": { "stalePackageIdsTruncated": { "const": true } } }
+      ]
+    }
+  ],
+  "$defs": {
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "authority"],
+      "properties": {
+        "kind": {
+          "enum": ["RESOURCE", "OPERATOR", "BUILT_IN_FUNCTION", "FEATURE", "SCENARIO",
+            "SOLUTION", "SOP", "AGENT", "WORKFLOW", "CHANNEL_APPLICATION"]
+        },
+        "id": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "authority": {
+          "type": "string", "pattern": "^(|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+        }
+      }
+    },
+    "exactPackageRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } } }
+      ]
+    },
+    "exactClosureRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "BUSINESS_ASSET_LINK_CLOSURE" } } }
+      ]
+    },
+    "deepLink": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^/business-mirror/\\?packageId=[^\\r\\n]+&compilationRevision=[1-9][0-9]*&task=capabilities(?:&[^\\r\\n]+)?$"
+    },
+    "impactPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "impactedRef", "depth", "pathCount", "highestRisk", "representativePath", "deepLink"
+      ],
+      "properties": {
+        "impactedRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessAssetRef" },
+        "depth": { "type": "integer", "minimum": 1, "maximum": 64 },
+        "pathCount": { "type": "integer", "minimum": 1 },
+        "highestRisk": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "representativePath": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": { "$ref": "business-asset-link-v1.schema.json" }
+        },
+        "deepLink": { "$ref": "#/$defs/deepLink" }
+      }
+    },
+    "sourceMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceRef", "paths", "deepLink"],
+      "properties": {
+        "sourceRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessAssetRef" },
+        "paths": {
+          "type": "array", "maxItems": 4096,
+          "items": { "$ref": "#/$defs/impactPath" }
+        },
+        "deepLink": { "$ref": "#/$defs/deepLink" }
+      }
+    },
+    "packageImpact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope", "packageId", "compilationRevision", "packageSnapshotRef",
+        "businessAssetLinkClosureRef", "matches", "deepLink"
+      ],
+      "properties": {
+        "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+        "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "compilationRevision": { "type": "integer", "minimum": 1 },
+        "packageSnapshotRef": { "$ref": "#/$defs/exactPackageRef" },
+        "businessAssetLinkClosureRef": { "$ref": "#/$defs/exactClosureRef" },
+        "matches": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": { "$ref": "#/$defs/sourceMatch" }
+        },
+        "deepLink": { "$ref": "#/$defs/deepLink" }
+      }
+    }
+  }
+}
