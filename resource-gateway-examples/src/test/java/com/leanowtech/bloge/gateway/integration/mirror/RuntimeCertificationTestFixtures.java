@@ -46,6 +46,13 @@ final class RuntimeCertificationTestFixtures {
 
     RuntimeCertificationReport report(
             List<RuntimeCertificationReport.ScenarioResult> results) {
+        return report(results, ref("RUNTIME_CERTIFICATION_AUTHORIZATION_CONSUMPTION",
+                "runtime-authorization:sg:3", 1, 'e'));
+    }
+
+    RuntimeCertificationReport report(
+            List<RuntimeCertificationReport.ScenarioResult> results,
+            MirrorArtifactRef authorizationConsumptionRef) {
         long writeAttempts = results.stream().mapToLong(
                 RuntimeCertificationReport.ScenarioResult
                         ::externalBusinessWriteAttemptCount).sum();
@@ -60,8 +67,7 @@ final class RuntimeCertificationTestFixtures {
                 : RuntimeCertificationReport.Verdict.BLOCKED;
         return integrity.sealReport(new RuntimeCertificationIntegrity.ReportMaterial(
                 "runtime-report:sg:3", 5, manifest.artifactRef(), authorization.artifactRef(),
-                ref("RUNTIME_CERTIFICATION_AUTHORIZATION_CONSUMPTION",
-                        "runtime-authorization:sg:3", 1, 'e'),
+                authorizationConsumptionRef,
                 regional.certification.artifactRef(), regional.isolationV2.artifactRef(),
                 regional.isolationV2.attestation().artifactRef(), scope, manifest.region(),
                 deployment,

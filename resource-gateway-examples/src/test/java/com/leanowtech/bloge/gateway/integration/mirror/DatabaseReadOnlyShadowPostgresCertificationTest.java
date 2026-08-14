@@ -197,6 +197,68 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
     }
 
     @Test
+    void runtimeCertificationMigrationConsumesOneAuthorizationAcrossReplicas()
+            throws Exception {
+        DataSource firstSource = postgres.getPostgresDatabase();
+        DataSource secondSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260815_003__runtime_certification_journal.sql"))
+                .execute(firstSource);
+        Replica firstReplica = replica(firstSource);
+        Replica secondReplica = replica(secondSource);
+        var first = new DatabaseRuntimeCertificationExecutionJournal(
+                firstReplica.jdbc(), mapper, firstReplica.transactions());
+        var second = new DatabaseRuntimeCertificationExecutionJournal(
+                secondReplica.jdbc(), mapper, secondReplica.transactions());
+        first.init();
+        second.init();
+        RuntimeCertificationTestFixtures fixtures =
+                new RuntimeCertificationTestFixtures();
+        var identity = new RuntimeCertificationExecutionJournal.RunIdentity(
+                fixtures.report.reportId(), fixtures.manifest.artifactRef(),
+                fixtures.authorization.artifactRef(),
+                fixtures.authorization.nonceFingerprint(),
+                fixtures.manifest.environmentFingerprint());
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        List<RuntimeCertificationExecutionJournal.Claim> claims;
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<RuntimeCertificationExecutionJournal.Claim> left = executor.submit(() -> {
+                awaitBarrier(start);
+                return first.claimOrResume(identity, "runtime-replica-a",
+                        Duration.ofMinutes(30), Instant.EPOCH);
+            });
+            Future<RuntimeCertificationExecutionJournal.Claim> right = executor.submit(() -> {
+                awaitBarrier(start);
+                return second.claimOrResume(identity, "runtime-replica-b",
+                        Duration.ofMinutes(30), Instant.MAX);
+            });
+            claims = List.of(awaitFuture(left), awaitFuture(right));
+        }
+
+        var acquired = claims.stream().filter(value -> value.status()
+                == RuntimeCertificationExecutionJournal.ClaimStatus.ACQUIRED).toList();
+        assertThat(acquired).singleElement();
+        assertThat(claims).filteredOn(value -> value.status()
+                        == RuntimeCertificationExecutionJournal.ClaimStatus.CONFLICT)
+                .singleElement();
+        var owner = acquired.getFirst().lease().ownerId().equals("runtime-replica-a")
+                ? first : second;
+        for (RuntimeCertificationReport.ScenarioResult result : fixtures.results(null)) {
+            owner.appendScenario(acquired.getFirst().lease(), result);
+        }
+        RuntimeCertificationReport report = fixtures.report(
+                fixtures.results(null), acquired.getFirst().authorizationConsumptionRef());
+        owner.complete(acquired.getFirst().lease(), report);
+
+        var replay = second.claimOrResume(identity, "runtime-replica-c",
+                Duration.ofMinutes(30), Instant.EPOCH);
+        assertThat(replay.status()).isEqualTo(
+                RuntimeCertificationExecutionJournal.ClaimStatus.COMPLETED);
+        assertThat(replay.completedReport()).isEqualTo(report);
+    }
+
+    @Test
     void reservesOneSamplingOrdinalAcrossConnections()
             throws Exception {
         CyclicBarrier initializationRace =
