@@ -211,6 +211,9 @@ public record RuntimeCertificationReport(
      * @param attemptId stable Adapter attempt identity
      * @param status terminal result
      * @param startedAt scenario start
+     * @param faultAppliedAt independently observed fault application time
+     * @param faultRemovedAt independently observed fault removal time
+     * @param recoveryObservedAt independently observed recovery boundary time
      * @param completedAt scenario completion
      * @param faultApplied whether the requested failure was independently observed
      * @param recoveryObserved whether recovery reached its declared terminal boundary
@@ -227,6 +230,9 @@ public record RuntimeCertificationReport(
             String attemptId,
             ScenarioStatus status,
             Instant startedAt,
+            Instant faultAppliedAt,
+            Instant faultRemovedAt,
+            Instant recoveryObservedAt,
             Instant completedAt,
             boolean faultApplied,
             boolean recoveryObserved,
@@ -249,6 +255,20 @@ public record RuntimeCertificationReport(
                     || externalBusinessWriteAttemptCount < 0 || writeEscapeCount < 0) {
                 throw new IllegalArgumentException("runtime scenario observation is invalid");
             }
+            if (faultApplied != (faultAppliedAt != null)
+                    || recoveryObserved != (recoveryObservedAt != null)
+                    || faultRemovedAt != null && faultAppliedAt == null
+                    || recoveryObservedAt != null && faultRemovedAt == null
+                    || faultAppliedAt != null && (faultAppliedAt.isBefore(startedAt)
+                    || faultAppliedAt.isAfter(completedAt))
+                    || faultRemovedAt != null && (faultRemovedAt.isBefore(faultAppliedAt)
+                    || faultRemovedAt.isAfter(completedAt))
+                    || recoveryObservedAt != null
+                    && (recoveryObservedAt.isBefore(faultRemovedAt)
+                    || recoveryObservedAt.isAfter(completedAt))) {
+                throw new IllegalArgumentException(
+                        "runtime scenario fault/recovery timeline is invalid");
+            }
             commandTranscriptFingerprint = RegionalDataPlaneDeploymentContract.fingerprint(
                     commandTranscriptFingerprint, "commandTranscriptFingerprint");
             observationFingerprint = RegionalDataPlaneDeploymentContract.fingerprint(
@@ -264,6 +284,7 @@ public record RuntimeCertificationReport(
                     .allMatch(value -> value.status() == InvariantStatus.PASSED);
             if (status == ScenarioStatus.PASSED
                     && (!faultApplied || !recoveryObserved || !allPassed
+                    || faultRemovedAt == null
                     || externalBusinessWriteAttemptCount != 0 || writeEscapeCount != 0)) {
                 throw new IllegalArgumentException(
                         "passed runtime scenario lacks complete zero-write evidence");

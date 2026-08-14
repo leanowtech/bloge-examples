@@ -108,6 +108,20 @@ class RuntimeCertificationHarnessTest {
     }
 
     @Test
+    void recoveryOutsideTheDeclaredSloFailsClosedBeforeAnotherFault() {
+        FakeAdapter adapter = new FakeAdapter(fixtures, null);
+        adapter.recoveryDelaySeconds = 121;
+
+        RuntimeCertificationReport report = harness(
+                adapter, new FakeJournal(), regional(true)).execute(command(adapter));
+
+        assertThat(report.verdict()).isEqualTo(RuntimeCertificationReport.Verdict.BLOCKED);
+        assertThat(report.scenarioResults().getFirst().reasonCode())
+                .isEqualTo("ADAPTER_RESULT_INVALID");
+        assertThat(adapter.calls).hasValue(1);
+    }
+
+    @Test
     void staleEpochStopsBeforeNextFault() {
         FakeAdapter adapter = new FakeAdapter(fixtures, null);
         FakeJournal journal = new FakeJournal();
@@ -181,6 +195,7 @@ class RuntimeCertificationHarnessTest {
         private final RuntimeCertificationManifest.Scenario failure;
         private final AtomicInteger calls = new AtomicInteger();
         private RuntimeCertificationReport.AdapterDescriptor descriptor;
+        private long recoveryDelaySeconds = 1;
 
         private FakeAdapter(
                 RuntimeCertificationTestFixtures fixtures,
@@ -215,7 +230,10 @@ class RuntimeCertificationHarnessTest {
                     request.requirement().scenario(),
                     "attempt:" + request.requirement().scenario().name().toLowerCase(),
                     RuntimeCertificationReport.ScenarioStatus.PASSED,
-                    request.requestedAt(), request.requestedAt().plusSeconds(1), true, true,
+                    request.requestedAt(), request.requestedAt().plusSeconds(1),
+                    request.requestedAt().plusSeconds(2),
+                    request.requestedAt().plusSeconds(2 + recoveryDelaySeconds),
+                    request.requestedAt().plusSeconds(3 + recoveryDelaySeconds), true, true,
                     0, 0, RuntimeCertificationTestFixtures.fingerprint('2'),
                     RuntimeCertificationTestFixtures.fingerprint('3'), observations,
                     List.of(RuntimeCertificationTestFixtures.ref(

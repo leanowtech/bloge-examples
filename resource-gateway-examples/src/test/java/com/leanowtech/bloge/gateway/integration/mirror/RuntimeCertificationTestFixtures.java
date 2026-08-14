@@ -103,7 +103,14 @@ final class RuntimeCertificationTestFixtures {
                             .toList();
             values.add(new RuntimeCertificationReport.ScenarioResult(
                     requirement.scenario(), "attempt:" + index, status,
-                    now.plusSeconds(index * 5L), now.plusSeconds(index * 5L + 4),
+                    now.plusSeconds(index * 5L),
+                    status == RuntimeCertificationReport.ScenarioStatus.PASSED
+                            ? now.plusSeconds(index * 5L + 1) : null,
+                    status == RuntimeCertificationReport.ScenarioStatus.PASSED
+                            ? now.plusSeconds(index * 5L + 2) : null,
+                    status == RuntimeCertificationReport.ScenarioStatus.PASSED
+                            ? now.plusSeconds(index * 5L + 3) : null,
+                    now.plusSeconds(index * 5L + 4),
                     status == RuntimeCertificationReport.ScenarioStatus.PASSED,
                     status == RuntimeCertificationReport.ScenarioStatus.PASSED,
                     0, 0, fingerprint(digit(index + 1)), fingerprint(digit(index + 2)),

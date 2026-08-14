@@ -228,7 +228,10 @@ public final class RuntimeCertificationHarness {
         if (result == null || result.scenario() != requirement.scenario()
                 || result.startedAt().isBefore(requestedAt)
                 || Duration.between(result.startedAt(), result.completedAt())
-                .compareTo(Duration.ofSeconds(requirement.maximumExecutionSeconds())) > 0) {
+                .compareTo(Duration.ofSeconds(requirement.maximumExecutionSeconds())) > 0
+                || result.faultRemovedAt() != null && result.recoveryObservedAt() != null
+                && Duration.between(result.faultRemovedAt(), result.recoveryObservedAt())
+                .compareTo(Duration.ofSeconds(requirement.maximumRecoverySeconds())) > 0) {
             return false;
         }
         return requirement.requiredInvariantCodes().equals(result.invariantObservations().stream()
@@ -272,7 +275,7 @@ public final class RuntimeCertificationHarness {
                 .toList();
         return new RuntimeCertificationReport.ScenarioResult(
                 requirement.scenario(), "attempt:" + requirement.scenario().name().toLowerCase(),
-                status, now, now, false, false, 0, 0,
+                status, now, null, null, null, now, false, false, 0, 0,
                 sha256(reasonCode + ":command"), sha256(reasonCode + ":observation"),
                 invariants, List.of(proofRef), reasonCode);
     }
