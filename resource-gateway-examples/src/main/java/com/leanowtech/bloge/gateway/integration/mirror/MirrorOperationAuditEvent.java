@@ -148,6 +148,12 @@ public record MirrorOperationAuditEvent(
         OUTCOME_OBSERVATION_READ,
         /** Read one bounded hash-chained outcome inbox lifecycle page. */
         OUTCOME_LIFECYCLE_READ,
+        /** Admit one independently authorized historical outcome backfill stream. */
+        OUTCOME_SOURCE_BACKFILL_REGISTER,
+        /** Irreversibly fence one independently revoked outcome connector generation. */
+        OUTCOME_SOURCE_GENERATION_REVOKE,
+        /** Read one payload-free production outcome source checkpoint. */
+        OUTCOME_SOURCE_CHECKPOINT_READ,
         /** Verify, sign, and append one complete pre-treatment selected population. */
         OUTCOME_POPULATION_INGEST,
         /** Create or exactly replay one immutable selected-population upload intent. */

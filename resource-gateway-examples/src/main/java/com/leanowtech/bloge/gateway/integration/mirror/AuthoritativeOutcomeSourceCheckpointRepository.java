@@ -15,6 +15,9 @@ import java.util.regex.Pattern;
  * therefore leaves either the previous committed cursor or an exact staged page.</p>
  */
 public interface AuthoritativeOutcomeSourceCheckpointRepository {
+    /** Current payload-free checkpoint projection wire version. */
+    String SNAPSHOT_SCHEMA_VERSION =
+            "resourceGateway.authoritativeOutcomeSourceCheckpoint.v1";
     /** Bounded worker identity syntax. */
     Pattern OWNER_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}");
     /** Stable persisted failure-code syntax. */
@@ -215,6 +218,7 @@ public interface AuthoritativeOutcomeSourceCheckpointRepository {
      * @param updatedAt latest committed transition time
      */
     record Snapshot(
+            String schemaVersion,
             StreamKey key,
             MirrorArtifactRef controlCommandRef,
             String baselinePageFingerprint,
@@ -237,6 +241,9 @@ public interface AuthoritativeOutcomeSourceCheckpointRepository {
     ) {
         /** Enforces stream-type, baseline, progress, lease, and state closure. */
         public Snapshot {
+            if (!SNAPSHOT_SCHEMA_VERSION.equals(schemaVersion)) {
+                throw invalid("source checkpoint schemaVersion is unsupported");
+            }
             key = Objects.requireNonNull(key, "key");
             if (key.streamKind() == AuthoritativeOutcomeSourcePage.StreamKind.LIVE) {
                 if (controlCommandRef != null) {

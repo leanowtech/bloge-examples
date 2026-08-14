@@ -563,6 +563,50 @@ class ToolStudioIntegrationServiceTest {
     }
 
     @Test
+    void capabilitiesSeparateOutcomeSourceProtocolFromRuntimeReadiness() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        assertThat(unavailable.supportedObjects())
+                .containsKeys(
+                        "authoritativeOutcomeSourcePage",
+                        "authoritativeOutcomeConnectorControlCommand",
+                        "authoritativeOutcomeSourceCheckpoint",
+                        "authoritativeOutcomeSourceDescriptor");
+        assertThat(unavailable.features())
+                .containsEntry("mirrorAuthoritativeOutcomeSourceProtocol", true)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceControlApi", false)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceContinuousReady", false);
+        assertThat(unavailable.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .doesNotContain("POST /api/mirror/outcome-sources/backfills");
+
+        AtomicBoolean scheduler = new AtomicBoolean(false);
+        service.configureAuthoritativeOutcomeSourceRuntime(
+                new AuthoritativeOutcomeSourceRuntimeAvailability(
+                        true, true, () -> true, () -> true,
+                        () -> true, scheduler::get));
+
+        IntegrationCapabilities assembled = service.capabilities().payload();
+        assertThat(assembled.features())
+                .containsEntry("mirrorAuthoritativeOutcomeSourceControlApi", true)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceDurableCheckpoint", true)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceWorkerReady", true)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceScheduling", false)
+                .containsEntry("mirrorAuthoritativeOutcomeSourceContinuousReady", false);
+        assertThat(assembled.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "POST /api/mirror/outcome-sources/backfills",
+                        "POST /api/mirror/outcome-sources/revocations",
+                        "GET /api/mirror/outcome-sources/{connectorId}/generations/{generation}/streams/{streamKind}/{streamId}");
+
+        scheduler.set(true);
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("mirrorAuthoritativeOutcomeSourceContinuousReady", true);
+    }
+
+    @Test
     void capabilitiesSeparateShadowControlDataAndSchedulerReadiness() {
         AtomicBoolean worker =
                 new AtomicBoolean(false);

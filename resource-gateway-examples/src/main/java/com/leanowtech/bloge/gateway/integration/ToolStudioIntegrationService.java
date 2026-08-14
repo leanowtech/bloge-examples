@@ -107,6 +107,11 @@ public class ToolStudioIntegrationService {
                     () -> false,
                     () -> false,
                     () -> false);
+    private AuthoritativeOutcomeSourceRuntimeAvailability
+            authoritativeOutcomeSourceRuntimeAvailability =
+            new AuthoritativeOutcomeSourceRuntimeAvailability(
+                    false, false, () -> false, () -> false,
+                    () -> false, () -> false);
     private AuthoritativeOutcomeSelectedPopulationRuntimeAvailability
             authoritativeOutcomeSelectedPopulationRuntimeAvailability =
             new
@@ -306,6 +311,16 @@ public class ToolStudioIntegrationService {
                         () -> false,
                         () -> false)
                         : availability;
+    }
+
+    /** Receives the marker only when the protected production source boundary is assembled. */
+    @Autowired(required = false)
+    void configureAuthoritativeOutcomeSourceRuntime(
+            AuthoritativeOutcomeSourceRuntimeAvailability availability) {
+        this.authoritativeOutcomeSourceRuntimeAvailability = availability == null
+                ? new AuthoritativeOutcomeSourceRuntimeAvailability(
+                false, false, () -> false, () -> false, () -> false, () -> false)
+                : availability;
     }
 
     /** Receives the marker only when protected selected-population routes are assembled. */
@@ -811,6 +826,28 @@ public class ToolStudioIntegrationService {
                 "mirrorAuthoritativeOutcomeContinuousReady",
                 authoritativeOutcomeRuntimeAvailability
                         .continuousReady());
+        features.put("mirrorAuthoritativeOutcomeSourceProtocol", true);
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceControlApi",
+                authoritativeOutcomeSourceRuntimeAvailability.controlApi());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceDurableCheckpoint",
+                authoritativeOutcomeSourceRuntimeAvailability.durableCheckpoint());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceReady",
+                authoritativeOutcomeSourceRuntimeAvailability.sourceReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceAuthorityReady",
+                authoritativeOutcomeSourceRuntimeAvailability.authorityReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceWorkerReady",
+                authoritativeOutcomeSourceRuntimeAvailability.workerReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceScheduling",
+                authoritativeOutcomeSourceRuntimeAvailability.schedulerReady());
+        features.put(
+                "mirrorAuthoritativeOutcomeSourceContinuousReady",
+                authoritativeOutcomeSourceRuntimeAvailability.continuousReady());
         features.put(
                 "mirrorAuthoritativeOutcomeSelectedPopulationApi",
                 authoritativeOutcomeSelectedPopulationRuntimeAvailability
@@ -1985,6 +2022,14 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/mirror/outcome-observations/{observationId}/lifecycle"));
+        }
+        if (authoritativeOutcomeSourceRuntimeAvailability.controlApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/outcome-sources/backfills"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/mirror/outcome-sources/revocations"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/mirror/outcome-sources/{connectorId}/generations/{generation}/streams/{streamKind}/{streamId}"));
         }
         if (authoritativeOutcomeSelectedPopulationRuntimeAvailability
                 .api()) {

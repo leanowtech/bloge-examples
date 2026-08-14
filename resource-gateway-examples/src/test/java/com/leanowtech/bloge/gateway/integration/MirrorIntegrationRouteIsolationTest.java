@@ -14,6 +14,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolation
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorDeploymentIsolationAttestationService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityObservationAdmissionService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusGovernanceService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceControlService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowAuthorityKeySetService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceBindingService;
 import com.leanowtech.bloge.gateway.integration.mirror.ReadOnlyShadowSourceResolutionAttestationService;
@@ -85,6 +86,9 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/observations/{observationId}/reviews",
                     "POST /api/mirror/corpus-candidates",
                     "POST /api/mirror/corpus-publications",
+                    "POST /api/mirror/outcome-sources/backfills",
+                    "POST /api/mirror/outcome-sources/revocations",
+                    "GET /api/mirror/outcome-sources/{connectorId}/generations/{generation}/streams/{streamKind}/{streamId}",
                     "GET /api/business-mirror/domain-capability-packages/{packageId}/evidence-index",
                     "GET /api/business-mirror/domain-portfolios/{domainId}");
             assertThat(routes(staging)).contains(
@@ -132,6 +136,9 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/observations/{observationId}/reviews",
                     "POST /api/mirror/corpus-candidates",
                     "POST /api/mirror/corpus-publications",
+                    "POST /api/mirror/outcome-sources/backfills",
+                    "POST /api/mirror/outcome-sources/revocations",
+                    "GET /api/mirror/outcome-sources/{connectorId}/generations/{generation}/streams/{streamKind}/{streamId}",
                     "GET /api/business-mirror/domain-capability-packages/{packageId}/evidence-index",
                     "GET /api/business-mirror/domain-portfolios/{domainId}");
             assertThat(routes(disabled)).noneMatch(route ->
@@ -196,6 +203,10 @@ class MirrorIntegrationRouteIsolationTest {
                     CapabilityCorpusGovernanceController.class)).isEmpty();
             assertThat(production.getBeansOfType(PackageEvidenceController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(PackageEvidenceController.class)).isEmpty();
+            assertThat(production.getBeansOfType(
+                    AuthoritativeOutcomeSourceController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(
+                    AuthoritativeOutcomeSourceController.class)).isEmpty();
         }
     }
 
@@ -222,6 +233,7 @@ class MirrorIntegrationRouteIsolationTest {
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
                 CapabilityCorpusGovernanceController.class,
+                AuthoritativeOutcomeSourceController.class,
                 PackageEvidenceController.class);
         context.refresh();
         return context;
@@ -333,6 +345,12 @@ class MirrorIntegrationRouteIsolationTest {
         }
 
         @Bean
+        AuthoritativeOutcomeSourceControlService
+        authoritativeOutcomeSourceControlService() {
+            return mock(AuthoritativeOutcomeSourceControlService.class);
+        }
+
+        @Bean
         IntegrationRequestAuthenticator integrationRequestAuthenticator() {
             return mock(IntegrationRequestAuthenticator.class);
         }
@@ -398,6 +416,13 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         CapabilityCorpusGovernanceDecoder capabilityCorpusGovernanceDecoder() {
             return new CapabilityCorpusGovernanceDecoder(
+                    new ObjectMapper().findAndRegisterModules());
+        }
+
+        @Bean
+        AuthoritativeOutcomeSourceCommandDecoder
+        authoritativeOutcomeSourceCommandDecoder() {
+            return new AuthoritativeOutcomeSourceCommandDecoder(
                     new ObjectMapper().findAndRegisterModules());
         }
     }

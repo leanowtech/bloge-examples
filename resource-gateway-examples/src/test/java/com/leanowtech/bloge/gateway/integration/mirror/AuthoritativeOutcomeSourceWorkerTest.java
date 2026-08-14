@@ -267,6 +267,12 @@ class AuthoritativeOutcomeSourceWorkerTest {
         }
 
         @Override
+        public AuthoritativeOutcomeSourceCheckpointRepository.Registration
+        liveRegistration() {
+            return AuthoritativeOutcomeSourceTestFixtures.liveRegistration();
+        }
+
+        @Override
         public FetchResult fetch(Position position) {
             return fetch.fetch(position);
         }

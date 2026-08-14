@@ -88,6 +88,14 @@ import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeInbox
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeObservationIntegrity;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationScheduler;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeReconciliationWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceBootstrap;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceCheckpointRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceControlService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.DatabaseAuthoritativeOutcomeSourceCheckpointRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentPolicy;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeContinuousAssessmentScheduler;
@@ -207,6 +215,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTe
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorServingGenerationTrustProvider;
 import com.leanowtech.bloge.gateway.integration.MirrorRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeRuntimeAvailability;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSourceRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSelectedPopulationRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.DomainFidelityRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.OnlineReadOnlyShadowBaselineRuntimeAvailability;
@@ -233,6 +242,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import java.time.Clock;
+import java.time.Duration;
 
 /**
  * Physically isolated composition root for stateless mirror planning and execution.
@@ -256,6 +266,7 @@ import java.time.Clock;
         ScenarioRehearsalBatchFinalizationSloProperties.class,
         ReadOnlyShadowJobSchedulerProperties.class,
         AuthoritativeOutcomeReconciliationSchedulerProperties.class,
+        AuthoritativeOutcomeSourceSchedulerProperties.class,
         AuthoritativeOutcomeContinuousAssessmentSchedulerProperties.class,
         OnlineReadOnlyShadowBaselineProperties.class,
         OnlineReadOnlyShadowCandidateProperties.class
@@ -2378,6 +2389,135 @@ public class MirrorRuntimeConfiguration {
                 () -> {
                     AuthoritativeOutcomeReconciliationScheduler current =
                             scheduler.getIfAvailable();
+                    return current != null && current.ready();
+                });
+    }
+
+    /** Freezes database-fenced source lease, retry, quarantine, and idle controls. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSource.class,
+            AuthoritativeOutcomeSourceAuthorityVerifier.class,
+            AuthoritativeOutcomeObservationIntegrity.class})
+    public AuthoritativeOutcomeSourceCheckpointRepository.Policy
+    authoritativeOutcomeSourceCheckpointPolicy() {
+        return new AuthoritativeOutcomeSourceCheckpointRepository.Policy(
+                Duration.ofSeconds(30), Duration.ofSeconds(5),
+                Duration.ofMinutes(5), Duration.ofSeconds(5), 8);
+    }
+
+    /** Creates the durable source cursor, staged-page, and generation-fence authority. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSource.class,
+            AuthoritativeOutcomeSourceAuthorityVerifier.class,
+            AuthoritativeOutcomeObservationIntegrity.class})
+    public AuthoritativeOutcomeSourceCheckpointRepository
+    authoritativeOutcomeSourceCheckpointRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        return new DatabaseAuthoritativeOutcomeSourceCheckpointRepository(
+                jdbc, objectMapper, transactionManager);
+    }
+
+    /** Registers the deployment-owned live baseline without permitting cursor rewinds. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSource.class,
+            AuthoritativeOutcomeSourceCheckpointRepository.class})
+    public AuthoritativeOutcomeSourceBootstrap authoritativeOutcomeSourceBootstrap(
+            AuthoritativeOutcomeSourceCheckpointRepository checkpoints,
+            AuthoritativeOutcomeSource source) {
+        return new AuthoritativeOutcomeSourceBootstrap(checkpoints, source);
+    }
+
+    /** Creates the authenticated and audited backfill/revocation control boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSourceCheckpointRepository.class,
+            AuthoritativeOutcomeSourceAuthorityVerifier.class})
+    public AuthoritativeOutcomeSourceControlService authoritativeOutcomeSourceControlService(
+            AuthoritativeOutcomeSourceCheckpointRepository checkpoints,
+            AuthoritativeOutcomeSourceAuthorityVerifier authority,
+            MirrorOperationObservability observability,
+            ObjectMapper objectMapper,
+            PlatformTransactionManager transactionManager) {
+        return new AuthoritativeOutcomeSourceControlService(
+                checkpoints, authority, observability, objectMapper, transactionManager);
+    }
+
+    /** Creates one stage/apply/commit source worker over the existing Outcome inbox. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean({
+            AuthoritativeOutcomeSourceCheckpointRepository.class,
+            AuthoritativeOutcomeSource.class,
+            AuthoritativeOutcomeSourceAuthorityVerifier.class,
+            AuthoritativeOutcomeObservationIntegrity.class,
+            AuthoritativeOutcomeInboxRepository.class,
+            AuthoritativeOutcomeSourceBootstrap.class})
+    public AuthoritativeOutcomeSourceWorker authoritativeOutcomeSourceWorker(
+            AuthoritativeOutcomeSourceCheckpointRepository checkpoints,
+            AuthoritativeOutcomeSource source,
+            AuthoritativeOutcomeSourceAuthorityVerifier sourceAuthority,
+            AuthoritativeOutcomeObservationIntegrity observationIntegrity,
+            AuthoritativeOutcomeInboxRepository inbox,
+            AuthoritativeOutcomeSourceCheckpointRepository.Policy policy,
+            ObjectMapper objectMapper) {
+        return new AuthoritativeOutcomeSourceWorker(
+                checkpoints, source, sourceAuthority, observationIntegrity,
+                inbox, policy, objectMapper);
+    }
+
+    /** Starts explicitly enabled, bounded source polling lanes for one regional partition. */
+    @Bean(destroyMethod = "close")
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeSourceWorker.class)
+    @ConditionalOnProperty(
+            prefix = AuthoritativeOutcomeSourceSchedulerProperties.PREFIX,
+            name = "enabled", havingValue = "true")
+    public AuthoritativeOutcomeSourceScheduler authoritativeOutcomeSourceScheduler(
+            AuthoritativeOutcomeSourceWorker worker,
+            AuthoritativeOutcomeSourceSchedulerProperties properties) {
+        return new AuthoritativeOutcomeSourceScheduler(
+                worker, properties.region(), properties.environmentId(),
+                properties.instanceId(), properties.maximumPollers(),
+                properties.initialDelay(), properties.pollInterval(),
+                properties.drainTimeout());
+    }
+
+    /** Publishes source protocol, control, checkpoint, bootstrap, and polling readiness. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnBean(AuthoritativeOutcomeSourceControlService.class)
+    public AuthoritativeOutcomeSourceRuntimeAvailability
+    authoritativeOutcomeSourceRuntimeAvailability(
+            AuthoritativeOutcomeSourceControlService control,
+            AuthoritativeOutcomeSourceCheckpointRepository checkpoints,
+            AuthoritativeOutcomeSource source,
+            AuthoritativeOutcomeSourceAuthorityVerifier authority,
+            ObjectProvider<AuthoritativeOutcomeSourceBootstrap> bootstrap,
+            ObjectProvider<AuthoritativeOutcomeSourceWorker> worker,
+            ObjectProvider<AuthoritativeOutcomeSourceScheduler> scheduler) {
+        return new AuthoritativeOutcomeSourceRuntimeAvailability(
+                control != null,
+                checkpoints.durable(),
+                () -> {
+                    AuthoritativeOutcomeSourceBootstrap current = bootstrap.getIfAvailable();
+                    return current != null && current.ready() && source.descriptor() != null;
+                },
+                authority::available,
+                () -> {
+                    AuthoritativeOutcomeSourceWorker current = worker.getIfAvailable();
+                    return current != null && current.ready();
+                },
+                () -> {
+                    AuthoritativeOutcomeSourceScheduler current = scheduler.getIfAvailable();
                     return current != null && current.ready();
                 });
     }

@@ -5,6 +5,14 @@ import java.util.regex.Pattern;
 
 /** Authenticated, payload-isolated source of bounded production outcome pages. */
 public interface AuthoritativeOutcomeSource {
+    /**
+     * Returns the immutable deployment-owned live baseline.
+     *
+     * <p>The baseline is registered idempotently during startup. Changing it for an existing
+     * connector generation is a deployment error; operators must publish a new generation.</p>
+     */
+    AuthoritativeOutcomeSourceCheckpointRepository.Registration liveRegistration();
+
     /** Fetches at most one verified page after the committed checkpoint. */
     FetchResult fetch(Position position);
 

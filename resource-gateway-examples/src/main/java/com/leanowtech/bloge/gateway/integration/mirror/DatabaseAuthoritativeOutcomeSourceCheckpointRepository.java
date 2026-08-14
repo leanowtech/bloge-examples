@@ -468,6 +468,7 @@ public final class DatabaseAuthoritativeOutcomeSourceCheckpointRepository
             MirrorArtifactRef baselineCursorRef,
             Instant now) {
         return new Snapshot(
+                SNAPSHOT_SCHEMA_VERSION,
                 key, controlCommandRef, baselinePageFingerprint, baselineCursorRef,
                 0, baselinePageFingerprint, baselineCursorRef, null,
                 Instant.EPOCH, Status.ACTIVE, "", 0, 0, now, 0,
@@ -749,6 +750,7 @@ public final class DatabaseAuthoritativeOutcomeSourceCheckpointRepository
             Instant nextEligibleAt, long leaseEpoch, Instant leaseExpiresAt,
             String failureCode, Instant updatedAt) {
         return new Snapshot(
+                value.schemaVersion(),
                 value.key(), value.controlCommandRef(), value.baselinePageFingerprint(),
                 value.baselineCursorRef(), committedSequence, committedPageFingerprint,
                 committedCursorRef, committedWatermarkRef, eventTimeThrough, status,

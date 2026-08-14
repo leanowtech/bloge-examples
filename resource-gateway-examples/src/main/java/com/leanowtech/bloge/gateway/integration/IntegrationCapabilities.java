@@ -333,6 +333,19 @@ public record IntegrationCapabilities(
         objects.put("packageEvidenceIndex", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.evidence
                         .PackageEvidenceIndex.SCHEMA_VERSION));
+        objects.put("authoritativeOutcomeSourcePage", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .AuthoritativeOutcomeSourcePage.SCHEMA_VERSION));
+        objects.put("authoritativeOutcomeConnectorControlCommand", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .AuthoritativeOutcomeConnectorControlCommand.SCHEMA_VERSION));
+        objects.put("authoritativeOutcomeSourceCheckpoint", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .AuthoritativeOutcomeSourceCheckpointRepository
+                        .SNAPSHOT_SCHEMA_VERSION));
+        objects.put("authoritativeOutcomeSourceDescriptor", List.of(
+                com.leanowtech.bloge.gateway.integration.mirror
+                        .AuthoritativeOutcomeSource.Descriptor.SCHEMA_VERSION));
         objects.put("evidenceOwnerTask", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.evidence
                         .EvidenceOwnerTask.SCHEMA_VERSION));
