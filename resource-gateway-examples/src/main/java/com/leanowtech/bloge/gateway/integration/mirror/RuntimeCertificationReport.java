@@ -27,6 +27,8 @@ public record RuntimeCertificationReport(
         MirrorArtifactRef authorizationRef,
         MirrorArtifactRef authorizationConsumptionRef,
         MirrorArtifactRef regionalDataPlaneCertificationRef,
+        MirrorArtifactRef isolationDecisionRef,
+        MirrorArtifactRef isolationAttestationRef,
         CapabilitySnapshot.Scope scope,
         String region,
         MirrorDeploymentIsolationAttestation.DeploymentIdentity deployment,
@@ -77,6 +79,12 @@ public record RuntimeCertificationReport(
                         regionalDataPlaneCertificationRef,
                         RegionalDataPlaneCertification.ARTIFACT_KIND,
                         "regionalDataPlaneCertificationRef");
+        isolationDecisionRef = RuntimeCertificationExecutionAuthorization.requireKind(
+                isolationDecisionRef, MirrorDeploymentIsolationAttestationBundle.ARTIFACT_KIND,
+                "isolationDecisionRef");
+        isolationAttestationRef = RuntimeCertificationExecutionAuthorization.requireKind(
+                isolationAttestationRef, MirrorDeploymentIsolationAttestation.ARTIFACT_KIND,
+                "isolationAttestationRef");
         scope = Objects.requireNonNull(scope, "scope");
         region = RegionalDataPlaneDeploymentContract.identifier(region, "region");
         deployment = Objects.requireNonNull(deployment, "deployment");
@@ -191,11 +199,8 @@ public record RuntimeCertificationReport(
             environmentFingerprint = RegionalDataPlaneDeploymentContract.fingerprint(
                     environmentFingerprint, "environmentFingerprint");
             supportedScenarios = exactScenarios(supportedScenarios);
-            if (!isolatedControlPlane || !productionExecutionDenied
-                    || !externalAuthorizationRequired || !durableReplayProtection) {
-                throw new IllegalArgumentException(
-                        "runtime certification adapter safety controls are incomplete");
-            }
+            // Negative booleans remain representable so plan/capability probes can explain why
+            // an installed Adapter is blocked. Execution and report verification reject them.
         }
     }
 

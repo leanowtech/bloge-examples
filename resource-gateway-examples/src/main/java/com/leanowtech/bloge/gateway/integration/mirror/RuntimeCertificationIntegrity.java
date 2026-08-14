@@ -177,6 +177,8 @@ public final class RuntimeCertificationIntegrity {
             RuntimeCertificationExecutionAuthorization authorization,
             RuntimeCertificationReport report,
             MirrorArtifactRef expectedRegionalCertificationRef,
+            MirrorArtifactRef expectedIsolationDecisionRef,
+            MirrorArtifactRef expectedIsolationAttestationRef,
             VisualEvidenceSigner authorizationAuthority,
             VisualEvidenceSigner reportAuthority) {
         VerificationResult authorizationResult = verifyAuthorization(manifest, authorization,
@@ -195,6 +197,10 @@ public final class RuntimeCertificationIntegrity {
                 || expectedRegionalCertificationRef == null
                 || !expectedRegionalCertificationRef.equals(
                 report.regionalDataPlaneCertificationRef())
+                || expectedIsolationDecisionRef == null
+                || !expectedIsolationDecisionRef.equals(report.isolationDecisionRef())
+                || expectedIsolationAttestationRef == null
+                || !expectedIsolationAttestationRef.equals(report.isolationAttestationRef())
                 || !manifest.scope().equals(report.scope())
                 || !manifest.region().equals(report.region())
                 || !manifest.deployment().equals(report.deployment())
@@ -284,7 +290,8 @@ public final class RuntimeCertificationIntegrity {
         return new RuntimeCertificationReport("", fingerprint, material.reportId(),
                 material.revision(), material.manifestRef(), material.authorizationRef(),
                 material.authorizationConsumptionRef(),
-                material.regionalDataPlaneCertificationRef(), material.scope(),
+                material.regionalDataPlaneCertificationRef(), material.isolationDecisionRef(),
+                material.isolationAttestationRef(), material.scope(),
                 material.region(), material.deployment(), material.environmentClass(),
                 material.environmentFingerprint(), material.adapter(),
                 material.observedComponents(), material.startedAt(), material.completedAt(),
@@ -435,6 +442,8 @@ public final class RuntimeCertificationIntegrity {
             MirrorArtifactRef authorizationRef,
             MirrorArtifactRef authorizationConsumptionRef,
             MirrorArtifactRef regionalDataPlaneCertificationRef,
+            MirrorArtifactRef isolationDecisionRef,
+            MirrorArtifactRef isolationAttestationRef,
             CapabilitySnapshot.Scope scope,
             String region,
             MirrorDeploymentIsolationAttestation.DeploymentIdentity deployment,
@@ -454,7 +463,8 @@ public final class RuntimeCertificationIntegrity {
         static ReportMaterial from(RuntimeCertificationReport value) {
             return new ReportMaterial(value.reportId(), value.revision(), value.manifestRef(),
                     value.authorizationRef(), value.authorizationConsumptionRef(),
-                    value.regionalDataPlaneCertificationRef(), value.scope(), value.region(),
+                    value.regionalDataPlaneCertificationRef(), value.isolationDecisionRef(),
+                    value.isolationAttestationRef(), value.scope(), value.region(),
                     value.deployment(), value.environmentClass(), value.environmentFingerprint(),
                     value.adapter(), value.observedComponents(), value.startedAt(),
                     value.completedAt(), value.scenarioResults(), value.verdict(),

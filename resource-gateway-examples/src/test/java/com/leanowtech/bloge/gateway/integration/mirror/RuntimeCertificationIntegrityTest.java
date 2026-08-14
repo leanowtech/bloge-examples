@@ -92,6 +92,7 @@ class RuntimeCertificationIntegrityTest {
                 source.schemaVersion(), source.reportFingerprint(), "runtime-report:tampered",
                 source.revision(), source.manifestRef(), source.authorizationRef(),
                 source.authorizationConsumptionRef(), source.regionalDataPlaneCertificationRef(),
+                source.isolationDecisionRef(), source.isolationAttestationRef(),
                 source.scope(), source.region(), source.deployment(), source.environmentClass(),
                 source.environmentFingerprint(), source.adapter(), source.observedComponents(),
                 source.startedAt(), source.completedAt(), source.scenarioResults(), source.verdict(),
@@ -118,7 +119,9 @@ class RuntimeCertificationIntegrityTest {
     private RuntimeCertificationIntegrity.VerificationResult verify(
             RuntimeCertificationReport report) {
         return fixtures.integrity.verifyReport(fixtures.manifest, fixtures.authorization, report,
-                fixtures.regional.certification.artifactRef(), fixtures.authorizationSigner,
-                fixtures.reportSigner);
+                fixtures.regional.certification.artifactRef(),
+                fixtures.regional.isolationV2.artifactRef(),
+                fixtures.regional.isolationV2.attestation().artifactRef(),
+                fixtures.authorizationSigner, fixtures.reportSigner);
     }
 }
