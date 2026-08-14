@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-002 Package durable authoring
+> 当前迭代：BM-003 PackageCompiler
 >
 > 最近更新：2026-08-14
 
@@ -213,7 +213,7 @@ Iteration 1 关闭了业务主对象的协议断层。Iteration 2 关闭了 Pack
 
 该数字是仓库内部工程复评，不是客户验收结论，仍明显高于 `<3%` 的收敛门槛。
 
-## 7. 下一迭代：BM-003 与 BM-004
+## 7. Iteration 2 复评时确定的后续路径
 
 下一步先让已可靠保存的 Package 能产生可解释、可复现的编译事实，再包装存量 Graph：
 
@@ -224,3 +224,53 @@ Iteration 1 关闭了业务主对象的协议断层。Iteration 2 关闭了 Pack
 5. 实现 Legacy Graph projector；七个内置 Graph 都能生成 Package draft 和明确 gap inventory，缺失业务语义不得误报 READY。
 
 BM-003 与 BM-004 分别提交。每次提交后重新运行完整门禁、架构偏差审计和差距复评。
+
+## 8. Iteration 3A：BM-003 deterministic compiler kernel
+
+### 8.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Authority freeze/fence port | Registry 解析与编译决策分离；结果发布前强制第二次 TOCTOU 检查 |
+| Dependency observation | exact source、immutable materialized ref、Scope、resolution status 和 kind-specific assurance 可审计 |
+| Fail-closed compiler | Draft obligation、Contract/Scenario/Outcome、Proposal isolation、高风险 Effect 和 dependency manifest 统一派生 Finding |
+| Business Asset Link Closure | 新增单 Scope、无 dangling ref、无环、content-addressed 的 L0-L3 closure 协议与严格 Schema |
+| Deterministic facts | 相同输入、revision 和 `compiledAt` 生成相同 Readiness、Closure 和 Snapshot fingerprint |
+| Independent verification | Test Kit 对 Closure、Readiness 和 Snapshot 复算 fingerprint 并验证关键语义，不依赖服务端或 Spring |
+| 接入说明 | `resource-gateway-business-mirror-package-compiler.md` 记录不变量、适配器责任、Finding 和未完成边界 |
+
+### 8.2 聚焦验证
+
+| 项目 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml -Dtest=PackageCompilerTest,DomainCapabilityPackageProtocolTest test` | `16` tests，全部通过；其中编译器 `9` 个测试含 100 组乱序输入 |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml -Dtest=BusinessMirrorProtocolTest test` | `15` tests，全部通过 |
+
+完整项目门禁：
+
+| 项目 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5950` tests，`0` failures，`0` errors，`13` skipped；包含原生 PostgreSQL 和真实浏览器 E2E；`BUILD SUCCESS` |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `541` tests，`0` failures，`0` errors，`0` skipped；JAR、shade 与 Javadoc 门禁通过；`BUILD SUCCESS` |
+
+首次 Test Kit 完整门禁中，`540` 个测试全部通过，但 Javadoc 因内部 verifier 暴露了未文档化公共类型而失败。实现随即收窄为 package-private，仅保留 `BusinessMirrorProtocol` 作为公共入口并补全其契约说明；最终结果以修复后重跑为准。
+
+提交前语义对齐审查又发现，服务端会拒绝端点、关系和条件相同而仅风险或 Owner 不同的重复业务关系，Test Kit 最初只依赖 JSON Schema 的结构性去重。独立 verifier 已补充同坐标去重并新增回归用例，避免跨语言消费者接受服务端拒绝的 Closure。
+
+### 8.3 诚实的完成边界
+
+本轮只关闭编译决策与跨语言复验内核，不把「Java 类已存在」误报为部署可用。仍缺：
+
+- compile facts 与 exact receipt 的原子持久化；
+- 认证 HTTP compile/read API 和稳定错误映射；
+- 连接现有 Graph、Scenario、Fidelity、Outcome 权威仓储的 Adapter；
+- 七个内置 Graph 的 Legacy Package 投影；
+- async capacity、取消、HA/DR 与真实客户 Authority 认证。
+
+能力探针继续不声明 Package Compiler ready。
+
+### 8.4 差距复评
+
+编译器已经能确定性地区分「可发布 immutable fact」与「有明确阻断原因的作者态」，关闭了协议对象存在但没有生成规则、exact ref 被乐观信任、L0-L3 link 无法独立验真的根问题。由于产品和部署仍不能调用该内核，风险加权差距只从约 `24%` 降至约 `22%`，不会按代码行数虚增成熟度。
+
+下一子迭代继续 BM-003：完成 PostgreSQL append-only facts、idempotent compile receipt、认证 HTTP vertical slice 和 runtime capability gate。之后再进入 BM-004 Legacy Graph Adapter。

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-asset-link-closure-v1.schema.json",
+  "title": "Resource Gateway Business Asset Link Closure v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "closureId",
+    "revision",
+    "fingerprint",
+    "scope",
+    "packageId",
+    "assets",
+    "links",
+    "createdAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.businessAssetLinkClosure.v1"
+    },
+    "closureId": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "fingerprint": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint"
+    },
+    "scope": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/scope"
+    },
+    "packageId": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+    },
+    "assets": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "business-mirror-common-v1.schema.json#/$defs/businessAssetRef"
+      }
+    },
+    "links": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "business-asset-link-v1.schema.json"
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

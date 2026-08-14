@@ -146,6 +146,11 @@ It includes the required identity Scope, create/save/read/replay commands, stabl
 PostgreSQL migration boundary, and stop command. The API is intentionally headless in BM-002;
 `Business Mirror Workspace`, Package compilation, and Proposal simulation are later work packages.
 
+The deterministic Package compilation kernel, frozen dependency authority port, readiness semantics,
+and offline verification boundary are documented in the
+[Business Mirror PackageCompiler guide](../docs/resource-gateway-business-mirror-package-compiler.md).
+The compiler HTTP/persistence vertical slice is still in progress and is not advertised as deployment-ready.
+
 Author Workspace v2 now distinguishes **recoverable** from **saved**. After an edit, the lifecycle
 beside the draft identity advances from `DIRTY` to `RECOVERABLE` when the current tab has captured a
 TTL-bound recovery snapshot. The Save icon creates or updates the authoritative server revision.

@@ -110,6 +110,14 @@ public record PackageReadinessReport(
         createdAt = java.util.Objects.requireNonNull(createdAt, "createdAt");
     }
 
+    /** @return exact reference to this sealed readiness report */
+    public MirrorArtifactRef artifactRef() {
+        if (fingerprint.isBlank()) {
+            throw new IllegalStateException("Package readiness report is not content-addressed");
+        }
+        return new MirrorArtifactRef("PACKAGE_READINESS_REPORT", reportId, revision, fingerprint);
+    }
+
     /** @return identical report with a replacement canonical fingerprint */
     public PackageReadinessReport withFingerprint(String value) {
         return new PackageReadinessReport(schemaVersion, reportId, revision, value, scope,

@@ -31,7 +31,7 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
-    void validatesAllSixBusinessMirrorRoots() throws Exception {
+    void validatesAllSevenBusinessMirrorRoots() throws Exception {
         ObjectNode packageDraft = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
         ObjectNode proposalSnapshot = (ObjectNode) fixture(
@@ -39,6 +39,8 @@ class BusinessMirrorProtocolTest {
 
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLink(
                 businessAssetLink(packageDraft)));
+        assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLinkClosure(
+                businessAssetLinkClosure(packageDraft)));
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(
                 packageDraft));
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requirePackageSnapshot(
@@ -166,6 +168,65 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void rejectsSchemaValidCompilationFactsAfterContentTampering() throws Exception {
+        ObjectNode packageDraft = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
+        ObjectNode snapshot = packageSnapshot(packageDraft);
+        ((ObjectNode) snapshot.path("businessDefinition")).put(
+                "businessGoal", "schema-valid but modified");
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageSnapshot(snapshot))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_SNAPSHOT_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("schema-valid but modified");
+    }
+
+    @Test
+    void rejectsDanglingAndCyclicBusinessAssetLinkClosures() throws Exception {
+        ObjectNode packageDraft = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
+        ObjectNode dangling = businessAssetLinkClosure(packageDraft);
+        ((ArrayNode) dangling.path("assets")).remove(1);
+        seal(dangling);
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLinkClosure(dangling))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.BUSINESS_ASSET_LINK_CLOSURE_DANGLING");
+
+        ObjectNode cyclic = businessAssetLinkClosure(packageDraft);
+        ObjectNode backwards = JSON.createObjectNode();
+        backwards.put("schemaVersion", BusinessMirrorProtocol.BUSINESS_ASSET_LINK_V1);
+        backwards.set("sourceRef", packageDraft.path("channelRefs").get(0).deepCopy());
+        backwards.set("targetRef", packageDraft.path("solutionRefs").get(0).deepCopy());
+        backwards.put("relation", "USES");
+        backwards.put("condition", "");
+        backwards.put("risk", "HIGH");
+        backwards.put("owner", "cancellation-service-owner");
+        backwards.set("provenance", packageDraft.path("provenance").deepCopy());
+        ((ArrayNode) cyclic.path("links")).add(backwards);
+        seal(cyclic);
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLinkClosure(cyclic))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.BUSINESS_ASSET_LINK_CLOSURE_CYCLE");
+    }
+
+    @Test
+    void rejectsSemanticallyDuplicateBusinessAssetLinksEvenWhenMetadataDiffers() throws Exception {
+        ObjectNode packageDraft = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
+        ObjectNode closure = businessAssetLinkClosure(packageDraft);
+        ObjectNode duplicate = businessAssetLink(packageDraft);
+        duplicate.put("risk", "LOW");
+        duplicate.put("owner", "another-owner");
+        ((ArrayNode) closure.path("links")).add(duplicate);
+        seal(closure);
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLinkClosure(closure))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.BUSINESS_ASSET_LINK_CLOSURE_LINK_DUPLICATE");
+    }
+
+    @Test
     void rejectsEvidenceStateWithoutRequiredEvidenceKinds() throws Exception {
         ObjectNode proposal = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PROPOSAL_FIXTURE_RESOURCE);
@@ -235,7 +296,7 @@ class BusinessMirrorProtocolTest {
                 artifactRef("PACKAGE_COMPILATION_POLICY", "default", '8'));
         snapshot.set("provenance", packageDraft.path("provenance").deepCopy());
         snapshot.put("createdAt", "2026-08-14T02:00:00Z");
-        return snapshot;
+        return seal(snapshot);
     }
 
     private static ObjectNode readinessReport(ObjectNode packageDraft) {
@@ -259,7 +320,43 @@ class BusinessMirrorProtocolTest {
         finding.put("messageId", "package.owner.review");
         report.putArray("findings").add(finding);
         report.put("createdAt", "2026-08-14T02:00:00Z");
-        return report;
+        return seal(report);
+    }
+
+    private static ObjectNode businessAssetLinkClosure(ObjectNode packageDraft) {
+        ObjectNode closure = JSON.createObjectNode();
+        closure.put("schemaVersion", BusinessMirrorProtocol.BUSINESS_ASSET_LINK_CLOSURE_V1);
+        closure.put("closureId", "cancellation-asset-links");
+        closure.put("revision", 1);
+        closure.put("fingerprint", "");
+        closure.set("scope", packageDraft.path("scope").deepCopy());
+        closure.put("packageId", packageDraft.path("packageId").asText());
+        closure.putArray("assets")
+                .add(packageDraft.path("solutionRefs").get(0).deepCopy())
+                .add(packageDraft.path("carrierRefs").get(0).deepCopy())
+                .add(packageDraft.path("channelRefs").get(0).deepCopy());
+        ArrayNode links = closure.putArray("links");
+        links.add(businessAssetLink(packageDraft));
+        ObjectNode exposed = JSON.createObjectNode();
+        exposed.put("schemaVersion", BusinessMirrorProtocol.BUSINESS_ASSET_LINK_V1);
+        exposed.set("sourceRef", packageDraft.path("carrierRefs").get(0).deepCopy());
+        exposed.set("targetRef", packageDraft.path("channelRefs").get(0).deepCopy());
+        exposed.put("relation", "EXPOSED_ON");
+        exposed.put("condition", "");
+        exposed.put("risk", "HIGH");
+        exposed.put("owner", "cancellation-service-owner");
+        exposed.set("provenance", packageDraft.path("provenance").deepCopy());
+        links.add(exposed);
+        closure.put("createdAt", "2026-08-14T02:00:00Z");
+        return seal(closure);
+    }
+
+    private static ObjectNode seal(ObjectNode value) {
+        value.put("fingerprint", "");
+        value.put("fingerprint", BusinessMirrorCanonical.fingerprint(value,
+                "RG.BUSINESS_MIRROR.CLIENT.TEST_TOO_LARGE",
+                "RG.BUSINESS_MIRROR.CLIENT.TEST_CANONICALIZATION_FAILED"));
+        return value;
     }
 
     private static ObjectNode proposalDraft(ObjectNode snapshot) {

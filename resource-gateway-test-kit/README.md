@@ -248,6 +248,19 @@ strict package-id order, one enterprise Scope, and a cursor bound to the last it
 `cancellation-fee-package-save-receipt-v1.fixture.json` is available through
 `BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE`.
 
+Compiled Business Mirror facts have semantic offline verification as well:
+
+```java
+BusinessMirrorProtocol.requireBusinessAssetLinkClosure(linkClosure);
+BusinessMirrorProtocol.requirePackageReadinessReport(readiness);
+BusinessMirrorProtocol.requirePackageSnapshot(snapshot);
+```
+
+The verifier recomputes all three content addresses. It also rejects dangling/cyclic L0-L3 links,
+contradictory readiness status, cross-Scope provenance, mutable authoring artifacts in a Snapshot
+manifest, and non-deterministic manifest ordering. These checks do not query a Resource Gateway
+registry and do not expose Package content in exceptions.
+
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope
 is not part of this method's input:

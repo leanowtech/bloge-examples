@@ -16,6 +16,9 @@ public final class BusinessMirrorProtocol {
     /** Business Asset Link v1 wire version. */
     public static final String BUSINESS_ASSET_LINK_V1 =
             "resourceGateway.businessAssetLink.v1";
+    /** Immutable Business Asset Link Closure v1 wire version. */
+    public static final String BUSINESS_ASSET_LINK_CLOSURE_V1 =
+            "resourceGateway.businessAssetLinkClosure.v1";
     /** Mutable Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_DRAFT_V1 =
             "bloge.domainCapabilityPackageDraft.v1";
@@ -54,6 +57,8 @@ public final class BusinessMirrorProtocol {
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
+    static final String BUSINESS_ASSET_LINK_CLOSURE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "business-asset-link-closure-v1.schema.json";
     static final String PACKAGE_DRAFT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-draft-v1.schema.json";
     static final String STORED_PACKAGE_DRAFT_SCHEMA_RESOURCE =
@@ -82,6 +87,16 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireBusinessAssetLink(JsonNode value) {
         require(value, BUSINESS_ASSET_LINK_SCHEMA_RESOURCE, "BUSINESS_ASSET_LINK_INVALID");
+    }
+
+    /**
+     * Requires a content-addressed, acyclic and single-Scope Business Asset Link Closure.
+     *
+     * @param value decoded Business Asset Link Closure
+     * @throws IllegalArgumentException when Schema, fingerprint, Scope, link, or cycle checks fail
+     */
+    public static void requireBusinessAssetLinkClosure(JsonNode value) {
+        BusinessMirrorCompilationVerifier.verifyBusinessAssetLinkClosure(value);
     }
 
     /**
@@ -131,7 +146,7 @@ public final class BusinessMirrorProtocol {
      * @throws IllegalArgumentException when the value violates the packaged protocol
      */
     public static void requirePackageSnapshot(JsonNode value) {
-        require(value, PACKAGE_SNAPSHOT_SCHEMA_RESOURCE, "PACKAGE_SNAPSHOT_INVALID");
+        BusinessMirrorCompilationVerifier.verifyPackageSnapshot(value);
     }
 
     /**
@@ -141,7 +156,7 @@ public final class BusinessMirrorProtocol {
      * @throws IllegalArgumentException when the value violates the packaged protocol
      */
     public static void requirePackageReadinessReport(JsonNode value) {
-        require(value, PACKAGE_READINESS_SCHEMA_RESOURCE, "PACKAGE_READINESS_INVALID");
+        BusinessMirrorCompilationVerifier.verifyPackageReadinessReport(value);
     }
 
     /**

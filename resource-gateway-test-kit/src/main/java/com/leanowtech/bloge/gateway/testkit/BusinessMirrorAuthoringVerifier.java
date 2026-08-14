@@ -1,19 +1,11 @@
 package com.leanowtech.bloge.gateway.testkit;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
 
@@ -27,8 +19,6 @@ import java.util.Set;
 public final class BusinessMirrorAuthoringVerifier {
     /** Maximum canonical Package draft size accepted by the server and this verifier. */
     public static final int MAXIMUM_DRAFT_BYTES = 8 * 1_048_576;
-
-    private static final ObjectMapper JSON = new ObjectMapper();
 
     private BusinessMirrorAuthoringVerifier() {
     }
@@ -133,33 +123,9 @@ public final class BusinessMirrorAuthoringVerifier {
     }
 
     private static String canonicalFingerprint(JsonNode value) {
-        try {
-            byte[] canonical = JSON.writeValueAsBytes(canonical(value));
-            if (canonical.length > MAXIMUM_DRAFT_BYTES) {
-                throw invalid("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_TOO_LARGE");
-            }
-            return "sha256:" + HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(canonical));
-        } catch (JsonProcessingException | GeneralSecurityException failure) {
-            throw invalid("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_CANONICALIZATION_FAILED");
-        }
-    }
-
-    private static JsonNode canonical(JsonNode value) {
-        if (value.isObject()) {
-            ObjectNode sorted = JSON.createObjectNode();
-            List<String> names = new ArrayList<>();
-            value.fieldNames().forEachRemaining(names::add);
-            names.sort(Comparator.naturalOrder());
-            names.forEach(name -> sorted.set(name, canonical(value.get(name))));
-            return sorted;
-        }
-        if (value.isArray()) {
-            ArrayNode array = JSON.createArrayNode();
-            value.forEach(item -> array.add(canonical(item)));
-            return array;
-        }
-        return value.deepCopy();
+        return BusinessMirrorCanonical.fingerprint(value,
+                "RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_TOO_LARGE",
+                "RG.BUSINESS_MIRROR.CLIENT.PACKAGE_CANONICALIZATION_FAILED");
     }
 
     private static Instant instant(String value, String code) {
