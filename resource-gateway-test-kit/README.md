@@ -227,6 +227,27 @@ testing API/schema until a generation-matched typed client is added.
 
 ## Capability mirror compatibility and offline verification
 
+Business Mirror consumers can also validate the authoring protocol without a running server. In
+addition to Package and Proposal domain objects, the packaged schema registry now includes the
+durable Package authoring envelopes:
+
+```java
+JsonNode receipt = objectMapper.readTree(receiptJson);
+BusinessMirrorProtocol.requirePackageSaveReceipt(receipt);
+
+JsonNode page = objectMapper.readTree(pageJson);
+BusinessMirrorProtocol.requirePackagePage(page);
+
+JsonNode stored = receipt.path("result");
+BusinessMirrorProtocol.requireStoredPackageDraft(stored);
+```
+
+These validators fail closed on unknown fields, malformed exact fingerprints, or a stored draft
+whose canonical content no longer matches its fingerprint. Page verification additionally enforces
+strict package-id order, one enterprise Scope, and a cursor bound to the last item. The fixed
+`cancellation-fee-package-save-receipt-v1.fixture.json` is available through
+`BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE`.
+
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope
 is not part of this method's input:

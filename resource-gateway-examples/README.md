@@ -33,7 +33,7 @@ integration something the business flow can see, reason about, test, and change.
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
-| Business Mirror protocol foundation | First-class Domain Capability Package, Capability Proposal, Package Readiness, and typed L0-L3 Business Asset Link protocols; strict versioned schemas, simulation-only proposal isolation, content-addressed snapshots, and standalone Test Kit validation are available while repository/API/UI readiness remains explicitly false |
+| Business Mirror authoring foundation | First-class Domain Capability Package, Capability Proposal, Package Readiness, and typed L0-L3 Business Asset Link protocols; Package drafts now have authenticated durable create/save/read/list APIs, exact restart-safe receipts, full-scope optimistic revisions, PostgreSQL DDL certification, and standalone Test Kit validation; compiler, simulation, and workspace readiness remain explicitly false |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
@@ -139,6 +139,12 @@ product vocabulary is in
 [`docs/resource-gateway-localization-glossary.md`](../docs/resource-gateway-localization-glossary.md),
 and Stage 4 verification is recorded in
 [`docs/resource-gateway-ux-stage4-localization-governance.md`](../docs/resource-gateway-ux-stage4-localization-governance.md).
+
+To exercise the new Business Mirror Package authoring API with the cancellation-fee fixture, use the
+[Business Mirror Package Authoring guide](../docs/resource-gateway-business-mirror-package-authoring-guide.md).
+It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
+PostgreSQL migration boundary, and stop command. The API is intentionally headless in BM-002;
+`Business Mirror Workspace`, Package compilation, and Proposal simulation are later work packages.
 
 Author Workspace v2 now distinguishes **recoverable** from **saved**. After an edit, the lifecycle
 beside the draft identity advances from `DIRTY` to `RECOVERABLE` when the current tab has captured a

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "resourceGateway.domainCapabilityPackageSaveReceipt.v1",
+  "requestFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "result": {
+    "schemaVersion": "resourceGateway.storedDomainCapabilityPackageDraft.v1",
+    "draftFingerprint": "sha256:9af1287712cd5aff2b3abbaf5a49e0121e39282a49d306b28bcaf6e8272fd0cf",
+    "draft": {
+      "schemaVersion": "bloge.domainCapabilityPackageDraft.v1",
+      "packageId": "cancellation-fee-resolution",
+      "revision": 1,
+      "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" },
+      "businessDefinition": {
+        "domainId": "ride-cancellation",
+        "problemTaxonomyRef": { "kind": "PROBLEM_TAXONOMY", "id": "trip-problems", "revision": 1, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+        "problemCode": "TRIP.CANCELLATION.FEE",
+        "businessGoal": "Resolve disputed cancellation fees",
+        "expectedOutcome": "Return an explainable and policy-compliant resolution",
+        "riskClass": "HIGH",
+        "accountableOwner": "cancellation-service-owner",
+        "collaboratingOwners": ["risk-owner", "support-operations"]
+      },
+      "packageContractRef": { "kind": "CONTRACT", "id": "cancellation-fee-package", "revision": 1, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      "capabilityRefs": [{ "kind": "CAPABILITY", "id": "trip-query", "revision": 1, "fingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" }],
+      "graphRefs": [{ "kind": "GRAPH_DRAFT", "id": "cancellation-fee-resolution", "revision": 1, "fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" }],
+      "proposalRefs": [],
+      "stateModelRefs": [{ "kind": "STATE_MODEL", "id": "trip-lifecycle", "revision": 1, "fingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" }],
+      "effectModelRefs": [{ "kind": "EFFECT_CONTRACT", "id": "refund-effect", "revision": 1, "fingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" }],
+      "scenarioInventoryRef": { "kind": "SCENARIO_INVENTORY", "id": "cancellation-scenarios", "revision": 1, "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111" },
+      "scenarioPackRefs": [{ "kind": "SCENARIO_PACK", "id": "cancellation-core", "revision": 1, "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222" }],
+      "solutionRefs": [{ "layer": "L1_SERVICE_DESIGN", "kind": "SOLUTION", "id": "cancellation-fee-solution", "revision": 1, "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333", "authority": "customer-service-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } }],
+      "carrierRefs": [{ "layer": "L2_SERVICE_CARRIER", "kind": "WORKFLOW", "id": "cancellation-fee-workflow", "revision": 1, "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444", "authority": "customer-service-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } }],
+      "channelRefs": [{ "layer": "L3_APPLICATION", "kind": "CHANNEL_APPLICATION", "id": "support-console", "revision": 1, "fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555", "authority": "customer-service-registry", "scope": { "tenantId": "ride-hailing", "organizationId": "customer-service", "projectId": "cancellation", "environmentId": "test", "region": "sg" } }],
+      "fidelityInventoryRef": { "kind": "DOMAIN_FIDELITY_INVENTORY", "id": "cancellation-fidelity", "revision": 1, "fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666" },
+      "outcomeDefinitionRefs": [{ "kind": "OUTCOME_DEFINITION", "id": "fair-resolution", "revision": 1, "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777" }],
+      "limitations": ["Cash refund remains virtual during rehearsal"],
+      "assumptions": ["Trip facts are supplied by certified fixtures"],
+      "expiresAt": "2026-11-14T02:00:00Z",
+      "provenance": {
+        "schemaVersion": "resourceGateway.artifactProvenance.v1",
+        "sourceType": "OWNER",
+        "sourceRefs": [],
+        "tenantId": "ride-hailing",
+        "purpose": "customer-service-business-mirror",
+        "sampleFrom": null,
+        "sampleTo": null,
+        "sampleCount": null,
+        "confidence": null,
+        "biasRisks": [],
+        "approvedBy": "",
+        "approvedAt": null,
+        "expiresAt": null,
+        "revocationRef": ""
+      },
+      "lifecycle": "READY_FOR_REVIEW"
+    },
+    "createdAt": "2026-08-14T02:00:00Z",
+    "updatedAt": "2026-08-14T02:00:00Z",
+    "updatedBy": "cancellation-service-owner"
+  },
+  "completedAt": "2026-08-14T02:00:00Z"
+}

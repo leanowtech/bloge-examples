@@ -19,6 +19,15 @@ public final class BusinessMirrorProtocol {
     /** Mutable Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_DRAFT_V1 =
             "bloge.domainCapabilityPackageDraft.v1";
+    /** Repository-owned stored Package revision v1 wire version. */
+    public static final String STORED_DOMAIN_CAPABILITY_PACKAGE_DRAFT_V1 =
+            "resourceGateway.storedDomainCapabilityPackageDraft.v1";
+    /** Exact idempotent Package save receipt v1 wire version. */
+    public static final String DOMAIN_CAPABILITY_PACKAGE_SAVE_RECEIPT_V1 =
+            "resourceGateway.domainCapabilityPackageSaveReceipt.v1";
+    /** Bounded Package index page v1 wire version. */
+    public static final String DOMAIN_CAPABILITY_PACKAGE_PAGE_V1 =
+            "resourceGateway.domainCapabilityPackagePage.v1";
     /** Immutable compiled Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_SNAPSHOT_V1 =
             "resourceGateway.domainCapabilityPackageSnapshot.v1";
@@ -39,11 +48,20 @@ public final class BusinessMirrorProtocol {
     public static final String PROPOSAL_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "cancellation-attribution-proposal-stage1-v1.fixture.json";
+    /** Exact durable Package create receipt example. */
+    public static final String PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "cancellation-fee-package-save-receipt-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
     static final String PACKAGE_DRAFT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-draft-v1.schema.json";
+    static final String STORED_PACKAGE_DRAFT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stored-domain-capability-package-draft-v1.schema.json";
+    static final String PACKAGE_SAVE_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "domain-capability-package-save-receipt-v1.schema.json";
+    static final String PACKAGE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "domain-capability-package-page-v1.schema.json";
     static final String PACKAGE_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-snapshot-v1.schema.json";
     static final String PACKAGE_READINESS_SCHEMA_RESOURCE =
@@ -74,6 +92,36 @@ public final class BusinessMirrorProtocol {
      */
     public static void requirePackageDraft(JsonNode value) {
         require(value, PACKAGE_DRAFT_SCHEMA_RESOURCE, "PACKAGE_DRAFT_INVALID");
+    }
+
+    /**
+     * Requires a strict repository-owned stored Package revision v1 value.
+     *
+     * @param value decoded stored Package revision
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requireStoredPackageDraft(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyStoredPackageDraft(value);
+    }
+
+    /**
+     * Requires a strict exact Package save receipt v1 value.
+     *
+     * @param value decoded Package save receipt
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requirePackageSaveReceipt(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyPackageSaveReceipt(value);
+    }
+
+    /**
+     * Requires a strict bounded Package index page v1 value.
+     *
+     * @param value decoded Package index page
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requirePackagePage(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyPackagePage(value);
     }
 
     /**

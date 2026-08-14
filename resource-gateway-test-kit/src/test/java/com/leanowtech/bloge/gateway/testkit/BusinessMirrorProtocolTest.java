@@ -53,6 +53,71 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void validatesDurablePackageApiEnvelopesAndExactReceiptFixture() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ObjectNode page = JSON.createObjectNode();
+        page.put("schemaVersion", BusinessMirrorProtocol.DOMAIN_CAPABILITY_PACKAGE_PAGE_V1);
+        page.putArray("items").add(receipt.path("result").deepCopy());
+        page.put("nextCursor", "");
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredPackageDraft(receipt.path("result")));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requirePackageSaveReceipt(receipt));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requirePackagePage(page));
+    }
+
+    @Test
+    void rejectsTamperedDurablePackageApiEnvelopeShape() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ((ObjectNode) receipt.path("result")).put("rawBusinessPayload", "must-not-leak");
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageSaveReceipt(receipt))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_SAVE_RECEIPT_INVALID")
+                .hasMessageNotContaining("must-not-leak");
+    }
+
+    @Test
+    void rejectsSchemaValidStoredDraftContentWhoseCanonicalFingerprintWasNotUpdated() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ((ArrayNode) receipt.path("result").path("draft").path("assumptions"))
+                .add("tampered-but-schema-valid");
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageSaveReceipt(receipt))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("tampered-but-schema-valid");
+    }
+
+    @Test
+    void rejectsDuplicatePageItemsAndCursorThatDoesNotBindTheLastItem() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ObjectNode duplicatePage = JSON.createObjectNode();
+        duplicatePage.put("schemaVersion", BusinessMirrorProtocol.DOMAIN_CAPABILITY_PACKAGE_PAGE_V1);
+        duplicatePage.putArray("items")
+                .add(receipt.path("result").deepCopy())
+                .add(receipt.path("result").deepCopy());
+        duplicatePage.put("nextCursor", "cancellation-fee-resolution");
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackagePage(duplicatePage))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_PAGE_ORDER_INVALID");
+
+        ObjectNode badCursorPage = duplicatePage.deepCopy();
+        ((ArrayNode) badCursorPage.path("items")).remove(1);
+        badCursorPage.put("nextCursor", "different-package");
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackagePage(badCursorPage))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_PAGE_CURSOR_INVALID");
+    }
+
+    @Test
     void rejectsUnknownFieldsAndDoesNotLeakTheirValues() throws Exception {
         ObjectNode packageDraft = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
@@ -117,6 +182,8 @@ class BusinessMirrorProtocolTest {
                 .isEqualTo("bloge.domainCapabilityPackageDraft.v1");
         assertThat(BusinessMirrorProtocol.CAPABILITY_PROPOSAL_SNAPSHOT_V1)
                 .isEqualTo("resourceGateway.capabilityProposalSnapshot.v1");
+        assertThat(BusinessMirrorProtocol.DOMAIN_CAPABILITY_PACKAGE_SAVE_RECEIPT_V1)
+                .isEqualTo("resourceGateway.domainCapabilityPackageSaveReceipt.v1");
         assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_INVALID");

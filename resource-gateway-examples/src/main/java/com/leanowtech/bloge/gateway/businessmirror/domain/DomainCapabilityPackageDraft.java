@@ -201,6 +201,15 @@ public record DomainCapabilityPackageDraft(
                 solutionRefs, carrierRefs, channelRefs, fidelityInventoryRef, outcomeDefinitionRefs);
     }
 
+    /** Returns this authoring value with a repository-assigned optimistic revision. */
+    public DomainCapabilityPackageDraft withRevision(long value) {
+        return new DomainCapabilityPackageDraft(schemaVersion, packageId, value, scope,
+                businessDefinition, packageContractRef, capabilityRefs, graphRefs, proposalRefs,
+                stateModelRefs, effectModelRefs, scenarioInventoryRef, scenarioPackRefs,
+                solutionRefs, carrierRefs, channelRefs, fidelityInventoryRef,
+                outcomeDefinitionRefs, limitations, assumptions, expiresAt, provenance, lifecycle);
+    }
+
     private static List<String> readinessBlockers(
             BusinessDefinition businessDefinition,
             MirrorArtifactRef packageContractRef,

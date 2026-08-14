@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackagePage;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceipt;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredDomainCapabilityPackageDraft;
 import com.leanowtech.bloge.gateway.businessmirror.domain.BusinessAssetLink;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityProposalDraft;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityProposalSnapshot;
@@ -12,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class BusinessMirrorCapabilityTest {
     @Test
-    void advertisesProtocolsWithoutClaimingUnimplementedRuntimeApis() {
+    void advertisesDurablePackageApiWithoutClaimingUnimplementedProposalRuntime() {
         IntegrationCapabilities capabilities = IntegrationCapabilities.current();
 
         assertThat(capabilities.supportedObjects())
@@ -20,6 +23,12 @@ class BusinessMirrorCapabilityTest {
                         BusinessAssetLink.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageDraft", java.util.List.of(
                         DomainCapabilityPackageDraft.SCHEMA_VERSION))
+                .containsEntry("storedDomainCapabilityPackageDraft", java.util.List.of(
+                        StoredDomainCapabilityPackageDraft.SCHEMA_VERSION))
+                .containsEntry("domainCapabilityPackageSaveReceipt", java.util.List.of(
+                        DomainCapabilityPackageSaveReceipt.SCHEMA_VERSION))
+                .containsEntry("domainCapabilityPackagePage", java.util.List.of(
+                        DomainCapabilityPackagePage.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageSnapshot", java.util.List.of(
                         DomainCapabilityPackageSnapshot.SCHEMA_VERSION))
                 .containsEntry("packageReadinessReport", java.util.List.of(
@@ -30,7 +39,7 @@ class BusinessMirrorCapabilityTest {
                         CapabilityProposalSnapshot.SCHEMA_VERSION));
         assertThat(capabilities.features())
                 .containsEntry("businessMirrorProtocol", true)
-                .containsEntry("businessMirrorPackageApi", false)
+                .containsEntry("businessMirrorPackageApi", true)
                 .containsEntry("businessMirrorProposalSimulation", false);
         assertThat(capabilities.protocolVersion())
                 .isEqualTo(ToolStudioResourceGatewayProtocol.VERSION);

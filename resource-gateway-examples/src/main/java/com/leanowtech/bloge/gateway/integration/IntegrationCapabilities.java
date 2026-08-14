@@ -324,6 +324,15 @@ public record IntegrationCapabilities(
         objects.put("domainCapabilityPackageDraft", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageDraft.SCHEMA_VERSION));
+        objects.put("storedDomainCapabilityPackageDraft", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .StoredDomainCapabilityPackageDraft.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackageSaveReceipt", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .DomainCapabilityPackageSaveReceipt.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackagePage", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .DomainCapabilityPackagePage.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageSnapshot", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageSnapshot.SCHEMA_VERSION));
@@ -938,7 +947,7 @@ public record IntegrationCapabilities(
         features.put("capabilityProjection", true);
         features.put("capabilityClosureProtocol", true);
         features.put("businessMirrorProtocol", true);
-        features.put("businessMirrorPackageApi", false);
+        features.put("businessMirrorPackageApi", true);
         features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);

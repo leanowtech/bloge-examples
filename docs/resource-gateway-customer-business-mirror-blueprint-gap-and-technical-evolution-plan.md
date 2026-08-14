@@ -660,7 +660,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 | Ticket | 优先级 | 工作包 | 主要交付 | 退出门禁 |
 |---|---|---|---|---|
 | RG-BM-001 | P0 | 权威与协议冻结 | 领域词汇、source-of-truth、v1 Schema、ADR | **实施中：**协议内核、严格 Schema、固定 fixtures 和 Test Kit 已完成；RG/ANEKE/业务/TEE 四方签字及 mixed-version 消费者认证待完成 |
-| RG-BM-002 | P0 | Package protocol 与 repository | Draft/Snapshot/Readiness、严格 Schema、DB migration、idempotent API | 并发保存、漂移、跨 Scope、重启 exact replay 全绿 |
+| RG-BM-002 | P0 | Package protocol 与 repository | **仓库内工程实现已完成：** Draft/Snapshot/Readiness 协议、严格 Schema、PostgreSQL migration、认证 create/save/read/list API、完整 Scope、optimistic revision 与 durable exact receipt | H2/PostgreSQL 双实例并发、漂移、跨 Scope、事务回滚、重启 exact replay、认证 HTTP 和独立消费者全绿；HA/DR 属于 BM-013 |
 | RG-BM-003 | P0 | PackageCompiler | closure、link、scenario、fidelity、outcome 编译和 fail-closed report | deterministic fingerprint；TOCTOU 与 property tests 全绿 |
 | RG-BM-004 | P0 | Legacy migration | Graph → Package projector、gap inventory、逐包迁移 | 七个内置 Graph 均可包装且缺失项不误绿 |
 | RG-BM-005 | P0 | Business Mirror Workspace | Portfolio、Package 六步任务、Readiness、Capability Map | 中英文、390/820/1440、键盘、VS Code 离线均可完成固定任务 |

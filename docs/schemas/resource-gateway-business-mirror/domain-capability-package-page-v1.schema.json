@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/domain-capability-package-page-v1.schema.json",
+  "title": "Domain Capability Package Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "items", "nextCursor"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.domainCapabilityPackagePage.v1" },
+    "items": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "stored-domain-capability-package-draft-v1.schema.json" }
+    },
+    "nextCursor": { "type": "string", "maxLength": 512 }
+  }
+}

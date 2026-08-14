@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/stored-domain-capability-package-draft-v1.schema.json",
+  "title": "Stored Domain Capability Package Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "draftFingerprint", "draft", "createdAt", "updatedAt", "updatedBy"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.storedDomainCapabilityPackageDraft.v1" },
+    "draftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "draft": { "$ref": "domain-capability-package-draft-v1.schema.json" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "updatedBy": { "type": "string", "minLength": 1, "maxLength": 2048 }
+  }
+}

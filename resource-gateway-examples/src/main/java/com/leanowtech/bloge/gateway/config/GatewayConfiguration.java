@@ -12,6 +12,12 @@ import com.leanowtech.bloge.core.operator.SuspendableOperator;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseDomainCapabilityPackageDraftRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseDomainCapabilityPackageSaveReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageAuthoringService;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageDraftRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveCoordinator;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
@@ -362,7 +368,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
@@ -511,6 +517,41 @@ public class GatewayConfiguration {
     public AuthoringDraftRepository authoringDraftRepository(JdbcTemplate jdbc,
                                                              ObjectMapper objectMapper) {
         return new DatabaseAuthoringDraftRepository(jdbc, objectMapper);
+    }
+
+    /** Durable, fully scoped current and historical Package authoring state. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainCapabilityPackageDraftRepository domainCapabilityPackageDraftRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseDomainCapabilityPackageDraftRepository(jdbc, objectMapper);
+    }
+
+    /** Restart-safe exact-response journal for Package create and save commands. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainCapabilityPackageSaveReceiptRepository domainCapabilityPackageSaveReceiptRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseDomainCapabilityPackageSaveReceiptRepository(jdbc, objectMapper);
+    }
+
+    /** Cross-replica idempotency coordinator for Package authoring mutations. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainCapabilityPackageSaveCoordinator domainCapabilityPackageSaveCoordinator(
+            DomainCapabilityPackageSaveReceiptRepository receipts,
+            ObjectMapper objectMapper) {
+        return new DomainCapabilityPackageSaveCoordinator(receipts, objectMapper);
+    }
+
+    /** Authenticated Package command/query application boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainCapabilityPackageAuthoringService domainCapabilityPackageAuthoringService(
+            DomainCapabilityPackageDraftRepository drafts,
+            DomainCapabilityPackageSaveCoordinator saves,
+            ObjectMapper objectMapper) {
+        return new DomainCapabilityPackageAuthoringService(drafts, saves, objectMapper);
     }
 
     /**

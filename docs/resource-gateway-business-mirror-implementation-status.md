@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-001 协议内核
+> 当前迭代：BM-002 Package durable authoring
 >
 > 最近更新：2026-08-14
 
@@ -74,7 +74,90 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 BM-001 的仓库内工程门禁已完成。四方 Owner 对协议治理规则的组织签署不属于本地代码可以替代的证据，仍保留为 BM-001 的外部验收项。
 
-## 3. 能力探针解释
+## 3. Iteration 2：BM-002 Package durable authoring
+
+### 3.1 已交付
+
+| 交付 | 实现 | 已固化的关键约束 |
+|---|---|---|
+| Package command/query port | `DomainCapabilityPackageAuthoringService`、repository interfaces | HTTP transport、事务编排和 JDBC 存储分层；认证 Scope 只能由 `IntegrationRequestContext` 提供 |
+| Current 与 immutable history | `DatabaseDomainCapabilityPackageDraftRepository` | 五段 Scope + `packageId` 主键；current 和 history 同事务；每次保存重算 canonical fingerprint |
+| Optimistic save | `saveIfRevision`、`expectedRevision` | create 只接受 revision `0`；save 要求 path/body/expected revision 一致；冲突不覆盖 current |
+| Durable idempotency | lock/receipt repository、`DomainCapabilityPackageSaveCoordinator` | key 绑定 canonical command fingerprint；数据库串行化跨线程/跨副本；重启后返回 exact 原回执 |
+| 认证 Authoring API | `/api/business-mirror/packages` | create/save/current/exact revision/history/keyset list；独立 read/write operation；统一 problem contract |
+| PostgreSQL migration | `V20260814_001__business_mirror_package_authoring.sql` | 四张表、完整 Scope 主键、fingerprint check、history/receipt 索引 |
+| 严格 authoring envelope | 三份 JSON Schema、固定 save receipt fixture | stored draft、save receipt、page 均 `additionalProperties: false`；Test Kit 可离线校验 |
+| 能力发现 | `/api/integration/capabilities` | 新增三类 authoring 对象；运行装配与 PostgreSQL 认证通过后才声明 `businessMirrorPackageApi=true` |
+| 使用与运维指南 | `resource-gateway-business-mirror-package-authoring-guide.md` | 固定 Scope 演示、create/save/read/exact replay、错误恢复、迁移和停止服务步骤 |
+
+### 3.2 事务与并发语义
+
+一次写请求的原子边界为：
+
+```text
+authenticate
+  -> validate command and trusted Scope
+  -> acquire (Scope, Idempotency-Key) database row lock
+  -> find exact prior receipt or reject key drift
+  -> compare current revision
+  -> write current + immutable history
+  -> write exact receipt
+  -> commit once
+```
+
+PostgreSQL 锁行使用 `INSERT ... ON CONFLICT DO NOTHING` 后 `SELECT ... FOR UPDATE`。实现没有通过捕获 unique violation 建锁，因为 PostgreSQL 的唯一键异常会中止当前事务。H2 使用等价的 `MERGE` 初始化锁行。该差异被封装在 receipt repository，并由两套数据库测试覆盖。
+
+保存回执同时存储结构化 JSON、request fingerprint 和 completion timestamp。读取时重新校验三者以及回执内部 Scope；数据库列和 JSON 发生漂移时失败关闭。时间戳统一截断到微秒，避免 JDBC/PostgreSQL 精度差异破坏 exact replay。
+
+### 3.3 自动化验证
+
+| 测试层 | 用例数 | 证明内容 |
+|---|---:|---|
+| H2 repository/service | 10 | 响应丢失 + 重启重放、key 漂移、history/page、Scope 隔离、Scope mismatch、缺 key、receipt tamper、revision conflict、事务回滚、双实例并发 |
+| 原生 PostgreSQL 14 | 1 | 部署 DDL、`fsync=on`、`synchronous_commit=on`、两独立连接争抢同 key、单 revision/receipt |
+| Controller | 2 | HTTP status/header、认证 context 传递和 problem contract |
+| Spring HTTP/transaction wiring | 2 | AOP transactional proxy；真实认证、Jackson、Controller、DB、exact replay 和 list 完整链路 |
+| 能力探针 | 1 | 三类对象和 package API readiness 可发现 |
+| 独立 Test Kit | 12 | 九类根协议、三类 durable envelope、固定 fixtures、canonical fingerprint 复算、page Scope/order/cursor、未知字段和篡改拒绝 |
+
+聚焦门禁共 `28` 个用例，全部通过：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=DatabaseDomainCapabilityPackageAuthoringTest,\
+DatabaseDomainCapabilityPackagePostgresCertificationTest,\
+DomainCapabilityPackageControllerTest,\
+BusinessMirrorPackageSpringWiringTest,\
+BusinessMirrorCapabilityTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=BusinessMirrorProtocolTest test
+```
+
+完整项目门禁：
+
+| 项目 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5941` tests，`0` failures，`0` errors，`13` skipped；包含原生 PostgreSQL 和真实浏览器 E2E；`BUILD SUCCESS` |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `538` tests，`0` failures，`0` errors，`0` skipped；JAR、shade 与 Javadoc 门禁通过；`BUILD SUCCESS` |
+
+聚焦测试中曾发现一处测试断言把 `result.draft.revision` 写成 `result.revision`；实现响应符合既定 Schema，修正断言后重跑全绿。该失败没有通过改变协议来掩盖。
+
+完整构建仍报告两类既有工具链风险：BLOGE 发布 POM 中 `bloge-durable`、`bloge-test` 未给 `bloge-execution-control` 声明依赖版本；本机 Chrome `151` 高于 Selenium 精确支持的 CDP `149`。两者未造成当前门禁失败，但应分别进入上游发布元数据和浏览器工具链升级队列。
+
+### 3.4 当前认证边界
+
+BM-002 的 PostgreSQL 认证证明了 migration 可执行、durable commit 开启和两副本幂等串行化。它尚未证明：
+
+- PostgreSQL HA failover 与长事务锁恢复；
+- 网络分区、连接池耗尽和数据库磁盘满；
+- 蓝绿升级和跨版本读写；
+- PITR、备份恢复、RPO/RTO；
+- 客户 KMS/Vault、mTLS 和企业迁移平台。
+
+这些不是本轮遗漏后可以标成「已完成」的细节，而是 BM-012/BM-013 的独立生产认证责任。
+
+## 4. 能力探针解释
 
 当前探针应包含：
 
@@ -84,19 +167,22 @@ BM-001 的仓库内工程门禁已完成。四方 Owner 对协议治理规则的
     "domainCapabilityPackageDraft": ["bloge.domainCapabilityPackageDraft.v1"],
     "domainCapabilityPackageSnapshot": ["resourceGateway.domainCapabilityPackageSnapshot.v1"],
     "capabilityProposalDraft": ["bloge.capabilityProposalDraft.v1"],
-    "capabilityProposalSnapshot": ["resourceGateway.capabilityProposalSnapshot.v1"]
+    "capabilityProposalSnapshot": ["resourceGateway.capabilityProposalSnapshot.v1"],
+    "storedDomainCapabilityPackageDraft": ["resourceGateway.storedDomainCapabilityPackageDraft.v1"],
+    "domainCapabilityPackageSaveReceipt": ["resourceGateway.domainCapabilityPackageSaveReceipt.v1"],
+    "domainCapabilityPackagePage": ["resourceGateway.domainCapabilityPackagePage.v1"]
   },
   "features": {
     "businessMirrorProtocol": true,
-    "businessMirrorPackageApi": false,
+    "businessMirrorPackageApi": true,
     "businessMirrorProposalSimulation": false
   }
 }
 ```
 
-`businessMirrorProtocol=true` 只表示协议、Schema 和独立校验器可用。当前还不能通过 HTTP 创建、保存、编译或模拟 Package/Proposal。
+`businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 进一步表示 Package 作者态持久化 API 已装配并通过本轮认证；它不表示 Package 编译、Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
 
-## 4. 架构偏差审计
+## 5. 架构偏差审计
 
 | 蓝图决策 | 当前实现 | 结论 |
 |---|---|---|
@@ -106,30 +192,35 @@ BM-001 的仓库内工程门禁已完成。四方 Owner 对协议治理规则的
 | Proposal 不是正式 Operator 上的 `mock=true` | Proposal 有独立身份、价值假设、隔离 binding 和证据生命周期 | 符合 |
 | RG 不接管 ANEKE Registry/Gate | Snapshot 不包含 ANEKE 权威状态 | 符合 |
 | Test Kit 不依赖服务端和 Spring | 新公共入口只依赖 Jackson 与打包 Schema | 符合 |
+| 写命令由完整企业 Scope 隔离 | current/history/lock/receipt 主键均包含五段 Scope | 符合 |
+| 重试返回原始事实，不重复执行 | exact receipt 与 canonical command fingerprint 持久化在同一事务 | 符合 |
+| 示例自动建表不冒充生产迁移 | 独立 PostgreSQL DDL 和原生数据库认证存在，文档明确运行时建表边界 | 符合 |
 | 新对象进入 additive `1.1.x` 集成协议 | 对象已进入能力探针，但当前 protocolVersion 仍为 `1.0.0` | 有意延后到 BM-014；先补多版本协商与旧消费者认证，避免伪兼容 |
 
 未发现需要推翻蓝图边界的架构偏差。
 
-## 5. 差距复评
+## 6. 差距复评
 
-本轮关闭的是「业务主对象不存在、Proposal 没有独立身份、L0-L3 无类型协议、跨语言协议不可消费」四个根问题的协议层部分。仍未关闭其持久化、编译、运行、产品和组织闭环。
+Iteration 1 关闭了业务主对象的协议断层。Iteration 2 关闭了 Package 作者态没有 durable source-of-truth、写入不可重放、并发保存会漂移、跨系统无法校验保存结果的问题。业务能力包现在可以被可靠地写入和读取，但仍不能编译成不可变 Snapshot，也没有产品工作区和运行闭环。
 
-| 口径 | 开工前 | Iteration 1 复评 | 剩余主要缺口 |
-|---|---:|---:|---|
-| 技术内核完成度 | `90-92` | `91-93` | PackageCompiler、Proposal simulation、真实基础设施认证 |
-| 产品蓝图闭环度 | `67` | `72` | repository/API、Business Mirror Workspace、实现交付、Impact/Evidence |
-| 复杂企业生产成熟度 | `54` | `54` | 本轮没有新增 HA/DR、生产 Connector、KMS/WORM 或组织运行证据 |
+| 口径 | 开工前 | Iteration 1 | Iteration 2 | 剩余主要缺口 |
+|---|---:|---:|---:|---|
+| 技术内核完成度 | `90-92` | `91-93` | `92-94` | PackageCompiler、Proposal simulation、HA/DR/upgrade certification |
+| 产品蓝图闭环度 | `67` | `72` | `76` | Workspace、编译、模拟、实现交付、Impact/Evidence |
+| 复杂企业生产成熟度 | `54` | `54` | `56` | PostgreSQL 单机认证之外，仍缺 HA/DR、客户 Connector、KMS/WORM 和组织运行证据 |
 
-按 15 个工作包的风险加权口径，当前距离完整蓝图仍约 `28%`。该数字是仓库内部工程复评，不是客户验收结论，也远未达到 `<3%` 的收敛门槛。
+按 15 个工作包的风险加权口径，当前距离完整蓝图仍约 `24%`。下降的 `4` 个百分点来自可运行、可重放、可跨语言消费的 Package authoring vertical slice，而不是单纯增加 Java 类型。产品 UI、编译/模拟运行、客户真实事实源和生产基础设施仍是高权重缺口，因此没有把单个 repository 迭代放大成虚假成熟度。
 
-## 6. 下一迭代：BM-002
+该数字是仓库内部工程复评，不是客户验收结论，仍明显高于 `<3%` 的收敛门槛。
 
-下一步建立 Package 的 durable authoring vertical slice，禁止直接跳到 UI：
+## 7. 下一迭代：BM-003 与 BM-004
 
-1. 定义 Package command/query port、authority policy 和稳定错误码。
-2. 增加 PostgreSQL migration、完整 Scope 主键、optimistic revision 与 canonical draft fingerprint。
-3. 实现 create/save/read/list API，使用 idempotency key 保存 exact receipt。
-4. 覆盖并发保存、响应丢失重试、同 key 不同 payload、跨 Scope、重启 exact replay 和数据库回滚。
-5. 能力探针仅在运行装配和认证完成后把 `businessMirrorPackageApi` 改为 `true`。
+下一步先让已可靠保存的 Package 能产生可解释、可复现的编译事实，再包装存量 Graph：
 
-BM-002 完成后重新执行差距复评，再进入 PackageCompiler 与 Legacy Graph 包装器。
+1. 建立 `PackageCompiler` port，输入 exact stored draft 与 authority-frozen dependency resolver。
+2. 产出 immutable `DomainCapabilityPackageSnapshot` 和由 Finding 派生的 `PackageReadinessReport`。
+3. 对 Contract、Capability、Graph、Scenario、L0-L3 link、Fidelity 与 Outcome closure 做完整性、Scope、fingerprint 和生命周期校验。
+4. 使用两次编译相同指纹、依赖 TOCTOU 冲突、乱序/property inputs 和 tamper cases 证明确定性。
+5. 实现 Legacy Graph projector；七个内置 Graph 都能生成 Package draft 和明确 gap inventory，缺失业务语义不得误报 READY。
+
+BM-003 与 BM-004 分别提交。每次提交后重新运行完整门禁、架构偏差审计和差距复评。
