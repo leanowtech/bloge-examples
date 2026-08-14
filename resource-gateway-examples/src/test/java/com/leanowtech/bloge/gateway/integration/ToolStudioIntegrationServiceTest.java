@@ -159,6 +159,10 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
                 .containsEntry("businessMirrorWorkspace", true)
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
+                .containsEntry("businessMirrorPackageGovernanceProtocol", true)
+                .containsEntry("businessMirrorPackageRegistryIngestApi", false)
+                .containsEntry("businessMirrorPackageGovernanceProjectionApi", false)
+                .containsEntry("businessMirrorPackageGovernanceProjectionIngestReady", false)
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
@@ -263,7 +267,11 @@ class ToolStudioIntegrationServiceTest {
                         "capabilityClosureProjectionRequest",
                         "businessAssetLinkClosure", "packageCompilationReceipt",
                         "legacyGraphPackageProjection",
-                        "legacyGraphPackageProjectionCatalog");
+                        "legacyGraphPackageProjectionCatalog",
+                        "packageRegistryIngestBundle",
+                        "domainCapabilityPackageGovernanceProjection",
+                        "domainCapabilityPackageGovernanceView",
+                        "packageGovernanceProjectionReceipt");
         assertThat(envelope.payload().supportedObjects())
                 .containsEntry("mirrorPlan", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -364,6 +372,28 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );
+    }
+
+    @Test
+    void capabilitiesAdvertisePackageGovernanceRoutesOnlyWhenServiceIsAssembled() {
+        ToolStudioIntegrationService service = service(null, null, null, null);
+        var governance = mock(com.leanowtech.bloge.gateway.businessmirror.governance
+                .PackageGovernanceIntegrationService.class);
+        when(governance.ingestionReady()).thenReturn(true);
+        service.configureBusinessMirrorPackageGovernance(governance);
+
+        IntegrationCapabilities capabilities = service.capabilities().payload();
+
+        assertThat(capabilities.features())
+                .containsEntry("businessMirrorPackageRegistryIngestApi", true)
+                .containsEntry("businessMirrorPackageGovernanceProjectionApi", true)
+                .containsEntry("businessMirrorPackageGovernanceProjectionIngestReady", true);
+        assertThat(capabilities.endpoints())
+                .extracting(endpoint -> endpoint.method() + " " + endpoint.path())
+                .contains(
+                        "GET /api/integration/domain-capability-packages/{packageId}/revisions/{revision}/registry-ingest-bundle",
+                        "POST /api/integration/domain-capability-packages/{packageId}/governance-projections",
+                        "GET /api/integration/domain-capability-packages/{packageId}/governance-projection");
     }
 
     @Test

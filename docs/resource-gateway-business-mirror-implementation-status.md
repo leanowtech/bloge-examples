@@ -1114,3 +1114,61 @@ freshness-aware gate projection 与 mixed-version 兼容（BM-014），以及取
 
 下一迭代进入 BM-014。目标不是把 ANEKE 治理复制到 Resource Gateway，而是让 Package Snapshot、Evidence、
 Runtime Certification 与外部 gate result 通过 additive 1.1 协议形成可独立升级、可检测陈旧、可审计重放的持续集成闭环。
+
+## 22. Iteration 14：BM-014 ANEKE Package Integration
+
+### 22.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Additive protocol 1.1 | `ToolStudioResourceGatewayProtocol` 升级到 `1.1.0`，最低兼容消费者保持 `1.0.0`；integration envelope 和 Stage 0 baseline 同时覆盖两版 |
+| Registry Ingest Bundle | 一个对象完整携带 Package Snapshot、Readiness、Business Asset Link Closure、Package Evidence Index 和 exact dependency manifest；Bundle 与四类内嵌事实均内容寻址 |
+| ANEKE Governance Projection | ANEKE 回传 registry record、gate decision、状态、source cursor、有效窗口和域分离签名；Resource Gateway 不生成或解释 ANEKE publish result |
+| Freshness-aware View | 将当前 Package/Evidence/Bundle 与缓存投影联结，严格派生 `CURRENT/MISSING/STALE/EXPIRED/UNVERIFIABLE`，不把缺 trust 或旧投影降级成通过 |
+| 单调外部日志 | 完整 Scope + Package 一条 append-only stream；`externalGeneration` 从 1 连续递增，exact replay 可恢复，rollback/fork/gap 和 projectionId/issuer takeover 被拒绝 |
+| 认证 Integration API | exact revision Bundle export、Projection ingest 和 current joined view 三条路由；每条路由使用独立 purpose policy 和 trusted identity Scope |
+| 动态能力探针 | 协议对象始终可发现；API 物理装配与 ANEKE trust 当前 ready 分开广告，未安装客户 trust 时写入失败关闭 |
+| 事务事件 | 新 generation 提交后写入 `DOMAIN_CAPABILITY_PACKAGE_GOVERNANCE_CHANGED` outbox；exact replay 不重复产生治理变更事件 |
+| 数据库迁移 | `V20260815_004` 创建 Scope-keyed head、append-only projection history、exact ref 列和 expiry index；H2 与 PostgreSQL 共用 repository 语义 |
+| 独立消费者 | Test Kit 打包四份 strict Schema、两份 server-produced fixture，并独立复验 Bundle 闭包、内容地址、Projection 签名材料、有效期、exact refs 和 caller-owned trust |
+| 接入文档 | [ANEKE Package 集成指南](resource-gateway-aneke-package-integration-guide.md)覆盖 Authority、启动、探针、HTTP、trust adapter、generation、PostgreSQL、错误恢复和上线清单 |
+
+### 22.2 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 服务端已是 `1.1.0`，Test Kit mirror envelope 仍只接受 `1.0.0` | Producer 版本升级只改了服务端常量，没有同步独立消费者兼容基线 | Test Kit 显式维护 current/minimum 两版；baseline 把 `1.1.0` 放在首选、保留 `1.0.0`，新增滚动升级混部用例 |
+| PostgreSQL 双副本在 head 唯一键冲突后无法继续 `FOR UPDATE` | H2 允许捕获冲突后继续，PostgreSQL 会把整个事务标记为 aborted | head 初始化进入独立 `REQUIRES_NEW` 事务，冲突在事务外消化，再进入 generation 提交事务；原生 PostgreSQL 双 DataSource 认证固定该语义 |
+| 独立初始化事务可能被 gap 请求抢占 stream identity | 把“创建 head”提前后，没有先限制 bootstrap generation | 只有 generation `1` 可创建新 head；被拒绝的 generation gap 不留下 stream，随后合法 issuer/projectionId 可正常 bootstrap |
+| 只校验 Projection 顶层签名会漏掉 Bundle 内部漂移 | 外部治理签名不能替代 RG 编译事实和 Evidence 的各自内容地址 | 服务端接收前重建当前 Bundle；Test Kit 逐一复验 Snapshot、Readiness、L0-L3 Closure、Evidence、manifest 和三类跨对象 ref |
+| fixed fixture 容易被当成已接通 ANEKE | 协议兼容证据与客户治理 Authority 没有在体验路径中分开 | 文档把本地协议体验、离线复验和安装客户 trust 的完整闭环分成三条路径；默认 `ingestReady=false` 明确解释为预期失败关闭 |
+
+### 22.3 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| 服务端协议、service、controller、H2 repository、capability | `17/17` 通过 | 内容地址、签名/trust、exact replay、Scope、stale/expired、outbox、API purpose、generation 和动态探针 |
+| 原生 PostgreSQL | `1/1` 通过 | `V20260815_004`、两个独立 DataSource/transaction manager 竞争同一 successor，只允许一个提交 |
+| 独立 Test Kit 与 mixed-version | `9/9` 通过 | 四类 Schema、两份 fixture、Ed25519、Bundle closure、Projection binding、tamper、unknown field、expiry、trust reject 和 `1.1.0/1.0.0` 协商 |
+
+最终整库 `clean verify` 数字在 BM-015 收口时统一更新，避免用聚焦测试冒充发布门禁。
+
+### 22.4 架构漂移审计
+
+1. Resource Gateway 只导出 immutable Package/Evidence facts 和缓存外部投影，不新增 ANEKE registry、workbook、owner approval、TEE 或 publish gate。
+2. ANEKE Projection 必须由部署方 trust adapter 验证；仓库没有 accept-all、fixture-key 或 production fallback。
+3. Projection 不能修改 Draft、Snapshot、Evidence 或 compilation head；RG facts 变化只会让投影变 stale。
+4. Bundle 和 event 均 payload-free；业务 Payload、credential、私钥和原始审计材料不进入跨系统协议。
+5. Outbox 只通知“外部治理投影发生变化”，不把异步事件当作当前状态 Authority；消费者必须使用 cursor 恢复并重读 current view。
+6. H2/本地 Ed25519 fixture 只证明实现和 wire compatibility；真实 ANEKE trust、registry、gate 和组织审批仍需客户环境认证。
+
+### 22.5 差距复评
+
+BM-014 关闭了仓库内“Package 导入 ANEKE 时依赖松散 Map”“多库/多 revision 依赖无法精确闭合”“外部 gate
+结果没有签名、有效期与 generation”“陈旧治理结果继续显示为当前”“两边版本无法独立滚动升级”“并发副本可形成
+generation fork”和“消费者必须信任服务端自证”七类工程差距。
+
+风险加权差距由约 `3.5%` 降至约 `2.8%`。该数字仍不代表客户 ANEKE 已接通：真实 issuer/key lifecycle、
+registry/workbook/gate、跨系统 cursor、组织审批、故障演练和长期运行必须在客户环境形成证据。仓库内最后一个工作包是
+BM-015：形成取消费申诉试点验收 Manifest，把第 16.5 节十项门禁、Owner 冻结分母、exact evidence refs、观察窗和
+“未获客户验收”状态形式化，避免用演示数据冒充业务验收。

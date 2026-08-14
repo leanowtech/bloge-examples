@@ -43,6 +43,28 @@ public final class DomainCapabilityPackageGovernanceProjectionIntegrity {
     public Verification verify(
             DomainCapabilityPackageGovernanceProjection projection,
             PackageGovernanceProjectionTrust trust) {
+        Verification canonical = canonicalVerification(projection);
+        if (!canonical.verified()) {
+            return canonical;
+        }
+        try {
+            PackageGovernanceProjectionTrust authority = trust == null
+                    ? PackageGovernanceProjectionTrust.unavailable() : trust;
+            if (!authority.available()) {
+                return new Verification(false, "TRUST_UNAVAILABLE");
+            }
+            if (!authority.verify(projection.projectionSeal(), projection)) {
+                return new Verification(false, "SIGNATURE_REJECTED");
+            }
+            return new Verification(true, "VERIFIED");
+        } catch (RuntimeException invalid) {
+            return new Verification(false, "PROJECTION_INVALID");
+        }
+    }
+
+    /** Verifies canonical addresses and signing material without assigning external trust. */
+    public Verification canonicalVerification(
+            DomainCapabilityPackageGovernanceProjection projection) {
         if (projection == null) {
             return new Verification(false, "PROJECTION_REQUIRED");
         }
@@ -55,15 +77,7 @@ public final class DomainCapabilityPackageGovernanceProjectionIntegrity {
             if (!projection.projectionFingerprint().equals(projectionFingerprint(projection))) {
                 return new Verification(false, "PROJECTION_FINGERPRINT_INVALID");
             }
-            PackageGovernanceProjectionTrust authority = trust == null
-                    ? PackageGovernanceProjectionTrust.unavailable() : trust;
-            if (!authority.available()) {
-                return new Verification(false, "TRUST_UNAVAILABLE");
-            }
-            if (!authority.verify(projection.projectionSeal(), projection)) {
-                return new Verification(false, "SIGNATURE_REJECTED");
-            }
-            return new Verification(true, "VERIFIED");
+            return new Verification(true, "CANONICAL");
         } catch (RuntimeException invalid) {
             return new Verification(false, "PROJECTION_INVALID");
         }

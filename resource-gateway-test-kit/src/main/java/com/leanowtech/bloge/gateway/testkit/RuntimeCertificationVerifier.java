@@ -560,7 +560,21 @@ public final class RuntimeCertificationVerifier {
         return Map.copyOf(values);
     }
 
-    /** Immutable coordinates safe to carry into a release gate. */
+    /**
+     * Immutable coordinates safe to carry into a release gate.
+     *
+     * @param manifestId certification manifest identifier
+     * @param manifestRevision certification manifest revision
+     * @param manifestFingerprint canonical certification manifest fingerprint
+     * @param authorizationId execution authorization identifier
+     * @param authorizationRevision execution authorization revision
+     * @param authorizationFingerprint canonical execution authorization fingerprint
+     * @param reportId certification report identifier
+     * @param reportRevision certification report revision
+     * @param reportFingerprint canonical certification report fingerprint
+     * @param startedAt certification start time
+     * @param completedAt certification completion time
+     */
     public record VerifiedCoordinates(
             String manifestId,
             long manifestRevision,
@@ -576,7 +590,15 @@ public final class RuntimeCertificationVerifier {
     ) {
     }
 
-    /** Immutable closure returned for a self-contained replay package. */
+    /**
+     * Immutable closure returned for a self-contained replay package.
+     *
+     * @param bundleId replay bundle identifier
+     * @param bundleRevision replay bundle revision
+     * @param bundleFingerprint canonical replay bundle fingerprint
+     * @param runtime verified runtime certification coordinates
+     * @param regional verified regional certification coordinates
+     */
     public record VerifiedReplayBundleCoordinates(
             String bundleId,
             long bundleRevision,

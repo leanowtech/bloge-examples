@@ -446,6 +446,34 @@ public class DatabasePackageEvidenceRepository implements PackageEvidenceReposit
     }
 
     @Override
+    public Optional<PackageEvidenceIndex> findByCompilation(
+            CapabilitySnapshot.Scope scope, String packageId, long compilationRevision) {
+        CapabilitySnapshot.Scope exact = Objects.requireNonNull(scope, "scope");
+        if (compilationRevision < 1) {
+            return Optional.empty();
+        }
+        return jdbc.query("""
+                        SELECT index_json, index_fingerprint,
+                               package_id AS stored_package_id,
+                               compilation_revision AS stored_compilation_revision,
+                               projection_revision AS stored_projection_revision,
+                               snapshot_fingerprint AS stored_snapshot_fingerprint,
+                               domain_id AS stored_domain_id,
+                               valid_until AS stored_valid_until,
+                               projected_at AS stored_projected_at
+                        FROM business_mirror_package_evidence_indexes
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ? AND package_id = ?
+                          AND compilation_revision = ?
+                        ORDER BY projection_revision DESC LIMIT 1
+                        """, (rs, row) -> readIndex(rs, exact),
+                exact.tenantId(), exact.organizationId(), exact.projectId(),
+                exact.environmentId(), exact.region(),
+                required(packageId, "packageId", 512), compilationRevision)
+                .stream().findFirst();
+    }
+
+    @Override
     public CurrentPage findCurrentByDomain(
             CapabilitySnapshot.Scope scope,
             String domainId,

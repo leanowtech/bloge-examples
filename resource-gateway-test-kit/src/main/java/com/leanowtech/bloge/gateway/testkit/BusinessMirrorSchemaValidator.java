@@ -22,6 +22,9 @@ final class BusinessMirrorSchemaValidator {
     private static final String MIRROR_SCHEMA_ID_ROOT =
             "https://bloge.dev/schemas/resource-gateway-mirror/";
     private static final String MIRROR_RESOURCE_ROOT = "/schemas/resource-gateway-mirror/";
+    private static final String TOOL_SCHEMA_ID_ROOT =
+            "https://bloge.dev/schemas/tool-studio-resource-gateway/";
+    private static final String TOOL_RESOURCE_ROOT = "/schemas/tool-studio-resource-gateway/";
     private static final List<String> BUSINESS_SCHEMA_NAMES = List.of(
             "business-mirror-common-v1.schema.json",
             "business-asset-link-v1.schema.json",
@@ -59,6 +62,11 @@ final class BusinessMirrorSchemaValidator {
             "artifact-provenance-v1.schema.json",
             "effect-contract-v1.schema.json",
             "capability-contract-v1.schema.json");
+    private static final List<String> TOOL_SCHEMA_NAMES = List.of(
+            "package-registry-ingest-bundle-v1.schema.json",
+            "domain-capability-package-governance-projection-v1.schema.json",
+            "domain-capability-package-governance-view-v1.schema.json",
+            "package-governance-projection-receipt-v1.schema.json");
     private static final Map<String, String> RESOURCE_TO_ID = resourceIds();
 
     private BusinessMirrorSchemaValidator() {
@@ -92,6 +100,9 @@ final class BusinessMirrorSchemaValidator {
         }
         for (String name : MIRROR_SCHEMA_NAMES) {
             ids.put(MIRROR_RESOURCE_ROOT + name, MIRROR_SCHEMA_ID_ROOT + name);
+        }
+        for (String name : TOOL_SCHEMA_NAMES) {
+            ids.put(TOOL_RESOURCE_ROOT + name, TOOL_SCHEMA_ID_ROOT + name);
         }
         return Map.copyOf(ids);
     }

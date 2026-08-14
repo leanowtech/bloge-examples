@@ -333,6 +333,18 @@ public record IntegrationCapabilities(
         objects.put("packageEvidenceIndex", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.evidence
                         .PackageEvidenceIndex.SCHEMA_VERSION));
+        objects.put("packageRegistryIngestBundle", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.governance
+                        .PackageRegistryIngestBundle.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackageGovernanceProjection", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.governance
+                        .DomainCapabilityPackageGovernanceProjection.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackageGovernanceView", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.governance
+                        .DomainCapabilityPackageGovernanceView.SCHEMA_VERSION));
+        objects.put("packageGovernanceProjectionReceipt", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.governance
+                        .PackageGovernanceProjectionReceipt.SCHEMA_VERSION));
         objects.put("authoritativeOutcomeSourcePage", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .AuthoritativeOutcomeSourcePage.SCHEMA_VERSION));
@@ -1057,6 +1069,10 @@ public record IntegrationCapabilities(
         features.put("businessMirrorAssetImpactRebuild", true);
         features.put("businessMirrorAssetImpactFreshness", true);
         features.put("businessMirrorPackageEvidenceProtocol", true);
+        features.put("businessMirrorPackageGovernanceProtocol", true);
+        features.put("businessMirrorPackageRegistryIngestApi", false);
+        features.put("businessMirrorPackageGovernanceProjectionApi", false);
+        features.put("businessMirrorPackageGovernanceProjectionIngestReady", false);
         features.put("mirrorRuntimeCertificationProtocol", true);
         features.put("mirrorRuntimeCertificationPlanReady", false);
         features.put("mirrorRuntimeCertificationDurableJournalReady", false);

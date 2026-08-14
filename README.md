@@ -210,6 +210,8 @@ bloge-examples/
 - `docs/resource-gateway-test-kit-design-and-user-guide.md` for the Test Kit
   architecture, five-minute Java path, CI usage, trust boundaries, and troubleshooting;
   `resource-gateway-test-kit/README.md` remains the exhaustive API and protocol reference
+- `docs/resource-gateway-aneke-package-integration-guide.md` for protocol 1.1 Package registry
+  ingest, signed governance projection, freshness, Test Kit verification, and PostgreSQL operations
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter

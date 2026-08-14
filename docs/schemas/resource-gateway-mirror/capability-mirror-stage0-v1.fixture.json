@@ -2,6 +2,7 @@
   "schemaVersion": "resourceGateway.capabilityMirrorCompatibility.v1",
   "protocol": "ToolStudioResourceGatewayProtocol",
   "protocolVersions": [
+    "1.1.0",
     "1.0.0"
   ],
   "requiredObjects": {

@@ -33,6 +33,7 @@ discover exact target
 | Validate Business Mirror Package, Proposal, binding, Conformance, or Legacy Graph files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
 | Verify Outcome source pages, commands, and checkpoints offline | `AuthoritativeOutcomeSourceProtocolVerifier` + caller-owned Source trust callback |
 | Verify a self-contained HA/failure certification package | `RuntimeCertificationVerifier.requireReplayBundle` + caller-owned regional, approval, and evidence trust callbacks |
+| Verify ANEKE Package registry and governance exchange | `PackageGovernanceProtocol` + caller-owned ANEKE projection trust callback |
 
 Build the library and start the local test-profile Gateway:
 
@@ -53,6 +54,13 @@ The JAR packages the authoritative v1 JSON Schema and provides:
   `RuntimeCertificationVerifier` independently reconstructs all content addresses, signing
   materials, recovery SLOs, zero-write constraints, Regional Data Plane and isolation-reference
   closure without linking Spring or Resource Gateway server classes;
+
+- strict Package Registry Ingest Bundle, ANEKE Governance Projection, joined Governance View and
+  Projection Receipt Schemas plus server-produced Bundle/Projection fixtures;
+  `PackageGovernanceProtocol` independently verifies Package/Readiness/L0-L3/Evidence/dependency
+  closure, content addresses, exact cross-system refs, validity windows and caller-owned projection
+  trust, while capability negotiation accepts protocol `1.1.0` and minimum consumer `1.0.0` during
+  rolling upgrades;
 
 - strict production Outcome Source page, Backfill/revocation command, and payload-free checkpoint
   Schemas plus server-produced compatibility fixtures; `AuthoritativeOutcomeSourceProtocolVerifier`

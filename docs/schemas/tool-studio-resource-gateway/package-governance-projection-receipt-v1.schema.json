@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/package-governance-projection-receipt-v1.schema.json",
+  "title": "Tool Studio Package Governance Projection Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "projectionRef", "externalGeneration", "status",
+    "acceptedAt", "replayed"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "toolStudio.packageGovernanceProjectionReceipt.v1" },
+    "projectionRef": { "$ref": "#/$defs/projectionRef" },
+    "externalGeneration": { "type": "integer", "minimum": 1 },
+    "status": {
+      "type": "string",
+      "enum": ["UNDER_REVIEW", "ACCEPTED", "REJECTED", "CERTIFIED", "SUSPENDED", "REVOKED"]
+    },
+    "acceptedAt": { "type": "string", "format": "date-time" },
+    "replayed": { "type": "boolean" }
+  },
+  "$defs": {
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "projectionRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE_GOVERNANCE_PROJECTION" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

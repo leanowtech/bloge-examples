@@ -88,6 +88,12 @@
                     <include>evidence-verification-key-set-v1.schema.json</include>
                     <include>evidence-key-set-trust-publication-v1.schema.json</include>
                     <include>evidence-key-set-trust-bundle-v1.schema.json</include>
+                    <include>package-registry-ingest-bundle-v1.schema.json</include>
+                    <include>package-registry-ingest-bundle-v1.fixture.json</include>
+                    <include>domain-capability-package-governance-projection-v1.schema.json</include>
+                    <include>domain-capability-package-governance-projection-v1.fixture.json</include>
+                    <include>domain-capability-package-governance-view-v1.schema.json</include>
+                    <include>package-governance-projection-receipt-v1.schema.json</include>
                 </includes>
             </resource>
             <resource>

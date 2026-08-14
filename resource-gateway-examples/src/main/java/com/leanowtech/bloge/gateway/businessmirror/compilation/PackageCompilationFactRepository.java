@@ -12,4 +12,8 @@ public interface PackageCompilationFactRepository {
 
     Optional<PackageCompilationReceipt> find(
             CapabilitySnapshot.Scope scope, String packageId, long compilationRevision);
+
+    /** Returns the newest immutable compilation fact that produced a Package Snapshot. */
+    Optional<PackageCompilationReceipt> findCurrent(
+            CapabilitySnapshot.Scope scope, String packageId);
 }

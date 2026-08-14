@@ -30,6 +30,10 @@ public interface PackageEvidenceRepository {
     Optional<PackageEvidenceIndex> find(
             CapabilitySnapshot.Scope scope, String packageId, long projectionRevision);
 
+    /** Returns the newest evidence projection for one exact Package compilation. */
+    Optional<PackageEvidenceIndex> findByCompilation(
+            CapabilitySnapshot.Scope scope, String packageId, long compilationRevision);
+
     CurrentPage findCurrentByDomain(
             CapabilitySnapshot.Scope scope, String domainId, String afterPackageId, int limit);
 

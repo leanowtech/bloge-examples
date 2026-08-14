@@ -90,6 +90,8 @@ public class ToolStudioIntegrationService {
     private boolean businessMirrorImplementationRuntimeReady;
     private boolean businessMirrorImplementationConformanceApi;
     private boolean businessMirrorPackageEvidenceApi;
+    private boolean businessMirrorPackageGovernanceApi;
+    private boolean businessMirrorPackageGovernanceIngestReady;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
     private RegionalDataPlaneCertificationAuthority regionalDataPlaneCertificationAuthority =
@@ -279,6 +281,16 @@ public class ToolStudioIntegrationService {
     void configureBusinessMirrorPackageEvidence(
             com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService service) {
         this.businessMirrorPackageEvidenceApi = service != null;
+    }
+
+    /** Advertises Package/ANEKE integration and independent trust readiness. */
+    @Autowired(required = false)
+    void configureBusinessMirrorPackageGovernance(
+            com.leanowtech.bloge.gateway.businessmirror.governance
+                    .PackageGovernanceIntegrationService service) {
+        this.businessMirrorPackageGovernanceApi = service != null;
+        this.businessMirrorPackageGovernanceIngestReady =
+                service != null && service.ingestionReady();
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -678,6 +690,12 @@ public class ToolStudioIntegrationService {
                 businessMirrorPackageEvidenceApi);
         features.put("businessMirrorEvidenceOwnerTaskApi",
                 businessMirrorPackageEvidenceApi);
+        features.put("businessMirrorPackageRegistryIngestApi",
+                businessMirrorPackageGovernanceApi);
+        features.put("businessMirrorPackageGovernanceProjectionApi",
+                businessMirrorPackageGovernanceApi);
+        features.put("businessMirrorPackageGovernanceProjectionIngestReady",
+                businessMirrorPackageGovernanceIngestReady);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2373,6 +2391,17 @@ public class ToolStudioIntegrationService {
                     "/api/integration/domain-capability-packages/{packageId}/evidence-index"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/integration/domain-portfolios/{domainId}"));
+        }
+        if (businessMirrorPackageGovernanceApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/integration/domain-capability-packages/{packageId}/revisions/{revision}/registry-ingest-bundle"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/integration/domain-capability-packages/{packageId}/governance-projections"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/integration/domain-capability-packages/{packageId}/governance-projection"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

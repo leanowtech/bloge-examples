@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/tool-studio-resource-gateway/domain-capability-package-governance-view-v1.schema.json",
+  "title": "Tool Studio Domain Capability Package Governance View v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "scope", "packageId", "currentPackageSnapshotRef",
+    "currentEvidenceIndexRef", "currentRegistryIngestBundleRef", "projection",
+    "freshness", "reasonCode", "evaluatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "toolStudio.domainCapabilityPackageGovernanceView.v1"
+    },
+    "scope": {
+      "$ref": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-mirror-common-v1.schema.json#/$defs/scope"
+    },
+    "packageId": { "$ref": "#/$defs/identifier" },
+    "currentPackageSnapshotRef": { "$ref": "#/$defs/packageRef" },
+    "currentEvidenceIndexRef": { "$ref": "#/$defs/evidenceRef" },
+    "currentRegistryIngestBundleRef": { "$ref": "#/$defs/ingestRef" },
+    "projection": {
+      "oneOf": [
+        {
+          "$ref": "https://bloge.dev/schemas/tool-studio-resource-gateway/domain-capability-package-governance-projection-v1.schema.json"
+        },
+        { "type": "null" }
+      ]
+    },
+    "freshness": {
+      "type": "string",
+      "enum": ["CURRENT", "MISSING", "STALE", "EXPIRED", "UNVERIFIABLE"]
+    },
+    "reasonCode": { "type": "string", "maxLength": 128 },
+    "evaluatedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "freshness": { "const": "CURRENT" } } },
+      "then": {
+        "properties": {
+          "projection": { "type": "object" },
+          "reasonCode": { "const": "" }
+        }
+      },
+      "else": { "properties": { "reasonCode": { "minLength": 1 } } }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "packageRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } } }
+      ]
+    },
+    "evidenceRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PACKAGE_EVIDENCE_INDEX" } } }
+      ]
+    },
+    "ingestRef": {
+      "allOf": [
+        { "$ref": "#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PACKAGE_REGISTRY_INGEST_BUNDLE" } } }
+      ]
+    }
+  }
+}

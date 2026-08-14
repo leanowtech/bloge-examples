@@ -28,6 +28,7 @@ import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCo
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabaseBusinessAssetImpactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageEvidenceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageGovernanceProjectionRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPackageDependencyAdapter;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.CompositePackageCompilationAuthority;
@@ -43,6 +44,11 @@ import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactSer
 import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceProjectionWorker;
 import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceRepository;
 import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService;
+import com.leanowtech.bloge.gateway.businessmirror.governance.DomainCapabilityPackageGovernanceProjectionIntegrity;
+import com.leanowtech.bloge.gateway.businessmirror.governance.PackageGovernanceIntegrationService;
+import com.leanowtech.bloge.gateway.businessmirror.governance.PackageGovernanceProjectionRepository;
+import com.leanowtech.bloge.gateway.businessmirror.governance.PackageGovernanceProjectionTrust;
+import com.leanowtech.bloge.gateway.businessmirror.governance.PackageRegistryIngestBundleIntegrity;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
@@ -867,6 +873,60 @@ public class GatewayConfiguration {
     public PackageEvidenceProjectionWorker packageEvidenceProjectionWorker(
             PackageEvidenceService service) {
         return new PackageEvidenceProjectionWorker(service);
+    }
+
+    /** Canonical Package registry-ingest bundle producer. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageRegistryIngestBundleIntegrity packageRegistryIngestBundleIntegrity(
+            ObjectMapper objectMapper) {
+        return new PackageRegistryIngestBundleIntegrity(objectMapper);
+    }
+
+    /** Canonical ANEKE Package governance projection verifier. */
+    @Bean
+    @ConditionalOnMissingBean
+    public DomainCapabilityPackageGovernanceProjectionIntegrity
+            domainCapabilityPackageGovernanceProjectionIntegrity(ObjectMapper objectMapper) {
+        return new DomainCapabilityPackageGovernanceProjectionIntegrity(objectMapper);
+    }
+
+    /** Append-only, generation-fenced cache of external ANEKE Package governance facts. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+    public PackageGovernanceProjectionRepository packageGovernanceProjectionRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper objectMapper,
+            DomainCapabilityPackageGovernanceProjectionIntegrity integrity,
+            PlatformTransactionManager transactionManager) {
+        return new DatabasePackageGovernanceProjectionRepository(
+                jdbc, objectMapper, integrity, transactionManager);
+    }
+
+    /**
+     * ANEKE Package integration boundary. A customer-owned trust adapter enables projection
+     * ingestion; without one registry export remains available and writes fail closed.
+     */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+    public PackageGovernanceIntegrationService packageGovernanceIntegrationService(
+            PackageCompilationFactRepository facts,
+            PackageEvidenceRepository evidence,
+            PackageGovernanceProjectionRepository projections,
+            PackageRegistryIngestBundleIntegrity bundleIntegrity,
+            DomainCapabilityPackageGovernanceProjectionIntegrity projectionIntegrity,
+            ObjectProvider<PackageGovernanceProjectionTrust> trust,
+            IntegrationChangeEventOutbox outbox) {
+        return new PackageGovernanceIntegrationService(facts, evidence, projections,
+                bundleIntegrity, projectionIntegrity,
+                trust.getIfAvailable(PackageGovernanceProjectionTrust::unavailable),
+                outbox, Clock.systemUTC());
     }
 
     /** Restart-safe exact-response journal for Package compile commands. */

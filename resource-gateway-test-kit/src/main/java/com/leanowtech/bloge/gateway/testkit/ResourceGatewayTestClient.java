@@ -4118,7 +4118,7 @@ public final class ResourceGatewayTestClient {
             Set<String> payloadVersions) {
         if (!CapabilityMirrorProtocol.INTEGRATION_PROTOCOL.equals(
                 response.path("protocol").asText())
-                || !CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1.equals(
+                || !CapabilityMirrorProtocol.SUPPORTED_INTEGRATION_PROTOCOL_VERSIONS.contains(
                 response.path("protocolVersion").asText())
                 || !payloadKind.equals(response.path("payloadKind").asText())
                 || payloadVersions == null

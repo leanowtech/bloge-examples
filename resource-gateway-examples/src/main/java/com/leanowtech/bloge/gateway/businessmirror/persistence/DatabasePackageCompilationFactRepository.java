@@ -203,6 +203,51 @@ public final class DatabasePackageCompilationFactRepository
                 exact.region(), id, compilationRevision).stream().flatMap(Optional::stream).findFirst();
     }
 
+    @Override
+    public Optional<PackageCompilationReceipt> findCurrent(
+            CapabilitySnapshot.Scope scope, String packageId) {
+        CapabilitySnapshot.Scope exact = java.util.Objects.requireNonNull(scope, "scope");
+        String id = required(packageId, "packageId");
+        return jdbc.query("""
+                        SELECT c.compilation_revision, c.request_fingerprint,
+                               c.source_draft_revision, c.source_draft_fingerprint,
+                               c.readiness_status, c.authority_generation, c.completed_at,
+                               r.fact_fingerprint AS readiness_fingerprint,
+                               r.fact_json AS readiness_json,
+                               l.fact_fingerprint AS closure_fingerprint,
+                               l.fact_json AS closure_json,
+                               s.fact_fingerprint AS snapshot_fingerprint,
+                               s.fact_json AS snapshot_json
+                        FROM business_mirror_package_compilations c
+                        JOIN business_mirror_package_readiness_reports r
+                          USING (tenant_id, organization_id, project_id, environment_id,
+                                 region_id, package_id, compilation_revision)
+                        JOIN business_mirror_package_asset_link_closures l
+                          USING (tenant_id, organization_id, project_id, environment_id,
+                                 region_id, package_id, compilation_revision)
+                        JOIN business_mirror_package_snapshots s
+                          USING (tenant_id, organization_id, project_id, environment_id,
+                                 region_id, package_id, compilation_revision)
+                        WHERE c.tenant_id = ? AND c.organization_id = ? AND c.project_id = ?
+                          AND c.environment_id = ? AND c.region_id = ? AND c.package_id = ?
+                        ORDER BY c.compilation_revision DESC LIMIT 1
+                        """,
+                (rs, row) -> read(exact, id, rs.getLong("compilation_revision"),
+                        rs.getString("request_fingerprint"),
+                        rs.getLong("source_draft_revision"),
+                        rs.getString("source_draft_fingerprint"),
+                        rs.getString("readiness_status"),
+                        rs.getString("authority_generation"),
+                        rs.getTimestamp("completed_at").toInstant(),
+                        rs.getString("readiness_fingerprint"),
+                        rs.getString("readiness_json"),
+                        rs.getString("closure_fingerprint"), rs.getString("closure_json"),
+                        rs.getString("snapshot_fingerprint"), rs.getString("snapshot_json")),
+                exact.tenantId(), exact.organizationId(), exact.projectId(),
+                exact.environmentId(), exact.region(), id)
+                .stream().flatMap(Optional::stream).findFirst();
+    }
+
     private Optional<PackageCompilationReceipt> read(
             CapabilitySnapshot.Scope scope,
             String packageId,

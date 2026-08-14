@@ -22,6 +22,11 @@ public final class CapabilityMirrorProtocol {
     public static final String INTEGRATION_PROTOCOL = "ToolStudioResourceGatewayProtocol";
     /** Tool Studio integration protocol version required by the Stage 0 baseline. */
     public static final String INTEGRATION_PROTOCOL_V1 = "1.0.0";
+    /** Current additive Tool Studio integration protocol version. */
+    public static final String INTEGRATION_PROTOCOL_CURRENT = "1.1.0";
+    /** Versions accepted by the independent client, newest first. */
+    public static final Set<String> SUPPORTED_INTEGRATION_PROTOCOL_VERSIONS =
+            Set.of(INTEGRATION_PROTOCOL_CURRENT, INTEGRATION_PROTOCOL_V1);
     /** Capability-mirror compatibility fixture wire version. */
     public static final String COMPATIBILITY_V1 =
             "resourceGateway.capabilityMirrorCompatibility.v1";

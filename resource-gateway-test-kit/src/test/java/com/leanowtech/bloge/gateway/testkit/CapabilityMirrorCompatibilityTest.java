@@ -24,7 +24,7 @@ class CapabilityMirrorCompatibilityTest {
         assertThat(assessment.baselineVersion())
                 .isEqualTo(CapabilityMirrorProtocol.COMPATIBILITY_V1);
         assertThat(assessment.negotiatedProtocolVersion())
-                .isEqualTo(CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1);
+                .isEqualTo(CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_CURRENT);
         assertThat(assessment.negotiatedObjectVersions())
                 .containsEntry("capabilitySnapshot",
                         CapabilityMirrorProtocol.CAPABILITY_SNAPSHOT_V1)
@@ -36,6 +36,19 @@ class CapabilityMirrorCompatibilityTest {
                 org.assertj.core.api.Assertions.entry("mirrorExternalLeafInterception", false),
                 org.assertj.core.api.Assertions.entry("mirrorServing", false));
         assessment.requireCompatible();
+    }
+
+    @Test
+    void acceptsMinimumConsumerDuringProtocolElevenRollingUpgrade() {
+        ObjectNode probe = compatibleProbe();
+        probe.put("protocolVersion", CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1);
+
+        CapabilityMirrorCompatibility.Assessment assessment =
+                CapabilityMirrorCompatibility.assess(probe);
+
+        assertThat(assessment.compatible()).isTrue();
+        assertThat(assessment.negotiatedProtocolVersion())
+                .isEqualTo(CapabilityMirrorProtocol.INTEGRATION_PROTOCOL_V1);
     }
 
     @Test
