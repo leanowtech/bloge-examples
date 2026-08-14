@@ -153,7 +153,8 @@ class PackageEvidenceProjectorTest {
         assertThat(second).isEqualTo(first);
         PackageEvidenceIndex tampered = new PackageEvidenceIndex(first.schemaVersion(),
                 first.indexFingerprint(), first.scope(), first.packageId(),
-                first.compilationRevision(), first.packageSnapshotSource(), first.readinessSource(),
+                first.compilationRevision(), first.projectionRevision(),
+                first.packageSnapshotSource(), first.readinessSource(),
                 first.businessAssetClosureSource(), first.domainId(), "TRIP.OTHER",
                 first.layers(), first.fidelity(), first.driftSignals(), first.projectedAt(),
                 first.validUntil());

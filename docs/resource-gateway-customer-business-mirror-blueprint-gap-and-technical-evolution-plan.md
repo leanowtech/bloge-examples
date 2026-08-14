@@ -320,6 +320,8 @@ BusinessAssetLink
 | Implementation Binding | `resourceGateway.proposalImplementationBinding.v1` | 真实实现版本和 RuntimeBinding |
 | Conformance Report | `resourceGateway.implementationConformanceReport.v1` | 同源验收套件与实现结果 |
 | Package Evidence Index | `resourceGateway.packageEvidenceIndex.v1` | 包级 Operator/Graph/Scenario/Carrier 证据索引 |
+| Domain Evidence Portfolio | `resourceGateway.domainEvidencePortfolio.v1` | 业务域内当前 Package 的分层证明、七维保真度与活跃债务视图；不生成综合分数 |
+| Evidence Owner Task | `resourceGateway.evidenceOwnerTask.v1` | 由 exact drift signal 派生的可确认、可解决、可审计工作项 |
 | Governance Projection | `toolStudio.domainCapabilityPackageGovernanceProjection.v1` | ANEKE 返回的治理视图 |
 
 `ToolStudioResourceGatewayProtocol` 应从 `1.0.0` 以 additive 方式升级到 `1.1.0`。现有对象不改语义；旧消费者可忽略新对象。只有 envelope、错误或既有字段语义发生破坏时才进入 `2.0.0`。
@@ -340,6 +342,10 @@ BusinessAssetLink
 | `POST /api/authoring/capability-proposals/{proposalId}/submit` | 提交业务价值和证据，不创建生产绑定 |
 | `POST /api/authoring/capability-proposals/{proposalId}/implementation-bindings` | 由授权产研主体绑定真实实现 |
 | `POST /api/authoring/capability-proposals/{proposalId}/conformance-runs` | 复用原业务验收套件验证实现 |
+| `POST /api/business-mirror/domain-capability-packages/{id}/evidence-index/refresh` | 使用当前 immutable Package facts 和最新签名 Fidelity Profile 生成新证据投影 |
+| `GET /api/business-mirror/evidence-owner-tasks` | 按 domain、Package 和状态读取有界 Owner Task 集合 |
+| `POST /api/business-mirror/evidence-owner-tasks/{taskId}/acknowledge` | 使用 optimistic task version 确认一项证据债务 |
+| `POST /api/business-mirror/evidence-owner-tasks/{taskId}/resolve` | 使用 exact resolution evidence ref 解决一项证据债务 |
 
 ### 7.3 Integration API
 
@@ -361,7 +367,8 @@ BusinessAssetLink
 - `CAPABILITY_PROPOSAL_SUBMITTED`
 - `PROPOSAL_IMPLEMENTATION_BOUND`
 - `PROPOSAL_CONFORMANCE_COMPLETED`
-- `PACKAGE_FIDELITY_STALE`
+- `PACKAGE_EVIDENCE_INDEX_CHANGED`
+- `BUSINESS_MIRROR_EVIDENCE_TASK_CHANGED`
 - `BUSINESS_ASSET_IMPACT_CHANGED`
 
 事件只携带 exact refs、fingerprint、scope、event cursor 和 payload-free summary。大型内容由消费者按引用读取。
@@ -668,7 +675,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 | RG-BM-007 | P0 | Proposal simulation | **仓库内工程实现已完成：** pure temporary overlay、exact Package/Graph/Suite/Fixture resolution、MirrorPlan/Run、分层 payload-free evidence、durable lease/replay、strict Schema 与独立 Test Kit | `SIMULATED` Snapshot 始终无 implementation binding；真实网络/Secret/write/fallback fail closed；H2/PostgreSQL、Spring、Controller、tamper 和跨 JVM fixture 全绿 |
 | RG-BM-008 | P1 | 实现交付与 Conformance | **仓库内工程实现已完成：**runtime-owned port、exact binding、target-only plan derivation、同源 Suite/Case/Fixture 执行、版本化 behavior projection、payload-free signed report、`CONFORMANT` Snapshot、durable lease/replay、PostgreSQL、认证 API、strict Schema、fixed fixture、Test Kit 与动态 capability readiness | Binding 精确闭合 Proposal/PASSED simulation/target/Contract/runtime generation；Conformance 仅替换 target sites，非 target 继续 Fixture-only；共享规则、fallback、漂移、过期和未触达 fail closed；完整语义与跨运行行为指纹分离并可独立复验 |
 | RG-BM-009 | P1 | L0-L3 关系与 Impact | **仓库内工程实现已完成：**确定性 transitive impact、事务 projection outbox、跨副本租约 worker、append-only reverse index/current head、`CURRENT/STALE` freshness、有界 rebuild、认证 API、exact Deep Link、change event、strict Schema、fixed fixture 与独立 Test Kit | L0 exact ref 可定位 L1/L2/L3 受影响资产；Snapshot/Closure/路径/风险/Deep Link 可复验；H2/PostgreSQL lease/replay/stale/tamper 与前端发布门禁全绿；HA/容量/客户语义验收归 BM-013/015 |
-| RG-BM-010 | P1 | Package Evidence/Fidelity | **领域内核已完成：**`resourceGateway.packageEvidenceIndex.v1`、L0/L1/L2/L3/Calibration 五层证明隔离、逐结论 exact lineage、既有 Fidelity 七维向量无损投影、缺失/过期/Inventory 漂移/弃权债务的保守信号；durable projection、Portfolio API、Owner Task、Test Kit 与产品界面继续实施 | 领域测试已证明低层 PASS 不能覆盖高层缺证、无综合分数字段、unsigned Profile fail closed、七维和 source lineage 可复验；完整退出待持久化与消费者切片 |
+| RG-BM-010 | P1 | Package Evidence/Fidelity | **服务端纵向切片已完成：**五层证明隔离与七维 Fidelity 内核、事务 outbox、跨副本 DB-time lease、append-only index/current head、独立 projection revision、Domain Portfolio、optimistic Owner Task journal、exact resolution evidence、认证 Author/Integration API、payload-free change event 和 PostgreSQL migration；strict Schema、fixed fixture、独立 Test Kit 与产品界面继续实施 | 20 个聚焦测试覆盖低层证明不可替代高层证明、无综合分数、unsigned Profile fail closed、七维/source lineage 复验、H2/PostgreSQL 双副本 lease、poison quarantine、task lifecycle、tamper 与 Controller；完整退出待消费者和产品切片 |
 | RG-BM-011 | P0 并行 | 生产 Outcome Connector | cursor、watermark、backfill、revoke、durable inbox | 目标客户只读事实源连续运行并通过断流/迟到/冲突演练 |
 | RG-BM-012 | P0 并行 | Regional Data Plane | KMS/Vault/State/Resolver、mTLS、egress isolation | 真实基础设施中 write escape 为 0，key/CA rotation 全绿 |
 | RG-BM-013 | P0 并行 | Runtime certification harness | PostgreSQL HA、kill、partition、upgrade、backup/restore | CI/nightly/客户环境生成可重放认证包 |

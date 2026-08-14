@@ -12,6 +12,9 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -45,6 +48,20 @@ public final class PackageEvidenceProjector {
             Optional<DomainFidelityProfile> latestProfile,
             Instant projectedAt,
             ObjectMapper mapper) {
+        return project(receipt, inventory, latestProfile, 1, projectedAt, mapper);
+    }
+
+    /** Builds a projection at one repository-fenced independent evidence revision. */
+    public static PackageEvidenceIndex project(
+            PackageCompilationReceipt receipt,
+            Optional<DomainFidelityInventory> inventory,
+            Optional<DomainFidelityProfile> latestProfile,
+            long projectionRevision,
+            Instant projectedAt,
+            ObjectMapper mapper) {
+        if (projectionRevision < 1) {
+            throw new IllegalArgumentException("projectionRevision must be positive");
+        }
         PackageCompilationReceipt exact = Objects.requireNonNull(receipt, "receipt");
         DomainCapabilityPackageSnapshot snapshot = Objects.requireNonNull(
                 exact.snapshot(), "successful Package snapshot");
@@ -131,7 +148,7 @@ public final class PackageEvidenceProjector {
                 fidelity.view(), snapshotSource, cut);
         Instant validUntil = validity(snapshot, exactInventory, profile, cut);
         return new PackageEvidenceIndex("", "", snapshot.scope(), snapshot.packageId(),
-                snapshot.revision(), snapshotSource, readinessSource, closureSource,
+                snapshot.revision(), projectionRevision, snapshotSource, readinessSource, closureSource,
                 snapshot.businessDefinition().domainId(),
                 snapshot.businessDefinition().problemCode(), layers, fidelity.view(),
                 signals, cut, validUntil).seal(mapper);
@@ -331,7 +348,7 @@ public final class PackageEvidenceProjector {
         List<PackageEvidenceIndex.EvidenceSource> exactLineage = canonical(lineage);
         return reasons.stream().distinct().sorted(Comparator.comparing(Enum::name))
                 .map(reason -> new PackageEvidenceIndex.DriftSignal(
-                        signalId(snapshot.packageId(), snapshot.revision(), reason),
+                        signalId(snapshot.packageId(), snapshot.revision(), reason, exactLineage),
                         reason, severity, snapshot.businessDefinition().accountableOwner(),
                         exactLineage, cut, dueAt))
                 .sorted(Comparator.comparing(PackageEvidenceIndex.DriftSignal::signalId))
@@ -489,9 +506,25 @@ public final class PackageEvidenceProjector {
     }
 
     private static String signalId(
-            String packageId, long revision, PackageEvidenceIndex.DriftReason reason) {
+            String packageId,
+            long revision,
+            PackageEvidenceIndex.DriftReason reason,
+            List<PackageEvidenceIndex.EvidenceSource> lineage) {
+        String material = lineage.stream()
+                .map(value -> value.kind() + "|" + value.id() + "|" + value.coordinate()
+                        + "|" + value.fingerprint())
+                .reduce((left, right) -> left + '\n' + right).orElseThrow();
         return packageId + ":r" + revision + ":" + reason.name().toLowerCase(
-                java.util.Locale.ROOT);
+                java.util.Locale.ROOT) + ":" + sha256(material).substring(0, 16);
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     private static PackageEvidenceIndex.SignalSeverity severity(

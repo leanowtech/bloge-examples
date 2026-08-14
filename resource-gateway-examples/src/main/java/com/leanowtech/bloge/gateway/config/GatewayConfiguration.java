@@ -27,6 +27,7 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPac
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationFactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabaseBusinessAssetImpactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageEvidenceRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPackageDependencyAdapter;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.CompositePackageCompilationAuthority;
@@ -39,6 +40,9 @@ import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactProjectionWorker;
 import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactService;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceProjectionWorker;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
@@ -84,6 +88,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilitySnapsho
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityRepository;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
@@ -826,6 +831,41 @@ public class GatewayConfiguration {
         return new BusinessAssetImpactProjectionWorker(service);
     }
 
+    /** Append-only Package Evidence/Fidelity indexes and owner-task journal. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+    public PackageEvidenceRepository packageEvidenceRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabasePackageEvidenceRepository(jdbc, objectMapper);
+    }
+
+    /** Stable port from Package aggregation into the existing Fidelity execution-fact kernel. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+    public PackageEvidenceService packageEvidenceService(
+            PackageEvidenceRepository evidence,
+            PackageCompilationFactRepository facts,
+            DomainFidelityRepository fidelity,
+            IntegrationChangeEventOutbox outbox,
+            ObjectMapper objectMapper) {
+        return new PackageEvidenceService(
+                evidence, facts, fidelity, outbox, objectMapper, Clock.systemUTC());
+    }
+
+    /** Database-leased asynchronous Package Evidence/Fidelity projection worker. */
+    @Bean
+    @ConditionalOnMissingBean
+    @ConditionalOnProperty(
+            prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
+    public PackageEvidenceProjectionWorker packageEvidenceProjectionWorker(
+            PackageEvidenceService service) {
+        return new PackageEvidenceProjectionWorker(service);
+    }
+
     /** Restart-safe exact-response journal for Package compile commands. */
     @Bean
     @ConditionalOnMissingBean
@@ -842,9 +882,16 @@ public class GatewayConfiguration {
             PackageCompilationFactRepository facts,
             PackageCompiler compiler,
             BusinessAssetImpactService impacts,
+            ObjectProvider<PackageEvidenceService> packageEvidence,
             ObjectMapper objectMapper) {
+        PackageEvidenceService evidence = packageEvidence.getIfAvailable();
         return new PackageCompilationCoordinator(
-                receipts, facts, compiler, impacts, objectMapper, Clock.systemUTC());
+                receipts, facts, compiler, (scope, receipt) -> {
+                    impacts.enqueue(scope, receipt);
+                    if (evidence != null) {
+                        evidence.enqueue(scope, receipt);
+                    }
+                }, objectMapper, Clock.systemUTC());
     }
 
     /** Authenticated Package compilation command/query boundary. */

@@ -165,7 +165,13 @@ verification, and failure recovery. The
 [Business Asset Impact guide](../docs/resource-gateway-business-asset-impact-index-guide.md)
 covers deterministic L0-L3 transitive impact, transactional projection outbox, cross-replica
 worker leases, `CURRENT/STALE` freshness, bounded rebuild, exact Deep Links, PostgreSQL deployment,
-and Test Kit offline verification. The
+and Test Kit offline verification. Successful Package compilation now also admits a payload-free
+Package Evidence projection job in the same transaction. The evidence service persists independent
+L0/L1/L2/L3/Calibration conclusions and the existing seven Fidelity dimensions without producing
+an overall score. Current Package indexes and domain portfolios are available from
+`/api/integration/domain-capability-packages/{packageId}/evidence-index` and
+`/api/integration/domain-portfolios/{domainId}`. Authoring routes can refresh an index and manage
+optimistic owner tasks; resolving a task requires an exact evidence reference. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

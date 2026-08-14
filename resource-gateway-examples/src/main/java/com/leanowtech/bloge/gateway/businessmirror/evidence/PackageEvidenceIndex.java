@@ -31,6 +31,7 @@ public record PackageEvidenceIndex(
         CapabilitySnapshot.Scope scope,
         String packageId,
         long compilationRevision,
+        long projectionRevision,
         EvidenceSource packageSnapshotSource,
         EvidenceSource readinessSource,
         EvidenceSource businessAssetClosureSource,
@@ -48,6 +49,8 @@ public record PackageEvidenceIndex(
     public static final int MAXIMUM_CANONICAL_BYTES = 16 * 1024 * 1024;
     /** Maximum conclusions admitted to one Package index. */
     public static final int MAXIMUM_CONCLUSIONS = 16_384;
+    /** Maximum independently actionable drift signals admitted to one Package index. */
+    public static final int MAXIMUM_DRIFT_SIGNALS = 500;
 
     private static final Pattern IDENTIFIER =
             Pattern.compile("[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}");
@@ -59,8 +62,9 @@ public record PackageEvidenceIndex(
         indexFingerprint = optionalFingerprint(indexFingerprint, "indexFingerprint");
         scope = Objects.requireNonNull(scope, "scope");
         packageId = identifier(packageId, "packageId");
-        if (compilationRevision < 1) {
-            throw new IllegalArgumentException("compilationRevision must be positive");
+        if (compilationRevision < 1 || projectionRevision < 1) {
+            throw new IllegalArgumentException(
+                    "compilationRevision and projectionRevision must be positive");
         }
         packageSnapshotSource = requireKind(
                 packageSnapshotSource, "DOMAIN_CAPABILITY_PACKAGE", "packageSnapshotSource");
@@ -95,7 +99,8 @@ public record PackageEvidenceIndex(
         fidelity = Objects.requireNonNull(fidelity, "fidelity");
         driftSignals = driftSignals == null ? List.of() : List.copyOf(driftSignals);
         List<String> orderedSignals = driftSignals.stream().map(DriftSignal::signalId).toList();
-        if (!orderedSignals.equals(orderedSignals.stream().sorted().distinct().toList())) {
+        if (driftSignals.size() > MAXIMUM_DRIFT_SIGNALS
+                || !orderedSignals.equals(orderedSignals.stream().sorted().distinct().toList())) {
             throw new IllegalArgumentException("drift signals must be unique and ordered");
         }
         projectedAt = Objects.requireNonNull(projectedAt, "projectedAt");
@@ -131,7 +136,7 @@ public record PackageEvidenceIndex(
     /** Returns an identical index carrying the supplied fingerprint. */
     public PackageEvidenceIndex withFingerprint(String value) {
         return new PackageEvidenceIndex(schemaVersion, value, scope, packageId,
-                compilationRevision, packageSnapshotSource, readinessSource,
+                compilationRevision, projectionRevision, packageSnapshotSource, readinessSource,
                 businessAssetClosureSource, domainId, problemCode, layers, fidelity,
                 driftSignals, projectedAt, validUntil);
     }

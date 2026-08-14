@@ -26,6 +26,13 @@ public final class BusinessMirrorDeepLinks {
                 + "&assetAuthority=" + encoded(exact.authority());
     }
 
+    /** Opens one Package directly on the evidence/fidelity task. */
+    public static String evidenceLink(String packageId, long compilationRevision) {
+        return "/business-mirror/?packageId=" + encoded(packageId)
+                + "&compilationRevision=" + compilationRevision
+                + "&task=evidence";
+    }
+
     private static String encoded(String value) {
         return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8)
                 .replace("+", "%20");
