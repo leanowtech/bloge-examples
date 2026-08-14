@@ -568,7 +568,7 @@ try {
 
 | 能力族 | 入口类型 | 何时使用 |
 | --- | --- | --- |
-| Business Mirror | `BusinessMirrorProtocol`、`BusinessMirrorLegacyMigrationVerifier` | 在无服务端环境中校验 Package、Proposal、Readiness、L0-L3 Business Asset Link 和 Legacy Graph migration projection/catalog；可从打包的取消费与 loan-decision fixtures 开始 |
+| Business Mirror | `BusinessMirrorProtocol`、`BusinessMirrorConformanceVerifier`、`BusinessMirrorLegacyMigrationVerifier` | 在无服务端环境中校验 Package、Proposal、实现绑定、同套件 Conformance、Readiness、L0-L3 Business Asset Link 和 Legacy Graph migration projection/catalog；可从打包的取消费、退款实现一致性与 loan-decision fixtures 开始 |
 | Capability Mirror | `CapabilityMirrorCompatibility`、`CapabilityMirrorVerifier` | 导入 sealed capability snapshot/closure |
 | Stateful Mirror | `MirrorStateProtocolVerifier`、`MirrorSessionCheckpointVerifier` | 验证状态模型、写入、checkpoint 和恢复 |
 | Read-only Shadow | `ReadOnlyShadow*Verifier`、`OnlineReadOnlyShadow*Verifier` | 验证 baseline/candidate/source binding 与 comparison |

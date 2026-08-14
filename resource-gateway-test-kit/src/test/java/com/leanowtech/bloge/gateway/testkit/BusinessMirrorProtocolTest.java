@@ -226,6 +226,78 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void verifiesCompletePayloadFreeImplementationConformanceOffline() throws Exception {
+        ObjectNode stored = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                BusinessMirrorProtocol.CAPABILITY_IMPLEMENTATION_CONFORMANCE_REQUEST_V1);
+        request.set("implementationBindingRef",
+                stored.path("report").path("implementationBindingRef").deepCopy());
+        request.set("simulationEvidenceRef",
+                stored.path("report").path("simulationEvidenceRef").deepCopy());
+        request.put("expectedProposalDraftFingerprint",
+                stored.path("report").path("proposalDraftRef").path("fingerprint").asText());
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireImplementationConformanceRequest(request));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireImplementationTestEvidence(
+                        stored.path("report").path("cases").get(0)
+                                .path("implementationEvidence")));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireImplementationConformanceReport(
+                        stored.path("report")));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalSnapshot(stored.path("proposalSnapshot")));
+        var verified = BusinessMirrorConformanceVerifier.verifyStored(stored);
+
+        assertThat(verified.conformanceId()).isEqualTo("refund-conformance-1");
+        assertThat(verified.status()).isEqualTo("PASSED");
+        assertThat(stored.path("proposalSnapshot").path("evidenceState").asText())
+                .isEqualTo("CONFORMANT");
+        assertThat(stored.toString()).doesNotContain(
+                "requestPayload", "responsePayload", "nodeInput", "nodeOutput");
+    }
+
+    @Test
+    void rejectsConformanceCoordinateDriftAndSchemaValidMaterialTampering() throws Exception {
+        ObjectNode stored = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE);
+        ObjectNode request = JSON.createObjectNode();
+        request.put("schemaVersion",
+                BusinessMirrorProtocol.CAPABILITY_IMPLEMENTATION_CONFORMANCE_REQUEST_V1);
+        request.set("implementationBindingRef",
+                stored.path("report").path("implementationBindingRef").deepCopy());
+        request.set("simulationEvidenceRef",
+                stored.path("report").path("simulationEvidenceRef").deepCopy());
+        request.put("expectedProposalDraftFingerprint", fingerprint('1'));
+        ((ObjectNode) request.path("implementationBindingRef")).put("kind", "CAPABILITY");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireImplementationConformanceRequest(request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPLEMENTATION_CONFORMANCE_REQUEST_INVALID");
+
+        ObjectNode tampered = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE);
+        ((ObjectNode) tampered.path("report").path("cases").get(0))
+                .put("implementationTargetCallCount", 2);
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredImplementationConformance(tampered))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPLEMENTATION_CONFORMANCE_CASE_INVALID");
+
+        ObjectNode evidenceTamper = (ObjectNode) fixture(
+                BusinessMirrorProtocol.IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE);
+        ((ObjectNode) evidenceTamper.path("report").path("cases").get(0)
+                .path("implementationEvidence")).put("status", "TIMED_OUT");
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireImplementationConformanceReport(
+                evidenceTamper.path("report")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.IMPLEMENTATION_TEST_EVIDENCE_FINGERPRINT_MISMATCH");
+    }
+
+    @Test
     void rejectsTamperedProposalFingerprintAndDuplicateProposalPages() throws Exception {
         ObjectNode receipt = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);

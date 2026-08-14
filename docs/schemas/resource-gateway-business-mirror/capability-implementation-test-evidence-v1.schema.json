@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-implementation-test-evidence-v1.schema.json",
+  "title": "Capability Implementation Test Evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "fingerprint", "status", "semanticResultFingerprint", "planFingerprint", "fixtureFingerprint", "assertionSummaryFingerprint", "nodeTraceFingerprint", "edgeTraceFingerprint", "startedAt", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityImplementationTestEvidence.v1" },
+    "runId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "status": { "enum": ["PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"] },
+    "semanticResultFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "planFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "fixtureFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "assertionSummaryFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "nodeTraceFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "edgeTraceFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "startedAt": { "type": "string", "format": "date-time" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

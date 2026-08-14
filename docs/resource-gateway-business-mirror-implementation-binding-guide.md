@@ -175,7 +175,7 @@ db/postgresql/V20260814_005__business_mirror_implementation_binding.sql
 | `RG.BUSINESS_MIRROR.IMPLEMENTATION_BINDING_SIGNER_UNAVAILABLE` | 无法形成可验证服务端事实 | 恢复 KMS/HSM signer 后重试 exact command |
 | `RG.BUSINESS_MIRROR.IMPLEMENTATION_BINDING_FORBIDDEN` | 环境或 purpose 不被允许 | 仅在授权 test/staging workload 中调用 |
 
-## 7. 当前边界与下一阶段
+## 7. 当前边界与一致性验证
 
 本阶段已经证明“实现身份与模拟基线精确绑定”，尚未证明：
 
@@ -185,4 +185,4 @@ db/postgresql/V20260814_005__business_mirror_implementation_binding.sql
 - 实现与依赖 Fixture 的职责没有串线；
 - 绑定在执行期间没有过期或漂移。
 
-BM-008 后续 Conformance 会复用原 Simulation 的 Suite 与 Fixture，只将 Proposal target invocation site 受控反转到该 binding；其他依赖继续 Fixture-only。Conformance report 会将模拟 Case 与实现 Case 一一配对，形成 payload-free、签名、可持久回放的独立证据，并且只有该证据可以推动 `CONFORMANT`。
+同套件 Conformance 已由 BM-008B 落地：它复用原 Simulation 的 Suite 与 Fixture，只将 Proposal target invocation site 受控反转到 exact binding；其他依赖继续 Fixture-only。Conformance report 将模拟 Case 与实现 Case 一一配对，形成 payload-free、签名、可持久回放的独立证据，并且只有该证据可以推动 `CONFORMANT`。操作、Diff 语义与失败恢复见[实现一致性验证与接入指南](resource-gateway-business-mirror-implementation-conformance-guide.md)。

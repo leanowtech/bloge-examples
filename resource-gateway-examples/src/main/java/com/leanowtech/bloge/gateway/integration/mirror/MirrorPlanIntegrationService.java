@@ -360,6 +360,50 @@ public class MirrorPlanIntegrationService {
         return compiled;
     }
 
+    /**
+     * Rehydrates one exact baseline plan for the implementation-conformance application service.
+     *
+     * <p>This is a narrow internal privilege transition, not a generic purpose override. The
+     * caller must already hold the fixed {@code CAPABILITY_CONFORMANCE} purpose in test or staging.
+     * Resolution then uses the existing rehearsal identity only to reread the exact frozen
+     * Fixture, replay, corpus, Graph, and execution-service generation; it never creates or runs a
+     * new mirror plan and does not expose payloads over HTTP.</p>
+     *
+     * @param planRef exact baseline MIRROR_PLAN reference recorded by simulation evidence
+     * @param identity authenticated conformance workload
+     * @return exact baseline runtime generation; the caller must close it
+     */
+    public CompiledMirrorPlan materializeForConformance(
+            MirrorArtifactRef planRef, IntegrationRequestContext identity) {
+        CapabilitySnapshot.Scope scope = requireMirrorIdentity(
+                identity,
+                Set.of("CAPABILITY_CONFORMANCE"),
+                "RG.MIRROR.CONFORMANCE_PURPOSE_REQUIRED",
+                "Mirror baseline materialization requires CAPABILITY_CONFORMANCE.");
+        if (planRef == null || !"MIRROR_PLAN".equals(planRef.kind())
+                || planRef.revision() != 1) {
+            throw badRequest(identity, "RG.MIRROR.CONFORMANCE_PLAN_REF_INVALID",
+                    "Conformance requires an exact MIRROR_PLAN reference.", Map.of());
+        }
+        IntegrationRequestContext rehearsalIdentity = withPurpose(identity, AUTHORIZED_PURPOSE);
+        MirrorPlan plan = findStored(scope, planRef.id(), rehearsalIdentity)
+                .filter(value -> value.planFingerprint().equals(planRef.fingerprint()))
+                .orElseThrow(() -> new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.MIRROR.CONFORMANCE_PLAN_NOT_FOUND",
+                        "The exact baseline MirrorPlan was not found in the authorized scope.",
+                        identity.correlationId(), Map.of())));
+        return materialize(plan, rehearsalIdentity);
+    }
+
+    private static IntegrationRequestContext withPurpose(
+            IntegrationRequestContext identity, String purpose) {
+        return new IntegrationRequestContext(identity.tenantId(), identity.organizationId(),
+                identity.projectId(), identity.environmentId(), identity.region(),
+                identity.actorType(), identity.actorId(), identity.delegatedBy(), purpose,
+                identity.correlationId(), identity.groups(), identity.clearance(),
+                identity.delegationGrantId());
+    }
+
     private Optional<MirrorPlan> findStored(
             CapabilitySnapshot.Scope scope,
             String planId,

@@ -19,8 +19,12 @@ import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityImplementati
 import com.leanowtech.bloge.gateway.businessmirror.domain.PackageReadinessReport;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRequest;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceReport;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRequest;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationBinding;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationConformance;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjection;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjectionCatalog;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationEvidence;
@@ -80,7 +84,16 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("capabilityImplementationBinding", java.util.List.of(
                         CapabilityImplementationBinding.SCHEMA_VERSION))
                 .containsEntry("storedCapabilityImplementationBinding", java.util.List.of(
-                        StoredCapabilityImplementationBinding.SCHEMA_VERSION));
+                        StoredCapabilityImplementationBinding.SCHEMA_VERSION))
+                .containsEntry("capabilityImplementationConformanceRequest", java.util.List.of(
+                        CapabilityImplementationConformanceRequest.SCHEMA_VERSION))
+                .containsEntry("capabilityImplementationTestEvidence", java.util.List.of(
+                        CapabilityImplementationConformanceReport.ImplementationEvidence
+                                .SCHEMA_VERSION))
+                .containsEntry("capabilityImplementationConformanceReport", java.util.List.of(
+                        CapabilityImplementationConformanceReport.SCHEMA_VERSION))
+                .containsEntry("storedCapabilityImplementationConformance", java.util.List.of(
+                        StoredCapabilityImplementationConformance.SCHEMA_VERSION));
         assertThat(capabilities.features())
                 .containsEntry("businessMirrorProtocol", true)
                 .containsEntry("businessMirrorPackageApi", true)
@@ -92,7 +105,8 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("businessMirrorProposalSimulation", false)
                 .containsEntry("businessMirrorImplementationBindingApi", false)
-                .containsEntry("businessMirrorImplementationRuntimeReady", false);
+                .containsEntry("businessMirrorImplementationRuntimeReady", false)
+                .containsEntry("businessMirrorImplementationConformanceApi", false);
         assertThat(capabilities.endpoints())
                 .contains(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/business-mirror/packages/{packageId}/compile"))
@@ -140,18 +154,26 @@ class BusinessMirrorCapabilityTest {
                 null, null, null, null);
         service.configureBusinessMirrorImplementation(
                 mock(CapabilityImplementationBindingService.class),
+                mock(CapabilityImplementationConformanceService.class),
                 CapabilityImplementationRuntimePort.unavailable());
 
         IntegrationCapabilities capabilities = service.capabilities().payload();
 
         assertThat(capabilities.features())
                 .containsEntry("businessMirrorImplementationBindingApi", true)
-                .containsEntry("businessMirrorImplementationRuntimeReady", false);
+                .containsEntry("businessMirrorImplementationRuntimeReady", false)
+                .containsEntry("businessMirrorImplementationConformanceApi", true);
         assertThat(capabilities.endpoints()).contains(
                 new IntegrationCapabilities.Endpoint(
                         "POST",
                         "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-bindings"),
                 new IntegrationCapabilities.Endpoint(
-                        "GET", "/api/business-mirror/implementation-bindings/{bindingId}"));
+                        "GET", "/api/business-mirror/implementation-bindings/{bindingId}"),
+                new IntegrationCapabilities.Endpoint(
+                        "POST",
+                        "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-conformances"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/business-mirror/implementation-bindings/{bindingId}/revisions/{revision}/conformance"));
     }
 }

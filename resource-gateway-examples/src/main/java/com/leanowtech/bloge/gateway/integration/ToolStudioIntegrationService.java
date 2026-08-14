@@ -87,6 +87,7 @@ public class ToolStudioIntegrationService {
     private boolean businessMirrorProposalSimulationApi;
     private boolean businessMirrorImplementationBindingApi;
     private boolean businessMirrorImplementationRuntimeReady;
+    private boolean businessMirrorImplementationConformanceApi;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
     private DomainFidelityRuntimeAvailability
@@ -254,8 +255,11 @@ public class ToolStudioIntegrationService {
             com.leanowtech.bloge.gateway.businessmirror.implementation
                     .CapabilityImplementationBindingService service,
             com.leanowtech.bloge.gateway.businessmirror.implementation
+                    .CapabilityImplementationConformanceService conformanceService,
+            com.leanowtech.bloge.gateway.businessmirror.implementation
                     .CapabilityImplementationRuntimePort runtime) {
         this.businessMirrorImplementationBindingApi = service != null;
+        this.businessMirrorImplementationConformanceApi = conformanceService != null;
         this.businessMirrorImplementationRuntimeReady = runtime != null && runtime.available();
     }
 
@@ -622,6 +626,8 @@ public class ToolStudioIntegrationService {
                 businessMirrorImplementationBindingApi);
         features.put("businessMirrorImplementationRuntimeReady",
                 businessMirrorImplementationRuntimeReady);
+        features.put("businessMirrorImplementationConformanceApi",
+                businessMirrorImplementationConformanceApi);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2247,6 +2253,14 @@ public class ToolStudioIntegrationService {
                     "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-bindings"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/business-mirror/implementation-bindings/{bindingId}"));
+        }
+        if (businessMirrorImplementationConformanceApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-conformances"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/business-mirror/implementation-bindings/{bindingId}/revisions/{revision}/conformance"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

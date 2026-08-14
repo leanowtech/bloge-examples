@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityImplementationBinding;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationBindingRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationConformanceRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.StoredCapabilityImplementationBinding;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
@@ -249,6 +251,51 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
         assertThat(new JdbcTemplate(firstDataSource).queryForObject(
                 "SELECT COUNT(*) FROM rg_bm_implementation_binding WHERE binding_id = ?",
                 Long.class, binding.bindingId())).isEqualTo(1);
+    }
+
+    @Test
+    void appliesImplementationConformanceDdlAndFencesTwoIndependentReplicas() throws Exception {
+        DataSource firstDataSource = postgres.getPostgresDatabase();
+        DataSource secondDataSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260814_006__business_mirror_implementation_conformance.sql"))
+                .execute(firstDataSource);
+        var first = new DatabaseCapabilityImplementationConformanceRepository(
+                new JdbcTemplate(firstDataSource), mapper);
+        var second = new DatabaseCapabilityImplementationConformanceRepository(
+                new JdbcTemplate(secondDataSource), mapper);
+        first.init();
+        second.init();
+        CapabilitySnapshot.Scope scope = new CapabilitySnapshot.Scope(
+                "tenant", "customer-service", "refund", "test", "sg");
+        CapabilityImplementationConformanceRepository.Registration registration =
+                new CapabilityImplementationConformanceRepository.Registration(scope,
+                        "conformance-postgres-1", "proposal-postgres-1", 1,
+                        implementationRef("PROPOSAL_IMPLEMENTATION_BINDING",
+                                "binding-postgres-1", '4'), implementationFingerprint('7'));
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<CapabilityImplementationConformanceRepository.Claim> left =
+                CompletableFuture.supplyAsync(() -> {
+                    await(start);
+                    return first.claim(registration, "replica-a", Duration.ofMinutes(10));
+                });
+        CompletableFuture<CapabilityImplementationConformanceRepository.Claim> right =
+                CompletableFuture.supplyAsync(() -> {
+                    await(start);
+                    return second.claim(registration, "replica-b", Duration.ofMinutes(10));
+                });
+        start.countDown();
+
+        var claims = List.of(left.get(15, TimeUnit.SECONDS), right.get(15, TimeUnit.SECONDS));
+        assertThat(claims).extracting(
+                CapabilityImplementationConformanceRepository.Claim::outcome)
+                .containsExactlyInAnyOrder(
+                        CapabilityImplementationConformanceRepository.Outcome.ACQUIRED,
+                        CapabilityImplementationConformanceRepository.Outcome.IN_PROGRESS);
+        assertThat(new JdbcTemplate(firstDataSource).queryForObject(
+                "SELECT COUNT(*) FROM rg_bm_implementation_conformance WHERE binding_id = ?",
+                Long.class, registration.implementationBindingRef().id())).isEqualTo(1);
     }
 
     private DomainCapabilityPackageSaveCoordinator.Outcome executeAfter(

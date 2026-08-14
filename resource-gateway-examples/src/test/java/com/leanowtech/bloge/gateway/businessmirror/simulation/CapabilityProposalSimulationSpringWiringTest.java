@@ -4,6 +4,9 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingController;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceController;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
 import com.leanowtech.bloge.gateway.integration.ToolStudioIntegrationService;
 import org.junit.jupiter.api.Test;
@@ -50,10 +53,14 @@ class CapabilityProposalSimulationSpringWiringTest {
         assertThat(context.getBean(CapabilityImplementationBindingController.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationBindingService.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationBindingRepository.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationConformanceController.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationConformanceService.class)).isNotNull();
+        assertThat(context.getBean(CapabilityImplementationConformanceRepository.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationRuntimePort.class).available()).isFalse();
         assertThat(integration.capabilities().payload().features())
                 .containsEntry("businessMirrorProposalSimulation", true)
                 .containsEntry("businessMirrorImplementationBindingApi", true)
+                .containsEntry("businessMirrorImplementationConformanceApi", true)
                 .containsEntry("businessMirrorImplementationRuntimeReady", false);
         assertThat(integration.capabilities().payload().endpoints())
                 .contains(new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
@@ -61,6 +68,12 @@ class CapabilityProposalSimulationSpringWiringTest {
                         "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations"),
                         new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
                                 "GET",
-                                "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations/{simulationId}"));
+                                "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/simulations/{simulationId}"),
+                        new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
+                                "POST",
+                                "/api/business-mirror/proposals/{proposalId}/revisions/{revision}/implementation-conformances"),
+                        new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
+                                "GET",
+                                "/api/business-mirror/implementation-bindings/{bindingId}/revisions/{revision}/conformance"));
     }
 }

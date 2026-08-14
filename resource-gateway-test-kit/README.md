@@ -30,7 +30,7 @@ discover exact target
 | Gate a release in CI | `ResourceGatewaySuiteCli` + payload-free JUnit XML |
 | Verify release-grade evidence | exact Suite revision + caller-pinned trust material |
 | Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
-| Validate Business Mirror Package, Proposal, or Legacy Graph projection files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
+| Validate Business Mirror Package, Proposal, binding, Conformance, or Legacy Graph files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
 
 Build the library and start the local test-profile Gateway:
 
@@ -48,11 +48,14 @@ The JAR packages the authoritative v1 JSON Schema and provides:
 
 - strict `DomainCapabilityPackageDraft`, `DomainCapabilityPackageSnapshot`,
   `PackageReadinessReport`, `CapabilityProposalDraft`, stored Proposal revision/save receipt/page,
-  `CapabilityProposalSnapshot`, payload-free Proposal simulation request/evidence/stored result, and
+  `CapabilityProposalSnapshot`, payload-free Proposal simulation request/evidence/stored result,
+  exact implementation binding, implementation Conformance request/test evidence/report/stored
+  result, and
   `BusinessAssetLink` schemas, plus fail-closed Legacy Graph projection/catalog schemas;
   `BusinessMirrorProtocol` validates these files offline and ships complete cancellation-fee
   Package, simulation-only Proposal, exact Proposal save receipt, server-produced Proposal
-  simulation result, and loan-decision migration fixtures without
+  simulation result, implementation binding, complete implementation Conformance result, and
+  loan-decision migration fixtures without
   linking the Resource Gateway server or Spring Boot;
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
@@ -293,6 +296,25 @@ material closure. Cryptographic signer trust remains deployment-owned. The packa
 payloads or credentials. See the
 [Implementation Binding guide](../docs/resource-gateway-business-mirror-implementation-binding-guide.md)
 for runtime adapter and API semantics.
+
+The exact implementation Conformance chain is independently verifiable as well:
+
+```java
+BusinessMirrorProtocol.requireImplementationConformanceRequest(request);
+BusinessMirrorProtocol.requireImplementationTestEvidence(implementationEvidence);
+BusinessMirrorProtocol.requireImplementationConformanceReport(report);
+BusinessMirrorProtocol.requireStoredImplementationConformance(storedConformance);
+```
+
+The verifier recomputes the embedded implementation evidence, aggregate report, and resulting
+Proposal Snapshot content addresses. It also checks complete Suite coverage, deterministic Case
+order, derived pass/fail state, target call counts, fixture-to-real behavior fingerprints, exact
+binding closure, report evidence reference, and detached-seal material identity. It never accepts a
+`CONFORMANT` label on its own. The packaged
+`refund-implementation-conformance-stage1-v1.fixture.json` is exposed as
+`BusinessMirrorProtocol.IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE`. Cryptographic signer trust and
+the correctness of undeclared production semantics remain deployment-owned. See the
+[Implementation Conformance guide](../docs/resource-gateway-business-mirror-implementation-conformance-guide.md).
 
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope

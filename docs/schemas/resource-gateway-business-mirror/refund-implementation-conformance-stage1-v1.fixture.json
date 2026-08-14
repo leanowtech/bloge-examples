@@ -1,0 +1,261 @@
+{
+  "schemaVersion": "resourceGateway.storedCapabilityImplementationConformance.v1",
+  "requestFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "report": {
+    "schemaVersion": "resourceGateway.capabilityImplementationConformanceReport.v1",
+    "conformanceId": "refund-conformance-1",
+    "fingerprint": "sha256:8555d0ba7d995bf895769a3e2b7ab24e0da1c955d5aee27a9d3a7b8eb19763cb",
+    "scope": {
+      "tenantId": "tenant-1",
+      "organizationId": "customer-service",
+      "projectId": "refund-service-design",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "proposalDraftRef": {
+      "kind": "CAPABILITY_PROPOSAL_DRAFT",
+      "id": "refund-proposal",
+      "revision": 1,
+      "fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "simulationEvidenceRef": {
+      "kind": "PROPOSAL_SIMULATION_EVIDENCE",
+      "id": "simulation-1",
+      "revision": 1,
+      "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "implementationBindingRef": {
+      "kind": "PROPOSAL_IMPLEMENTATION_BINDING",
+      "id": "refund-implementation-binding-1",
+      "revision": 1,
+      "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "targetCapabilityRef": {
+      "kind": "CAPABILITY",
+      "id": "refund-lookup",
+      "revision": 1,
+      "fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "graphRef": {
+      "kind": "GRAPH_DRAFT",
+      "id": "refund-graph",
+      "revision": 1,
+      "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    },
+    "acceptanceSuiteRefs": [
+      {
+        "kind": "TEST_SUITE",
+        "id": "refund-suite",
+        "revision": 1,
+        "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    ],
+    "status": "PASSED",
+    "cases": [
+      {
+        "caseId": "case-001",
+        "caseType": "GOLDEN",
+        "suiteRef": {
+          "kind": "TEST_SUITE",
+          "id": "refund-suite",
+          "revision": 1,
+          "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "fixtureRef": {
+          "kind": "FIXTURE_BUNDLE",
+          "id": "refund-fixture",
+          "revision": 1,
+          "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        },
+        "baselineMirrorEvidenceBundleRef": {
+          "kind": "MIRROR_EVIDENCE_BUNDLE",
+          "id": "refund-baseline-run-1",
+          "revision": 1,
+          "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "implementationEvidence": {
+          "schemaVersion": "resourceGateway.capabilityImplementationTestEvidence.v1",
+          "runId": "refund-implementation-run-1",
+          "fingerprint": "sha256:5294dcb1488c2725d927b9cf9f490f177b6d773f9cd2764e3d54b8726131e049",
+          "status": "PASSED",
+          "semanticResultFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "planFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "fixtureFingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+          "assertionSummaryFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "nodeTraceFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "edgeTraceFingerprint": "sha256:abababababababababababababababababababababababababababababababab",
+          "startedAt": "2026-08-14T10:00:03Z",
+          "completedAt": "2026-08-14T10:00:04Z"
+        },
+        "baselineRunStatus": "PASSED",
+        "baselineSemanticResultFingerprint": "sha256:bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc",
+        "baselineBehaviorFingerprint": "sha256:edededededededededededededededededededededededededededededededed",
+        "implementationBehaviorFingerprint": "sha256:edededededededededededededededededededededededededededededededed",
+        "comparison": "MATCH",
+        "baselineTargetCallCount": 1,
+        "implementationTargetCallCount": 1,
+        "targetInvocationSiteIds": ["/refund/lookup#PRIMARY"],
+        "mismatchReasons": [],
+        "limitations": []
+      }
+    ],
+    "startedAt": "2026-08-14T10:00:02Z",
+    "completedAt": "2026-08-14T10:00:04Z",
+    "limitations": ["Same-suite conformance proves declared assertions and semantic result identity only."],
+    "uncertainties": ["Undeclared business semantics and production outcome fidelity are not evaluated."]
+  },
+  "attestation": {
+    "schemaVersion": "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint": "sha256:8555d0ba7d995bf895769a3e2b7ab24e0da1c955d5aee27a9d3a7b8eb19763cb",
+    "algorithm": "TEST",
+    "keyId": "compatibility-fixture-key",
+    "signedAt": "2026-08-14T10:00:04Z",
+    "signature": "detached-compatibility-signature"
+  },
+  "proposalSnapshot": {
+    "schemaVersion": "resourceGateway.capabilityProposalSnapshot.v1",
+    "proposalId": "refund-proposal",
+    "revision": 1,
+    "fingerprint": "sha256:bbe2089973ea7d7f70908744289719d1d95e7ad30ae558024d384e8c627874f7",
+    "scope": {
+      "tenantId": "tenant-1",
+      "organizationId": "customer-service",
+      "projectId": "refund-service-design",
+      "environmentId": "staging",
+      "region": "sg"
+    },
+    "sourceDraftRevision": 1,
+    "sourceDraftFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "businessIntent": {
+      "capabilityGap": "Refund lookup is missing",
+      "expectedValue": "Validate the refund journey",
+      "applicableScenarioRefs": [
+        {
+          "kind": "SCENARIO_CASE",
+          "id": "refund-approved",
+          "revision": 1,
+          "fingerprint": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
+        }
+      ],
+      "candidatePackageRefs": [
+        {
+          "kind": "DOMAIN_CAPABILITY_PACKAGE",
+          "id": "refund-package",
+          "revision": 1,
+          "fingerprint": "sha256:1313131313131313131313131313131313131313131313131313131313131313"
+        }
+      ],
+      "candidateGraphRefs": [
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "refund-graph",
+          "revision": 1,
+          "fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        }
+      ],
+      "owner": "refund-platform"
+    },
+    "candidateContract": {
+      "schemaVersion": "resourceGateway.capabilityContract.v1",
+      "inputSchema": {
+        "format": "json-schema",
+        "version": "2020-12",
+        "schema": {"additionalProperties": true, "type": "object"}
+      },
+      "outputSchema": {
+        "format": "json-schema",
+        "version": "2020-12",
+        "schema": {"additionalProperties": true, "type": "object"}
+      },
+      "errorModel": [],
+      "effect": {
+        "schemaVersion": "resourceGateway.effectContract.v1",
+        "mode": "READ_ONLY",
+        "readSet": ["refund/*"],
+        "writeSet": [],
+        "conditionalEffects": [],
+        "compensationRef": null,
+        "requiresApproval": false,
+        "riskLevel": "LOW",
+        "derivation": "DECLARED",
+        "unresolvedReasons": []
+      },
+      "determinism": "DETERMINISTIC",
+      "idempotency": {"mode": "IDEMPOTENT", "keyPath": "", "replayReturnsOriginal": true},
+      "stateModelRef": null,
+      "compatibility": {"input": "REVIEW_REQUIRED", "output": "REVIEW_REQUIRED", "errorModel": "REVIEW_REQUIRED"},
+      "security": {"classification": "INTERNAL", "requiresSecrets": false, "allowedRegions": ["sg"], "payloadRetentionAllowed": false},
+      "slo": {"timeout": "PT2S", "availabilityTarget": 0.99, "latencyP95Ms": 500, "owner": "refund-platform"}
+    },
+    "fixturePackRefs": [
+      {
+        "kind": "FIXTURE_BUNDLE",
+        "id": "refund-fixture",
+        "revision": 1,
+        "fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      }
+    ],
+    "businessAcceptanceSuiteRefs": [
+      {
+        "kind": "TEST_SUITE",
+        "id": "refund-suite",
+        "revision": 1,
+        "fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    ],
+    "simulationRuntimeBinding": {
+      "kind": "SIMULATION_ONLY",
+      "resolverPolicyRef": {
+        "kind": "FIXTURE_RESOLVER_POLICY",
+        "id": "fixture-only",
+        "revision": 1,
+        "fingerprint": "sha256:1414141414141414141414141414141414141414141414141414141414141414"
+      },
+      "realExternalCallsAllowed": false,
+      "externalCredentialsAllowed": false,
+      "networkEgressAllowed": false
+    },
+    "implementationBindingRef": {
+      "kind": "PROPOSAL_IMPLEMENTATION_BINDING",
+      "id": "refund-implementation-binding-1",
+      "revision": 1,
+      "fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "evidenceState": "CONFORMANT",
+    "evidenceRefs": [
+      {
+        "kind": "IMPLEMENTATION_CONFORMANCE_REPORT",
+        "id": "refund-conformance-1",
+        "revision": 1,
+        "fingerprint": "sha256:8555d0ba7d995bf895769a3e2b7ab24e0da1c955d5aee27a9d3a7b8eb19763cb"
+      },
+      {
+        "kind": "PROPOSAL_SIMULATION_EVIDENCE",
+        "id": "simulation-1",
+        "revision": 1,
+        "fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ],
+    "assumptions": [],
+    "limitations": ["Same-suite conformance proves declared assertions and semantic result identity only."],
+    "expiresAt": "2026-08-15T10:00:00Z",
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "OWNER",
+      "sourceRefs": [],
+      "tenantId": "tenant-1",
+      "purpose": "implementation-conformance-fixture",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [],
+      "approvedBy": "",
+      "approvedAt": null,
+      "expiresAt": null,
+      "revocationRef": ""
+    },
+    "createdAt": "2026-08-14T10:00:04Z"
+  },
+  "completedAt": "2026-08-14T10:00:04Z"
+}

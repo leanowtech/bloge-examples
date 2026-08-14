@@ -1,0 +1,42 @@
+CREATE TABLE IF NOT EXISTS rg_bm_implementation_conformance (
+    tenant_id VARCHAR(255) NOT NULL,
+    organization_id VARCHAR(255) NOT NULL,
+    project_id VARCHAR(255) NOT NULL,
+    environment_id VARCHAR(255) NOT NULL,
+    region VARCHAR(64) NOT NULL,
+    binding_id VARCHAR(512) NOT NULL,
+    binding_revision BIGINT NOT NULL CHECK (binding_revision > 0),
+    conformance_id VARCHAR(512) NOT NULL,
+    proposal_id VARCHAR(512) NOT NULL,
+    proposal_revision BIGINT NOT NULL CHECK (proposal_revision > 0),
+    binding_fingerprint VARCHAR(71) NOT NULL
+        CHECK (binding_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    request_fingerprint VARCHAR(71) NOT NULL
+        CHECK (request_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    status VARCHAR(32) NOT NULL CHECK (status IN ('ACTIVE', 'COMPLETED')),
+    lease_owner VARCHAR(512) NOT NULL,
+    lease_epoch BIGINT NOT NULL CHECK (lease_epoch > 0),
+    lease_expires_at VARCHAR(64) NOT NULL,
+    result_json TEXT,
+    last_failure_code VARCHAR(256) NOT NULL,
+    created_at VARCHAR(64) NOT NULL,
+    updated_at VARCHAR(64) NOT NULL,
+    PRIMARY KEY (
+        tenant_id, organization_id, project_id, environment_id, region,
+        binding_id, binding_revision
+    ),
+    UNIQUE (
+        tenant_id, organization_id, project_id, environment_id, region,
+        conformance_id
+    ),
+    CHECK ((status = 'COMPLETED') = (result_json IS NOT NULL))
+);
+
+CREATE INDEX IF NOT EXISTS idx_rg_bm_implementation_conformance_proposal
+    ON rg_bm_implementation_conformance (
+        tenant_id, organization_id, project_id, environment_id, region,
+        proposal_id, proposal_revision
+    );
+
+CREATE INDEX IF NOT EXISTS idx_rg_bm_implementation_conformance_lease
+    ON rg_bm_implementation_conformance (status, lease_expires_at);

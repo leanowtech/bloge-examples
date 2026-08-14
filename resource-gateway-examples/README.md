@@ -158,6 +158,10 @@ replay, layered evidence, offline verification, PostgreSQL deployment, and the h
 covers the runtime-owned adapter, exact Proposal/Simulation/Contract/implementation closure,
 immutable signed binding, PostgreSQL deployment, independent verification, and the separate
 capability signals for binding API versus customer runtime readiness. The
+[Implementation Conformance guide](../docs/resource-gateway-business-mirror-implementation-conformance-guide.md)
+covers target-only plan derivation, exact same-suite execution, fixture-to-real behavior
+fingerprints, signed durable reports, `CONFORMANT` Proposal state, PostgreSQL fencing, offline
+verification, and failure recovery. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

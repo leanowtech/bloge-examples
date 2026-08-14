@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-008A 实现绑定已完成；正在实施 BM-008B 同套件 Conformance
+> 当前迭代：BM-008 实现绑定与同套件 Conformance 已完成；下一步进入 BM-009 L0-L3 reverse impact
 >
 > 最近更新：2026-08-14
 
@@ -733,4 +733,60 @@ BM-007 关闭了 Proposal 只能编辑但不能试跑、候选 Contract 无法�
 
 BM-008A 关闭了“实现只有一个 URL/名称、无法绑定评审代次”“模拟证据与实现代次可错配”“客户 runtime 未安装却被误报 ready”和“绑定结果不能跨语言复验”的问题。风险加权差距由约 `10%` 降至约 `9.5%`。
 
-降幅保持克制，因为绑定尚未执行实现，也没有复用原 acceptance suite、Case 配对、结构化 Diff 或 `CONFORMANT` Snapshot。BM-008B 将只把原模拟中 Proposal target 的 invocation sites 反转到 exact implementation binding，所有其他外部依赖继续 Fixture-only；共用规则、真实 fallback、绑定过期和调用未触达必须失败关闭。报告必须 payload-free、签名、durable、可重放，并明确“同套件 assertion 一致”不等于未声明业务语义也完全一致。
+该差距在随后完成的 BM-008B 中关闭：实现运行复用原 acceptance suite、Case、Fixture 和 baseline evidence，只把 Proposal target invocation sites 反转到 exact implementation binding，并形成 payload-free、签名、durable、可重放的结构化报告。具体实现与剩余边界见下一节。
+
+## 16. Iteration 8B：BM-008 same-suite implementation Conformance
+
+### 16.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Target-only plan derivation | 从 accepted `CompiledMirrorPlan` 派生 Conformance plan；只将 Proposal target sites 改为 `REAL`，其余 fixture/replay/corpus/clock/random 保持冻结 |
+| 隔离拒绝规则 | 无 target、共享规则、operator ref 跨职责复用、embedded target、非 target REAL/SPY/fallback、控制未解析或 runtime coordinate 不唯一均失败关闭 |
+| Runtime exact adapter | `ConformanceOperatorRegistry` 每次调用前重新核验 Descriptor、binding 与 expiry，只记录调用次数和 site，不留存 payload |
+| 跨运行行为指纹 | 新增 payload-free observable behavior projection；保留节点/边坐标、输入输出指纹、状态、错误与 attempt，归一化预期的 fixture/real 执行机制差异 |
+| Same-suite execution | 逐一读取原 Simulation 的 exact Suite/Case/Fixture/MirrorPlan/baseline evidence，使用原输入和断言执行真实实现 |
+| 可解释报告 | 每个 Case 同时携带 baseline/implementation 完整语义指纹、行为指纹、调用次数、site、断言结果摘要和稳定 mismatch reason |
+| 单调 Proposal 状态 | 全部 Case `MATCH` 才生成 `CONFORMANT` Snapshot；失败报告仍签名持久化，但 Snapshot 保持 `IMPLEMENTED` |
+| Durable lease authority | 五段 Scope + binding revision 主键、conformance id 唯一、数据库时钟、lease epoch fencing、exact replay；完成重试不重复调用实现 |
+| 认证 API 与能力探针 | 提供 conform/read endpoint；对象协议、API 装配与客户 runtime readiness 分开声明 |
+| 独立协议闭环 | 四份 strict Schema、完整 stage-1 fixture 和 Test Kit verifier；重算 evidence/report/snapshot 三层指纹及状态、覆盖、attestation closure |
+| PostgreSQL 与接入文档 | `V20260814_006` 通过双副本并发认证；[Conformance 指南](resource-gateway-business-mirror-implementation-conformance-guide.md)覆盖操作、Diff、恢复与边界 |
+
+### 16.2 关键不变量
+
+1. Conformance 不能重新选择 `latest` Suite、Fixture、Plan、baseline evidence 或 implementation generation。
+2. Proposal target 是唯一允许触达 runtime port 的职责边界；非 target 外部依赖不能借 Conformance 逃逸到真实系统。
+3. 完整测试语义指纹不直接判等，因为 purpose、plan、fixture consumption 和 fidelity 必然不同；跨运行行为投影必须显式版本化且 payload-free。
+4. `MATCH` 同时要求 baseline/implementation 通过、行为指纹一致、target 调用次数/site 一致和实现断言全绿。
+5. exact retry 返回已持久化结果，不再次调用客户实现；旧 lease 不能完成新 epoch。
+6. `CONFORMANT` 只证明声明范围内的同套件一致性，不能越级成为 `CALIBRATED` 或生产 Outcome 证据。
+
+### 16.3 实施中发现并根治的问题
+
+初版直接比较共享测试内核的 `semanticResultFingerprint`。该指纹有意包含执行 purpose、plan fingerprint、fixture consumption 和 fidelity，因此 baseline 的 `MIRROR_REHEARSAL/FIXTURE` 与实现的 `CAPABILITY_CONFORMANCE/REAL` 即使业务输出完全相同也一定不等。问题根因不是样例，而是把“执行身份”误当成“跨机制业务行为”。现已保留双方原语义指纹用于审计，另引入版本化 behavior projection 负责跨机制判等，并以等值/值漂移反例锁定。
+
+第二个问题是只替换 `OperatorRegistry` 不能使真实实现生效：测试运行时执行的是 plan 中冻结的 invocation inventory。现由 compiler 同时替换 target site 的 frozen operator，防止计划指纹、预检对象与实际 delegate 不一致。
+
+第三个问题由全量架构守卫发现：Conformance compiler 初版直接持有 testing runtime 内部的 `GovernedExecutionServices`，功能虽然正确，却让业务镜像层获得了状态化 provider 句柄。根因是缺少“冻结服务投影 → 绑定 plan → 组装 control”的公开规划边界。现新增一次性 `ExecutionControlPreparation`，调用方只能读取 payload-free binding，并只能消费一次完成 exact plan 绑定；架构守卫保持原规则，不增加例外名单。
+
+Test Kit 首次 `verify` 还在 552 个行为测试全绿后被 Javadoc 门禁拒绝。新增离线校验 API 当时只有摘要，缺少参数、返回值和失败语义。现已补齐可由 IDE 直接展示的公共契约，Javadoc 门禁继续启用。
+
+### 16.4 验证与架构漂移审计
+
+聚焦门禁覆盖 behavior normalization、target-only plan、共享规则拒绝、一次性执行服务边界、服务 exact closure、H2 lease/fencing、Controller、capability probe、Spring Bean、strict Schema、tamper、固定 fixture 和原生 PostgreSQL 双副本竞争。
+
+| 工程 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `6018` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E、架构守卫和 Spring Boot 可执行 JAR 打包通过 |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `552` tests，`0` failures，`0` errors，`0` skipped；strict Schema packaging、shade、Javadoc 和 JAR 打包通过 |
+
+`13` 个 skipped 均为仓库既有的环境条件跳过，不是本轮失败降级。
+
+架构未引入平行执行引擎：Conformance 复用 `MirrorPlanIntegrationService`、`ExecutionControlCompiler`、`TestRunService`、Fixture/Suite repository、Mirror evidence 与现有 signer。`materializeForConformance` 是固定 purpose、仅 test/staging 的内部权限桥，不对 HTTP 暴露 sealed Graph 或 payload。客户实现继续归 runtime-owned port；Resource Gateway 只拥有编排、证据与状态推进。
+
+### 16.5 差距复评
+
+BM-008 完整关闭了“模拟通过后没有精确实现身份”“真实实现无法复用原验收分母”“fixture 与实现职责串线”“结果不可解释、不可重放、不可离线复验”的仓库内工程差距。风险加权差距由约 `9.5%` 降至约 `8.5%`。
+
+降幅仍受生产边界约束：V1 仅覆盖只读、无状态候选实现；尚无 L0-L3 reverse impact（BM-009）、Package Evidence/Fidelity 聚合（BM-010）、生产 Outcome/Regional Data Plane/HA-DR 认证（BM-011/012/013）、ANEKE 持续集成（BM-014）和真实取消费域试点（BM-015）。下一迭代进入 BM-009。

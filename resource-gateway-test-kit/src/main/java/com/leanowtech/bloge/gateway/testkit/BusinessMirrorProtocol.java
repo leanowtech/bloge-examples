@@ -79,6 +79,18 @@ public final class BusinessMirrorProtocol {
     /** Durable signed implementation-binding result v1 wire version. */
     public static final String STORED_CAPABILITY_IMPLEMENTATION_BINDING_V1 =
             "resourceGateway.storedCapabilityImplementationBinding.v1";
+    /** Exact same-suite implementation-conformance command v1 wire version. */
+    public static final String CAPABILITY_IMPLEMENTATION_CONFORMANCE_REQUEST_V1 =
+            "resourceGateway.capabilityImplementationConformanceRequest.v1";
+    /** Payload-free evidence for one real implementation test Case. */
+    public static final String CAPABILITY_IMPLEMENTATION_TEST_EVIDENCE_V1 =
+            "resourceGateway.capabilityImplementationTestEvidence.v1";
+    /** Aggregate fixture-to-implementation behavior report v1 wire version. */
+    public static final String CAPABILITY_IMPLEMENTATION_CONFORMANCE_REPORT_V1 =
+            "resourceGateway.capabilityImplementationConformanceReport.v1";
+    /** Durable signed implementation-conformance result v1 wire version. */
+    public static final String STORED_CAPABILITY_IMPLEMENTATION_CONFORMANCE_V1 =
+            "resourceGateway.storedCapabilityImplementationConformance.v1";
 
     /** Complete cancellation-fee Package example packaged with the client. */
     public static final String PACKAGE_FIXTURE_RESOURCE =
@@ -103,6 +115,9 @@ public final class BusinessMirrorProtocol {
     /** Server-produced, signed and payload-free implementation-binding result example. */
     public static final String IMPLEMENTATION_BINDING_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "refund-implementation-binding-stage1-v1.fixture.json";
+    /** Server-produced, signed implementation-conformance result example. */
+    public static final String IMPLEMENTATION_CONFORMANCE_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "refund-implementation-conformance-stage1-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
@@ -148,6 +163,14 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "capability-implementation-binding-v1.schema.json";
     static final String STORED_IMPLEMENTATION_BINDING_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "stored-capability-implementation-binding-v1.schema.json";
+    static final String IMPLEMENTATION_CONFORMANCE_REQUEST_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-implementation-conformance-request-v1.schema.json";
+    static final String IMPLEMENTATION_TEST_EVIDENCE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-implementation-test-evidence-v1.schema.json";
+    static final String IMPLEMENTATION_CONFORMANCE_REPORT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-implementation-conformance-report-v1.schema.json";
+    static final String STORED_IMPLEMENTATION_CONFORMANCE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stored-capability-implementation-conformance-v1.schema.json";
 
     private BusinessMirrorProtocol() {
     }
@@ -370,6 +393,46 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireStoredImplementationBinding(JsonNode value) {
         BusinessMirrorImplementationVerifier.verifyStoredBinding(value);
+    }
+
+    /**
+     * Requires an exact payload-free implementation-conformance command.
+     *
+     * @param value decoded implementation-conformance request
+     * @throws IllegalArgumentException when the value violates the packaged protocol
+     */
+    public static void requireImplementationConformanceRequest(JsonNode value) {
+        BusinessMirrorConformanceVerifier.verifyRequest(value);
+    }
+
+    /**
+     * Requires a content-addressed payload-free implementation test evidence value.
+     *
+     * @param value decoded implementation test evidence
+     * @throws IllegalArgumentException when Schema, content address, or time ordering fails
+     */
+    public static void requireImplementationTestEvidence(JsonNode value) {
+        BusinessMirrorConformanceVerifier.verifyImplementationEvidence(value);
+    }
+
+    /**
+     * Requires a content-addressed complete same-suite conformance report.
+     *
+     * @param value decoded implementation-conformance report
+     * @throws IllegalArgumentException when report integrity or coverage is inconsistent
+     */
+    public static void requireImplementationConformanceReport(JsonNode value) {
+        BusinessMirrorConformanceVerifier.verifyReport(value);
+    }
+
+    /**
+     * Requires a durable report, attestation, and Proposal-state identity closure.
+     *
+     * @param value decoded durable conformance aggregate
+     * @throws IllegalArgumentException when report, attestation, or Proposal closure is inconsistent
+     */
+    public static void requireStoredImplementationConformance(JsonNode value) {
+        BusinessMirrorConformanceVerifier.verifyStored(value);
     }
 
     private static void require(JsonNode value, String schema, String failureCode) {

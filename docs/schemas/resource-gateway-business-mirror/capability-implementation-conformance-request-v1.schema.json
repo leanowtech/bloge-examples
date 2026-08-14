@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-implementation-conformance-request-v1.schema.json",
+  "title": "Capability Implementation Conformance Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "implementationBindingRef", "simulationEvidenceRef", "expectedProposalDraftFingerprint"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityImplementationConformanceRequest.v1" },
+    "implementationBindingRef": { "$ref": "#/$defs/implementationBindingRef" },
+    "simulationEvidenceRef": { "$ref": "#/$defs/simulationEvidenceRef" },
+    "expectedProposalDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "implementationBindingRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PROPOSAL_IMPLEMENTATION_BINDING" } }, "required": ["kind"] }
+      ]
+    },
+    "simulationEvidenceRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "PROPOSAL_SIMULATION_EVIDENCE" } }, "required": ["kind"] }
+      ]
+    }
+  }
+}

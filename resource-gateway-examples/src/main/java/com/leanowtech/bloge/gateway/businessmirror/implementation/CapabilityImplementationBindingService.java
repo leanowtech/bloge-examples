@@ -217,6 +217,34 @@ public final class CapabilityImplementationBindingService {
         }
     }
 
+    /**
+     * Verifies that a live runtime descriptor still equals one previously attested binding.
+     * Package visibility keeps the check shared by binding and conformance without exposing a
+     * caller-controlled authorization helper.
+     */
+    static void requireExactDescriptor(
+            CapabilityImplementationBinding binding,
+            CapabilityImplementationRuntimePort.Descriptor descriptor) {
+        Objects.requireNonNull(binding, "binding");
+        if (descriptor == null
+                || !binding.runtimePortRef().equals(descriptor.runtimePortRef())
+                || !binding.runtimePortFingerprint().equals(descriptor.runtimePortFingerprint())
+                || !binding.implementationVersion().equals(descriptor.implementationVersion())
+                || !binding.implementationFingerprint()
+                .equals(descriptor.implementationFingerprint())
+                || !binding.candidateContractFingerprint()
+                .equals(descriptor.candidateContractFingerprint())
+                || !binding.runtimeOwner().equals(descriptor.runtimeOwner())
+                || !binding.allowedRegions().equals(descriptor.allowedRegions())
+                || binding.readOnly() != descriptor.readOnly()
+                || binding.stateless() != descriptor.stateless()
+                || !binding.runtimeAttestedAt().equals(descriptor.attestedAt())
+                || descriptor.expiresAt() == null
+                || descriptor.expiresAt().isBefore(binding.expiresAt())) {
+            throw new IllegalArgumentException("implementation runtime descriptor drift");
+        }
+    }
+
     private static CapabilitySnapshot.Scope requireIdentity(
             IntegrationRequestContext identity, String... allowedPurposes) {
         Objects.requireNonNull(identity, "identity").requireComplete();

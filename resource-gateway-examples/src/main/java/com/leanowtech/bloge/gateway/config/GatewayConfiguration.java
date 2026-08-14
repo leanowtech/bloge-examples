@@ -39,8 +39,11 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationRuntimePort;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationBindingRepository;
+import com.leanowtech.bloge.gateway.businessmirror.implementation.DatabaseCapabilityImplementationConformanceRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationRepository;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.CapabilityProposalSimulationService;
 import com.leanowtech.bloge.gateway.businessmirror.simulation.DatabaseCapabilityProposalSimulationRepository;
@@ -75,6 +78,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotReposit
 import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilitySnapshotRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorEvidenceRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
@@ -83,7 +87,9 @@ import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.testing.security.ExecutionControlBoundaryGuardFilter;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
@@ -692,6 +698,46 @@ public class GatewayConfiguration {
             ObjectMapper objectMapper) {
         return new CapabilityImplementationBindingService(
                 proposals, simulations, bindings, runtime, signer, objectMapper);
+    }
+
+    /** Durable lease and exact-result authority for same-suite implementation conformance. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityImplementationConformanceRepository
+    capabilityImplementationConformanceRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCapabilityImplementationConformanceRepository(jdbc, objectMapper);
+    }
+
+    /** Restores baseline Mirror generations and executes only the attested target implementation. */
+    @Bean
+    @Profile("!production & (test | staging)")
+    @ConditionalOnProperty(prefix = "gateway.testing.mirror", name = "enabled",
+            havingValue = "true")
+    @ConditionalOnMissingBean
+    public CapabilityImplementationConformanceService
+    capabilityImplementationConformanceService(
+            CapabilityProposalDraftRepository proposals,
+            CapabilityProposalSimulationRepository simulations,
+            CapabilityImplementationBindingService bindingService,
+            CapabilityImplementationConformanceRepository conformances,
+            CapabilityImplementationRuntimePort runtime,
+            TestSuiteRepository suites,
+            MirrorPlanIntegrationService plans,
+            MirrorEvidenceRepository mirrorEvidence,
+            OperatorRegistry operators,
+            ResourceRegistry resources,
+            BlgeExpressionEvaluator expressionEvaluator,
+            VisualEvidenceSigner signer,
+            ObjectMapper objectMapper) {
+        return new CapabilityImplementationConformanceService(
+                proposals, simulations, bindingService, conformances, runtime, suites, plans,
+                mirrorEvidence, operators,
+                new ResourceFixtureRuntime(resources, expressionEvaluator, objectMapper),
+                signer, objectMapper);
     }
 
     /** Exact read adapter over the shipped Graph, Contract, test-suite and capability authorities. */
