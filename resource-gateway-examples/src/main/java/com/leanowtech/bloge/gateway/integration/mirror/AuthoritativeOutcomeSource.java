@@ -15,6 +15,7 @@ public interface AuthoritativeOutcomeSource {
     enum FetchStatus {
         PAGE,
         NO_CHANGE,
+        STREAM_COMPLETE,
         SOURCE_UNAVAILABLE,
         PROTOCOL_REJECTED,
         GENERATION_REVOKED

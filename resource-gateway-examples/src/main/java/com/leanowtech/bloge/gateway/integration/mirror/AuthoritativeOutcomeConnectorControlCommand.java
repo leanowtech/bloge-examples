@@ -27,6 +27,7 @@ public record AuthoritativeOutcomeConnectorControlCommand(
         CommandType commandType,
         String streamId,
         EventTimeRange eventTimeRange,
+        String baselinePageFingerprint,
         MirrorArtifactRef baselineCursorRef,
         String reasonCode,
         Instant requestedAt,
@@ -74,13 +75,18 @@ public record AuthoritativeOutcomeConnectorControlCommand(
                 throw invalid("backfill cannot reuse the live stream id");
             }
             eventTimeRange = Objects.requireNonNull(eventTimeRange, "eventTimeRange");
+            baselinePageFingerprint = requiredFingerprint(
+                    baselinePageFingerprint, "baselinePageFingerprint");
             baselineCursorRef = requireKind(
                     baselineCursorRef,
                     AuthoritativeOutcomeSourcePage.CURSOR_KIND,
                     "baselineCursorRef");
         } else {
             streamId = Objects.requireNonNullElse(streamId, "").trim();
-            if (!streamId.isBlank() || eventTimeRange != null || baselineCursorRef != null) {
+            baselinePageFingerprint = Objects.requireNonNullElse(
+                    baselinePageFingerprint, "").trim();
+            if (!streamId.isBlank() || eventTimeRange != null
+                    || !baselinePageFingerprint.isBlank() || baselineCursorRef != null) {
                 throw invalid("revocation cannot carry backfill stream material");
             }
         }
@@ -148,7 +154,8 @@ public record AuthoritativeOutcomeConnectorControlCommand(
         return new AuthoritativeOutcomeConnectorControlCommand(
                 schemaVersion, commandId, revision, fingerprint, scope,
                 connectorId, connectorGeneration, commandType, streamId,
-                eventTimeRange, baselineCursorRef, reasonCode, requestedAt,
+                eventTimeRange, baselinePageFingerprint, baselineCursorRef,
+                reasonCode, requestedAt,
                 expiresAt, seal);
     }
 
@@ -173,6 +180,14 @@ public record AuthoritativeOutcomeConnectorControlCommand(
         String exact = Objects.requireNonNullElse(value, "").trim();
         if (!exact.isBlank() && !FINGERPRINT.matcher(exact).matches()) {
             throw invalid("commandFingerprint is invalid");
+        }
+        return exact;
+    }
+
+    private static String requiredFingerprint(String value, String field) {
+        String exact = optionalFingerprint(value);
+        if (exact.isBlank()) {
+            throw invalid(field + " is invalid");
         }
         return exact;
     }

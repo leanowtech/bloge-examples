@@ -133,7 +133,7 @@ class AuthoritativeOutcomeSourceProtocolTest {
                         "", "revoke-ledger-generation-7", 1, "", scope(),
                         "settlement-ledger", 7,
                         AuthoritativeOutcomeConnectorControlCommand.CommandType.REVOKE_GENERATION,
-                        "", null, null, "SOURCE_AUTHORITY_REVOKED",
+                        "", null, "", null, "SOURCE_AUTHORITY_REVOKED",
                         Instant.parse("2026-07-12T00:00:00Z"),
                         Instant.parse("2026-07-13T00:00:00Z"),
                         VisualRunEvidenceSeal.unsigned()).seal(mapper);
@@ -143,7 +143,8 @@ class AuthoritativeOutcomeSourceProtocolTest {
         assertThatThrownBy(() -> new AuthoritativeOutcomeConnectorControlCommand(
                 "", "bad-revoke", 1, "", scope(), "settlement-ledger", 7,
                 AuthoritativeOutcomeConnectorControlCommand.CommandType.REVOKE_GENERATION,
-                "repair", backfill.eventTimeRange(), backfill.baselineCursorRef(),
+                "repair", backfill.eventTimeRange(),
+                backfill.baselinePageFingerprint(), backfill.baselineCursorRef(),
                 "SOURCE_AUTHORITY_REVOKED", backfill.requestedAt(), backfill.expiresAt(),
                 VisualRunEvidenceSeal.unsigned()))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -191,6 +192,7 @@ class AuthoritativeOutcomeSourceProtocolTest {
                 new AuthoritativeOutcomeConnectorControlCommand.EventTimeRange(
                         Instant.parse("2026-07-01T00:00:00Z"),
                         Instant.parse("2026-08-01T00:00:00Z")),
+                AuthoritativeOutcomeTestFixtures.fingerprint('d'),
                 ref(AuthoritativeOutcomeSourcePage.CURSOR_KIND, "cursor-july", 'e'),
                 "LATE_LEDGER_REPAIR",
                 Instant.parse("2026-08-02T00:00:00Z"),
