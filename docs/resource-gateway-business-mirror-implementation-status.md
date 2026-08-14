@@ -978,8 +978,7 @@ BM-010 关闭了“Package 缺少跨 Operator/Graph/Scenario/Carrier/Outcome 的
 | Source kernel 聚焦门禁 | `72/72` 通过 | page/command 协议、repository、worker、control service、decoder/controller、bootstrap、scheduler、capability、profile/routes 与 H2 crash replay |
 | PostgreSQL / Schema / Spring 最终聚焦 | `5/5` 通过 | 双连接唯一 claim、staged page 重启恢复、commit/revoke、三类服务端 fixture、生产装配隔离和连续 readiness |
 | Test Kit 完整发布门禁 | `562/562` 通过 | `202` 份 Mirror 资源打包、Schema closure、page/command/checkpoint verifier、tamper、shaded JAR 和零警告公共 API Javadoc |
-
-最终 Resource Gateway `clean verify` 结果在本迭代文档提交后的全量回归中补记；聚焦门禁不能替代该发布门禁。
+| Resource Gateway 完整发布门禁 | `6100` 项，`0` failure，`0` error，`13` skipped | 干净编译、整库行为/数据库/真实浏览器/架构门禁、三类 Source 协议与可执行 JAR 重打包通过 |
 
 ### 19.4 架构漂移审计
 
