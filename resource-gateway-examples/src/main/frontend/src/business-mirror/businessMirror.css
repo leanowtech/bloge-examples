@@ -22,7 +22,11 @@
 
 .business-mirror-load-state button,
 .business-mirror-readiness button,
-.business-mirror-secondary-link {
+.business-mirror-secondary-link,
+.business-mirror-evidence-state button,
+.business-mirror-evidence-summary button,
+.business-mirror-reference-note button,
+.business-mirror-owner-tasks button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -797,6 +801,317 @@
   color: #28623b;
 }
 
+.business-mirror-evidence-state {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 76px;
+  padding: 14px;
+  border: 1px solid #b9cde1;
+  border-radius: 5px;
+  background: #f3f8fd;
+  color: #315b7e;
+}
+
+.business-mirror-evidence-state > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+}
+
+.business-mirror-evidence-state small,
+.business-mirror-evidence-state code {
+  color: #607086;
+  overflow-wrap: anywhere;
+}
+
+.business-mirror-evidence-state.missing {
+  border-color: #d9bd83;
+  background: #fff9eb;
+  color: #7a5107;
+}
+
+.business-mirror-evidence-state.error {
+  border-color: #dfb7ae;
+  background: #fff5f2;
+  color: #903b30;
+}
+
+.business-mirror-reference-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border: 1px solid #9cb8d5;
+  border-left: 4px solid #2f6fa8;
+  border-radius: 5px;
+  background: #edf5fc;
+  color: #285879;
+}
+
+.business-mirror-reference-note > span {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.business-mirror-reference-note small {
+  color: #5e7085;
+}
+
+.business-mirror-evidence-summary {
+  display: grid;
+  grid-template-columns: auto minmax(100px, 0.7fr) minmax(140px, 0.9fr) minmax(210px, 1.4fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #a8cbb1;
+  border-left: 4px solid #2f7a47;
+  border-radius: 5px;
+  background: #f0f8f2;
+  color: #28623b;
+}
+
+.business-mirror-evidence-summary:not(.fidelity-current) {
+  border-color: #d9bd83;
+  border-left-color: #b97917;
+  background: #fff9eb;
+  color: #78500a;
+}
+
+.business-mirror-evidence-summary > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.business-mirror-evidence-summary small {
+  color: #657286;
+  font-size: 11px;
+}
+
+.business-mirror-evidence-summary code {
+  overflow: hidden;
+  color: #42536a;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-mirror-evidence-section {
+  margin-top: 20px;
+}
+
+.business-mirror-evidence-section > header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 8px;
+}
+
+.business-mirror-evidence-section h4 {
+  margin: 0;
+  color: #24364c;
+  font-size: 15px;
+  letter-spacing: 0;
+}
+
+.business-mirror-evidence-section > header > span {
+  max-width: 520px;
+  color: #657286;
+  font-size: 11px;
+  text-align: right;
+}
+
+.business-mirror-evidence-layers {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.business-mirror-evidence-layers article {
+  min-width: 0;
+  border: 1px solid #d4dbe4;
+  border-top: 3px solid #356da4;
+  background: #fff;
+}
+
+.business-mirror-evidence-layers article:nth-child(2) {
+  border-top-color: #397a65;
+}
+
+.business-mirror-evidence-layers article:nth-child(3) {
+  border-top-color: #a56b1d;
+}
+
+.business-mirror-evidence-layers article:nth-child(4) {
+  border-top-color: #745d98;
+}
+
+.business-mirror-evidence-layers article:nth-child(5) {
+  border-top-color: #9a4e51;
+}
+
+.business-mirror-evidence-layers article > span,
+.business-mirror-evidence-layers article > strong {
+  display: block;
+  overflow: hidden;
+  padding: 0 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-mirror-evidence-layers article > span {
+  padding-top: 8px;
+  color: #687589;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.business-mirror-evidence-layers article > strong {
+  min-height: 34px;
+  padding-top: 2px;
+  color: #30435a;
+  font-size: 12px;
+}
+
+.business-mirror-evidence-layers dl {
+  display: grid;
+  margin: 0;
+  border-top: 1px solid #e2e6eb;
+}
+
+.business-mirror-evidence-layers dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 9px;
+  color: #627084;
+  font-size: 11px;
+}
+
+.business-mirror-evidence-layers dl div.debt dd {
+  color: #a23b2c;
+  font-weight: 850;
+}
+
+.business-mirror-evidence-layers dd {
+  margin: 0;
+  color: #2c4058;
+  font-weight: 750;
+}
+
+.business-mirror-fidelity-table {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #d5dbe3;
+  border-radius: 5px;
+  background: #fff;
+  overflow: auto;
+}
+
+.business-mirror-fidelity-table > div {
+  display: grid;
+  grid-template-columns: minmax(136px, 1.3fr) minmax(82px, 0.8fr) repeat(4, minmax(88px, 0.8fr));
+  align-items: center;
+  min-width: 660px;
+  min-height: 38px;
+  border-bottom: 1px solid #e4e7eb;
+}
+
+.business-mirror-fidelity-table > div:last-child {
+  border-bottom: 0;
+}
+
+.business-mirror-fidelity-table > div.header {
+  min-height: 34px;
+  background: #f1f3f6;
+  color: #536174;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.business-mirror-fidelity-table > div > * {
+  min-width: 0;
+  padding: 7px 9px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.business-mirror-fidelity-table code {
+  color: #2e4866;
+  font-size: 10px;
+}
+
+.dimension-state {
+  color: #2d6841;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.dimension-state:is(.partial, .insufficient, .abstained, .stale, .missing) {
+  color: #9b4a24;
+}
+
+.business-mirror-owner-tasks {
+  display: grid;
+  border: 1px solid #d5dbe3;
+  border-radius: 5px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.business-mirror-owner-tasks article {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e4e7eb;
+}
+
+.business-mirror-owner-tasks article:last-child {
+  border-bottom: 0;
+}
+
+.business-mirror-owner-tasks article > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.business-mirror-owner-tasks small {
+  color: #657286;
+  overflow-wrap: anywhere;
+}
+
+.business-mirror-owner-tasks > p {
+  margin: 0;
+  padding: 16px;
+  color: #627084;
+}
+
+.task-severity {
+  padding: 3px 6px;
+  border-radius: 4px;
+  background: #fff0c8;
+  color: #7f5206;
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.task-severity.error,
+.task-severity.critical {
+  background: #f8ded8;
+  color: #95362a;
+}
+
 .business-mirror-evidence-rail {
   padding: 12px;
   border-left: 1px solid #d7dce3;
@@ -910,6 +1225,10 @@
     grid-template-columns: repeat(2, minmax(170px, 1fr));
   }
 
+  .business-mirror-evidence-layers {
+    grid-template-columns: repeat(3, minmax(140px, 1fr));
+  }
+
   .capability-layer-arrow {
     display: none;
   }
@@ -1014,6 +1333,44 @@
   .business-mirror-evidence-rail {
     grid-template-columns: minmax(0, 1fr);
   }
+
+  .business-mirror-evidence-summary {
+    grid-template-columns: auto repeat(2, minmax(0, 1fr));
+  }
+
+  .business-mirror-evidence-state,
+  .business-mirror-reference-note {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .business-mirror-evidence-state button,
+  .business-mirror-reference-note button {
+    width: 100%;
+  }
+
+  .business-mirror-evidence-summary > span:nth-of-type(3),
+  .business-mirror-evidence-summary > button {
+    grid-column: 2 / -1;
+  }
+
+  .business-mirror-evidence-layers {
+    grid-template-columns: repeat(2, minmax(130px, 1fr));
+  }
+
+  .business-mirror-evidence-section > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .business-mirror-evidence-section > header > span {
+    text-align: left;
+  }
+
+  .business-mirror-owner-tasks article {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 460px) {
@@ -1091,8 +1448,19 @@
 
   .business-mirror-form,
   .business-mirror-requirement-list.two-column,
-  .business-mirror-capability-map {
+  .business-mirror-capability-map,
+  .business-mirror-evidence-layers {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .business-mirror-evidence-summary {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .business-mirror-evidence-summary > span,
+  .business-mirror-evidence-summary > span:nth-of-type(3),
+  .business-mirror-evidence-summary > button {
+    grid-column: 2;
   }
 
   .business-mirror-form label.wide {

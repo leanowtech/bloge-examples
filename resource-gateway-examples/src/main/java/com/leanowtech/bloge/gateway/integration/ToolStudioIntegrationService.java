@@ -88,6 +88,7 @@ public class ToolStudioIntegrationService {
     private boolean businessMirrorImplementationBindingApi;
     private boolean businessMirrorImplementationRuntimeReady;
     private boolean businessMirrorImplementationConformanceApi;
+    private boolean businessMirrorPackageEvidenceApi;
     private MirrorRuntimeAvailability mirrorRuntimeAvailability =
             new MirrorRuntimeAvailability(false, false);
     private DomainFidelityRuntimeAvailability
@@ -261,6 +262,13 @@ public class ToolStudioIntegrationService {
         this.businessMirrorImplementationBindingApi = service != null;
         this.businessMirrorImplementationConformanceApi = conformanceService != null;
         this.businessMirrorImplementationRuntimeReady = runtime != null && runtime.available();
+    }
+
+    /** Advertises Package evidence routes only when their protected service is assembled. */
+    @Autowired(required = false)
+    void configureBusinessMirrorPackageEvidence(
+            com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService service) {
+        this.businessMirrorPackageEvidenceApi = service != null;
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -628,6 +636,12 @@ public class ToolStudioIntegrationService {
                 businessMirrorImplementationRuntimeReady);
         features.put("businessMirrorImplementationConformanceApi",
                 businessMirrorImplementationConformanceApi);
+        features.put("businessMirrorPackageEvidenceApi",
+                businessMirrorPackageEvidenceApi);
+        features.put("businessMirrorDomainEvidencePortfolioApi",
+                businessMirrorPackageEvidenceApi);
+        features.put("businessMirrorEvidenceOwnerTaskApi",
+                businessMirrorPackageEvidenceApi);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2261,6 +2275,29 @@ public class ToolStudioIntegrationService {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET",
                     "/api/business-mirror/implementation-bindings/{bindingId}/revisions/{revision}/conformance"));
+        }
+        if (businessMirrorPackageEvidenceApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/business-mirror/domain-capability-packages/{packageId}/evidence-index"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/domain-capability-packages/{packageId}/evidence-index/refresh"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/business-mirror/domain-portfolios/{domainId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/business-mirror/evidence-owner-tasks"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/evidence-owner-tasks/{taskId}/acknowledge"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST",
+                    "/api/business-mirror/evidence-owner-tasks/{taskId}/resolve"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET",
+                    "/api/integration/domain-capability-packages/{packageId}/evidence-index"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/integration/domain-portfolios/{domainId}"));
         }
         IntegrationCapabilities augmented = new IntegrationCapabilities(
                 current.schemaVersion(), current.protocol(), current.protocolVersion(),

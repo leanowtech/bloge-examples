@@ -23,6 +23,10 @@ class BusinessMirrorProtocolTest {
                 BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
         JsonNode impact = fixture(
                 BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE);
+        JsonNode evidenceIndex = fixture(
+                BusinessMirrorProtocol.PACKAGE_EVIDENCE_INDEX_FIXTURE_RESOURCE);
+        JsonNode evidencePortfolio = fixture(
+                BusinessMirrorProtocol.DOMAIN_EVIDENCE_PORTFOLIO_FIXTURE_RESOURCE);
 
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requirePackageDraft(packageDraft));
@@ -32,11 +36,71 @@ class BusinessMirrorProtocolTest {
                 () -> BusinessMirrorProtocol.requireLegacyGraphPackageProjection(legacyProjection));
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requireBusinessAssetImpactReport(impact));
+        assertThatNoException().isThrownBy(
+                () -> BusinessMirrorProtocol.requirePackageEvidenceIndex(evidenceIndex));
+        assertThatNoException().isThrownBy(
+                () -> BusinessMirrorProtocol.requireDomainEvidencePortfolio(evidencePortfolio));
         assertThat(packageDraft.path("businessDefinition").path("problemCode").asText())
                 .isEqualTo("TRIP.CANCELLATION.FEE");
         assertThat(proposalSnapshot.path("simulationRuntimeBinding")
                 .path("networkEgressAllowed").asBoolean()).isFalse();
         assertThat(legacyProjection.path("status").asText()).isEqualTo("BLOCKED");
+    }
+
+    @Test
+    void verifiesFiveLayerEvidenceSevenDimensionFidelityAndActiveOwnerTasksOffline()
+            throws Exception {
+        JsonNode index = fixture(BusinessMirrorProtocol.PACKAGE_EVIDENCE_INDEX_FIXTURE_RESOURCE);
+        JsonNode portfolio = fixture(
+                BusinessMirrorProtocol.DOMAIN_EVIDENCE_PORTFOLIO_FIXTURE_RESOURCE);
+
+        var verifiedIndex = BusinessMirrorEvidenceVerifier.verifyIndex(index);
+        var verifiedPortfolio = BusinessMirrorEvidenceVerifier.verifyPortfolio(portfolio);
+        var verifiedTask = BusinessMirrorEvidenceVerifier.verifyTask(
+                portfolio.path("packages").get(0).path("ownerTasks").get(0));
+
+        assertThat(verifiedIndex.conclusionCount()).isEqualTo(14);
+        assertThat(verifiedIndex.fidelityState()).isEqualTo("CURRENT");
+        assertThat(verifiedIndex.fidelityDimensionCount()).isEqualTo(7);
+        assertThat(verifiedIndex.driftSignalCount()).isZero();
+        assertThat(verifiedPortfolio.packageCount()).isOne();
+        assertThat(verifiedPortfolio.activeTaskCount()).isOne();
+        assertThat(verifiedTask.status()).isEqualTo("OPEN");
+        assertThat(index.toString()).doesNotContain(
+                "overallScore", "totalScore", "maturityScore", "overallPass");
+    }
+
+    @Test
+    void rejectsEvidenceFingerprintLineageAndPortfolioArithmeticTampering() throws Exception {
+        ObjectNode fingerprintTamper = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_EVIDENCE_INDEX_FIXTURE_RESOURCE);
+        fingerprintTamper.put("problemCode", "TRIP.TAMPERED");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requirePackageEvidenceIndex(fingerprintTamper))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_EVIDENCE_INDEX_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("TRIP.TAMPERED");
+
+        ObjectNode lineageTamper = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_EVIDENCE_INDEX_FIXTURE_RESOURCE);
+        ((ObjectNode) lineageTamper.path("layers").get(0).path("conclusions").get(0))
+                .putArray("sourceLineage")
+                .add(lineageTamper.path("packageSnapshotSource").deepCopy());
+        sealField(lineageTamper, "indexFingerprint");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requirePackageEvidenceIndex(lineageTamper))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_EVIDENCE_LINEAGE_INVALID");
+
+        ObjectNode portfolio = (ObjectNode) fixture(
+                BusinessMirrorProtocol.DOMAIN_EVIDENCE_PORTFOLIO_FIXTURE_RESOURCE);
+        ((ObjectNode) portfolio.path("packages").get(0).path("layers").get(0))
+                .put("conclusionCount", 7);
+        sealField(portfolio, "portfolioFingerprint");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireDomainEvidencePortfolio(portfolio))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.DOMAIN_EVIDENCE_LAYER_ARITHMETIC_INVALID");
     }
 
     @Test
@@ -596,6 +660,10 @@ class BusinessMirrorProtocolTest {
                 .isEqualTo("resourceGateway.legacyGraphPackageProjection.v1");
         assertThat(BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_REPORT_V1)
                 .isEqualTo("resourceGateway.businessAssetImpactReport.v1");
+        assertThat(BusinessMirrorProtocol.PACKAGE_EVIDENCE_INDEX_V1)
+                .isEqualTo("resourceGateway.packageEvidenceIndex.v1");
+        assertThat(BusinessMirrorProtocol.DOMAIN_EVIDENCE_PORTFOLIO_V1)
+                .isEqualTo("resourceGateway.domainEvidencePortfolio.v1");
         assertThat(BusinessMirrorProtocol.STORED_CAPABILITY_PROPOSAL_SIMULATION_V1)
                 .isEqualTo("resourceGateway.storedCapabilityProposalSimulation.v1");
         assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(null))
@@ -737,6 +805,14 @@ class BusinessMirrorProtocolTest {
     private static ObjectNode seal(ObjectNode value) {
         value.put("fingerprint", "");
         value.put("fingerprint", BusinessMirrorCanonical.fingerprint(value,
+                "RG.BUSINESS_MIRROR.CLIENT.TEST_TOO_LARGE",
+                "RG.BUSINESS_MIRROR.CLIENT.TEST_CANONICALIZATION_FAILED"));
+        return value;
+    }
+
+    private static ObjectNode sealField(ObjectNode value, String field) {
+        value.put(field, "");
+        value.put(field, BusinessMirrorCanonical.fingerprint(value,
                 "RG.BUSINESS_MIRROR.CLIENT.TEST_TOO_LARGE",
                 "RG.BUSINESS_MIRROR.CLIENT.TEST_CANONICALIZATION_FAILED"));
         return value;

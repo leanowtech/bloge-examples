@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,6 +22,7 @@ import java.util.List;
 /** Authenticated Package evidence index, domain Portfolio, refresh, and owner-task transport. */
 @RestController
 @RequestMapping
+@Profile("!production & (test | staging)")
 @ConditionalOnProperty(
         prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
 public final class PackageEvidenceController {

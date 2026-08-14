@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowLeft,
   Boxes,
   Check,
@@ -15,18 +16,25 @@ import {
   Search,
   ShieldCheck,
   SlidersHorizontal,
+  TableProperties,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
+  acknowledgeBusinessMirrorEvidenceTask,
+  BlogeApiRequestError,
   compileBusinessMirrorPackage,
+  fetchBusinessMirrorDomainEvidencePortfolio,
   fetchBusinessMirrorLegacyCatalog,
+  fetchBusinessMirrorPackageEvidence,
   fetchBusinessMirrorPackages,
   importBusinessMirrorLegacyPackage,
+  refreshBusinessMirrorPackageEvidence,
   saveBusinessMirrorPackage,
 } from '../api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { MessageId } from '../i18n/messageCatalog';
+import referenceEvidenceJson from '../../../../../../docs/schemas/resource-gateway-business-mirror/package-evidence-index-stage1-v1.fixture.json';
 import {
   businessMirrorCapabilityLayers,
   businessMirrorTaskForGap,
@@ -34,6 +42,9 @@ import {
   effectiveBusinessMirrorGaps,
   projectBusinessMirrorPortfolio,
   type BusinessMirrorCompilationReceipt,
+  type BusinessMirrorDomainEvidencePortfolio,
+  type BusinessMirrorEvidenceLayer,
+  type BusinessMirrorPackageEvidenceIndex,
   type BusinessMirrorGap,
   type BusinessMirrorPackageDraft,
   type BusinessMirrorPackagePage,
@@ -68,6 +79,7 @@ const TASKS: Array<{
   { id: 'capabilities', label: 'businessMirror.task.capabilities', detail: 'businessMirror.task.capabilitiesDetail' },
   { id: 'scenarios', label: 'businessMirror.task.scenarios', detail: 'businessMirror.task.scenariosDetail' },
   { id: 'rehearsal', label: 'businessMirror.task.rehearsal', detail: 'businessMirror.task.rehearsalDetail' },
+  { id: 'evidence', label: 'businessMirror.task.evidence', detail: 'businessMirror.task.evidenceDetail' },
   { id: 'calibrate', label: 'businessMirror.task.calibrate', detail: 'businessMirror.task.calibrateDetail' },
 ];
 
@@ -80,6 +92,9 @@ const BUILT_IN_GRAPH_TITLES: Record<string, MessageId> = {
   resourceDispatch: 'showcase.resourceDispatch.title',
   aiEnrichedSearch: 'showcase.aiEnrichedSearch.title',
 };
+
+const REFERENCE_PACKAGE_EVIDENCE =
+  referenceEvidenceJson as unknown as BusinessMirrorPackageEvidenceIndex;
 
 export default function BusinessMirrorWorkspace() {
   const { m } = useI18n();
@@ -97,6 +112,7 @@ export default function BusinessMirrorWorkspace() {
   const [editor, setEditor] = useState<BusinessMirrorPackageDraft | null>(null);
   const [compilation, setCompilation] = useState<BusinessMirrorCompilationReceipt | null>(null);
   const [command, setCommand] = useState<CommandState>({ kind: 'idle' });
+  const activeTaskButton = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -130,6 +146,25 @@ export default function BusinessMirrorWorkspace() {
     setCompilation(null);
     setCommand({ kind: 'idle' });
   }, [selected?.packageId]);
+
+  useEffect(() => {
+    const align = () => {
+      const button = activeTaskButton.current;
+      const rail = button?.parentElement;
+      if (button && rail && rail.scrollWidth > rail.clientWidth) {
+        rail.scrollLeft = Math.max(
+          0,
+          button.offsetLeft - (rail.clientWidth - button.offsetWidth) / 2,
+        );
+      }
+    };
+    const frame = window.requestAnimationFrame(align);
+    window.addEventListener('resize', align);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', align);
+    };
+  }, [activeTask, selected?.packageId]);
 
   if (loadError) {
     return (
@@ -305,6 +340,7 @@ export default function BusinessMirrorWorkspace() {
             return (
               <button
                 key={task.id}
+                ref={activeTask === task.id ? activeTaskButton : undefined}
                 type="button"
                 className={activeTask === task.id ? 'active' : ''}
                 aria-current={activeTask === task.id ? 'step' : undefined}
@@ -539,6 +575,7 @@ function TaskSurface({
   }
   if (task === 'scenarios') return <ScenarioTask item={item} draft={draft} />;
   if (task === 'rehearsal') return <RehearsalTask draft={draft} />;
+  if (task === 'evidence') return <EvidenceTask item={item} />;
   return <CalibrateTask draft={draft} />;
 }
 
@@ -745,6 +782,265 @@ function RehearsalTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
       </a>
     </>
   );
+}
+
+type EvidenceLoadState = 'loading' | 'available' | 'missing' | 'error';
+
+const EVIDENCE_LAYER_LABELS: Record<BusinessMirrorEvidenceLayer, MessageId> = {
+  L0_RESOURCE: 'businessMirror.evidence.layer.l0',
+  L1_SERVICE_DESIGN: 'businessMirror.evidence.layer.l1',
+  L2_SERVICE_CARRIER: 'businessMirror.evidence.layer.l2',
+  L3_APPLICATION: 'businessMirror.evidence.layer.l3',
+  CALIBRATION: 'businessMirror.evidence.layer.calibration',
+};
+
+function EvidenceTask({ item }: { item: BusinessMirrorPortfolioItem }) {
+  const { m } = useI18n();
+  const [generation, setGeneration] = useState(0);
+  const [state, setState] = useState<EvidenceLoadState>('loading');
+  const [index, setIndex] = useState<BusinessMirrorPackageEvidenceIndex | null>(null);
+  const [portfolio, setPortfolio] = useState<BusinessMirrorDomainEvidencePortfolio | null>(null);
+  const [detail, setDetail] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [taskActionId, setTaskActionId] = useState('');
+  const [reference, setReference] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setState('loading');
+    setIndex(null);
+    setPortfolio(null);
+    setDetail('');
+    setReference(false);
+    void fetchBusinessMirrorPackageEvidence(item.packageId)
+      .then(async (nextIndex) => {
+        const nextPortfolio = await fetchBusinessMirrorDomainEvidencePortfolio(nextIndex.domainId)
+          .catch(() => null);
+        if (!active) return;
+        setIndex(nextIndex);
+        setPortfolio(nextPortfolio);
+        setState('available');
+      })
+      .catch((cause: unknown) => {
+        if (!active) return;
+        if (cause instanceof BlogeApiRequestError && cause.status === 404) {
+          setState('missing');
+          return;
+        }
+        setDetail(errorDetail(cause));
+        setState('error');
+      });
+    return () => { active = false; };
+  }, [generation, item.packageId]);
+
+  const refresh = async () => {
+    setRefreshing(true);
+    setDetail('');
+    try {
+      await refreshBusinessMirrorPackageEvidence(item.packageId);
+      setGeneration((value) => value + 1);
+    } catch (cause) {
+      setDetail(errorDetail(cause));
+    } finally {
+      setRefreshing(false);
+    }
+  };
+  const acknowledge = async (taskId: string, version: number) => {
+    setTaskActionId(taskId);
+    setDetail('');
+    try {
+      await acknowledgeBusinessMirrorEvidenceTask(taskId, version);
+      setGeneration((value) => value + 1);
+    } catch (cause) {
+      setDetail(errorDetail(cause));
+    } finally {
+      setTaskActionId('');
+    }
+  };
+  const loadReference = () => {
+    setIndex(REFERENCE_PACKAGE_EVIDENCE);
+    setPortfolio(null);
+    setDetail('');
+    setReference(true);
+    setState('available');
+  };
+
+  return (
+    <>
+      <TaskHeading heading="businessMirror.evidence.title" detail="businessMirror.evidence.detail" />
+      {state === 'loading' && (
+        <div className="business-mirror-evidence-state" aria-busy="true">
+          <LoaderCircle aria-hidden="true" className="spin" size={21} />
+          <span>{m('businessMirror.evidence.loading')}</span>
+        </div>
+      )}
+      {state === 'missing' && (
+        <div className="business-mirror-evidence-state missing">
+          <TableProperties aria-hidden="true" size={24} />
+          <span>
+            <strong>{m('businessMirror.evidence.missing')}</strong>
+            <small>{m(item.imported
+              ? 'businessMirror.evidence.missingCompiled' : 'businessMirror.evidence.missingImported')}</small>
+          </span>
+          <button type="button" onClick={() => setGeneration((value) => value + 1)}>
+            <RefreshCw aria-hidden="true" size={16} />
+            {m('businessMirror.evidence.reload')}
+          </button>
+          <button type="button" onClick={loadReference}>
+            <TableProperties aria-hidden="true" size={16} />
+            {m('businessMirror.evidence.loadReference')}
+          </button>
+        </div>
+      )}
+      {state === 'error' && (
+        <div className="business-mirror-evidence-state error" role="alert">
+          <CircleAlert aria-hidden="true" size={22} />
+          <span><strong>{m('businessMirror.evidence.failed')}</strong><code>{detail}</code></span>
+          <button type="button" onClick={() => setGeneration((value) => value + 1)}>
+            <RefreshCw aria-hidden="true" size={16} />
+            {m('businessMirror.command.retry')}
+          </button>
+        </div>
+      )}
+      {state === 'available' && index && (
+        <>
+          {reference && (
+            <div className="business-mirror-reference-note" role="status">
+              <TableProperties aria-hidden="true" size={18} />
+              <span>
+                <strong>{m('businessMirror.evidence.referenceTitle')}</strong>
+                <small>{m('businessMirror.evidence.referenceDetail', {
+                  packageId: index.packageId,
+                })}</small>
+              </span>
+              <button type="button" onClick={() => setGeneration((value) => value + 1)}>
+                <RefreshCw aria-hidden="true" size={15} />
+                {m('businessMirror.evidence.returnCurrent')}
+              </button>
+            </div>
+          )}
+          <div className={`business-mirror-evidence-summary fidelity-${index.fidelity.state.toLowerCase()}`}>
+            <Activity aria-hidden="true" size={22} />
+            <span>
+              <small>{m('businessMirror.evidence.fidelityState')}</small>
+              <strong>{index.fidelity.state}</strong>
+            </span>
+            <span>
+              <small>{m('businessMirror.evidence.compilation')}</small>
+              <strong>r{index.compilationRevision} / p{index.projectionRevision}</strong>
+            </span>
+            <span>
+              <small>{m('businessMirror.evidence.projectedAt')}</small>
+              <code>{index.projectedAt}</code>
+            </span>
+            {!reference && (
+              <button type="button" disabled={refreshing} onClick={refresh}>
+                <RefreshCw aria-hidden="true" className={refreshing ? 'spin' : ''} size={16} />
+                {m(refreshing ? 'businessMirror.evidence.refreshing' : 'businessMirror.evidence.refresh')}
+              </button>
+            )}
+          </div>
+
+          <section className="business-mirror-evidence-section">
+            <header>
+              <h4>{m('businessMirror.evidence.layers')}</h4>
+              <span>{m('businessMirror.evidence.noScore')}</span>
+            </header>
+            <div className="business-mirror-evidence-layers">
+              {index.layers.map((layer) => {
+                const available = layer.conclusions.filter((value) => value.state === 'AVAILABLE').length;
+                const debt = layer.conclusions.length - available;
+                return (
+                  <article key={layer.layer}>
+                    <span>{layer.layer}</span>
+                    <strong>{m(EVIDENCE_LAYER_LABELS[layer.layer])}</strong>
+                    <dl>
+                      <div><dt>{m('businessMirror.evidence.conclusions')}</dt><dd>{layer.conclusions.length}</dd></div>
+                      <div><dt>{m('businessMirror.evidence.available')}</dt><dd>{available}</dd></div>
+                      <div className={debt ? 'debt' : ''}><dt>{m('businessMirror.evidence.debt')}</dt><dd>{debt}</dd></div>
+                    </dl>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="business-mirror-evidence-section">
+            <header>
+              <h4>{m('businessMirror.evidence.dimensions')}</h4>
+              <span>{m('businessMirror.evidence.dimensionDetail')}</span>
+            </header>
+            {index.fidelity.dimensions.length === 0 ? (
+              <p className="business-mirror-inline-warning">{m('businessMirror.evidence.profileMissing')}</p>
+            ) : (
+              <div className="business-mirror-fidelity-table" role="table">
+                <div role="row" className="header">
+                  <span role="columnheader">{m('businessMirror.evidence.dimension')}</span>
+                  <span role="columnheader">{m('businessMirror.evidence.state')}</span>
+                  <span role="columnheader">{m('businessMirror.evidence.obligations')}</span>
+                  <span role="columnheader">{m('businessMirror.evidence.coverage')}</span>
+                  <span role="columnheader">{m('businessMirror.evidence.confidence')}</span>
+                  <span role="columnheader">{m('businessMirror.evidence.abstention')}</span>
+                </div>
+                {index.fidelity.dimensions.map((dimension) => (
+                  <div role="row" key={dimension.dimension}>
+                    <code role="cell">{dimension.dimension}</code>
+                    <span role="cell" className={`dimension-state ${dimension.state.toLowerCase()}`}>
+                      {dimension.state}
+                    </span>
+                    <span role="cell">{dimension.metric
+                      ? `${dimension.metric.passedUnits}/${dimension.metric.requiredUnits}` : '-'}</span>
+                    <span role="cell">{ratio(dimension.metric?.coverageRatio)}</span>
+                    <span role="cell">{dimension.metric
+                      ? `${ratio(dimension.metric.confidence.lowerBound)}-${ratio(dimension.metric.confidence.upperBound)}`
+                      : '-'}</span>
+                    <span role="cell">{ratio(dimension.metric?.abstentionRatio)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="business-mirror-evidence-section">
+            <header>
+              <h4>{m('businessMirror.evidence.ownerTasks')}</h4>
+              <span>{m('businessMirror.evidence.ownerTasksDetail', {
+                count: portfolio?.packages.flatMap((value) => value.ownerTasks).length
+                  ?? index.driftSignals.length,
+              })}</span>
+            </header>
+            <div className="business-mirror-owner-tasks">
+              {(portfolio?.packages.flatMap((value) => value.ownerTasks) ?? []).map((task) => (
+                <article key={task.taskId}>
+                  <span className={`task-severity ${task.severity.toLowerCase()}`}>{task.severity}</span>
+                  <span><strong>{task.reason}</strong><small>{task.owner} · {task.dueAt}</small></span>
+                  <code>{task.status}</code>
+                  {task.status === 'OPEN' && (
+                    <button type="button" disabled={taskActionId === task.taskId}
+                      onClick={() => acknowledge(task.taskId, task.version)}>
+                      {taskActionId === task.taskId
+                        ? <LoaderCircle aria-hidden="true" className="spin" size={15} />
+                        : <Check aria-hidden="true" size={15} />}
+                      {m('businessMirror.evidence.acknowledge')}
+                    </button>
+                  )}
+                </article>
+              ))}
+              {!portfolio?.packages.some((value) => value.ownerTasks.length > 0) && (
+                <p>{m(index.driftSignals.length
+                  ? 'businessMirror.evidence.portfolioPending' : 'businessMirror.evidence.noTasks')}</p>
+              )}
+            </div>
+          </section>
+        </>
+      )}
+      {detail && state === 'available' && <p className="business-mirror-inline-warning" role="alert">{detail}</p>}
+    </>
+  );
+}
+
+function ratio(value: number | undefined): string {
+  return value === undefined ? '-' : `${Math.round(value * 1000) / 10}%`;
 }
 
 function CalibrateTask({ draft }: { draft: BusinessMirrorPackageDraft }) {

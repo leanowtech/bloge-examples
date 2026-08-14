@@ -833,6 +833,7 @@ public class GatewayConfiguration {
 
     /** Append-only Package Evidence/Fidelity indexes and owner-task journal. */
     @Bean
+    @Profile("!production & (test | staging)")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
             prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
@@ -843,6 +844,7 @@ public class GatewayConfiguration {
 
     /** Stable port from Package aggregation into the existing Fidelity execution-fact kernel. */
     @Bean
+    @Profile("!production & (test | staging)")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
             prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")
@@ -858,6 +860,7 @@ public class GatewayConfiguration {
 
     /** Database-leased asynchronous Package Evidence/Fidelity projection worker. */
     @Bean
+    @Profile("!production & (test | staging)")
     @ConditionalOnMissingBean
     @ConditionalOnProperty(
             prefix = "gateway.testing.mirror", name = "enabled", havingValue = "true")

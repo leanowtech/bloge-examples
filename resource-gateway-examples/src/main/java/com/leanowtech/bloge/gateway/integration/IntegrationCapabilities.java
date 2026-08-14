@@ -330,6 +330,15 @@ public record IntegrationCapabilities(
         objects.put("businessAssetImpactRebuildReport", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.impact
                         .BusinessAssetImpactRebuildReport.SCHEMA_VERSION));
+        objects.put("packageEvidenceIndex", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.evidence
+                        .PackageEvidenceIndex.SCHEMA_VERSION));
+        objects.put("evidenceOwnerTask", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.evidence
+                        .EvidenceOwnerTask.SCHEMA_VERSION));
+        objects.put("domainEvidencePortfolio", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.evidence
+                        .DomainEvidencePortfolio.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageDraft", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageDraft.SCHEMA_VERSION));
@@ -1010,6 +1019,10 @@ public record IntegrationCapabilities(
         features.put("businessMirrorAssetImpactApi", true);
         features.put("businessMirrorAssetImpactRebuild", true);
         features.put("businessMirrorAssetImpactFreshness", true);
+        features.put("businessMirrorPackageEvidenceProtocol", true);
+        features.put("businessMirrorPackageEvidenceApi", false);
+        features.put("businessMirrorDomainEvidencePortfolioApi", false);
+        features.put("businessMirrorEvidenceOwnerTaskApi", false);
         features.put("businessMirrorDeepLinks", true);
         features.put("businessMirrorPackageCompilerAuthorityReady", false);
         features.put("businessMirrorLegacyMigrationApi", true);

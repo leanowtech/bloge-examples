@@ -739,7 +739,11 @@ class ResourceGatewayApplicationTest {
                 .containsEntry("trustedWorkloadIdentity", true)
                 .containsEntry("demoIdentityMode", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", true)
-                .containsEntry("businessMirrorLegacyMigrationAuthorityReady", true);
+                .containsEntry("businessMirrorLegacyMigrationAuthorityReady", true)
+                .containsEntry("businessMirrorPackageEvidenceProtocol", true)
+                .containsEntry("businessMirrorPackageEvidenceApi", false)
+                .containsEntry("businessMirrorDomainEvidencePortfolioApi", false)
+                .containsEntry("businessMirrorEvidenceOwnerTaskApi", false);
         assertThat((Map<String, Object>) capabilityPayload.get("identityProvider"))
                 .containsEntry("providerType", "STATIC_BEARER_REGISTRY")
                 .containsEntry("claimsSource", "SERVER_REGISTRY");

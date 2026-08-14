@@ -1,11 +1,15 @@
 package com.leanowtech.bloge.gateway.businessmirror.evidence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceipt;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityInventory;
 import com.leanowtech.bloge.gateway.integration.mirror.DomainFidelityProfile;
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +19,84 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class PackageEvidenceProjectorTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+
+    @Test
+    void publishesExactIndexAndDebtPortfolioCompatibilityFixtures() throws Exception {
+        DomainFidelityInventory inventory = PackageEvidenceFixtures.inventory(mapper, 'd',
+                PackageEvidenceFixtures.NOW.plus(Duration.ofDays(90)));
+        PackageCompilationReceipt receipt =
+                PackageEvidenceFixtures.receiptWithInventory(mapper, inventory);
+        DomainFidelityProfile profile = PackageEvidenceFixtures.profile(mapper, inventory,
+                DomainFidelityProfile.MeasurementOutcome.PASS, PackageEvidenceFixtures.NOW);
+        PackageEvidenceIndex current = PackageEvidenceProjector.project(receipt,
+                Optional.of(inventory), Optional.of(profile), 1,
+                PackageEvidenceFixtures.NOW, mapper);
+        PackageEvidenceIndex debt = PackageEvidenceProjector.project(receipt,
+                Optional.of(inventory), Optional.empty(), 1,
+                PackageEvidenceFixtures.NOW, mapper);
+        EvidenceOwnerTask task = EvidenceOwnerTask.open(debt,
+                debt.driftSignals().getFirst(),
+                "/business-mirror/?packageId=cancellation-package&compilationRevision=7&task=evidence",
+                mapper);
+        DomainEvidencePortfolio portfolio = new DomainEvidencePortfolio("", "", debt.scope(),
+                debt.domainId(), List.of(DomainEvidencePortfolio.summarize(debt, List.of(task),
+                PackageEvidenceFixtures.NOW, task.deepLink())), "", PackageEvidenceFixtures.NOW)
+                .seal(mapper);
+        ObjectMapper wireMapper = mapper.copy()
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+        JsonNode currentWire = wireMapper.valueToTree(current);
+        JsonNode portfolioWire = wireMapper.valueToTree(portfolio);
+        JsonNode fixedIndex = wireMapper.readTree(Files.readString(Path.of(
+                "../docs/schemas/resource-gateway-business-mirror/"
+                        + "package-evidence-index-stage1-v1.fixture.json")));
+        JsonNode fixedPortfolio = wireMapper.readTree(Files.readString(Path.of(
+                "../docs/schemas/resource-gateway-business-mirror/"
+                        + "domain-evidence-portfolio-stage1-v1.fixture.json")));
+        assertThat(firstDifference(currentWire, fixedIndex, "$")).isEmpty();
+        assertThat(firstDifference(portfolioWire, fixedPortfolio, "$")).isEmpty();
+    }
+
+    private static String firstDifference(JsonNode expected, JsonNode actual, String path) {
+        if (expected.getNodeType() != actual.getNodeType()) {
+            return path + " type";
+        }
+        if (expected.isObject()) {
+            java.util.Set<String> names = new java.util.TreeSet<>();
+            expected.fieldNames().forEachRemaining(names::add);
+            actual.fieldNames().forEachRemaining(names::add);
+            for (String name : names) {
+                if (!expected.has(name) || !actual.has(name)) {
+                    return path + "." + name + " missing";
+                }
+                String difference = firstDifference(
+                        expected.get(name), actual.get(name), path + "." + name);
+                if (!difference.isEmpty()) {
+                    return difference;
+                }
+            }
+            return "";
+        }
+        if (expected.isArray()) {
+            if (expected.size() != actual.size()) {
+                return path + " size";
+            }
+            for (int index = 0; index < expected.size(); index++) {
+                String difference = firstDifference(
+                        expected.get(index), actual.get(index), path + "[" + index + "]");
+                if (!difference.isEmpty()) {
+                    return difference;
+                }
+            }
+            return "";
+        }
+        if (expected.isNumber() && actual.isNumber()) {
+            return expected.decimalValue().compareTo(actual.decimalValue()) == 0
+                    ? "" : path + " expected=" + expected + " actual=" + actual;
+        }
+        return expected.equals(actual) ? ""
+                : path + " expected=" + expected + " actual=" + actual;
+    }
 
     @Test
     void preservesFiveProofLayersSevenDimensionsAndExactLineageWithoutAnOverallScore()

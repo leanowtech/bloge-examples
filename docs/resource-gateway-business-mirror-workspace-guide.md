@@ -92,18 +92,18 @@ Portfolio 合并两个权威来源：
 
 ## 3. Package 工作区如何阅读
 
-![Package readiness and six tasks](assets/resource-gateway-business-mirror-package-readiness-zh.jpg)
+![Package readiness and seven tasks](assets/resource-gateway-business-mirror-package-readiness-zh.jpg)
 
 Package 页面固定包含四个区域：
 
 1. **上下文栏**：显示 Package 身份、Graph 名、revision、在线或离线状态。
 2. **Readiness 带**：显示 blocking 数量、首个阻断和当前主动作。
-3. **六步任务导航**：把领域对象和治理义务投影为可执行任务。
+3. **七步任务导航**：把领域对象和治理义务投影为可执行任务。
 4. **Gap 与来源侧栏**：保留全部缺失项和 exact Graph、Contract、Capability、Closure、Test Suite 来源。
 
 「处理首个阻断」按稳定 gap code 定位任务。它不修改数据，也不隐藏其他阻断。
 
-### 3.1 六步任务
+### 3.1 七步任务
 
 | 步骤 | 业务问题 | 主要对象 | 当前可执行能力 |
 |---|---|---|---|
@@ -112,9 +112,16 @@ Package 页面固定包含四个区域：
 | 3. 组装能力 | L0 到 L3 是否形成可追踪服务链 | Graph、Capability、Solution、Carrier、Channel | 查看类型化能力地图与缺失资产，跳转精确 Graph |
 | 4. 冻结场景分母 | 哪些业务分支必须被验证 | ScenarioInventory、ScenarioPack | 区分发现的技术测试与受治理业务 Scenario |
 | 5. 隔离演练 | 在不依赖真实接口时能否可控运行 | MirrorPlan、Fixture、Scenario run | 检查演练前置条件并进入 Rehearsals 工作区 |
-| 6. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 查看缺失权威事实；ANEKE 发布门禁仍在系统边界外 |
+| 6. 检查证据 | L0-L3 与校准证据是否完整、保真度债务由谁负责 | PackageEvidenceIndex、七维 Fidelity、Domain Portfolio、Owner Task | 查看五层结论、分母、置信区间、弃权和任务；确认接手任务；可打开只读协议参考样例 |
+| 7. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 查看缺失权威事实；ANEKE 发布门禁仍在系统边界外 |
 
 只有步骤 1 的已导入字段可直接编辑。其余步骤展示 exact ref、缺失义务和跨工作区入口，避免在一个页面中制造第二套 Contract、Scenario 或 Graph 编辑器。
+
+![五层证据与七维 Fidelity](assets/resource-gateway-business-mirror-evidence-zh.png)
+
+第 6 步在没有 current index 时显示正式空态。选择“打开参考证据”会加载 server-produced、
+Test Kit-consumed 的只读 fixture，并持续标明它不是当前 Package 的证据；该操作不会写入数据库或改变
+Readiness。真实索引出现后，可从页面刷新来源、查看五层结论与七维明细，并确认接手活跃 Owner Task。
 
 ## 4. L0-L3 能力地图
 
@@ -140,7 +147,7 @@ Package 页面固定包含四个区域：
 - 当前任务通过 `aria-current="step"` 暴露给辅助技术。
 - 加载、错误和成功状态分别使用 `status` 或 `alert` 语义。
 
-工作区在 `1440`、`820` 和 `390` CSS px 下使用不同布局。平板和手机把六步导航变为有界横向 task rail，主页面不得产生横向滚动；Gap 侧栏移动到任务内容之后。
+工作区在 `1440`、`820` 和 `390` CSS px 下使用不同布局。平板和手机把七步导航变为有界横向 task rail，主页面不得产生横向滚动；Gap 侧栏移动到任务内容之后。
 
 ![390px mobile task workspace](assets/resource-gateway-business-mirror-mobile-zh.jpg)
 
@@ -212,7 +219,7 @@ tail -100 target/example-logs/visual-canvas-demo.log
 
 ## 9. 当前实现边界
 
-RG-BM-005 已完成 Portfolio、Package 六步任务、Readiness、L0-L3 Capability Map、中英文、响应式与 VS Code 离线固定任务。以下能力属于后续工作包：
+RG-BM-005 已完成 Portfolio、Package 基础任务、Readiness、L0-L3 Capability Map、中英文、响应式与 VS Code 离线固定任务。RG-BM-010 又把五层 Evidence、七维 Fidelity、Domain Portfolio 和 Owner Task 加入第 6 步，形成七步工作区。详细操作见 [Package Evidence 与 Fidelity 使用说明](resource-gateway-package-evidence-and-fidelity-guide.md)。以下能力属于后续工作包：
 
 - Capability Proposal 的图形化创建、`SIMULATION_ONLY` binding 和 acceptance suite：RG-BM-006。
 - Proposal temporary snapshot、隔离运行和分层 evidence：RG-BM-007。

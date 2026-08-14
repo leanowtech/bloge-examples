@@ -1,6 +1,10 @@
 package com.leanowtech.bloge.gateway.businessmirror.simulation;
 
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceController;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceProjectionWorker;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceRepository;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingController;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
@@ -56,12 +60,19 @@ class CapabilityProposalSimulationSpringWiringTest {
         assertThat(context.getBean(CapabilityImplementationConformanceController.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationConformanceService.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationConformanceRepository.class)).isNotNull();
+        assertThat(context.getBean(PackageEvidenceController.class)).isNotNull();
+        assertThat(context.getBean(PackageEvidenceService.class)).isNotNull();
+        assertThat(context.getBean(PackageEvidenceRepository.class)).isNotNull();
+        assertThat(context.getBean(PackageEvidenceProjectionWorker.class)).isNotNull();
         assertThat(context.getBean(CapabilityImplementationRuntimePort.class).available()).isFalse();
         assertThat(integration.capabilities().payload().features())
                 .containsEntry("businessMirrorProposalSimulation", true)
                 .containsEntry("businessMirrorImplementationBindingApi", true)
                 .containsEntry("businessMirrorImplementationConformanceApi", true)
-                .containsEntry("businessMirrorImplementationRuntimeReady", false);
+                .containsEntry("businessMirrorImplementationRuntimeReady", false)
+                .containsEntry("businessMirrorPackageEvidenceApi", true)
+                .containsEntry("businessMirrorDomainEvidencePortfolioApi", true)
+                .containsEntry("businessMirrorEvidenceOwnerTaskApi", true);
         assertThat(integration.capabilities().payload().endpoints())
                 .contains(new com.leanowtech.bloge.gateway.integration.IntegrationCapabilities.Endpoint(
                         "POST",

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceController;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlanIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunIntegrationService;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorSessionIntegrationService;
@@ -82,7 +84,9 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/observations",
                     "POST /api/mirror/observations/{observationId}/reviews",
                     "POST /api/mirror/corpus-candidates",
-                    "POST /api/mirror/corpus-publications");
+                    "POST /api/mirror/corpus-publications",
+                    "GET /api/business-mirror/domain-capability-packages/{packageId}/evidence-index",
+                    "GET /api/business-mirror/domain-portfolios/{domainId}");
             assertThat(routes(staging)).contains(
                     "POST /api/mirror/plans",
                     "GET /api/mirror/plans/{planId}",
@@ -127,8 +131,12 @@ class MirrorIntegrationRouteIsolationTest {
                     "POST /api/mirror/observations",
                     "POST /api/mirror/observations/{observationId}/reviews",
                     "POST /api/mirror/corpus-candidates",
-                    "POST /api/mirror/corpus-publications");
-            assertThat(routes(disabled)).noneMatch(route -> route.contains("/api/mirror/"));
+                    "POST /api/mirror/corpus-publications",
+                    "GET /api/business-mirror/domain-capability-packages/{packageId}/evidence-index",
+                    "GET /api/business-mirror/domain-portfolios/{domainId}");
+            assertThat(routes(disabled)).noneMatch(route ->
+                    route.contains("/api/mirror/")
+                            || route.contains("/api/business-mirror/domain-"));
         }
     }
 
@@ -186,6 +194,8 @@ class MirrorIntegrationRouteIsolationTest {
                     CapabilityCorpusGovernanceController.class)).isEmpty();
             assertThat(mixed.getBeansOfType(
                     CapabilityCorpusGovernanceController.class)).isEmpty();
+            assertThat(production.getBeansOfType(PackageEvidenceController.class)).isEmpty();
+            assertThat(mixed.getBeansOfType(PackageEvidenceController.class)).isEmpty();
         }
     }
 
@@ -211,7 +221,8 @@ class MirrorIntegrationRouteIsolationTest {
                 ReadOnlyShadowSourceResolutionAttestationController.class,
                 MirrorDeploymentIsolationAttestationController.class,
                 CapabilityObservationController.class,
-                CapabilityCorpusGovernanceController.class);
+                CapabilityCorpusGovernanceController.class,
+                PackageEvidenceController.class);
         context.refresh();
         return context;
     }
@@ -314,6 +325,11 @@ class MirrorIntegrationRouteIsolationTest {
         @Bean
         CapabilityCorpusGovernanceService capabilityCorpusGovernanceService() {
             return mock(CapabilityCorpusGovernanceService.class);
+        }
+
+        @Bean
+        PackageEvidenceService packageEvidenceService() {
+            return mock(PackageEvidenceService.class);
         }
 
         @Bean

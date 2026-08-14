@@ -4,9 +4,9 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-009 L0-L3 reverse impact 仓库内工程实现已完成；下一步进入 BM-010 Package Evidence/Fidelity
+> 当前迭代：BM-010 Package Evidence/Fidelity 仓库内工程实现已完成；下一步进入 BM-011 Production Outcome Connector
 >
-> 最近更新：2026-08-14
+> 最近更新：2026-08-15
 
 ## 1. 本文用途
 
@@ -463,7 +463,7 @@ BM-004 关闭了存量 Graph 只能继续手工维护、无法进入 Package 主
 | 交付 | 结果 |
 |---|---|
 | 默认业务入口 | `/` 重定向到 `/business-mirror/`；Portfolio 以七个真实 Legacy Graph preview 呈现待镜像资产，旧 Author v2 与 Legacy 页面继续可进入 |
-| 六步任务工作区 | Package 页面按问题、边界、能力、场景、演练、校准与提交组织任务，不把协议字段平铺成表单 |
+| 七步任务工作区 | Package 页面按问题、边界、能力、场景、演练、证据、校准与提交组织任务，不把协议字段平铺成表单 |
 | 引导式作者流程 | 支持 preview 导入、业务字段编辑、durable save 和 compile；无需直接编辑 JSON |
 | 可行动就绪信息 | 固定显示第一个阻断项和完整 gap inventory；保存成功不伪装成 READY |
 | L0-L3 能力地图 | 从 exact refs 投影 L0 资源指令、L1 服务设计、L2 服务载体和 L3 业务应用；未建模层级保持缺失，不用拓扑猜测 |
@@ -886,3 +886,58 @@ BM-009 关闭了“L0-L3 关系只有正向 Closure、无法从变更反查下�
 风险加权差距由约 `8.5%` 降至约 `7.5%`。降幅保持克制：尚缺 Package Evidence/Fidelity 聚合与 drift task（BM-010）、生产 Outcome Connector（BM-011）、Regional Data Plane（BM-012）、PostgreSQL HA/kill/partition/upgrade/backup certification（BM-013）、ANEKE protocol 1.1 持续集成（BM-014）和真实取消费域试点（BM-015）。当前 PostgreSQL 证据只证明单进程原生数据库的双连接竞争，不证明客户生产拓扑。
 
 下一迭代进入 BM-010：建立 Package Evidence Index 与多维 Portfolio Fidelity projection。每个结论必须回到 exact source；freshness、confidence、abstention 和 denominator 分开显示，禁止用单一总分掩盖未知范围。
+
+## 18. Iteration 10：BM-010 Package Evidence/Fidelity
+
+### 18.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 五层 Evidence Index | Operator、Graph、Scenario、Carrier 和 Outcome 五层分别保留结论、exact source、freshness 和限制，不允许低层通过替代高层业务证明 |
+| 七维 Fidelity | Contract、Branch、State、Fault、Temporal、Outcome 和 Drift 独立报告 required/pass、coverage、Wilson interval、abstention 与 source lineage；协议和 UI 均禁止综合分数 |
+| 可重建持久投影 | 从 immutable Package compilation fact 与现有 Domain Fidelity authority 生成；事务 outbox、数据库时钟 lease、epoch fencing、退避、quarantine、append-only revision 和 current head 完整闭合 |
+| Domain Portfolio | 按 domain 分页聚合当前 Package 摘要与活跃债务，不复制业务 payload；Portfolio、Evidence Index 和 Owner Task 三者做 exact Package/revision/fingerprint 闭合 |
+| Owner Task journal | drift/debt 派生 `OPEN` 任务，支持 optimistic acknowledge 和携带 exact resolution evidence 的 resolve；任务状态变化不修改 Evidence 事实 |
+| 认证 API 与动态探针 | Authoring 与 Integration 同义路由、固定 purpose、完整 Scope；协议版本始终可发现，运行 API 仅在受保护服务真实装配时为 `true` |
+| 生产隔离 | Package Evidence 服务、worker 和 Controller 只在 `test/staging + gateway.testing.mirror.enabled=true` 物理装配；production 与混合 profile 即使误设开关也失败关闭 |
+| 跨语言协议 | 三份 strict Schema、两份 server-produced fixed fixture、Test Kit 离线 verifier 和公开 Java API Javadoc；拒绝篡改、综合分数、错误 revision closure 和不一致 Portfolio |
+| 七步产品体验 | Business Mirror 新增“验证证据”任务，展示五层证明、七维保真度、活跃任务、刷新和接手；404 时可打开明确隔离、只读且不写库的参考证据 |
+| 运维与接入文档 | [Package Evidence/Fidelity 指南](resource-gateway-package-evidence-and-fidelity-guide.md)覆盖启停、能力探针、HTTP、任务生命周期、PostgreSQL、Test Kit、安全与故障排查 |
+
+### 18.2 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| Portfolio 曾把健康 Profile 与不相关任务组合 | 聚合只按 domain 汇总，没有核对 Package/revision/fingerprint 语义闭包 | Portfolio 构造和 Test Kit 同时复验 exact closure；增加真实债务样例固定 OPEN task |
+| 固定 fixture 比较把 JSON 整数节点实现差异当成协议漂移 | `IntNode` 与 `LongNode` 的 Java 类型差异被误当成 wire value 差异 | fixture 兼容门禁改为递归 JSON 数值语义比较，同时继续严格比较字段、数组顺序和字符串 |
+| 移动端七维表格与任务导航不易定位 | 宽表依赖页面滚动，deep-linked 第六步超出首屏任务轨道 | 宽表改为局部横向滚动；任务轨道在布局稳定后自动把当前步骤居中，不产生页面级横向溢出 |
+| capability probe 在默认关闭时被测试错误要求为 ready | 把“协议存在”与“运行服务已装配”混为一谈，且服务最初缺少 production profile 物理隔离 | 默认上下文断言 API false；完整 test Mirror 上下文断言 true；production/mixed profile 路由与 bean 均为空 |
+| Test Kit 行为全绿但发布被 Javadoc 拒绝 | 新 verifier 的三个公开 record 缺字段语义，独立消费者无法仅凭 IDE 理解 revision/fingerprint | 补齐全部 `@param`，保留 `failOnWarnings`；重新执行完整 `clean verify`，不降低门禁 |
+
+### 18.3 自动化与实机验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| BM-010 服务端聚焦门禁 | `39/39` 通过 | projector/service/repository/worker/Controller、H2/PostgreSQL、动态 capability、Spring 装配与 production 物理隔离 |
+| Test Kit 完整发布门禁 | `558/558` 通过 | strict Schema、server fixture、tamper/closure/禁止综合分数、shade、JAR 和零警告 Javadoc |
+| Frontend 聚焦与发布构建 | 通过 | Workspace `6`、locale `13`、i18n `34`、UX `40`、host `13`、TypeScript、Vite `1870` modules 和 route budget 全绿 |
+| 真实浏览器 | 通过 | 真实 Spring Boot API + Vite 在 1280/820/390px 验证五层、七维、任务接手与只读参考样例；移动端文档宽度等于视口、局部宽表可滚动、当前任务可见、控制台零错误 |
+| Resource Gateway 完整发布门禁 | `6061` 项，`0` failure，`0` error，`13` skipped | 干净编译、整库行为/数据库/浏览器/架构门禁和可执行 JAR 打包通过 |
+
+### 18.4 架构漂移审计
+
+1. Evidence Index 只消费 immutable successful compilation facts 与现有 Fidelity authority，不读取 mutable draft 推导“已证明”结论。
+2. 五层证明与七维 Fidelity 分开保存；任何层级、维度、UI 或 Test Kit 都不生成综合成熟度分数。
+3. Evidence 是治理输入，不是 Resource Gateway 自建 publish gate；ANEKE 继续拥有 Registry、Workbook、审批和最终发布裁决。
+4. Owner Task 是可审计工作流投影；acknowledge/resolve 不能修改 Evidence、Fidelity、Scenario denominator 或 Outcome authority。
+5. `supportedObjects` 表示消费者理解协议，runtime feature 表示端点真实可调用；二者不再互相冒充。
+6. 前端参考 fixture 明确标记为非当前 Package，只读加载，不写数据库、不创建任务、不触发发布门禁。
+7. H2 用于本地演示，原生 PostgreSQL 双连接只证明 repository 语义和租约竞争，不宣称 HA、灾备或客户规模成熟度。
+
+### 18.5 差距复评
+
+BM-010 关闭了“Package 缺少跨 Operator/Graph/Scenario/Carrier/Outcome 的统一证据坐标”“Fidelity 只有技术页、业务 Owner 无法经营债务”“drift 没有可确认、可解决、可审计工作项”“协议存在与运行 API 可用性混淆”和“独立消费者无法复验证据聚合”的仓库内工程差距。
+
+风险加权差距由约 `7.5%` 降至约 `6.5%`。剩余部分几乎全部位于不能由本地功能演示冒充的工业化边界：生产 Outcome Connector 的持续事实供给（BM-011）、真实 Regional Data Plane 与密钥/证书/出口隔离（BM-012）、HA/故障/升级/备份恢复认证包（BM-013）、ANEKE protocol 1.1 与 stale governance projection 闭环（BM-014），以及由客户 Owner 冻结分母并运行完整观察窗的取消费申诉试点（BM-015）。
+
+下一迭代进入 BM-011。实现策略是复用现有 `AuthoritativeOutcomeObservation`、durable inbox、selected population 和 continuous assessment 内核，只新增生产 Connector 的 source contract、durable checkpoint、backfill/revocation 命令、quarantine 与可移植认证证据，不建立第二套 Outcome Authority。

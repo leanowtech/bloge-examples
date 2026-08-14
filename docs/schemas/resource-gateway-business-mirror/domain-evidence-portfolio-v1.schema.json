@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/domain-evidence-portfolio-v1.schema.json",
+  "title": "Resource Gateway Domain Evidence Portfolio v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "portfolioFingerprint", "scope", "domainId", "packages", "nextCursor", "generatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.domainEvidencePortfolio.v1" },
+    "portfolioFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "domainId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "packages": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/packageView" } },
+    "nextCursor": { "type": "string", "pattern": "^(|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$" },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "stateCount": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "count"],
+      "properties": {
+        "state": { "$ref": "package-evidence-index-v1.schema.json#/$defs/conclusionState" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 16384 }
+      }
+    },
+    "proofCount": {
+      "type": "object", "additionalProperties": false,
+      "required": ["proof", "count"],
+      "properties": {
+        "proof": { "$ref": "package-evidence-index-v1.schema.json#/$defs/proofStrength" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 16384 }
+      }
+    },
+    "layerView": {
+      "type": "object", "additionalProperties": false,
+      "required": ["layer", "conclusionCount", "states", "proofComposition"],
+      "properties": {
+        "layer": { "$ref": "package-evidence-index-v1.schema.json#/$defs/layerName" },
+        "conclusionCount": { "type": "integer", "minimum": 0, "maximum": 16384 },
+        "states": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/stateCount" } },
+        "proofComposition": { "type": "array", "maxItems": 6, "items": { "$ref": "#/$defs/proofCount" } }
+      }
+    },
+    "packageView": {
+      "type": "object", "additionalProperties": false,
+      "required": ["packageId", "compilationRevision", "projectionRevision", "evidenceIndexFingerprint", "problemCode", "freshness", "layers", "fidelity", "ownerTasks", "deepLink"],
+      "properties": {
+        "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "compilationRevision": { "type": "integer", "minimum": 1 },
+        "projectionRevision": { "type": "integer", "minimum": 1 },
+        "evidenceIndexFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+        "problemCode": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "freshness": { "enum": ["CURRENT", "STALE"] },
+        "layers": {
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "prefixItems": [
+            { "allOf": [{ "$ref": "#/$defs/layerView" }, { "properties": { "layer": { "const": "L0_RESOURCE" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/layerView" }, { "properties": { "layer": { "const": "L1_SERVICE_DESIGN" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/layerView" }, { "properties": { "layer": { "const": "L2_SERVICE_CARRIER" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/layerView" }, { "properties": { "layer": { "const": "L3_APPLICATION" } } }] },
+            { "allOf": [{ "$ref": "#/$defs/layerView" }, { "properties": { "layer": { "const": "CALIBRATION" } } }] }
+          ],
+          "items": false
+        },
+        "fidelity": { "$ref": "package-evidence-index-v1.schema.json#/$defs/fidelityView" },
+        "ownerTasks": { "type": "array", "maxItems": 500, "items": { "$ref": "evidence-owner-task-v1.schema.json" } },
+        "deepLink": { "$ref": "evidence-owner-task-v1.schema.json#/$defs/deepLink" }
+      }
+    }
+  }
+}

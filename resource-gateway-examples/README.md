@@ -172,8 +172,12 @@ an overall score. Current Package indexes and domain portfolios are available fr
 `/api/integration/domain-capability-packages/{packageId}/evidence-index` and
 `/api/integration/domain-portfolios/{domainId}`. Authoring routes can refresh an index and manage
 optimistic owner tasks; resolving a task requires an exact evidence reference. The
+[Package Evidence and Fidelity guide](../docs/resource-gateway-package-evidence-and-fidelity-guide.md)
+covers the five proof layers, seven-dimensional Fidelity model, capability probe, Author/Integration
+API, worker recovery, PostgreSQL migration, fixed reference evidence, and offline Test Kit
+verification. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
-covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
+covers the default Portfolio, seven-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.
 
 Existing graphs can be migrated incrementally without rewriting their topology. The

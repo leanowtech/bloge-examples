@@ -17,6 +17,10 @@ import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackag
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageSnapshot;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityImplementationBinding;
 import com.leanowtech.bloge.gateway.businessmirror.domain.PackageReadinessReport;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.DomainEvidencePortfolio;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.EvidenceOwnerTask;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceIndex;
+import com.leanowtech.bloge.gateway.businessmirror.evidence.PackageEvidenceService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRequest;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceReport;
@@ -51,6 +55,12 @@ class BusinessMirrorCapabilityTest {
                         BusinessAssetImpactReport.SCHEMA_VERSION))
                 .containsEntry("businessAssetImpactRebuildReport", java.util.List.of(
                         BusinessAssetImpactRebuildReport.SCHEMA_VERSION))
+                .containsEntry("packageEvidenceIndex", java.util.List.of(
+                        PackageEvidenceIndex.SCHEMA_VERSION))
+                .containsEntry("evidenceOwnerTask", java.util.List.of(
+                        EvidenceOwnerTask.SCHEMA_VERSION))
+                .containsEntry("domainEvidencePortfolio", java.util.List.of(
+                        DomainEvidencePortfolio.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageDraft", java.util.List.of(
                         DomainCapabilityPackageDraft.SCHEMA_VERSION))
                 .containsEntry("storedDomainCapabilityPackageDraft", java.util.List.of(
@@ -107,6 +117,10 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorAssetImpactApi", true)
                 .containsEntry("businessMirrorAssetImpactRebuild", true)
                 .containsEntry("businessMirrorAssetImpactFreshness", true)
+                .containsEntry("businessMirrorPackageEvidenceProtocol", true)
+                .containsEntry("businessMirrorPackageEvidenceApi", false)
+                .containsEntry("businessMirrorDomainEvidencePortfolioApi", false)
+                .containsEntry("businessMirrorEvidenceOwnerTaskApi", false)
                 .containsEntry("businessMirrorDeepLinks", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
@@ -192,5 +206,35 @@ class BusinessMirrorCapabilityTest {
                 new IntegrationCapabilities.Endpoint(
                         "GET",
                         "/api/business-mirror/implementation-bindings/{bindingId}/revisions/{revision}/conformance"));
+    }
+
+    @Test
+    void runtimeProbeAdvertisesOnlyActuallyAssembledPackageEvidenceRoutes() {
+        ToolStudioIntegrationService service = new ToolStudioIntegrationService(
+                null, null, null, null);
+        String evidencePath =
+                "/api/business-mirror/domain-capability-packages/{packageId}/evidence-index";
+
+        assertThat(service.capabilities().payload().endpoints())
+                .doesNotContain(new IntegrationCapabilities.Endpoint("GET", evidencePath));
+
+        service.configureBusinessMirrorPackageEvidence(mock(PackageEvidenceService.class));
+        IntegrationCapabilities capabilities = service.capabilities().payload();
+
+        assertThat(capabilities.features())
+                .containsEntry("businessMirrorPackageEvidenceApi", true)
+                .containsEntry("businessMirrorDomainEvidencePortfolioApi", true)
+                .containsEntry("businessMirrorEvidenceOwnerTaskApi", true);
+        assertThat(capabilities.endpoints()).contains(
+                new IntegrationCapabilities.Endpoint("GET", evidencePath),
+                new IntegrationCapabilities.Endpoint(
+                        "POST", evidencePath + "/refresh"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/domain-portfolios/{domainId}"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/evidence-owner-tasks"),
+                new IntegrationCapabilities.Endpoint(
+                        "GET",
+                        "/api/integration/domain-capability-packages/{packageId}/evidence-index"));
     }
 }

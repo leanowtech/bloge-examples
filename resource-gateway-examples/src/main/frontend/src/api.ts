@@ -98,7 +98,11 @@ import type {
 } from './author/workspace/workspaceSeed';
 import type {
   BusinessMirrorCompilationReceipt,
+  BusinessMirrorDomainEvidencePortfolio,
+  BusinessMirrorEvidenceOwnerTask,
+  BusinessMirrorEvidenceProjectionResult,
   BusinessMirrorPackageDraft,
+  BusinessMirrorPackageEvidenceIndex,
   BusinessMirrorPackagePage,
   BusinessMirrorPackageSaveReceipt,
   LegacyGraphPackageProjection,
@@ -357,6 +361,51 @@ export async function compileBusinessMirrorPackage(
       method: 'POST',
       headers: businessMirrorHeaders({ 'Idempotency-Key': idempotencyKey }),
     },
+  ));
+}
+
+/** Loads the immutable current Package evidence projection for one exact enterprise Scope. */
+export async function fetchBusinessMirrorPackageEvidence(
+  packageId: string,
+): Promise<BusinessMirrorPackageEvidenceIndex> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/domain-capability-packages/${encodeURIComponent(packageId)}/evidence-index`,
+    { headers: businessMirrorHeaders() },
+  ));
+}
+
+/** Reprojects one Package from the latest durable compilation and Fidelity source cuts. */
+export async function refreshBusinessMirrorPackageEvidence(
+  packageId: string,
+): Promise<BusinessMirrorEvidenceProjectionResult> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/domain-capability-packages/${encodeURIComponent(packageId)}`
+      + '/evidence-index/refresh',
+    { method: 'POST', headers: businessMirrorHeaders() },
+  ));
+}
+
+/** Loads a bounded domain Portfolio without flattening evidence into a scalar score. */
+export async function fetchBusinessMirrorDomainEvidencePortfolio(
+  domainId: string,
+  limit = 100,
+): Promise<BusinessMirrorDomainEvidencePortfolio> {
+  const query = new URLSearchParams({ limit: String(limit) });
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/domain-portfolios/${encodeURIComponent(domainId)}?${query}`,
+    { headers: businessMirrorHeaders() },
+  ));
+}
+
+/** Acknowledges one optimistic-concurrency-fenced owner task. */
+export async function acknowledgeBusinessMirrorEvidenceTask(
+  taskId: string,
+  expectedVersion: number,
+): Promise<BusinessMirrorEvidenceOwnerTask> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/evidence-owner-tasks/${encodeURIComponent(taskId)}`
+      + `/acknowledge?expectedVersion=${expectedVersion}`,
+    { method: 'POST', headers: businessMirrorHeaders() },
   ));
 }
 

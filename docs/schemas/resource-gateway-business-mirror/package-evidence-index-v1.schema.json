@@ -1,0 +1,275 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/package-evidence-index-v1.schema.json",
+  "title": "Resource Gateway Package Evidence Index v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "indexFingerprint", "scope", "packageId", "compilationRevision",
+    "projectionRevision", "packageSnapshotSource", "readinessSource",
+    "businessAssetClosureSource", "domainId", "problemCode", "layers", "fidelity",
+    "driftSignals", "projectedAt", "validUntil"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.packageEvidenceIndex.v1" },
+    "indexFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "compilationRevision": { "type": "integer", "minimum": 1 },
+    "projectionRevision": { "type": "integer", "minimum": 1 },
+    "packageSnapshotSource": {
+      "allOf": [
+        { "$ref": "#/$defs/evidenceSource" },
+        { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } } }
+      ]
+    },
+    "readinessSource": {
+      "allOf": [
+        { "$ref": "#/$defs/evidenceSource" },
+        { "properties": { "kind": { "const": "PACKAGE_READINESS_REPORT" } } }
+      ]
+    },
+    "businessAssetClosureSource": {
+      "allOf": [
+        { "$ref": "#/$defs/evidenceSource" },
+        { "properties": { "kind": { "const": "BUSINESS_ASSET_LINK_CLOSURE" } } }
+      ]
+    },
+    "domainId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "problemCode": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "layers": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [
+        { "$ref": "#/$defs/l0Layer" },
+        { "$ref": "#/$defs/l1Layer" },
+        { "$ref": "#/$defs/l2Layer" },
+        { "$ref": "#/$defs/l3Layer" },
+        { "$ref": "#/$defs/calibrationLayer" }
+      ],
+      "items": false
+    },
+    "fidelity": { "$ref": "#/$defs/fidelityView" },
+    "driftSignals": {
+      "type": "array", "maxItems": 500,
+      "items": { "$ref": "#/$defs/driftSignal" }
+    },
+    "projectedAt": { "type": "string", "format": "date-time" },
+    "validUntil": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$"
+    },
+    "optionalIdentifier": {
+      "type": "string", "pattern": "^(|[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511})$"
+    },
+    "nullableTime": {
+      "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }]
+    },
+    "nullableObject": {
+      "oneOf": [{ "type": "object" }, { "type": "null" }]
+    },
+    "evidenceSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "coordinate", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "coordinate": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" }
+      }
+    },
+    "sourceLineage": {
+      "type": "array", "minItems": 1, "maxItems": 64,
+      "items": { "$ref": "#/$defs/evidenceSource" }
+    },
+    "layerName": {
+      "enum": ["L0_RESOURCE", "L1_SERVICE_DESIGN", "L2_SERVICE_CARRIER", "L3_APPLICATION", "CALIBRATION"]
+    },
+    "evidenceKind": {
+      "enum": ["CONTRACT", "EXECUTABLE", "STATE_EFFECT", "SCENARIO", "SOLUTION", "CARRIER", "CHANNEL", "FIDELITY_DENOMINATOR", "FIDELITY_PROFILE", "OUTCOME", "OTHER"]
+    },
+    "proofStrength": {
+      "enum": ["DECLARED", "COMPILED", "OWNER_APPROVED_DENOMINATOR", "EXECUTION_EVIDENCE", "SIGNED_FIDELITY_PROFILE", "INDEPENDENT_OUTCOME"]
+    },
+    "conclusionState": {
+      "enum": ["AVAILABLE", "MISSING", "STALE", "DRIFTED", "ABSTAINED", "INSUFFICIENT"]
+    },
+    "evidenceConclusion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conclusionId", "layer", "evidenceKind", "proofStrength", "state", "subject", "sourceLineage", "observedAt", "validUntil", "limitationCode"],
+      "properties": {
+        "conclusionId": { "$ref": "#/$defs/identifier" },
+        "layer": { "$ref": "#/$defs/layerName" },
+        "evidenceKind": { "$ref": "#/$defs/evidenceKind" },
+        "proofStrength": { "$ref": "#/$defs/proofStrength" },
+        "state": { "$ref": "#/$defs/conclusionState" },
+        "subject": { "$ref": "#/$defs/evidenceSource" },
+        "sourceLineage": { "$ref": "#/$defs/sourceLineage" },
+        "observedAt": { "$ref": "#/$defs/nullableTime" },
+        "validUntil": { "$ref": "#/$defs/nullableTime" },
+        "limitationCode": { "$ref": "#/$defs/optionalIdentifier" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "AVAILABLE" } }, "required": ["state"] },
+          "then": { "properties": { "limitationCode": { "const": "" } } },
+          "else": { "properties": { "limitationCode": { "$ref": "#/$defs/identifier" } } }
+        },
+        {
+          "if": { "properties": { "observedAt": { "type": "null" } }, "required": ["observedAt"] },
+          "then": { "properties": { "validUntil": { "type": "null" } } },
+          "else": { "properties": { "validUntil": { "type": "string", "format": "date-time" } } }
+        }
+      ]
+    },
+    "evidenceLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layer", "conclusions"],
+      "properties": {
+        "layer": { "$ref": "#/$defs/layerName" },
+        "conclusions": {
+          "type": "array", "maxItems": 16384,
+          "items": { "$ref": "#/$defs/evidenceConclusion" }
+        }
+      }
+    },
+    "l0Layer": { "allOf": [{ "$ref": "#/$defs/evidenceLayer" }, { "properties": { "layer": { "const": "L0_RESOURCE" }, "conclusions": { "items": { "allOf": [{ "$ref": "#/$defs/evidenceConclusion" }, { "properties": { "layer": { "const": "L0_RESOURCE" } } }] } } } }] },
+    "l1Layer": { "allOf": [{ "$ref": "#/$defs/evidenceLayer" }, { "properties": { "layer": { "const": "L1_SERVICE_DESIGN" }, "conclusions": { "items": { "allOf": [{ "$ref": "#/$defs/evidenceConclusion" }, { "properties": { "layer": { "const": "L1_SERVICE_DESIGN" } } }] } } } }] },
+    "l2Layer": { "allOf": [{ "$ref": "#/$defs/evidenceLayer" }, { "properties": { "layer": { "const": "L2_SERVICE_CARRIER" }, "conclusions": { "items": { "allOf": [{ "$ref": "#/$defs/evidenceConclusion" }, { "properties": { "layer": { "const": "L2_SERVICE_CARRIER" } } }] } } } }] },
+    "l3Layer": { "allOf": [{ "$ref": "#/$defs/evidenceLayer" }, { "properties": { "layer": { "const": "L3_APPLICATION" }, "conclusions": { "items": { "allOf": [{ "$ref": "#/$defs/evidenceConclusion" }, { "properties": { "layer": { "const": "L3_APPLICATION" } } }] } } } }] },
+    "calibrationLayer": { "allOf": [{ "$ref": "#/$defs/evidenceLayer" }, { "properties": { "layer": { "const": "CALIBRATION" }, "conclusions": { "items": { "allOf": [{ "$ref": "#/$defs/evidenceConclusion" }, { "properties": { "layer": { "const": "CALIBRATION" } } }] } } } }] },
+    "dimension": {
+      "enum": ["BEHAVIOR", "CONTRACT", "EFFECT", "ERROR_DISTRIBUTION", "OUTCOME", "REQUEST_SPACE", "STATE_TRANSITION"]
+    },
+    "dimensionDenominator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dimension", "requiredUnits"],
+      "properties": {
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "requiredUnits": { "type": "integer", "minimum": 1, "maximum": 4096 }
+      }
+    },
+    "denominator": {
+      "type": "object", "additionalProperties": false,
+      "required": ["totalUnits", "totalObligations", "dimensions"],
+      "properties": {
+        "totalUnits": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "totalObligations": { "type": "integer", "minimum": 1, "maximum": 28672 },
+        "dimensions": { "type": "array", "minItems": 1, "maxItems": 7, "items": { "$ref": "#/$defs/dimensionDenominator" } }
+      }
+    },
+    "confidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["point", "lowerBound", "upperBound", "method"],
+      "properties": {
+        "point": { "type": "number", "minimum": 0, "maximum": 1 },
+        "lowerBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "upperBound": { "type": "number", "minimum": 0, "maximum": 1 },
+        "method": { "const": "WILSON_95_V1" }
+      }
+    },
+    "dimensionMetric": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dimension", "requiredUnits", "freshEvidenceUnits", "assessedUnits", "passedUnits", "failedUnits", "abstainedUnits", "staleUnits", "missingUnits", "coverageRatio", "abstentionRatio", "confidence", "sufficiency"],
+      "properties": {
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "requiredUnits": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "freshEvidenceUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "assessedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "passedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "failedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "abstainedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "staleUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "missingUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "coverageRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "abstentionRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "confidence": { "oneOf": [{ "$ref": "#/$defs/confidence" }, { "type": "null" }] },
+        "sufficiency": { "enum": ["MEASURED", "PARTIAL_COVERAGE", "BELOW_MINIMUM_SAMPLE", "NO_ASSESSED_EVIDENCE"] }
+      }
+    },
+    "dimensionEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["dimension", "state", "metric", "sourceLineage"],
+      "properties": {
+        "dimension": { "$ref": "#/$defs/dimension" },
+        "state": { "enum": ["MEASURED", "PARTIAL", "INSUFFICIENT", "ABSTAINED", "STALE", "MISSING", "NOT_IN_DENOMINATOR"] },
+        "metric": { "oneOf": [{ "$ref": "#/$defs/dimensionMetric" }, { "type": "null" }] },
+        "sourceLineage": { "$ref": "#/$defs/sourceLineage" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "const": "NOT_IN_DENOMINATOR" } }, "required": ["state"] },
+          "then": { "properties": { "metric": { "type": "null" } } },
+          "else": { "properties": { "metric": { "$ref": "#/$defs/dimensionMetric" } } }
+        }
+      ]
+    },
+    "reasonCount": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reason", "count"],
+      "properties": {
+        "reason": { "enum": ["ASSERTION_EVIDENCE_INDETERMINATE", "DIMENSION_ASSERTION_ABSENT", "EVIDENCE_NOT_CERTIFIABLE", "OUTCOME_CENSORED", "OUTCOME_CONFLICTING", "OUTCOME_PENDING", "OUTCOME_AUTHORITY_UNAVAILABLE", "REQUEST_SPACE_EVIDENCE_UNAVAILABLE", "SOURCE_EVIDENCE_INCOMPLETE"] },
+        "count": { "type": "integer", "minimum": 1, "maximum": 28672 }
+      }
+    },
+    "abstentionDebt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["totalObligations", "abstainedObligations", "ratio", "reasons"],
+      "properties": {
+        "totalObligations": { "type": "integer", "minimum": 1, "maximum": 28672 },
+        "abstainedObligations": { "type": "integer", "minimum": 0, "maximum": 28672 },
+        "ratio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "reasons": { "type": "array", "maxItems": 9, "items": { "$ref": "#/$defs/reasonCount" } }
+      }
+    },
+    "sourceComposition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["totalUnits", "recordedUnits", "synthesizedUnits", "ownerDeclaredUnits", "authoritativeUnits", "unknownUnits", "synthesizedRatio", "unknownRatio"],
+      "properties": {
+        "totalUnits": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "recordedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "synthesizedUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "ownerDeclaredUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "authoritativeUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "unknownUnits": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "synthesizedRatio": { "type": "number", "minimum": 0, "maximum": 1 },
+        "unknownRatio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "fidelityView": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "inventorySource", "profileSource", "measuredAt", "validUntil", "denominator", "dimensions", "abstentionDebt", "sourceComposition", "assessment", "limitations", "sourceLineage"],
+      "properties": {
+        "state": { "enum": ["CURRENT", "PARTIAL", "INSUFFICIENT", "ABSTAINED", "STALE", "MISSING", "INVENTORY_DRIFT"] },
+        "inventorySource": { "$ref": "#/$defs/evidenceSource" },
+        "profileSource": { "oneOf": [{ "$ref": "#/$defs/evidenceSource" }, { "type": "null" }] },
+        "measuredAt": { "$ref": "#/$defs/nullableTime" },
+        "validUntil": { "$ref": "#/$defs/nullableTime" },
+        "denominator": { "oneOf": [{ "$ref": "#/$defs/denominator" }, { "type": "null" }] },
+        "dimensions": { "type": "array", "maxItems": 7, "items": { "$ref": "#/$defs/dimensionEvidence" } },
+        "abstentionDebt": { "oneOf": [{ "$ref": "#/$defs/abstentionDebt" }, { "type": "null" }] },
+        "sourceComposition": { "oneOf": [{ "$ref": "#/$defs/sourceComposition" }, { "type": "null" }] },
+        "assessment": { "oneOf": [{ "enum": ["COMPLETE", "PARTIAL", "INSUFFICIENT_EVIDENCE", "STALE"] }, { "type": "null" }] },
+        "limitations": { "type": "array", "maxItems": 8, "items": { "enum": ["ABSTENTION_PRESENT", "COVERAGE_INCOMPLETE", "EVIDENCE_STALE", "LOW_SAMPLE", "OUTCOME_UNCALIBRATED", "REQUEST_SPACE_UNMEASURED", "SOURCE_MODE_UNKNOWN", "SYNTHESIZED_SOURCE_PRESENT"] } },
+        "sourceLineage": { "$ref": "#/$defs/sourceLineage" }
+      }
+    },
+    "driftSignal": {
+      "type": "object", "additionalProperties": false,
+      "required": ["signalId", "reason", "severity", "owner", "sourceLineage", "detectedAt", "dueAt"],
+      "properties": {
+        "signalId": { "$ref": "#/$defs/identifier" },
+        "reason": { "enum": ["FIDELITY_INVENTORY_UNRESOLVED", "FIDELITY_INVENTORY_EXPIRED", "FIDELITY_PROFILE_MISSING", "FIDELITY_PROFILE_INVENTORY_DRIFT", "FIDELITY_PROFILE_STALE", "FIDELITY_EVIDENCE_INSUFFICIENT", "FIDELITY_ABSTENTION_DEBT", "OUTCOME_UNCALIBRATED"] },
+        "severity": { "enum": ["WARNING", "ERROR", "CRITICAL"] },
+        "owner": { "$ref": "#/$defs/identifier" },
+        "sourceLineage": { "$ref": "#/$defs/sourceLineage" },
+        "detectedAt": { "type": "string", "format": "date-time" },
+        "dueAt": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

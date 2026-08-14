@@ -22,12 +22,11 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /** Deterministic fixtures for package evidence-index tests. */
 final class PackageEvidenceFixtures {
-    static final Instant NOW = Instant.now().minusSeconds(10).truncatedTo(ChronoUnit.SECONDS);
+    static final Instant NOW = Instant.parse("2026-08-14T17:00:00Z");
     static final CapabilitySnapshot.Scope SCOPE = new CapabilitySnapshot.Scope(
             "tenant-a", "mobility", "customer-service", "staging", "sg");
 

@@ -171,7 +171,177 @@ export type BusinessMirrorTaskId =
   | 'capabilities'
   | 'scenarios'
   | 'rehearsal'
+  | 'evidence'
   | 'calibrate';
+
+export type BusinessMirrorEvidenceLayer =
+  | 'L0_RESOURCE'
+  | 'L1_SERVICE_DESIGN'
+  | 'L2_SERVICE_CARRIER'
+  | 'L3_APPLICATION'
+  | 'CALIBRATION';
+
+export interface BusinessMirrorEvidenceSource {
+  kind: string;
+  id: string;
+  coordinate: string;
+  fingerprint: string;
+}
+
+export interface BusinessMirrorEvidenceConclusion {
+  conclusionId: string;
+  layer: BusinessMirrorEvidenceLayer;
+  evidenceKind: string;
+  proofStrength: string;
+  state: 'AVAILABLE' | 'MISSING' | 'STALE' | 'DRIFTED' | 'ABSTAINED' | 'INSUFFICIENT';
+  subject: BusinessMirrorEvidenceSource;
+  sourceLineage: BusinessMirrorEvidenceSource[];
+  observedAt: string | null;
+  validUntil: string | null;
+  limitationCode: string;
+}
+
+export interface BusinessMirrorFidelityDimension {
+  dimension: string;
+  state: string;
+  metric: null | {
+    requiredUnits: number;
+    freshEvidenceUnits: number;
+    passedUnits: number;
+    failedUnits: number;
+    abstainedUnits: number;
+    staleUnits: number;
+    missingUnits: number;
+    coverageRatio: number;
+    abstentionRatio: number;
+    confidence: {
+      point: number;
+      lowerBound: number;
+      upperBound: number;
+      method: string;
+    };
+    sufficiency: string;
+  };
+  sourceLineage: BusinessMirrorEvidenceSource[];
+}
+
+export interface BusinessMirrorFidelityView {
+  state: string;
+  inventorySource: BusinessMirrorEvidenceSource;
+  profileSource: BusinessMirrorEvidenceSource | null;
+  measuredAt: string | null;
+  validUntil: string | null;
+  denominator: null | {
+    totalUnits: number;
+    totalObligations: number;
+  };
+  dimensions: BusinessMirrorFidelityDimension[];
+  abstentionDebt: null | {
+    totalObligations: number;
+    abstainedObligations: number;
+    ratio: number;
+    reasons: string[];
+  };
+  sourceComposition: null | {
+    totalUnits: number;
+    recordedUnits: number;
+    synthesizedUnits: number;
+    ownerDeclaredUnits: number;
+    authoritativeUnits: number;
+    unknownUnits: number;
+    synthesizedRatio: number;
+    unknownRatio: number;
+  };
+  assessment: string | null;
+  limitations: unknown[];
+  sourceLineage: BusinessMirrorEvidenceSource[];
+}
+
+export interface BusinessMirrorEvidenceOwnerTask {
+  schemaVersion: string;
+  taskFingerprint: string;
+  taskId: string;
+  version: number;
+  scope: BusinessMirrorScope;
+  packageId: string;
+  compilationRevision: number;
+  projectionRevision: number;
+  domainId: string;
+  reason: string;
+  severity: 'WARNING' | 'ERROR' | 'CRITICAL';
+  owner: string;
+  status: 'OPEN' | 'ACKNOWLEDGED' | 'RESOLVED' | 'SUPERSEDED';
+  sourceLineage: BusinessMirrorEvidenceSource[];
+  detectedAt: string;
+  dueAt: string;
+  updatedAt: string;
+  actedBy: string;
+  resolutionEvidenceRef: BusinessMirrorArtifactRef | null;
+  deepLink: string;
+}
+
+export interface BusinessMirrorPackageEvidenceIndex {
+  schemaVersion: string;
+  indexFingerprint: string;
+  scope: BusinessMirrorScope;
+  packageId: string;
+  compilationRevision: number;
+  projectionRevision: number;
+  domainId: string;
+  problemCode: string;
+  layers: Array<{
+    layer: BusinessMirrorEvidenceLayer;
+    conclusions: BusinessMirrorEvidenceConclusion[];
+  }>;
+  fidelity: BusinessMirrorFidelityView;
+  driftSignals: Array<{
+    signalId: string;
+    reason: string;
+    severity: 'WARNING' | 'ERROR' | 'CRITICAL';
+    owner: string;
+    sourceLineage: BusinessMirrorEvidenceSource[];
+    detectedAt: string;
+    dueAt: string;
+  }>;
+  projectedAt: string;
+  validUntil: string;
+}
+
+export interface BusinessMirrorDomainEvidencePortfolio {
+  schemaVersion: string;
+  portfolioFingerprint: string;
+  scope: BusinessMirrorScope;
+  domainId: string;
+  packages: Array<{
+    packageId: string;
+    compilationRevision: number;
+    projectionRevision: number;
+    evidenceIndexFingerprint: string;
+    problemCode: string;
+    freshness: string;
+    layers: Array<{
+      layer: BusinessMirrorEvidenceLayer;
+      conclusionCount: number;
+      states: Array<{ state: string; count: number }>;
+      proofComposition: Array<{ proof: string; count: number }>;
+    }>;
+    fidelity: BusinessMirrorFidelityView;
+    ownerTasks: BusinessMirrorEvidenceOwnerTask[];
+    deepLink: string;
+  }>;
+  nextCursor: string;
+  generatedAt: string;
+}
+
+export interface BusinessMirrorEvidenceProjectionResult {
+  packageId: string;
+  compilationRevision: number;
+  projectionRevision: number;
+  indexFingerprint: string;
+  ownerTaskCount: number;
+  projectedAt: string;
+  replayed: boolean;
+}
 
 export interface BusinessMirrorPortfolioItem {
   packageId: string;
@@ -309,6 +479,7 @@ export function businessMirrorTaskProgress(
   task: BusinessMirrorTaskId,
   gaps: BusinessMirrorGap[],
 ): 'BLOCKED' | 'REVIEW' | 'COMPLETE' {
+  if (task === 'evidence') return 'REVIEW';
   const taskGaps = gaps.filter((gap) => businessMirrorTaskForGap(gap) === task);
   if (taskGaps.some((gap) => gap.severity === 'BLOCKING')) return 'BLOCKED';
   return taskGaps.length > 0 ? 'REVIEW' : 'COMPLETE';

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/evidence-owner-task-v1.schema.json",
+  "title": "Resource Gateway Evidence Owner Task v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "taskFingerprint", "taskId", "version", "scope", "packageId",
+    "compilationRevision", "projectionRevision", "domainId", "reason", "severity", "owner",
+    "status", "sourceLineage", "detectedAt", "dueAt", "updatedAt", "actedBy",
+    "resolutionEvidenceRef", "deepLink"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.evidenceOwnerTask.v1" },
+    "taskFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "taskId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "version": { "type": "integer", "minimum": 1 },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "compilationRevision": { "type": "integer", "minimum": 1 },
+    "projectionRevision": { "type": "integer", "minimum": 1 },
+    "domainId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "reason": { "enum": ["FIDELITY_INVENTORY_UNRESOLVED", "FIDELITY_INVENTORY_EXPIRED", "FIDELITY_PROFILE_MISSING", "FIDELITY_PROFILE_INVENTORY_DRIFT", "FIDELITY_PROFILE_STALE", "FIDELITY_EVIDENCE_INSUFFICIENT", "FIDELITY_ABSTENTION_DEBT", "OUTCOME_UNCALIBRATED"] },
+    "severity": { "enum": ["WARNING", "ERROR", "CRITICAL"] },
+    "owner": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "status": { "enum": ["OPEN", "ACKNOWLEDGED", "RESOLVED", "SUPERSEDED"] },
+    "sourceLineage": { "$ref": "package-evidence-index-v1.schema.json#/$defs/sourceLineage" },
+    "detectedAt": { "type": "string", "format": "date-time" },
+    "dueAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "actedBy": { "type": "string", "maxLength": 1024 },
+    "resolutionEvidenceRef": { "oneOf": [{ "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" }, { "type": "null" }] },
+    "deepLink": { "$ref": "#/$defs/deepLink" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "OPEN" } }, "required": ["status"] },
+      "then": { "properties": { "actedBy": { "const": "" }, "resolutionEvidenceRef": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "ACKNOWLEDGED" } }, "required": ["status"] },
+      "then": { "properties": { "actedBy": { "minLength": 1 }, "resolutionEvidenceRef": { "type": "null" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "RESOLVED" } }, "required": ["status"] },
+      "then": { "properties": { "actedBy": { "minLength": 1 }, "resolutionEvidenceRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "SUPERSEDED" } }, "required": ["status"] },
+      "then": { "properties": { "actedBy": { "minLength": 1 }, "resolutionEvidenceRef": { "type": "null" } } }
+    }
+  ],
+  "$defs": {
+    "deepLink": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^/business-mirror/\\?packageId=[^\\r\\n]+&compilationRevision=[1-9][0-9]*&task=evidence(?:&[^\\r\\n]+)?$"
+    }
+  }
+}

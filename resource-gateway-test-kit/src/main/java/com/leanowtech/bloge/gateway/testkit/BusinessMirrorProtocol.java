@@ -25,6 +25,15 @@ public final class BusinessMirrorProtocol {
     /** Bounded reverse-index maintenance result v1. */
     public static final String BUSINESS_ASSET_IMPACT_REBUILD_REPORT_V1 =
             "resourceGateway.businessAssetImpactRebuildReport.v1";
+    /** Content-addressed five-layer Package evidence index v1. */
+    public static final String PACKAGE_EVIDENCE_INDEX_V1 =
+            "resourceGateway.packageEvidenceIndex.v1";
+    /** Versioned evidence debt owner task v1. */
+    public static final String EVIDENCE_OWNER_TASK_V1 =
+            "resourceGateway.evidenceOwnerTask.v1";
+    /** Bounded domain Portfolio preserving layers and the Fidelity vector v1. */
+    public static final String DOMAIN_EVIDENCE_PORTFOLIO_V1 =
+            "resourceGateway.domainEvidencePortfolio.v1";
     /** Mutable Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_DRAFT_V1 =
             "bloge.domainCapabilityPackageDraft.v1";
@@ -127,6 +136,12 @@ public final class BusinessMirrorProtocol {
     /** Complete L0-L3 reverse-impact query example. */
     public static final String BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "trip-api-impact-stage1-v1.fixture.json";
+    /** Complete server-produced five-layer and seven-dimension Package evidence example. */
+    public static final String PACKAGE_EVIDENCE_INDEX_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "package-evidence-index-stage1-v1.fixture.json";
+    /** Complete server-produced domain Portfolio and active owner-task example. */
+    public static final String DOMAIN_EVIDENCE_PORTFOLIO_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "domain-evidence-portfolio-stage1-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
@@ -136,6 +151,12 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "business-asset-impact-report-v1.schema.json";
     static final String BUSINESS_ASSET_IMPACT_REBUILD_REPORT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-impact-rebuild-report-v1.schema.json";
+    static final String PACKAGE_EVIDENCE_INDEX_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "package-evidence-index-v1.schema.json";
+    static final String EVIDENCE_OWNER_TASK_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "evidence-owner-task-v1.schema.json";
+    static final String DOMAIN_EVIDENCE_PORTFOLIO_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "domain-evidence-portfolio-v1.schema.json";
     static final String PACKAGE_DRAFT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-draft-v1.schema.json";
     static final String STORED_PACKAGE_DRAFT_SCHEMA_RESOURCE =
@@ -226,6 +247,33 @@ public final class BusinessMirrorProtocol {
     public static void requireBusinessAssetImpactRebuildReport(JsonNode value) {
         require(value, BUSINESS_ASSET_IMPACT_REBUILD_REPORT_SCHEMA_RESOURCE,
                 "BUSINESS_ASSET_IMPACT_REBUILD_REPORT_INVALID");
+    }
+
+    /**
+     * Requires a content-addressed five-layer Package evidence index with exact source lineage.
+     *
+     * @param value decoded Package evidence index
+     */
+    public static void requirePackageEvidenceIndex(JsonNode value) {
+        BusinessMirrorEvidenceVerifier.verifyIndex(value);
+    }
+
+    /**
+     * Requires a versioned owner task whose lifecycle state matches its resolution material.
+     *
+     * @param value decoded evidence owner task
+     */
+    public static void requireEvidenceOwnerTask(JsonNode value) {
+        BusinessMirrorEvidenceVerifier.verifyTask(value);
+    }
+
+    /**
+     * Requires a bounded domain Portfolio with independent layer and Fidelity projections.
+     *
+     * @param value decoded domain Portfolio
+     */
+    public static void requireDomainEvidencePortfolio(JsonNode value) {
+        BusinessMirrorEvidenceVerifier.verifyPortfolio(value);
     }
 
     /**

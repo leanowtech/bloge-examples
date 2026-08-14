@@ -1,0 +1,783 @@
+{
+  "schemaVersion" : "resourceGateway.packageEvidenceIndex.v1",
+  "indexFingerprint" : "sha256:13d24871105905588654b4c34839a2491ef17216122a3dd83bff6b4c62616892",
+  "scope" : {
+    "tenantId" : "tenant-a",
+    "organizationId" : "mobility",
+    "projectId" : "customer-service",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "packageId" : "cancellation-package",
+  "compilationRevision" : 7,
+  "projectionRevision" : 1,
+  "packageSnapshotSource" : {
+    "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+    "id" : "cancellation-package",
+    "coordinate" : "revision:7",
+    "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+  },
+  "readinessSource" : {
+    "kind" : "PACKAGE_READINESS_REPORT",
+    "id" : "cancellation-readiness",
+    "coordinate" : "revision:7",
+    "fingerprint" : "sha256:bf2bd6dd0e02a9382cc610ed5ba9b415b0a070a678b0941fe0c98ca60ef52a80"
+  },
+  "businessAssetClosureSource" : {
+    "kind" : "BUSINESS_ASSET_LINK_CLOSURE",
+    "id" : "cancellation-links",
+    "coordinate" : "revision:7",
+    "fingerprint" : "sha256:a75891f10a617916cc59b120ef5a9ce305af849c68180a3a38e8541fe5413c5c"
+  },
+  "domainId" : "ride-cancellation",
+  "problemCode" : "TRIP.CANCELLATION",
+  "layers" : [ {
+    "layer" : "L0_RESOURCE",
+    "conclusions" : [ {
+      "conclusionId" : "capability:query-trip:revision-1:bbbbbbbbbbbb",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "EXECUTABLE",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "CAPABILITY",
+        "id" : "query-trip",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "sourceLineage" : [ {
+        "kind" : "CAPABILITY",
+        "id" : "query-trip",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }, {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "contract:cancellation-contract:revision-1:cccccccccccc",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "CONTRACT",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "CONTRACT",
+        "id" : "cancellation-contract",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "sourceLineage" : [ {
+        "kind" : "CONTRACT",
+        "id" : "cancellation-contract",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      }, {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "graph_snapshot:cancellation-graph:revision-1:eeeeeeeeeeee",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "EXECUTABLE",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "GRAPH_SNAPSHOT",
+        "id" : "cancellation-graph",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "GRAPH_SNAPSHOT",
+        "id" : "cancellation-graph",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "operator:query-trip:revision-1:bbbbbbbbbbbb",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "EXECUTABLE",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "OPERATOR",
+        "id" : "query-trip",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "OPERATOR",
+        "id" : "query-trip",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "resource:trip-api:revision-1:aaaaaaaaaaaa",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "EXECUTABLE",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "RESOURCE",
+        "id" : "trip-api",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "RESOURCE",
+        "id" : "trip-api",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "scenario_run_evidence:cancellation-golden-run:revision-1:eeeeeeeeeeee",
+      "layer" : "L0_RESOURCE",
+      "evidenceKind" : "SCENARIO",
+      "proofStrength" : "EXECUTION_EVIDENCE",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "SCENARIO_RUN_EVIDENCE",
+        "id" : "cancellation-golden-run",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "SCENARIO_RUN_EVIDENCE",
+        "id" : "cancellation-golden-run",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    } ]
+  }, {
+    "layer" : "L1_SERVICE_DESIGN",
+    "conclusions" : [ {
+      "conclusionId" : "scenario_inventory:cancellation-scenarios:revision-1:aaaaaaaaaaaa",
+      "layer" : "L1_SERVICE_DESIGN",
+      "evidenceKind" : "SCENARIO",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "SCENARIO_INVENTORY",
+        "id" : "cancellation-scenarios",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "SCENARIO_INVENTORY",
+        "id" : "cancellation-scenarios",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "scenario_pack:cancellation-regression:revision-1:bbbbbbbbbbbb",
+      "layer" : "L1_SERVICE_DESIGN",
+      "evidenceKind" : "SCENARIO",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "SCENARIO_PACK",
+        "id" : "cancellation-regression",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "SCENARIO_PACK",
+        "id" : "cancellation-regression",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "solution:cancellation-solution:revision-1:cccccccccccc",
+      "layer" : "L1_SERVICE_DESIGN",
+      "evidenceKind" : "SOLUTION",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "SOLUTION",
+        "id" : "cancellation-solution",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "SOLUTION",
+        "id" : "cancellation-solution",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    } ]
+  }, {
+    "layer" : "L2_SERVICE_CARRIER",
+    "conclusions" : [ {
+      "conclusionId" : "workflow:cancellation-workflow:revision-1:dddddddddddd",
+      "layer" : "L2_SERVICE_CARRIER",
+      "evidenceKind" : "CARRIER",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "WORKFLOW",
+        "id" : "cancellation-workflow",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "WORKFLOW",
+        "id" : "cancellation-workflow",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    } ]
+  }, {
+    "layer" : "L3_APPLICATION",
+    "conclusions" : [ {
+      "conclusionId" : "channel_application:support-chat:revision-1:eeeeeeeeeeee",
+      "layer" : "L3_APPLICATION",
+      "evidenceKind" : "CHANNEL",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "CHANNEL_APPLICATION",
+        "id" : "support-chat",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      "sourceLineage" : [ {
+        "kind" : "CHANNEL_APPLICATION",
+        "id" : "support-chat",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }, {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    } ]
+  }, {
+    "layer" : "CALIBRATION",
+    "conclusions" : [ {
+      "conclusionId" : "domain_fidelity_inventory:cancellation-fidelity:revision-1:3f8e3a285b81",
+      "layer" : "CALIBRATION",
+      "evidenceKind" : "FIDELITY_DENOMINATOR",
+      "proofStrength" : "OWNER_APPROVED_DENOMINATOR",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      } ],
+      "observedAt" : "2025-10-18T17:00:00Z",
+      "validUntil" : "2026-11-12T17:00:00Z",
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "domain_fidelity_profile:ride-cancellation:measuredAt-2026-08-14T17-00-00Z:812a02eca66f",
+      "layer" : "CALIBRATION",
+      "evidenceKind" : "FIDELITY_PROFILE",
+      "proofStrength" : "SIGNED_FIDELITY_PROFILE",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ],
+      "observedAt" : "2026-08-14T17:00:00Z",
+      "validUntil" : "2026-09-13T16:00:00Z",
+      "limitationCode" : ""
+    }, {
+      "conclusionId" : "outcome_definition:resolved-without-repeat:revision-1:ffffffffffff",
+      "layer" : "CALIBRATION",
+      "evidenceKind" : "OUTCOME",
+      "proofStrength" : "COMPILED",
+      "state" : "AVAILABLE",
+      "subject" : {
+        "kind" : "OUTCOME_DEFINITION",
+        "id" : "resolved-without-repeat",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "OUTCOME_DEFINITION",
+        "id" : "resolved-without-repeat",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      } ],
+      "observedAt" : null,
+      "validUntil" : null,
+      "limitationCode" : ""
+    } ]
+  } ],
+  "fidelity" : {
+    "state" : "CURRENT",
+    "inventorySource" : {
+      "kind" : "DOMAIN_FIDELITY_INVENTORY",
+      "id" : "cancellation-fidelity",
+      "coordinate" : "revision:1",
+      "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+    },
+    "profileSource" : {
+      "kind" : "DOMAIN_FIDELITY_PROFILE",
+      "id" : "ride-cancellation",
+      "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+      "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+    },
+    "measuredAt" : "2026-08-14T17:00:00Z",
+    "validUntil" : "2026-09-13T16:00:00Z",
+    "denominator" : {
+      "totalUnits" : 1,
+      "totalObligations" : 7,
+      "dimensions" : [ {
+        "dimension" : "BEHAVIOR",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "CONTRACT",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "EFFECT",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "ERROR_DISTRIBUTION",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "OUTCOME",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "REQUEST_SPACE",
+        "requiredUnits" : 1
+      }, {
+        "dimension" : "STATE_TRANSITION",
+        "requiredUnits" : 1
+      } ]
+    },
+    "dimensions" : [ {
+      "dimension" : "BEHAVIOR",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "BEHAVIOR",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "CONTRACT",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "CONTRACT",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "EFFECT",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "EFFECT",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "ERROR_DISTRIBUTION",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "ERROR_DISTRIBUTION",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "OUTCOME",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "OUTCOME",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "REQUEST_SPACE",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "REQUEST_SPACE",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    }, {
+      "dimension" : "STATE_TRANSITION",
+      "state" : "MEASURED",
+      "metric" : {
+        "dimension" : "STATE_TRANSITION",
+        "requiredUnits" : 1,
+        "freshEvidenceUnits" : 1,
+        "assessedUnits" : 1,
+        "passedUnits" : 1,
+        "failedUnits" : 0,
+        "abstainedUnits" : 0,
+        "staleUnits" : 0,
+        "missingUnits" : 0,
+        "coverageRatio" : 1.0,
+        "abstentionRatio" : 0.0,
+        "confidence" : {
+          "point" : 1.0,
+          "lowerBound" : 0.20654931437723742,
+          "upperBound" : 1.0,
+          "method" : "WILSON_95_V1"
+        },
+        "sufficiency" : "MEASURED"
+      },
+      "sourceLineage" : [ {
+        "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+        "id" : "cancellation-outcome",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_PROFILE",
+        "id" : "ride-cancellation",
+        "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+        "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+      } ]
+    } ],
+    "abstentionDebt" : {
+      "totalObligations" : 7,
+      "abstainedObligations" : 0,
+      "ratio" : 0.0,
+      "reasons" : [ ]
+    },
+    "sourceComposition" : {
+      "totalUnits" : 1,
+      "recordedUnits" : 0,
+      "synthesizedUnits" : 0,
+      "ownerDeclaredUnits" : 0,
+      "authoritativeUnits" : 1,
+      "unknownUnits" : 0,
+      "synthesizedRatio" : 0.0,
+      "unknownRatio" : 0.0
+    },
+    "assessment" : "COMPLETE",
+    "limitations" : [ ],
+    "sourceLineage" : [ {
+      "kind" : "AUTHORITATIVE_OUTCOME_OBSERVATION",
+      "id" : "cancellation-outcome",
+      "coordinate" : "revision:1",
+      "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }, {
+      "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+      "id" : "cancellation-package",
+      "coordinate" : "revision:7",
+      "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+    }, {
+      "kind" : "DOMAIN_FIDELITY_INVENTORY",
+      "id" : "cancellation-fidelity",
+      "coordinate" : "revision:1",
+      "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+    }, {
+      "kind" : "DOMAIN_FIDELITY_PROFILE",
+      "id" : "ride-cancellation",
+      "coordinate" : "measuredAt:2026-08-14T17:00:00Z",
+      "fingerprint" : "sha256:812a02eca66f17e95d1175d2300e065421e89ecf3ccbcfcb68f963eff274ac26"
+    } ]
+  },
+  "driftSignals" : [ ],
+  "projectedAt" : "2026-08-14T17:00:00Z",
+  "validUntil" : "2026-09-13T16:00:00Z"
+}

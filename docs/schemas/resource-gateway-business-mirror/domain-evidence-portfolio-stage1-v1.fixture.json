@@ -1,0 +1,155 @@
+{
+  "schemaVersion" : "resourceGateway.domainEvidencePortfolio.v1",
+  "portfolioFingerprint" : "sha256:7f6a34456991ea115937f55158e5989cad536a88b43727f5450a024ca41b3c53",
+  "scope" : {
+    "tenantId" : "tenant-a",
+    "organizationId" : "mobility",
+    "projectId" : "customer-service",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "domainId" : "ride-cancellation",
+  "packages" : [ {
+    "packageId" : "cancellation-package",
+    "compilationRevision" : 7,
+    "projectionRevision" : 1,
+    "evidenceIndexFingerprint" : "sha256:2b42d902c8ace9f4740e1248c2d336e37b471471d42d9ea27c00ae2d50e780d3",
+    "problemCode" : "TRIP.CANCELLATION",
+    "freshness" : "CURRENT",
+    "layers" : [ {
+      "layer" : "L0_RESOURCE",
+      "conclusionCount" : 6,
+      "states" : [ {
+        "state" : "AVAILABLE",
+        "count" : 6
+      } ],
+      "proofComposition" : [ {
+        "proof" : "COMPILED",
+        "count" : 5
+      }, {
+        "proof" : "EXECUTION_EVIDENCE",
+        "count" : 1
+      } ]
+    }, {
+      "layer" : "L1_SERVICE_DESIGN",
+      "conclusionCount" : 3,
+      "states" : [ {
+        "state" : "AVAILABLE",
+        "count" : 3
+      } ],
+      "proofComposition" : [ {
+        "proof" : "COMPILED",
+        "count" : 3
+      } ]
+    }, {
+      "layer" : "L2_SERVICE_CARRIER",
+      "conclusionCount" : 1,
+      "states" : [ {
+        "state" : "AVAILABLE",
+        "count" : 1
+      } ],
+      "proofComposition" : [ {
+        "proof" : "COMPILED",
+        "count" : 1
+      } ]
+    }, {
+      "layer" : "L3_APPLICATION",
+      "conclusionCount" : 1,
+      "states" : [ {
+        "state" : "AVAILABLE",
+        "count" : 1
+      } ],
+      "proofComposition" : [ {
+        "proof" : "COMPILED",
+        "count" : 1
+      } ]
+    }, {
+      "layer" : "CALIBRATION",
+      "conclusionCount" : 2,
+      "states" : [ {
+        "state" : "AVAILABLE",
+        "count" : 1
+      }, {
+        "state" : "MISSING",
+        "count" : 1
+      } ],
+      "proofComposition" : [ {
+        "proof" : "COMPILED",
+        "count" : 1
+      }, {
+        "proof" : "OWNER_APPROVED_DENOMINATOR",
+        "count" : 1
+      } ]
+    } ],
+    "fidelity" : {
+      "state" : "MISSING",
+      "inventorySource" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      },
+      "profileSource" : null,
+      "measuredAt" : null,
+      "validUntil" : null,
+      "denominator" : null,
+      "dimensions" : [ ],
+      "abstentionDebt" : null,
+      "sourceComposition" : null,
+      "assessment" : null,
+      "limitations" : [ ],
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      } ]
+    },
+    "ownerTasks" : [ {
+      "schemaVersion" : "resourceGateway.evidenceOwnerTask.v1",
+      "taskFingerprint" : "sha256:3a5c27d29d647fd8cbbc70a65db213be0f8d62c8fbe780c9ee807957db0018c7",
+      "taskId" : "cancellation-package:r7:fidelity_profile_missing:7aaff531cb8ba392",
+      "version" : 1,
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "mobility",
+        "projectId" : "customer-service",
+        "environmentId" : "staging",
+        "region" : "sg"
+      },
+      "packageId" : "cancellation-package",
+      "compilationRevision" : 7,
+      "projectionRevision" : 1,
+      "domainId" : "ride-cancellation",
+      "reason" : "FIDELITY_PROFILE_MISSING",
+      "severity" : "ERROR",
+      "owner" : "cancellation-owner",
+      "status" : "OPEN",
+      "sourceLineage" : [ {
+        "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+        "id" : "cancellation-package",
+        "coordinate" : "revision:7",
+        "fingerprint" : "sha256:2b3c86628c0939bc988e68515d133cae1e6bd1867f078feacd6789405d478945"
+      }, {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "cancellation-fidelity",
+        "coordinate" : "revision:1",
+        "fingerprint" : "sha256:3f8e3a285b81772fd19d49c5ffcfbb5c092c7758c8d8df912b06808c05f07fa1"
+      } ],
+      "detectedAt" : "2026-08-14T17:00:00Z",
+      "dueAt" : "2026-08-15T17:00:00Z",
+      "updatedAt" : "2026-08-14T17:00:00Z",
+      "actedBy" : "",
+      "resolutionEvidenceRef" : null,
+      "deepLink" : "/business-mirror/?packageId=cancellation-package&compilationRevision=7&task=evidence"
+    } ],
+    "deepLink" : "/business-mirror/?packageId=cancellation-package&compilationRevision=7&task=evidence"
+  } ],
+  "nextCursor" : "",
+  "generatedAt" : "2026-08-14T17:00:00Z"
+}

@@ -6,17 +6,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import I18nProvider from '../i18n/I18nProvider';
 import BusinessMirrorWorkspace from './BusinessMirrorWorkspace';
 import type {
+  BusinessMirrorDomainEvidencePortfolio,
   BusinessMirrorPackageDraft,
+  BusinessMirrorPackageEvidenceIndex,
   LegacyGraphPackageProjection,
   StoredBusinessMirrorPackage,
 } from './domain';
 
 const api = vi.hoisted(() => ({
+  BlogeApiRequestError: class BlogeApiRequestError extends Error {
+    constructor(readonly status: number, readonly detail: string) {
+      super(`Request failed: ${status} ${detail}`);
+    }
+  },
   fetchBusinessMirrorLegacyCatalog: vi.fn(),
+  fetchBusinessMirrorPackageEvidence: vi.fn(),
+  fetchBusinessMirrorDomainEvidencePortfolio: vi.fn(),
   fetchBusinessMirrorPackages: vi.fn(),
   importBusinessMirrorLegacyPackage: vi.fn(),
   saveBusinessMirrorPackage: vi.fn(),
   compileBusinessMirrorPackage: vi.fn(),
+  refreshBusinessMirrorPackageEvidence: vi.fn(),
+  acknowledgeBusinessMirrorEvidenceTask: vi.fn(),
 }));
 
 vi.mock('../api', () => api);
@@ -76,7 +87,7 @@ describe('Business Mirror Workspace', () => {
     expect(document.body.textContent).toContain('ACCOUNTABLE_OWNER_MISSING');
     expect(document.body.textContent).toContain('1. Define problem');
     expect(input('Business domain').closest('fieldset')?.disabled).toBe(true);
-    expect(document.querySelectorAll('.business-mirror-task-rail button')).toHaveLength(6);
+    expect(document.querySelectorAll('.business-mirror-task-rail button')).toHaveLength(7);
   });
 
   it('imports durably, edits business fields, and asks the server for readiness', async () => {
@@ -152,6 +163,54 @@ describe('Business Mirror Workspace', () => {
     expect(focused?.closest('.capability-layer')?.textContent).toContain('L0 Foundation');
   });
 
+  it('keeps five evidence layers and seven Fidelity dimensions independently inspectable', async () => {
+    const stored = storedPackage(projection.packageDraft, 3);
+    const index = evidenceIndex(stored);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    api.fetchBusinessMirrorPackageEvidence.mockResolvedValue(index);
+    api.fetchBusinessMirrorDomainEvidencePortfolio.mockResolvedValue(evidencePortfolio(index));
+    api.acknowledgeBusinessMirrorEvidenceTask.mockResolvedValue(undefined);
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=evidence');
+
+    await render();
+    await act(async () => Promise.resolve());
+
+    expect(document.body.textContent).toContain('Package evidence and Fidelity');
+    expect(document.querySelectorAll('.business-mirror-evidence-layers article')).toHaveLength(5);
+    expect(document.querySelectorAll('.business-mirror-fidelity-table [role="row"]')).toHaveLength(8);
+    expect(document.body.textContent).toContain('20%-100%');
+    expect(document.body.textContent).not.toContain('Overall score');
+
+    await click(button('Acknowledge'));
+    expect(api.acknowledgeBusinessMirrorEvidenceTask).toHaveBeenCalledWith('task:fidelity', 1);
+  });
+
+  it('offers an explicitly isolated reference projection when current evidence is absent', async () => {
+    const stored = storedPackage(projection.packageDraft, 3);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    api.fetchBusinessMirrorPackageEvidence.mockRejectedValue(
+      new api.BlogeApiRequestError(404, 'RG.BUSINESS_MIRROR.EVIDENCE_INDEX_NOT_FOUND'),
+    );
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=evidence');
+
+    await render();
+    expect(document.body.textContent).toContain('No evidence projection exists yet');
+    await click(button('Open reference evidence'));
+
+    expect(document.body.textContent).toContain('Read-only protocol reference');
+    expect(document.body.textContent).toContain('this is not evidence for the selected Package');
+    expect(document.querySelectorAll('.business-mirror-evidence-layers article')).toHaveLength(5);
+    expect(button('Return to current Package')).toBeInstanceOf(HTMLButtonElement);
+  });
+
   async function render() {
     await act(async () => root?.render(<I18nProvider><BusinessMirrorWorkspace /></I18nProvider>));
     await act(async () => Promise.resolve());
@@ -220,6 +279,88 @@ function saveReceipt(stored: StoredBusinessMirrorPackage) {
   return {
     schemaVersion: 'resourceGateway.domainCapabilityPackageSaveReceipt.v1',
     requestFingerprint: fingerprint('request'), result: stored, completedAt: now(),
+  };
+}
+
+function evidenceIndex(stored: StoredBusinessMirrorPackage): BusinessMirrorPackageEvidenceIndex {
+  const source = {
+    kind: 'DOMAIN_CAPABILITY_PACKAGE', id: stored.draft.packageId,
+    coordinate: 'revision:3', fingerprint: fingerprint('source'),
+  };
+  const dimensions = [
+    'BEHAVIOR', 'CONTRACT', 'EFFECT', 'ERROR_DISTRIBUTION',
+    'OUTCOME', 'REQUEST_SPACE', 'STATE_TRANSITION',
+  ].map((dimension) => ({
+    dimension,
+    state: 'MEASURED',
+    metric: {
+      requiredUnits: 1, freshEvidenceUnits: 1, passedUnits: 1, failedUnits: 0,
+      abstainedUnits: 0, staleUnits: 0, missingUnits: 0, coverageRatio: 1,
+      abstentionRatio: 0, confidence: {
+        point: 1, lowerBound: 0.2, upperBound: 1, method: 'WILSON_95_V1',
+      }, sufficiency: 'MEASURED',
+    },
+    sourceLineage: [source],
+  }));
+  const layerNames = [
+    'L0_RESOURCE', 'L1_SERVICE_DESIGN', 'L2_SERVICE_CARRIER', 'L3_APPLICATION', 'CALIBRATION',
+  ] as const;
+  return {
+    schemaVersion: 'resourceGateway.packageEvidenceIndex.v1',
+    indexFingerprint: fingerprint('index'), scope: stored.draft.scope,
+    packageId: stored.draft.packageId, compilationRevision: 7, projectionRevision: 1,
+    domainId: 'ride.customer-service', problemCode: 'LOAN.DECISION',
+    layers: layerNames.map((layer, position) => ({
+      layer,
+      conclusions: [{
+        conclusionId: `conclusion:${position}`, layer, evidenceKind: 'CONTRACT',
+        proofStrength: 'COMPILED', state: 'AVAILABLE', subject: source,
+        sourceLineage: [source], observedAt: null, validUntil: null, limitationCode: '',
+      }],
+    })),
+    fidelity: {
+      state: 'CURRENT', inventorySource: source, profileSource: source,
+      measuredAt: now(), validUntil: now(), denominator: { totalUnits: 1, totalObligations: 7 },
+      dimensions, abstentionDebt: {
+        totalObligations: 7, abstainedObligations: 0, ratio: 0, reasons: [],
+      },
+      sourceComposition: {
+        totalUnits: 1, recordedUnits: 0, synthesizedUnits: 0, ownerDeclaredUnits: 0,
+        authoritativeUnits: 1, unknownUnits: 0, synthesizedRatio: 0, unknownRatio: 0,
+      },
+      assessment: 'COMPLETE', limitations: [], sourceLineage: [source],
+    },
+    driftSignals: [], projectedAt: now(), validUntil: now(),
+  };
+}
+
+function evidencePortfolio(
+  index: BusinessMirrorPackageEvidenceIndex,
+): BusinessMirrorDomainEvidencePortfolio {
+  const task = {
+    schemaVersion: 'resourceGateway.evidenceOwnerTask.v1', taskFingerprint: fingerprint('task'),
+    taskId: 'task:fidelity', version: 1, scope: index.scope, packageId: index.packageId,
+    compilationRevision: index.compilationRevision, projectionRevision: index.projectionRevision,
+    domainId: index.domainId, reason: 'FIDELITY_PROFILE_STALE', severity: 'ERROR' as const,
+    owner: 'risk-service-owner', status: 'OPEN' as const,
+    sourceLineage: index.fidelity.sourceLineage, detectedAt: now(), dueAt: now(), updatedAt: now(),
+    actedBy: '', resolutionEvidenceRef: null, deepLink: '/business-mirror/?task=evidence',
+  };
+  return {
+    schemaVersion: 'resourceGateway.domainEvidencePortfolio.v1',
+    portfolioFingerprint: fingerprint('portfolio'), scope: index.scope, domainId: index.domainId,
+    packages: [{
+      packageId: index.packageId, compilationRevision: index.compilationRevision,
+      projectionRevision: index.projectionRevision, evidenceIndexFingerprint: index.indexFingerprint,
+      problemCode: index.problemCode, freshness: index.fidelity.state,
+      layers: index.layers.map((layer) => ({
+        layer: layer.layer, conclusionCount: layer.conclusions.length,
+        states: [{ state: 'AVAILABLE', count: layer.conclusions.length }],
+        proofComposition: [{ proof: 'COMPILED', count: layer.conclusions.length }],
+      })),
+      fidelity: index.fidelity, ownerTasks: [task], deepLink: task.deepLink,
+    }],
+    nextCursor: '', generatedAt: now(),
   };
 }
 
