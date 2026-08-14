@@ -178,13 +178,13 @@ BM-002 的 PostgreSQL 认证证明了 migration 可执行、durable commit 开�
     "businessMirrorProtocol": true,
     "businessMirrorPackageApi": true,
     "businessMirrorPackageCompilerApi": true,
-    "businessMirrorPackageCompilerAuthorityReady": false,
+    "businessMirrorPackageCompilerAuthorityReady": true,
     "businessMirrorProposalSimulation": false
   }
 }
 ```
 
-`businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 表示 Package 作者态持久化 API 已装配；`businessMirrorPackageCompilerApi=true` 表示原子编译事务可调用。Authority readiness 单独为 `false`，因此默认演示会返回可信的 `BLOCKED` 事实，而不是伪造 READY。它不表示 Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
+`businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 表示 Package 作者态持久化 API 已装配；`businessMirrorPackageCompilerApi=true` 表示原子编译事务可调用。Authority readiness 现在为 `true`，表示默认部署已安装组合 Authority，并能围栏其明确拥有的 `GRAPH_DRAFT` 与 `CONTRACT` source kind；不支持的 Scenario、Fidelity、Outcome 等类型仍生成 `MISSING`。它不表示某个 Package 已 READY，也不表示 Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
 
 ## 5. 架构偏差审计
 
@@ -325,7 +325,7 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 | 项目 | 命令 | 结果 |
 |---|---|---|
-| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5960` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包通过；`BUILD SUCCESS` |
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5964` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包通过；`BUILD SUCCESS` |
 | Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `542` tests，`0` failures，`0` errors，`0` skipped；Schema packaging、shade 与 Javadoc 门禁通过；`BUILD SUCCESS` |
 
 ### 9.3 差距复评
@@ -333,3 +333,52 @@ mvn -f resource-gateway-test-kit/pom.xml \
 Package 编译已经从纯 Java 内核升级为可认证调用、可重放、可跨副本串行、可离线复验的部署纵向切片，BM-003 的主要剩余项收敛为真实 Authority Adapter 与大型编译容量控制。风险加权差距由约 `22%` 降至约 `20%`。
 
 下降幅度仍受两个高权重事实约束：默认部署无法把七个内置 Graph 及其 Contract/Scenario/Fidelity/Outcome 解析成 READY Package；业务人员也没有 Workspace 完成 Package/Proposal 操作。因此下一轮不能继续堆 repository，而应完成 Legacy projector + composite Authority 的真实数据闭环。
+
+## 10. Iteration 3C：BM-003 composite Authority
+
+### 10.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 唯一 source-kind ownership | `CompositePackageCompilationAuthority` 在启动时拒绝同一 kind 的双 Adapter Owner，不允许靠隐式优先级消除歧义 |
+| Unsupported-kind fail closed | 未安装 Adapter 的依赖形成精确 `MISSING` observation，不尝试第二 Registry，不从客户端读取 observation |
+| 完整 generation fencing | generation 绑定 Adapter 集、Scope、source/head observation、closure/plan、业务关系、evidence 与 code-owned policy；发布前按同一 source refs 完整重解析 |
+| 内置 Graph 权威适配 | `BuiltInGraphAssetAuthority` 复用 classpath DSL、Graph Contract、Operator/Resource 目录和既有 capability closure 投影，不维护第二份拓扑 |
+| 内置 Contract 权威适配 | 七个 `GatewayGraphContract` 形成 content-addressed `CONTRACT` exact refs，并证明 `SCHEMA_VALID` |
+| 测试资产诚实复用 | 每个内置 Contract Test Suite 进入 exact evidence refs，但不冒充 ScenarioPack，不消除 Scenario readiness blocker |
+| 动态能力探针 | 默认 Spring 部署的 `businessMirrorPackageCompilerAuthorityReady` 变为 `true`；静态协议工厂仍保留未装配状态用于独立消费者测试 |
+
+### 10.2 关键不变量
+
+1. `GRAPH_DRAFT` source ref 只物化为 immutable root `CAPABILITY`；Draft 本身不进入 Package manifest。
+2. 单 Graph Package 获得一个 exact `CAPABILITY_CLOSURE` ref；多 Graph root 在尚无正式 Package aggregate closure 前返回空 closure 并失败关闭，不擅自选第一个。
+3. Resource descriptor、Operator snapshot、DSL、Contract 或 Test Suite 变化都会改变物化 ref 或 Authority generation；二次解析可检测编译窗口内漂移。
+4. `businessMirrorPackageCompilerAuthorityReady=true` 只证明 Adapter infrastructure 已安装，Package 级是否 READY 仍由 exact observation 与 Finding 决定。
+5. 内置测试套件含可执行测试数据，但它与 owner-governed Scenario denominator/ScenarioPack 语义不同；Legacy 迁移必须显式转换和确认。
+
+### 10.3 自动化验证
+
+| 层级 | 用例 | 证明内容 |
+|---|---:|---|
+| Composite unit | 3 | unsupported kind、唯一 kind owner、完整 generation drift、双 Graph root fail closed |
+| 真实 Spring wiring | 10（测试类累计） | 七个 DSL Graph、Contract、Operator/Resource、Test Suite exact resolution；动态 capability readiness |
+
+已执行：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=CompositePackageCompilationAuthorityTest test
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ResourceGatewayApplicationTest test
+```
+
+两组聚焦门禁分别为 `3/3` 与 `10/10` 全绿。
+
+完整项目门禁已执行：`5964` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包均通过，`BUILD SUCCESS`。测试期间仅出现仓库既有的 BLOGE 发布 POM 元数据与 Selenium CDP 版本兼容提示，未形成测试失败或能力降级。
+
+### 10.4 差距复评
+
+默认部署不再只有「会输出缺失」的 fallback Authority，而是能从现有系统的真实 source-of-truth 解析七个内置 Graph、Contract、外部能力闭包和测试证据。BM-003 的根问题由「没有真实 Adapter」收敛为「Adapter 类型覆盖与生产容量认证尚不完整」。
+
+这一迭代没有提供业务工作区、Scenario 治理转换或客户 Outcome，因此风险加权差距只从约 `20%` 降至约 `19%`。下一提交实施 BM-004：把七个内置 Graph 包装成 `LEGACY_IMPORTED` Package preview/draft，输出正式 gap inventory，并复用 durable authoring API 渐进导入；所有不可推断业务字段必须保持阻断。

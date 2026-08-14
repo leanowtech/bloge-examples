@@ -129,13 +129,16 @@ class BusinessMirrorPackageSpringWiringTest {
                 .andExpect(header().string("Idempotent-Replayed", "true"))
                 .andReturn().getResponse().getContentAsString();
         assertThat(objectMapper.readTree(compileReplay)).isEqualTo(objectMapper.readTree(compileBody));
+        String authorityGeneration = objectMapper.readTree(compileBody)
+                .path("authorityGeneration").asText();
+        assertThat(authorityGeneration).startsWith("composite-authority-v1:").hasSize(87);
 
         mockMvc.perform(get(
                         "/api/business-mirror/packages/cancellation-fee-http-e2e/compilations/1")
-                        .header("Authorization", "Bearer bloge-aneke-demo-token")
-                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING"))
+                .header("Authorization", "Bearer bloge-aneke-demo-token")
+                .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.authorityGeneration").value("authority-unavailable-v1"))
+                .andExpect(jsonPath("$.authorityGeneration").value(authorityGeneration))
                 .andExpect(jsonPath("$.readiness.status").value("BLOCKED"));
     }
 }

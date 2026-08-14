@@ -20,13 +20,18 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPac
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationFactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPackageDependencyAdapter;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.CompositePackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationCoordinator;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationFactRepository;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependencyAuthorityAdapter;
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
-import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractCatalog;
+import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
@@ -52,6 +57,7 @@ import com.leanowtech.bloge.gateway.integration.SideEffectReconciler;
 import com.leanowtech.bloge.gateway.integration.SideEffectReconcilerRegistry;
 import com.leanowtech.bloge.gateway.integration.SideEffectReconciliationRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
 import com.leanowtech.bloge.gateway.integration.mirror.DatabaseCapabilitySnapshotRepository;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
@@ -563,11 +569,33 @@ public class GatewayConfiguration {
         return new DomainCapabilityPackageAuthoringService(drafts, saves, objectMapper);
     }
 
-    /** Fail-closed authority fallback; customer deployments replace this bean with real adapters. */
+    /** Exact read adapter over the shipped Graph, Contract, test-suite and capability authorities. */
     @Bean
     @ConditionalOnMissingBean
-    public PackageCompilationAuthority packageCompilationAuthority() {
-        return new UnavailablePackageCompilationAuthority();
+    public BuiltInGraphAssetAuthority builtInGraphAssetAuthority(
+            BuiltInCapabilityClosureService closures,
+            GatewayGraphContractCatalog contracts,
+            GatewayGraphContractTestSuiteRepository testSuites,
+            ObjectMapper objectMapper) {
+        return new BuiltInGraphAssetAuthority(closures, contracts, testSuites, objectMapper);
+    }
+
+    /** Source-kind owner that resolves built-in GraphDraft and Contract Package refs. */
+    @Bean
+    public BuiltInGraphPackageDependencyAdapter builtInGraphPackageDependencyAdapter(
+            BuiltInGraphAssetAuthority authority) {
+        return new BuiltInGraphPackageDependencyAdapter(authority);
+    }
+
+    /**
+     * Composite authority with exclusive source-kind ownership and publication-time drift fencing.
+     * Unsupported dependency kinds remain explicit MISSING observations.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationAuthority packageCompilationAuthority(
+            ObjectMapper objectMapper, List<PackageDependencyAuthorityAdapter> adapters) {
+        return new CompositePackageCompilationAuthority(objectMapper, adapters);
     }
 
     /** Deterministic Package compiler kernel. */

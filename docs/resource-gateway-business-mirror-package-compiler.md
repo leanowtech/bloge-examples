@@ -1,6 +1,6 @@
 # Resource Gateway Business Mirror PackageCompiler 设计与接入说明
 
-> 状态：BM-003 编译内核、原子持久化与认证 HTTP API 已实现；生产 Authority Adapter 尚未接入。
+> 状态：BM-003 编译内核、原子持久化、认证 HTTP API 与首批组合 Authority Adapter 已实现。
 >
 > 最近更新：2026-08-14
 
@@ -38,6 +38,9 @@ Package Draft 中的 `revision + fingerprint` 只表达作者希望引用哪个�
 |---|---|---|
 | `PackageCompiler` | 校验、Finding 派生、manifest 组装、closure/snapshot sealing、TOCTOU 调度 | 查询具体 Registry、写数据库、处理 HTTP |
 | `PackageCompilationAuthority` | 冻结同一代依赖事实，并在结果发布前确认未漂移 | 决定 Package readiness、替编译器忽略缺失项 |
+| `CompositePackageCompilationAuthority` | 按 source kind 指派唯一 Adapter、合并冻结事实、生成 policy/generation、二次解析围栏 | 用 Adapter 优先级掩盖歧义、把 unsupported kind 判为已解析 |
+| `PackageDependencyAuthorityAdapter` | 从既有 source-of-truth 解析一种或多种明确归属的依赖类型 | 充当新的万能 Registry、读取客户端伪造 observation |
+| `BuiltInGraphAssetAuthority` | 复用既有 DSL 投影、Graph Contract、Operator/Resource 目录和测试套件生成 exact refs | 维护第二份 Graph 拓扑、把测试套件冒充 ScenarioPack |
 | `PackageDependencyObservation` | 记录 source ref、materialized ref、Scope、状态和已证明 assurance | 携带 Fixture 或业务 Payload |
 | `FrozenPackageDependencies` | 携带 generation、closure/plan/policy/evidence refs 和业务资产 links | 充当新的资产 source-of-truth |
 | `BusinessAssetLinkClosure` | 固化单 Scope、无悬空引用、无环的 L0-L3 关系事实 | 替代 Graph edge 或 ANEKE impact registry |
@@ -48,6 +51,17 @@ Package Draft 中的 `revision + fingerprint` 只表达作者希望引用哪个�
 | `PackageCompilationReceipt` | 绑定 source、结果 revision、Authority generation 和三类结果事实 | 暴露依赖 payload 或可变 Registry head |
 
 `PackageCompilationAuthority` 是端口，不是数据库表。后续 Adapter 可以接 Capability Closure、Graph publication、Contract、Scenario、Fidelity 和 Outcome 各自的权威仓储，但不能把这些事实复制成一个新的万能 Registry。
+
+当前组合规则是硬约束：同一个 source kind 只能有一个 Adapter Owner；发现双 Owner 时应用启动失败。未安装 Adapter 的类型生成 `MISSING` observation，不会按顺序尝试多个 Registry。组合 Authority 的 generation 同时绑定 Adapter 集、Scope、source/head observation、物化 closure/plan、业务关系、evidence 和 code-owned compilation policy；`assertUnchanged` 会用同一批 source refs 再解析一次并比较完整 generation。
+
+首批 `BuiltInGraphPackageDependencyAdapter` 只拥有：
+
+| Source kind | 权威来源 | 物化结果 |
+|---|---|---|
+| `GRAPH_DRAFT` | classpath BLOGE DSL、`GatewayGraphContractCatalog`、`VisualOperatorCatalog`、`ResourceRegistry` | immutable root `CAPABILITY` 与 `CAPABILITY_CLOSURE` ref |
+| `CONTRACT` | `GatewayGraphContractCatalog` | content-addressed `CONTRACT` ref |
+
+内置 Contract Test Suite 只作为 exact evidence ref 进入冻结窗口。它不是 ScenarioPack，也不会消除 `SCENARIO_INVENTORY_MISSING` 或 `SCENARIO_PACK_MISSING`。
 
 ## 4. 编译流程
 
@@ -161,14 +175,17 @@ BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceiptJson);
 - H2/PostgreSQL append-only facts、Package revision allocator 和 durable receipt；
 - 响应丢失 exact replay、不同 key 并发 revision 串行化和数据库列/JSON 防漂移；
 - 动态 capability readiness：API 与 Authority 就绪状态分别暴露。
+- `CompositePackageCompilationAuthority` 的唯一 kind ownership、unsupported-kind fail closed 和完整 generation re-resolution；
+- 七个内置 Graph 的 DSL/Contract/Operator/Resource/Test Suite 权威解析；
+- `GRAPH_DRAFT` → immutable root `CAPABILITY`/`CAPABILITY_CLOSURE` 与 `CONTRACT` exact materialization。
 
 尚不可用：
 
-- 面向现有 Graph/Scenario/Outcome 仓储的生产 Authority Adapter；
+- 面向持久化 Visual Graph publication、Scenario、Fidelity、Outcome 和 L0-L3 关系仓储的 Authority Adapter；
 - 大型 Package async job、容量门禁和取消；
-- `businessMirrorPackageCompilerAuthorityReady=true` 的生产就绪部署。
+- 客户环境对 Authority Adapter 的 HA、升级、灾备和大规模容量认证。
 
-因此当前部署可以调用编译 API 并取得持久、可复验的阻断事实，但内置 `UnavailablePackageCompilationAuthority` 会失败关闭。探针同时返回 `businessMirrorPackageCompilerApi=true` 与 `businessMirrorPackageCompilerAuthorityReady=false`；后者只有在部署替换为真实 Adapter 后才会变为 `true`。
+默认部署现在返回 `businessMirrorPackageCompilerApi=true` 与 `businessMirrorPackageCompilerAuthorityReady=true`，表示组合 Authority 已安装并能对其拥有的 source kind 执行 exact resolution 与二次围栏。这个布尔值不表示任意 Package 的全部依赖都存在，也不表示客户生产环境已认证；unsupported kind 仍会形成 `MISSING` 并阻断 Snapshot。
 
 ### 9.1 API 快速体验
 
@@ -193,19 +210,20 @@ curl -fsS \
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=PackageCompilerTest,DomainCapabilityPackageProtocolTest test
+  -Dtest=PackageCompilerTest,CompositePackageCompilationAuthorityTest,\
+ResourceGatewayApplicationTest,DomainCapabilityPackageProtocolTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=BusinessMirrorProtocolTest test
 ```
 
-覆盖内容包括：完整编译、100 组输入乱序、缺失与指纹漂移、跨 Scope、Scenario/Outcome/Proposal/Effect assurance、mutable material、额外 Authority 观测、关系缺失/悬空/循环、source tamper 和结果发布前 TOCTOU fencing。
+覆盖内容包括：完整编译、100 组输入乱序、缺失与指纹漂移、跨 Scope、Scenario/Outcome/Proposal/Effect assurance、mutable material、额外 Authority 观测、关系缺失/悬空/循环、source tamper、唯一 kind ownership、unsupported kind、七个内置 Graph exact materialization 和结果发布前 TOCTOU fencing。
 
-完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5960` 个测试以及 Test Kit `542` 个测试均无失败；前者包含原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包，后者包含 Schema packaging、shade 与 Javadoc 门禁。
+完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5964` 个测试以及 Test Kit `542` 个测试均无失败；前者包含原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包，后者包含 Schema packaging、shade 与 Javadoc 门禁。
 
 ## 11. 下一步
 
-1. 实现 Graph、Contract、Scenario、Fidelity、Outcome 和业务资产关系的组合 Authority Adapter。
-2. 为 Adapter 增加 generation/head fencing、Scope 和 schema/fingerprint 认证套件。
-3. 实现 Legacy Graph projector，逐个包装七个内置 Graph，并保持缺失业务语义 `BLOCKED`。
+1. 实现 Legacy Graph projector，逐个包装七个内置 Graph，并保持缺失业务语义 `BLOCKED`。
+2. 将已发现的 Contract Test Suite 显式迁移为 owner-governed Scenario denominator/ScenarioPack，而不是直接改名。
+3. 继续接入持久化 Visual Graph、Scenario、Fidelity、Outcome 和业务资产关系 Adapter，并增加客户环境认证。
 4. 增加大型 Package async capacity/cancel；当前同步 API 只用于有界编译。

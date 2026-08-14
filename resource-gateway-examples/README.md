@@ -33,7 +33,7 @@ integration something the business flow can see, reason about, test, and change.
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
-| Business Mirror authoring foundation | First-class Domain Capability Package, Capability Proposal, Package Readiness, and typed L0-L3 Business Asset Link protocols; Package drafts now have authenticated durable create/save/read/list APIs, exact restart-safe receipts, full-scope optimistic revisions, PostgreSQL DDL certification, and standalone Test Kit validation; compiler, simulation, and workspace readiness remain explicitly false |
+| Business Mirror authoring foundation | First-class Domain Capability Package, Capability Proposal, Package Readiness, and typed L0-L3 Business Asset Link protocols; Package drafts and compilation facts have authenticated durable APIs, exact restart-safe receipts, full-scope optimistic revisions, PostgreSQL certification, and standalone Test Kit validation; the installed composite Authority resolves and fences shipped Graph/Contract assets while unsupported Scenario/Fidelity/Outcome kinds remain fail closed |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
@@ -150,9 +150,11 @@ The deterministic Package compilation kernel, frozen dependency authority port, 
 and offline verification boundary are documented in the
 [Business Mirror PackageCompiler guide](../docs/resource-gateway-business-mirror-package-compiler.md).
 The compiler HTTP/persistence vertical slice is available at
-`POST /api/business-mirror/packages/{packageId}/compile`. The bundled Authority is deliberately
-fail closed, so demo compilation returns a durable `BLOCKED` report until a deployment installs
-real Contract, Graph, Scenario, Fidelity, Outcome, and business-asset adapters.
+`POST /api/business-mirror/packages/{packageId}/compile`. The bundled composite Authority resolves
+the seven shipped Graphs and their formal Contracts through the existing DSL, operator, Resource,
+Contract, and contract-test authorities. Unsupported Scenario, Fidelity, Outcome, and business-asset
+kinds remain explicit `MISSING` observations, so an incomplete Package still returns a durable
+`BLOCKED` report instead of being mistaken for publishable business capability.
 
 Author Workspace v2 now distinguishes **recoverable** from **saved**. After an edit, the lifecycle
 beside the draft identity advances from `DIRTY` to `RECOVERABLE` when the current tab has captured a

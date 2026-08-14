@@ -30,7 +30,7 @@
 - Proposal simulation、实现交付和 Package 级测试运行；
 - ANEKE registry、publish gate 或治理状态写入。
 
-能力探针中 `businessMirrorPackageApi=true` 表示 durable authoring API 已装配，`businessMirrorPackageCompilerApi=true` 表示编译事务和 API 已装配。`businessMirrorPackageCompilerAuthorityReady=false` 表示当前仍使用 fail-closed Authority，不能把 `BLOCKED` 演示结果误解为依赖已接通。
+能力探针中 `businessMirrorPackageApi=true` 表示 durable authoring API 已装配，`businessMirrorPackageCompilerApi=true` 表示编译事务和 API 已装配。默认部署的 `businessMirrorPackageCompilerAuthorityReady=true` 表示组合 Authority 已安装，并能解析内置 `GRAPH_DRAFT` 与 `CONTRACT`；它不表示任意 Package 的 Scenario、Fidelity、Outcome 等全部依赖已经接通。unsupported kind 仍会失败关闭。
 
 ## 2. 启动演示服务
 
@@ -197,7 +197,7 @@ curl -fsS "${AUTH[@]}" \
          findings: [.readiness.findings[] | {code, fieldPath}]}'
 ```
 
-安装真实 `PackageCompilationAuthority` Bean 后，探针中的 `businessMirrorPackageCompilerAuthorityReady` 才变为 `true`。只有 Authority 能物化全部 exact refs 并证明对应 assurance 时，编译才可能生成非空 `snapshot`。
+默认组合 Authority 已能物化七个内置 Graph 与 Contract，因此探针返回 `businessMirrorPackageCompilerAuthorityReady=true`。只有某个 Package 的全部 exact refs 都有唯一 Authority Owner、都被成功物化并证明对应 assurance 时，该次编译才可能生成非空 `snapshot`；探针就绪不能替代 Package 级 Readiness。
 
 ## 4. API 参考
 

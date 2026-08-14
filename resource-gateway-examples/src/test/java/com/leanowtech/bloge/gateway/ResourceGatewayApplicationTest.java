@@ -8,6 +8,11 @@ import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestBatchResult;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestService;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPackageDependencyAdapter;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.CompositePackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependencyObservation;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure;
@@ -102,6 +107,15 @@ class ResourceGatewayApplicationTest {
 
     @Autowired
     private GatewayGraphContractCatalog graphContracts;
+
+    @Autowired
+    private BuiltInGraphAssetAuthority builtInGraphAssets;
+
+    @Autowired
+    private BuiltInGraphPackageDependencyAdapter builtInGraphPackageDependencies;
+
+    @Autowired
+    private PackageCompilationAuthority packageCompilationAuthority;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -558,6 +572,32 @@ class ResourceGatewayApplicationTest {
     }
 
     @Test
+    void everyBuiltInGraphIsResolvedByTheInstalledPackageCompilationAuthority() {
+        CapabilitySnapshot.Scope scope = capabilityProjectionContext().scope();
+
+        assertThat(packageCompilationAuthority)
+                .isInstanceOf(CompositePackageCompilationAuthority.class);
+        assertThat(packageCompilationAuthority.ready()).isTrue();
+        assertThat(builtInGraphAssets.graphNames()).hasSize(7);
+        assertThat(builtInGraphAssets.graphNames()).allSatisfy(graphName -> {
+            BuiltInGraphAssetAuthority.Snapshot snapshot =
+                    builtInGraphAssets.resolve(scope, graphName);
+
+            assertThat(snapshot.graphRef().id()).isEqualTo("built-in:" + graphName);
+            assertThat(snapshot.contractRef().id())
+                    .isEqualTo("built-in:" + graphName + ":contract");
+            assertThat(snapshot.testSuiteRefs()).hasSize(1);
+            assertThat(snapshot.capabilityClosureRef().fingerprint()).startsWith("sha256:");
+            assertThat(builtInGraphPackageDependencies.resolve(scope, snapshot.graphRef())
+                    .observation().status())
+                    .isEqualTo(PackageDependencyObservation.Status.RESOLVED);
+            assertThat(builtInGraphPackageDependencies.resolve(scope, snapshot.contractRef())
+                    .observation().status())
+                    .isEqualTo(PackageDependencyObservation.Status.RESOLVED);
+        });
+    }
+
+    @Test
     void builtInClosureProjectionNormalizesMissingResourceFailure() {
         registry.deregister("order-service.listOrders");
 
@@ -655,7 +695,8 @@ class ResourceGatewayApplicationTest {
         Map<String, Object> capabilityPayload = (Map<String, Object>) capabilities.get("payload");
         assertThat((Map<String, Object>) capabilityPayload.get("features"))
                 .containsEntry("trustedWorkloadIdentity", true)
-                .containsEntry("demoIdentityMode", true);
+                .containsEntry("demoIdentityMode", true)
+                .containsEntry("businessMirrorPackageCompilerAuthorityReady", true);
         assertThat((Map<String, Object>) capabilityPayload.get("identityProvider"))
                 .containsEntry("providerType", "STATIC_BEARER_REGISTRY")
                 .containsEntry("claimsSource", "SERVER_REGISTRY");
