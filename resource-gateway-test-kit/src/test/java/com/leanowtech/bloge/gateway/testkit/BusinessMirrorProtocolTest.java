@@ -41,6 +41,8 @@ class BusinessMirrorProtocolTest {
                 businessAssetLink(packageDraft)));
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requireBusinessAssetLinkClosure(
                 businessAssetLinkClosure(packageDraft)));
+        assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requirePackageCompilationReceipt(
+                packageCompilationReceipt(packageDraft)));
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(
                 packageDraft));
         assertThatNoException().isThrownBy(() -> BusinessMirrorProtocol.requirePackageSnapshot(
@@ -227,6 +229,18 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void rejectsCompilationReceiptWhoseEmbeddedFactsDoNotShareOneSource() throws Exception {
+        ObjectNode packageDraft = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
+        ObjectNode receipt = packageCompilationReceipt(packageDraft);
+        receipt.put("sourceDraftRevision", 2);
+
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageCompilationReceipt(receipt))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_COMPILATION_RECEIPT_INCONSISTENT");
+    }
+
+    @Test
     void rejectsEvidenceStateWithoutRequiredEvidenceKinds() throws Exception {
         ObjectNode proposal = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PROPOSAL_FIXTURE_RESOURCE);
@@ -349,6 +363,36 @@ class BusinessMirrorProtocolTest {
         links.add(exposed);
         closure.put("createdAt", "2026-08-14T02:00:00Z");
         return seal(closure);
+    }
+
+    private static ObjectNode packageCompilationReceipt(ObjectNode packageDraft) {
+        ObjectNode readiness = readinessReport(packageDraft);
+        ObjectNode closure = businessAssetLinkClosure(packageDraft);
+        ObjectNode snapshot = packageSnapshot(packageDraft);
+        snapshot.put("sourceDraftFingerprint", readiness.path("sourceDraftFingerprint").asText());
+        ObjectNode readinessRef = (ObjectNode) snapshot.path("readinessReportRef");
+        readinessRef.put("id", readiness.path("reportId").asText());
+        readinessRef.put("revision", readiness.path("revision").asLong());
+        readinessRef.put("fingerprint", readiness.path("fingerprint").asText());
+        ObjectNode closureRef = (ObjectNode) snapshot.path("businessAssetLinkClosureRef");
+        closureRef.put("id", closure.path("closureId").asText());
+        closureRef.put("revision", closure.path("revision").asLong());
+        closureRef.put("fingerprint", closure.path("fingerprint").asText());
+        seal(snapshot);
+
+        ObjectNode receipt = JSON.createObjectNode();
+        receipt.put("schemaVersion", BusinessMirrorProtocol.PACKAGE_COMPILATION_RECEIPT_V1);
+        receipt.put("requestFingerprint", fingerprint('b'));
+        receipt.put("packageId", packageDraft.path("packageId").asText());
+        receipt.put("sourceDraftRevision", readiness.path("sourceDraftRevision").asLong());
+        receipt.put("sourceDraftFingerprint", readiness.path("sourceDraftFingerprint").asText());
+        receipt.put("compilationRevision", readiness.path("revision").asLong());
+        receipt.set("readiness", readiness);
+        receipt.set("businessAssetLinkClosure", closure);
+        receipt.set("snapshot", snapshot);
+        receipt.put("authorityGeneration", "authority-generation-7");
+        receipt.put("completedAt", readiness.path("createdAt").asText());
+        return receipt;
     }
 
     private static ObjectNode seal(ObjectNode value) {

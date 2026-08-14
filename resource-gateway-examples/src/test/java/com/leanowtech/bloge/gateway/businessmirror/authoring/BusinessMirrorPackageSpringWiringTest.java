@@ -3,6 +3,10 @@ package com.leanowtech.bloge.gateway.businessmirror.authoring;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
+import com.leanowtech.bloge.gateway.businessmirror.transport.PackageCompilationController;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationFactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.support.AopUtils;
@@ -43,6 +47,9 @@ class BusinessMirrorPackageSpringWiringTest {
     private DomainCapabilityPackageAuthoringService service;
 
     @Autowired
+    private PackageCompilationService compilationService;
+
+    @Autowired
     private MockMvc mockMvc;
 
     @Autowired
@@ -53,7 +60,11 @@ class BusinessMirrorPackageSpringWiringTest {
         assertThat(context.getBean(DomainCapabilityPackageController.class)).isNotNull();
         assertThat(context.getBean(DomainCapabilityPackageDraftRepository.class)).isNotNull();
         assertThat(context.getBean(DomainCapabilityPackageSaveReceiptRepository.class)).isNotNull();
+        assertThat(context.getBean(PackageCompilationController.class)).isNotNull();
+        assertThat(context.getBean(PackageCompilationFactRepository.class)).isNotNull();
+        assertThat(context.getBean(PackageCompilationReceiptRepository.class)).isNotNull();
         assertThat(AopUtils.isAopProxy(service)).isTrue();
+        assertThat(AopUtils.isAopProxy(compilationService)).isTrue();
     }
 
     @Test
@@ -94,5 +105,37 @@ class BusinessMirrorPackageSpringWiringTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items.length()").value(1))
                 .andExpect(jsonPath("$.items[0].draft.packageId").value("cancellation-fee-http-e2e"));
+
+        String compileBody = mockMvc.perform(post(
+                        "/api/business-mirror/packages/cancellation-fee-http-e2e/compile?sourceRevision=1")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING")
+                        .header("Idempotency-Key", "bm-package-http-e2e:compile:v1"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "false"))
+                .andExpect(header().string("Compilation-Status", "BLOCKED"))
+                .andExpect(header().exists("ETag"))
+                .andExpect(jsonPath("$.compilationRevision").value(1))
+                .andExpect(jsonPath("$.readiness.status").value("BLOCKED"))
+                .andExpect(jsonPath("$.snapshot").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        String compileReplay = mockMvc.perform(post(
+                        "/api/business-mirror/packages/cancellation-fee-http-e2e/compile?sourceRevision=1")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING")
+                        .header("Idempotency-Key", "bm-package-http-e2e:compile:v1"))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "true"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(objectMapper.readTree(compileReplay)).isEqualTo(objectMapper.readTree(compileBody));
+
+        mockMvc.perform(get(
+                        "/api/business-mirror/packages/cancellation-fee-http-e2e/compilations/1")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.authorityGeneration").value("authority-unavailable-v1"))
+                .andExpect(jsonPath("$.readiness.status").value("BLOCKED"));
     }
 }

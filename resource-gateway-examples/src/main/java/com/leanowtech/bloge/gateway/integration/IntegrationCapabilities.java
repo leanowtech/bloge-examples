@@ -321,6 +321,9 @@ public record IntegrationCapabilities(
         objects.put("businessAssetLink", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .BusinessAssetLink.SCHEMA_VERSION));
+        objects.put("businessAssetLinkClosure", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .BusinessAssetLinkClosure.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageDraft", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageDraft.SCHEMA_VERSION));
@@ -333,6 +336,9 @@ public record IntegrationCapabilities(
         objects.put("domainCapabilityPackagePage", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.authoring
                         .DomainCapabilityPackagePage.SCHEMA_VERSION));
+        objects.put("packageCompilationReceipt", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.compilation
+                        .PackageCompilationReceipt.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageSnapshot", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageSnapshot.SCHEMA_VERSION));
@@ -948,6 +954,8 @@ public record IntegrationCapabilities(
         features.put("capabilityClosureProtocol", true);
         features.put("businessMirrorProtocol", true);
         features.put("businessMirrorPackageApi", true);
+        features.put("businessMirrorPackageCompilerApi", true);
+        features.put("businessMirrorPackageCompilerAuthorityReady", false);
         features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
@@ -1415,6 +1423,14 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/integration/reconciliation"),
                 new Endpoint("GET", "/api/integration/operator-libraries/{libraryId}"),
                 new Endpoint("GET", "/api/integration/operator-test-suites/{suiteId}"),
+                new Endpoint("POST", "/api/business-mirror/packages"),
+                new Endpoint("PUT", "/api/business-mirror/packages/{packageId}"),
+                new Endpoint("GET", "/api/business-mirror/packages"),
+                new Endpoint("GET", "/api/business-mirror/packages/{packageId}"),
+                new Endpoint("GET", "/api/business-mirror/packages/{packageId}/revisions"),
+                new Endpoint("GET", "/api/business-mirror/packages/{packageId}/revisions/{revision}"),
+                new Endpoint("POST", "/api/business-mirror/packages/{packageId}/compile"),
+                new Endpoint("GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"),
                 new Endpoint("POST", "/api/visual/drafts"),
                 new Endpoint("PUT", "/api/visual/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),

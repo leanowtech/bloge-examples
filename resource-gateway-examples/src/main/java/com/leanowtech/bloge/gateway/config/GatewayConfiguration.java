@@ -18,6 +18,15 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPac
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageDraftRepository;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveCoordinator;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationFactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationCoordinator;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationFactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.interceptor.QuotaConfigProvider;
 import com.leanowtech.bloge.gateway.integration.DatabaseGovernanceGateResultRepository;
@@ -552,6 +561,59 @@ public class GatewayConfiguration {
             DomainCapabilityPackageSaveCoordinator saves,
             ObjectMapper objectMapper) {
         return new DomainCapabilityPackageAuthoringService(drafts, saves, objectMapper);
+    }
+
+    /** Fail-closed authority fallback; customer deployments replace this bean with real adapters. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationAuthority packageCompilationAuthority() {
+        return new UnavailablePackageCompilationAuthority();
+    }
+
+    /** Deterministic Package compiler kernel. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompiler packageCompiler(
+            ObjectMapper objectMapper, PackageCompilationAuthority authority) {
+        return new PackageCompiler(objectMapper, authority);
+    }
+
+    /** Append-only Package compilation fact repository and revision allocator. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationFactRepository packageCompilationFactRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabasePackageCompilationFactRepository(jdbc, objectMapper);
+    }
+
+    /** Restart-safe exact-response journal for Package compile commands. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationReceiptRepository packageCompilationReceiptRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabasePackageCompilationReceiptRepository(jdbc, objectMapper);
+    }
+
+    /** Cross-replica atomic publication coordinator for Package compilation. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationCoordinator packageCompilationCoordinator(
+            PackageCompilationReceiptRepository receipts,
+            PackageCompilationFactRepository facts,
+            PackageCompiler compiler,
+            ObjectMapper objectMapper) {
+        return new PackageCompilationCoordinator(
+                receipts, facts, compiler, objectMapper, Clock.systemUTC());
+    }
+
+    /** Authenticated Package compilation command/query boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public PackageCompilationService packageCompilationService(
+            DomainCapabilityPackageDraftRepository drafts,
+            PackageCompilationFactRepository facts,
+            PackageCompilationCoordinator coordinator) {
+        return new PackageCompilationService(drafts, facts, coordinator);
     }
 
     /**

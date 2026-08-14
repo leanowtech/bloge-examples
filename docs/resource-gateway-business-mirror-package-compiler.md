@@ -1,6 +1,6 @@
 # Resource Gateway Business Mirror PackageCompiler 设计与接入说明
 
-> 状态：BM-003 编译内核已实现；编译结果持久化、HTTP API 和生产 Authority Adapter 尚未完成。
+> 状态：BM-003 编译内核、原子持久化与认证 HTTP API 已实现；生产 Authority Adapter 尚未接入。
 >
 > 最近更新：2026-08-14
 
@@ -43,6 +43,9 @@ Package Draft 中的 `revision + fingerprint` 只表达作者希望引用哪个�
 | `BusinessAssetLinkClosure` | 固化单 Scope、无悬空引用、无环的 L0-L3 关系事实 | 替代 Graph edge 或 ANEKE impact registry |
 | `PackageReadinessReport` | 输出稳定、payload-free、可深链的 Finding | 接受自由文本错误或人工改写 status |
 | `DomainCapabilityPackageSnapshot` | 固化一次 exact compile 的 immutable 跨系统事实 | 表达 ANEKE 发布、认证或客户批准状态 |
+| `PackageCompilationCoordinator` | 幂等 command、Package revision 串行分配、原子 fact/receipt 发布 | 接受调用方提交的 Authority observation |
+| `PackageCompilationFactRepository` | append-only Readiness、Closure、Snapshot 与 exact revision read | 修改已经发布的事实 |
+| `PackageCompilationReceipt` | 绑定 source、结果 revision、Authority generation 和三类结果事实 | 暴露依赖 payload 或可变 Registry head |
 
 `PackageCompilationAuthority` 是端口，不是数据库表。后续 Adapter 可以接 Capability Closure、Graph publication、Contract、Scenario、Fidelity 和 Outcome 各自的权威仓储，但不能把这些事实复制成一个新的万能 Registry。
 
@@ -64,6 +67,20 @@ verify stored Draft fingerprint
 ```
 
 `compiledAt` 和 Snapshot revision 由上层幂等 command/persistence 边界分配。编译器不读取系统时间，也不自行分配 revision，因此离线复验和响应丢失重试不会产生新 fingerprint。
+
+部署事务边界为：
+
+```text
+authenticate + exact source read
+  -> lock (Scope, Idempotency-Key)
+  -> replay exact prior receipt or reject key drift
+  -> lock (Scope, packageId) revision allocator
+  -> reserve compilation revision
+  -> compile under Authority freeze/fence
+  -> append Readiness + Link Closure + optional Snapshot
+  -> append exact compile receipt
+  -> commit once
+```
 
 ## 5. 依赖状态与 Assurance
 
@@ -126,9 +143,10 @@ Graph edge 继续表达执行数据流；Business Asset Link 只表达业务组�
 BusinessMirrorProtocol.requireBusinessAssetLinkClosure(linkClosureJson);
 BusinessMirrorProtocol.requirePackageReadinessReport(readinessJson);
 BusinessMirrorProtocol.requirePackageSnapshot(snapshotJson);
+BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceiptJson);
 ```
 
-三类入口不再只做 JSON Schema 校验，还会复算 fingerprint，并验证关系闭包、status 派生、Scope、manifest 顺序和 mutable artifact 禁令。失败只返回稳定错误码，不回显业务内容。
+这些入口不再只做 JSON Schema 校验，还会复算 fingerprint，并验证关系闭包、status 派生、Scope、manifest 顺序、mutable artifact 禁令，以及 receipt 中 source/revision/time/fact reference 的一致性。失败只返回稳定错误码，不回显业务内容。
 
 ## 9. 当前可用范围
 
@@ -139,16 +157,35 @@ BusinessMirrorProtocol.requirePackageSnapshot(snapshotJson);
 - 确定性 Finding、Readiness、Link Closure 和 Snapshot 生成；
 - 服务端 canonical sealing 与 Test Kit 独立复验；
 - 依赖缺失、跨 Scope、隔离缺失、篡改、循环和 TOCTOU 失败关闭。
+- 认证 `POST .../{packageId}/compile` 与 exact compilation read API；
+- H2/PostgreSQL append-only facts、Package revision allocator 和 durable receipt；
+- 响应丢失 exact replay、不同 key 并发 revision 串行化和数据库列/JSON 防漂移；
+- 动态 capability readiness：API 与 Authority 就绪状态分别暴露。
 
 尚不可用：
 
-- `POST .../{packageId}/compile` HTTP API；
-- Snapshot、Readiness、Closure 和 compile receipt 的原子持久化；
 - 面向现有 Graph/Scenario/Outcome 仓储的生产 Authority Adapter；
 - 大型 Package async job、容量门禁和取消；
-- capability probe 中的 Package Compiler readiness。
+- `businessMirrorPackageCompilerAuthorityReady=true` 的生产就绪部署。
 
-因此当前部署不能宣称 Package 编译服务已经可供产品调用。下一子迭代完成持久化和认证 HTTP vertical slice 后，才评估对应 feature flag。
+因此当前部署可以调用编译 API 并取得持久、可复验的阻断事实，但内置 `UnavailablePackageCompilationAuthority` 会失败关闭。探针同时返回 `businessMirrorPackageCompilerApi=true` 与 `businessMirrorPackageCompilerAuthorityReady=false`；后者只有在部署替换为真实 Adapter 后才会变为 `true`。
+
+### 9.1 API 快速体验
+
+```bash
+curl -i -sS -X POST \
+  'http://localhost:8080/api/business-mirror/packages/cancellation-fee-resolution/compile?sourceRevision=1' \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: BUSINESS_MIRROR_AUTHORING' \
+  -H 'Idempotency-Key: demo:cancellation-fee:compile:r1'
+
+curl -fsS \
+  http://localhost:8080/api/business-mirror/packages/cancellation-fee-resolution/compilations/1 \
+  -H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: BUSINESS_MIRROR_AUTHORING' | jq
+```
+
+先按 [Package Authoring 指南](resource-gateway-business-mirror-package-authoring-guide.md) 创建 revision `1`。演示环境返回 `BLOCKED` 是正确行为，不是接口故障。
 
 ## 10. 验证命令
 
@@ -164,13 +201,11 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 覆盖内容包括：完整编译、100 组输入乱序、缺失与指纹漂移、跨 Scope、Scenario/Outcome/Proposal/Effect assurance、mutable material、额外 Authority 观测、关系缺失/悬空/循环、source tamper 和结果发布前 TOCTOU fencing。
 
-完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5950` 个测试以及 Test Kit `541` 个测试均无失败；前者包含原生 PostgreSQL 和真实浏览器 E2E，后者包含打包、shade 与 Javadoc 门禁。
+完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5960` 个测试以及 Test Kit `542` 个测试均无失败；前者包含原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包，后者包含 Schema packaging、shade 与 Javadoc 门禁。
 
 ## 11. 下一步
 
-1. 建立 `snapshot/readiness/link-closure/compile-receipt` append-only 表和 PostgreSQL migration。
-2. 使用 `Scope + packageId + sourceDraftRevision + idempotencyKey` 串行化 compile command。
-3. 在同一事务内保存 exact compile receipt 和全部 immutable facts；响应丢失后返回原结果。
-4. 将 `PackageDependencyDriftException` 映射为 `RG.PACKAGE.DEPENDENCY_DRIFT` `409`。
-5. 增加认证 compile/read API，并通过 Spring HTTP、双实例并发和 PostgreSQL 原生测试。
-6. 实现 Legacy Graph Authority Adapter，逐个包装七个内置 Graph，并保持缺失业务语义 `BLOCKED`。
+1. 实现 Graph、Contract、Scenario、Fidelity、Outcome 和业务资产关系的组合 Authority Adapter。
+2. 为 Adapter 增加 generation/head fencing、Scope 和 schema/fingerprint 认证套件。
+3. 实现 Legacy Graph projector，逐个包装七个内置 Graph，并保持缺失业务语义 `BLOCKED`。
+4. 增加大型 Package async capacity/cancel；当前同步 API 只用于有界编译。

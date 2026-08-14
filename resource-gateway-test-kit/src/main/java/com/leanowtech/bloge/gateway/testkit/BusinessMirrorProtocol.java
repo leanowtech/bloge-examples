@@ -31,6 +31,9 @@ public final class BusinessMirrorProtocol {
     /** Bounded Package index page v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_PAGE_V1 =
             "resourceGateway.domainCapabilityPackagePage.v1";
+    /** Exact idempotent Package compilation receipt v1 wire version. */
+    public static final String PACKAGE_COMPILATION_RECEIPT_V1 =
+            "resourceGateway.packageCompilationReceipt.v1";
     /** Immutable compiled Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_SNAPSHOT_V1 =
             "resourceGateway.domainCapabilityPackageSnapshot.v1";
@@ -67,6 +70,8 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-save-receipt-v1.schema.json";
     static final String PACKAGE_PAGE_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-page-v1.schema.json";
+    static final String PACKAGE_COMPILATION_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "package-compilation-receipt-v1.schema.json";
     static final String PACKAGE_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-snapshot-v1.schema.json";
     static final String PACKAGE_READINESS_SCHEMA_RESOURCE =
@@ -137,6 +142,16 @@ public final class BusinessMirrorProtocol {
      */
     public static void requirePackagePage(JsonNode value) {
         BusinessMirrorAuthoringVerifier.verifyPackagePage(value);
+    }
+
+    /**
+     * Requires an exact Package compilation receipt whose embedded facts share one identity.
+     *
+     * @param value decoded Package compilation receipt
+     * @throws IllegalArgumentException when Schema, fingerprint, or fact alignment checks fail
+     */
+    public static void requirePackageCompilationReceipt(JsonNode value) {
+        BusinessMirrorCompilationVerifier.verifyPackageCompilationReceipt(value);
     }
 
     /**

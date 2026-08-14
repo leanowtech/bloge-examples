@@ -8,7 +8,7 @@
 
 ## 1. 能力边界
 
-本接口用于创建、修改和查询 `DomainCapabilityPackageDraft`。它解决的是业务能力包作者态的可靠保存，不负责 Package 编译、Proposal 模拟、ANEKE 发布门禁或生产运行。
+本接口用于创建、修改、查询和编译 `DomainCapabilityPackageDraft`。作者态保存与编译事实使用不同事务协议；Proposal 模拟、ANEKE 发布门禁和生产运行仍不在本轮范围内。
 
 当前已提供：
 
@@ -20,15 +20,17 @@
 - draft fingerprint、receipt fingerprint 和数据库列/JSON 一致性校验；
 - H2 本地运行和 PostgreSQL 14 部署 DDL 认证；
 - 独立 Test Kit 对保存回执、列表页和固定样例的离线 JSON Schema 校验。
+- exact source revision 的幂等编译 API，以及 Readiness、Link Closure、可选 Snapshot 的原子 append-only 保存；
+- 不同幂等键并发编译同一 Package 时的跨副本 revision 串行分配；
+- compile receipt 的严格 Schema、canonical fact 复验和 exact revision read。
 
 当前尚未提供：
 
-- PackageCompiler 和 `DomainCapabilityPackageSnapshot` 生成 API；
 - Business Mirror Workspace 可视化编辑界面；
 - Proposal simulation、实现交付和 Package 级测试运行；
 - ANEKE registry、publish gate 或治理状态写入。
 
-能力探针中 `businessMirrorPackageApi=true` 只表示本章所述的 durable authoring API 已装配，不表示完整 Business Mirror 产品闭环已完成。
+能力探针中 `businessMirrorPackageApi=true` 表示 durable authoring API 已装配，`businessMirrorPackageCompilerApi=true` 表示编译事务和 API 已装配。`businessMirrorPackageCompilerAuthorityReady=false` 表示当前仍使用 fail-closed Authority，不能把 `BLOCKED` 演示结果误解为依赖已接通。
 
 ## 2. 启动演示服务
 
@@ -68,6 +70,8 @@ curl -fsS http://localhost:8080/api/integration/capabilities \
   -H 'X-Purpose: BUSINESS_MIRROR_AUTHORING' \
   | jq '.payload |
         {businessMirrorPackageApi: .features.businessMirrorPackageApi,
+         businessMirrorPackageCompilerApi: .features.businessMirrorPackageCompilerApi,
+         businessMirrorPackageCompilerAuthorityReady: .features.businessMirrorPackageCompilerAuthorityReady,
          supportedObjects: .supportedObjects}'
 ```
 
@@ -76,6 +80,8 @@ curl -fsS http://localhost:8080/api/integration/capabilities \
 - `storedDomainCapabilityPackageDraft`
 - `domainCapabilityPackageSaveReceipt`
 - `domainCapabilityPackagePage`
+- `packageCompilationReceipt`
+- `businessAssetLinkClosure`
 
 ## 3. 完成一次作者态闭环
 
@@ -164,6 +170,35 @@ curl -i -sS -X PUT \
 
 如果其他作者已先保存，接口返回 retryable `RG.BUSINESS_MIRROR.PACKAGE_REVISION_CONFLICT`，并在 `details.currentRevision` 中给出当前 revision。客户端必须重新读取、合并并使用新 key 提交新命令，不得覆盖服务器 current revision。
 
+### 3.6 编译 exact revision
+
+```bash
+curl -i -sS -X POST \
+  'http://localhost:8080/api/business-mirror/packages/cancellation-fee-resolution/compile?sourceRevision=1' \
+  "${AUTH[@]}" \
+  -H 'Idempotency-Key: demo:cancellation-fee:compile:r1'
+```
+
+内置演示部署没有客户 Registry Authority，因此预期结果是：
+
+- HTTP `201`、`Idempotent-Replayed: false`；
+- `Compilation-Status: BLOCKED`；
+- `compilationRevision: 1`；
+- `readiness.findings` 精确列出无法解析或尚未接入的业务依赖；
+- `businessAssetLinkClosure` 被持久化；
+- `snapshot` 为 `null`，不会伪造可发布 Package。
+
+原样重试会返回 `Idempotent-Replayed: true` 和逐字段相同的 receipt。随后可读取 exact 事实：
+
+```bash
+curl -fsS "${AUTH[@]}" \
+  http://localhost:8080/api/business-mirror/packages/cancellation-fee-resolution/compilations/1 \
+  | jq '{compilationRevision, authorityGeneration, status: .readiness.status,
+         findings: [.readiness.findings[] | {code, fieldPath}]}'
+```
+
+安装真实 `PackageCompilationAuthority` Bean 后，探针中的 `businessMirrorPackageCompilerAuthorityReady` 才变为 `true`。只有 Authority 能物化全部 exact refs 并证明对应 assurance 时，编译才可能生成非空 `snapshot`。
+
 ## 4. API 参考
 
 | 方法与路径 | 用途 | 关键约束 |
@@ -174,6 +209,8 @@ curl -i -sS -X PUT \
 | `GET /api/business-mirror/packages/{packageId}/revisions` | 读取全部 history | revision 按降序返回 |
 | `GET /api/business-mirror/packages/{packageId}/revisions/{revision}` | 读取 exact revision | revision 必须大于 `0` |
 | `GET /api/business-mirror/packages?after={packageId}&limit={1-200}` | 列出 current projections | keyset pagination；默认 limit 为 `50` |
+| `POST /api/business-mirror/packages/{packageId}/compile?sourceRevision={n}` | 编译 exact authoring revision | `Idempotency-Key` 必填；结果原子追加 |
+| `GET /api/business-mirror/packages/{packageId}/compilations/{revision}` | 读取 exact compile receipt | 返回 Readiness、Closure 和可选 Snapshot |
 
 所有端点都要求：
 
@@ -193,6 +230,10 @@ curl -i -sS -X PUT \
 | `RG.BUSINESS_MIRROR.PACKAGE_NOT_FOUND` | `404` | 否 | 当前认证 Scope 中不存在目标 Package/revision |
 | `RG.BUSINESS_MIRROR.IDEMPOTENCY_CONFLICT` | `409` | 否 | 同 key 已绑定不同命令；停止自动重试并调查调用方 key 管理 |
 | `RG.BUSINESS_MIRROR.PACKAGE_REVISION_CONFLICT` | `409` | 是 | current 已变化；重新读取、合并并使用新 key 保存 |
+| `RG.BUSINESS_MIRROR.COMPILATION_IDEMPOTENCY_KEY_INVALID` | `400` | 否 | compile key 缺失或格式错误；修正后提交 |
+| `RG.BUSINESS_MIRROR.COMPILATION_IDEMPOTENCY_CONFLICT` | `409` | 否 | 同 key 绑定了不同 source revision 或 actor；停止自动换 key |
+| `RG.PACKAGE.DEPENDENCY_DRIFT` | `409` | 是 | Authority 在编译窗口内变化；重新冻结依赖后重试 |
+| `RG.BUSINESS_MIRROR.COMPILATION_NOT_FOUND` | `404` | 否 | 当前 Scope 不存在该 compilation revision |
 
 ## 5. 协议校验
 
@@ -216,6 +257,9 @@ BusinessMirrorProtocol.requirePackageSaveReceipt(receipt);
 
 JsonNode page = objectMapper.readTree(pageJson);
 BusinessMirrorProtocol.requirePackagePage(page);
+
+JsonNode compilation = objectMapper.readTree(compilationReceiptJson);
+BusinessMirrorProtocol.requirePackageCompilationReceipt(compilation);
 ```
 
 独立校验器会复算 stored draft 的 canonical fingerprint，并拒绝未知字段、内容篡改、时间倒序、跨 Scope page、非递增 package id、重复项和游离 cursor。保存命令的 `requestFingerprint` 由服务端绑定完整命令材料；只持有回执而没有原始命令的消费者只能校验格式，不能独立复算该字段。固定回执样例为 `cancellation-fee-package-save-receipt-v1.fixture.json`。
@@ -227,9 +271,10 @@ BusinessMirrorProtocol.requirePackagePage(page);
 ```text
 resource-gateway-examples/src/main/resources/db/postgresql/
 V20260814_001__business_mirror_package_authoring.sql
+V20260814_002__business_mirror_package_compilation.sql
 ```
 
-迁移创建四张表：current draft、immutable revision、idempotency lock 和 exact save receipt。完整 Scope 是每张表主键的一部分。
+第二个迁移增加 Package revision allocator/lock、compile command lock/receipt、compilation index，以及 Readiness、Link Closure、Snapshot 三类 append-only fact 表。完整 Scope 是每张表主键的一部分。
 
 运行时 repository 的自动建表只用于示例和本地启动，不替代企业 migration gate。生产变更流程至少要保存迁移执行证据、备份/恢复证据和回滚决策。BM-013 才会补齐 PostgreSQL HA、网络分区、滚动升级和备份恢复认证包；当前 PostgreSQL 证据只覆盖真实 DDL、`fsync=on`、`synchronous_commit=on` 和两独立连接并发。
 
@@ -249,6 +294,7 @@ V20260814_001__business_mirror_package_authoring.sql
 mvn -f resource-gateway-examples/pom.xml \
   -Dtest=DatabaseDomainCapabilityPackageAuthoringTest,\
 DatabaseDomainCapabilityPackagePostgresCertificationTest,\
+DatabasePackageCompilationTest,PackageCompilationControllerTest,\
 DomainCapabilityPackageControllerTest,\
 BusinessMirrorPackageSpringWiringTest,\
 BusinessMirrorCapabilityTest test
@@ -264,4 +310,4 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
 ```
 
-测试覆盖 exact restart replay、同 key 漂移、完整 Scope 隔离、optimistic conflict、事务回滚、H2 双实例并发、原生 PostgreSQL 双实例并发、receipt 防篡改、认证 HTTP 和独立 Schema 消费。
+测试覆盖 exact restart replay、同 key 漂移、完整 Scope 隔离、optimistic conflict、事务回滚、H2 双实例并发、原生 PostgreSQL 双实例并发、compile revision 分配、READY/BLOCKED fact 持久化、receipt 防篡改、认证 HTTP 和独立 Schema 消费。

@@ -153,6 +153,9 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("visualCapabilityClosureProjection", true)
                 .containsEntry("capabilitySnapshotApi", true)
                 .containsEntry("capabilityLifecycleFencing", true)
+                .containsEntry("businessMirrorPackageApi", true)
+                .containsEntry("businessMirrorPackageCompilerApi", true)
+                .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
@@ -254,7 +257,8 @@ class ToolStudioIntegrationServiceTest {
                         "writeEffectSpec", "sessionStateSpace",
                         "capabilityContract", "effectContract",
                         "artifactProvenance", "capabilityLifecycleTransition",
-                        "capabilityClosureProjectionRequest");
+                        "capabilityClosureProjectionRequest",
+                        "businessAssetLinkClosure", "packageCompilationReceipt");
         assertThat(envelope.payload().supportedObjects())
                 .containsEntry("mirrorPlan", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -306,6 +310,14 @@ class ToolStudioIntegrationServiceTest {
                         "GET /api/integration/reconciliation",
                 "GET /api/integration/operator-libraries/{libraryId}",
                 "GET /api/integration/operator-test-suites/{suiteId}",
+                "POST /api/business-mirror/packages",
+                "PUT /api/business-mirror/packages/{packageId}",
+                "GET /api/business-mirror/packages",
+                "GET /api/business-mirror/packages/{packageId}",
+                "GET /api/business-mirror/packages/{packageId}/revisions",
+                "GET /api/business-mirror/packages/{packageId}/revisions/{revision}",
+                "POST /api/business-mirror/packages/{packageId}/compile",
+                "GET /api/business-mirror/packages/{packageId}/compilations/{compilationRevision}",
                 "POST /api/visual/drafts",
                 "PUT /api/visual/drafts/{draftId}",
                         "POST /admin/visual-operator-library-authoring/preview",

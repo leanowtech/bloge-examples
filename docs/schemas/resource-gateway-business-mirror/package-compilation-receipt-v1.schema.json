@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/package-compilation-receipt-v1.schema.json",
+  "title": "Resource Gateway Package Compilation Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestFingerprint", "packageId", "sourceDraftRevision", "sourceDraftFingerprint", "compilationRevision", "readiness", "businessAssetLinkClosure", "snapshot", "authorityGeneration", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.packageCompilationReceipt.v1" },
+    "requestFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "sourceDraftRevision": { "type": "integer", "minimum": 1 },
+    "sourceDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "compilationRevision": { "type": "integer", "minimum": 1 },
+    "readiness": { "$ref": "package-readiness-report-v1.schema.json" },
+    "businessAssetLinkClosure": { "$ref": "business-asset-link-closure-v1.schema.json" },
+    "snapshot": {
+      "oneOf": [
+        { "$ref": "domain-capability-package-snapshot-v1.schema.json" },
+        { "type": "null" }
+      ]
+    },
+    "authorityGeneration": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "readiness": {
+            "properties": { "status": { "const": "BLOCKED" } },
+            "required": ["status"]
+          }
+        },
+        "required": ["readiness"]
+      },
+      "then": { "properties": { "snapshot": { "type": "null" } } },
+      "else": { "properties": { "snapshot": { "$ref": "domain-capability-package-snapshot-v1.schema.json" } } }
+    }
+  ]
+}

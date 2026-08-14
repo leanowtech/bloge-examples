@@ -3,7 +3,11 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackagePage;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceipt;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredDomainCapabilityPackageDraft;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.FrozenPackageDependencies;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceipt;
 import com.leanowtech.bloge.gateway.businessmirror.domain.BusinessAssetLink;
+import com.leanowtech.bloge.gateway.businessmirror.domain.BusinessAssetLinkClosure;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityProposalDraft;
 import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityProposalSnapshot;
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageDraft;
@@ -21,6 +25,8 @@ class BusinessMirrorCapabilityTest {
         assertThat(capabilities.supportedObjects())
                 .containsEntry("businessAssetLink", java.util.List.of(
                         BusinessAssetLink.SCHEMA_VERSION))
+                .containsEntry("businessAssetLinkClosure", java.util.List.of(
+                        BusinessAssetLinkClosure.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageDraft", java.util.List.of(
                         DomainCapabilityPackageDraft.SCHEMA_VERSION))
                 .containsEntry("storedDomainCapabilityPackageDraft", java.util.List.of(
@@ -29,6 +35,8 @@ class BusinessMirrorCapabilityTest {
                         DomainCapabilityPackageSaveReceipt.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackagePage", java.util.List.of(
                         DomainCapabilityPackagePage.SCHEMA_VERSION))
+                .containsEntry("packageCompilationReceipt", java.util.List.of(
+                        PackageCompilationReceipt.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageSnapshot", java.util.List.of(
                         DomainCapabilityPackageSnapshot.SCHEMA_VERSION))
                 .containsEntry("packageReadinessReport", java.util.List.of(
@@ -40,8 +48,34 @@ class BusinessMirrorCapabilityTest {
         assertThat(capabilities.features())
                 .containsEntry("businessMirrorProtocol", true)
                 .containsEntry("businessMirrorPackageApi", true)
+                .containsEntry("businessMirrorPackageCompilerApi", true)
+                .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorProposalSimulation", false);
+        assertThat(capabilities.endpoints())
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/business-mirror/packages/{packageId}/compile"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"));
         assertThat(capabilities.protocolVersion())
                 .isEqualTo(ToolStudioResourceGatewayProtocol.VERSION);
+    }
+
+    @Test
+    void runtimeProbeReflectsTheActuallyInstalledCompilationAuthority() {
+        ToolStudioIntegrationService service = new ToolStudioIntegrationService(null, null, null, null);
+        service.configurePackageCompilationAuthority(new PackageCompilationAuthority() {
+            @Override
+            public FrozenPackageDependencies freeze(StoredDomainCapabilityPackageDraft source) {
+                throw new UnsupportedOperationException("not used by the probe");
+            }
+
+            @Override
+            public void assertUnchanged(FrozenPackageDependencies frozen) {
+                throw new UnsupportedOperationException("not used by the probe");
+            }
+        });
+
+        assertThat(service.capabilities().payload().features())
+                .containsEntry("businessMirrorPackageCompilerAuthorityReady", true);
     }
 }

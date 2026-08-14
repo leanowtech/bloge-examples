@@ -117,6 +117,52 @@ final class BusinessMirrorCompilationVerifier {
                 snapshot.path("dependencyManifest").size(), instant(snapshot.path("createdAt").asText()));
     }
 
+    /** Verifies an idempotent compilation receipt and all embedded immutable facts. */
+    static VerifiedCompilationReceipt verifyPackageCompilationReceipt(JsonNode receipt) {
+        BusinessMirrorSchemaValidator.require(receipt,
+                BusinessMirrorProtocol.PACKAGE_COMPILATION_RECEIPT_SCHEMA_RESOURCE,
+                "RG.BUSINESS_MIRROR.CLIENT.PACKAGE_COMPILATION_RECEIPT_INVALID");
+        VerifiedReadiness readiness = verifyPackageReadinessReport(receipt.path("readiness"));
+        VerifiedLinkClosure closure = verifyBusinessAssetLinkClosure(
+                receipt.path("businessAssetLinkClosure"));
+        VerifiedPackageSnapshot snapshot = receipt.path("snapshot").isNull() ? null
+                : verifyPackageSnapshot(receipt.path("snapshot"));
+        String packageId = receipt.path("packageId").asText();
+        long sourceRevision = receipt.path("sourceDraftRevision").asLong();
+        String sourceFingerprint = receipt.path("sourceDraftFingerprint").asText();
+        long compilationRevision = receipt.path("compilationRevision").asLong();
+        Instant completedAt = instant(receipt.path("completedAt").asText());
+        boolean aligned = packageId.equals(readiness.packageId())
+                && packageId.equals(closure.packageId())
+                && sourceRevision == readiness.sourceDraftRevision()
+                && sourceFingerprint.equals(readiness.sourceDraftFingerprint())
+                && compilationRevision == readiness.revision()
+                && compilationRevision == closure.revision()
+                && readiness.scopeFingerprint().equals(closure.scopeFingerprint())
+                && completedAt.equals(readiness.createdAt())
+                && completedAt.equals(closure.createdAt())
+                && ("BLOCKED".equals(readiness.status())) == (snapshot == null);
+        if (snapshot != null) {
+            aligned &= packageId.equals(snapshot.packageId())
+                    && sourceRevision == snapshot.sourceDraftRevision()
+                    && sourceFingerprint.equals(snapshot.sourceDraftFingerprint())
+                    && compilationRevision == snapshot.revision()
+                    && readiness.scopeFingerprint().equals(snapshot.scopeFingerprint())
+                    && completedAt.equals(snapshot.createdAt())
+                    && receipt.path("readiness").path("fingerprint").asText().equals(
+                    receipt.path("snapshot").path("readinessReportRef").path("fingerprint").asText())
+                    && receipt.path("businessAssetLinkClosure").path("fingerprint").asText().equals(
+                    receipt.path("snapshot").path("businessAssetLinkClosureRef")
+                            .path("fingerprint").asText());
+        }
+        if (!aligned) {
+            throw invalid("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_COMPILATION_RECEIPT_INCONSISTENT");
+        }
+        return new VerifiedCompilationReceipt(receipt.path("requestFingerprint").asText(),
+                packageId, sourceRevision, sourceFingerprint, compilationRevision,
+                readiness.status(), receipt.path("authorityGeneration").asText(), completedAt);
+    }
+
     private static void verifyFingerprint(JsonNode value, String mismatchCode) {
         ObjectNode material = (ObjectNode) value.deepCopy();
         material.put("fingerprint", "");
@@ -218,5 +264,12 @@ final class BusinessMirrorCompilationVerifier {
                                    long sourceDraftRevision, String sourceDraftFingerprint,
                                    String compilerVersion, String scopeFingerprint,
                                    int dependencyCount, Instant createdAt) {
+    }
+
+    /** Payload-free verified Package compilation receipt identity. */
+    record VerifiedCompilationReceipt(String requestFingerprint, String packageId,
+                                      long sourceDraftRevision, String sourceDraftFingerprint,
+                                      long compilationRevision, String status,
+                                      String authorityGeneration, Instant completedAt) {
     }
 }

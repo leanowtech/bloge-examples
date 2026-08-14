@@ -1,6 +1,12 @@
 package com.leanowtech.bloge.gateway.businessmirror.authoring;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationFactRepository;
+import com.leanowtech.bloge.gateway.businessmirror.persistence.DatabasePackageCompilationReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationCoordinator;
+import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
 import io.zonky.test.db.postgres.embedded.EmbeddedPostgres;
 
 import org.junit.jupiter.api.AfterAll;
@@ -15,6 +21,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
+import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -75,6 +82,43 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
         assertThat(jdbc.queryForObject("SHOW synchronous_commit", String.class)).isEqualTo("on");
     }
 
+    @Test
+    void appliesCompilationDdlAndSerializesPackageRevisionAllocationAcrossReplicas() throws Exception {
+        DataSource firstDataSource = postgres.getPostgresDatabase();
+        DataSource secondDataSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(
+                new ClassPathResource("db/postgresql/V20260814_001__business_mirror_package_authoring.sql"),
+                new ClassPathResource("db/postgresql/V20260814_002__business_mirror_package_compilation.sql"))
+                .execute(firstDataSource);
+        Replica authoring = replica(firstDataSource);
+        authoring.transactions().execute(status -> authoring.service().create(
+                BusinessMirrorAuthoringFixtures.draft("postgres-compile", 0, "v1"),
+                "package:create:postgres-compile", BusinessMirrorAuthoringFixtures.identity()));
+        CompilationReplica first = compilationReplica(firstDataSource);
+        CompilationReplica second = compilationReplica(secondDataSource);
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<PackageCompilationCoordinator.Outcome> left = CompletableFuture.supplyAsync(
+                () -> compileAfter(start, first, "package:compile:postgres:left"));
+        CompletableFuture<PackageCompilationCoordinator.Outcome> right = CompletableFuture.supplyAsync(
+                () -> compileAfter(start, second, "package:compile:postgres:right"));
+        start.countDown();
+
+        var outcomes = List.of(left.get(15, TimeUnit.SECONDS), right.get(15, TimeUnit.SECONDS));
+        assertThat(outcomes).extracting(value -> value.receipt().compilationRevision())
+                .containsExactlyInAnyOrder(1L, 2L);
+        JdbcTemplate jdbc = new JdbcTemplate(firstDataSource);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM business_mirror_package_compilations WHERE package_id = ?",
+                Long.class, "postgres-compile")).isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT next_revision FROM business_mirror_package_compilation_heads WHERE package_id = ?",
+                Long.class, "postgres-compile")).isEqualTo(3);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM business_mirror_package_compile_receipts WHERE package_id = ?",
+                Long.class, "postgres-compile")).isEqualTo(2);
+    }
+
     private DomainCapabilityPackageSaveCoordinator.Outcome executeAfter(
             CountDownLatch start, Replica replica) {
         try {
@@ -100,8 +144,40 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
     }
 
+    private PackageCompilationCoordinator.Outcome compileAfter(
+            CountDownLatch start, CompilationReplica replica, String key) {
+        try {
+            start.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failure);
+        }
+        return replica.transactions().execute(status -> replica.service().compile(
+                "postgres-compile", 1, key, BusinessMirrorAuthoringFixtures.identity()));
+    }
+
+    private CompilationReplica compilationReplica(DataSource dataSource) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        var drafts = new DatabaseDomainCapabilityPackageDraftRepository(jdbc, mapper);
+        drafts.init();
+        var facts = new DatabasePackageCompilationFactRepository(jdbc, mapper);
+        facts.init();
+        var receipts = new DatabasePackageCompilationReceiptRepository(jdbc, mapper);
+        receipts.init();
+        var compiler = new PackageCompiler(mapper, new UnavailablePackageCompilationAuthority());
+        var coordinator = new PackageCompilationCoordinator(
+                receipts, facts, compiler, mapper, Clock.systemUTC());
+        return new CompilationReplica(new PackageCompilationService(drafts, facts, coordinator),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
+
     private record Replica(
             DomainCapabilityPackageAuthoringService service,
+            TransactionTemplate transactions) {
+    }
+
+    private record CompilationReplica(
+            PackageCompilationService service,
             TransactionTemplate transactions) {
     }
 }

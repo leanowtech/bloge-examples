@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-003 PackageCompiler
+> 当前迭代：BM-003 Authority Adapter / BM-004 Legacy migration
 >
 > 最近更新：2026-08-14
 
@@ -170,17 +170,21 @@ BM-002 的 PostgreSQL 认证证明了 migration 可执行、durable commit 开�
     "capabilityProposalSnapshot": ["resourceGateway.capabilityProposalSnapshot.v1"],
     "storedDomainCapabilityPackageDraft": ["resourceGateway.storedDomainCapabilityPackageDraft.v1"],
     "domainCapabilityPackageSaveReceipt": ["resourceGateway.domainCapabilityPackageSaveReceipt.v1"],
-    "domainCapabilityPackagePage": ["resourceGateway.domainCapabilityPackagePage.v1"]
+    "domainCapabilityPackagePage": ["resourceGateway.domainCapabilityPackagePage.v1"],
+    "businessAssetLinkClosure": ["resourceGateway.businessAssetLinkClosure.v1"],
+    "packageCompilationReceipt": ["resourceGateway.packageCompilationReceipt.v1"]
   },
   "features": {
     "businessMirrorProtocol": true,
     "businessMirrorPackageApi": true,
+    "businessMirrorPackageCompilerApi": true,
+    "businessMirrorPackageCompilerAuthorityReady": false,
     "businessMirrorProposalSimulation": false
   }
 }
 ```
 
-`businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 进一步表示 Package 作者态持久化 API 已装配并通过本轮认证；它不表示 Package 编译、Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
+`businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 表示 Package 作者态持久化 API 已装配；`businessMirrorPackageCompilerApi=true` 表示原子编译事务可调用。Authority readiness 单独为 `false`，因此默认演示会返回可信的 `BLOCKED` 事实，而不是伪造 READY。它不表示 Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
 
 ## 5. 架构偏差审计
 
@@ -259,18 +263,73 @@ BM-003 与 BM-004 分别提交。每次提交后重新运行完整门禁、架�
 
 ### 8.3 诚实的完成边界
 
-本轮只关闭编译决策与跨语言复验内核，不把「Java 类已存在」误报为部署可用。仍缺：
+Iteration 3A 只关闭编译决策与跨语言复验内核；Iteration 3B 已进一步关闭以下两项。仍缺：
 
-- compile facts 与 exact receipt 的原子持久化；
-- 认证 HTTP compile/read API 和稳定错误映射；
 - 连接现有 Graph、Scenario、Fidelity、Outcome 权威仓储的 Adapter；
 - 七个内置 Graph 的 Legacy Package 投影；
 - async capacity、取消、HA/DR 与真实客户 Authority 认证。
 
-能力探针继续不声明 Package Compiler ready。
+能力探针声明 compiler API 可用，但在默认 fallback Authority 下明确声明 Authority 未就绪。
 
 ### 8.4 差距复评
 
 编译器已经能确定性地区分「可发布 immutable fact」与「有明确阻断原因的作者态」，关闭了协议对象存在但没有生成规则、exact ref 被乐观信任、L0-L3 link 无法独立验真的根问题。由于产品和部署仍不能调用该内核，风险加权差距只从约 `24%` 降至约 `22%`，不会按代码行数虚增成熟度。
 
-下一子迭代继续 BM-003：完成 PostgreSQL append-only facts、idempotent compile receipt、认证 HTTP vertical slice 和 runtime capability gate。之后再进入 BM-004 Legacy Graph Adapter。
+下一子迭代继续 BM-003 的真实 Authority Adapter，并与 BM-004 Legacy Graph Adapter 合并验证。
+
+## 9. Iteration 3B：BM-003 durable compilation vertical slice
+
+### 9.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 原子编译事务 | exact source read、命令锁、Package revision 锁、Authority freeze/fence、三类 fact 与 receipt 单事务提交 |
+| Append-only facts | Readiness、Business Asset Link Closure、可选 Snapshot 独立分表；exact compilation revision 可回读并复验 |
+| Durable idempotency | command fingerprint 与 exact receipt 持久化；响应丢失、重启和同 key 漂移语义与 authoring 一致 |
+| 跨副本 revision allocator | 不同 idempotency key 并发编译同一 Package 时，使用独立 Package coordinate lock 分配单调 revision |
+| 认证 HTTP | `POST .../{packageId}/compile` 与 `GET .../compilations/{revision}`；Scope、purpose 和稳定 problem contract 生效 |
+| 失败关闭默认 Authority | `UnavailablePackageCompilationAuthority` 将未接依赖形成 `BLOCKED` Finding，不接受客户端伪造 observation |
+| 动态能力探针 | `businessMirrorPackageCompilerApi=true`；运行时根据安装的 Authority Bean 派生 `businessMirrorPackageCompilerAuthorityReady` |
+| 跨语言 receipt | 严格 `resourceGateway.packageCompilationReceipt.v1` Schema；Test Kit 复验内嵌 fingerprints 与 source/revision/time/ref 对齐 |
+| PostgreSQL migration | `V20260814_002__business_mirror_package_compilation.sql` 创建 allocator、locks、receipts 和 append-only fact 表 |
+| 模块职责 | `compilation` 只保留领域编译规则和 ports；事务编排、JDBC Adapter、HTTP 分别位于 `application`、`persistence`、`transport` |
+
+### 9.2 自动化验证
+
+| 测试层 | 用例数 | 证明内容 |
+|---|---:|---|
+| 编译/持久化 H2 | 6 | restart exact replay、key drift、双副本不同 key revision、事务回滚、fact column tamper、READY Snapshot rehydrate |
+| 原生 PostgreSQL 14 | 2（累计） | 两份 deployment DDL、`fsync/synchronous_commit`、save key 串行化、Package revision 跨连接串行化 |
+| Controller/Spring HTTP | 4 | compile/read 分权认证、headers、BLOCKED receipt、exact replay、exact GET、事务代理 |
+| Capability | 2 | 新对象/API 可发现；安装真实 Authority 后 runtime readiness 动态变为 true |
+| Compiler kernel | 9 | 完整/阻断编译、100 组乱序、TOCTOU、Scope、tamper、cycle |
+| Test Kit | 16 | 15 类 Schema 资源、compile receipt 内嵌事实复验、篡改与关系闭包拒绝 |
+
+聚焦门禁全部通过：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=BusinessMirrorCapabilityTest,PackageCompilationControllerTest,\
+BusinessMirrorPackageSpringWiringTest,DatabasePackageCompilationTest,\
+PackageCompilerTest,DatabaseDomainCapabilityPackagePostgresCertificationTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=BusinessMirrorProtocolTest test
+```
+
+开发中有两次有价值的红灯：第一版 H2 `MERGE ... KEY` 会把既有 `next_revision` 重置为 `1`；仅改为 `WHEN NOT MATCHED` 后，两个首编译事务仍可同时判断 head 缺失。最终引入独立 `(Scope, packageId)` coordinate lock，先串行化首行创建再锁 head。修复后 H2 和 PostgreSQL 双连接测试均稳定得到 revision `1/2`。
+
+首次完整门禁还发现一项能力探针契约测试仍把历史 endpoint 集合写死，新增八个 Package endpoint 被判为 unexpected。根治不是放宽集合断言，而是更新固定 endpoint 清单，并在同一测试中绑定 `businessMirrorPackageApi`、`businessMirrorPackageCompilerApi`、Authority readiness 以及两个新对象版本。端点、feature 与对象 Schema 今后必须同步演进。
+
+完整项目门禁：
+
+| 项目 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5960` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包通过；`BUILD SUCCESS` |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `542` tests，`0` failures，`0` errors，`0` skipped；Schema packaging、shade 与 Javadoc 门禁通过；`BUILD SUCCESS` |
+
+### 9.3 差距复评
+
+Package 编译已经从纯 Java 内核升级为可认证调用、可重放、可跨副本串行、可离线复验的部署纵向切片，BM-003 的主要剩余项收敛为真实 Authority Adapter 与大型编译容量控制。风险加权差距由约 `22%` 降至约 `20%`。
+
+下降幅度仍受两个高权重事实约束：默认部署无法把七个内置 Graph 及其 Contract/Scenario/Fidelity/Outcome 解析成 READY Package；业务人员也没有 Workspace 完成 Package/Proposal 操作。因此下一轮不能继续堆 repository，而应完成 Legacy projector + composite Authority 的真实数据闭环。

@@ -144,7 +144,7 @@ public final class PackageCompiler {
         List<PackageReadinessReport.Finding> findings = new ArrayList<>();
         Map<MirrorArtifactRef, PackageDependencyObservation> actual = new HashMap<>();
         frozen.observations().forEach(value -> actual.put(value.sourceRef(), value));
-        Set<MirrorArtifactRef> expected = expectedRefs(draft);
+        Set<MirrorArtifactRef> expected = Set.copyOf(PackageDependencyRefs.from(draft));
         for (MirrorArtifactRef ref : expected) {
             PackageDependencyObservation observation = actual.get(ref);
             if (observation == null) {
@@ -275,35 +275,6 @@ public final class PackageCompiler {
                 .thenComparing(MirrorArtifactRef::id)
                 .thenComparingLong(MirrorArtifactRef::revision)
                 .thenComparing(MirrorArtifactRef::fingerprint)).toList();
-    }
-
-    private static Set<MirrorArtifactRef> expectedRefs(DomainCapabilityPackageDraft draft) {
-        LinkedHashSet<MirrorArtifactRef> refs = new LinkedHashSet<>();
-        add(refs, draft.businessDefinition().problemTaxonomyRef());
-        add(refs, draft.packageContractRef());
-        refs.addAll(draft.capabilityRefs());
-        refs.addAll(draft.graphRefs());
-        refs.addAll(draft.proposalRefs());
-        refs.addAll(draft.stateModelRefs());
-        refs.addAll(draft.effectModelRefs());
-        add(refs, draft.scenarioInventoryRef());
-        refs.addAll(draft.scenarioPackRefs());
-        refs.addAll(draft.solutionRefs().stream().map(PackageCompiler::artifactRef).toList());
-        refs.addAll(draft.carrierRefs().stream().map(PackageCompiler::artifactRef).toList());
-        refs.addAll(draft.channelRefs().stream().map(PackageCompiler::artifactRef).toList());
-        add(refs, draft.fidelityInventoryRef());
-        refs.addAll(draft.outcomeDefinitionRefs());
-        return Set.copyOf(refs);
-    }
-
-    private static MirrorArtifactRef artifactRef(BusinessAssetRef ref) {
-        return new MirrorArtifactRef(ref.kind().name(), ref.id(), ref.revision(), ref.fingerprint());
-    }
-
-    private static void add(Set<MirrorArtifactRef> refs, MirrorArtifactRef ref) {
-        if (ref != null) {
-            refs.add(ref);
-        }
     }
 
     private static PackageReadinessReport.Finding finding(

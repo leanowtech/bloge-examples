@@ -4,6 +4,11 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredDomainCapabil
 
 /** Authoritative adapter that freezes and fences every Package compile dependency. */
 public interface PackageCompilationAuthority {
+    /** @return whether this adapter can resolve deployment-authoritative Package dependencies */
+    default boolean ready() {
+        return true;
+    }
+
     /** Resolve one exact source draft against one coherent authority generation. */
     FrozenPackageDependencies freeze(StoredDomainCapabilityPackageDraft source);
 

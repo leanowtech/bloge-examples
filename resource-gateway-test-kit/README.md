@@ -254,12 +254,14 @@ Compiled Business Mirror facts have semantic offline verification as well:
 BusinessMirrorProtocol.requireBusinessAssetLinkClosure(linkClosure);
 BusinessMirrorProtocol.requirePackageReadinessReport(readiness);
 BusinessMirrorProtocol.requirePackageSnapshot(snapshot);
+BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceipt);
 ```
 
 The verifier recomputes all three content addresses. It also rejects dangling/cyclic L0-L3 links,
 contradictory readiness status, cross-Scope provenance, mutable authoring artifacts in a Snapshot
-manifest, and non-deterministic manifest ordering. These checks do not query a Resource Gateway
-registry and do not expose Package content in exceptions.
+manifest, non-deterministic manifest ordering, and receipts whose source/revision/time/fact
+references disagree. These checks do not query a Resource Gateway registry and do not expose
+Package content in exceptions.
 
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope

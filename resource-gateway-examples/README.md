@@ -143,13 +143,16 @@ and Stage 4 verification is recorded in
 To exercise the new Business Mirror Package authoring API with the cancellation-fee fixture, use the
 [Business Mirror Package Authoring guide](../docs/resource-gateway-business-mirror-package-authoring-guide.md).
 It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
-PostgreSQL migration boundary, and stop command. The API is intentionally headless in BM-002;
-`Business Mirror Workspace`, Package compilation, and Proposal simulation are later work packages.
+PostgreSQL migration boundary, compile/read commands, and stop command. The API remains headless;
+`Business Mirror Workspace` and Proposal simulation are later work packages.
 
 The deterministic Package compilation kernel, frozen dependency authority port, readiness semantics,
 and offline verification boundary are documented in the
 [Business Mirror PackageCompiler guide](../docs/resource-gateway-business-mirror-package-compiler.md).
-The compiler HTTP/persistence vertical slice is still in progress and is not advertised as deployment-ready.
+The compiler HTTP/persistence vertical slice is available at
+`POST /api/business-mirror/packages/{packageId}/compile`. The bundled Authority is deliberately
+fail closed, so demo compilation returns a durable `BLOCKED` report until a deployment installs
+real Contract, Graph, Scenario, Fidelity, Outcome, and business-asset adapters.
 
 Author Workspace v2 now distinguishes **recoverable** from **saved**. After an edit, the lifecycle
 beside the draft identity advances from `DIRTY` to `RECOVERABLE` when the current tab has captured a

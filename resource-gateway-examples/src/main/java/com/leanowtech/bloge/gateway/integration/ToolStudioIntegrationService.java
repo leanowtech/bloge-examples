@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.integration;
 
+import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationRuntime;
@@ -171,6 +174,8 @@ public class ToolStudioIntegrationService {
             physicalAttemptReconciliationHealth = List.of();
     private List<TestSuiteStabilityPhysicalAttemptTerminalProjectionHealth>
             physicalAttemptTerminalHealth = List.of();
+    private PackageCompilationAuthority packageCompilationAuthority =
+            new UnavailablePackageCompilationAuthority();
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -216,6 +221,12 @@ public class ToolStudioIntegrationService {
                 ? new TestSuiteStabilityJobAuthorizer.Descriptor(
                 "", false, "UNAVAILABLE", "", Map.of())
                 : availability.suiteStabilityCurrentAuthority();
+    }
+
+    @Autowired(required = false)
+    void configurePackageCompilationAuthority(PackageCompilationAuthority authority) {
+        this.packageCompilationAuthority = authority == null
+                ? new UnavailablePackageCompilationAuthority() : authority;
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -571,6 +582,8 @@ public class ToolStudioIntegrationService {
         TestSecretAuthority.Descriptor testSecretAuthority = currentTestSecretAuthority();
         boolean secretAuthorityReady = testSecretAuthority.available();
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
+        features.put("businessMirrorPackageCompilerAuthorityReady",
+                packageCompilationAuthority.ready());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
