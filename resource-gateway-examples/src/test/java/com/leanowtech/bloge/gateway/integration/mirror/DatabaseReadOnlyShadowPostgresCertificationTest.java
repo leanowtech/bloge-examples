@@ -10,6 +10,8 @@ import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import javax.sql.DataSource;
 import java.time.Duration;
@@ -126,6 +128,72 @@ class DatabaseReadOnlyShadowPostgresCertificationTest {
                         before,
                         Instant.now()
                                 .plusSeconds(2));
+    }
+
+    @Test
+    void sourceMigrationFencesClaimsAndRecoversStagedPageAcrossReplicas()
+            throws Exception {
+        DataSource firstSource = postgres.getPostgresDatabase();
+        DataSource secondSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260815_002__authoritative_outcome_source_checkpoints.sql"))
+                .execute(firstSource);
+        Replica firstReplica = replica(firstSource);
+        Replica secondReplica = replica(secondSource);
+        var first = new DatabaseAuthoritativeOutcomeSourceCheckpointRepository(
+                firstReplica.jdbc(), mapper, firstReplica.transactions());
+        var second = new DatabaseAuthoritativeOutcomeSourceCheckpointRepository(
+                secondReplica.jdbc(), mapper, secondReplica.transactions());
+        first.init();
+        second.init();
+        first.registerLive(AuthoritativeOutcomeSourceTestFixtures.liveRegistration());
+        var policy = new AuthoritativeOutcomeSourceCheckpointRepository.Policy(
+                Duration.ofSeconds(30), Duration.ofSeconds(2),
+                Duration.ofMinutes(1), Duration.ofSeconds(5), 3);
+        CyclicBarrier start = new CyclicBarrier(2);
+
+        List<AuthoritativeOutcomeSourceCheckpointRepository.Claim> claims;
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            Future<AuthoritativeOutcomeSourceCheckpointRepository.Claim> left =
+                    executor.submit(() -> {
+                        awaitBarrier(start);
+                        return first.claimNext("sg", "staging", "source-replica-a", policy);
+                    });
+            Future<AuthoritativeOutcomeSourceCheckpointRepository.Claim> right =
+                    executor.submit(() -> {
+                        awaitBarrier(start);
+                        return second.claimNext("sg", "staging", "source-replica-b", policy);
+                    });
+            claims = List.of(awaitFuture(left), awaitFuture(right));
+        }
+
+        var acquired = claims.stream()
+                .filter(value -> value.outcome()
+                        == AuthoritativeOutcomeSourceCheckpointRepository.Claim.Outcome.ACQUIRED)
+                .toList();
+        assertThat(acquired).singleElement();
+        assertThat(claims).filteredOn(value -> value.outcome()
+                        == AuthoritativeOutcomeSourceCheckpointRepository.Claim.Outcome.NO_WORK)
+                .singleElement();
+        var lease = acquired.getFirst().lease();
+        var owner = lease.ownerId().equals("source-replica-a") ? first : second;
+        var page = AuthoritativeOutcomeSourceTestFixtures.livePage(mapper);
+        owner.stage(lease, page);
+
+        var restarted = new DatabaseAuthoritativeOutcomeSourceCheckpointRepository(
+                firstReplica.jdbc(), mapper, firstReplica.transactions());
+        restarted.init();
+        assertThat(restarted.find(AuthoritativeOutcomeSourceTestFixtures.liveKey()))
+                .get()
+                .extracting(AuthoritativeOutcomeSourceCheckpointRepository.Snapshot
+                        ::stagedPageFingerprint)
+                .isEqualTo(page.pageFingerprint());
+        restarted.commit(lease, page.pageFingerprint(), policy);
+        restarted.revokeGeneration(AuthoritativeOutcomeSourceTestFixtures.revoke(mapper));
+        assertThat(restarted.find(AuthoritativeOutcomeSourceTestFixtures.liveKey()))
+                .get()
+                .extracting(AuthoritativeOutcomeSourceCheckpointRepository.Snapshot::status)
+                .isEqualTo(AuthoritativeOutcomeSourceCheckpointRepository.Status.REVOKED);
     }
 
     @Test

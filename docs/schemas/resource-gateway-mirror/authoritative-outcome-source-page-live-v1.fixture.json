@@ -1,0 +1,172 @@
+{
+  "schemaVersion" : "resourceGateway.authoritativeOutcomeSourcePage.v1",
+  "pageFingerprint" : "sha256:b50d7be46ec76fb117a5498dec512489607989bb072ca342be4577035b2d0f1f",
+  "scope" : {
+    "tenantId" : "tenant-a",
+    "organizationId" : "support",
+    "projectId" : "refunds",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "connectorId" : "settlement-ledger",
+  "connectorGeneration" : 7,
+  "streamKind" : "LIVE",
+  "streamId" : "live",
+  "controlCommandRef" : null,
+  "sequence" : 1,
+  "previousPageFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "previousCursorRef" : {
+    "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR",
+    "id" : "cursor-1",
+    "revision" : 1,
+    "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "nextCursorRef" : {
+    "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR",
+    "id" : "cursor-2",
+    "revision" : 1,
+    "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "watermark" : {
+    "watermarkRef" : {
+      "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK",
+      "id" : "ledger-watermark-1",
+      "revision" : 1,
+      "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "eventTimeThrough" : "2026-07-10T23:59:01Z",
+    "publishedAt" : "2026-07-11T00:00:01Z"
+  },
+  "producedAt" : "2026-07-11T00:00:02Z",
+  "entries" : [ {
+    "ordinal" : 1,
+    "operation" : "UPSERT",
+    "expectedPredecessorFingerprint" : "",
+    "affectedSourceRef" : null,
+    "observation" : {
+      "schemaVersion" : "resourceGateway.authoritativeOutcomeObservation.v1",
+      "observationId" : "outcome-refund-boundary",
+      "revision" : 1,
+      "observationFingerprint" : "sha256:5a12fd6db51178921b8098a0e61c04cd0dfc33524c410a25cc9e77494574534d",
+      "scope" : {
+        "tenantId" : "tenant-a",
+        "organizationId" : "support",
+        "projectId" : "refunds",
+        "environmentId" : "staging",
+        "region" : "sg"
+      },
+      "inventoryRef" : {
+        "kind" : "DOMAIN_FIDELITY_INVENTORY",
+        "id" : "refund-support",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "unitId" : "refund-boundary",
+      "scenarioCaseRef" : {
+        "kind" : "SCENARIO_CASE",
+        "id" : "refund-boundary",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "targetCapabilityRef" : {
+        "kind" : "CAPABILITY",
+        "id" : "refund",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "outcomeDefinitionRef" : {
+        "kind" : "OUTCOME_DEFINITION",
+        "id" : "refund-settled",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "attributionPolicyRef" : {
+        "kind" : "OUTCOME_ATTRIBUTION_POLICY",
+        "id" : "refund-seven-day-window",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "authoritySetRef" : {
+        "kind" : "OUTCOME_AUTHORITY_SET",
+        "id" : "refund-ledgers",
+        "revision" : 1,
+        "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "selectionProof" : {
+        "cohortRef" : {
+          "kind" : "OUTCOME_CALIBRATION_COHORT",
+          "id" : "refunds-2026-07",
+          "revision" : 1,
+          "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "samplingFrameRef" : {
+          "kind" : "OUTCOME_SAMPLING_FRAME",
+          "id" : "eligible-refunds-2026-07",
+          "revision" : 1,
+          "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "stratumId" : "amount-band-100-500",
+        "inclusionFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "selectedAt" : "2026-06-30T23:59:00Z",
+        "eligiblePopulationSize" : 10000,
+        "selectedPopulationSize" : 1000,
+        "sampleOrdinal" : 42,
+        "selectionMode" : "HASH_PARTITION"
+      },
+      "subjectFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attributionKeyFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "modelOutcomeFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attributionWindow" : {
+        "actionOccurredAt" : "2026-07-01T00:00:00Z",
+        "opensAt" : "2026-07-01T00:00:00Z",
+        "closesAt" : "2026-07-08T00:00:00Z"
+      },
+      "reconciledAt" : "2026-07-10T00:00:00Z",
+      "attestedAt" : "2026-07-26T04:00:00Z",
+      "authorityWatermarks" : [ {
+        "authorityId" : "settlement-ledger",
+        "watermarkRef" : {
+          "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK",
+          "id" : "settlement-ledger-watermark",
+          "revision" : 1,
+          "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "eventTimeThrough" : "2026-07-08T00:00:00Z",
+        "publishedAt" : "2026-07-09T23:59:59Z"
+      } ],
+      "authorityFacts" : [ {
+        "authorityId" : "settlement-ledger",
+        "sourceRef" : {
+          "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_RECORD",
+          "id" : "settlement-001",
+          "revision" : 1,
+          "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "subjectFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "attributionKeyFingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "outcomeFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "occurredAt" : "2026-07-07T23:59:59Z",
+        "recordedAt" : "2026-07-08T00:00:30Z",
+        "evidenceComplete" : true
+      } ],
+      "reconciliation" : "MATCH",
+      "evidenceComplete" : true,
+      "observationSeal" : {
+        "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+        "materialFingerprint" : "",
+        "algorithm" : "",
+        "keyId" : "",
+        "signedAt" : "1970-01-01T00:00:00Z",
+        "signature" : ""
+      }
+    }
+  } ],
+  "sourceSeal" : {
+    "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint" : "sha256:b50d7be46ec76fb117a5498dec512489607989bb072ca342be4577035b2d0f1f",
+    "algorithm" : "Ed25519",
+    "keyId" : "customer-data-authority",
+    "signedAt" : "2026-07-11T00:00:01Z",
+    "signature" : "deterministic-signature"
+  }
+}

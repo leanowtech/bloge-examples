@@ -27,6 +27,19 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorRunRequestRepositor
 import com.leanowtech.bloge.gateway.integration.mirror.CompiledScenarioRehearsalPlanRepository;
 import com.leanowtech.bloge.gateway.integration.mirror.ComposedReadOnlyShadowAccessAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSource;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceAuthorityVerifier;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceBootstrap;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceCheckpointRepository;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceControlService;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourcePage;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceScheduler;
+import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSourceWorker;
+import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSourceCommandDecoder;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSourceController;
+import com.leanowtech.bloge.gateway.integration.AuthoritativeOutcomeSourceRuntimeAvailability;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationApplicationService;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationAuthorityVerifier;
 import com.leanowtech.bloge.gateway.integration.mirror.AuthoritativeOutcomeSelectedPopulationDispositionAuthorityVerifier;
@@ -325,6 +338,66 @@ class MirrorRuntimeConfigurationTest {
                             assertThat(scheduler.ready()).isTrue());
             assertThat(scheduled.getBean(
                     AuthoritativeOutcomeRuntimeAvailability.class)
+                    .continuousReady()).isTrue();
+        }
+    }
+
+    @Test
+    void productionOutcomeSourceRequiresHostAuthorityAdapterAndExplicitScheduling() {
+        Map<String, Object> base = Map.of(
+                "gateway.testing.mirror.enabled", true,
+                "test.outcome-authority", true,
+                "test.available-signer", true,
+                "test.outcome-source", true);
+        Map<String, Object> scheduledProperties = new java.util.LinkedHashMap<>(base);
+        scheduledProperties.put(
+                AuthoritativeOutcomeSourceSchedulerProperties.PREFIX + ".enabled", true);
+        scheduledProperties.put(
+                AuthoritativeOutcomeSourceSchedulerProperties.PREFIX + ".instance-id",
+                "source-replica-a");
+        scheduledProperties.put(
+                AuthoritativeOutcomeSourceSchedulerProperties.PREFIX + ".region", "sg");
+        scheduledProperties.put(
+                AuthoritativeOutcomeSourceSchedulerProperties.PREFIX + ".environment-id",
+                "staging");
+        try (var absent = context(Map.of(
+                     "gateway.testing.mirror.enabled", true,
+                     "test.outcome-authority", true,
+                     "test.available-signer", true), "staging");
+             var configured = context(base, "staging");
+             var scheduled = context(scheduledProperties, "staging")) {
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeSourceControlService.class)).isEmpty();
+            assertThat(absent.getBeansOfType(
+                    AuthoritativeOutcomeSourceRuntimeAvailability.class)).isEmpty();
+
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeSourceCheckpointRepository.class)).hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeSourceBootstrap.class)).hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeSourceControlService.class)).hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeSourceWorker.class)).hasSize(1);
+            assertThat(configured.getBeansOfType(
+                    AuthoritativeOutcomeSourceController.class)).hasSize(1);
+            assertThat(configured.getBean(
+                    AuthoritativeOutcomeSourceRuntimeAvailability.class))
+                    .satisfies(availability -> {
+                        assertThat(availability.controlApi()).isTrue();
+                        assertThat(availability.durableCheckpoint()).isTrue();
+                        assertThat(availability.sourceReady()).isTrue();
+                        assertThat(availability.authorityReady()).isTrue();
+                        assertThat(availability.workerReady()).isTrue();
+                        assertThat(availability.schedulerReady()).isFalse();
+                        assertThat(availability.continuousReady()).isFalse();
+                    });
+            assertThat(scheduled.getBeansOfType(
+                    AuthoritativeOutcomeSourceScheduler.class).values())
+                    .singleElement()
+                    .satisfies(value -> assertThat(value.ready()).isTrue());
+            assertThat(scheduled.getBean(
+                    AuthoritativeOutcomeSourceRuntimeAvailability.class)
                     .continuousReady()).isTrue();
         }
     }
@@ -913,6 +986,57 @@ class MirrorRuntimeConfigurationTest {
                         }
                     });
         }
+        if (Boolean.TRUE.equals(properties.get("test.outcome-source"))) {
+            context.registerBean(
+                    AuthoritativeOutcomeSourceAuthorityVerifier.class,
+                    () -> new AuthoritativeOutcomeSourceAuthorityVerifier() {
+                        @Override
+                        public boolean available() {
+                            return true;
+                        }
+
+                        @Override
+                        public void verifyPage(AuthoritativeOutcomeSourcePage page) {
+                        }
+
+                        @Override
+                        public void verifyCommand(
+                                com.leanowtech.bloge.gateway.integration.mirror
+                                        .AuthoritativeOutcomeConnectorControlCommand command) {
+                        }
+                    });
+            context.registerBean(AuthoritativeOutcomeSource.class, () -> {
+                CapabilitySnapshot.Scope scope = new CapabilitySnapshot.Scope(
+                        "tenant-a", "support", "refunds", "staging", "sg");
+                AuthoritativeOutcomeSourceCheckpointRepository.StreamKey key =
+                        new AuthoritativeOutcomeSourceCheckpointRepository.StreamKey(
+                                scope, "settlement-ledger", 7,
+                                AuthoritativeOutcomeSourcePage.StreamKind.LIVE, "live");
+                MirrorArtifactRef cursor = new MirrorArtifactRef(
+                        AuthoritativeOutcomeSourcePage.CURSOR_KIND, "cursor-1", 1,
+                        "sha256:" + "b".repeat(64));
+                return new AuthoritativeOutcomeSource() {
+                    @Override
+                    public AuthoritativeOutcomeSourceCheckpointRepository.Registration
+                    liveRegistration() {
+                        return new AuthoritativeOutcomeSourceCheckpointRepository.Registration(
+                                key, "sha256:" + "a".repeat(64), cursor);
+                    }
+
+                    @Override
+                    public FetchResult fetch(Position position) {
+                        return FetchResult.withoutPage(
+                                FetchStatus.NO_CHANGE, "NO_NEW_FACTS");
+                    }
+
+                    @Override
+                    public Descriptor descriptor() {
+                        return new Descriptor(Descriptor.SCHEMA_VERSION,
+                                true, true, true, true, true, true);
+                    }
+                };
+            });
+        }
         if (Boolean.TRUE.equals(
                 properties.get(
                         OnlineReadOnlyShadowBaselineProperties
@@ -977,6 +1101,8 @@ class MirrorRuntimeConfigurationTest {
                 AuthoritativeOutcomeObservationRequestDecoder.class);
         context.register(
                 AuthoritativeOutcomeInboxController.class);
+        context.register(AuthoritativeOutcomeSourceCommandDecoder.class);
+        context.register(AuthoritativeOutcomeSourceController.class);
         context.register(
                 AuthoritativeOutcomeSelectedPopulationRequestDecoder
                         .class);
@@ -1426,6 +1552,20 @@ class MirrorRuntimeConfigurationTest {
                 CapabilityRetryPolicyProvider.class)).isEmpty();
         assertThat(context.getBeansOfType(
                 CapabilityCorpusSourceVerifier.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceCheckpointRepository.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceBootstrap.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceControlService.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceWorker.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceScheduler.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceRuntimeAvailability.class)).isEmpty();
+        assertThat(context.getBeansOfType(
+                AuthoritativeOutcomeSourceController.class)).isEmpty();
     }
 
     private static final class EmptyResourceRegistry implements ResourceRegistry {

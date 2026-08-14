@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-source-checkpoint-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Source Checkpoint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "key", "controlCommandRef", "baselinePageFingerprint",
+    "baselineCursorRef", "committedSequence", "committedPageFingerprint",
+    "committedCursorRef", "committedWatermarkRef", "eventTimeThrough", "status",
+    "stagedPageFingerprint", "attemptCount", "consecutiveFailures", "nextEligibleAt",
+    "leaseEpoch", "leaseExpiresAt", "failureCode", "createdAt", "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "resourceGateway.authoritativeOutcomeSourceCheckpoint.v1"},
+    "key": {"$ref": "#/$defs/streamKey"},
+    "controlCommandRef": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/controlCommandRef"}]
+    },
+    "baselinePageFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+    "baselineCursorRef": {"$ref": "#/$defs/cursorRef"},
+    "committedSequence": {"type": "integer", "minimum": 0},
+    "committedPageFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+    "committedCursorRef": {"$ref": "#/$defs/cursorRef"},
+    "committedWatermarkRef": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/watermarkRef"}]
+    },
+    "eventTimeThrough": {"type": "string", "format": "date-time"},
+    "status": {
+      "type": "string",
+      "enum": ["ACTIVE", "RUNNING", "COMPLETE", "REVOKED", "QUARANTINED"]
+    },
+    "stagedPageFingerprint": {
+      "oneOf": [{"const": ""}, {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}]
+    },
+    "attemptCount": {"type": "integer", "minimum": 0},
+    "consecutiveFailures": {"type": "integer", "minimum": 0},
+    "nextEligibleAt": {"type": "string", "format": "date-time"},
+    "leaseEpoch": {"type": "integer", "minimum": 0},
+    "leaseExpiresAt": {"type": "string", "format": "date-time"},
+    "failureCode": {
+      "type": "string", "maxLength": 255,
+      "pattern": "^$|^[A-Z][A-Z0-9_.-]{0,254}$"
+    },
+    "createdAt": {"type": "string", "format": "date-time"},
+    "updatedAt": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/identifier"},
+        "id": {"$ref": "#/$defs/identifier"},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}
+      }
+    },
+    "cursorRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR"}}}
+      ]
+    },
+    "watermarkRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK"}}}
+      ]
+    },
+    "controlCommandRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_CONNECTOR_CONTROL_COMMAND"}}}
+      ]
+    },
+    "streamKey": {
+      "type": "object", "additionalProperties": false,
+      "required": ["scope", "connectorId", "connectorGeneration", "streamKind", "streamId"],
+      "properties": {
+        "scope": {"$ref": "mirror-plan-v1.schema.json#/$defs/scope"},
+        "connectorId": {"$ref": "#/$defs/identifier"},
+        "connectorGeneration": {"type": "integer", "minimum": 1},
+        "streamKind": {"type": "string", "enum": ["LIVE", "BACKFILL"]},
+        "streamId": {"$ref": "#/$defs/identifier"}
+      }
+    }
+  }
+}

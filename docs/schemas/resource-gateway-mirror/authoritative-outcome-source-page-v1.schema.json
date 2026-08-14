@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-source-page-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Source Page v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "pageFingerprint", "scope", "connectorId",
+    "connectorGeneration", "streamKind", "streamId", "controlCommandRef",
+    "sequence", "previousPageFingerprint", "previousCursorRef", "nextCursorRef",
+    "watermark", "producedAt", "entries", "sourceSeal"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "resourceGateway.authoritativeOutcomeSourcePage.v1"},
+    "pageFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+    "scope": {"$ref": "mirror-plan-v1.schema.json#/$defs/scope"},
+    "connectorId": {"$ref": "#/$defs/identifier"},
+    "connectorGeneration": {"type": "integer", "minimum": 1},
+    "streamKind": {"type": "string", "enum": ["LIVE", "BACKFILL"]},
+    "streamId": {"$ref": "#/$defs/identifier"},
+    "controlCommandRef": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/controlCommandRef"}]
+    },
+    "sequence": {"type": "integer", "minimum": 1},
+    "previousPageFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+    "previousCursorRef": {"$ref": "#/$defs/cursorRef"},
+    "nextCursorRef": {"$ref": "#/$defs/cursorRef"},
+    "watermark": {"$ref": "#/$defs/watermark"},
+    "producedAt": {"type": "string", "format": "date-time"},
+    "entries": {
+      "type": "array", "minItems": 1, "maxItems": 500,
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "sourceSeal": {"$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/identifier"},
+        "id": {"$ref": "#/$defs/identifier"},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}
+      }
+    },
+    "controlCommandRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_CONNECTOR_CONTROL_COMMAND"}}}
+      ]
+    },
+    "cursorRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR"}}}
+      ]
+    },
+    "watermarkRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_WATERMARK"}}}
+      ]
+    },
+    "sourceRecordRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_RECORD"}}}
+      ]
+    },
+    "watermark": {
+      "type": "object", "additionalProperties": false,
+      "required": ["watermarkRef", "eventTimeThrough", "publishedAt"],
+      "properties": {
+        "watermarkRef": {"$ref": "#/$defs/watermarkRef"},
+        "eventTimeThrough": {"type": "string", "format": "date-time"},
+        "publishedAt": {"type": "string", "format": "date-time"}
+      }
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "ordinal", "operation", "expectedPredecessorFingerprint",
+        "affectedSourceRef", "observation"
+      ],
+      "properties": {
+        "ordinal": {"type": "integer", "minimum": 1, "maximum": 500},
+        "operation": {"type": "string", "enum": ["UPSERT", "REVOKE"]},
+        "expectedPredecessorFingerprint": {
+          "oneOf": [
+            {"const": ""},
+            {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}
+          ]
+        },
+        "affectedSourceRef": {
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sourceRecordRef"}]
+        },
+        "observation": {"$ref": "#/$defs/observationCandidate"}
+      }
+    },
+    "observationCandidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "observationId", "revision", "observationFingerprint", "scope",
+        "inventoryRef", "unitId", "scenarioCaseRef", "targetCapabilityRef",
+        "outcomeDefinitionRef", "attributionPolicyRef", "authoritySetRef", "selectionProof",
+        "subjectFingerprint", "attributionKeyFingerprint", "modelOutcomeFingerprint",
+        "attributionWindow", "reconciledAt", "attestedAt", "authorityWatermarks",
+        "authorityFacts", "reconciliation", "evidenceComplete", "observationSeal"
+      ],
+      "properties": {
+        "schemaVersion": {"const": "resourceGateway.authoritativeOutcomeObservation.v1"},
+        "observationId": {"$ref": "#/$defs/identifier"},
+        "revision": {"type": "integer", "minimum": 1},
+        "observationFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+        "scope": {"$ref": "mirror-plan-v1.schema.json#/$defs/scope"},
+        "inventoryRef": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/inventoryRef"},
+        "unitId": {"$ref": "#/$defs/identifier"},
+        "scenarioCaseRef": {"$ref": "domain-fidelity-inventory-v1.schema.json#/$defs/scenarioCaseRef"},
+        "targetCapabilityRef": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/capabilityRef"},
+        "outcomeDefinitionRef": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/outcomeDefinitionRef"},
+        "attributionPolicyRef": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/attributionPolicyRef"},
+        "authoritySetRef": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/authoritySetRef"},
+        "selectionProof": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/selectionProof"},
+        "subjectFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+        "attributionKeyFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+        "modelOutcomeFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+        "attributionWindow": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/attributionWindow"},
+        "reconciledAt": {"type": "string", "format": "date-time"},
+        "attestedAt": {"type": "string", "format": "date-time"},
+        "authorityWatermarks": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/authorityWatermark"}
+        },
+        "authorityFacts": {
+          "type": "array", "maxItems": 1024,
+          "items": {"$ref": "authoritative-outcome-observation-v1.schema.json#/$defs/authorityFact"}
+        },
+        "reconciliation": {
+          "type": "string", "enum": ["MATCH", "MISMATCH", "PENDING", "CENSORED", "CONFLICT"]
+        },
+        "evidenceComplete": {"type": "boolean"},
+        "observationSeal": {"$ref": "#/$defs/unsignedSeal"}
+      }
+    },
+    "unsignedSeal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "materialFingerprint", "algorithm", "keyId", "signedAt", "signature"
+      ],
+      "properties": {
+        "schemaVersion": {"const": "bloge.visualRunEvidenceSeal.v1"},
+        "materialFingerprint": {"const": ""},
+        "algorithm": {"const": ""},
+        "keyId": {"const": ""},
+        "signedAt": {"const": "1970-01-01T00:00:00Z"},
+        "signature": {"const": ""}
+      }
+    }
+  }
+}

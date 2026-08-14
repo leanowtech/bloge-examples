@@ -397,6 +397,15 @@ public final class CapabilityMirrorProtocol {
     /** Signed payload-free authoritative business-outcome observation wire version. */
     public static final String AUTHORITATIVE_OUTCOME_OBSERVATION_V1 =
             "resourceGateway.authoritativeOutcomeObservation.v1";
+    /** Externally attested production Outcome source-page wire version. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_PAGE_V1 =
+            "resourceGateway.authoritativeOutcomeSourcePage.v1";
+    /** Externally authorized source backfill or generation-revocation command version. */
+    public static final String AUTHORITATIVE_OUTCOME_CONNECTOR_CONTROL_COMMAND_V1 =
+            "resourceGateway.authoritativeOutcomeConnectorControlCommand.v1";
+    /** Payload-free durable source-checkpoint projection wire version. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_CHECKPOINT_V1 =
+            "resourceGateway.authoritativeOutcomeSourceCheckpoint.v1";
     /** Strict connector admission command for one outcome observation revision. */
     public static final String
     AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_V1 =
@@ -615,6 +624,18 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_OBSERVATION_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-observation-stage1-v1.fixture.json";
+    /** Packaged server-produced live source page. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_PAGE_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-source-page-live-v1.fixture.json";
+    /** Packaged server-produced authorized backfill command. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_COMMAND_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-source-command-backfill-v1.fixture.json";
+    /** Packaged server-produced payload-free live checkpoint. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_CHECKPOINT_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-source-checkpoint-live-v1.fixture.json";
     /** Packaged public-only selected-population completeness compatibility fixture. */
     public static final String
     AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_FIXTURE_RESOURCE =
@@ -1064,6 +1085,19 @@ public final class CapabilityMirrorProtocol {
     AUTHORITATIVE_OUTCOME_OBSERVATION_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "authoritative-outcome-observation-v1.schema.json";
+    /** Packaged strict production Outcome source-page schema. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-source-page-v1.schema.json";
+    /** Packaged strict source connector-control command schema. */
+    public static final String
+    AUTHORITATIVE_OUTCOME_CONNECTOR_CONTROL_COMMAND_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-connector-control-command-v1.schema.json";
+    /** Packaged strict payload-free source-checkpoint schema. */
+    public static final String AUTHORITATIVE_OUTCOME_SOURCE_CHECKPOINT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "authoritative-outcome-source-checkpoint-v1.schema.json";
     /** Packaged strict outcome observation admission command schema. */
     public static final String
     AUTHORITATIVE_OUTCOME_OBSERVATION_ADMISSION_REQUEST_SCHEMA_RESOURCE =
@@ -1465,6 +1499,36 @@ public final class CapabilityMirrorProtocol {
     authoritativeOutcomeObservationCompatibilityFixture() {
         return OutcomeObservationFixtureHolder.FIXTURE
                 .detachedCopy();
+    }
+
+    /**
+     * Returns the server-produced, independently verified live source-page fixture.
+     *
+     * @return mutable defensive copy of the payload-free page
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static JsonNode authoritativeOutcomeSourcePageFixture() {
+        return OutcomeSourceFixtureHolder.PAGE.deepCopy();
+    }
+
+    /**
+     * Returns the server-produced, independently verified backfill-command fixture.
+     *
+     * @return mutable defensive copy of the externally authorized command
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static JsonNode authoritativeOutcomeSourceCommandFixture() {
+        return OutcomeSourceFixtureHolder.COMMAND.deepCopy();
+    }
+
+    /**
+     * Returns the server-produced, independently verified live-checkpoint fixture.
+     *
+     * @return mutable defensive copy of the payload-free checkpoint
+     * @throws IllegalStateException when the packaged fixture is absent or unverifiable
+     */
+    public static JsonNode authoritativeOutcomeSourceCheckpointFixture() {
+        return OutcomeSourceFixtureHolder.CHECKPOINT.deepCopy();
     }
 
     /**
@@ -1883,6 +1947,47 @@ public final class CapabilityMirrorProtocol {
                 throw new IllegalStateException(
                         "RG.MIRROR.CLIENT.OUTCOME_OBSERVATION_FIXTURE_UNAVAILABLE",
                         failure);
+            }
+        }
+    }
+
+    private static final class OutcomeSourceFixtureHolder {
+        private static final AuthoritativeOutcomeSourceProtocolVerifier VERIFIER =
+                new AuthoritativeOutcomeSourceProtocolVerifier();
+        private static final JsonNode PAGE = loadPage();
+        private static final JsonNode COMMAND = loadCommand();
+        private static final JsonNode CHECKPOINT = loadCheckpoint();
+
+        private static JsonNode loadPage() {
+            JsonNode value = load(
+                    AUTHORITATIVE_OUTCOME_SOURCE_PAGE_FIXTURE_RESOURCE,
+                    "source page");
+            return VERIFIER.requirePage(value, (seal, artifact) -> true);
+        }
+
+        private static JsonNode loadCommand() {
+            JsonNode value = load(
+                    AUTHORITATIVE_OUTCOME_SOURCE_COMMAND_FIXTURE_RESOURCE,
+                    "source command");
+            return VERIFIER.requireCommand(value, (seal, artifact) -> true);
+        }
+
+        private static JsonNode loadCheckpoint() {
+            return VERIFIER.requireCheckpoint(load(
+                    AUTHORITATIVE_OUTCOME_SOURCE_CHECKPOINT_FIXTURE_RESOURCE,
+                    "source checkpoint"));
+        }
+
+        private static JsonNode load(String resource, String artifact) {
+            try (InputStream input = CapabilityMirrorProtocol.class
+                    .getResourceAsStream(resource)) {
+                if (input == null) {
+                    throw new IOException("Outcome " + artifact + " fixture is absent");
+                }
+                return JSON.readTree(input);
+            } catch (IOException | RuntimeException failure) {
+                throw new IllegalStateException(
+                        "RG.MIRROR.CLIENT.OUTCOME_SOURCE_FIXTURE_UNAVAILABLE", failure);
             }
         }
     }

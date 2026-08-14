@@ -1,0 +1,39 @@
+{
+  "schemaVersion" : "resourceGateway.authoritativeOutcomeConnectorControlCommand.v1",
+  "commandId" : "backfill-ledger-july",
+  "revision" : 1,
+  "commandFingerprint" : "sha256:e4387904cd52a7dc4f154dd963d23d428cb0e56532740829a2dee4f47e820c2e",
+  "scope" : {
+    "tenantId" : "tenant-a",
+    "organizationId" : "support",
+    "projectId" : "refunds",
+    "environmentId" : "staging",
+    "region" : "sg"
+  },
+  "connectorId" : "settlement-ledger",
+  "connectorGeneration" : 7,
+  "commandType" : "BACKFILL",
+  "streamId" : "repair-2026-07",
+  "eventTimeRange" : {
+    "startsAt" : "2026-07-01T00:00:00Z",
+    "endsAt" : "2026-08-01T00:00:00Z"
+  },
+  "baselinePageFingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "baselineCursorRef" : {
+    "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR",
+    "id" : "cursor-july",
+    "revision" : 1,
+    "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  },
+  "reasonCode" : "LATE_LEDGER_REPAIR",
+  "requestedAt" : "2026-08-02T00:00:00Z",
+  "expiresAt" : "2026-08-09T00:00:00Z",
+  "authoritySeal" : {
+    "schemaVersion" : "bloge.visualRunEvidenceSeal.v1",
+    "materialFingerprint" : "sha256:e4387904cd52a7dc4f154dd963d23d428cb0e56532740829a2dee4f47e820c2e",
+    "algorithm" : "Ed25519",
+    "keyId" : "customer-data-authority",
+    "signedAt" : "2026-07-11T00:00:01Z",
+    "signature" : "deterministic-signature"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-mirror/authoritative-outcome-connector-control-command-v1.schema.json",
+  "title": "Resource Gateway Authoritative Outcome Connector Control Command v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "commandId", "revision", "commandFingerprint", "scope",
+    "connectorId", "connectorGeneration", "commandType", "streamId",
+    "eventTimeRange", "baselinePageFingerprint", "baselineCursorRef", "reasonCode",
+    "requestedAt", "expiresAt", "authoritySeal"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "resourceGateway.authoritativeOutcomeConnectorControlCommand.v1"},
+    "commandId": {"$ref": "#/$defs/identifier"},
+    "revision": {"type": "integer", "minimum": 1},
+    "commandFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+    "scope": {"$ref": "mirror-plan-v1.schema.json#/$defs/scope"},
+    "connectorId": {"$ref": "#/$defs/identifier"},
+    "connectorGeneration": {"type": "integer", "minimum": 1},
+    "commandType": {"type": "string", "enum": ["BACKFILL", "REVOKE_GENERATION"]},
+    "streamId": {"type": "string", "maxLength": 512},
+    "eventTimeRange": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/eventTimeRange"}]
+    },
+    "baselinePageFingerprint": {
+      "oneOf": [{"const": ""}, {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}]
+    },
+    "baselineCursorRef": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/cursorRef"}]
+    },
+    "reasonCode": {
+      "type": "string", "minLength": 1, "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+    },
+    "requestedAt": {"type": "string", "format": "date-time"},
+    "expiresAt": {"type": "string", "format": "date-time"},
+    "authoritySeal": {"$ref": "domain-fidelity-profile-v1.schema.json#/$defs/evidenceSeal"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"commandType": {"const": "BACKFILL"}}},
+      "then": {
+        "properties": {
+          "streamId": {"$ref": "#/$defs/identifier", "not": {"const": "live"}},
+          "eventTimeRange": {"$ref": "#/$defs/eventTimeRange"},
+          "baselinePageFingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"},
+          "baselineCursorRef": {"$ref": "#/$defs/cursorRef"}
+        }
+      },
+      "else": {
+        "properties": {
+          "streamId": {"const": ""},
+          "eventTimeRange": {"type": "null"},
+          "baselinePageFingerprint": {"const": ""},
+          "baselineCursorRef": {"type": "null"}
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string", "minLength": 1, "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/#-]{0,511}$"
+    },
+    "artifactRef": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {"$ref": "#/$defs/identifier"},
+        "id": {"$ref": "#/$defs/identifier"},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "mirror-plan-v1.schema.json#/$defs/fingerprint"}
+      }
+    },
+    "cursorRef": {
+      "allOf": [
+        {"$ref": "#/$defs/artifactRef"},
+        {"properties": {"kind": {"const": "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR"}}}
+      ]
+    },
+    "eventTimeRange": {
+      "type": "object", "additionalProperties": false,
+      "required": ["startsAt", "endsAt"],
+      "properties": {
+        "startsAt": {"type": "string", "format": "date-time"},
+        "endsAt": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

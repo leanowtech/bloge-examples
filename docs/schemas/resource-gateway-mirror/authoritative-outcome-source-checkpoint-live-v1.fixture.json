@@ -1,0 +1,44 @@
+{
+  "schemaVersion" : "resourceGateway.authoritativeOutcomeSourceCheckpoint.v1",
+  "key" : {
+    "scope" : {
+      "tenantId" : "tenant-a",
+      "organizationId" : "support",
+      "projectId" : "refunds",
+      "environmentId" : "staging",
+      "region" : "sg"
+    },
+    "connectorId" : "settlement-ledger",
+    "connectorGeneration" : 7,
+    "streamKind" : "LIVE",
+    "streamId" : "live"
+  },
+  "controlCommandRef" : null,
+  "baselinePageFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "baselineCursorRef" : {
+    "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR",
+    "id" : "cursor-1",
+    "revision" : 1,
+    "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "committedSequence" : 0,
+  "committedPageFingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "committedCursorRef" : {
+    "kind" : "AUTHORITATIVE_OUTCOME_SOURCE_CURSOR",
+    "id" : "cursor-1",
+    "revision" : 1,
+    "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "committedWatermarkRef" : null,
+  "eventTimeThrough" : "1970-01-01T00:00:00Z",
+  "status" : "ACTIVE",
+  "stagedPageFingerprint" : "",
+  "attemptCount" : 0,
+  "consecutiveFailures" : 0,
+  "nextEligibleAt" : "2026-08-03T00:00:00Z",
+  "leaseEpoch" : 0,
+  "leaseExpiresAt" : "1970-01-01T00:00:00Z",
+  "failureCode" : "",
+  "createdAt" : "2026-08-03T00:00:00Z",
+  "updatedAt" : "2026-08-03T00:00:00Z"
+}
