@@ -31,6 +31,7 @@ discover exact target
 | Verify release-grade evidence | exact Suite revision + caller-pinned trust material |
 | Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
 | Validate Business Mirror Package, Proposal, binding, Conformance, or Legacy Graph files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
+| Verify Outcome source pages, commands, and checkpoints offline | `AuthoritativeOutcomeSourceProtocolVerifier` + caller-owned Source trust callback |
 
 Build the library and start the local test-profile Gateway:
 
@@ -45,6 +46,11 @@ The local demo uses `http://localhost:8080` and the test-only bearer token
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:
+
+- strict production Outcome Source page, Backfill/revocation command, and payload-free checkpoint
+  Schemas plus server-produced compatibility fixtures; `AuthoritativeOutcomeSourceProtocolVerifier`
+  re-derives content addresses and stream/checkpoint closure without Spring or server artifacts,
+  while the caller remains responsible for customer key, identity, generation, and revocation trust;
 
 - strict `DomainCapabilityPackageDraft`, `DomainCapabilityPackageSnapshot`,
   `PackageReadinessReport`, `CapabilityProposalDraft`, stored Proposal revision/save receipt/page,

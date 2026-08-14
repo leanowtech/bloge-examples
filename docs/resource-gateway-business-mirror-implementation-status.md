@@ -941,3 +941,59 @@ BM-010 关闭了“Package 缺少跨 Operator/Graph/Scenario/Carrier/Outcome 的
 风险加权差距由约 `7.5%` 降至约 `6.5%`。剩余部分几乎全部位于不能由本地功能演示冒充的工业化边界：生产 Outcome Connector 的持续事实供给（BM-011）、真实 Regional Data Plane 与密钥/证书/出口隔离（BM-012）、HA/故障/升级/备份恢复认证包（BM-013）、ANEKE protocol 1.1 与 stale governance projection 闭环（BM-014），以及由客户 Owner 冻结分母并运行完整观察窗的取消费申诉试点（BM-015）。
 
 下一迭代进入 BM-011。实现策略是复用现有 `AuthoritativeOutcomeObservation`、durable inbox、selected population 和 continuous assessment 内核，只新增生产 Connector 的 source contract、durable checkpoint、backfill/revocation 命令、quarantine 与可移植认证证据，不建立第二套 Outcome Authority。
+
+## 19. Iteration 11：BM-011 production Outcome Source
+
+### 19.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Source port 与安全描述 | `AuthoritativeOutcomeSource` 冻结部署所有的 Live baseline、exact position、bounded fetch status 和全真 mTLS/private trust/SPKI/certificate identity descriptor；仓库不提供默认客户实现 |
+| 双 Authority 分离 | `AuthoritativeOutcomeSourceAuthorityVerifier` 校验 page/command；既有 `AuthoritativeOutcomeAuthorityVerifier` 继续校验每条 Outcome，Connector 签名不能冒充业务结果正确性 |
+| durable checkpoint | 完整企业 Scope、Live/Backfill 独立 cursor chain、数据库时间 owner/epoch lease、staged page、heartbeat、退避、quarantine、terminal state 和 irreversible generation fence |
+| 崩溃一致性 | worker 采用 stage/apply/commit；整页先持久化，每条 Observation 通过既有 integrity/inbox exact append，全部 durable 后才推进 cursor；任意中断由下一 owner 重放同一 staged page |
+| Backfill 与 revoke 控制面 | authenticate-before-decode、固定 purpose、外部 Authority、命令 expiry、Scope 隔离、idempotent exact replay、payload-free audit 和稳定错误码 |
+| 启动与调度 | Live baseline 启动时幂等注册且拒绝倒退；Scheduler 仅显式开启，限制 poller、间隔和 drain；`production`/混合 profile 与保留生产环境名物理失败关闭 |
+| 动态能力探针 | protocol 始终可发现；Control API、durable checkpoint、Source、Authority、worker、Scheduler 和 continuous readiness 分别报告，端点只在运行面真实装配时广告 |
+| PostgreSQL 迁移与原生认证 | V20260815_002 建立 command/generation/checkpoint/staged-page/lease 索引和约束；真实 PostgreSQL 两连接竞态证明唯一 claim、重启读取 staged page、commit 和 generation revoke |
+| 跨语言协议 | Source Page、Control Command、Checkpoint 三份 strict Schema，三份 server-produced fixed fixture，Test Kit 独立 verifier、内容地址/闭合/tamper 门禁和完整公共 API Javadoc |
+| 接入与运维文档 | [权威 Outcome Source 指南](resource-gateway-production-outcome-source-guide.md)覆盖责任边界、Adapter、Authority、启动、探针、Backfill、revoke、事故处置、Test Kit 和客户上线清单 |
+
+### 19.2 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 直接在抓取后逐条写 Observation 会形成 cursor 与 inbox 的不确定窗口 | 外部分页 cursor 与内部多条事实提交不是一个事务域，at-least-once 不能单靠内存重试闭合 | 先 durable stage 完整 page，再 exact replay/append inbox，最后 fenced commit cursor；重启测试固定覆盖 stage 后崩溃 |
+| Live 与修复数据若共享 cursor，会让迟到修复改写主时间线 | 把「持续事实流」和「有业务授权的历史修复」误建模成同一生命周期 | Live 固定 `streamId=live`；Backfill 使用独立 command、时间窗、stream 和 baseline，不能推进 Live cursor |
+| Source transport 签名容易被误用为 Outcome 正确性证明 | 「数据确由连接器发出」与「业务结果真实有效」属于不同 Authority | 保留 page/command Authority 与 Observation Authority 双校验；worker 复用既有 Outcome integrity，不新建旁路准入 |
+| 服务具有协议类时 capability 容易被误报 ready | 静态版本支持与客户 Adapter、Authority、Scheduler 的当前可用性混在一个布尔值 | 七个独立 runtime facts 加 `continuousReady` 合取；运行路由只在 Control service 装配后广告 |
+| Source page 不能直接复用最终 Observation Schema | Source page 内的 Observation 尚未经过 Resource Gateway Authority 签名，最终 Schema 会错误要求 RG seal | Source Page Schema 显式定义 addressed-but-unsigned candidate；worker 准入时才由既有 integrity 签名；禁止放宽最终 Observation Schema |
+| 固定 fixture 比较再次遇到 JSON `IntNode/LongNode` 差异 | Java 节点实现差异不等于 JSON wire value 差异 | 服务端 fixture 门禁使用递归数值语义比较，仍严格比较字段闭包、数组顺序、字符串和 fingerprint |
+| 审计若晚于 purpose/env 校验，拒绝尝试不可见 | 只围绕成功业务分支启动审计，前置授权失败没有控制面证据 | 完整身份建立后立即创建 operation observation，再执行 purpose、Scope 和环境拒绝；成功与失败均 payload-free 收口 |
+
+### 19.3 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| Source kernel 聚焦门禁 | `72/72` 通过 | page/command 协议、repository、worker、control service、decoder/controller、bootstrap、scheduler、capability、profile/routes 与 H2 crash replay |
+| PostgreSQL / Schema / Spring 最终聚焦 | `5/5` 通过 | 双连接唯一 claim、staged page 重启恢复、commit/revoke、三类服务端 fixture、生产装配隔离和连续 readiness |
+| Test Kit 完整发布门禁 | `562/562` 通过 | `202` 份 Mirror 资源打包、Schema closure、page/command/checkpoint verifier、tamper、shaded JAR 和零警告公共 API Javadoc |
+
+最终 Resource Gateway `clean verify` 结果在本迭代文档提交后的全量回归中补记；聚焦门禁不能替代该发布门禁。
+
+### 19.4 架构漂移审计
+
+1. Source worker 只向既有 `AuthoritativeOutcomeInboxRepository` 准入 Observation，没有建立平行 Outcome repository、Fidelity projector 或业务真相源。
+2. Connector Adapter 与 Source Authority 由客户部署拥有；Resource Gateway 只拥有 checkpoint、运行编排、协议和证据，不接管客户数据 Registry 或密钥治理。
+3. Live baseline、Backfill command、Source page、checkpoint 和 Observation 使用 exact ref/content address 连接，没有让 raw cursor 或 Payload 穿过控制面。
+4. `production` profile 不装配 Mirror Source；所谓「生产 Outcome」指事实来自客户生产 Authority，并在隔离 staging Mirror 域被只读摄取，不表示 RG 进入生产交易链路。
+5. Protocol support 与 runtime readiness 分离；本地 fixed fixture 和测试 Adapter 不会让客户 Connector 被宣称为 ready。
+6. 当前 PostgreSQL 认证证明单 PostgreSQL 进程的两个连接边界，不证明多节点 HA、网络分区、备份恢复或跨区域能力。
+
+### 19.5 差距复评
+
+BM-011 关闭了仓库内「生产事实没有持续 Source port」「cursor 与 inbox 崩溃窗口不闭合」「Live 与 Backfill 串线」「generation 无不可逆撤销」「Source 与 Outcome Authority 混淆」「外部消费者不能独立复验」六类工程缺口。
+
+风险加权差距由约 `6.5%` 降至约 `5.5%`。这不是客户生产 Connector 已认证的声明：实际 Adapter、Source Authority、Observation Authority、数据授权、业务 watermark SLO 和目标源断流/迟到/冲突演练只能在客户环境完成。仓库剩余高权重差距为 Regional Data Plane 与私有 PKI/KMS/egress 隔离（BM-012）、HA/kill/partition/upgrade/backup certification（BM-013）、ANEKE protocol 1.1 与 stale governance projection（BM-014），以及真实取消费域 Owner 冻结分母和完整观察窗试点（BM-015）。
+
+下一迭代进入 BM-012。目标不是再造一个业务运行平台，而是把 Vault、Secret、State、Resolver、KMS、mTLS 和 egress policy 组合为可验证的 regional deployment contract，并让缺失、陈旧、rotation 中断和 write escape 失败关闭。

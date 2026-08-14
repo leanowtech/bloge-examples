@@ -176,6 +176,11 @@ optimistic owner tasks; resolving a task requires an exact evidence reference. T
 covers the five proof layers, seven-dimensional Fidelity model, capability probe, Author/Integration
 API, worker recovery, PostgreSQL migration, fixed reference evidence, and offline Test Kit
 verification. The
+[production Outcome Source guide](../docs/resource-gateway-production-outcome-source-guide.md)
+defines the deployment-owned live baseline, bounded source adapter, independent page/command
+authority, durable stage/apply/commit checkpoint, Backfill and generation-revocation operations,
+dynamic readiness, PostgreSQL migration, incident handling, and the boundary between repository
+certification and a real customer connector. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, seven-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.
