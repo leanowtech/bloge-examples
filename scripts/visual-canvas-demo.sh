@@ -2051,6 +2051,10 @@ author_url() {
     echo "http://localhost:$(configured_port)/author/"
 }
 
+business_mirror_url() {
+    echo "http://localhost:$(configured_port)/business-mirror/"
+}
+
 libraries_url() {
     echo "http://localhost:$(configured_port)/libraries/"
 }
@@ -2103,6 +2107,7 @@ artifact_has_visual_frontend() {
     fi
 
     jar tf "${artifact}" 2>/dev/null | awk '
+        $0 == "BOOT-INF/classes/static/business-mirror/index.html" ||
         $0 == "BOOT-INF/classes/static/author/index.html" ||
         $0 == "BOOT-INF/classes/static/libraries/index.html" ||
         $0 == "BOOT-INF/classes/static/rehearsals/index.html" ||
@@ -2111,7 +2116,7 @@ artifact_has_visual_frontend() {
                 found++
             }
         }
-        END { exit found == 4 ? 0 : 1 }
+        END { exit found == 5 ? 0 : 1 }
     '
 }
 
@@ -2180,6 +2185,7 @@ print_urls() {
     echo "Demo URLs:"
     if truthy "${BUILD_FRONTEND}" && artifact_has_visual_frontend; then
         cat <<EOF
+  Business Mirror: $(business_mirror_url)
   Author canvas:   $(author_url)
   Library author:  $(libraries_url)
   Rehearsals:      $(rehearsals_url)
@@ -2243,7 +2249,8 @@ build_app() {
 }
 
 visual_routes_ready() {
-    curl -fsS "$(author_url)" >/dev/null 2>&1 &&
+    curl -fsS "$(business_mirror_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(author_url)" >/dev/null 2>&1 &&
         curl -fsS "$(libraries_url)" >/dev/null 2>&1 &&
         curl -fsS "$(rehearsals_url)" >/dev/null 2>&1 &&
         curl -fsS "$(showcase_url)" >/dev/null 2>&1
@@ -2440,7 +2447,7 @@ open_author_if_requested() {
         return 0
     fi
     if command -v open >/dev/null 2>&1; then
-        open "$(author_url)" >/dev/null 2>&1 || true
+        open "$(business_mirror_url)" >/dev/null 2>&1 || true
     else
         echo "Browser open requested, but the 'open' command is unavailable."
     fi

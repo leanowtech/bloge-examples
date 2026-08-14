@@ -8,13 +8,16 @@ const shellChunkBudget = 180 * 1024;
 const routeStartupTransferBudget = 350 * 1024;
 const vendorPrefixes = ['react-runtime-', 'react-flow-'];
 const requiredApplicationChunks = [
+  'BusinessMirrorWorkspace-',
   'AuthorCanvas-',
   'LibraryWorkbench-',
   'RehearsalWorkbench-',
   'Showcase-',
   'author-domain-',
 ];
-const routePrefixes = ['AuthorCanvas-', 'LibraryWorkbench-', 'RehearsalWorkbench-', 'Showcase-'];
+const routePrefixes = [
+  'BusinessMirrorWorkspace-', 'AuthorCanvas-', 'LibraryWorkbench-', 'RehearsalWorkbench-', 'Showcase-',
+];
 
 const chunks = readdirSync(assetsDirectory)
   .filter((name) => name.endsWith('.js'))

@@ -11,6 +11,7 @@ const {
   stableErrorCode,
 } = require('./protocol');
 const { offlineOperatorCatalog } = require('./offlineCatalog');
+const { createOfflineBusinessMirrorStore } = require('./offlineBusinessMirror');
 
 const RESPONSE_BODY_LIMIT = 20 * 1024 * 1024;
 const SENSITIVE_REQUEST_HEADERS = new Set([
@@ -96,6 +97,7 @@ function createGatewayFetchHandler({
 } = {}) {
   const remoteBase = normalizeRemoteBase(remoteBaseUrl);
   const timeout = Math.min(60_000, Math.max(1_000, Number(requestTimeoutMs) || 10_000));
+  const offlineBusinessMirror = createOfflineBusinessMirrorStore();
   return async function gatewayFetch(request) {
     const target = new URL(request.url, 'https://resource-gateway.invalid');
     const resourcePath = `${target.pathname}${target.search}`;
@@ -106,6 +108,8 @@ function createGatewayFetchHandler({
       return jsonResponse(403, { code: 'RG.HOST.ADMIN_PROXY.DISABLED' }, 'Forbidden');
     }
     if (!remoteBase) {
+      const businessMirrorResponse = offlineBusinessMirror(request, target);
+      if (businessMirrorResponse) return businessMirrorResponse;
       if (request.method === 'GET' && target.pathname === '/api/visual/operators') {
         return jsonResponse(200, catalog, 'OK');
       }

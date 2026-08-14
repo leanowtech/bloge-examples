@@ -1,8 +1,9 @@
 # BLOGE Resource Gateway Authoring for VS Code
 
-This reference extension runs the Resource Gateway authoring surface inside a VS Code WebView. The default mode is
-serverless: it loads an embedded operator catalog, keeps authoring local, and stores crash-recovery snapshots as
-AES-256-GCM ciphertext. The encryption key lives only in VS Code `SecretStorage`.
+This reference extension runs the Resource Gateway product workspaces inside a VS Code WebView. The default mode is
+serverless. Business Mirror opens first with three embedded Legacy Graph projections and a complete
+catalog-preview-import-save-compile task. The Author workspace also loads an embedded operator catalog and stores its
+crash-recovery snapshots as AES-256-GCM ciphertext. The encryption key lives only in VS Code `SecretStorage`.
 
 ## Run the extension
 
@@ -12,9 +13,17 @@ npm run prepare:webview
 code --new-window --extensionDevelopmentPath="$PWD"
 ```
 
-In the Extension Development Host, run **Resource Gateway: Open Authoring Workspace**. Load any of the three complete
-canvas examples, edit it, wait for the `宿主加密存储 / Host encrypted storage` state, then run
-**Resource Gateway: Save Recovery and Close**. Reopen the workspace to verify exact recovery.
+In the Extension Development Host, run **Resource Gateway: Open Authoring Workspace**. Business Mirror is the default
+page. Open `loanDecisionPolicy`, import it, fill the guided business definition, save revision `2`, then compile its
+expected `BLOCKED` readiness report. No server is required. Select **Author** to load any of the three complete canvas
+examples, edit it, wait for the `宿主加密存储 / Host encrypted storage` state, then run **Resource Gateway: Save Recovery
+and Close**. Reopen the workspace to verify exact Author recovery.
+
+The offline Business Mirror adapter never accesses the network, Secret, or production business payload. It binds
+idempotency keys to canonical request material, exactly replays an ambiguous save, and rejects key reuse with changed
+material. Package heads are extension-process state; they are not presented as durable production storage. See the
+[Business Mirror Workspace guide](../../docs/resource-gateway-business-mirror-workspace-guide.md) for the complete fixed
+task and the server/remote-runtime boundary.
 
 Author Workspace v2 keeps the standard canvas free of overlay controls. Use the diagonal-arrow button to expand
 Inspect: the selected node and its nearest structural context are centered at a readable zoom while the minimap keeps

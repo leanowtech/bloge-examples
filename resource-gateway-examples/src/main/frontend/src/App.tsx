@@ -15,19 +15,22 @@ import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
 
-type WorkspaceRoute = 'author' | 'libraries' | 'rehearsals' | 'showcase';
+type WorkspaceRoute = 'business-mirror' | 'author' | 'libraries' | 'rehearsals' | 'showcase';
 
+const loadBusinessMirrorWorkspace = () => import('./business-mirror/BusinessMirrorWorkspace');
 const loadAuthorCanvas = () => import('./AuthorCanvas');
 const loadLibraryWorkbench = () => import('./library-authoring/LibraryWorkbench');
 const loadRehearsalWorkbench = () => import('./RehearsalWorkbench');
 const loadShowcase = () => import('./Showcase');
 
+const BusinessMirrorWorkspace = lazy(loadBusinessMirrorWorkspace);
 const AuthorCanvas = lazy(loadAuthorCanvas);
 const LibraryWorkbench = lazy(loadLibraryWorkbench);
 const RehearsalWorkbench = lazy(loadRehearsalWorkbench);
 const Showcase = lazy(loadShowcase);
 
 const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
+  'business-mirror': loadBusinessMirrorWorkspace,
   author: loadAuthorCanvas,
   libraries: loadLibraryWorkbench,
   rehearsals: loadRehearsalWorkbench,
@@ -52,7 +55,9 @@ function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const vscodeHost = typeof globalThis.acquireVsCodeApi === 'function';
   const route = resolveWorkspaceRoute(window.location.pathname, window.location.search, vscodeHost);
-  const titleSource = route === 'libraries'
+  const titleSource = route === 'business-mirror'
+    ? 'Business Mirror'
+    : route === 'libraries'
     ? 'Libraries'
     : route === 'rehearsals'
     ? 'Rehearsals'
@@ -100,6 +105,15 @@ function AppShell() {
             aria-label={t('Workspace views')}
             data-open={navigationOpen}
           >
+            <a
+              className={`topbar-link ${route === 'business-mirror' ? 'active' : ''}`}
+              href={workspaceEntryHref('business-mirror', window.location.search, vscodeHost)}
+              aria-current={route === 'business-mirror' ? 'page' : undefined}
+              onPointerEnter={prefetch('business-mirror')}
+              onFocus={prefetch('business-mirror')}
+            >
+              {t('Business Mirror')}
+            </a>
             <a
               className={`topbar-link ${authorIsCurrent ? 'active' : ''}`}
               href={authorHref}
@@ -157,7 +171,9 @@ function AppShell() {
       </header>
       <Suspense fallback={<WorkspaceLoading />}>
         <HostReadySignal route={route} />
-        {route === 'libraries'
+        {route === 'business-mirror'
+          ? <BusinessMirrorWorkspace />
+          : route === 'libraries'
           ? <LibraryWorkbench />
           : route === 'showcase'
           ? <Showcase />
@@ -172,18 +188,21 @@ function AppShell() {
 function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boolean): WorkspaceRoute {
   if (vscodeHost) {
     const requested = new URLSearchParams(search).get('workspaceRoute');
-    if (requested === 'libraries' || requested === 'rehearsals' || requested === 'showcase') {
+    if (requested === 'business-mirror' || requested === 'author' || requested === 'libraries'
+        || requested === 'rehearsals' || requested === 'showcase') {
       return requested;
     }
-    return 'author';
+    return 'business-mirror';
   }
-  return pathname.startsWith('/libraries')
+  return pathname.startsWith('/author')
+    ? 'author'
+    : pathname.startsWith('/libraries')
     ? 'libraries'
     : pathname.startsWith('/showcase')
     ? 'showcase'
     : pathname.startsWith('/rehearsals')
       ? 'rehearsals'
-      : 'author';
+      : 'business-mirror';
 }
 
 function workspaceEntryHref(
@@ -194,6 +213,7 @@ function workspaceEntryHref(
 ): string {
   if (!vscodeHost) {
     if (route === 'author') return authorWorkspaceEntryHref(search, authorVersion);
+    if (route === 'business-mirror') return '/business-mirror/';
     return `/${route}/`;
   }
   const params = new URLSearchParams(search);

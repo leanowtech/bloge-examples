@@ -9,6 +9,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -78,6 +79,21 @@ class GatewayExampleControllerTest {
         pageMvc.perform(get("/examples/gateway"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/examples/gateway/index.html"));
+    }
+
+    @Test
+    void pageControllerMakesBusinessMirrorTheDefaultProductWorkspace() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/business-mirror/"));
+        pageMvc.perform(get("/business-mirror"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(redirectedUrl("/business-mirror/"));
+        pageMvc.perform(get("/business-mirror/"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/business-mirror/index.html"));
     }
 
     @Test

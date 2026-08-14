@@ -96,6 +96,14 @@ import type {
   WorkspaceForkCommand,
   WorkspaceForkReceipt,
 } from './author/workspace/workspaceSeed';
+import type {
+  BusinessMirrorCompilationReceipt,
+  BusinessMirrorPackageDraft,
+  BusinessMirrorPackagePage,
+  BusinessMirrorPackageSaveReceipt,
+  LegacyGraphPackageProjection,
+  LegacyGraphPackageProjectionCatalog,
+} from './business-mirror/domain';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -268,6 +276,88 @@ export function getRehearsalRemediationCredentialStatus(
 
 function sendRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return blogeApiTransport(input, init);
+}
+
+function businessMirrorHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    ...operatorTestHeadersProvider(),
+    ...extra,
+    'X-Purpose': 'BUSINESS_MIRROR_AUTHORING',
+  };
+}
+
+/** Loads the complete bounded Legacy Graph migration catalog for the verified enterprise Scope. */
+export async function fetchBusinessMirrorLegacyCatalog(): Promise<LegacyGraphPackageProjectionCatalog> {
+  return readTestingJson(await sendRequest('/api/business-mirror/legacy-graphs', {
+    headers: businessMirrorHeaders(),
+  }));
+}
+
+/** Loads one exact Legacy Graph migration projection without mutating authoring state. */
+export async function fetchBusinessMirrorLegacyProjection(
+  graphName: string,
+): Promise<LegacyGraphPackageProjection> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/legacy-graphs/${encodeURIComponent(graphName)}`,
+    { headers: businessMirrorHeaders() },
+  ));
+}
+
+/** Lists current durable Package drafts in the verified enterprise Scope. */
+export async function fetchBusinessMirrorPackages(limit = 200): Promise<BusinessMirrorPackagePage> {
+  return readTestingJson(await sendRequest(`/api/business-mirror/packages?limit=${limit}`, {
+    headers: businessMirrorHeaders(),
+  }));
+}
+
+/** Imports one Legacy Graph projection through the durable Package authoring boundary. */
+export async function importBusinessMirrorLegacyPackage(
+  graphName: string,
+  idempotencyKey: string,
+): Promise<BusinessMirrorPackageSaveReceipt> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/legacy-graphs/${encodeURIComponent(graphName)}/packages`,
+    {
+      method: 'POST',
+      headers: businessMirrorHeaders({ 'Idempotency-Key': idempotencyKey }),
+    },
+  ));
+}
+
+/** Saves guided Package edits using the server-owned optimistic revision boundary. */
+export async function saveBusinessMirrorPackage(
+  draft: BusinessMirrorPackageDraft,
+  idempotencyKey: string,
+): Promise<BusinessMirrorPackageSaveReceipt> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/packages/${encodeURIComponent(draft.packageId)}`
+      + `?expectedRevision=${draft.revision}`,
+    {
+      method: 'PUT',
+      headers: businessMirrorHeaders({
+        'Content-Type': 'application/json',
+        'Idempotency-Key': idempotencyKey,
+      }),
+      body: JSON.stringify(draft),
+    },
+  ));
+}
+
+/** Compiles one exact durable Package revision and returns its authoritative readiness report. */
+export async function compileBusinessMirrorPackage(
+  packageId: string,
+  sourceRevision: number,
+  idempotencyKey: string,
+): Promise<BusinessMirrorCompilationReceipt> {
+  return readTestingJson(await sendRequest(
+    `/api/business-mirror/packages/${encodeURIComponent(packageId)}`
+      + `/compile?sourceRevision=${sourceRevision}`,
+    {
+      method: 'POST',
+      headers: businessMirrorHeaders({ 'Idempotency-Key': idempotencyKey }),
+    },
+  ));
 }
 
 function fillTemplate(template: string, values: Record<string, unknown>): string {

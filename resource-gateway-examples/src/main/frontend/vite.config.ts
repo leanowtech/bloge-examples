@@ -2,7 +2,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// The same SPA is copied under /author/, /libraries/, /rehearsals/, and /showcase/, so assets stay relative.
+// The same SPA is copied under every product route, so assets stay relative.
 export default defineConfig({
   base: './',
   plugins: [react()],

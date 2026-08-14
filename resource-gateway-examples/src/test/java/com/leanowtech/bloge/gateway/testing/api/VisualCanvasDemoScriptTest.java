@@ -68,10 +68,12 @@ class VisualCanvasDemoScriptTest {
         String source = Files.readString(SCRIPT, StandardCharsets.UTF_8);
 
         assertThat(source).contains(
+                "BOOT-INF/classes/static/business-mirror/index.html",
                 "BOOT-INF/classes/static/author/index.html",
                 "BOOT-INF/classes/static/libraries/index.html",
                 "BOOT-INF/classes/static/rehearsals/index.html",
                 "BOOT-INF/classes/static/showcase/index.html",
+                "curl -fsS \"$(business_mirror_url)\"",
                 "curl -fsS \"$(author_url)\"",
                 "curl -fsS \"$(libraries_url)\"",
                 "curl -fsS \"$(rehearsals_url)\"",
@@ -84,6 +86,7 @@ class VisualCanvasDemoScriptTest {
                 SCRIPT, StandardCharsets.UTF_8);
 
         assertThat(source).contains(
+                "Business Mirror: $(business_mirror_url)",
                 "Library author:  $(libraries_url)",
                 "Rehearsals:      $(rehearsals_url)",
                 ".payload.features.mirrorScenarioRehearsalBatchJobListing == true",

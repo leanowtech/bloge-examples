@@ -33,7 +33,7 @@ integration something the business flow can see, reason about, test, and change.
 | Managed evidence signing | Non-exportable KMS/HSM provider protocol, atomic public-key generations, locally verified signatures, rotation/revoke semantics, and machine-readable custody health |
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
-| Business Mirror authoring foundation | First-class Domain Capability Package, Capability Proposal, Package Readiness, and typed L0-L3 Business Asset Link protocols; Package drafts and compilation facts have authenticated durable APIs, exact restart-safe receipts, full-scope optimistic revisions, PostgreSQL certification, and standalone Test Kit validation; the installed composite Authority resolves and fences shipped Graph/Contract assets while unsupported Scenario/Fidelity/Outcome kinds remain fail closed |
+| Business Mirror workspace | The default product entry turns shipped Graph/Contract facts into a searchable Package portfolio, six readiness tasks, an L0-L3 capability map, exact lineage, durable guided edits, and deterministic compilation; English, Simplified Chinese, responsive layouts, and a serverless VS Code fixed task share the same fail-closed domain semantics |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
@@ -45,8 +45,9 @@ integration something the business flow can see, reason about, test, and change.
 
 ## Try It In VS Code, No Server Required
 
-The reference extension packages the real Author Workspace v2 with an offline operator and built-in
-function catalog. It opens no port and needs no Spring Boot process:
+The reference extension packages the real Business Mirror and Author workspaces with offline
+Business Mirror projections plus an operator and built-in function catalog. It opens no port and
+needs no Spring Boot process:
 
 ```bash
 cd resource-gateway-examples/vscode-extension
@@ -54,10 +55,11 @@ npm run prepare:webview
 code --new-window --extensionDevelopmentPath="$PWD"
 ```
 
-Run **Resource Gateway: Open Authoring Workspace**, load a complete example, edit it, then use
-**Resource Gateway: Save Recovery and Close**. Reopening restores the exact workspace from
-host-encrypted recovery. A remote runtime is optional and remains behind workspace trust, HTTPS,
-SecretStorage credentials, and path restrictions. See the
+Run **Resource Gateway: Open Authoring Workspace**. Business Mirror opens first: import one of the
+three offline Graph projections, fill its business definition, save, and compile readiness. Select
+**Author** to edit a complete canvas example; **Resource Gateway: Save Recovery and Close** keeps
+that canvas in host-encrypted recovery. A remote runtime is optional and remains behind workspace
+trust, HTTPS, SecretStorage credentials, and path restrictions. See the
 [extension guide](vscode-extension/README.md) and
 [real-host UX evidence](../docs/resource-gateway-ux-round3-s5-vscode-host-integration.md).
 
@@ -88,6 +90,7 @@ silently consuming work.
 
 | Open | Best first move |
 | --- | --- |
+| `http://localhost:8080/` | Open the default Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
@@ -143,8 +146,10 @@ and Stage 4 verification is recorded in
 To exercise the new Business Mirror Package authoring API with the cancellation-fee fixture, use the
 [Business Mirror Package Authoring guide](../docs/resource-gateway-business-mirror-package-authoring-guide.md).
 It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
-PostgreSQL migration boundary, compile/read commands, and stop command. The API remains headless;
-`Business Mirror Workspace` and Proposal simulation are later work packages.
+PostgreSQL migration boundary, compile/read commands, and stop command. The
+[Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
+covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
+mode, and recovery semantics. Proposal simulation remains a later work package.
 
 Existing graphs can be migrated incrementally without rewriting their topology. The
 [Legacy Graph migration guide](../docs/resource-gateway-business-mirror-legacy-migration-guide.md)

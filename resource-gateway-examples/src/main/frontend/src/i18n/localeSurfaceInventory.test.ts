@@ -10,6 +10,7 @@ import {
 import { hasChineseTranslation } from './i18n';
 
 const DEEP_SURFACES = [
+  '../business-mirror/BusinessMirrorWorkspace.tsx',
   '../AuthorCanvas.tsx',
   '../author/canvas/CanvasTaskNavigator.tsx',
   '../author/shell/AuthorCommandBar.tsx',

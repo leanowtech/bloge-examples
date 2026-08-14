@@ -10,6 +10,26 @@ import org.springframework.web.bind.annotation.GetMapping;
 public class GatewayExamplePageController {
 
     /**
+     * Preserves the workspace directory in the browser URL so relative Vite assets resolve correctly.
+     *
+     * @return canonical workspace redirect target
+     */
+    @GetMapping({"/", "/business-mirror"})
+    public String businessMirrorWorkspaceRedirect() {
+        return "redirect:/business-mirror/";
+    }
+
+    /**
+     * Serves Business Mirror as the default product workspace at its canonical URL.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping("/business-mirror/")
+    public String businessMirrorWorkspace() {
+        return "forward:/business-mirror/index.html";
+    }
+
+    /**
      * Forwards the clean showcase route to the static browser artifact.
      *
      * @return static resource forward target

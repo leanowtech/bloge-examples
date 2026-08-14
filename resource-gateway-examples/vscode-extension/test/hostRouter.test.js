@@ -37,6 +37,76 @@ test('serves a complete offline author catalog and reports route readiness', asy
   assert.deepEqual(payload.builtInFunctions.map((fn) => fn.name), ['coalesce', 'toNumber', 'round']);
 });
 
+test('supports the fixed Business Mirror task offline without a server', async () => {
+  const handler = createGatewayFetchHandler();
+  const catalogResponse = await handler(fetchRequest('/api/business-mirror/legacy-graphs'));
+  const catalog = body(catalogResponse);
+  assert.equal(catalogResponse.status, 200);
+  assert.equal(catalog.scope.environmentId, 'offline');
+  assert.deepEqual(catalog.items.map((item) => item.graphName), [
+    'loanDecisionPolicy', 'resourceDispatch', 'enrichOrderList',
+  ]);
+
+  const importedResponse = await handler(fetchRequest(
+    '/api/business-mirror/legacy-graphs/loanDecisionPolicy/packages',
+    'POST',
+    { 'idempotency-key': 'offline:import:loan:v1' },
+  ));
+  const imported = body(importedResponse);
+  assert.equal(importedResponse.status, 201);
+  assert.equal(imported.result.draft.revision, 1);
+
+  const packagePage = body(await handler(fetchRequest('/api/business-mirror/packages?limit=200')));
+  assert.equal(packagePage.items.length, 1);
+  assert.equal(packagePage.items[0].draft.packageId, 'legacy:loanDecisionPolicy');
+
+  const edited = structuredClone(imported.result.draft);
+  edited.businessDefinition.domainId = 'ride.customer-service';
+  edited.businessDefinition.problemCode = 'loan-decision';
+  edited.businessDefinition.businessGoal = 'Give an explainable decision.';
+  edited.businessDefinition.expectedOutcome = 'Correct decisions with explicit abstention.';
+  edited.businessDefinition.accountableOwner = 'risk-service-owner';
+  const saved = body(await handler(fetchRequest(
+    '/api/business-mirror/packages/legacy%3AloanDecisionPolicy?expectedRevision=1',
+    'PUT',
+    { 'idempotency-key': 'offline:save:loan:r1', 'content-type': 'application/json' },
+    JSON.stringify(edited),
+  )));
+  assert.equal(saved.result.draft.revision, 2);
+  assert.equal(saved.result.draft.businessDefinition.accountableOwner, 'risk-service-owner');
+
+  const replayedSaveResponse = await handler(fetchRequest(
+    '/api/business-mirror/packages/legacy%3AloanDecisionPolicy?expectedRevision=1',
+    'PUT',
+    { 'idempotency-key': 'offline:save:loan:r1', 'content-type': 'application/json' },
+    JSON.stringify(edited),
+  ));
+  assert.equal(replayedSaveResponse.status, 200);
+  assert.equal(replayedSaveResponse.body, JSON.stringify(saved));
+
+  const conflictingEdit = structuredClone(edited);
+  conflictingEdit.businessDefinition.businessGoal = 'Different request material.';
+  const idempotencyConflict = await handler(fetchRequest(
+    '/api/business-mirror/packages/legacy%3AloanDecisionPolicy?expectedRevision=1',
+    'PUT',
+    { 'idempotency-key': 'offline:save:loan:r1', 'content-type': 'application/json' },
+    JSON.stringify(conflictingEdit),
+  ));
+  assert.equal(idempotencyConflict.status, 409);
+  assert.equal(body(idempotencyConflict).code,
+    'RG.BUSINESS_MIRROR.IDEMPOTENCY_MATERIAL_CONFLICT');
+
+  const compiled = body(await handler(fetchRequest(
+    '/api/business-mirror/packages/legacy%3AloanDecisionPolicy/compile?sourceRevision=2',
+    'POST',
+    { 'idempotency-key': 'offline:compile:loan:r2' },
+  )));
+  assert.equal(compiled.readiness.status, 'BLOCKED');
+  assert.ok(compiled.readiness.findings.length > 0);
+  assert.equal(compiled.readiness.findings.some((finding) =>
+    finding.code === 'ACCOUNTABLE_OWNER_MISSING'), false);
+});
+
 test('round-trips encrypted-store operations through correlated responses', async () => {
   const responses = [];
   const recoveryStore = memoryRecoveryStore();
@@ -123,6 +193,14 @@ test('blocks admin and non-Resource-Gateway paths by default', async () => {
 
 function request(requestId, operation, payload) {
   return { schemaVersion: 'bloge.vscodeWebviewRequest.v1', requestId, operation, payload };
+}
+
+function fetchRequest(url, method = 'GET', headers = {}, requestBody = null) {
+  return { url, method, headers, body: requestBody };
+}
+
+function body(responseValue) {
+  return JSON.parse(responseValue.body);
 }
 
 function memoryRecoveryStore() {

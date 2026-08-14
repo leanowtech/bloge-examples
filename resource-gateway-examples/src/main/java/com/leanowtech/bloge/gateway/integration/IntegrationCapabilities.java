@@ -964,6 +964,7 @@ public record IntegrationCapabilities(
         features.put("businessMirrorPackageCompilerAuthorityReady", false);
         features.put("businessMirrorLegacyMigrationApi", true);
         features.put("businessMirrorLegacyMigrationAuthorityReady", false);
+        features.put("businessMirrorWorkspace", true);
         features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);

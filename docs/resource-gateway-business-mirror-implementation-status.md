@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-004 Legacy migration 已完成；下一迭代 BM-005 Business Mirror Workspace
+> 当前迭代：BM-005 Business Mirror Workspace 已完成；下一迭代 BM-006 CapabilityProposal simulation loop
 >
 > 最近更新：2026-08-14
 
@@ -455,3 +455,66 @@ mvn -f resource-gateway-test-kit/pom.xml \
 BM-004 关闭了存量 Graph 只能继续手工维护、无法进入 Package 主模型、迁移过程会误填业务语义以及导入结果无法独立验真的根问题。七个内置 Graph 现在都能逐包 preview 和导入，并且缺失项不会误绿。
 
 风险加权差距由约 `19%` 降至约 `17%`。仍占主要权重的缺口是：没有业务人员可用的 Business Mirror Workspace；Proposal 尚不能形成隔离模拟闭环；持久化 Visual Graph、Scenario、Fidelity 和 Outcome Authority 未接通；客户生产环境尚无 KMS、HA/DR、升级与容量认证。下一迭代进入 BM-005，以现有 Package、projection、gap、compile receipt 和 exact lineage 构建任务导向工作区，而不是在旧 Canvas 上继续堆字段。
+
+## 12. Iteration 5：BM-005 Business Mirror Workspace
+
+### 12.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 默认业务入口 | `/` 重定向到 `/business-mirror/`；Portfolio 以七个真实 Legacy Graph preview 呈现待镜像资产，旧 Author v2 与 Legacy 页面继续可进入 |
+| 六步任务工作区 | Package 页面按问题、边界、能力、场景、演练、校准与提交组织任务，不把协议字段平铺成表单 |
+| 引导式作者流程 | 支持 preview 导入、业务字段编辑、durable save 和 compile；无需直接编辑 JSON |
+| 可行动就绪信息 | 固定显示第一个阻断项和完整 gap inventory；保存成功不伪装成 READY |
+| L0-L3 能力地图 | 从 exact refs 投影 L0 资源指令、L1 服务设计、L2 服务载体和 L3 业务应用；未建模层级保持缺失，不用拓扑猜测 |
+| 企业级基础体验 | 英文/中文切换、键盘可达、响应式任务轨与内容布局；`390`、`820`、`1280` 宽度完成真实浏览器检查 |
+| 服务端可分发页面 | Vite 产物随 Spring Boot JAR 打包至独立 `business-mirror` 静态目录，canonical route、资源加载和能力探针可验真 |
+| VS Code 离线闭环 | 无 sidecar 时可浏览固定目录、preview、导入、编辑、保存与编译；幂等键绑定 canonical material fingerprint |
+| 演示与操作材料 | 启停脚本默认打开 Business Mirror；新增操作手册和四张中文界面截图 |
+
+### 12.2 架构与信任边界
+
+1. Workspace 是 Package、Legacy projection 和 compile receipt 的任务投影，不是新的事实存储；浏览器不自行派生 revision、fingerprint 或 readiness。
+2. 页面复用既有认证、Scope、purpose、optimistic revision 和 idempotency 约束；作者请求显式携带 `X-Purpose: BUSINESS_MIRROR_AUTHORING`。
+3. 发现到的 Contract Test Suite 仍然只是技术证据，不能被界面自动提升为 owner-governed Scenario 或 Scenario denominator。
+4. 页面不把保存成功解释为可发布，也不伪造 Outcome、Fidelity、Governance 或 ANEKE gate 结论；所有未满足项继续显示为 blocker/gap。
+5. VS Code 离线包仅存在于当前扩展会话，用于轻量作者体验；它不声称具有生产持久化、真实网络模拟、Secret、治理或发布能力。
+6. 相同 idempotency key 仅可重放完全相同的 canonical material；材料变化必须使用新 key，否则失败关闭。
+
+### 12.3 开发红灯与根治
+
+| 红灯 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 真实页面请求返回 `400` | API client 未携带服务端安全策略要求的 authoring purpose；纯组件测试没有穿透该边界 | Business Mirror client 统一附加 purpose header；API 单测断言 header；打包 JAR 后执行真实浏览器流程 |
+| `/` 页面空白且静态资源 `404` | server-side forward 保留根 URL，Vite 的相对 `./assets` 从错误基址解析 | 根路径和无尾斜杠入口使用 canonical redirect；controller 测试固定重定向/forward 契约；浏览器验证产物资源 |
+| 首次保存可能出现幂等冲突 | 保存可早于异步 fingerprint projection 完成，重试键却已基于旧材料生成 | continuity hook 以 material fingerprint epoch 原子管理 retry identity；新增“保存发生在异步投影前”的 exact retry 测试 |
+
+这些问题共同证明：Business Mirror 不能只以 React DOM 测试作为验收。后续工作包继续同时执行 domain/protocol、打包部署和真实浏览器门禁。
+
+### 12.4 自动化与视觉验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---|---|
+| Frontend | `764/764` tests 通过 | Portfolio、六步工作区、API purpose、i18n、键盘、路由、bundle budget 和 continuity |
+| VS Code extension | `17/17` tests 通过，`npm run verify` 通过 | 离线路由、固定任务、幂等与冲突、WebView 打包和 chunk 检查 |
+| Resource Gateway | `5968` tests，`0` failures，`0` errors，`13` conditional skips | Controller、能力探针、真实浏览器 E2E、Spring Boot 可执行 JAR |
+| Resource Gateway Test Kit | `544` tests，全部通过 | Business Mirror schema、fixture、独立协议和打包门禁无回归 |
+| 手工真实浏览器 | `1280x720`、`820x900`、`390x844` | 七个 Portfolio 项、导入、编辑、保存、编译、首要 blocker、L0-L3、中文/英文、无 document 横向溢出 |
+
+`1440` 宽度有 CSS 与自动化 viewport contract 覆盖，但本轮可用浏览器的最大实际截图宽度为 `1280`，不能将其写成已完成的人工视觉认证。截图和操作路径见 [Business Mirror Workspace 使用手册](resource-gateway-business-mirror-workspace-guide.md)。
+
+### 12.5 架构漂移审计
+
+1. 没有新增平行业务真相源；Legacy Graph endpoint、Package repository、Compiler 和 Readiness 派生规则保持权威。
+2. Workspace 没有把 suite evidence 自动转换为 Scenario，也没有越权定义客户 Outcome。
+3. `READY`、Publish、Governance 和 Production certification 没有因 UI 可操作而提前宣称完成。
+4. 在线和离线实现共享 fail-closed gap 模型；离线只提供固定样例和会话内作者态，不模拟生产 Authority。
+5. Author v2 与 Legacy 保留兼容入口，Business Mirror 通过新路由渐进成为默认任务入口，没有破坏既有 API 或 Graph name。
+
+### 12.6 差距复评
+
+BM-005 关闭了“业务人员只能面对协议、JSON 或纯画布”“存量 Graph 无统一迁移入口”“缺口不可行动”和“轻量 VS Code 场景必须启动 sidecar”的体验断层。现在用户可以从真实 Portfolio 进入 Package，沿六项任务补全业务语义，并持续看到 exact lineage 与第一个阻断项。
+
+风险加权差距由约 `17%` 降至约 `14%`。降幅保持克制，因为高权重能力仍未完成：CapabilityProposal 尚不能在严格隔离域内形成 Fixture 驱动的模拟与业务验收闭环；Visual Graph、Scenario、Fidelity 和 Outcome 仍缺少持久化 Authority；生产 KMS、HA/DR、升级、容量和多组织运营尚未认证；客户业务验收也不是仓库内测试可以替代的证据。
+
+下一迭代进入 BM-006：实现 CapabilityProposal durable authoring、`SIMULATION_ONLY` binding、Fixture、验收套件和确定性模拟运行。任何未匹配调用、真实网络、Secret 或生产副作用都必须失败关闭，模拟成功也不能自动晋级为 IMPLEMENTED 或 CONFORMANT。

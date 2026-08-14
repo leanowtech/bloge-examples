@@ -25,6 +25,10 @@ vi.mock('./AuthorCanvas', () => ({
   },
 }));
 
+vi.mock('./business-mirror/BusinessMirrorWorkspace', () => ({
+  default: () => <div data-testid="business-mirror-mock">Business Mirror workspace</div>,
+}));
+
 vi.mock('./Showcase', () => ({
   default: () => <div data-testid="showcase-mock">Showcase catalog</div>,
 }));
@@ -70,6 +74,23 @@ describe('App route shell', () => {
     vi.restoreAllMocks();
   });
 
+  it('renders Business Mirror as the default product workspace', async () => {
+    await renderAt('/');
+
+    expect(document.title).toBe('BLOGE Visual Canvas - Business Mirror');
+    expect(query('[data-testid="business-mirror-mock"]').textContent).toContain('Business Mirror');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('/business-mirror/');
+  });
+
+  it('renders the canonical Business Mirror route', async () => {
+    await renderAt('/business-mirror/?packageId=legacy%3AloanDecisionPolicy');
+
+    expect(query('[data-testid="business-mirror-mock"]').textContent).toContain('Business Mirror');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('/business-mirror/');
+  });
+
   it('renders the author canvas for /author/', async () => {
     await renderAt('/author/');
 
@@ -95,7 +116,8 @@ describe('App route shell', () => {
     expect(query<HTMLAnchorElement>('.topbar-link.active').textContent).toContain('Legacy');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
       .toBe('/author/?authorWorkspace=legacy&draftId=draft-1&nodeId=policy');
-    expect(query<HTMLAnchorElement>('.topbar-link:not(.active)').getAttribute('href'))
+    expect(query<HTMLAnchorElement>('.topbar-link[href="/author/?draftId=draft-1&nodeId=policy"]')
+      .getAttribute('href'))
       .toBe('/author/?draftId=draft-1&nodeId=policy');
   });
 
@@ -114,7 +136,7 @@ describe('App route shell', () => {
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
     expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
-    expect(document.querySelectorAll('.topbar-link')).toHaveLength(4);
+    expect(document.querySelectorAll('.topbar-link')).toHaveLength(5);
   });
 
   it('renders the library workbench for /libraries/', async () => {
@@ -143,8 +165,18 @@ describe('App route shell', () => {
     expect(query('[data-testid="libraries-mock"]').textContent).toContain('Library workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
       .toBe('?workspaceRoute=libraries&draftId=library-1');
-    expect(query<HTMLAnchorElement>('.topbar-link:not(.active)').getAttribute('href'))
+    expect(query<HTMLAnchorElement>('.topbar-link[href*="workspaceRoute=author"]').getAttribute('href'))
       .toBe('?workspaceRoute=author&draftId=library-1');
+  });
+
+  it('defaults the packaged VS Code WebView to offline Business Mirror', async () => {
+    (globalThis as typeof globalThis & { acquireVsCodeApi?: () => { postMessage(): void } })
+      .acquireVsCodeApi = () => ({ postMessage() {} });
+    await renderAt('/index.html');
+
+    expect(query('[data-testid="business-mirror-mock"]').textContent).toContain('Business Mirror');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
+      .toBe('?workspaceRoute=business-mirror');
   });
 
   it('switches the shell to Chinese and persists the preference without reloading', async () => {

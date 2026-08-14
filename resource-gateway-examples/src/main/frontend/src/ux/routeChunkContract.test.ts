@@ -9,10 +9,12 @@ const packageJson = JSON.parse(
 
 describe('Route chunk contract', () => {
   it('loads each heavyweight workspace through a route boundary', () => {
+    expect(appSource).not.toMatch(/^import BusinessMirrorWorkspace/m);
     expect(appSource).not.toMatch(/^import AuthorCanvas/m);
     expect(appSource).not.toMatch(/^import RehearsalWorkbench/m);
     expect(appSource).not.toMatch(/^import Showcase/m);
     expect(appSource).not.toMatch(/^import LibraryWorkbench/m);
+    expect(appSource).toContain("lazy(loadBusinessMirrorWorkspace)");
     expect(appSource).toContain("lazy(loadAuthorCanvas)");
     expect(appSource).toContain("lazy(loadLibraryWorkbench)");
     expect(appSource).toContain("lazy(loadRehearsalWorkbench)");

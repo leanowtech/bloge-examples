@@ -57,6 +57,7 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorPackageCompilerApi", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
+                .containsEntry("businessMirrorWorkspace", true)
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("businessMirrorProposalSimulation", false);
         assertThat(capabilities.endpoints())

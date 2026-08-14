@@ -157,6 +157,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("businessMirrorPackageCompilerApi", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
+                .containsEntry("businessMirrorWorkspace", true)
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)

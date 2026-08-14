@@ -1508,7 +1508,7 @@ curl -sS 'http://localhost:8080/api/integration/reconciliation' \
 
 ### 3.8 演示脚本启动方式
 
-推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后以 `test` profile 在 `8080` 启动服务，因此隔离的 `/api/testing/**` 也可用于演示；`production` profile 中这些 bean 和路由不存在。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
+推荐演示时直接使用仓库根目录下的专用脚本。它默认执行 `resource-gateway-examples` 的 `-Pfrontend package`，把 React UI 打进 Spring Boot 静态资源，然后以 `test` profile 在 `8080` 启动服务，因此隔离的 `/api/testing/**` 也可用于演示；`production` profile 中这些 bean 和路由不存在。Business Mirror 是默认产品入口，根路径会重定向到 `/business-mirror/`。为缩短演示准备时间，脚本默认给 Maven 打包加 `-DskipTests`；需要把测试也跑进去时使用 `--run-tests`。
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh
@@ -1587,9 +1587,11 @@ Scenario evidence 与 operation/lifecycle audit。完整命令示例和 Test Kit
 启动成功后脚本会打印：
 
 ```text
+Business Mirror: http://localhost:8080/business-mirror/
 Author canvas:   http://localhost:8080/author/
+Library author:  http://localhost:8080/libraries/
 Rehearsals:      http://localhost:8080/rehearsals/
-Run examples:    http://localhost:8080/showcase/
+Showcase:        http://localhost:8080/showcase/
 Legacy composer: http://localhost:8080/examples/gateway
   Capability probe: http://localhost:8080/api/integration/capabilities
   Active profile:   test
@@ -1601,8 +1603,7 @@ Integration API templates:
   Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
 ```
 
-脚本不会把“端口已监听”当成启动成功。它会等待公开的 capability endpoint 返回 2xx，确认协议、路由和 Spring
-依赖都已完成装配后才报告 ready。可独立复查：
+脚本不会把“端口已监听”当成启动成功。它会等待公开的 capability endpoint 返回 2xx，并检查 Business Mirror、Author、Libraries、Rehearsals 和 Showcase 五条静态路由，确认协议、路由和 Spring 依赖都已完成装配后才报告 ready。Business Mirror 的固定操作流程和页面说明见 [Business Mirror Workspace 使用与系统说明](resource-gateway-business-mirror-workspace-guide.md)。可独立复查：
 
 ```bash
 curl -fsS http://localhost:8080/api/integration/capabilities

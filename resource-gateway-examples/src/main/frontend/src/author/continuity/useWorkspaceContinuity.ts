@@ -239,8 +239,12 @@ export function useWorkspaceContinuity<TPayload>({
     if (!enabled || !hasContent) return Promise.resolve(true);
     if (saveInFlightRef.current) return saveInFlightRef.current;
     const task = (async (): Promise<boolean> => {
-      const epoch = epochRef.current;
       const fingerprint = fingerprintRef.current || await sha256Fingerprint(fingerprintValueRef.current);
+      if (!fingerprintRef.current) {
+        fingerprintRef.current = fingerprint;
+        epochRef.current += 1;
+      }
+      const epoch = epochRef.current;
       dispatch({ type: 'SAVE_STARTED', epoch });
       try {
         await onSaveRef.current({
