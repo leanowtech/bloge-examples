@@ -30,7 +30,7 @@ discover exact target
 | Gate a release in CI | `ResourceGatewaySuiteCli` + payload-free JUnit XML |
 | Verify release-grade evidence | exact Suite revision + caller-pinned trust material |
 | Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
-| Validate Business Mirror Package or Proposal files offline | `BusinessMirrorProtocol` + the packaged cancellation-fee fixtures |
+| Validate Business Mirror Package, Proposal, or Legacy Graph projection files offline | `BusinessMirrorProtocol` + packaged compatibility fixtures |
 
 Build the library and start the local test-profile Gateway:
 
@@ -48,9 +48,10 @@ The JAR packages the authoritative v1 JSON Schema and provides:
 
 - strict `DomainCapabilityPackageDraft`, `DomainCapabilityPackageSnapshot`,
   `PackageReadinessReport`, `CapabilityProposalDraft`, `CapabilityProposalSnapshot`, and
-  `BusinessAssetLink` schemas; `BusinessMirrorProtocol` validates these files offline and ships
-  complete cancellation-fee Package and simulation-only Proposal fixtures without linking the
-  Resource Gateway server or Spring Boot;
+  `BusinessAssetLink` schemas, plus fail-closed Legacy Graph projection/catalog schemas;
+  `BusinessMirrorProtocol` validates these files offline and ships complete cancellation-fee
+  Package, simulation-only Proposal, and server-produced loan-decision migration fixtures without
+  linking the Resource Gateway server or Spring Boot;
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
   registries, deterministic property planning/materialization/execution, pure-DSL mutation
@@ -255,6 +256,9 @@ BusinessMirrorProtocol.requireBusinessAssetLinkClosure(linkClosure);
 BusinessMirrorProtocol.requirePackageReadinessReport(readiness);
 BusinessMirrorProtocol.requirePackageSnapshot(snapshot);
 BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceipt);
+
+BusinessMirrorProtocol.requireLegacyGraphPackageProjection(legacyProjection);
+BusinessMirrorProtocol.requireLegacyGraphPackageProjectionCatalog(legacyCatalog);
 ```
 
 The verifier recomputes all three content addresses. It also rejects dangling/cyclic L0-L3 links,
@@ -262,6 +266,14 @@ contradictory readiness status, cross-Scope provenance, mutable authoring artifa
 manifest, non-deterministic manifest ordering, and receipts whose source/revision/time/fact
 references disagree. These checks do not query a Resource Gateway registry and do not expose
 Package content in exceptions.
+
+Legacy migration verification additionally proves Graph/Contract/Capability/Closure bindings,
+single-Scope provenance closure, exact equivalence between Package readiness blockers and migration
+gaps, mandatory owner/Contract/MirrorPlan policy gaps, graph-name ordering, derived status, and the
+projection content address. Discovered Contract tests remain evidence only; the verifier rejects a
+projection that hides Scenario governance debt. The fixed fixture is exposed as
+`BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE`. The end-to-end API flow is in the
+[Legacy Graph migration guide](../docs/resource-gateway-business-mirror-legacy-migration-guide.md).
 
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope

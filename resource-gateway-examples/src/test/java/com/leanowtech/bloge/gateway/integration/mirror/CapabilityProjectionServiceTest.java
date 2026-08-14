@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -236,6 +237,25 @@ class CapabilityProjectionServiceTest {
     }
 
     @Test
+    void canonicalResourceFingerprintIgnoresResponseSuccessSetInsertionOrder() {
+        LinkedHashSet<Object> firstValues = new LinkedHashSet<>(List.of("SUCCESS", 0, "0"));
+        LinkedHashSet<Object> secondValues = new LinkedHashSet<>(List.of("0", "SUCCESS", 0));
+        ResourceDescriptor firstDescriptor = resourceWithProtocol(
+                new ResponseProtocol.BodyCode("code", firstValues, "message"));
+        ResourceDescriptor secondDescriptor = resourceWithProtocol(
+                new ResponseProtocol.BodyCode("code", secondValues, "message"));
+
+        CapabilitySnapshot first = projection.projectResource(firstDescriptor,
+                objectSchema("customerId"), objectSchema("customer"), context(1));
+        CapabilitySnapshot second = projection.projectResource(secondDescriptor,
+                objectSchema("customerId"), objectSchema("customer"), context(1));
+
+        assertThat(firstDescriptor.responseProtocol()).isEqualTo(secondDescriptor.responseProtocol());
+        assertThat(first.source().sourceFingerprint()).isEqualTo(second.source().sourceFingerprint());
+        assertThat(first.fingerprint()).isEqualTo(second.fingerprint());
+    }
+
+    @Test
     void pureNodeChangeMovesGraphFingerprintWithoutExpandingDependencyClosure() {
         OperatorDefinition read = resourceOperator("loadCustomer", "customers.get", "READ_EXTERNAL", false);
         OperatorDefinition pureV1 = operator("normalize", OperatorDefinition.Source.builtIn("built-in"),
@@ -272,6 +292,12 @@ class CapabilityProjectionServiceTest {
         return new ResourceDescriptor(id, "https://api.example.test/" + id, method, headers, null,
                 Duration.ofSeconds(3), ParameterMapping.empty(), new ResponseProtocol.HttpStatus(),
                 "data", writeContract);
+    }
+
+    private static ResourceDescriptor resourceWithProtocol(ResponseProtocol responseProtocol) {
+        return new ResourceDescriptor("customers.get", "https://api.example.test/customers.get",
+                "GET", Map.of("Accept", "application/json"), null, Duration.ofSeconds(3),
+                ParameterMapping.empty(), responseProtocol, "data", null);
     }
 
     private static ResourceDescriptor.ExternalWriteContract managedWriteContract() {

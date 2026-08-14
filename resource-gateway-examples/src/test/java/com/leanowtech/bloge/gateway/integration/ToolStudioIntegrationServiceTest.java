@@ -156,6 +156,8 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("businessMirrorPackageApi", true)
                 .containsEntry("businessMirrorPackageCompilerApi", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
+                .containsEntry("businessMirrorLegacyMigrationApi", true)
+                .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("visualLibraryAuthoringOperatorTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringFunctionTestDraftRunner", true)
                 .containsEntry("visualLibraryAuthoringGovernedFixturePersistence", false)
@@ -258,7 +260,9 @@ class ToolStudioIntegrationServiceTest {
                         "capabilityContract", "effectContract",
                         "artifactProvenance", "capabilityLifecycleTransition",
                         "capabilityClosureProjectionRequest",
-                        "businessAssetLinkClosure", "packageCompilationReceipt");
+                        "businessAssetLinkClosure", "packageCompilationReceipt",
+                        "legacyGraphPackageProjection",
+                        "legacyGraphPackageProjectionCatalog");
         assertThat(envelope.payload().supportedObjects())
                 .containsEntry("mirrorPlan", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror
@@ -318,6 +322,9 @@ class ToolStudioIntegrationServiceTest {
                 "GET /api/business-mirror/packages/{packageId}/revisions/{revision}",
                 "POST /api/business-mirror/packages/{packageId}/compile",
                 "GET /api/business-mirror/packages/{packageId}/compilations/{compilationRevision}",
+                "GET /api/business-mirror/legacy-graphs",
+                "GET /api/business-mirror/legacy-graphs/{graphName}",
+                "POST /api/business-mirror/legacy-graphs/{graphName}/packages",
                 "POST /api/visual/drafts",
                 "PUT /api/visual/drafts/{draftId}",
                         "POST /admin/visual-operator-library-authoring/preview",

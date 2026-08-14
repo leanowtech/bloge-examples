@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-003 Authority Adapter / BM-004 Legacy migration
+> 当前迭代：BM-004 Legacy migration 已完成；下一迭代 BM-005 Business Mirror Workspace
 >
 > 最近更新：2026-08-14
 
@@ -172,19 +172,25 @@ BM-002 的 PostgreSQL 认证证明了 migration 可执行、durable commit 开�
     "domainCapabilityPackageSaveReceipt": ["resourceGateway.domainCapabilityPackageSaveReceipt.v1"],
     "domainCapabilityPackagePage": ["resourceGateway.domainCapabilityPackagePage.v1"],
     "businessAssetLinkClosure": ["resourceGateway.businessAssetLinkClosure.v1"],
-    "packageCompilationReceipt": ["resourceGateway.packageCompilationReceipt.v1"]
+    "packageCompilationReceipt": ["resourceGateway.packageCompilationReceipt.v1"],
+    "legacyGraphPackageProjection": ["resourceGateway.legacyGraphPackageProjection.v1"],
+    "legacyGraphPackageProjectionCatalog": ["resourceGateway.legacyGraphPackageProjectionCatalog.v1"]
   },
   "features": {
     "businessMirrorProtocol": true,
     "businessMirrorPackageApi": true,
     "businessMirrorPackageCompilerApi": true,
     "businessMirrorPackageCompilerAuthorityReady": true,
+    "businessMirrorLegacyMigrationApi": true,
+    "businessMirrorLegacyMigrationAuthorityReady": true,
     "businessMirrorProposalSimulation": false
   }
 }
 ```
 
 `businessMirrorProtocol=true` 表示领域协议、Schema 和独立校验器可用。`businessMirrorPackageApi=true` 表示 Package 作者态持久化 API 已装配；`businessMirrorPackageCompilerApi=true` 表示原子编译事务可调用。Authority readiness 现在为 `true`，表示默认部署已安装组合 Authority，并能围栏其明确拥有的 `GRAPH_DRAFT` 与 `CONTRACT` source kind；不支持的 Scenario、Fidelity、Outcome 等类型仍生成 `MISSING`。它不表示某个 Package 已 READY，也不表示 Proposal 模拟、Business Mirror Workspace 或生产环境认证已经完成。
+
+`businessMirrorLegacyMigrationApi=true` 表示 catalog、preview 和 import 路由已安装；`businessMirrorLegacyMigrationAuthorityReady=true` 表示运行时至少能精确投影一个存量 Graph。静态 capability factory 保持 readiness 为 `false`，只有 Spring 装配真实 projector 后才动态提升，防止协议支持被误报为部署就绪。
 
 ## 5. 架构偏差审计
 
@@ -200,6 +206,8 @@ BM-002 的 PostgreSQL 认证证明了 migration 可执行、durable commit 开�
 | 重试返回原始事实，不重复执行 | exact receipt 与 canonical command fingerprint 持久化在同一事务 | 符合 |
 | 示例自动建表不冒充生产迁移 | 独立 PostgreSQL DDL 和原生数据库认证存在，文档明确运行时建表边界 | 符合 |
 | 新对象进入 additive `1.1.x` 集成协议 | 对象已进入能力探针，但当前 protocolVersion 仍为 `1.0.0` | 有意延后到 BM-014；先补多版本协商与旧消费者认证，避免伪兼容 |
+| Legacy 迁移不改写 Graph | projector 只生成 exact refs、Package draft 和 gap；原 Graph/Contract 不变 | 符合 |
+| 技术测试不冒充业务 Scenario | Contract Test Suite 只进入 discovered evidence 和 provenance | 符合 |
 
 未发现需要推翻蓝图边界的架构偏差。
 
@@ -382,3 +390,68 @@ mvn -f resource-gateway-examples/pom.xml \
 默认部署不再只有「会输出缺失」的 fallback Authority，而是能从现有系统的真实 source-of-truth 解析七个内置 Graph、Contract、外部能力闭包和测试证据。BM-003 的根问题由「没有真实 Adapter」收敛为「Adapter 类型覆盖与生产容量认证尚不完整」。
 
 这一迭代没有提供业务工作区、Scenario 治理转换或客户 Outcome，因此风险加权差距只从约 `20%` 降至约 `19%`。下一提交实施 BM-004：把七个内置 Graph 包装成 `LEGACY_IMPORTED` Package preview/draft，输出正式 gap inventory，并复用 durable authoring API 渐进导入；所有不可推断业务字段必须保持阻断。
+
+## 11. Iteration 4：BM-004 Legacy Graph migration
+
+### 11.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 无副作用迁移目录 | `GET /api/business-mirror/legacy-graphs` 在认证 Scope 内按 graph name 返回七个完整 preview |
+| 单 Graph preview | exact Graph/Contract/Capability/Closure/Test Suite refs、空业务定义、`INFERRED` provenance 和完整 gap inventory |
+| Durable 渐进导入 | `POST .../{graphName}/packages` 复用 Package create 的 Scope、事务、optimistic revision 和 durable exact replay |
+| Fail-closed 迁移状态 | `PACKAGE_READINESS` gap 与 Draft blocker 精确等价；Owner、Contract 和 MirrorPlan 迁移 policy gap 不可隐藏 |
+| 严格跨语言协议 | projection/catalog 两个 Draft 2020-12 Schema，全部 `additionalProperties: false` |
+| 独立语义验真 | Test Kit 复算 projection fingerprint，并验证 source closure、Scope、排序、状态和 gap 完整性 |
+| 固定兼容性向量 | server-produced loan-decision projection fixture 约束跨 JVM exact refs 和 projection fingerprint |
+| 动态能力发现 | API support 与 runtime authority readiness 分离；三条 endpoint 和两个 object version 可发现 |
+| 操作与恢复手册 | `resource-gateway-business-mirror-legacy-migration-guide.md` 覆盖启动、preview、导入、重放、编译、错误和停止 |
+
+### 11.2 迁移信任边界
+
+1. Package id 固定为 `legacy:{graphName}`，preview revision 固定为 `0`，成功导入后由 repository 分配 revision `1`。
+2. Graph Contract 是技术 source evidence，不自动成为业务 Owner 已批准的 Package Contract。
+3. Contract Test Suite 是可执行证据，不是 owner-governed Scenario denominator 或 ScenarioPack。
+4. 无法从拓扑证明的 Problem、Goal、Owner、Risk、Solution、Carrier、Channel、Fidelity、Outcome、State 和 Effect 保持空值或保守值，并形成阻断 gap。
+5. preview、catalog 和 import 使用可信身份的五段 Scope；调用方不能在 URL 或 body 中切换租户。
+6. projection 的 provenance 必须闭合 Graph、Contract、Capability、Closure 和全部 discovered suites；遗漏任一 source ref 都会被服务端或 Test Kit 拒绝。
+7. 导入成功只表示作者态已可靠落库，不表示迁移完成、编译 READY、ANEKE 可发布或客户环境已认证。
+
+### 11.3 开发红灯与根治
+
+固定 fixture 在独立 JVM 中首次发现同一 Resource Descriptor 生成不同 capability fingerprint。病根不是 SHA-256 或 ObjectMapper，而是 `ResponseProtocol.BodyCode.successValues` 使用 `Set.copyOf`，其跨 JVM 迭代顺序不稳定；canonical serializer 会按该顺序编码数组。
+
+实现没有放宽 fixture 等值断言。`BodyCode` 和 `StatusCodes` 现在在值对象构造边界转为稳定有序、不可变 Set，并新增不同插入顺序生成相同 source/snapshot fingerprint 的回归测试。修复后独立 JVM 的 Spring HTTP 测试与固定 fixture 逐字段一致。这个缺陷说明 content-addressed protocol 必须规范化所有无序集合，不能只排序 Map key。
+
+### 11.4 自动化验证
+
+聚焦门禁：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=CapabilityProjectionServiceTest,BusinessMirrorCapabilityTest,\
+ResourceGatewayApplicationTest,BusinessMirrorPackageSpringWiringTest,\
+ToolStudioIntegrationServiceTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=BusinessMirrorProtocolTest test
+```
+
+验证覆盖七个 Graph、catalog 排序、固定 preview、未知 Graph `404`、import exact replay、导入后编译、静态/动态 capability readiness、Set 顺序确定性、Schema packaging、gap 隐藏和 fingerprint 篡改拒绝。
+
+聚焦门禁中，Test Kit 为 `18/18` 全绿，Spring migration HTTP 为 `3/3` 全绿，Capability projection 为 `13/13` 全绿。
+
+完整项目门禁：
+
+| 项目 | 命令 | 结果 |
+|---|---|---|
+| Resource Gateway | `mvn -f resource-gateway-examples/pom.xml clean verify` | `5967` tests，`0` failures，`0` errors，`13` skipped；原生 PostgreSQL、真实浏览器 E2E、Spring Boot 可执行 JAR 打包通过；`BUILD SUCCESS` |
+| Resource Gateway Test Kit | `mvn -f resource-gateway-test-kit/pom.xml clean verify` | `544` tests，`0` failures，`0` errors，`0` skipped；Schema packaging、shade、Javadoc 和 JAR 打包通过；`BUILD SUCCESS` |
+
+完整回归新增覆盖 migration controller wiring、跨 JVM 固定 fixture、endpoint capability 清单和 Set 规范化。`13` 个 skipped 均为仓库既有的环境条件跳过，不是本轮失败降级。
+
+### 11.5 差距复评
+
+BM-004 关闭了存量 Graph 只能继续手工维护、无法进入 Package 主模型、迁移过程会误填业务语义以及导入结果无法独立验真的根问题。七个内置 Graph 现在都能逐包 preview 和导入，并且缺失项不会误绿。
+
+风险加权差距由约 `19%` 降至约 `17%`。仍占主要权重的缺口是：没有业务人员可用的 Business Mirror Workspace；Proposal 尚不能形成隔离模拟闭环；持久化 Visual Graph、Scenario、Fidelity 和 Outcome Authority 未接通；客户生产环境尚无 KMS、HA/DR、升级与容量认证。下一迭代进入 BM-005，以现有 Package、projection、gap、compile receipt 和 exact lineage 构建任务导向工作区，而不是在旧 Canvas 上继续堆字段。

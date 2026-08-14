@@ -13,7 +13,10 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphPacka
 import com.leanowtech.bloge.gateway.businessmirror.compilation.CompositePackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependencyObservation;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjection;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.integration.mirror.BuiltInCapabilityClosureService;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosureIntegrity;
@@ -116,6 +119,9 @@ class ResourceGatewayApplicationTest {
 
     @Autowired
     private PackageCompilationAuthority packageCompilationAuthority;
+
+    @Autowired
+    private LegacyGraphPackageProjector legacyGraphPackageProjector;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -598,6 +604,42 @@ class ResourceGatewayApplicationTest {
     }
 
     @Test
+    void everyBuiltInGraphHasAFailClosedLegacyPackageProjection() {
+        IntegrationRequestContext identity = new IntegrationRequestContext(
+                "demo-tenant", "support", "gateway-examples", "test", "sg",
+                "WORKLOAD", "migration-test", "", "BUSINESS_MIRROR_AUTHORING",
+                "legacy-catalog-test");
+
+        var catalog = legacyGraphPackageProjector.catalog(identity);
+
+        assertThat(legacyGraphPackageProjector.ready()).isTrue();
+        assertThat(catalog.items()).hasSize(7);
+        assertThat(catalog.items()).allSatisfy(projection -> {
+            projection.verify(objectMapper);
+            assertThat(projection.migrationMode())
+                    .isEqualTo(LegacyGraphPackageProjection.MigrationMode.LEGACY_IMPORTED);
+            assertThat(projection.status())
+                    .isEqualTo(LegacyGraphPackageProjection.Status.BLOCKED);
+            assertThat(projection.packageDraft().revision()).isZero();
+            assertThat(projection.packageDraft().businessDefinition())
+                    .isEqualTo(com.leanowtech.bloge.gateway.businessmirror.domain
+                            .DomainCapabilityPackageDraft.BusinessDefinition.empty());
+            assertThat(projection.packageDraft().provenance().sourceType())
+                    .isEqualTo(com.leanowtech.bloge.gateway.integration.mirror
+                            .ArtifactProvenance.SourceType.INFERRED);
+            assertThat(projection.packageDraft().provenance().approvedBy()).isBlank();
+            assertThat(projection.discoveredTestSuiteRefs()).hasSize(1);
+            assertThat(projection.gaps())
+                    .extracting(LegacyGraphPackageProjection.Gap::code)
+                    .containsAll(projection.packageDraft().readinessBlockers())
+                    .contains("GRAPH_CONTRACT_OWNER_CONFIRMATION_MISSING",
+                            "MIRROR_PLAN_MISSING",
+                            "LEGACY_PROJECTION_OWNER_APPROVAL_MISSING",
+                            "DISCOVERED_TEST_SUITE_REQUIRES_SCENARIO_GOVERNANCE");
+        });
+    }
+
+    @Test
     void builtInClosureProjectionNormalizesMissingResourceFailure() {
         registry.deregister("order-service.listOrders");
 
@@ -696,7 +738,8 @@ class ResourceGatewayApplicationTest {
         assertThat((Map<String, Object>) capabilityPayload.get("features"))
                 .containsEntry("trustedWorkloadIdentity", true)
                 .containsEntry("demoIdentityMode", true)
-                .containsEntry("businessMirrorPackageCompilerAuthorityReady", true);
+                .containsEntry("businessMirrorPackageCompilerAuthorityReady", true)
+                .containsEntry("businessMirrorLegacyMigrationAuthorityReady", true);
         assertThat((Map<String, Object>) capabilityPayload.get("identityProvider"))
                 .containsEntry("providerType", "STATIC_BEARER_REGISTRY")
                 .containsEntry("claimsSource", "SERVER_REGISTRY");

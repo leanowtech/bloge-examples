@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioPublicationController;
 import com.leanowtech.bloge.gateway.authoring.scenario.TableSuiteRunController;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageController;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageController;
 import com.leanowtech.bloge.gateway.businessmirror.transport.PackageCompilationController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
@@ -41,7 +42,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         VisualLibraryAuthoringDraftController.class,
         VisualLibraryAuthoringTestController.class,
         DomainCapabilityPackageController.class,
-        PackageCompilationController.class
+        PackageCompilationController.class,
+        LegacyGraphPackageController.class
 })
 public class IntegrationProblemHandler {
 

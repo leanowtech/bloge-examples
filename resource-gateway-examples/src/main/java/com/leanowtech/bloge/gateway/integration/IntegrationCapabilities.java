@@ -339,6 +339,12 @@ public record IntegrationCapabilities(
         objects.put("packageCompilationReceipt", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.compilation
                         .PackageCompilationReceipt.SCHEMA_VERSION));
+        objects.put("legacyGraphPackageProjection", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.migration
+                        .LegacyGraphPackageProjection.SCHEMA_VERSION));
+        objects.put("legacyGraphPackageProjectionCatalog", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.migration
+                        .LegacyGraphPackageProjectionCatalog.SCHEMA_VERSION));
         objects.put("domainCapabilityPackageSnapshot", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .DomainCapabilityPackageSnapshot.SCHEMA_VERSION));
@@ -956,6 +962,8 @@ public record IntegrationCapabilities(
         features.put("businessMirrorPackageApi", true);
         features.put("businessMirrorPackageCompilerApi", true);
         features.put("businessMirrorPackageCompilerAuthorityReady", false);
+        features.put("businessMirrorLegacyMigrationApi", true);
+        features.put("businessMirrorLegacyMigrationAuthorityReady", false);
         features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
@@ -1431,6 +1439,9 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/business-mirror/packages/{packageId}/revisions/{revision}"),
                 new Endpoint("POST", "/api/business-mirror/packages/{packageId}/compile"),
                 new Endpoint("GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"),
+                new Endpoint("GET", "/api/business-mirror/legacy-graphs"),
+                new Endpoint("GET", "/api/business-mirror/legacy-graphs/{graphName}"),
+                new Endpoint("POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"),
                 new Endpoint("POST", "/api/visual/drafts"),
                 new Endpoint("PUT", "/api/visual/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),

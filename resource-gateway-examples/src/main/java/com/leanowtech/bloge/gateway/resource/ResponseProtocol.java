@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.resource;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
@@ -53,7 +56,8 @@ public sealed interface ResponseProtocol permits
             if (codePath == null || codePath.isBlank()) {
                 throw new IllegalArgumentException("codePath must not be blank");
             }
-            successValues = successValues == null ? Set.of() : Set.copyOf(successValues);
+            successValues = stableSet(successValues,
+                    Comparator.comparing(ResponseProtocol::stableScalarKey));
         }
     }
 
@@ -87,7 +91,7 @@ public sealed interface ResponseProtocol permits
         Set<Integer> successCodes
     ) implements ResponseProtocol {
         public StatusCodes {
-            successCodes = successCodes == null ? Set.of() : Set.copyOf(successCodes);
+            successCodes = stableSet(successCodes, Comparator.nullsFirst(Integer::compareTo));
         }
     }
 
@@ -115,5 +119,18 @@ public sealed interface ResponseProtocol permits
                 throw new IllegalArgumentException("successExpr must not be blank");
             }
         }
+    }
+
+    private static <T> Set<T> stableSet(Set<T> values, Comparator<? super T> comparator) {
+        if (values == null || values.isEmpty()) {
+            return Set.of();
+        }
+        LinkedHashSet<T> ordered = new LinkedHashSet<>();
+        values.stream().sorted(comparator).forEach(ordered::add);
+        return Collections.unmodifiableSet(ordered);
+    }
+
+    private static String stableScalarKey(Object value) {
+        return value == null ? "0:null" : value.getClass().getName() + ":" + value;
     }
 }

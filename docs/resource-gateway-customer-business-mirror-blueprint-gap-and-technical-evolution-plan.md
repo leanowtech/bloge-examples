@@ -638,7 +638,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 
 ### 13.2 Legacy Graph 包装器
 
-新增 `LegacyGraphPackageProjector`：
+已实现 `LegacyGraphPackageProjector`，并保持以下迁移规则：
 
 1. 将一个现有 Graph、Graph Contract、Scenario 和依赖闭包包装为 `LEGACY_IMPORTED` Package draft。
 2. 无法推断的 Problem、Owner、Risk、Solution、Carrier、Outcome 显示为 readiness finding。
@@ -662,7 +662,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 | RG-BM-001 | P0 | 权威与协议冻结 | 领域词汇、source-of-truth、v1 Schema、ADR | **实施中：**协议内核、严格 Schema、固定 fixtures 和 Test Kit 已完成；RG/ANEKE/业务/TEE 四方签字及 mixed-version 消费者认证待完成 |
 | RG-BM-002 | P0 | Package protocol 与 repository | **仓库内工程实现已完成：** Draft/Snapshot/Readiness 协议、严格 Schema、PostgreSQL migration、认证 create/save/read/list API、完整 Scope、optimistic revision 与 durable exact receipt | H2/PostgreSQL 双实例并发、漂移、跨 Scope、事务回滚、重启 exact replay、认证 HTTP 和独立消费者全绿；HA/DR 属于 BM-013 |
 | RG-BM-003 | P0 | PackageCompiler | **内核、部署纵向切片与首批真实 Adapter 已完成：** Authority freeze/fence、确定性 Readiness/Snapshot/Closure、PostgreSQL append-only facts、跨副本 revision allocator、durable receipt、认证 compile/read API、组合 Authority、内置 Graph/Contract exact resolution、动态 readiness 和独立 Test Kit 复验；Scenario/Fidelity/Outcome Adapter 继续实施 | 100 组乱序、tamper、Scope、cycle、TOCTOU、唯一 kind ownership、七个内置 Graph、H2/PostgreSQL 双连接、响应丢失和 Spring HTTP 全绿；完整退出仍需其余 Adapter 与大型编译容量认证 |
-| RG-BM-004 | P0 | Legacy migration | Graph → Package projector、gap inventory、逐包迁移 | 七个内置 Graph 均可包装且缺失项不误绿 |
+| RG-BM-004 | P0 | Legacy migration | **仓库内工程实现已完成：** Graph → Package catalog/preview/projector、正式 gap inventory、durable 幂等逐包导入、严格 Schema、固定 fixture、Test Kit 离线复验和动态 capability readiness | 七个内置 Graph 均可包装；不可推断业务字段、Owner approval、Scenario 治理和 MirrorPlan 保持阻断；跨 JVM fixed fixture、HTTP replay、tamper/gap-hide 全绿 |
 | RG-BM-005 | P0 | Business Mirror Workspace | Portfolio、Package 六步任务、Readiness、Capability Map | 中英文、390/820/1440、键盘、VS Code 离线均可完成固定任务 |
 | RG-BM-006 | P0 | CapabilityProposal protocol | Proposal、SIMULATION_ONLY binding、Fixture 与 acceptance suite | Proposal 无真实网络/Secret/write；未匹配 fail closed |
 | RG-BM-007 | P0 | Proposal simulation | temporary snapshot、MirrorPlan、分层 evidence、Package run | 模拟证据不可被 Gate 识别为实现证据 |

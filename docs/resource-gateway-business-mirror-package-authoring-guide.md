@@ -22,7 +22,9 @@
 - 独立 Test Kit 对保存回执、列表页和固定样例的离线 JSON Schema 校验。
 - exact source revision 的幂等编译 API，以及 Readiness、Link Closure、可选 Snapshot 的原子 append-only 保存；
 - 不同幂等键并发编译同一 Package 时的跨副本 revision 串行分配；
-- compile receipt 的严格 Schema、canonical fact 复验和 exact revision read。
+- compile receipt 的严格 Schema、canonical fact 复验和 exact revision read；
+- 七个内置 Graph 的无副作用迁移 preview、完整 gap inventory 和幂等 Package 导入；
+- Legacy projection/catalog 的严格 Schema、固定兼容性 fixture 和 Test Kit 离线语义复验。
 
 当前尚未提供：
 
@@ -31,6 +33,8 @@
 - ANEKE registry、publish gate 或治理状态写入。
 
 能力探针中 `businessMirrorPackageApi=true` 表示 durable authoring API 已装配，`businessMirrorPackageCompilerApi=true` 表示编译事务和 API 已装配。默认部署的 `businessMirrorPackageCompilerAuthorityReady=true` 表示组合 Authority 已安装，并能解析内置 `GRAPH_DRAFT` 与 `CONTRACT`；它不表示任意 Package 的 Scenario、Fidelity、Outcome 等全部依赖已经接通。unsupported kind 仍会失败关闭。
+
+`businessMirrorLegacyMigrationApi=true` 表示迁移路由和协议已安装；`businessMirrorLegacyMigrationAuthorityReady=true` 表示当前部署至少能精确投影一个存量 Graph。完整操作见 [存量 Graph 渐进迁移指南](resource-gateway-business-mirror-legacy-migration-guide.md)。
 
 ## 2. 启动演示服务
 
@@ -69,10 +73,12 @@ curl -fsS http://localhost:8080/api/integration/capabilities \
   -H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: BUSINESS_MIRROR_AUTHORING' \
   | jq '.payload |
-        {businessMirrorPackageApi: .features.businessMirrorPackageApi,
-         businessMirrorPackageCompilerApi: .features.businessMirrorPackageCompilerApi,
-         businessMirrorPackageCompilerAuthorityReady: .features.businessMirrorPackageCompilerAuthorityReady,
-         supportedObjects: .supportedObjects}'
+	        {businessMirrorPackageApi: .features.businessMirrorPackageApi,
+	         businessMirrorPackageCompilerApi: .features.businessMirrorPackageCompilerApi,
+	         businessMirrorPackageCompilerAuthorityReady: .features.businessMirrorPackageCompilerAuthorityReady,
+	         businessMirrorLegacyMigrationApi: .features.businessMirrorLegacyMigrationApi,
+	         businessMirrorLegacyMigrationAuthorityReady: .features.businessMirrorLegacyMigrationAuthorityReady,
+	         supportedObjects: .supportedObjects}'
 ```
 
 判断条件：`businessMirrorPackageApi` 为 `true`，且 `supportedObjects` 包含：
@@ -82,6 +88,8 @@ curl -fsS http://localhost:8080/api/integration/capabilities \
 - `domainCapabilityPackagePage`
 - `packageCompilationReceipt`
 - `businessAssetLinkClosure`
+- `legacyGraphPackageProjection`
+- `legacyGraphPackageProjectionCatalog`
 
 ## 3. 完成一次作者态闭环
 
@@ -211,6 +219,9 @@ curl -fsS "${AUTH[@]}" \
 | `GET /api/business-mirror/packages?after={packageId}&limit={1-200}` | 列出 current projections | keyset pagination；默认 limit 为 `50` |
 | `POST /api/business-mirror/packages/{packageId}/compile?sourceRevision={n}` | 编译 exact authoring revision | `Idempotency-Key` 必填；结果原子追加 |
 | `GET /api/business-mirror/packages/{packageId}/compilations/{revision}` | 读取 exact compile receipt | 返回 Readiness、Closure 和可选 Snapshot |
+| `GET /api/business-mirror/legacy-graphs` | 列出迁移候选及完整 preview | 按 graph name 排序；同一认证 Scope |
+| `GET /api/business-mirror/legacy-graphs/{graphName}` | 无副作用预览 Legacy Package | 不推断业务语义；gap 必须完整 |
+| `POST /api/business-mirror/legacy-graphs/{graphName}/packages` | 幂等导入 revision `1` | 复用 Package create 事务和回执 |
 
 所有端点都要求：
 
@@ -234,6 +245,8 @@ curl -fsS "${AUTH[@]}" \
 | `RG.BUSINESS_MIRROR.COMPILATION_IDEMPOTENCY_CONFLICT` | `409` | 否 | 同 key 绑定了不同 source revision 或 actor；停止自动换 key |
 | `RG.PACKAGE.DEPENDENCY_DRIFT` | `409` | 是 | Authority 在编译窗口内变化；重新冻结依赖后重试 |
 | `RG.BUSINESS_MIRROR.COMPILATION_NOT_FOUND` | `404` | 否 | 当前 Scope 不存在该 compilation revision |
+| `RG.BUSINESS_MIRROR.LEGACY_GRAPH_NOT_FOUND` | `404` | 否 | installed migration authority 中不存在该 Graph；先读取 catalog |
+| `RG.BUSINESS_MIRROR.LEGACY_PROJECTION_UNAVAILABLE` | `503` | 是 | source authority 无法产生 exact projection；检查能力探针和底层资产完整性 |
 
 ## 5. 协议校验
 
@@ -249,6 +262,12 @@ BM-002 新增的可消费根对象为：
 - `domain-capability-package-save-receipt-v1.schema.json`
 - `domain-capability-package-page-v1.schema.json`
 
+BM-004 新增：
+
+- `legacy-graph-package-projection-v1.schema.json`
+- `legacy-graph-package-projection-catalog-v1.schema.json`
+- `loan-decision-legacy-graph-projection-v1.fixture.json`
+
 Test Kit 消费者可离线校验，不需要启动 Resource Gateway：
 
 ```java
@@ -260,6 +279,9 @@ BusinessMirrorProtocol.requirePackagePage(page);
 
 JsonNode compilation = objectMapper.readTree(compilationReceiptJson);
 BusinessMirrorProtocol.requirePackageCompilationReceipt(compilation);
+
+JsonNode legacyProjection = objectMapper.readTree(legacyProjectionJson);
+BusinessMirrorProtocol.requireLegacyGraphPackageProjection(legacyProjection);
 ```
 
 独立校验器会复算 stored draft 的 canonical fingerprint，并拒绝未知字段、内容篡改、时间倒序、跨 Scope page、非递增 package id、重复项和游离 cursor。保存命令的 `requestFingerprint` 由服务端绑定完整命令材料；只持有回执而没有原始命令的消费者只能校验格式，不能独立复算该字段。固定回执样例为 `cancellation-fee-package-save-receipt-v1.fixture.json`。

@@ -13,6 +13,8 @@ import com.leanowtech.bloge.gateway.businessmirror.domain.CapabilityProposalSnap
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageDraft;
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageSnapshot;
 import com.leanowtech.bloge.gateway.businessmirror.domain.PackageReadinessReport;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjection;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjectionCatalog;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +39,10 @@ class BusinessMirrorCapabilityTest {
                         DomainCapabilityPackagePage.SCHEMA_VERSION))
                 .containsEntry("packageCompilationReceipt", java.util.List.of(
                         PackageCompilationReceipt.SCHEMA_VERSION))
+                .containsEntry("legacyGraphPackageProjection", java.util.List.of(
+                        LegacyGraphPackageProjection.SCHEMA_VERSION))
+                .containsEntry("legacyGraphPackageProjectionCatalog", java.util.List.of(
+                        LegacyGraphPackageProjectionCatalog.SCHEMA_VERSION))
                 .containsEntry("domainCapabilityPackageSnapshot", java.util.List.of(
                         DomainCapabilityPackageSnapshot.SCHEMA_VERSION))
                 .containsEntry("packageReadinessReport", java.util.List.of(
@@ -50,12 +56,20 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorPackageApi", true)
                 .containsEntry("businessMirrorPackageCompilerApi", true)
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
+                .containsEntry("businessMirrorLegacyMigrationApi", true)
+                .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("businessMirrorProposalSimulation", false);
         assertThat(capabilities.endpoints())
                 .contains(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/business-mirror/packages/{packageId}/compile"))
                 .contains(new IntegrationCapabilities.Endpoint(
-                        "GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"));
+                        "GET", "/api/business-mirror/packages/{packageId}/compilations/{compilationRevision}"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/legacy-graphs"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/legacy-graphs/{graphName}"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"));
         assertThat(capabilities.protocolVersion())
                 .isEqualTo(ToolStudioResourceGatewayProtocol.VERSION);
     }

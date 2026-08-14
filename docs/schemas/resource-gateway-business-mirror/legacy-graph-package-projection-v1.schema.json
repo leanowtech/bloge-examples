@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/legacy-graph-package-projection-v1.schema.json",
+  "title": "Resource Gateway Legacy Graph Package Projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "projectorVersion", "migrationMode", "graphName", "scope", "sourceGraphRef", "sourceContractRef", "projectedCapabilityRef", "capabilityClosureRef", "discoveredTestSuiteRefs", "packageDraft", "gaps", "status", "projectionFingerprint"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.legacyGraphPackageProjection.v1" },
+    "projectorVersion": { "const": "legacy-graph-package-projector-v1" },
+    "migrationMode": { "const": "LEGACY_IMPORTED" },
+    "graphName": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "sourceGraphRef": { "$ref": "#/$defs/graphRef" },
+    "sourceContractRef": { "$ref": "#/$defs/contractRef" },
+    "projectedCapabilityRef": { "$ref": "#/$defs/capabilityRef" },
+    "capabilityClosureRef": { "$ref": "#/$defs/capabilityClosureRef" },
+    "discoveredTestSuiteRefs": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/testSuiteRef" }
+    },
+    "packageDraft": { "$ref": "domain-capability-package-draft-v1.schema.json" },
+    "gaps": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/gap" }
+    },
+    "status": { "enum": ["BLOCKED", "READY_FOR_OWNER_REVIEW"] },
+    "projectionFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "graphRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "GRAPH_DRAFT" } } }
+      ]
+    },
+    "contractRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CONTRACT" } } }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY" } } }
+      ]
+    },
+    "capabilityClosureRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "CAPABILITY_CLOSURE" } } }
+      ]
+    },
+    "testSuiteRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "TEST_SUITE" } } }
+      ]
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "origin", "category", "severity", "draftPath", "explanation", "requiredAction", "evidenceRefs"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "origin": { "enum": ["PACKAGE_READINESS", "MIGRATION_POLICY"] },
+        "category": { "enum": ["BUSINESS_CONTEXT", "CONTRACT", "EXECUTION_MODEL", "SCENARIO", "SERVICE_ASSET", "FIDELITY", "OUTCOME", "MIGRATION_TRUST"] },
+        "severity": { "enum": ["BLOCKING", "WARNING"] },
+        "draftPath": { "type": "string", "pattern": "^/", "maxLength": 1024 },
+        "explanation": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "requiredAction": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "evidenceRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" }
+      }
+    }
+  }
+}

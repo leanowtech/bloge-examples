@@ -146,6 +146,12 @@ It includes the required identity Scope, create/save/read/replay commands, stabl
 PostgreSQL migration boundary, compile/read commands, and stop command. The API remains headless;
 `Business Mirror Workspace` and Proposal simulation are later work packages.
 
+Existing graphs can be migrated incrementally without rewriting their topology. The
+[Legacy Graph migration guide](../docs/resource-gateway-business-mirror-legacy-migration-guide.md)
+covers the seven built-in Graph previews, formal gap inventory, fixed compatibility fixture,
+idempotent Package import, compilation, and offline Test Kit verification. Migration deliberately
+keeps inferred business fields blocked and does not relabel Contract tests as governed Scenarios.
+
 The deterministic Package compilation kernel, frozen dependency authority port, readiness semantics,
 and offline verification boundary are documented in the
 [Business Mirror PackageCompiler guide](../docs/resource-gateway-business-mirror-package-compiler.md).

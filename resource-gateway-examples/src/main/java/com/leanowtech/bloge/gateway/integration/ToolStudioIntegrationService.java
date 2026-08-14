@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.integration;
 
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
@@ -176,6 +177,7 @@ public class ToolStudioIntegrationService {
             physicalAttemptTerminalHealth = List.of();
     private PackageCompilationAuthority packageCompilationAuthority =
             new UnavailablePackageCompilationAuthority();
+    private boolean legacyGraphPackageProjectorReady;
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -227,6 +229,12 @@ public class ToolStudioIntegrationService {
     void configurePackageCompilationAuthority(PackageCompilationAuthority authority) {
         this.packageCompilationAuthority = authority == null
                 ? new UnavailablePackageCompilationAuthority() : authority;
+    }
+
+    /** Receives the built-in Legacy migration authority only when its source catalog is installed. */
+    @Autowired(required = false)
+    void configureLegacyGraphPackageProjector(LegacyGraphPackageProjector projector) {
+        this.legacyGraphPackageProjectorReady = projector != null && projector.ready();
     }
 
     /** Receives the marker only when protected mirror routes are physically assembled. */
@@ -584,6 +592,8 @@ public class ToolStudioIntegrationService {
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
         features.put("businessMirrorPackageCompilerAuthorityReady",
                 packageCompilationAuthority.ready());
+        features.put("businessMirrorLegacyMigrationAuthorityReady",
+                legacyGraphPackageProjectorReady);
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);

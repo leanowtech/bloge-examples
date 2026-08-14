@@ -31,6 +31,8 @@ final class BusinessMirrorSchemaValidator {
             "domain-capability-package-save-receipt-v1.schema.json",
             "domain-capability-package-page-v1.schema.json",
             "package-compilation-receipt-v1.schema.json",
+            "legacy-graph-package-projection-v1.schema.json",
+            "legacy-graph-package-projection-catalog-v1.schema.json",
             "domain-capability-package-snapshot-v1.schema.json",
             "package-readiness-report-v1.schema.json",
             "capability-proposal-draft-v1.schema.json",

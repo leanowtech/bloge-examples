@@ -1,0 +1,415 @@
+{
+  "schemaVersion": "resourceGateway.legacyGraphPackageProjection.v1",
+  "projectorVersion": "legacy-graph-package-projector-v1",
+  "migrationMode": "LEGACY_IMPORTED",
+  "graphName": "loanDecisionPolicy",
+  "scope": {
+    "tenantId": "ride-hailing",
+    "organizationId": "customer-service",
+    "projectId": "cancellation",
+    "environmentId": "test",
+    "region": "sg"
+  },
+  "sourceGraphRef": {
+    "kind": "GRAPH_DRAFT",
+    "id": "built-in:loanDecisionPolicy",
+    "revision": 1,
+    "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+  },
+  "sourceContractRef": {
+    "kind": "CONTRACT",
+    "id": "built-in:loanDecisionPolicy:contract",
+    "revision": 1,
+    "fingerprint": "sha256:c1e2462948cf3ef5a5405fbc8311e39cdefe5dcf6f89396bc1f5cf29ade05550"
+  },
+  "projectedCapabilityRef": {
+    "kind": "CAPABILITY",
+    "id": "graph:loanDecisionPolicy",
+    "revision": 1,
+    "fingerprint": "sha256:bb48bad6ee6ad57ecc46f369a00f13cc3cb1af4db2b13cd83346f88ee8cfbfc7"
+  },
+  "capabilityClosureRef": {
+    "kind": "CAPABILITY_CLOSURE",
+    "id": "graph:loanDecisionPolicy",
+    "revision": 1,
+    "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+  },
+  "discoveredTestSuiteRefs": [
+    {
+      "kind": "TEST_SUITE",
+      "id": "loan-decision-policy-smoke",
+      "revision": 1,
+      "fingerprint": "sha256:65aef628e0f44c5c208001aa587122ea4523a9fd4a2d67f7ced8c96a4c4b98e8"
+    }
+  ],
+  "packageDraft": {
+    "schemaVersion": "bloge.domainCapabilityPackageDraft.v1",
+    "packageId": "legacy:loanDecisionPolicy",
+    "revision": 0,
+    "scope": {
+      "tenantId": "ride-hailing",
+      "organizationId": "customer-service",
+      "projectId": "cancellation",
+      "environmentId": "test",
+      "region": "sg"
+    },
+    "businessDefinition": {
+      "domainId": "",
+      "problemTaxonomyRef": null,
+      "problemCode": "",
+      "businessGoal": "",
+      "expectedOutcome": "",
+      "riskClass": "CRITICAL",
+      "accountableOwner": "",
+      "collaboratingOwners": []
+    },
+    "packageContractRef": {
+      "kind": "CONTRACT",
+      "id": "built-in:loanDecisionPolicy:contract",
+      "revision": 1,
+      "fingerprint": "sha256:c1e2462948cf3ef5a5405fbc8311e39cdefe5dcf6f89396bc1f5cf29ade05550"
+    },
+    "capabilityRefs": [],
+    "graphRefs": [
+      {
+        "kind": "GRAPH_DRAFT",
+        "id": "built-in:loanDecisionPolicy",
+        "revision": 1,
+        "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+      }
+    ],
+    "proposalRefs": [],
+    "stateModelRefs": [],
+    "effectModelRefs": [],
+    "scenarioInventoryRef": null,
+    "scenarioPackRefs": [],
+    "solutionRefs": [],
+    "carrierRefs": [],
+    "channelRefs": [],
+    "fidelityInventoryRef": null,
+    "outcomeDefinitionRefs": [],
+    "limitations": [
+      "Business bindings, Fidelity, Outcome, state, and effect semantics are absent.",
+      "Contract test suites require governed Scenario conversion before readiness.",
+      "The imported Graph Contract requires Package-owner confirmation."
+    ],
+    "assumptions": [
+      "Existing Graph execution behavior is preserved without topology rewriting."
+    ],
+    "expiresAt": null,
+    "provenance": {
+      "schemaVersion": "resourceGateway.artifactProvenance.v1",
+      "sourceType": "INFERRED",
+      "sourceRefs": [
+        {
+          "kind": "CAPABILITY",
+          "id": "graph:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:bb48bad6ee6ad57ecc46f369a00f13cc3cb1af4db2b13cd83346f88ee8cfbfc7"
+        },
+        {
+          "kind": "CAPABILITY_CLOSURE",
+          "id": "graph:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+        },
+        {
+          "kind": "CONTRACT",
+          "id": "built-in:loanDecisionPolicy:contract",
+          "revision": 1,
+          "fingerprint": "sha256:c1e2462948cf3ef5a5405fbc8311e39cdefe5dcf6f89396bc1f5cf29ade05550"
+        },
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "built-in:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        },
+        {
+          "kind": "TEST_SUITE",
+          "id": "loan-decision-policy-smoke",
+          "revision": 1,
+          "fingerprint": "sha256:65aef628e0f44c5c208001aa587122ea4523a9fd4a2d67f7ced8c96a4c4b98e8"
+        }
+      ],
+      "tenantId": "ride-hailing",
+      "purpose": "BUSINESS_MIRROR_LEGACY_MIGRATION",
+      "sampleFrom": null,
+      "sampleTo": null,
+      "sampleCount": null,
+      "confidence": null,
+      "biasRisks": [
+        "Discovered Contract test suites are not an owner-governed Scenario denominator.",
+        "Graph topology and Contract structure do not prove customer-business semantics.",
+        "No production Outcome, Fidelity, state, or effect evidence was inferred."
+      ],
+      "approvedBy": "",
+      "approvedAt": null,
+      "expiresAt": null,
+      "revocationRef": ""
+    },
+    "lifecycle": "DRAFT"
+  },
+  "gaps": [
+    {
+      "code": "ACCOUNTABLE_OWNER_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "MIGRATION_TRUST",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/accountableOwner",
+      "explanation": "Accountable business owner is unknown.",
+      "requiredAction": "Assign the accountable Package owner.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "BUSINESS_DOMAIN_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "BUSINESS_CONTEXT",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/domainId",
+      "explanation": "Customer-business domain is unknown.",
+      "requiredAction": "Select the governed business domain.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "BUSINESS_GOAL_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "BUSINESS_CONTEXT",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/businessGoal",
+      "explanation": "Business goal cannot be inferred from topology.",
+      "requiredAction": "Author a measurable customer-service goal.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "CHANNEL_BINDING_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "SERVICE_ASSET",
+      "severity": "BLOCKING",
+      "draftPath": "/channelRefs",
+      "explanation": "No L3 application channel is bound.",
+      "requiredAction": "Bind the consuming channel application.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "DISCOVERED_TEST_SUITE_REQUIRES_SCENARIO_GOVERNANCE",
+      "origin": "MIGRATION_POLICY",
+      "category": "SCENARIO",
+      "severity": "WARNING",
+      "draftPath": "/scenarioPackRefs",
+      "explanation": "Executable Contract tests were discovered but are not Scenario inventory or packs.",
+      "requiredAction": "Classify, deduplicate, version, and approve them into the Scenario governance model.",
+      "evidenceRefs": [
+        {
+          "kind": "TEST_SUITE",
+          "id": "loan-decision-policy-smoke",
+          "revision": 1,
+          "fingerprint": "sha256:65aef628e0f44c5c208001aa587122ea4523a9fd4a2d67f7ced8c96a4c4b98e8"
+        }
+      ]
+    },
+    {
+      "code": "EXPECTED_OUTCOME_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "OUTCOME",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/expectedOutcome",
+      "explanation": "Expected business outcome is unknown.",
+      "requiredAction": "Define the independently observable expected outcome.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "FIDELITY_INVENTORY_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "FIDELITY",
+      "severity": "BLOCKING",
+      "draftPath": "/fidelityInventoryRef",
+      "explanation": "Fidelity denominator is missing.",
+      "requiredAction": "Define dimensions, strata, thresholds, and observation horizons.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "GRAPH_CONTRACT_OWNER_CONFIRMATION_MISSING",
+      "origin": "MIGRATION_POLICY",
+      "category": "CONTRACT",
+      "severity": "BLOCKING",
+      "draftPath": "/packageContractRef",
+      "explanation": "The existing Graph Contract is technical source evidence, not an approved Package Contract.",
+      "requiredAction": "Have the accountable Package owner confirm or replace the Contract reference.",
+      "evidenceRefs": [
+        {
+          "kind": "CONTRACT",
+          "id": "built-in:loanDecisionPolicy:contract",
+          "revision": 1,
+          "fingerprint": "sha256:c1e2462948cf3ef5a5405fbc8311e39cdefe5dcf6f89396bc1f5cf29ade05550"
+        }
+      ]
+    },
+    {
+      "code": "HIGH_RISK_EFFECT_MODEL_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "EXECUTION_MODEL",
+      "severity": "BLOCKING",
+      "draftPath": "/effectModelRefs",
+      "explanation": "Fail-closed legacy risk defaults require an effect model.",
+      "requiredAction": "Confirm risk and bind exact write/effect semantics when risk remains high.",
+      "evidenceRefs": [
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "built-in:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        }
+      ]
+    },
+    {
+      "code": "HIGH_RISK_STATE_MODEL_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "EXECUTION_MODEL",
+      "severity": "BLOCKING",
+      "draftPath": "/stateModelRefs",
+      "explanation": "Fail-closed legacy risk defaults require a state model.",
+      "requiredAction": "Confirm risk and bind an exact state model when risk remains high.",
+      "evidenceRefs": [
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "built-in:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        }
+      ]
+    },
+    {
+      "code": "LEGACY_PROJECTION_OWNER_APPROVAL_MISSING",
+      "origin": "MIGRATION_POLICY",
+      "category": "MIGRATION_TRUST",
+      "severity": "BLOCKING",
+      "draftPath": "/provenance/approvedBy",
+      "explanation": "The migration projection is inferred and carries no business-owner approval.",
+      "requiredAction": "Review every inferred binding and record an independent owner approval.",
+      "evidenceRefs": [
+        {
+          "kind": "CONTRACT",
+          "id": "built-in:loanDecisionPolicy:contract",
+          "revision": 1,
+          "fingerprint": "sha256:c1e2462948cf3ef5a5405fbc8311e39cdefe5dcf6f89396bc1f5cf29ade05550"
+        },
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "built-in:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        }
+      ]
+    },
+    {
+      "code": "MIRROR_PLAN_MISSING",
+      "origin": "MIGRATION_POLICY",
+      "category": "EXECUTION_MODEL",
+      "severity": "BLOCKING",
+      "draftPath": "/graphRefs/0",
+      "explanation": "No exact MirrorPlan has been compiled for the imported Package.",
+      "requiredAction": "Compile and review a MirrorPlan after the Package business boundary is confirmed.",
+      "evidenceRefs": [
+        {
+          "kind": "CAPABILITY_CLOSURE",
+          "id": "graph:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:c41bbec4654e892c5b3c84c019095c405b9859becb91f9b3b5850097a5c8d0df"
+        },
+        {
+          "kind": "GRAPH_DRAFT",
+          "id": "built-in:loanDecisionPolicy",
+          "revision": 1,
+          "fingerprint": "sha256:aaccd036d9027ff8c257e3d8c7e81bbca9867a6b9626fbf701a533083cc1a87d"
+        }
+      ]
+    },
+    {
+      "code": "OUTCOME_DEFINITION_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "OUTCOME",
+      "severity": "BLOCKING",
+      "draftPath": "/outcomeDefinitionRefs",
+      "explanation": "Independent Outcome definitions are missing.",
+      "requiredAction": "Bind exact Outcome definitions and their authority source.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "PROBLEM_CODE_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "BUSINESS_CONTEXT",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/problemCode",
+      "explanation": "Customer problem code is unknown.",
+      "requiredAction": "Select the taxonomy-local problem code.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "PROBLEM_TAXONOMY_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "BUSINESS_CONTEXT",
+      "severity": "BLOCKING",
+      "draftPath": "/businessDefinition/problemTaxonomyRef",
+      "explanation": "Problem taxonomy is unknown.",
+      "requiredAction": "Bind an exact governed problem taxonomy revision.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "SCENARIO_INVENTORY_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "SCENARIO",
+      "severity": "BLOCKING",
+      "draftPath": "/scenarioInventoryRef",
+      "explanation": "Owner-governed Scenario denominator is missing.",
+      "requiredAction": "Freeze the expected Scenario inventory.",
+      "evidenceRefs": [
+        {
+          "kind": "TEST_SUITE",
+          "id": "loan-decision-policy-smoke",
+          "revision": 1,
+          "fingerprint": "sha256:65aef628e0f44c5c208001aa587122ea4523a9fd4a2d67f7ced8c96a4c4b98e8"
+        }
+      ]
+    },
+    {
+      "code": "SCENARIO_PACK_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "SCENARIO",
+      "severity": "BLOCKING",
+      "draftPath": "/scenarioPackRefs",
+      "explanation": "Governed executable Scenario packs are missing.",
+      "requiredAction": "Convert reviewed tests and business cases into exact Scenario packs.",
+      "evidenceRefs": [
+        {
+          "kind": "TEST_SUITE",
+          "id": "loan-decision-policy-smoke",
+          "revision": 1,
+          "fingerprint": "sha256:65aef628e0f44c5c208001aa587122ea4523a9fd4a2d67f7ced8c96a4c4b98e8"
+        }
+      ]
+    },
+    {
+      "code": "SERVICE_CARRIER_BINDING_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "SERVICE_ASSET",
+      "severity": "BLOCKING",
+      "draftPath": "/carrierRefs",
+      "explanation": "No L2 service carrier is bound.",
+      "requiredAction": "Bind an exact SOP, Workflow, or Agent asset.",
+      "evidenceRefs": []
+    },
+    {
+      "code": "SOLUTION_BINDING_MISSING",
+      "origin": "PACKAGE_READINESS",
+      "category": "SERVICE_ASSET",
+      "severity": "BLOCKING",
+      "draftPath": "/solutionRefs",
+      "explanation": "No L1 Solution is bound.",
+      "requiredAction": "Bind the Package to an exact L1 Solution asset.",
+      "evidenceRefs": []
+    }
+  ],
+  "status": "BLOCKED",
+  "projectionFingerprint": "sha256:7484c8a3884d217c43463039eac8e11249f6a924fa08572206c45a9973effcf3"
+}

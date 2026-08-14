@@ -19,15 +19,68 @@ class BusinessMirrorProtocolTest {
     void packagesStrictSchemasAndExecutableFixturesWithoutServerDependencies() throws Exception {
         JsonNode packageDraft = fixture(BusinessMirrorProtocol.PACKAGE_FIXTURE_RESOURCE);
         JsonNode proposalSnapshot = fixture(BusinessMirrorProtocol.PROPOSAL_FIXTURE_RESOURCE);
+        JsonNode legacyProjection = fixture(
+                BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
 
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requirePackageDraft(packageDraft));
         assertThatNoException().isThrownBy(
                 () -> BusinessMirrorProtocol.requireProposalSnapshot(proposalSnapshot));
+        assertThatNoException().isThrownBy(
+                () -> BusinessMirrorProtocol.requireLegacyGraphPackageProjection(legacyProjection));
         assertThat(packageDraft.path("businessDefinition").path("problemCode").asText())
                 .isEqualTo("TRIP.CANCELLATION.FEE");
         assertThat(proposalSnapshot.path("simulationRuntimeBinding")
                 .path("networkEgressAllowed").asBoolean()).isFalse();
+        assertThat(legacyProjection.path("status").asText()).isEqualTo("BLOCKED");
+    }
+
+    @Test
+    void verifiesLegacyProjectionBindingsGapsAndFingerprintOffline() throws Exception {
+        ObjectNode projection = (ObjectNode) fixture(
+                BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
+        ObjectNode catalog = JSON.createObjectNode();
+        catalog.put("schemaVersion",
+                BusinessMirrorProtocol.LEGACY_GRAPH_PACKAGE_PROJECTION_CATALOG_V1);
+        catalog.set("scope", projection.path("scope").deepCopy());
+        catalog.putArray("items").add(projection.deepCopy());
+
+        var verified = BusinessMirrorLegacyMigrationVerifier.verifyProjection(projection);
+        var verifiedCatalog = BusinessMirrorLegacyMigrationVerifier.verifyCatalog(catalog);
+
+        assertThat(verified.graphName()).isEqualTo("loanDecisionPolicy");
+        assertThat(verified.packageId()).isEqualTo("legacy:loanDecisionPolicy");
+        assertThat(verified.readinessGapCount()).isEqualTo(15);
+        assertThat(verified.totalGapCount()).isEqualTo(19);
+        assertThat(verifiedCatalog.itemCount()).isOne();
+    }
+
+    @Test
+    void rejectsLegacyProjectionThatHidesAReadinessGapOrChangesSealedMaterial()
+            throws Exception {
+        ObjectNode missingGap = (ObjectNode) fixture(
+                BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
+        ArrayNode gaps = (ArrayNode) missingGap.path("gaps");
+        for (int index = 0; index < gaps.size(); index++) {
+            if ("SCENARIO_PACK_MISSING".equals(gaps.get(index).path("code").asText())) {
+                gaps.remove(index);
+                break;
+            }
+        }
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireLegacyGraphPackageProjection(missingGap))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.LEGACY_GRAPH_PROJECTION_INVALID");
+
+        ObjectNode tampered = (ObjectNode) fixture(
+                BusinessMirrorProtocol.LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE);
+        ((ObjectNode) tampered.path("packageDraft").path("businessDefinition"))
+                .put("businessGoal", "schema-valid tampering");
+        assertThatThrownBy(() ->
+                BusinessMirrorProtocol.requireLegacyGraphPackageProjection(tampered))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.LEGACY_GRAPH_PROJECTION_INVALID")
+                .hasMessageNotContaining("schema-valid tampering");
     }
 
     @Test
@@ -259,6 +312,8 @@ class BusinessMirrorProtocolTest {
                 .isEqualTo("resourceGateway.capabilityProposalSnapshot.v1");
         assertThat(BusinessMirrorProtocol.DOMAIN_CAPABILITY_PACKAGE_SAVE_RECEIPT_V1)
                 .isEqualTo("resourceGateway.domainCapabilityPackageSaveReceipt.v1");
+        assertThat(BusinessMirrorProtocol.LEGACY_GRAPH_PACKAGE_PROJECTION_V1)
+                .isEqualTo("resourceGateway.legacyGraphPackageProjection.v1");
         assertThatThrownBy(() -> BusinessMirrorProtocol.requirePackageDraft(null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PACKAGE_DRAFT_INVALID");

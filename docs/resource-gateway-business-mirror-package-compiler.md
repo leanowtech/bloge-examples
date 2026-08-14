@@ -177,7 +177,8 @@ BusinessMirrorProtocol.requirePackageCompilationReceipt(compilationReceiptJson);
 - 动态 capability readiness：API 与 Authority 就绪状态分别暴露。
 - `CompositePackageCompilationAuthority` 的唯一 kind ownership、unsupported-kind fail closed 和完整 generation re-resolution；
 - 七个内置 Graph 的 DSL/Contract/Operator/Resource/Test Suite 权威解析；
-- `GRAPH_DRAFT` → immutable root `CAPABILITY`/`CAPABILITY_CLOSURE` 与 `CONTRACT` exact materialization。
+- `GRAPH_DRAFT` → immutable root `CAPABILITY`/`CAPABILITY_CLOSURE` 与 `CONTRACT` exact materialization；
+- 七个内置 Graph 的 fail-closed Legacy Package preview、gap inventory 和 durable idempotent import。
 
 尚不可用：
 
@@ -219,11 +220,15 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 覆盖内容包括：完整编译、100 组输入乱序、缺失与指纹漂移、跨 Scope、Scenario/Outcome/Proposal/Effect assurance、mutable material、额外 Authority 观测、关系缺失/悬空/循环、source tamper、唯一 kind ownership、unsupported kind、七个内置 Graph exact materialization 和结果发布前 TOCTOU fencing。
 
-完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5964` 个测试以及 Test Kit `542` 个测试均无失败；前者包含原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包，后者包含 Schema packaging、shade 与 Javadoc 门禁。
+完整门禁结果见 [Business Mirror 实施状态](resource-gateway-business-mirror-implementation-status.md)。当前 Resource Gateway `5967` 个测试以及 Test Kit `544` 个测试均无失败；前者包含原生 PostgreSQL、真实浏览器 E2E 与可执行 JAR 打包，后者包含 Schema packaging、shade 与 Javadoc 门禁。
 
 ## 11. 下一步
 
-1. 实现 Legacy Graph projector，逐个包装七个内置 Graph，并保持缺失业务语义 `BLOCKED`。
-2. 将已发现的 Contract Test Suite 显式迁移为 owner-governed Scenario denominator/ScenarioPack，而不是直接改名。
-3. 继续接入持久化 Visual Graph、Scenario、Fidelity、Outcome 和业务资产关系 Adapter，并增加客户环境认证。
+BM-004 Legacy Graph projector 已完成。其协议、三条 API、离线验真和逐包操作见 [存量 Graph 渐进迁移指南](resource-gateway-business-mirror-legacy-migration-guide.md)。
+
+后续顺序：
+
+1. 在 Business Mirror Workspace 中呈现 Package、gap 和 exact source lineage；
+2. 将已发现的 Contract Test Suite 显式迁移为 owner-governed Scenario denominator/ScenarioPack，而不是直接改名；
+3. 继续接入持久化 Visual Graph、Scenario、Fidelity、Outcome 和业务资产关系 Adapter，并增加客户环境认证；
 4. 增加大型 Package async capacity/cancel；当前同步 API 只用于有界编译。

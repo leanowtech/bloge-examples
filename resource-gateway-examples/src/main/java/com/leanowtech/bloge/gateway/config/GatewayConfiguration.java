@@ -30,6 +30,7 @@ import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilatio
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageDependencyAuthorityAdapter;
 import com.leanowtech.bloge.gateway.businessmirror.application.PackageCompilationService;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
+import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractCatalog;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphContractTestSuiteRepository;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
@@ -596,6 +597,15 @@ public class GatewayConfiguration {
     public PackageCompilationAuthority packageCompilationAuthority(
             ObjectMapper objectMapper, List<PackageDependencyAuthorityAdapter> adapters) {
         return new CompositePackageCompilationAuthority(objectMapper, adapters);
+    }
+
+    /** Fail-closed preview/import boundary for gradually wrapping existing Graph assets. */
+    @Bean
+    public LegacyGraphPackageProjector legacyGraphPackageProjector(
+            BuiltInGraphAssetAuthority authority,
+            DomainCapabilityPackageAuthoringService authoring,
+            ObjectMapper objectMapper) {
+        return new LegacyGraphPackageProjector(authority, authoring, objectMapper);
     }
 
     /** Deterministic Package compiler kernel. */

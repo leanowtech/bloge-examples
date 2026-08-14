@@ -34,6 +34,12 @@ public final class BusinessMirrorProtocol {
     /** Exact idempotent Package compilation receipt v1 wire version. */
     public static final String PACKAGE_COMPILATION_RECEIPT_V1 =
             "resourceGateway.packageCompilationReceipt.v1";
+    /** Fail-closed Legacy Graph Package migration projection v1 wire version. */
+    public static final String LEGACY_GRAPH_PACKAGE_PROJECTION_V1 =
+            "resourceGateway.legacyGraphPackageProjection.v1";
+    /** Complete bounded Legacy Graph migration catalog v1 wire version. */
+    public static final String LEGACY_GRAPH_PACKAGE_PROJECTION_CATALOG_V1 =
+            "resourceGateway.legacyGraphPackageProjectionCatalog.v1";
     /** Immutable compiled Domain Capability Package v1 wire version. */
     public static final String DOMAIN_CAPABILITY_PACKAGE_SNAPSHOT_V1 =
             "resourceGateway.domainCapabilityPackageSnapshot.v1";
@@ -57,6 +63,9 @@ public final class BusinessMirrorProtocol {
     /** Exact durable Package create receipt example. */
     public static final String PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "cancellation-fee-package-save-receipt-v1.fixture.json";
+    /** Server-produced fail-closed Legacy Graph projection example. */
+    public static final String LEGACY_GRAPH_PROJECTION_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "loan-decision-legacy-graph-projection-v1.fixture.json";
 
     static final String BUSINESS_ASSET_LINK_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "business-asset-link-v1.schema.json";
@@ -72,6 +81,10 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-page-v1.schema.json";
     static final String PACKAGE_COMPILATION_RECEIPT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "package-compilation-receipt-v1.schema.json";
+    static final String LEGACY_GRAPH_PROJECTION_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "legacy-graph-package-projection-v1.schema.json";
+    static final String LEGACY_GRAPH_PROJECTION_CATALOG_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "legacy-graph-package-projection-catalog-v1.schema.json";
     static final String PACKAGE_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "domain-capability-package-snapshot-v1.schema.json";
     static final String PACKAGE_READINESS_SCHEMA_RESOURCE =
@@ -152,6 +165,26 @@ public final class BusinessMirrorProtocol {
      */
     public static void requirePackageCompilationReceipt(JsonNode value) {
         BusinessMirrorCompilationVerifier.verifyPackageCompilationReceipt(value);
+    }
+
+    /**
+     * Requires a sealed Legacy Graph migration projection with complete fail-closed gaps.
+     *
+     * @param value decoded Legacy Graph Package projection
+     * @throws IllegalArgumentException when Schema, source binding, gap, trust, or fingerprint checks fail
+     */
+    public static void requireLegacyGraphPackageProjection(JsonNode value) {
+        BusinessMirrorLegacyMigrationVerifier.verifyProjection(value);
+    }
+
+    /**
+     * Requires a graph-name ordered, single-Scope Legacy Graph projection catalog.
+     *
+     * @param value decoded Legacy Graph projection catalog
+     * @throws IllegalArgumentException when catalog or nested projection verification fails
+     */
+    public static void requireLegacyGraphPackageProjectionCatalog(JsonNode value) {
+        BusinessMirrorLegacyMigrationVerifier.verifyCatalog(value);
     }
 
     /**
