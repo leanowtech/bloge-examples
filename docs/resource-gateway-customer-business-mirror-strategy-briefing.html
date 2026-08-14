@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Resource Gateway 客户业务镜像、可执行规格与业务产研协作战略汇报">
+<title>Resource Gateway 客户业务镜像战略汇报</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-soft: #fafafa;
+  --bg-tint: #f4f6f9;
+  --ink: #1a1d23;
+  --ink-2: #4a5160;
+  --ink-3: #8993a4;
+  --line: #e5e8ed;
+  --line-soft: #eef0f4;
+  --brand: #2563eb;
+  --brand-2: #3b82f6;
+  --brand-soft: #eef4ff;
+  --accent: #7c3aed;
+  --accent-soft: #f3eeff;
+  --green: #059669;
+  --green-soft: #ecfdf5;
+  --amber: #d97706;
+  --amber-soft: #fffbeb;
+  --red: #dc2626;
+  --red-soft: #fff1f2;
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 6px 20px rgba(15, 23, 42, 0.05);
+  --shadow-lg: 0 18px 60px rgba(15, 23, 42, 0.08);
+}
+
+:root[data-theme="dark"] {
+  --bg: #0b0e14;
+  --bg-soft: #11151c;
+  --bg-tint: #1a1f2a;
+  --ink: #e5e9f0;
+  --ink-2: #a8b1c4;
+  --ink-3: #6b7588;
+  --line: #1f2632;
+  --line-soft: #181d27;
+  --brand: #60a5fa;
+  --brand-2: #93c5fd;
+  --brand-soft: rgba(96, 165, 250, 0.12);
+  --accent: #a78bfa;
+  --accent-soft: rgba(167, 139, 250, 0.12);
+  --green: #34d399;
+  --green-soft: rgba(52, 211, 153, 0.12);
+  --amber: #fbbf24;
+  --amber-soft: rgba(251, 191, 36, 0.12);
+  --red: #f87171;
+  --red-soft: rgba(248, 113, 113, 0.12);
+  --nav-bg: rgba(11, 14, 20, 0.9);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
+}
+button { color: inherit; font: inherit; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 34%, transparent);
+  outline-offset: 3px;
+}
+
+.progress-line {
+  position: fixed;
+  z-index: 1001;
+  top: 59px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--brand);
+}
+
+.report-nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 1000;
+  height: 60px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--nav-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+.nav-logo::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--brand);
+  box-shadow: 0 5px 14px rgba(37, 99, 235, 0.18);
+}
+.nav-links {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: 0.16s ease;
+}
+.nav-links a:hover { color: var(--ink); background: var(--bg-tint); }
+.nav-links a.active { color: var(--brand); background: var(--brand-soft); }
+.theme-toggle {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-tint);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+.theme-toggle:hover { border-color: var(--brand); color: var(--brand); transform: translateY(-1px); }
+.theme-light { display: none; }
+:root[data-theme="dark"] .theme-dark { display: none; }
+:root[data-theme="dark"] .theme-light { display: inline; }
+
+.report-section {
+  position: relative;
+  padding: 104px 32px;
+  scroll-margin-top: 58px;
+  overflow: clip;
+}
+.report-section.tinted { background: var(--bg-soft); }
+.container { max-width: 1180px; margin: 0 auto; }
+.container-wide { max-width: 1380px; margin: 0 auto; }
+.container-narrow { max-width: 900px; margin: 0 auto; }
+
+.eyebrow {
+  margin-bottom: 14px;
+  color: var(--brand);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+h1, h2, h3 { overflow-wrap: anywhere; line-height: 1.18; letter-spacing: 0; }
+h1 { font-size: 3.55rem; line-height: 1.08; }
+h2 { font-size: 2.35rem; }
+h3 { font-size: 1.12rem; }
+.gradient-text {
+  color: var(--brand);
+  background: none;
+}
+.lead {
+  max-width: 820px;
+  color: var(--ink-2);
+  font-size: 1.04rem;
+  line-height: 1.85;
+}
+.section-header { margin-bottom: 48px; }
+.section-header.centered { text-align: center; }
+.section-header.centered .lead { margin: 18px auto 0; }
+.section-index {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.section-index::after { content: ""; width: 44px; height: 1px; background: var(--line); }
+
+.fade-in { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.fade-in.visible { opacity: 1; transform: none; }
+
+.hero {
+  min-height: 100vh;
+  padding-top: 150px;
+  display: grid;
+  align-items: center;
+}
+.hero::before, .hero::after { display: none; }
+.hero-layout { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 44px; align-items: center; }
+.hero-copy, .hero-visual { min-width: 0; }
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  margin-bottom: 26px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+.hero-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+.hero-copy .lead { margin-top: 26px; overflow-wrap: anywhere; }
+.hero-visual {
+  min-height: 390px;
+  padding: 28px;
+  display: grid;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--brand-soft);
+  box-shadow: var(--shadow-lg);
+}
+.north-star {
+  width: min(260px, 75vw);
+  aspect-ratio: 1;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--brand) 38%, var(--line));
+  border-radius: 50%;
+  text-align: center;
+}
+.north-star-core {
+  width: 68%;
+  aspect-ratio: 1;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 20px 65px rgba(69, 64, 214, 0.22);
+}
+
+.metrics {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+.metric { min-width: 0; padding: 22px 18px; }
+.metric + .metric { border-left: 1px solid var(--line); }
+.metric-value { color: var(--brand); font-size: 1.55rem; font-weight: 780; line-height: 1; }
+.metric-label { margin-top: 8px; color: var(--ink-3); font-size: 0.72rem; }
+
+.grid-2, .grid-3, .grid-4 { display: grid; gap: 14px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  transition: 0.2s ease;
+}
+.card:hover { border-color: color-mix(in srgb, var(--brand) 35%, var(--line)); box-shadow: var(--shadow); transform: translateY(-3px); }
+.card-kicker { color: var(--brand); font-size: 0.68rem; font-weight: 750; letter-spacing: 0; }
+.card h3 { margin-top: 10px; }
+.card p { margin-top: 8px; color: var(--ink-2); font-size: 0.82rem; }
+.card.result { border-left: 3px solid var(--green); }
+.card.attention { border-left: 3px solid var(--amber); }
+.card.risk { border-left: 3px solid var(--red); }
+
+.logic-chain {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+.logic-step {
+  position: relative;
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.logic-step::after {
+  content: "→";
+  position: absolute;
+  top: 42%;
+  right: -17px;
+  color: var(--brand);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.logic-step:last-child::after { display: none; }
+.logic-step small { color: var(--brand); font-size: 0.62rem; font-weight: 780; }
+.logic-step strong { display: block; margin-top: 7px; }
+.logic-step span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+
+.callout {
+  padding: 16px 18px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  color: var(--ink-2);
+}
+.callout strong { color: var(--ink); }
+.callout.evidence { border-color: var(--green); background: var(--green-soft); }
+.callout.attention { border-color: var(--amber); background: var(--amber-soft); }
+.callout.risk { border-color: var(--red); background: var(--red-soft); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.tab-button {
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+.tab-button:hover { border-color: var(--brand); color: var(--brand); }
+.tab-button.active, .tab-button[aria-selected="true"] { border-color: var(--brand); background: var(--brand); color: #fff; }
+.tab-panel[hidden] { display: none; }
+
+.diagram-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+.diagram-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-tint);
+  color: var(--ink-2);
+  font-size: 0.68rem;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.legend-line { width: 30px; border-top: 4px solid var(--brand); }
+.legend-line.control { border-top: 3px dashed var(--amber); }
+.legend-line.evidence { border-top: 2px dashed var(--ink-3); }
+.diagram-viewport {
+  min-height: 440px;
+  padding: 24px;
+  overflow: auto;
+  background: var(--bg);
+}
+.diagram-viewport > svg { display: block; min-width: 980px; width: 100%; height: auto; }
+.diagram-hint { color: var(--ink-3); font-size: 0.7rem; }
+
+.workflow {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.workflow-io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.workflow-io > div { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); }
+.workflow-io .output { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); background: var(--green-soft); }
+.workflow-io small { color: var(--ink-3); font-size: 0.62rem; font-weight: 760; }
+.workflow-io strong { display: block; margin-top: 5px; font-size: 0.82rem; }
+.workflow-states { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
+.workflow-state {
+  position: relative;
+  min-height: 100px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+.workflow-state::after {
+  content: "→";
+  position: absolute;
+  top: 36px;
+  right: -17px;
+  color: var(--brand);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.workflow-state:last-child::after { display: none; }
+.workflow-state.gate { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); background: var(--amber-soft); }
+.workflow-state.done { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); background: var(--green-soft); }
+.workflow-state small { color: var(--ink-3); font-size: 0.6rem; font-weight: 780; }
+.workflow-state strong { display: block; margin-top: 6px; font-size: 0.78rem; }
+.workflow-state span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.68rem; }
+.feedback-return { margin-top: 16px; padding: 10px 14px; border: 1px dashed var(--amber); color: var(--amber); font-size: 0.72rem; font-weight: 700; }
+
+.report-footer { padding: 40px 32px; border-top: 1px solid var(--line); color: var(--ink-3); text-align: center; font-size: 0.75rem; }
+
+@media (max-width: 1100px) {
+  .hero-layout { grid-template-columns: 1fr; }
+  .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .logic-chain, .workflow-states { grid-template-columns: repeat(3, 1fr); }
+  .logic-step:nth-child(3)::after, .workflow-state:nth-child(3)::after { display: none; }
+}
+
+@media (max-width: 760px) {
+  .report-nav { padding: 0 14px; gap: 12px; }
+  .nav-logo { font-size: 0; gap: 0; }
+  .report-section { padding: 82px 18px; }
+  .hero { padding-top: 116px; }
+  h1 { font-size: 2.45rem; }
+  .metrics, .grid-2, .grid-3, .grid-4, .logic-chain, .workflow-io, .workflow-states { grid-template-columns: 1fr; }
+  .metric + .metric { border-top: 1px solid var(--line); border-left: 0; }
+  .logic-step::after, .logic-step:nth-child(3)::after, .workflow-state::after, .workflow-state:nth-child(3)::after {
+    display: block;
+    top: auto;
+    right: 50%;
+    bottom: -18px;
+    transform: translateX(50%) rotate(90deg);
+  }
+  .logic-step:last-child::after, .workflow-state:last-child::after { display: none; }
+  .diagram-head { align-items: flex-start; flex-direction: column; }
+  .diagram-viewport { min-height: 340px; padding: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  .report-nav, .progress-line, .theme-toggle { display: none !important; }
+  .report-section { break-inside: avoid; padding: 48px 24px; }
+  .fade-in { opacity: 1; transform: none; }
+}
+</style>
+<style>
+/* Resource Gateway briefing overrides and report-specific components. */
+:root { --nav-height: 60px; }
+h1, h2, h3 { letter-spacing: 0; }
+h1 { font-size: 3.55rem; }
+h2 { font-size: 2.35rem; }
+.progress-line { background: var(--brand); }
+.nav-logo::before { border-radius: 4px; background: var(--brand); box-shadow: none; }
+.hero { min-height: 760px; padding-top: 126px; }
+.hero::before, .hero::after { display: none; }
+.hero-layout { grid-template-columns: 1.08fr 0.92fr; gap: 68px; }
+.hero-visual {
+  min-height: 430px;
+  padding: 0 0 0 34px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.hero-badge, .tab-button { border-radius: 6px; }
+.metrics, .card, .logic-step, .callout, .diagram-shell, .workflow,
+.workflow-io > div, .workflow-state { border-radius: 8px; }
+.card { height: 100%; }
+.theme-toggle { border-radius: 6px; }
+.thesis-board { display: grid; align-content: center; gap: 0; width: 100%; }
+.thesis-board > header { padding-bottom: 18px; border-bottom: 2px solid var(--ink); }
+.thesis-board > header small { color: var(--ink-3); font-size: 0.7rem; font-weight: 700; }
+.thesis-board > header strong { display: block; margin-top: 6px; font-size: 1.35rem; line-height: 1.4; }
+.thesis-factor { display: grid; grid-template-columns: 34px 1fr; gap: 14px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.thesis-factor b { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid var(--line); color: var(--brand); font-size: 0.76rem; }
+.thesis-factor strong { display: block; font-size: 0.95rem; }
+.thesis-factor span { display: block; margin-top: 3px; color: var(--ink-3); font-size: 0.75rem; }
+.thesis-result { padding: 20px 0 0; color: var(--green); font-size: 1.08rem; font-weight: 780; }
+.section-claim { margin-top: 28px; padding: 22px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 1.22rem; font-weight: 720; line-height: 1.65; }
+.formula { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; margin-top: 26px; border: 1px solid var(--line); background: var(--line); }
+.formula > div { min-width: 0; padding: 18px 14px; background: var(--bg); text-align: center; }
+.formula small { display: block; color: var(--ink-3); font-size: 0.64rem; }
+.formula strong { display: block; margin-top: 5px; font-size: 0.84rem; }
+.formula-mark { display: none; }
+.insight-number { color: var(--brand); font-size: 2rem; font-weight: 800; line-height: 1; }
+.result-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.result-card { padding: 22px; border-top: 3px solid var(--brand); border-bottom: 1px solid var(--line); background: var(--bg); }
+.result-card:nth-child(2) { border-top-color: var(--accent); }
+.result-card:nth-child(3) { border-top-color: var(--green); }
+.result-card:nth-child(4) { border-top-color: var(--amber); }
+.result-card small { color: var(--ink-3); font-size: 0.68rem; font-weight: 700; }
+.result-card h3 { margin-top: 8px; }
+.result-card p { margin-top: 10px; color: var(--ink-2); font-size: 0.82rem; }
+.result-card dl { margin-top: 16px; }
+.result-card dt { color: var(--ink-3); font-size: 0.66rem; }
+.result-card dd { margin-top: 3px; font-size: 0.78rem; font-weight: 700; }
+.asset-stack { display: grid; gap: 0; border: 1px solid var(--line); }
+.asset-layer { display: grid; grid-template-columns: 110px 1.05fr 1fr 0.9fr; gap: 20px; align-items: center; padding: 22px; background: var(--bg); }
+.asset-layer + .asset-layer { border-top: 1px solid var(--line); }
+.asset-level { color: var(--brand); font-size: 1.5rem; font-weight: 820; }
+.asset-layer:nth-child(2) .asset-level { color: var(--amber); }
+.asset-layer:nth-child(3) .asset-level { color: var(--accent); }
+.asset-layer:nth-child(4) .asset-level { color: var(--green); }
+.asset-layer strong { display: block; }
+.asset-layer span { color: var(--ink-2); font-size: 0.78rem; }
+.asset-layer em { color: var(--ink-3); font-size: 0.72rem; font-style: normal; }
+.ownership-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 18px; border: 1px solid var(--line); background: var(--line); }
+.ownership-grid > div { padding: 18px; background: var(--bg-soft); }
+.ownership-grid strong { display: block; font-size: 0.84rem; }
+.ownership-grid span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+.diagram-actions { display: flex; align-items: center; gap: 6px; }
+.icon-button, .text-button {
+  min-width: 34px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+}
+.icon-button:hover, .text-button:hover { border-color: var(--brand); color: var(--brand); }
+.text-button { min-width: auto; font-size: 0.72rem; font-weight: 700; }
+.zoom-label { min-width: 48px; color: var(--ink-3); font-size: 0.68rem; text-align: center; }
+.diagram-viewport { min-height: 520px; padding: 16px; background: #ffffff; background-image: none; }
+.diagram-stage { width: 100%; min-width: 1080px; transform-origin: top left; }
+.diagram-stage > svg { display: block; width: 100%; height: auto; color-scheme: light; }
+.diagram-caption { padding: 14px 18px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 0.72rem; }
+.compare-grid { display: grid; grid-template-columns: 1fr 56px 1fr; gap: 20px; align-items: stretch; }
+.compare-panel { padding: 24px; border: 1px solid var(--line); background: var(--bg); }
+.compare-panel.old { border-top: 3px solid var(--red); }
+.compare-panel.new { border-top: 3px solid var(--green); }
+.compare-panel h3 { margin-bottom: 16px; }
+.compare-panel ol { padding-left: 20px; color: var(--ink-2); font-size: 0.82rem; }
+.compare-panel li + li { margin-top: 9px; }
+.compare-arrow { display: grid; place-items: center; color: var(--brand); font-size: 1.65rem; font-weight: 800; }
+.authority-rule { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 18px; border: 1px solid var(--line); }
+.authority-rule > div { padding: 18px; }
+.authority-rule > div + div { border-left: 1px solid var(--line); }
+.authority-rule small { color: var(--ink-3); font-size: 0.64rem; }
+.authority-rule strong { display: block; margin-top: 5px; font-size: 0.83rem; }
+.plane-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+.plane { min-height: 150px; padding: 18px; border: 1px solid var(--line); border-top: 3px solid var(--brand); background: var(--bg); }
+.plane:nth-child(2) { border-top-color: var(--accent); }
+.plane:nth-child(3) { border-top-color: var(--amber); }
+.plane:nth-child(4), .plane:nth-child(5) { border-top-color: var(--green); }
+.plane small { color: var(--ink-3); font-size: 0.64rem; font-weight: 760; }
+.plane strong { display: block; margin-top: 8px; font-size: 0.9rem; }
+.plane span { display: block; margin-top: 9px; color: var(--ink-2); font-size: 0.72rem; }
+.model-layout { display: grid; grid-template-columns: 0.95fr 1.05fr; gap: 24px; margin-top: 28px; }
+.model-code { overflow: auto; padding: 22px; border: 1px solid var(--line); background: var(--bg-tint); color: var(--ink-2); font: 0.75rem/1.75 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre; }
+.decision-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+.decision-table th, .decision-table td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.decision-table th { color: var(--ink-3); font-size: 0.66rem; font-weight: 760; }
+.decision-table td:first-child { color: var(--ink); font-weight: 700; }
+.pilot-header { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 28px; align-items: start; }
+.pilot-signal { padding: 22px; border-left: 3px solid var(--green); background: var(--green-soft); }
+.pilot-signal strong { display: block; }
+.pilot-signal span { display: block; margin-top: 7px; color: var(--ink-2); font-size: 0.8rem; }
+.capability-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 28px; }
+.capability-item { padding: 16px; border: 1px solid var(--line); background: var(--bg); }
+.capability-item small { color: var(--brand); font-size: 0.62rem; font-weight: 780; }
+.capability-item strong { display: block; margin-top: 5px; font-size: 0.8rem; }
+.scenario-panel { padding: 22px; border: 1px solid var(--line); background: var(--bg); }
+.scenario-panel h3 { margin-bottom: 8px; }
+.scenario-panel p { color: var(--ink-2); font-size: 0.82rem; }
+.scenario-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 16px; }
+.scenario-facts > div { padding: 13px; background: var(--bg-soft); }
+.scenario-facts small { color: var(--ink-3); font-size: 0.62rem; }
+.scenario-facts strong { display: block; margin-top: 4px; font-size: 0.76rem; }
+.evidence-ladder { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-top: 24px; border: 1px solid var(--line); background: var(--line); }
+.evidence-step { padding: 18px; background: var(--bg); }
+.evidence-step small { color: var(--ink-3); font-size: 0.62rem; }
+.evidence-step strong { display: block; margin-top: 6px; font-size: 0.8rem; }
+.evidence-step:nth-child(1) strong { color: var(--amber); }
+.evidence-step:nth-child(2) strong { color: var(--brand); }
+.evidence-step:nth-child(3) strong { color: var(--accent); }
+.evidence-step:nth-child(4) strong { color: var(--green); }
+.scorecard { display: grid; grid-template-columns: 0.95fr 1.05fr; gap: 24px; }
+.metric-list { border-top: 1px solid var(--line); }
+.metric-row { display: grid; grid-template-columns: 0.7fr 1fr 1.2fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.metric-row strong { font-size: 0.8rem; }
+.metric-row span { color: var(--ink-2); font-size: 0.74rem; }
+.metric-row em { color: var(--ink-3); font-size: 0.7rem; font-style: normal; }
+.hypothesis-list { display: grid; gap: 10px; }
+.hypothesis { padding: 16px; border-left: 3px solid var(--amber); background: var(--amber-soft); }
+.hypothesis strong { display: block; font-size: 0.8rem; }
+.hypothesis span { display: block; margin-top: 4px; color: var(--ink-2); font-size: 0.72rem; }
+.roadmap-line { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0; border-top: 2px solid var(--brand); }
+.roadmap-stage { position: relative; padding: 26px 18px 18px; }
+.roadmap-stage::before { content: ""; position: absolute; top: -7px; left: 18px; width: 12px; height: 12px; border: 2px solid var(--brand); background: var(--bg); }
+.roadmap-stage small { color: var(--brand); font-size: 0.64rem; font-weight: 780; }
+.roadmap-stage h3 { margin-top: 7px; font-size: 0.94rem; }
+.roadmap-stage p { margin-top: 8px; color: var(--ink-2); font-size: 0.73rem; }
+.decision-board { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 24px; margin-top: 42px; }
+.decision-list { counter-reset: decision; border-top: 1px solid var(--line); }
+.decision-item { counter-increment: decision; display: grid; grid-template-columns: 32px 1fr; gap: 12px; padding: 15px 0; border-bottom: 1px solid var(--line); }
+.decision-item::before { content: counter(decision, decimal-leading-zero); color: var(--brand); font-size: 0.7rem; font-weight: 800; }
+.decision-item strong { font-size: 0.8rem; }
+.question-box { padding: 22px; border: 1px solid var(--line); background: var(--bg-tint); }
+.question-box h3 { margin-bottom: 12px; }
+.question-box ul { padding-left: 18px; color: var(--ink-2); font-size: 0.78rem; }
+.question-box li + li { margin-top: 9px; }
+.closing-statement { margin-top: 42px; padding: 30px 0; border-top: 3px solid var(--ink); border-bottom: 1px solid var(--line); font-size: 1.35rem; font-weight: 760; line-height: 1.6; }
+dialog.diagram-dialog { width: min(96vw, 1800px); max-width: none; height: 92vh; max-height: none; margin: auto; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+dialog.diagram-dialog::backdrop { background: rgba(8, 15, 28, 0.72); }
+.dialog-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.dialog-close { width: 36px; height: 36px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+.dialog-body { height: calc(92vh - 66px); overflow: auto; padding: 18px; background: #fff; }
+.dialog-body svg { display: block; min-width: 1500px; width: 100%; height: auto; color-scheme: light; }
+.semantic-strip { display: grid; grid-template-columns: repeat(5, 1fr); margin-bottom: 28px; border: 1px solid var(--line); }
+.semantic-item { min-width: 0; padding: 16px; background: var(--bg); }
+.semantic-item + .semantic-item { border-left: 1px solid var(--line); }
+.semantic-item small { color: var(--brand); font-size: 0.62rem; font-weight: 780; }
+.semantic-item strong { display: block; margin-top: 5px; font-size: 0.82rem; }
+.semantic-item span { display: block; margin-top: 5px; color: var(--ink-3); font-size: 0.7rem; }
+.operation-flow { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; margin-bottom: 32px; }
+.operation-step { position: relative; min-height: 114px; padding: 16px; border-top: 3px solid var(--brand); border-bottom: 1px solid var(--line); background: var(--bg); }
+.operation-step::after { content: "→"; position: absolute; top: 42px; right: -15px; color: var(--brand); font-weight: 800; }
+.operation-step:last-child::after { display: none; }
+.operation-step b { color: var(--brand); font-size: 0.65rem; }
+.operation-step strong { display: block; margin-top: 7px; font-size: 0.8rem; }
+.operation-step span { display: block; margin-top: 5px; color: var(--ink-3); font-size: 0.68rem; }
+.workbench-tabs { gap: 0; margin: 0; border-bottom: 1px solid var(--line); }
+.workbench-tabs .tab-button { min-width: 150px; padding: 11px 18px; border: 0; border-right: 1px solid var(--line); border-radius: 0; background: var(--bg-soft); }
+.workbench-tabs .tab-button.active { border-bottom: 3px solid var(--brand); background: var(--bg); color: var(--brand); }
+.workbench-frame { overflow: hidden; border: 1px solid var(--line); background: var(--bg); box-shadow: var(--shadow); }
+.workbench-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--bg-soft); }
+.workbench-title { min-width: 0; }
+.workbench-title small { display: block; color: var(--ink-3); font-size: 0.62rem; }
+.workbench-title strong { display: block; overflow: hidden; margin-top: 2px; font-size: 0.86rem; text-overflow: ellipsis; white-space: nowrap; }
+.workbench-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.ui-command, .ui-status { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--ink-2); font-size: 0.65rem; font-weight: 700; white-space: nowrap; }
+.ui-command.primary { border-color: var(--brand); background: var(--brand); color: #fff; }
+.ui-status.good { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); background: var(--green-soft); color: var(--green); }
+.ui-status.warn { border-color: color-mix(in srgb, var(--amber) 45%, var(--line)); background: var(--amber-soft); color: var(--amber); }
+.ui-status.risk { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); background: var(--red-soft); color: var(--red); }
+.contract-workspace { display: grid; grid-template-columns: 0.72fr 1.7fr 0.82fr; min-height: 540px; }
+.workspace-pane { min-width: 0; padding: 16px; }
+.workspace-pane + .workspace-pane { border-left: 1px solid var(--line); }
+.pane-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.pane-title strong { font-size: 0.78rem; }
+.pane-title span { color: var(--ink-3); font-size: 0.62rem; }
+.contract-tree { border-top: 1px solid var(--line); }
+.tree-group { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.tree-group > strong { display: block; color: var(--ink-2); font-size: 0.72rem; }
+.tree-node { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 8px; margin-top: 5px; background: var(--bg-soft); font-size: 0.68rem; }
+.tree-node.active { border-left: 3px solid var(--brand); background: var(--brand-soft); color: var(--brand); }
+.tree-node em { color: var(--ink-3); font-size: 0.58rem; font-style: normal; }
+.schema-block + .schema-block { margin-top: 20px; }
+.schema-block header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.schema-block header strong { font-size: 0.78rem; }
+.schema-block header span { color: var(--ink-3); font-size: 0.62rem; }
+.ui-table-wrap { overflow-x: auto; border: 1px solid var(--line); }
+.ui-table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: 0.68rem; }
+.ui-table th, .ui-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.ui-table th { background: var(--bg-soft); color: var(--ink-3); font-size: 0.6rem; font-weight: 760; }
+.ui-table tr:last-child td { border-bottom: 0; }
+.ui-table tr.selected td { background: var(--brand-soft); }
+.field-name { color: var(--ink); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-weight: 700; }
+.required-mark { color: var(--red); }
+.contract-semantics { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; border: 1px solid var(--line); }
+.contract-semantics > div { min-width: 0; padding: 12px; }
+.contract-semantics > div + div { border-left: 1px solid var(--line); }
+.contract-semantics small { display: block; color: var(--ink-3); font-size: 0.58rem; }
+.contract-semantics strong { display: block; margin-top: 4px; font-size: 0.67rem; overflow-wrap: anywhere; }
+.readiness-score { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); }
+.readiness-score > div { padding: 11px; text-align: center; }
+.readiness-score > div:nth-child(even) { border-left: 1px solid var(--line); }
+.readiness-score > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+.readiness-score b { display: block; color: var(--brand); font-size: 1rem; }
+.readiness-score span { color: var(--ink-3); font-size: 0.58rem; }
+.check-list { margin-top: 14px; border-top: 1px solid var(--line); }
+.check-row { display: grid; grid-template-columns: 18px 1fr; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.check-row b { color: var(--green); font-size: 0.7rem; }
+.check-row.warn b { color: var(--amber); }
+.check-row strong { display: block; font-size: 0.68rem; }
+.check-row span { display: block; margin-top: 2px; color: var(--ink-3); font-size: 0.6rem; }
+.scenario-workspace { min-height: 540px; }
+.coverage-bar { display: grid; grid-template-columns: repeat(5, 1fr); border-bottom: 1px solid var(--line); }
+.coverage-cell { padding: 13px 16px; background: var(--bg); }
+.coverage-cell + .coverage-cell { border-left: 1px solid var(--line); }
+.coverage-cell b { display: block; color: var(--brand); font-size: 1rem; }
+.coverage-cell span { color: var(--ink-3); font-size: 0.6rem; }
+.scenario-grid { padding: 16px; }
+.scenario-grid .ui-table { min-width: 1060px; }
+.case-type { display: inline-block; padding: 2px 6px; border: 1px solid var(--line); border-radius: 4px; font-size: 0.58rem; font-weight: 760; }
+.case-type.golden { color: var(--green); background: var(--green-soft); }
+.case-type.negative { color: var(--red); background: var(--red-soft); }
+.case-type.boundary { color: var(--amber); background: var(--amber-soft); }
+.case-type.regression { color: var(--brand); background: var(--brand-soft); }
+.case-editor { display: grid; grid-template-columns: 1fr 1fr 0.85fr; margin-top: 14px; border: 1px solid var(--line); }
+.case-editor > div { min-width: 0; padding: 14px; }
+.case-editor > div + div { border-left: 1px solid var(--line); }
+.case-editor header { margin-bottom: 10px; color: var(--ink-3); font-size: 0.62rem; font-weight: 760; }
+.data-line { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font: 0.64rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.data-line:last-child { border-bottom: 0; }
+.data-line span:last-child { color: var(--brand); text-align: right; overflow-wrap: anywhere; }
+.assertion-line { padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 0.65rem; }
+.assertion-line:last-child { border-bottom: 0; }
+.assertion-line b { color: var(--green); }
+.evidence-workspace { min-height: 540px; }
+.run-safety { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--green-soft); }
+.run-safety strong { color: var(--green); font-size: 0.72rem; }
+.run-safety span { color: var(--ink-2); font-size: 0.64rem; }
+.trust-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+.trust-cell { padding: 14px 16px; }
+.trust-cell + .trust-cell { border-left: 1px solid var(--line); }
+.trust-cell small { display: block; color: var(--ink-3); font-size: 0.58rem; }
+.trust-cell strong { display: block; margin-top: 4px; font-size: 0.72rem; }
+.trust-cell strong.good { color: var(--green); }
+.trust-cell strong.warn { color: var(--amber); }
+.evidence-body { display: grid; grid-template-columns: 1.25fr 0.75fr; }
+.evidence-body > div { min-width: 0; padding: 16px; }
+.evidence-body > div + div { border-left: 1px solid var(--line); }
+.trace-line { display: grid; grid-template-columns: 48px 1fr 84px 72px; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 0.65rem; }
+.trace-line:last-child { border-bottom: 0; }
+.trace-line code { color: var(--brand); }
+.trace-line em { color: var(--ink-3); font-style: normal; text-align: right; }
+.trace-line b { color: var(--green); text-align: right; }
+.evidence-summary { margin-top: 16px; padding: 14px; border-left: 3px solid var(--brand); background: var(--brand-soft); }
+.evidence-summary strong { display: block; font-size: 0.72rem; }
+.evidence-summary span { display: block; margin-top: 4px; color: var(--ink-2); font-size: 0.64rem; }
+.operation-result { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 24px; border-top: 2px solid var(--ink); border-bottom: 1px solid var(--line); }
+.operation-result > div { padding: 16px; }
+.operation-result > div + div { border-left: 1px solid var(--line); }
+.operation-result small { color: var(--ink-3); font-size: 0.58rem; }
+.operation-result strong { display: block; margin-top: 5px; font-size: 0.76rem; }
+@media (max-width: 1100px) {
+  h1 { font-size: 3rem; }
+  h2 { font-size: 2.05rem; }
+  .result-grid, .ownership-grid { grid-template-columns: repeat(2, 1fr); }
+  .asset-layer { grid-template-columns: 86px 1fr 1fr; }
+  .asset-layer em { grid-column: 2 / -1; }
+  .plane-grid { grid-template-columns: repeat(3, 1fr); }
+  .model-layout, .scorecard, .decision-board { grid-template-columns: 1fr; }
+  .capability-strip { grid-template-columns: repeat(2, 1fr); }
+  .roadmap-line { grid-template-columns: repeat(3, 1fr); row-gap: 22px; }
+  .operation-flow { grid-template-columns: repeat(3, 1fr); }
+  .operation-step:nth-child(3)::after { display: none; }
+  .contract-workspace { grid-template-columns: 0.8fr 1.5fr; }
+  .contract-workspace .workspace-pane:last-child { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
+  .evidence-body { grid-template-columns: 1fr; }
+  .evidence-body > div + div { border-top: 1px solid var(--line); border-left: 0; }
+}
+@media (max-width: 760px) {
+  h1 { font-size: 2.35rem; }
+  h2 { font-size: 1.78rem; }
+  .hero { min-height: auto; }
+  .hero-layout { grid-template-columns: 1fr; gap: 26px; }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric { padding: 16px 14px; }
+  .metric + .metric { border-top: 0; border-left: 0; }
+  .metric:nth-child(even) { border-left: 1px solid var(--line); }
+  .metric:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .hero-visual { min-height: 0; padding: 30px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+  .formula, .result-grid, .ownership-grid, .authority-rule, .plane-grid, .capability-strip,
+  .scenario-facts, .evidence-ladder, .roadmap-line { grid-template-columns: 1fr; }
+  .asset-layer { grid-template-columns: 62px 1fr; gap: 12px; padding: 18px; }
+  .asset-layer span, .asset-layer em { grid-column: 2; }
+  .compare-grid { grid-template-columns: 1fr; }
+  .compare-arrow { transform: rotate(90deg); }
+  .authority-rule > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .metric-row { grid-template-columns: 1fr; gap: 5px; }
+  .pilot-header { grid-template-columns: 1fr; }
+  .diagram-actions { width: 100%; justify-content: flex-end; }
+  .diagram-viewport { min-height: 360px; }
+  .roadmap-stage { padding-left: 16px; }
+  .semantic-strip, .operation-flow, .coverage-bar, .trust-grid, .operation-result { grid-template-columns: 1fr; }
+  .semantic-item + .semantic-item, .coverage-cell + .coverage-cell, .trust-cell + .trust-cell,
+  .operation-result > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .operation-step::after, .operation-step:nth-child(3)::after { top: auto; right: 50%; bottom: -18px; display: block; transform: translateX(50%) rotate(90deg); }
+  .operation-step:last-child::after { display: none; }
+  .workbench-tabs { flex-wrap: nowrap; overflow-x: auto; }
+  .workbench-tabs .tab-button { min-width: 132px; }
+  .workbench-toolbar, .run-safety { align-items: flex-start; flex-direction: column; }
+  .workbench-actions { justify-content: flex-start; }
+  .contract-workspace { grid-template-columns: 1fr; }
+  .workspace-pane + .workspace-pane, .contract-workspace .workspace-pane:last-child { border-top: 1px solid var(--line); border-left: 0; }
+  .contract-workspace .workspace-pane:last-child { grid-column: auto; }
+  .contract-semantics, .readiness-score { grid-template-columns: repeat(2, 1fr); }
+  .contract-semantics > div:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
+  .contract-semantics > div:nth-child(4) { border-top: 1px solid var(--line); }
+  .case-editor { grid-template-columns: 1fr; }
+  .case-editor > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .trace-line { grid-template-columns: 44px 1fr 62px; }
+  .trace-line em { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="progress-line" id="progressLine" aria-hidden="true"></div>
+<nav class="report-nav" aria-label="汇报章节导航">
+  <div class="nav-logo">Resource Gateway</div>
+  <div class="nav-links">
+    <a href="#hero">战略结论</a>
+    <a href="#insight">业务洞见</a>
+    <a href="#value">价值结果</a>
+    <a href="#assets">资产分层</a>
+    <a href="#mirror">业务镜像</a>
+    <a href="#collaboration">协作机制</a>
+    <a href="#architecture">技术战略</a>
+    <a href="#workbench">正确性工作台</a>
+    <a href="#pilot">验证场景</a>
+    <a href="#measurement">度量证伪</a>
+    <a href="#roadmap">演进决策</a>
+  </div>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换明暗主题">
+    <span class="theme-dark" aria-hidden="true">◐</span><span class="theme-light" aria-hidden="true">◑</span>
+  </button>
+</nav>
+
+<main>
+  <section class="report-section hero" id="hero">
+    <div class="container hero-layout">
+      <div class="hero-copy fade-in">
+        <div class="hero-badge">客户业务镜像与可执行协作战略</div>
+        <h1>把客服业务理解变成可执行、可验证、可持续校准的组织资产</h1>
+        <p class="lead">客服组织通过确定性业务镜像获得独立设计与演练能力。业务人员先用可执行规格验证新能力价值，产研再绑定真实实现，并以真实业务结果持续校准。</p>
+        <div class="metrics" aria-label="汇报摘要">
+          <div class="metric"><div class="metric-value">1</div><div class="metric-label">业务一等对象</div></div>
+          <div class="metric"><div class="metric-value">L0–L3</div><div class="metric-label">逐层契约与验证</div></div>
+          <div class="metric"><div class="metric-value">4</div><div class="metric-label">分级证据状态</div></div>
+          <div class="metric"><div class="metric-value">1</div><div class="metric-label">首条纵向切片</div></div>
+        </div>
+      </div>
+      <div class="hero-visual fade-in" aria-label="战略北极星">
+        <div class="thesis-board">
+          <header><small>战略北极星</small><strong>竞争维度从接口数量和人力单价，转向业务拟合保真度与学习速度</strong></header>
+          <div class="thesis-factor"><b>01</b><div><strong>跨域问题模型</strong><span>客服拥有客户视角的诊断、冲突处理与解决方案组合</span></div></div>
+          <div class="thesis-factor"><b>02</b><div><strong>可执行业务资产</strong><span>契约、状态、场景、Fixture 和断言可以独立运行</span></div></div>
+          <div class="thesis-factor"><b>03</b><div><strong>真实结果校准</strong><span>只读 Shadow 与独立 Outcome 持续修正认知偏差</span></div></div>
+          <div class="thesis-result">结果：服务质量和迭代速度形成可复利差距</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="insight">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">01 · 业务洞见</div>
+        <h2>客服组织真正稀缺的资产，是对跨域客户问题的可验证理解</h2>
+        <p class="lead">事业部掌握订单、地图、支付和风控等局部事实；客服组织负责把分散事实组织为客户问题、处置策略和结果判断。这部分认知决定服务能力的上限。</p>
+      </header>
+      <div class="grid-3 fade-in">
+        <article class="card"><div class="insight-number">01</div><h3>接口接入逐渐成为基础能力</h3><p>API 解决“能否调用”，无法独立回答“何时调用、为何调用、结果是否解决客户问题”。长期价值继续向跨域语义、状态和结果迁移。</p></article>
+        <article class="card"><div class="insight-number">02</div><h3>客服拥有跨域问题模型</h3><p>单一事业部通常不拥有取消费申诉、计价争议或重复扣款的完整解释。客服对事实的组合和处置，构成独特业务资产。</p></article>
+        <article class="card result"><div class="insight-number">03</div><h3>运行自主需要事实校准</h3><p>客服可以脱离真实接口完成日常设计和回归，同时保持与真实业务真值的周期性连接，避免 Fixture 形成历史幻觉。</p></article>
+      </div>
+      <div class="section-claim fade-in">客服业务的目标，不是复制每个事业部的系统，而是形成能够解释跨域问题、独立演练解决方案、并持续用真实结果修正的客户业务模型。</div>
+      <div class="formula fade-in" aria-label="客服服务能力乘法模型">
+        <div><small>业务服务能力</small><strong>业务状态还原</strong></div>
+        <div><small>乘以</small><strong>处置决策正确</strong></div>
+        <div><small>乘以</small><strong>解决动作可靠</strong></div>
+        <div><small>乘以</small><strong>沟通适配</strong></div>
+        <div><small>乘以</small><strong>结果闭环与学习</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="value">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">02 · 战略价值</div>
+        <h2>业务镜像同时改变服务质量、交付方式和组织协作</h2>
+        <p class="lead">价值判断需要同时看到业务机制和可观察指标。当前先冻结指标框架，首个业务域建立基线后再确定目标值。</p>
+      </header>
+      <div class="logic-chain fade-in" aria-label="战略价值追溯链">
+        <div class="logic-step"><small>事业部输入</small><strong>原子事实与能力</strong><span>契约、变化、只读事实</span></div>
+        <div class="logic-step"><small>客服生产</small><strong>跨域业务模型</strong><span>问题、状态、解决方案</span></div>
+        <div class="logic-step"><small>平台运行</small><strong>确定性业务镜像</strong><span>独立演练、故障与状态</span></div>
+        <div class="logic-step"><small>正确性证明</small><strong>场景与分层证据</strong><span>覆盖、断言、限制</span></div>
+        <div class="logic-step"><small>持续校准</small><strong>真实 Outcome</strong><span>偏差、漂移、下一修订</span></div>
+      </div>
+      <div class="result-grid fade-in" style="margin-top: 30px;">
+        <article class="result-card"><small>业务自主性</small><h3>减少对真实环境的即时依赖</h3><p>关键流程可在镜像世界中独立设计、演练和回归，事业部协作从逐次支持转为周期性提供契约和校准事实。</p><dl><dt>观察指标</dt><dd>无真实接口可完成的设计与回归比例</dd></dl></article>
+        <article class="result-card"><small>协作效率</small><h3>需求先成为可执行规格</h3><p>业务人员先证明期望行为和业务价值，产研围绕同一验收套件实现，减少二次翻译和验收返工。</p><dl><dt>观察指标</dt><dd>澄清轮次、返工、首次一致性通过</dd></dl></article>
+        <article class="result-card"><small>业务正确性</small><h3>覆盖组合、状态与异常</h3><p>测试从单接口成功扩展到跨域状态、时间、故障、幂等、补偿和人工接管，降低错误处置逃逸。</p><dl><dt>观察指标</dt><dd>风险加权覆盖、错误处置、线上逃逸</dd></dl></article>
+        <article class="result-card"><small>资产复利</small><h3>同一业务模型跨载体复用</h3><p>契约、场景和断言能够被 SOP、Workflow、服务智能体、文本机器人和语音机器人共同消费。</p><dl><dt>观察指标</dt><dd>跨载体复用率、变更回归影响范围</dd></dl></article>
+      </div>
+      <div class="callout attention fade-in" style="margin-top: 24px;"><strong>关键约束：</strong>Fixture 数量、Graph 数量和 Case 数量都不是壁垒指标。只有具备风险分母、真实校准、Owner 和失效传播的验证资产，才会形成可复利认知。</div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="assets">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">03 · 业务资产分层</div>
+        <h2>从 L0 开始契约化，使每一层服务资产都具备验证入口</h2>
+        <p class="lead">Graph 作为统一执行投影，业务语义仍由分层资产表达。业务人员经营的是“取消费申诉解决能力”，而不是一张匿名 DAG。</p>
+      </header>
+      <div class="asset-stack fade-in">
+        <div class="asset-layer"><div class="asset-level">L0</div><div><strong>基础资源层</strong><span>API、业务指令、Operator、Built-in Function</span></div><span>输入、输出、错误、Effect、幂等、权限</span><em>Schema、单元测试、协议回放、故障测试</em></div>
+        <div class="asset-layer"><div class="asset-level">L1</div><div><strong>服务设计层</strong><span>业务参数、特征、场景、问题定义、解决方案</span></div><span>场景前置、状态、决策、期望处置</span><em>决策表、状态迁移、场景与属性测试</em></div>
+        <div class="asset-layer"><div class="asset-level">L2</div><div><strong>服务载体层</strong><span>知识、SOP、Workflow、服务智能体</span></div><span>旅程、策略、工具使用、升级和沟通约束</span><em>端到端演练、策略合规、工具调用序列</em></div>
+        <div class="asset-layer"><div class="asset-level">L3</div><div><strong>业务应用层</strong><span>文本机器人、语音机器人、人工辅助应用</span></div><span>渠道输入输出、会话状态、降级与体验</span><em>多轮交互、渠道兼容、压力与线上观察</em></div>
+      </div>
+      <div class="ownership-grid fade-in" aria-label="组织责任边界">
+        <div><strong>事业部能力 Owner</strong><span>拥有原子业务事实、局部规则和原子能力权威</span></div>
+        <div><strong>客服业务 Owner</strong><span>拥有跨域问题、解决方案、场景分母和业务正确性</span></div>
+        <div><strong>Resource Gateway</strong><span>编译并运行契约、状态、场景和证据闭包</span></div>
+        <div><strong>企业治理平台</strong><span>负责 Registry、Owner、审批、发布门禁和生产权限</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="mirror">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">04 · 业务价值飞轮</div>
+        <h2>运行自主权来自确定性镜像，业务可信度来自持续校准</h2>
+        <p class="lead">日常设计与回归不触达真实外部副作用；只读 Shadow、脱敏 Replay 和独立 Outcome 定期识别偏差，驱动资产失效、Owner 修复和新修订回归。</p>
+      </header>
+      <div class="diagram-shell fade-in">
+        <div class="diagram-head">
+          <div><strong>客户业务镜像价值飞轮</strong><div class="diagram-hint">横向滚动、缩放或全屏查看完整关系</div></div>
+          <div class="diagram-actions">
+            <button class="icon-button" type="button" data-action="zoom-out" title="缩小" aria-label="缩小图形">−</button>
+            <span class="zoom-label" aria-live="polite">100%</span>
+            <button class="icon-button" type="button" data-action="zoom-in" title="放大" aria-label="放大图形">＋</button>
+            <button class="icon-button" type="button" data-action="zoom-reset" title="重置缩放" aria-label="重置缩放">↺</button>
+            <button class="text-button" type="button" data-action="fullscreen">全屏查看</button>
+          </div>
+        </div>
+        <div class="diagram-legend" aria-label="图例">
+          <span class="legend-item"><i class="legend-line"></i>定义与能力</span>
+          <span class="legend-item"><i class="legend-line control"></i>模拟与控制</span>
+          <span class="legend-item"><i class="legend-line evidence"></i>证据与结果</span>
+        </div>
+        <div class="diagram-viewport" data-diagram-shell data-dialog-title="客户业务镜像价值飞轮">
+          <div class="diagram-stage">
+            <svg role="img" aria-label="Resource Gateway 客户业务镜像价值飞轮" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent; color-scheme: light dark;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1842px" height="1008px" viewBox="0 0 1842 1008"><defs/><g><g><g><g><g><rect x="0" y="0" width="1840" height="40" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 20px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 22px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: nowrap; ">Resource Gateway 客户业务镜像价值飞轮</div></div></div></foreignObject></switch></g></g></g><g><g><rect x="0" y="42" width="1840" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 57px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #546e7a; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#546e7a, #8197a2); line-height: 1.2; pointer-events: all; white-space: nowrap; ">运行自主权来自确定性镜像，业务可信度来自事业部事实与独立 Outcome 的持续校准</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 0 148 L 0 110 L 330 110 L 330 148" fill="#eceff1" stroke="#455a64" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(236, 239, 241), rgb(31, 33, 35)); stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/><path d="M 0 148 L 0 760 L 330 760 L 330 148" fill="none" stroke="#455a64" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/><path d="M 0 148 L 330 148" fill="none" stroke="#455a64" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 328px; height: 1px; padding-top: 129px; margin-left: 1px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">1  事业部与权威事实源</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="35" y="180" width="260" height="82" fill="#ffffff" stroke="#455a64" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 258px; height: 1px; padding-top: 221px; margin-left: 36px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">原子业务事实<br />订单、轨迹、支付、计费、风控</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="35" y="298" width="260" height="88" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 258px; height: 1px; padding-top: 342px; margin-left: 36px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">原子能力与契约<br />Resource、Operator、Effect、错误与幂等</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="35" y="422" width="260" height="82" fill="#fff9c4" stroke="#f57c00" pointer-events="all" style="fill: light-dark(rgb(255, 249, 196), rgb(33, 28, 0)); stroke: light-dark(rgb(245, 124, 0), rgb(207, 102, 0));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 258px; height: 1px; padding-top: 463px; margin-left: 36px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">变化与事件时间<br />契约修订、政策版本、状态轨迹</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="35" y="540" width="260" height="92" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 258px; height: 1px; padding-top: 586px; margin-left: 36px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">独立业务 Outcome<br />问题闭环、二次申诉、人工纠正、退款结果</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="35" y="668" width="260" height="62" fill="#ffebee" stroke="#c62828" pointer-events="all" style="fill: light-dark(rgb(255, 235, 238), rgb(44, 27, 30)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 258px; height: 1px; padding-top: 699px; margin-left: 36px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">事实约束<br />运行日志不能自证业务正确性</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 380 148 L 380 110 L 1080 110 L 1080 148" fill="#e3f2fd" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 380 148 L 380 760 L 1080 760 L 1080 148" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 380 148 L 1080 148" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 698px; height: 1px; padding-top: 129px; margin-left: 381px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">2  Resource Gateway Business Capability Mirror Runtime</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><path d="M 410 205 L 410 175 L 1050 175 L 1050 205" fill="#e3f2fd" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 410 205 L 410 320 L 1050 320 L 1050 205" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 410 205 L 1050 205" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 638px; height: 1px; padding-top: 190px; margin-left: 411px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">定义平面</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="435" y="230" width="180" height="60" fill="#ffffff" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 260px; margin-left: 436px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Capability / Contract</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="640" y="230" width="180" height="60" fill="#ffffff" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 260px; margin-left: 641px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">DomainCapabilityPackage</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="845" y="230" width="180" height="60" fill="#ffffff" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 260px; margin-left: 846px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Scenario / Fixture / Assertion</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 410 375 L 410 345 L 1050 345 L 1050 375" fill="#fff3e0" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 410 375 L 410 515 L 1050 515 L 1050 375" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 410 375 L 1050 375" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 638px; height: 1px; padding-top: 360px; margin-left: 411px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">确定性模拟平面</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="435" y="405" width="180" height="75" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 443px; margin-left: 436px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">MirrorPlan<br />冻结依赖、策略与 Fixture</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="640" y="405" width="180" height="75" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 443px; margin-left: 641px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Stateful World<br />状态、时间、随机与身份</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="845" y="405" width="180" height="75" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 443px; margin-left: 846px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Isolated Runtime<br />故障注入、无真实外部写</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 410 570 L 410 540 L 1050 540 L 1050 570" fill="#e8f5e9" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 410 570 L 410 725 L 1050 725 L 1050 570" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 410 570 L 1050 570" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 638px; height: 1px; padding-top: 555px; margin-left: 411px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">验证与校准平面</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="435" y="605" width="180" height="78" fill="#ffffff" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 644px; margin-left: 436px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Evidence<br />Trace、断言、状态差异、限制</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="640" y="605" width="180" height="78" fill="#ffffff" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 644px; margin-left: 641px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Fidelity Profile<br />多维保真与未知债务</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="845" y="605" width="180" height="78" fill="#ffffff" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 178px; height: 1px; padding-top: 644px; margin-left: 846px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Drift Control<br />影响分析、stale 与修复队列</div></div></div></foreignObject></switch></g></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1130 148 L 1130 110 L 1830 110 L 1830 148" fill="#f3e5f5" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 1130 148 L 1130 760 L 1830 760 L 1830 148" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 1130 148 L 1830 148" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 698px; height: 1px; padding-top: 129px; margin-left: 1131px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">3  客服业务资产与服务交付</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="1170" y="180" width="620" height="82" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 600px; height: 1px; padding-top: 221px; margin-left: 1190px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">L0  基础资源层<br />API、业务指令、Operator、Built-in Function</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1170" y="300" width="620" height="82" fill="#fff3e0" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 600px; height: 1px; padding-top: 341px; margin-left: 1190px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">L1  服务设计层<br />业务特征、问题场景、决策与解决方案</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1170" y="420" width="620" height="82" fill="#f3e5f5" stroke="#6a1b9a" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 600px; height: 1px; padding-top: 461px; margin-left: 1190px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">L2  服务载体层<br />知识、SOP、Workflow、服务智能体</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1170" y="540" width="620" height="82" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 600px; height: 1px; padding-top: 581px; margin-left: 1190px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">L3  业务应用层<br />文本机器人、语音机器人、人工辅助应用</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1220" y="660" width="520" height="65" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 518px; height: 1px; padding-top: 693px; margin-left: 1221px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">竞争壁垒<br />跨域问题模型 × 风险覆盖 × 真实校准 × 学习速度</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 0 844 L 0 810 L 1830 810 L 1830 844" fill="#eceff1" stroke="#455a64" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(236, 239, 241), rgb(31, 33, 35)); stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/><path d="M 0 844 L 0 955 L 1830 955 L 1830 844" fill="none" stroke="#455a64" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/><path d="M 0 844 L 1830 844" fill="none" stroke="#455a64" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1828px; height: 1px; padding-top: 827px; margin-left: 1px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">4  持续校准与反熵闭环</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="180" y="872" width="250" height="55" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 900px; margin-left: 181px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">只读 Shadow / 脱敏 Replay</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="590" y="872" width="250" height="55" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 900px; margin-left: 591px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Typed Diff / Outcome 对账</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1000" y="872" width="250" height="55" fill="#ffebee" stroke="#c62828" pointer-events="all" style="fill: light-dark(rgb(255, 235, 238), rgb(44, 27, 30)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 900px; margin-left: 1001px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">保真下降 / 资产 STALE</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1410" y="872" width="250" height="55" fill="#fff3e0" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 900px; margin-left: 1411px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Owner 复核 / 新修订 / 受影响回归</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 430 899.5 L 583.63 899.5" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 588.88 899.5 L 581.88 903 L 583.63 899.5 L 581.88 896 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 900px; margin-left: 510px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">同输入比较</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 840 899.5 L 993.63 899.5" fill="none" stroke="#c62828" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/><path d="M 998.88 899.5 L 991.88 903 L 993.63 899.5 L 991.88 896 Z" fill="#c62828" stroke="#c62828" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(198, 40, 40), rgb(255, 145, 145)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 900px; margin-left: 920px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">识别偏差</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1250 899.5 L 1403.63 899.5" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 1408.88 899.5 L 1401.88 903 L 1403.63 899.5 L 1401.88 896 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 900px; margin-left: 1330px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">进入修复队列</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 330 337.5 L 355 337.5 L 355 292 L 373.63 292" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 378.88 292 L 371.88 295.5 L 373.63 292 L 371.88 288.5 Z" fill="#1565c0" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(21, 101, 192), rgb(99, 168, 246)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 315px; margin-left: 355px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">事实、契约与变化</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1080 402.5 L 1123.63 402.5" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 1128.88 402.5 L 1121.88 406 L 1123.63 402.5 L 1121.88 399 Z" fill="#6a1b9a" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(106, 27, 154), rgb(237, 169, 255)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 403px; margin-left: 1105px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">编译、运行与证据</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 295 586 L 350 586 L 350 795 L 305 795 L 305 865.63" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 305 870.88 L 301.5 863.88 L 305 865.63 L 308.5 863.88 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 724px; margin-left: 350px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">独立结果</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1480 760 L 1480 810 L 715 810 L 715 865.63" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 715 870.88 L 711.5 863.88 L 715 865.63 L 718.5 863.88 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 810px; margin-left: 1091px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">真实服务结果</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1535 927 L 1535 965 L 305 965 L 305 933.37" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 305 928.12 L 308.5 935.12 L 305 933.37 L 301.5 935.12 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 965px; margin-left: 920px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">新修订重新演练</div></div></div></foreignObject></switch></g></g></g><g><g><rect x="0" y="980" width="45" height="24" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 992px; margin-left: 2px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #455a64; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#455a64, #94a6af); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: nowrap; ">图例</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="55" y="978" width="120" height="28" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 118px; height: 1px; padding-top: 992px; margin-left: 56px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">定义 / 能力</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="190" y="978" width="120" height="28" fill="#fff3e0" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 118px; height: 1px; padding-top: 992px; margin-left: 191px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">模拟 / 控制</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="325" y="978" width="120" height="28" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 118px; height: 1px; padding-top: 992px; margin-left: 326px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">证据 / 结果</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="460" y="978" width="120" height="28" fill="#ffebee" stroke="#c62828" pointer-events="all" style="fill: light-dark(rgb(255, 235, 238), rgb(44, 27, 30)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 118px; height: 1px; padding-top: 992px; margin-left: 461px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">风险 / 失效</div></div></div></foreignObject></switch></g></g></g></g></g></g><switch><g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/></switch></svg>
+          </div>
+        </div>
+        <div class="diagram-caption">两类权威来源共同约束镜像：事业部提供原子事实与能力契约，独立 Outcome 源证明客户问题是否真正解决。运行日志只证明发生过，不能独立证明正确。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="collaboration">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">05 · 业务产研协作</div>
+        <h2>业务先提交可运行的能力规格，产研再实现生产机制</h2>
+        <p class="lead">这种方式拆开“是否值得做”和“如何可靠实现”两个问题。业务可以在投入开发前验证流程价值，产研从已冻结的契约和验收套件开始工作。</p>
+      </header>
+      <div class="compare-grid fade-in">
+        <article class="compare-panel old"><h3>过去：需求先进入研发队列</h3><ol><li>业务用 PRD 或流程图描述能力缺口</li><li>产研在实现过程中解释边界和异常</li><li>联调后才能看到完整业务流程</li><li>业务验收阶段集中暴露理解偏差</li><li>项目完成后验收数据难以持续复用</li></ol></article>
+        <div class="compare-arrow" aria-hidden="true">→</div>
+        <article class="compare-panel new"><h3>未来：业务先形成可执行规格</h3><ol><li>业务定义候选算子、契约和适用场景</li><li>Fixture 与业务验收套件冻结期望行为</li><li>完整流程在镜像环境中先行跑通</li><li>产研生成接口并绑定真实实现</li><li>同一套测试贯穿实现、Shadow 和发布</li></ol></article>
+      </div>
+      <div class="authority-rule fade-in">
+        <div><small>客服业务</small><strong>拥有业务规格权：问题、目标行为、场景与正确性</strong></div>
+        <div><small>平台产研</small><strong>承担实现责任：运行机制、安全、SLO、容量与可观测性</strong></div>
+        <div><small>企业治理</small><strong>拥有发布裁决权：Owner、审批、合规与生产权限</strong></div>
+      </div>
+      <div class="diagram-shell fade-in" style="margin-top: 30px;">
+        <div class="diagram-head">
+          <div><strong>候选算子从业务规格到生产能力</strong><div class="diagram-hint">`SIMULATION_ONLY` 是权限边界，不是视觉标签</div></div>
+          <div class="diagram-actions">
+            <button class="icon-button" type="button" data-action="zoom-out" title="缩小" aria-label="缩小图形">−</button>
+            <span class="zoom-label" aria-live="polite">100%</span>
+            <button class="icon-button" type="button" data-action="zoom-in" title="放大" aria-label="放大图形">＋</button>
+            <button class="icon-button" type="button" data-action="zoom-reset" title="重置缩放" aria-label="重置缩放">↺</button>
+            <button class="text-button" type="button" data-action="fullscreen">全屏查看</button>
+          </div>
+        </div>
+        <div class="diagram-legend" aria-label="图例">
+          <span class="legend-item"><i class="legend-line control"></i>业务模拟与探索性证据</span>
+          <span class="legend-item"><i class="legend-line"></i>实现与一致性验证</span>
+          <span class="legend-item"><i class="legend-line evidence"></i>校准与认证</span>
+        </div>
+        <div class="diagram-viewport" data-diagram-shell data-dialog-title="可执行能力协作生命周期">
+          <div class="diagram-stage">
+            <svg role="img" aria-label="候选算子从业务规格到生产能力的可执行协作生命周期" xmlns="http://www.w3.org/2000/svg" style="background: transparent; background-color: transparent; color-scheme: light dark;" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" width="1869px" height="1177px" viewBox="0 0 1869 1177"><defs/><g><g><g><g><g><rect x="27" y="0" width="1840" height="40" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 20px; margin-left: 29px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #263238; "><div style="display: inline-block; font-size: 22px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: nowrap; ">候选算子从业务规格到生产能力的可执行协作生命周期</div></div></div></foreignObject></switch></g></g></g><g><g><rect x="27" y="42" width="1840" height="30" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 57px; margin-left: 29px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #546e7a; "><div style="display: inline-block; font-size: 12px; font-family: Arial; color: light-dark(#546e7a, #8197a2); line-height: 1.2; pointer-events: all; white-space: nowrap; ">业务拥有规格权，产研承担实现与生产可靠性，治理系统裁决发布；模拟、实现、校准和认证不得相互冒充</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="27" y="80" width="1130" height="38" fill="#fff9c4" stroke="#f57c00" pointer-events="all" style="fill: light-dark(rgb(255, 249, 196), rgb(33, 28, 0)); stroke: light-dark(rgb(245, 124, 0), rgb(207, 102, 0));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1128px; height: 1px; padding-top: 99px; margin-left: 28px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">业务规格与模拟价值验证区</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1187" y="80" width="680" height="38" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 678px; height: 1px; padding-top: 99px; margin-left: 1188px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">真实实现、校准与生产认证区</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1171" y="75" width="4" height="50" fill="#c62828" stroke="#c62828" pointer-events="all" style="fill: light-dark(rgb(198, 40, 40), rgb(255, 145, 145)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g></g><g><g transform="translate(0.5,0.5)"><rect x="987" y="1020" width="170" height="62" fill="#ffebee" stroke="#c62828" pointer-events="all" style="fill: light-dark(rgb(255, 235, 238), rgb(44, 27, 30)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 168px; height: 1px; padding-top: 1051px; margin-left: 988px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #b71c1c; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#b71c1c, #ff9c9c); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">权限边界<br />SIMULATION_ONLY 不具备生产执行权</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 27 188 L 27 150 L 1867 150 L 1867 188" fill="#e3f2fd" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 27 188 L 27 375 L 1867 375 L 1867 188" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 27 188 L 1867 188" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1838px; height: 1px; padding-top: 169px; margin-left: 28px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">客服业务与服务产品</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="67" y="228" width="190" height="92" fill="#eceff1" stroke="#455a64" pointer-events="all" style="fill: light-dark(rgb(236, 239, 241), rgb(31, 33, 35)); stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 188px; height: 1px; padding-top: 274px; margin-left: 68px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">PROPOSED<br />发现能力缺口<br />说明客户问题与预期价值</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="317" y="228" width="220" height="92" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 218px; height: 1px; padding-top: 274px; margin-left: 318px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">SPECIFIED<br />定义 OperatorContract<br />输入、输出、错误、Effect、状态</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="597" y="228" width="230" height="92" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 228px; height: 1px; padding-top: 274px; margin-left: 598px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">BUSINESS ACCEPTANCE<br />Fixture、边界、故障与状态场景<br />冻结业务验收意图</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="887" y="228" width="220" height="92" fill="#fff3e0" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 218px; height: 1px; padding-top: 274px; margin-left: 888px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">SIMULATED<br />在完整流程中复核结果<br />识别覆盖、限制与价值假设</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1117" y="228" width="220" height="92" fill="#f3e5f5" stroke="#6a1b9a" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 218px; height: 1px; padding-top: 274px; margin-left: 1118px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">ACCEPTED<br />业务 Owner 接受价值假设<br />提交实现，不代表技术可行</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 257 274 L 310.63 274" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 315.88 274 L 308.88 277.5 L 310.63 274 L 308.88 270.5 Z" fill="#1565c0" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(21, 101, 192), rgb(99, 168, 246)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 274px; margin-left: 287px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">明确期望</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 537 274 L 590.63 274" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 595.88 274 L 588.88 277.5 L 590.63 274 L 588.88 270.5 Z" fill="#1565c0" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(21, 101, 192), rgb(99, 168, 246)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 274px; margin-left: 567px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">补齐行为边界</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1107 274 L 1110.63 274" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 1115.88 274 L 1108.88 277.5 L 1110.63 274 L 1108.88 270.5 Z" fill="#6a1b9a" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(106, 27, 154), rgb(237, 169, 255)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 274px; margin-left: 1112px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">证实业务价值</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 27 448 L 27 410 L 1867 410 L 1867 448" fill="#fff3e0" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 27 448 L 27 660 L 1867 660 L 1867 448" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 27 448 L 1867 448" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1838px; height: 1px; padding-top: 429px; margin-left: 28px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">Resource Gateway</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="317" y="495" width="230" height="98" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 228px; height: 1px; padding-top: 544px; margin-left: 318px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">图形化候选能力工作台<br />表单、Schema Tree、决策表<br />自动生成候选，不替代确认</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="617" y="495" width="230" height="98" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 228px; height: 1px; padding-top: 544px; margin-left: 618px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">确定性编译<br />CapabilityClosure + MirrorPlan<br />冻结状态、时间、身份与依赖</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="907" y="495" width="230" height="98" fill="#ffffff" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 228px; height: 1px; padding-top: 544px; margin-left: 908px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">隔离镜像运行<br />数据流控制反转、故障注入<br />真实外部写调用数为 0</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1237" y="495" width="250" height="98" fill="#f3e5f5" stroke="#6a1b9a" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 544px; margin-left: 1238px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">可执行实现包<br />Contract + SDK scaffold + runtime port<br />+ 同源 conformance suite</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1537" y="495" width="270" height="98" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 268px; height: 1px; padding-top: 544px; margin-left: 1538px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">分层证据<br />SIMULATED / IMPLEMENTED / CALIBRATED / CERTIFIED</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 547 544 L 610.63 544" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 615.88 544 L 608.88 547.5 L 610.63 544 L 608.88 540.5 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 544px; margin-left: 582px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">canonical spec</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 847 544 L 900.63 544" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 905.88 544 L 898.88 547.5 L 900.63 544 L 898.88 540.5 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 544px; margin-left: 877px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">authorized plan</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 27 738 L 27 700 L 1867 700 L 1867 738" fill="#e8f5e9" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 27 738 L 27 905 L 1867 905 L 1867 738" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 27 738 L 1867 738" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1838px; height: 1px; padding-top: 719px; margin-left: 28px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">平台产研与业务能力实现团队</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="1227" y="770" width="220" height="92" fill="#ffffff" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(255, 255, 255), rgb(18, 18, 18)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 218px; height: 1px; padding-top: 816px; margin-left: 1228px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">TECHNICAL REVIEW<br />评估可实现性、安全、成本与 NFR<br />必要时回修业务规格</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1477" y="770" width="200" height="92" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 198px; height: 1px; padding-top: 816px; margin-left: 1478px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">IMPLEMENTED<br />绑定代码、服务与运行版本<br />冻结 runtime fingerprint</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1707" y="770" width="140" height="92" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 138px; height: 1px; padding-top: 816px; margin-left: 1708px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">CONFORMANT<br />复用业务验收套件<br />通过实现一致性与工程门禁</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1447 816 L 1470.63 816" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 1475.88 816 L 1468.88 819.5 L 1470.63 816 L 1468.88 812.5 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 816px; margin-left: 1462px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">评审通过</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1677 816 L 1700.63 816" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 1705.88 816 L 1698.88 819.5 L 1700.63 816 L 1698.88 812.5 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 816px; margin-left: 1692px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">同源测试</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 27 983 L 27 945 L 1867 945 L 1867 983" fill="#f3e5f5" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 27 983 L 27 1125 L 1867 1125 L 1867 983" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 27 983 L 1867 983" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="none" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1838px; height: 1px; padding-top: 964px; margin-left: 28px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 13px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">真实校准与企业治理</div></div></div></foreignObject></switch></g></g><g><g transform="translate(0.5,0.5)"><rect x="1347" y="1005" width="250" height="90" fill="#e3f2fd" stroke="#1565c0" pointer-events="all" style="fill: light-dark(rgb(227, 242, 253), rgb(20, 33, 42)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 248px; height: 1px; padding-top: 1050px; margin-left: 1348px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">CALIBRATED<br />只读 Shadow + 权威 Outcome<br />Fidelity、置信度与 Drift 达标</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="1647" y="1005" width="200" height="90" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 198px; height: 1px; padding-top: 1050px; margin-left: 1648px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 11px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: normal; word-wrap: normal; ">CERTIFIED<br />Owner、SLO、安全、合规和发布门禁通过<br />只在批准范围内获得生产执行权</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1597 1050 L 1640.63 1050" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 1645.88 1050 L 1638.88 1053.5 L 1640.63 1050 L 1638.88 1046.5 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 1050px; margin-left: 1622px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">全部门禁通过</div></div></div></foreignObject></switch></g></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 712 320 L 712 395 L 432 395 L 432 488.63" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 432 493.88 L 428.5 486.88 L 432 488.63 L 435.5 486.88 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 395px; margin-left: 559px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">结构化编辑</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1022 495 L 1022 407.5 L 997 407.5 L 997 326.37" fill="none" stroke="#e65100" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/><path d="M 997 321.12 L 1000.5 328.12 L 997 326.37 L 993.5 328.12 Z" fill="#e65100" stroke="#e65100" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(230, 81, 0), rgb(251, 123, 53)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 408px; margin-left: 1010px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">结果与限制</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1271 320 L 1271 407.5 L 1287 407.5 L 1287 488.63" fill="none" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/><path d="M 1287 493.88 L 1283.5 486.88 L 1287 488.63 L 1290.5 486.88 Z" fill="#6a1b9a" stroke="#6a1b9a" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(106, 27, 154), rgb(237, 169, 255)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 408px; margin-left: 1280px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">提交实现</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1362 593 L 1362 681.5 L 1337 681.5 L 1337 763.63" fill="none" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/><path d="M 1337 768.88 L 1333.5 761.88 L 1337 763.63 L 1340.5 761.88 Z" fill="#2e7d32" stroke="#2e7d32" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(46, 125, 50), rgb(100, 168, 104)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 682px; margin-left: 1350px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">可执行规格包</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1777 862 L 1777 925 L 1792 925 L 1547 925 L 1547 998.63" fill="none" stroke="#1565c0" stroke-miterlimit="10" pointer-events="stroke" style="stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/><path d="M 1547 1003.88 L 1543.5 996.88 L 1547 998.63 L 1550.5 996.88 Z" fill="#1565c0" stroke="#1565c0" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(21, 101, 192), rgb(99, 168, 246)); stroke: light-dark(rgb(21, 101, 192), rgb(99, 168, 246));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 925px; margin-left: 1668px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">进入真实校准</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><path d="M 1227 816 L 1227 830 L 7 830 L 7 340 L 307 340 L 307 301.6 L 310.63 301.6" fill="none" stroke="#c62828" stroke-miterlimit="10" stroke-dasharray="3 3" pointer-events="stroke" style="stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/><path d="M 315.88 301.6 L 308.88 305.1 L 310.63 301.6 L 308.88 298.1 Z" fill="#c62828" stroke="#c62828" stroke-miterlimit="10" pointer-events="all" style="fill: light-dark(rgb(198, 40, 40), rgb(255, 145, 145)); stroke: light-dark(rgb(198, 40, 40), rgb(255, 145, 145));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 1px; height: 1px; padding-top: 830px; margin-left: 205px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #000000; background-color: #ffffff; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#000000, #ffffff); line-height: 1.2; pointer-events: all; font-weight: bold; background-color: light-dark(#ffffff, #121212); white-space: nowrap; ">规格不可实现或成本不成立，回修而非静默改义</div></div></div></foreignObject></switch></g></g></g><g><g><rect x="27" y="1150" width="70" height="24" fill="none" stroke="none" pointer-events="all"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe flex-start; width: 1px; height: 1px; padding-top: 1162px; margin-left: 29px;"><div style="box-sizing: border-box; font-size: 0; text-align: left; color: #455a64; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#455a64, #94a6af); line-height: 1.2; pointer-events: all; font-weight: bold; white-space: nowrap; ">状态颜色</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="107" y="1147" width="135" height="28" fill="#eceff1" stroke="#455a64" pointer-events="all" style="fill: light-dark(rgb(236, 239, 241), rgb(31, 33, 35)); stroke: light-dark(rgb(69, 90, 100), rgb(148, 166, 175));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 133px; height: 1px; padding-top: 1161px; margin-left: 108px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">草稿 / 待验证</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="257" y="1147" width="145" height="28" fill="#fff3e0" stroke="#e65100" pointer-events="all" style="fill: light-dark(rgb(255, 243, 224), rgb(36, 26, 9)); stroke: light-dark(rgb(230, 81, 0), rgb(251, 123, 53));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 143px; height: 1px; padding-top: 1161px; margin-left: 258px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">模拟 / 探索性证据</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="417" y="1147" width="135" height="28" fill="#f3e5f5" stroke="#6a1b9a" pointer-events="all" style="fill: light-dark(rgb(243, 229, 245), rgb(45, 33, 47)); stroke: light-dark(rgb(106, 27, 154), rgb(237, 169, 255));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 133px; height: 1px; padding-top: 1161px; margin-left: 418px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">治理 / 决策</div></div></div></foreignObject></switch></g></g></g><g><g transform="translate(0.5,0.5)"><rect x="567" y="1147" width="145" height="28" fill="#e8f5e9" stroke="#2e7d32" pointer-events="all" style="fill: light-dark(rgb(232, 245, 233), rgb(21, 33, 22)); stroke: light-dark(rgb(46, 125, 50), rgb(100, 168, 104));"/></g><g><g><switch><foreignObject style="overflow: visible; text-align: left;" pointer-events="none" width="100%" height="100%" requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"><div xmlns="http://www.w3.org/1999/xhtml" style="display: flex; align-items: unsafe center; justify-content: unsafe center; width: 143px; height: 1px; padding-top: 1161px; margin-left: 568px;"><div style="box-sizing: border-box; font-size: 0; text-align: center; color: #263238; "><div style="display: inline-block; font-size: 10px; font-family: Arial; color: light-dark(#263238, #bcc6cb); line-height: 1.2; pointer-events: all; white-space: normal; word-wrap: normal; ">实现 / 校准 / 就绪</div></div></div></foreignObject></switch></g></g></g></g></g></g><switch><g requiredFeatures="http://www.w3.org/TR/SVG11/feature#Extensibility"/></switch></svg>
+          </div>
+        </div>
+        <div class="diagram-caption">`SIMULATED` 证明业务上值得做、期望行为已表达；`IMPLEMENTED`、`CONFORMANT`、`CALIBRATED` 与 `CERTIFIED` 分别证明实现、契约一致性、真实拟合和生产准入。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="architecture">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">06 · 技术战略</div>
+        <h2>Resource Gateway 演进为业务能力镜像与服务演练运行时</h2>
+        <p class="lead">平台负责定义、编译、隔离运行、证据和校准事实；Graph 是执行投影，`DomainCapabilityPackage` 是业务人员经营和组织复用的一等对象。</p>
+      </header>
+      <div class="plane-grid fade-in" aria-label="五个技术平面">
+        <div class="plane"><small>01 · AUTHORING</small><strong>定义平面</strong><span>候选算子、契约、Graph、Fixture、场景和断言</span></div>
+        <div class="plane"><small>02 · COMPILATION</small><strong>编译平面</strong><span>依赖闭包、MirrorPlan、状态、时间、身份和策略冻结</span></div>
+        <div class="plane"><small>03 · SIMULATION</small><strong>模拟平面</strong><span>隔离执行、数据流控制反转、有状态世界和故障注入</span></div>
+        <div class="plane"><small>04 · EVIDENCE</small><strong>证据平面</strong><span>Trace、断言、状态差异、签名和可回放引用</span></div>
+        <div class="plane"><small>05 · CALIBRATION</small><strong>校准平面</strong><span>Shadow、保真向量、Outcome 对账和漂移传播</span></div>
+      </div>
+      <div class="model-layout fade-in">
+        <pre class="model-code" aria-label="DomainCapabilityPackage 结构">DomainCapabilityPackage
+├── 业务域 / 问题分类 / 风险等级
+├── 输入与输出契约
+├── CapabilityClosure
+├── 状态模型 / Effect 模型
+├── ScenarioInventory / Fixture / Assertion
+├── 解决方案 / 服务载体 / 渠道引用
+├── FidelityInventory / OutcomeDefinition
+├── Owner / Scope / Lifecycle / Provenance
+└── Graph / MirrorPlan / Evidence 投影</pre>
+        <div>
+          <table class="decision-table" aria-label="关键技术方向选择">
+            <thead><tr><th>决策点</th><th>推荐方向</th><th>解决的问题</th></tr></thead>
+            <tbody>
+              <tr><td>业务主对象</td><td>`DomainCapabilityPackage`</td><td>保留业务域、状态、场景和结果语义</td></tr>
+              <tr><td>未实现能力</td><td>`CapabilityProposal`</td><td>先验证业务价值，再投入真实实现</td></tr>
+              <tr><td>能力契约</td><td>Typed + Effect + State + Error + Idempotency</td><td>消除只有输入输出导致的模拟假绿</td></tr>
+              <tr><td>运行隔离</td><td>独立 MirrorPlan 与部署根</td><td>物理阻断 Fixture 和真实副作用进入生产</td></tr>
+              <tr><td>保真表达</td><td>多维向量 + 置信度 + 未知债务</td><td>避免单分数掩盖低保真和覆盖缺口</td></tr>
+              <tr><td>真实校准</td><td>只读 Shadow + 独立 Outcome</td><td>防止系统用自己的运行日志自证正确</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="grid-3 fade-in" style="margin-top: 28px;">
+        <article class="card"><div class="card-kicker">设计不变量</div><h3>模拟、实现、校准、认证分级</h3><p>四类证据回答不同问题，产品状态和协议字段不能相互冒充。</p></article>
+        <article class="card attention"><div class="card-kicker">设计不变量</div><h3>未知需要显式表达</h3><p>无匹配、低置信度和覆盖缺口返回 `ABSTAINED` 或 `INDETERMINATE`。</p></article>
+        <article class="card risk"><div class="card-kicker">设计不变量</div><h3>生产隔离是物理边界</h3><p>Mirror runtime 不具备真实写凭据和生产网络出口，不能只依赖请求参数。</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="workbench">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">07 · 契约与正确性工作台</div>
+        <h2>让业务人员按“定义边界、准备业务世界、声明正确答案、运行取证”完成闭环</h2>
+        <p class="lead">工作台不要求业务人员直接维护一团原始 JSON。系统把稳定接口、数据来源、本次测试世界、正确性判断和运行证据拆成五种对象，并在同一任务流中保持引用关系。</p>
+      </header>
+
+      <div class="semantic-strip fade-in" aria-label="正确性对象语义分工">
+        <div class="semantic-item"><small>CONTRACT</small><strong>允许什么</strong><span>字段、类型、错误、Effect、状态与幂等</span></div>
+        <div class="semantic-item"><small>BINDING</small><strong>数据从哪里来</strong><span>调用方、上游边、Context 或运行时资源</span></div>
+        <div class="semantic-item"><small>FIXTURE</small><strong>本次业务世界是什么</strong><span>外部返回、时间、身份、状态、故障和消费次数</span></div>
+        <div class="semantic-item"><small>ASSERTION</small><strong>什么才算正确</strong><span>路径、Schema、错误、状态迁移与治理预期</span></div>
+        <div class="semantic-item"><small>EVIDENCE</small><strong>哪次运行证明了什么</strong><span>冻结修订、Trace、差异、限制与证据等级</span></div>
+      </div>
+
+      <div class="operation-flow fade-in" aria-label="从契约到正确性证据的操作过程">
+        <div class="operation-step"><b>01</b><strong>选择业务问题</strong><span>明确 Outcome、风险和责任边界</span></div>
+        <div class="operation-step"><b>02</b><strong>定义 Graph 契约</strong><span>冻结服务入口与结果出口</span></div>
+        <div class="operation-step"><b>03</b><strong>补齐算子语义</strong><span>确认 Error、Effect、State 与 Idempotency</span></div>
+        <div class="operation-step"><b>04</b><strong>建立场景分母</strong><span>先列风险和状态，再创建测试行</span></div>
+        <div class="operation-step"><b>05</b><strong>编辑 Fixture 与断言</strong><span>注入确定世界，声明业务正确答案</span></div>
+        <div class="operation-step"><b>06</b><strong>运行、取证与校准</strong><span>读取首因、限制、漂移和真实差异</span></div>
+      </div>
+
+      <div class="workbench-frame fade-in">
+        <div class="tabs workbench-tabs" role="tablist" aria-label="契约与正确性工作台视图">
+          <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="contractDesk" id="contractDeskTab">契约定义</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="fixtureDesk" id="fixtureDeskTab">验证数据</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="evidenceDesk" id="evidenceDeskTab">运行证据</button>
+        </div>
+
+        <div id="contractDesk" role="tabpanel" aria-labelledby="contractDeskTab">
+          <div class="workbench-toolbar">
+            <div class="workbench-title"><small>乘客取消费申诉 / Graph Contract</small><strong>cancellationFeeAppeal · revision 12</strong></div>
+            <div class="workbench-actions"><span class="ui-status warn">探索性草稿</span><span class="ui-command">比较兼容性</span><span class="ui-command primary">保存契约</span></div>
+          </div>
+          <div class="contract-workspace">
+            <aside class="workspace-pane">
+              <div class="pane-title"><strong>契约范围</strong><span>3 个层级</span></div>
+              <div class="contract-tree">
+                <div class="tree-group"><strong>Graph Input</strong><div class="tree-node"><span>appealRequest</span><em>7 fields</em></div></div>
+                <div class="tree-group"><strong>Capability Closure</strong><div class="tree-node">queryTripFacts</div><div class="tree-node active"><span>resolveCancellationFee</span><em>selected</em></div><div class="tree-node">createRefund</div></div>
+                <div class="tree-group"><strong>Graph Output</strong><div class="tree-node"><span>appealResolution</span><em>5 fields</em></div></div>
+              </div>
+            </aside>
+
+            <div class="workspace-pane">
+              <div class="pane-title"><strong>resolveCancellationFee 能力契约</strong><span>Declared contract</span></div>
+              <section class="schema-block">
+                <header><strong>Input Schema</strong><span>调用者必须提供的稳定事实</span></header>
+                <div class="ui-table-wrap"><table class="ui-table" aria-label="算子输入契约示例"><thead><tr><th>字段</th><th>类型</th><th>必填</th><th>来源</th><th>业务含义</th></tr></thead><tbody>
+                  <tr><td class="field-name">tripId</td><td>string</td><td class="required-mark">是</td><td>Graph input</td><td>稳定行程标识，不接受展示号</td></tr>
+                  <tr><td class="field-name">eventTime</td><td>date-time</td><td class="required-mark">是</td><td>Context</td><td>选择事件发生时有效的政策版本</td></tr>
+                  <tr><td class="field-name">arrivalFact</td><td>ArrivalFact</td><td class="required-mark">是</td><td>queryTripFacts</td><td>距离、等待时长和定位置信度</td></tr>
+                  <tr><td class="field-name">paymentState</td><td>enum</td><td>否</td><td>queryPayment</td><td>CHARGED / REVERSED / UNKNOWN</td></tr>
+                </tbody></table></div>
+              </section>
+              <section class="schema-block">
+                <header><strong>Output Schema</strong><span>供后续解决动作消费的稳定结论</span></header>
+                <div class="ui-table-wrap"><table class="ui-table" aria-label="算子输出契约示例"><thead><tr><th>字段</th><th>类型</th><th>必填</th><th>约束</th><th>业务含义</th></tr></thead><tbody>
+                  <tr><td class="field-name">decision</td><td>enum</td><td class="required-mark">是</td><td>KEEP / REFUND / ESCALATE</td><td>允许的处置方向</td></tr>
+                  <tr><td class="field-name">refundAmount</td><td>money</td><td>条件</td><td>decision = REFUND</td><td>退款金额及币种</td></tr>
+                  <tr><td class="field-name">reasonCode</td><td>string</td><td class="required-mark">是</td><td>受控词表</td><td>沟通、审计与归因使用</td></tr>
+                  <tr><td class="field-name">confidence</td><td>number</td><td class="required-mark">是</td><td>0..1</td><td>低于门槛时不得自动处置</td></tr>
+                </tbody></table></div>
+              </section>
+              <div class="contract-semantics" aria-label="输入输出之外的能力语义">
+                <div><small>ERROR</small><strong>FACT_UNAVAILABLE<br>POLICY_UNKNOWN</strong></div>
+                <div><small>EFFECT</small><strong>READ_ONLY<br>不直接退款</strong></div>
+                <div><small>STATE</small><strong>APPEAL_OPEN → DECIDED</strong></div>
+                <div><small>IDEMPOTENCY</small><strong>tripId + appealId</strong></div>
+              </div>
+            </div>
+
+            <aside class="workspace-pane">
+              <div class="pane-title"><strong>Effective Contract</strong><span>来源不可静默混合</span></div>
+              <div class="readiness-score"><div><b>8</b><span>declared</span></div><div><b>2</b><span>inferred</span></div><div><b>8</b><span>bound</span></div><div><b>0</b><span>observed</span></div></div>
+              <div class="check-list">
+                <div class="check-row"><b>✓</b><div><strong>Graph 输入输出已定义</strong><span>可形成版本化集成边界</span></div></div>
+                <div class="check-row"><b>✓</b><div><strong>输入来源全部可追溯</strong><span>调用方、边与 Context 分离</span></div></div>
+                <div class="check-row"><b>✓</b><div><strong>错误和状态语义完整</strong><span>未知不会退化为空值</span></div></div>
+                <div class="check-row warn"><b>!</b><div><strong>observed 仅作候选</strong><span>真实观测不能自动改写契约</span></div></div>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div id="fixtureDesk" role="tabpanel" aria-labelledby="fixtureDeskTab" hidden>
+          <div class="workbench-toolbar">
+            <div class="workbench-title"><small>Scenario Inventory / 取消费申诉</small><strong>先冻结风险分母，再维护表格测试数据</strong></div>
+            <div class="workbench-actions"><span class="ui-command">导入用例</span><span class="ui-command">添加场景</span><span class="ui-command primary">运行所选项</span></div>
+          </div>
+          <div class="scenario-workspace">
+            <div class="coverage-bar" aria-label="场景覆盖摘要">
+              <div class="coverage-cell"><b>12</b><span>场景分母</span></div><div class="coverage-cell"><b>5</b><span>已建 Case</span></div><div class="coverage-cell"><b>4</b><span>状态分支</span></div><div class="coverage-cell"><b>3</b><span>故障类型</span></div><div class="coverage-cell"><b>7</b><span>待覆盖风险</span></div>
+            </div>
+            <div class="scenario-grid">
+              <div class="ui-table-wrap"><table class="ui-table" aria-label="取消费申诉正确性验证数据"><thead><tr><th>Case</th><th>类型</th><th>Given Fixture</th><th>When</th><th>Expected</th><th>覆盖风险</th></tr></thead><tbody>
+                <tr><td><strong>司机已到达并等待达标</strong></td><td><span class="case-type golden">GOLDEN</span></td><td>distance=30m; wait=6m</td><td>resolve fee</td><td>KEEP / LEGITIMATE_FEE</td><td>错误退款</td></tr>
+                <tr><td><strong>司机未到达</strong></td><td><span class="case-type negative">NEGATIVE</span></td><td>distance=1.8km; wait=0m</td><td>resolve fee</td><td>REFUND / DRIVER_NOT_ARRIVED</td><td>错误归责</td></tr>
+                <tr class="selected"><td><strong>地图定位事实冲突</strong></td><td><span class="case-type boundary">BOUNDARY</span></td><td>distance=1.2km; gps=0.38</td><td>resolve fee</td><td>ESCALATE / FACT_CONFLICT</td><td>未知被当成否定</td></tr>
+                <tr><td><strong>支付已经冲正</strong></td><td><span class="case-type regression">REGRESSION</span></td><td>payment=REVERSED</td><td>prepare refund</td><td>NOOP / ALREADY_REVERSED</td><td>重复退款</td></tr>
+                <tr><td><strong>地图依赖超时</strong></td><td><span class="case-type negative">FAULT</span></td><td>timeout@queryArrival</td><td>resolve fee</td><td>ABSTAIN / FACT_UNAVAILABLE</td><td>故障假绿</td></tr>
+              </tbody></table></div>
+
+              <div class="case-editor" aria-label="选中场景的 Fixture 和断言">
+                <div><header>GIVEN · 注入业务世界</header><div class="data-line"><span>ctx.eventTime</span><span>2026-08-01T10:30Z</span></div><div class="data-line"><span>arrival.distanceMeters</span><span>1200</span></div><div class="data-line"><span>arrival.gpsConfidence</span><span>0.38</span></div><div class="data-line"><span>policy.version</span><span>SG-2026.07</span></div></div>
+                <div><header>DEPENDENCY FIXTURES · 控制依赖</header><div class="data-line"><span>queryTrip.return</span><span>ARRIVED</span></div><div class="data-line"><span>queryArrival.return</span><span>CONFLICTED</span></div><div class="data-line"><span>queryPayment.return</span><span>CHARGED</span></div><div class="data-line"><span>createRefund.calls</span><span>0</span></div></div>
+                <div><header>EXPECTED · 声明正确答案</header><div class="assertion-line"><b>✓</b> $.decision = ESCALATE</div><div class="assertion-line"><b>✓</b> $.reasonCode = FACT_CONFLICT</div><div class="assertion-line"><b>✓</b> state remains APPEAL_OPEN</div><div class="assertion-line"><b>✓</b> createRefund invocation = 0</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="evidenceDesk" role="tabpanel" aria-labelledby="evidenceDeskTab" hidden>
+          <div class="workbench-toolbar">
+            <div class="workbench-title"><small>Run Evidence / run-20260814-1042</small><strong>地图定位事实冲突 · exact revisions frozen</strong></div>
+            <div class="workbench-actions"><span class="ui-command">回放</span><span class="ui-command">导出证据</span><span class="ui-command primary">提交校准</span></div>
+          </div>
+          <div class="evidence-workspace">
+            <div class="run-safety"><strong>MIRROR ONLY · 真实外部写调用数 0</strong><span>Graph r12 · Contract c7 · Scenario s18 · Fixture f41 · MirrorPlan mp-88</span></div>
+            <div class="trust-grid" aria-label="运行证据四个信任维度">
+              <div class="trust-cell"><small>EXECUTION</small><strong class="good">PASSED</strong></div><div class="trust-cell"><small>ASSERTIONS</small><strong class="good">4 / 4 PASSED</strong></div><div class="trust-cell"><small>CONTRACT</small><strong class="good">EXACT REVISION</strong></div><div class="trust-cell"><small>CALIBRATION</small><strong class="warn">NOT YET OBSERVED</strong></div>
+            </div>
+            <div class="evidence-body">
+              <div>
+                <div class="pane-title"><strong>Node Trace</strong><span>首因优先，不只显示最终输出</span></div>
+                <div class="trace-line"><code>n1</code><span>queryTripFacts · Fixture return</span><em>12 ms</em><b>MOCKED</b></div>
+                <div class="trace-line"><code>n2</code><span>queryArrival · conflicting facts</span><em>8 ms</em><b>MOCKED</b></div>
+                <div class="trace-line"><code>n3</code><span>resolveCancellationFee · deterministic rule</span><em>3 ms</em><b>SUCCESS</b></div>
+                <div class="trace-line"><code>n4</code><span>createRefund · guarded by decision</span><em>0 ms</em><b>SKIPPED</b></div>
+                <div class="evidence-summary"><strong>终态：ESCALATE / FACT_CONFLICT</strong><span>流程没有在低置信度事实下自动退款；申诉保持 OPEN，转入人工补充判断。</span></div>
+              </div>
+              <div>
+                <div class="pane-title"><strong>Assertions &amp; Limits</strong><span>正确性和限制同时输出</span></div>
+                <div class="assertion-line"><b>✓</b> output schema valid</div><div class="assertion-line"><b>✓</b> decision equals ESCALATE</div><div class="assertion-line"><b>✓</b> refund side effect count = 0</div><div class="assertion-line"><b>✓</b> state transition not committed</div>
+                <div class="check-list"><div class="check-row warn"><b>!</b><div><strong>证据等级：SIMULATED</strong><span>证明业务期望可运行，不代表真实实现一致或生产可发布。</span></div></div><div class="check-row warn"><b>!</b><div><strong>校准缺口</strong><span>尚未与同类真实申诉的 Shadow 和 Outcome 对账。</span></div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="operation-result fade-in" aria-label="正确性工作台形成的四类交付物">
+        <div><small>业务接口资产</small><strong>可版本化 Graph / Operator Contract</strong></div>
+        <div><small>正确性资产</small><strong>风险分母、Fixture 与 Assertion</strong></div>
+        <div><small>运行资产</small><strong>可回放 Trace 与 Evidence Bundle</strong></div>
+        <div><small>学习资产</small><strong>Fidelity、Drift、Stale 与修复任务</strong></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="pilot">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">08 · 首个验证场景</div>
+        <h2>以“乘客取消费申诉”验证从 L0 能力到 L3 服务的完整闭环</h2>
+        <p class="lead">该场景跨越订单、地图、计费、支付、风控和城市政策，包含查询、资金副作用、时间规则、状态冲突和人工升级，复杂度足以暴露平台真实能力。</p>
+      </header>
+      <div class="pilot-header fade-in">
+        <div><h3>为什么选它</h3><p class="lead" style="font-size: .9rem; margin-top: 12px;">业务问题清晰、Outcome 可观察、风险可控，并且能够同时验证业务人员建模、产研绑定、状态与幂等、服务载体复用和只读真实校准。</p></div>
+        <div class="pilot-signal"><strong>首轮范围控制</strong><span>先覆盖文本机器人和镜像演练。语音识别、打断、静默和延迟等渠道变量在业务语义闭合后加入。</span></div>
+      </div>
+      <div class="capability-strip fade-in" aria-label="L0 能力闭包">
+        <div class="capability-item"><small>ORDER</small><strong>查询行程与取消事件</strong></div>
+        <div class="capability-item"><small>MAP</small><strong>司机到达与定位置信度</strong></div>
+        <div class="capability-item"><small>PRICING</small><strong>计费明细与规则版本</strong></div>
+        <div class="capability-item"><small>PAYMENT</small><strong>扣款、退款、冲正与重复支付</strong></div>
+        <div class="capability-item"><small>POLICY / RISK</small><strong>城市政策、身份与风险限制</strong></div>
+        <div class="capability-item"><small>EFFECT</small><strong>退款、补偿与工单事务回执</strong></div>
+      </div>
+      <div class="tabs fade-in" role="tablist" aria-label="取消费申诉场景分类" style="margin-top: 30px;">
+        <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="scenarioNormal" id="scenarioNormalTab">规则正常</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scenarioConflict" id="scenarioConflictTab">事实冲突</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scenarioMoney" id="scenarioMoneyTab">资金幂等</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scenarioMissing" id="scenarioMissingTab">数据缺失</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scenarioDrift" id="scenarioDriftTab">策略漂移</button>
+      </div>
+      <div class="scenario-panel fade-in" id="scenarioNormal" role="tabpanel" aria-labelledby="scenarioNormalTab">
+        <h3>合法收取与司机未到达</h3><p>验证系统能够区分合法费用和应退费用，既不错误退款，也不让合法申诉被规则默认值吞掉。</p><div class="scenario-facts"><div><small>关键事实</small><strong>到达时间、距离、等待时长</strong></div><div><small>关键动作</small><strong>解释、免除或退款</strong></div><div><small>核心断言</small><strong>责任判断和金额一致</strong></div></div>
+      </div>
+      <div class="scenario-panel" id="scenarioConflict" role="tabpanel" aria-labelledby="scenarioConflictTab" hidden>
+        <h3>定位漂移与司机主动取消</h3><p>多个事实相互冲突或定位置信度不足时，系统需要拒绝武断归责，并进入补充判断或人工接管。</p><div class="scenario-facts"><div><small>关键事实</small><strong>轨迹冲突、定位置信度</strong></div><div><small>关键动作</small><strong>拒答、补充查询、人工升级</strong></div><div><small>核心断言</small><strong>未知不被解释为否定</strong></div></div>
+      </div>
+      <div class="scenario-panel" id="scenarioMoney" role="tabpanel" aria-labelledby="scenarioMoneyTab" hidden>
+        <h3>重复扣费、支付冲正与重试</h3><p>验证退款和补偿动作的幂等、未知提交和重复请求保护，避免“接口超时”被错误理解为“业务未执行”。</p><div class="scenario-facts"><div><small>关键事实</small><strong>支付流水、冲正和事务回执</strong></div><div><small>关键动作</small><strong>退款、查询、补偿</strong></div><div><small>核心断言</small><strong>不重复退款，提交状态可证明</strong></div></div>
+      </div>
+      <div class="scenario-panel" id="scenarioMissing" role="tabpanel" aria-labelledby="scenarioMissingTab" hidden>
+        <h3>地图、支付或订单数据不可用</h3><p>外部依赖超时或部分数据缺失时，流程应明确降级、保留限制并选择允许的 fallback，不用默认值制造确定答案。</p><div class="scenario-facts"><div><small>关键事实</small><strong>缺失来源、错误类型、重试次数</strong></div><div><small>关键动作</small><strong>fallback、接管、稍后处理</strong></div><div><small>核心断言</small><strong>部分失败语义完整</strong></div></div>
+      </div>
+      <div class="scenario-panel" id="scenarioDrift" role="tabpanel" aria-labelledby="scenarioDriftTab" hidden>
+        <h3>城市政策和规则版本变化</h3><p>系统按事件时间选择规则版本。任何策略修订都会使受影响场景和旧证据失效，并触发影响分析和重新演练。</p><div class="scenario-facts"><div><small>关键事实</small><strong>城市、事件时间、政策版本</strong></div><div><small>关键动作</small><strong>版本选择、stale、重新演练</strong></div><div><small>核心断言</small><strong>历史决策可回放且不串版</strong></div></div>
+      </div>
+      <div class="evidence-ladder fade-in" aria-label="证据等级">
+        <div class="evidence-step"><small>LEVEL 1</small><strong>SIMULATED</strong><span>业务期望已跑通</span></div>
+        <div class="evidence-step"><small>LEVEL 2</small><strong>IMPLEMENTED</strong><span>真实实现已绑定</span></div>
+        <div class="evidence-step"><small>LEVEL 3</small><strong>CALIBRATED</strong><span>Shadow 与 Outcome 达标</span></div>
+        <div class="evidence-step"><small>LEVEL 4</small><strong>CERTIFIED</strong><span>生产治理门禁通过</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="measurement">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">09 · 度量与证伪</div>
+        <h2>用业务结果和学习质量判断方向，而不是用资产数量自我证明</h2>
+        <p class="lead">第一条纵向切片需要同时验证业务人员是否能使用、协作摩擦是否下降、复杂缺陷是否被发现，以及模拟与真实结果是否逐步收敛。</p>
+      </header>
+      <div class="scorecard fade-in">
+        <div class="metric-list" aria-label="核心度量">
+          <div class="metric-row"><strong>业务自主性</strong><span>无真实接口可完成的设计和回归比例</span><em>同时报告最近校准时间和保真限制</em></div>
+          <div class="metric-row"><strong>协作效率</strong><span>能力缺口到可执行规格、接受到一致实现的周期</span><em>避免只把等待转移到另一个团队</em></div>
+          <div class="metric-row"><strong>业务覆盖</strong><span>风险加权场景、状态、错误和策略覆盖</span><em>Case 数量不能充当覆盖分母</em></div>
+          <div class="metric-row"><strong>保真运营</strong><span>Shadow 差异、stale debt、abstention debt 和修复时间</span><em>不能删除难例来降低债务</em></div>
+          <div class="metric-row"><strong>真实结果</strong><span>错误处置、重复退款、人工纠正和二次申诉</span><em>代理指标不能冒充权威 Outcome</em></div>
+        </div>
+        <div class="hypothesis-list" aria-label="可证伪假设">
+          <div class="hypothesis"><strong>业务人员能够生产可执行规格</strong><span>失败信号：大多数任务仍由研发代写 Schema、DSL 和 Fixture。</span></div>
+          <div class="hypothesis"><strong>可执行规格能够降低协作摩擦</strong><span>失败信号：流程增加了文档工作，但澄清和返工没有下降。</span></div>
+          <div class="hypothesis"><strong>镜像演练能够提升服务正确性</strong><span>失败信号：只增加测试数量，没有发现组合、状态或异常缺陷。</span></div>
+          <div class="hypothesis"><strong>真实校准能够控制模型漂移</strong><span>失败信号：模拟长期全绿，真实差异和客户 Outcome 没有改善。</span></div>
+        </div>
+      </div>
+      <div class="callout risk fade-in" style="margin-top: 24px;"><strong>停止条件：</strong>如果约定验证周期结束后，业务人员仍无法独立维护候选规格，或 Shadow 差异无法形成可修复的模型改进任务，应暂停跨域扩张，回到工具门槛、资产语义和 Owner 机制重新设计。具体周期由项目治理评审确认。</div>
+    </div>
+  </section>
+
+  <section class="report-section" id="roadmap">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">10 · 演进与决策</div>
+        <h2>从一个业务域的完整证据链开始，再复制到更多问题域</h2>
+        <p class="lead">扩围依据是业务人员可运营、产研可一致实现、模拟可真实校准和资产可持续维护，不以模块开发完成或演示页面可用作为唯一判断。</p>
+      </header>
+      <div class="roadmap-line fade-in">
+        <article class="roadmap-stage"><small>STAGE A</small><h3>冻结领域语义</h3><p>确定业务一等对象、场景分母、Owner、事实来源和规格权边界。</p></article>
+        <article class="roadmap-stage"><small>STAGE B</small><h3>业务自验证</h3><p>图形化创建候选算子，在 `SIMULATION_ONLY` 环境运行完整流程。</p></article>
+        <article class="roadmap-stage"><small>STAGE C</small><h3>产研一致实现</h3><p>生成 runtime port 和测试，绑定实现并处理 typed diff。</p></article>
+        <article class="roadmap-stage"><small>STAGE D</small><h3>真实校准</h3><p>接入只读 Shadow 和 Outcome，运营 Fidelity 与 Drift。</p></article>
+        <article class="roadmap-stage"><small>STAGE E</small><h3>跨域规模化</h3><p>复制到计价争议、重复扣款、失物找回和司机服务投诉。</p></article>
+      </div>
+      <div class="decision-board fade-in">
+        <div>
+          <h3 style="margin-bottom: 14px;">建议本轮冻结的管理决策</h3>
+          <div class="decision-list">
+            <div class="decision-item"><strong>Resource Gateway 的长期定位是业务能力镜像与服务演练运行时。</strong></div>
+            <div class="decision-item"><strong>`DomainCapabilityPackage` 是业务主对象，Graph 是执行投影。</strong></div>
+            <div class="decision-item"><strong>业务拥有规格权，产研承担实现责任，治理系统裁决发布。</strong></div>
+            <div class="decision-item"><strong>模拟、实现、校准和认证采用分级状态，不得互相冒充。</strong></div>
+            <div class="decision-item"><strong>首个纵向切片选择“乘客取消费申诉”，先覆盖文本机器人。</strong></div>
+            <div class="decision-item"><strong>覆盖采用风险加权场景分母，保真采用多维向量和未知债务。</strong></div>
+          </div>
+        </div>
+        <aside class="question-box">
+          <h3>进入实施前需要回答</h3>
+          <ul>
+            <li>`DomainCapabilityPackage` 的最终业务 Owner 由谁承担？</li>
+            <li>事业部最小校准责任包含契约变化、Replay、Shadow 和 Outcome 中的哪些组合？</li>
+            <li>取消费申诉的权威 Outcome 如何分层定义？</li>
+            <li>业务人员首轮可以修改 Fixture、决策规则、候选契约和 Graph 中的哪些层级？</li>
+          </ul>
+        </aside>
+      </div>
+      <div class="closing-statement fade-in">Resource Gateway 的长期价值，在于把客服对客户业务的理解转化为可运行的组织能力。业务理解越深、场景分母越完整、真实校准越持续，这套资产的复制成本越高。</div>
+    </div>
+  </section>
+</main>
+
+<footer class="report-footer">Resource Gateway · 客户业务镜像与可执行协作战略汇报</footer>
+
+<dialog class="diagram-dialog" id="diagramDialog" aria-labelledby="dialogTitle">
+  <div class="dialog-head"><strong id="dialogTitle">图形详情</strong><button class="dialog-close" type="button" aria-label="关闭全屏图形" title="关闭">×</button></div>
+  <div class="dialog-body" id="dialogBody"></div>
+</dialog>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem('briefing-theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = savedTheme || (prefersDark ? 'dark' : 'light');
+
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('briefing-theme', root.dataset.theme);
+  });
+
+  const progress = document.getElementById('progressLine');
+  const updateProgress = () => {
+    const available = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = `${available > 0 ? (scrollY / available) * 100 : 0}%`;
+  };
+  addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  const links = [...document.querySelectorAll('.nav-links a')];
+  const sections = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+  const sectionObserver = new IntersectionObserver(entries => {
+    const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (!visible) return;
+    links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+  }, { rootMargin: '-25% 0px -60%', threshold: [0.05, 0.35, 0.65] });
+  sections.forEach(section => sectionObserver.observe(section));
+
+  const revealObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.fade-in').forEach(element => revealObserver.observe(element));
+
+  document.querySelectorAll('[role="tablist"]').forEach(tablist => {
+    const tabs = [...tablist.querySelectorAll('[role="tab"]')];
+    const selectTab = tab => {
+      tabs.forEach(item => {
+        const selected = item === tab;
+        item.classList.toggle('active', selected);
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(item.getAttribute('aria-controls'));
+        if (panel) panel.hidden = !selected;
+      });
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => selectTab(tab));
+      tab.addEventListener('keydown', event => {
+        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+        event.preventDefault();
+        let next = index;
+        if (event.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'ArrowRight') next = (index + 1) % tabs.length;
+        if (event.key === 'Home') next = 0;
+        if (event.key === 'End') next = tabs.length - 1;
+        selectTab(tabs[next]);
+        tabs[next].focus();
+      });
+    });
+  });
+
+  document.querySelectorAll('.diagram-shell').forEach(shell => {
+    const viewport = shell.querySelector('[data-diagram-shell]');
+    const stage = shell.querySelector('.diagram-stage');
+    const label = shell.querySelector('.zoom-label');
+    if (!viewport || !stage || !label) return;
+    let scale = 1;
+    const renderScale = () => {
+      stage.style.width = `${Math.round(scale * 100)}%`;
+      label.textContent = `${Math.round(scale * 100)}%`;
+    };
+    shell.querySelector('[data-action="zoom-in"]')?.addEventListener('click', () => { scale = Math.min(2, scale + 0.15); renderScale(); });
+    shell.querySelector('[data-action="zoom-out"]')?.addEventListener('click', () => { scale = Math.max(0.7, scale - 0.15); renderScale(); });
+    shell.querySelector('[data-action="zoom-reset"]')?.addEventListener('click', () => { scale = 1; renderScale(); viewport.scrollTo({ left: 0, top: 0, behavior: 'smooth' }); });
+    shell.querySelector('[data-action="fullscreen"]')?.addEventListener('click', () => {
+      const dialog = document.getElementById('diagramDialog');
+      document.getElementById('dialogTitle').textContent = viewport.dataset.dialogTitle || '图形详情';
+      document.getElementById('dialogBody').innerHTML = stage.innerHTML;
+      dialog.showModal();
+    });
+  });
+
+  const dialog = document.getElementById('diagramDialog');
+  dialog.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
+})();
+</script>
+</body>
+</html>

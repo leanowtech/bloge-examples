@@ -1,0 +1,171 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="customer-business-mirror-loop" name="Business Mirror Value Loop">
+    <mxGraphModel dx="1920" dy="1080" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1080" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="Resource Gateway 客户业务镜像价值飞轮" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1840" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="运行自主权来自确定性镜像，业务可信度来自事业部事实与独立 Outcome 的持续校准" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="1840" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="facts" value="1  事业部与权威事实源" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="130" width="330" height="650" as="geometry"/>
+        </mxCell>
+        <mxCell id="facts_atomic" value="原子业务事实&#xa;订单、轨迹、支付、计费、风控" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;" vertex="1" parent="facts">
+          <mxGeometry x="35" y="70" width="260" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="facts_capability" value="原子能力与契约&#xa;Resource、Operator、Effect、错误与幂等" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=12;fontColor=#263238;" vertex="1" parent="facts">
+          <mxGeometry x="35" y="188" width="260" height="88" as="geometry"/>
+        </mxCell>
+        <mxCell id="facts_change" value="变化与事件时间&#xa;契约修订、政策版本、状态轨迹" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff9c4;strokeColor=#f57c00;fontFamily=Arial;fontSize=12;fontColor=#263238;" vertex="1" parent="facts">
+          <mxGeometry x="35" y="312" width="260" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="facts_outcome" value="独立业务 Outcome&#xa;问题闭环、二次申诉、人工纠正、退款结果" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;" vertex="1" parent="facts">
+          <mxGeometry x="35" y="430" width="260" height="92" as="geometry"/>
+        </mxCell>
+        <mxCell id="facts_guard" value="事实约束&#xa;运行日志不能自证业务正确性" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;" vertex="1" parent="facts">
+          <mxGeometry x="35" y="558" width="260" height="62" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="runtime" value="2  Resource Gateway Business Capability Mirror Runtime" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="130" width="700" height="650" as="geometry"/>
+        </mxCell>
+        <mxCell id="definition" value="定义平面" style="swimlane;startSize=30;rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="runtime">
+          <mxGeometry x="30" y="65" width="640" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="definition_contract" value="Capability / Contract" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="definition">
+          <mxGeometry x="25" y="55" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="definition_domain" value="DomainCapabilityPackage" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="definition">
+          <mxGeometry x="230" y="55" width="180" height="60" as="geometry"/>
+        </mxCell>
+        <mxCell id="definition_scenario" value="Scenario / Fixture / Assertion" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="definition">
+          <mxGeometry x="435" y="55" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="simulation" value="确定性模拟平面" style="swimlane;startSize=30;rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="runtime">
+          <mxGeometry x="30" y="235" width="640" height="170" as="geometry"/>
+        </mxCell>
+        <mxCell id="simulation_plan" value="MirrorPlan&#xa;冻结依赖、策略与 Fixture" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="simulation">
+          <mxGeometry x="25" y="60" width="180" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="simulation_world" value="Stateful World&#xa;状态、时间、随机与身份" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="simulation">
+          <mxGeometry x="230" y="60" width="180" height="75" as="geometry"/>
+        </mxCell>
+        <mxCell id="simulation_runner" value="Isolated Runtime&#xa;故障注入、无真实外部写" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="simulation">
+          <mxGeometry x="435" y="60" width="180" height="75" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="verification" value="验证与校准平面" style="swimlane;startSize=30;rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="runtime">
+          <mxGeometry x="30" y="430" width="640" height="185" as="geometry"/>
+        </mxCell>
+        <mxCell id="verification_evidence" value="Evidence&#xa;Trace、断言、状态差异、限制" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="verification">
+          <mxGeometry x="25" y="65" width="180" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="verification_fidelity" value="Fidelity Profile&#xa;多维保真与未知债务" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="verification">
+          <mxGeometry x="230" y="65" width="180" height="78" as="geometry"/>
+        </mxCell>
+        <mxCell id="verification_drift" value="Drift Control&#xa;影响分析、stale 与修复队列" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="verification">
+          <mxGeometry x="435" y="65" width="180" height="78" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="assets" value="3  客服业务资产与服务交付" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="130" width="700" height="650" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset_l0" value="L0  基础资源层&#xa;API、业务指令、Operator、Built-in Function" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;align=left;spacingLeft=18;" vertex="1" parent="assets">
+          <mxGeometry x="40" y="70" width="620" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset_l1" value="L1  服务设计层&#xa;业务特征、问题场景、决策与解决方案" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;align=left;spacingLeft=18;" vertex="1" parent="assets">
+          <mxGeometry x="40" y="190" width="620" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset_l2" value="L2  服务载体层&#xa;知识、SOP、Workflow、服务 Agent" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;align=left;spacingLeft=18;" vertex="1" parent="assets">
+          <mxGeometry x="40" y="310" width="620" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset_l3" value="L3  业务应用层&#xa;文本机器人、语音机器人、人工辅助应用" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;align=left;spacingLeft=18;" vertex="1" parent="assets">
+          <mxGeometry x="40" y="430" width="620" height="82" as="geometry"/>
+        </mxCell>
+        <mxCell id="asset_moat" value="竞争壁垒&#xa;跨域问题模型 × 风险覆盖 × 真实校准 × 学习速度" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;" vertex="1" parent="assets">
+          <mxGeometry x="90" y="550" width="520" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="loop" value="4  持续校准与反熵闭环" style="swimlane;startSize=34;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=12;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="830" width="1830" height="145" as="geometry"/>
+        </mxCell>
+        <mxCell id="loop_shadow" value="只读 Shadow / 脱敏 Replay" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="loop">
+          <mxGeometry x="180" y="62" width="250" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="loop_compare" value="Typed Diff / Outcome 对账" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="loop">
+          <mxGeometry x="590" y="62" width="250" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="loop_stale" value="保真下降 / 资产 STALE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="loop">
+          <mxGeometry x="1000" y="62" width="250" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="loop_repair" value="Owner 复核 / 新修订 / 受影响回归" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#263238;" vertex="1" parent="loop">
+          <mxGeometry x="1410" y="62" width="250" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_facts_runtime" value="事实、契约与变化" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.35;entryX=0;entryY=0.28;" edge="1" parent="1" source="facts" target="runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_runtime_assets" value="编译、运行与证据" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;labelBackgroundColor=#ffffff;exitX=1;exitY=0.45;entryX=0;entryY=0.45;" edge="1" parent="1" source="runtime" target="assets">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_outcome_loop" value="独立结果" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="facts_outcome" target="loop_shadow">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="390" y="606"/>
+              <mxPoint x="390" y="815"/>
+              <mxPoint x="345" y="815"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_assets_loop" value="真实服务结果" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="assets" target="loop_compare">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1520" y="830"/>
+              <mxPoint x="755" y="830"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_shadow_compare" value="同输入比较" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="loop" source="loop_shadow" target="loop_compare">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_compare_stale" value="识别偏差" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c62828;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="loop" source="loop_compare" target="loop_stale">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_stale_repair" value="进入修复队列" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="loop" source="loop_stale" target="loop_repair">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_repair_runtime" value="新修订重新演练" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;fontStyle=1;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=1;" edge="1" parent="1" source="loop_repair" target="loop_shadow">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1575" y="985"/>
+              <mxPoint x="345" y="985"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="legend" value="图例" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1000" width="45" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_blue" value="定义 / 能力" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="95" y="998" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_orange" value="模拟 / 控制" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=10;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="230" y="998" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_green" value="证据 / 结果" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="365" y="998" width="120" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_red" value="风险 / 失效" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=10;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="500" y="998" width="120" height="28" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

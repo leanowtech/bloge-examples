@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="business-mirror-target-authority" name="Business Mirror Target Authority Architecture">
+    <mxGraphModel dx="1920" dy="1360" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1920" pageHeight="1360" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <mxCell id="title" value="客户业务能力镜像目标权责架构" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1250" height="40" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Resource Gateway 拥有可执行编写、编译、模拟与证据事实；ANEKE 拥有企业 Registry 和发布裁决；客户权威系统拥有真实业务事实" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#546e7a;" vertex="1" parent="1">
+          <mxGeometry x="40" y="62" width="1450" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="invariant" value="权责不变量&#xa;模拟成功 ≠ 实现成功&#xa;实现成功 ≠ 客户问题解决&#xa;客户结果只能由独立 Outcome 事实证明" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffebee;strokeColor=#c62828;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#7f0000;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="1510" y="20" width="350" height="92" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="business_lane" value="客服业务 Owner / 服务产品" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#e3f2fd;strokeColor=#1565c0;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="140" width="1820" height="205" as="geometry"/>
+        </mxCell>
+        <mxCell id="problem_taxonomy" value="客户问题与风险分类&#xa;Problem Taxonomy&#xa;Risk Class / Owner" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="business_lane">
+          <mxGeometry x="50" y="72" width="260" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="package_draft" value="DomainCapabilityPackageDraft&#xa;业务问题、契约、场景分母&#xa;解决方案、载体与渠道引用" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#0d47a1;" vertex="1" parent="business_lane">
+          <mxGeometry x="370" y="72" width="330" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="scenario_denominator" value="Scenario / Fidelity 分母&#xa;正常、异常、边界、状态、故障&#xa;未知与未覆盖显式保留" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#1565c0;fontFamily=Arial;fontSize=11;fontColor=#0d47a1;" vertex="1" parent="business_lane">
+          <mxGeometry x="760" y="72" width="310" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="proposal_spec" value="CapabilityProposal&#xa;缺失能力的业务规格、Fixture&#xa;验收套件、价值假设与限制" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="business_lane">
+          <mxGeometry x="1130" y="72" width="310" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="business_decision" value="业务评审&#xa;接受 / 回修 / 放弃&#xa;不授予生产执行权" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#4a148c;" vertex="1" parent="business_lane">
+          <mxGeometry x="1500" y="72" width="260" height="90" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="authoring_lane" value="Resource Gateway Authoring Plane" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#fff3e0;strokeColor=#e65100;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="385" width="1820" height="220" as="geometry"/>
+        </mxCell>
+        <mxCell id="portfolio_workspace" value="业务镜像 Portfolio&#xa;Package 列表、覆盖、Fidelity&#xa;漂移、Owner 与能力缺口" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#bf360c;" vertex="1" parent="authoring_lane">
+          <mxGeometry x="50" y="80" width="300" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="package_workspace" value="Package Workbench&#xa;问题 → 契约 → 闭包 → 场景&#xa;演练 → 校准的统一任务流" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="authoring_lane">
+          <mxGeometry x="410" y="80" width="300" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="proposal_workspace" value="Proposal Workbench&#xa;业务语言定义输入、输出、Effect&#xa;生成候选并以仅模拟状态试跑" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffe0b2;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#bf360c;" vertex="1" parent="authoring_lane">
+          <mxGeometry x="770" y="80" width="300" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="existing_assets" value="复用现有成熟工作区&#xa;Libraries + Author v2&#xa;Contract / Scenario + Rehearsals" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="authoring_lane">
+          <mxGeometry x="1130" y="80" width="300" height="95" as="geometry"/>
+        </mxCell>
+        <mxCell id="authoring_snapshot" value="不可变 Authoring Snapshot&#xa;内容寻址、完整 Scope、精确引用&#xa;只表达已编写事实" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e65100;fontFamily=Arial;fontSize=11;fontColor=#bf360c;" vertex="1" parent="authoring_lane">
+          <mxGeometry x="1490" y="80" width="270" height="95" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="runtime_lane" value="Resource Gateway Compilation / Simulation / Evidence Plane" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#e8f5e9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="645" width="1820" height="225" as="geometry"/>
+        </mxCell>
+        <mxCell id="package_compiler" value="PackageCompiler&#xa;校验业务必填项与引用闭包&#xa;生成 Readiness / Impact" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="runtime_lane">
+          <mxGeometry x="50" y="82" width="290" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="closure_plan" value="CapabilityClosure + MirrorPlan&#xa;冻结 Graph、Operator、Function&#xa;Fixture、状态、时间与身份" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="runtime_lane">
+          <mxGeometry x="400" y="82" width="310" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="isolated_runtime" value="隔离 Mirror Runtime&#xa;SIMULATION_ONLY Proposal&#xa;数据流反转、Session、Fault" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="runtime_lane">
+          <mxGeometry x="770" y="82" width="300" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="evidence_bundle" value="分层证据与同源 Conformance&#xa;Operator / Graph / Scenario / Carrier&#xa;Mock 证明与真实实现证明分级" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#1b5e20;" vertex="1" parent="runtime_lane">
+          <mxGeometry x="1130" y="82" width="310" height="98" as="geometry"/>
+        </mxCell>
+        <mxCell id="fidelity_projection" value="Fidelity / Shadow / Outcome 投影&#xa;覆盖分母、置信度、Freshness&#xa;Abstention Debt 与 Drift" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#2e7d32;fontFamily=Arial;fontSize=11;fontColor=#1b5e20;" vertex="1" parent="runtime_lane">
+          <mxGeometry x="1500" y="82" width="260" height="98" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="governance_lane" value="ANEKE / 企业治理控制面" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#f3e5f5;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="910" width="1820" height="185" as="geometry"/>
+        </mxCell>
+        <mxCell id="registry" value="企业 Registry&#xa;Package / Capability / Contract&#xa;Owner 与生命周期权威" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#4a148c;" vertex="1" parent="governance_lane">
+          <mxGeometry x="180" y="65" width="300" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="workbook_gate" value="Correctness Workbook / Publish Gate&#xa;审批、Breaking Change、风险与证据门禁" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontStyle=1;fontColor=#4a148c;" vertex="1" parent="governance_lane">
+          <mxGeometry x="650" y="65" width="390" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="implementation_queue" value="实现队列与 Runtime Binding 审批&#xa;价值已证实不等于技术已就绪" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=11;fontColor=#4a148c;" vertex="1" parent="governance_lane">
+          <mxGeometry x="1210" y="65" width="390" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="data_lane" value="TEE / 客户区域数据面 / 客户权威系统" style="swimlane;startSize=38;rounded=0;whiteSpace=wrap;html=1;fillColor=#eceff1;strokeColor=#455a64;fontFamily=Arial;fontSize=13;fontStyle=1;fontColor=#263238;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1135" width="1820" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="runtime_binding" value="真实 Runtime Binding&#xa;代码、服务、版本、SLO&#xa;Workload Identity 与 Secret Policy" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="data_lane">
+          <mxGeometry x="170" y="62" width="350" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="regional_plane" value="Regional Data Plane&#xa;Payload Vault、KMS、State、Resolver&#xa;物理 Egress / Write 隔离" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="data_lane">
+          <mxGeometry x="710" y="62" width="350" height="85" as="geometry"/>
+        </mxCell>
+        <mxCell id="outcome_authority" value="独立 Outcome / Policy Authority&#xa;Watermark、Backfill、撤销、延迟结果&#xa;证明客户问题是否真正解决" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=11;fontColor=#263238;" vertex="1" parent="data_lane">
+          <mxGeometry x="1250" y="62" width="400" height="85" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_problem_package" value="确定业务边界" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="business_lane" source="problem_taxonomy" target="package_draft">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_package_scenario" value="冻结分母" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="business_lane" source="package_draft" target="scenario_denominator">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_scenario_proposal" value="发现能力缺口" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="business_lane" source="scenario_denominator" target="proposal_spec">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_package_workspace" value="图形化编写" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="package_draft" target="package_workspace">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_proposal_workspace" value="候选能力编写" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="proposal_spec" target="proposal_workspace">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_workspace_assets" value="引用现有资产" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authoring_lane" source="proposal_workspace" target="existing_assets">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_assets_snapshot" value="精确引用" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#e65100;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authoring_lane" source="existing_assets" target="authoring_snapshot">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_snapshot_compiler" value="编译 exact revision" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.3;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="authoring_snapshot" target="package_compiler">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1570" y="625"/><mxPoint x="235" y="625"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_compiler_closure" value="通过 readiness" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="runtime_lane" source="package_compiler" target="closure_plan">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_closure_runtime" value="授权计划" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="runtime_lane" source="closure_plan" target="isolated_runtime">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_runtime_evidence" value="运行事实" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="runtime_lane" source="isolated_runtime" target="evidence_bundle">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_evidence_fidelity" value="校准投影" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="runtime_lane" source="evidence_bundle" target="fidelity_projection">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_compiler_registry" value="Snapshot export" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.65;exitY=1;entryX=0.2;entryY=0;" edge="1" parent="1" source="package_compiler" target="registry">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_evidence_gate" value="Workbook / Evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.4;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="evidence_bundle" target="workbook_gate">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_evidence_queue" value="价值证据 / 提交实现" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.7;exitY=1;entryX=0.3;entryY=0;" edge="1" parent="1" source="evidence_bundle" target="implementation_queue">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_queue_binding" value="批准后绑定" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.2;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="implementation_queue" target="runtime_binding">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1290" y="1115"/><mxPoint x="385" y="1115"/></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="e_binding_plane" value="受控执行" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="data_lane" source="runtime_binding" target="regional_plane">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="e_outcome_fidelity" value="独立事实校准" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;fontFamily=Arial;fontSize=10;labelBackgroundColor=#ffffff;exitX=0.975;exitY=0;entryX=0.54;entryY=1;" edge="1" parent="1" source="outcome_authority" target="fidelity_projection">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="legend_title" value="权威边界" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=10;fontStyle=1;fontColor=#455a64;" vertex="1" parent="1">
+          <mxGeometry x="40" y="1325" width="80" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_business" value="业务规格与问题定义" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#bbdefb;strokeColor=#1565c0;fontFamily=Arial;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="130" y="1322" width="190" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_rg" value="RG 可执行事实" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#c8e6c9;strokeColor=#2e7d32;fontFamily=Arial;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="340" y="1322" width="170" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_governance" value="ANEKE 治理裁决" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e1bee7;strokeColor=#6a1b9a;fontFamily=Arial;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="530" y="1322" width="180" height="28" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_truth" value="客户生产事实与受控数据面" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#455a64;fontFamily=Arial;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="730" y="1322" width="230" height="28" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
