@@ -33,6 +33,44 @@ class RuntimeCertificationVerifierTest {
     }
 
     @Test
+    void selfContainedReplayBundleVerifiesRegionalAndRuntimeClosure() throws Exception {
+        JsonNode bundle = resource(
+                "runtime-certification-replay-bundle-v1.fixture.json");
+
+        RuntimeCertificationVerifier.VerifiedReplayBundleCoordinates verified =
+                verifier.requireReplayBundle(bundle,
+                        (seal, certification) -> true,
+                        (seal, authorization) -> true,
+                        (seal, report) -> true);
+
+        assertThat(verified.bundleId()).isEqualTo("runtime-replay-bundle:sg:3");
+        assertThat(verified.runtime().reportId()).isEqualTo("runtime-report:sg:3");
+        assertThat(verified.regional().certificationId())
+                .isEqualTo("regional-certification:sg");
+    }
+
+    @Test
+    void replayBundleAddressAndUnknownFieldsFailClosed() throws Exception {
+        ObjectNode tampered = (ObjectNode) resource(
+                "runtime-certification-replay-bundle-v1.fixture.json");
+        tampered.put("exporter", "runtime-certification-exporter:drifted");
+        assertThatThrownBy(() -> verifier.requireReplayBundle(tampered,
+                (seal, certification) -> true,
+                (seal, authorization) -> true,
+                (seal, report) -> true))
+                .hasMessage("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_FINGERPRINT_INVALID");
+
+        ObjectNode unknown = (ObjectNode) resource(
+                "runtime-certification-replay-bundle-v1.fixture.json");
+        unknown.put("businessPayload", "forbidden");
+        assertThatThrownBy(() -> verifier.requireReplayBundle(unknown,
+                (seal, certification) -> true,
+                (seal, authorization) -> true,
+                (seal, report) -> true))
+                .hasMessage("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_SCHEMA_INVALID");
+    }
+
+    @Test
     void unknownPayloadFieldAndIncompleteDenominatorFailSchemaValidation() throws Exception {
         JsonNode manifest = resource("runtime-certification-manifest-v1.fixture.json");
         JsonNode authorization = resource(

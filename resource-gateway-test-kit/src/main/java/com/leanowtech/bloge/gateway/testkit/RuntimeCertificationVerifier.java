@@ -30,12 +30,18 @@ public final class RuntimeCertificationVerifier {
     /** Packaged complete report Schema. */
     public static final String REPORT_SCHEMA_RESOURCE =
             "/schemas/resource-gateway-mirror/runtime-certification-report-v1.schema.json";
+    /** Packaged self-contained replay-bundle Schema. */
+    public static final String REPLAY_BUNDLE_SCHEMA_RESOURCE =
+            "/schemas/resource-gateway-mirror/"
+                    + "runtime-certification-replay-bundle-v1.schema.json";
     /** Maximum canonical manifest size. */
     public static final int MAXIMUM_MANIFEST_BYTES = 4 * 1024 * 1024;
     /** Maximum canonical authorization size. */
     public static final int MAXIMUM_AUTHORIZATION_BYTES = 2 * 1024 * 1024;
     /** Maximum canonical report size. */
     public static final int MAXIMUM_REPORT_BYTES = 8 * 1024 * 1024;
+    /** Maximum canonical self-contained replay-bundle size. */
+    public static final int MAXIMUM_REPLAY_BUNDLE_BYTES = 32 * 1024 * 1024;
     /** Authorization signature domain. */
     public static final String AUTHORIZATION_SIGNATURE_DOMAIN =
             "RESOURCE_GATEWAY_RUNTIME_CERTIFICATION_EXECUTION_AUTHORIZATION_V1";
@@ -139,6 +145,86 @@ public final class RuntimeCertificationVerifier {
                 exactReport.path("reportFingerprint").asText(),
                 exactReport.path("startedAt").asText(),
                 exactReport.path("completedAt").asText());
+    }
+
+    /**
+     * Verifies a self-contained BM-012 plus BM-013 replay package.
+     *
+     * @param replayBundle complete payload-free replay bundle
+     * @param regionalSealVerifier customer regional-certification trust
+     * @param authorizationSealVerifier customer destructive-authorization trust
+     * @param reportSealVerifier customer runtime-report trust
+     * @return verified bundle, regional, and runtime coordinates
+     */
+    public VerifiedReplayBundleCoordinates requireReplayBundle(
+            JsonNode replayBundle,
+            RegionalDataPlaneCertificationVerifier.ExternalSealVerifier regionalSealVerifier,
+            ExternalSealVerifier authorizationSealVerifier,
+            ExternalSealVerifier reportSealVerifier) {
+        JsonNode bundle = copy(
+                replayBundle, "RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_INVALID");
+        CapabilityMirrorSchemaValidator.require(bundle, REPLAY_BUNDLE_SCHEMA_RESOURCE,
+                "RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_SCHEMA_INVALID");
+        ObjectNode envelope = JSON.createObjectNode();
+        envelope.put("schemaVersion", bundle.path("schemaVersion").asText());
+        envelope.put("bundleFingerprint", "");
+        envelope.set("material", material(bundle, List.of(
+                "bundleId", "revision", "manifest", "authorization", "report",
+                "regionalContract", "regionalCertification", "isolationDecision",
+                "exportedAt", "exporter")));
+        if (!bundle.path("bundleFingerprint").asText().equals(
+                EvidenceVerificationSupport.sha256Bounded(
+                        envelope, MAXIMUM_REPLAY_BUNDLE_BYTES))) {
+            throw invalid("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_FINGERPRINT_INVALID");
+        }
+        JsonNode report = bundle.path("report");
+        RegionalDataPlaneCertificationVerifier.VerifiedCoordinates regional =
+                new RegionalDataPlaneCertificationVerifier().require(
+                        bundle.path("regionalContract"),
+                        bundle.path("regionalCertification"),
+                        bundle.path("isolationDecision"),
+                        instant(report.path("startedAt").asText()),
+                        instant(report.path("completedAt").asText()),
+                        regionalSealVerifier);
+        JsonNode regionalCertification = bundle.path("regionalCertification");
+        JsonNode isolationDecision = bundle.path("isolationDecision");
+        JsonNode attestation = isolationDecision.path("attestation");
+        JsonNode attestationMaterial = attestation.path("material");
+        if (!artifactEquals(report.path("regionalDataPlaneCertificationRef"),
+                "REGIONAL_DATA_PLANE_CERTIFICATION",
+                regionalCertification.path("certificationId").asText(),
+                regionalCertification.path("revision").asLong(),
+                regionalCertification.path("certificationFingerprint").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_REGIONAL_REF_INVALID");
+        }
+        if (!artifactEquals(report.path("isolationDecisionRef"),
+                "DEPLOYMENT_ISOLATION_ATTESTATION_BUNDLE",
+                attestationMaterial.path("attestationId").asText()
+                        + "#revision:" + attestationMaterial.path("revision").asLong(),
+                isolationDecision.path("status").path("material")
+                        .path("statusRevision").asLong(),
+                isolationDecision.path("bundleFingerprint").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_DECISION_REF_INVALID");
+        }
+        if (!artifactEquals(report.path("isolationAttestationRef"),
+                "DEPLOYMENT_ISOLATION_ATTESTATION",
+                attestationMaterial.path("attestationId").asText(),
+                attestationMaterial.path("revision").asLong(),
+                attestation.path("attestationFingerprint").asText())) {
+            throw invalid("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_ATTESTATION_REF_INVALID");
+        }
+        VerifiedCoordinates runtime = require(
+                bundle.path("manifest"), bundle.path("authorization"), report,
+                report.path("regionalDataPlaneCertificationRef"),
+                report.path("isolationDecisionRef"), report.path("isolationAttestationRef"),
+                authorizationSealVerifier, reportSealVerifier);
+        Instant exportedAt = instant(bundle.path("exportedAt").asText());
+        if (exportedAt.isBefore(instant(report.path("completedAt").asText()))) {
+            throw invalid("RG.MIRROR.CLIENT.RUNTIME_REPLAY_BUNDLE_WINDOW_INVALID");
+        }
+        return new VerifiedReplayBundleCoordinates(
+                bundle.path("bundleId").asText(), bundle.path("revision").asLong(),
+                bundle.path("bundleFingerprint").asText(), runtime, regional);
     }
 
     private static void verifyFingerprints(
@@ -487,6 +573,16 @@ public final class RuntimeCertificationVerifier {
             String reportFingerprint,
             String startedAt,
             String completedAt
+    ) {
+    }
+
+    /** Immutable closure returned for a self-contained replay package. */
+    public record VerifiedReplayBundleCoordinates(
+            String bundleId,
+            long bundleRevision,
+            String bundleFingerprint,
+            VerifiedCoordinates runtime,
+            RegionalDataPlaneCertificationVerifier.VerifiedCoordinates regional
     ) {
     }
 }

@@ -163,6 +163,7 @@ final class CapabilityMirrorSchemaValidator {
             "runtime-certification-manifest-v1.schema.json",
             "runtime-certification-execution-authorization-v1.schema.json",
             "runtime-certification-report-v1.schema.json",
+            "runtime-certification-replay-bundle-v1.schema.json",
             "read-only-shadow-comparison-v1.schema.json",
             "read-only-shadow-comparison-v2.schema.json",
             "read-only-shadow-comparison-v3.schema.json",
