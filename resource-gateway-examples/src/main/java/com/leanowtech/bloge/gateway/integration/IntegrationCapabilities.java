@@ -354,6 +354,15 @@ public record IntegrationCapabilities(
         objects.put("capabilityProposalDraft", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .CapabilityProposalDraft.SCHEMA_VERSION));
+        objects.put("storedCapabilityProposalDraft", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .StoredCapabilityProposalDraft.SCHEMA_VERSION));
+        objects.put("capabilityProposalSaveReceipt", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .CapabilityProposalSaveReceipt.SCHEMA_VERSION));
+        objects.put("capabilityProposalPage", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.authoring
+                        .CapabilityProposalPage.SCHEMA_VERSION));
         objects.put("capabilityProposalSnapshot", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.domain
                         .CapabilityProposalSnapshot.SCHEMA_VERSION));
@@ -965,6 +974,7 @@ public record IntegrationCapabilities(
         features.put("businessMirrorLegacyMigrationApi", true);
         features.put("businessMirrorLegacyMigrationAuthorityReady", false);
         features.put("businessMirrorWorkspace", true);
+        features.put("businessMirrorProposalApi", true);
         features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
@@ -1443,6 +1453,12 @@ public record IntegrationCapabilities(
                 new Endpoint("GET", "/api/business-mirror/legacy-graphs"),
                 new Endpoint("GET", "/api/business-mirror/legacy-graphs/{graphName}"),
                 new Endpoint("POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"),
+                new Endpoint("POST", "/api/business-mirror/proposals"),
+                new Endpoint("PUT", "/api/business-mirror/proposals/{proposalId}"),
+                new Endpoint("GET", "/api/business-mirror/proposals"),
+                new Endpoint("GET", "/api/business-mirror/proposals/{proposalId}"),
+                new Endpoint("GET", "/api/business-mirror/proposals/{proposalId}/revisions"),
+                new Endpoint("GET", "/api/business-mirror/proposals/{proposalId}/revisions/{revision}"),
                 new Endpoint("POST", "/api/visual/drafts"),
                 new Endpoint("PUT", "/api/visual/drafts/{draftId}"),
                 new Endpoint("POST", "/admin/visual-operator-library-authoring/preview"),

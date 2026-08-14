@@ -66,9 +66,56 @@ class BusinessMirrorPackageSpringWiringTest {
         assertThat(context.getBean(PackageCompilationFactRepository.class)).isNotNull();
         assertThat(context.getBean(PackageCompilationReceiptRepository.class)).isNotNull();
         assertThat(context.getBean(LegacyGraphPackageController.class)).isNotNull();
+        assertThat(context.getBean(CapabilityProposalController.class)).isNotNull();
+        assertThat(context.getBean(CapabilityProposalDraftRepository.class)).isNotNull();
+        assertThat(context.getBean(CapabilityProposalSaveReceiptRepository.class)).isNotNull();
         assertThat(context.getBean(LegacyGraphPackageProjector.class).ready()).isTrue();
         assertThat(AopUtils.isAopProxy(service)).isTrue();
         assertThat(AopUtils.isAopProxy(compilationService)).isTrue();
+    }
+
+    @Test
+    void persistsAndExactlyReplaysSimulationOnlyProposalThroughAuthenticatedHttp() throws Exception {
+        String body = objectMapper.writeValueAsString(BusinessMirrorAuthoringFixtures.proposal(
+                "trip-attribution-http-e2e", 0,
+                "Rehearse cancellation attribution without the Trip Platform"));
+        String key = "bm-proposal-http-e2e:create:v1";
+
+        String firstBody = mockMvc.perform(post("/api/business-mirror/proposals")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "false"))
+                .andExpect(header().exists("ETag"))
+                .andExpect(jsonPath("$.result.draft.revision").value(1))
+                .andExpect(jsonPath("$.result.draft.proposalId")
+                        .value("trip-attribution-http-e2e"))
+                .andExpect(jsonPath("$.result.draft.simulationRuntimeBinding.kind")
+                        .value("SIMULATION_ONLY"))
+                .andExpect(jsonPath("$.result.draft.simulationRuntimeBinding.networkEgressAllowed")
+                        .value(false))
+                .andReturn().getResponse().getContentAsString();
+
+        String replayBody = mockMvc.perform(post("/api/business-mirror/proposals")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING")
+                        .header("Idempotency-Key", key)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Idempotent-Replayed", "true"))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(objectMapper.readTree(replayBody)).isEqualTo(objectMapper.readTree(firstBody));
+
+        mockMvc.perform(get("/api/business-mirror/proposals?limit=25")
+                        .header("Authorization", "Bearer bloge-aneke-demo-token")
+                        .header("X-Purpose", "BUSINESS_MIRROR_AUTHORING"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[*].draft.proposalId").value(
+                        org.hamcrest.Matchers.hasItem("trip-attribution-http-e2e")));
     }
 
     @Test

@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackagePage;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveReceipt;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredDomainCapabilityPackageDraft;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.StoredCapabilityProposalDraft;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalSaveReceipt;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalPage;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.FrozenPackageDependencies;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationReceipt;
@@ -49,6 +52,12 @@ class BusinessMirrorCapabilityTest {
                         PackageReadinessReport.SCHEMA_VERSION))
                 .containsEntry("capabilityProposalDraft", java.util.List.of(
                         CapabilityProposalDraft.SCHEMA_VERSION))
+                .containsEntry("storedCapabilityProposalDraft", java.util.List.of(
+                        StoredCapabilityProposalDraft.SCHEMA_VERSION))
+                .containsEntry("capabilityProposalSaveReceipt", java.util.List.of(
+                        CapabilityProposalSaveReceipt.SCHEMA_VERSION))
+                .containsEntry("capabilityProposalPage", java.util.List.of(
+                        CapabilityProposalPage.SCHEMA_VERSION))
                 .containsEntry("capabilityProposalSnapshot", java.util.List.of(
                         CapabilityProposalSnapshot.SCHEMA_VERSION));
         assertThat(capabilities.features())
@@ -58,6 +67,7 @@ class BusinessMirrorCapabilityTest {
                 .containsEntry("businessMirrorPackageCompilerAuthorityReady", false)
                 .containsEntry("businessMirrorLegacyMigrationApi", true)
                 .containsEntry("businessMirrorWorkspace", true)
+                .containsEntry("businessMirrorProposalApi", true)
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("businessMirrorProposalSimulation", false);
         assertThat(capabilities.endpoints())
@@ -71,6 +81,13 @@ class BusinessMirrorCapabilityTest {
                         "GET", "/api/business-mirror/legacy-graphs/{graphName}"))
                 .contains(new IntegrationCapabilities.Endpoint(
                         "POST", "/api/business-mirror/legacy-graphs/{graphName}/packages"));
+        assertThat(capabilities.endpoints())
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "POST", "/api/business-mirror/proposals"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "PUT", "/api/business-mirror/proposals/{proposalId}"))
+                .contains(new IntegrationCapabilities.Endpoint(
+                        "GET", "/api/business-mirror/proposals/{proposalId}/revisions/{revision}"));
         assertThat(capabilities.protocolVersion())
                 .isEqualTo(ToolStudioResourceGatewayProtocol.VERSION);
     }

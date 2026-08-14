@@ -49,6 +49,15 @@ public final class BusinessMirrorProtocol {
     /** Mutable Capability Proposal v1 wire version. */
     public static final String CAPABILITY_PROPOSAL_DRAFT_V1 =
             "bloge.capabilityProposalDraft.v1";
+    /** Repository-owned stored Capability Proposal revision v1 wire version. */
+    public static final String STORED_CAPABILITY_PROPOSAL_DRAFT_V1 =
+            "resourceGateway.storedCapabilityProposalDraft.v1";
+    /** Exact idempotent Capability Proposal save receipt v1 wire version. */
+    public static final String CAPABILITY_PROPOSAL_SAVE_RECEIPT_V1 =
+            "resourceGateway.capabilityProposalSaveReceipt.v1";
+    /** Bounded Capability Proposal index page v1 wire version. */
+    public static final String CAPABILITY_PROPOSAL_PAGE_V1 =
+            "resourceGateway.capabilityProposalPage.v1";
     /** Immutable evidence-derived Capability Proposal v1 wire version. */
     public static final String CAPABILITY_PROPOSAL_SNAPSHOT_V1 =
             "resourceGateway.capabilityProposalSnapshot.v1";
@@ -60,6 +69,10 @@ public final class BusinessMirrorProtocol {
     public static final String PROPOSAL_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT
                     + "cancellation-attribution-proposal-stage1-v1.fixture.json";
+    /** Exact durable Capability Proposal create receipt example. */
+    public static final String PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE =
+            SCHEMA_RESOURCE_ROOT
+                    + "cancellation-attribution-proposal-save-receipt-v1.fixture.json";
     /** Exact durable Package create receipt example. */
     public static final String PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "cancellation-fee-package-save-receipt-v1.fixture.json";
@@ -91,6 +104,12 @@ public final class BusinessMirrorProtocol {
             SCHEMA_RESOURCE_ROOT + "package-readiness-report-v1.schema.json";
     static final String PROPOSAL_DRAFT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-proposal-draft-v1.schema.json";
+    static final String STORED_PROPOSAL_DRAFT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "stored-capability-proposal-draft-v1.schema.json";
+    static final String PROPOSAL_SAVE_RECEIPT_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-proposal-save-receipt-v1.schema.json";
+    static final String PROPOSAL_PAGE_SCHEMA_RESOURCE =
+            SCHEMA_RESOURCE_ROOT + "capability-proposal-page-v1.schema.json";
     static final String PROPOSAL_SNAPSHOT_SCHEMA_RESOURCE =
             SCHEMA_RESOURCE_ROOT + "capability-proposal-snapshot-v1.schema.json";
 
@@ -215,6 +234,36 @@ public final class BusinessMirrorProtocol {
      */
     public static void requireProposalDraft(JsonNode value) {
         require(value, PROPOSAL_DRAFT_SCHEMA_RESOURCE, "PROPOSAL_DRAFT_INVALID");
+    }
+
+    /**
+     * Requires a content-addressed repository-owned Capability Proposal revision.
+     *
+     * @param value decoded stored Capability Proposal
+     * @throws IllegalArgumentException when Schema, fingerprint, Scope, or time checks fail
+     */
+    public static void requireStoredProposalDraft(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyStoredProposalDraft(value);
+    }
+
+    /**
+     * Requires an exact durable Capability Proposal save receipt.
+     *
+     * @param value decoded Capability Proposal save receipt
+     * @throws IllegalArgumentException when Schema or nested semantic verification fails
+     */
+    public static void requireProposalSaveReceipt(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyProposalSaveReceipt(value);
+    }
+
+    /**
+     * Requires a bounded, ordered, single-Scope Capability Proposal page.
+     *
+     * @param value decoded Capability Proposal page
+     * @throws IllegalArgumentException when Schema, order, Scope, or cursor checks fail
+     */
+    public static void requireProposalPage(JsonNode value) {
+        BusinessMirrorAuthoringVerifier.verifyProposalPage(value);
     }
 
     /**

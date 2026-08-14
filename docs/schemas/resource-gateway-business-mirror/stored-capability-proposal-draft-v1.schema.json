@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/stored-capability-proposal-draft-v1.schema.json",
+  "title": "Stored Capability Proposal Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "draftFingerprint", "draft", "createdAt", "updatedAt", "updatedBy"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.storedCapabilityProposalDraft.v1" },
+    "draftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "draft": { "$ref": "capability-proposal-draft-v1.schema.json" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "updatedBy": { "type": "string", "minLength": 1, "maxLength": 2048 }
+  }
+}

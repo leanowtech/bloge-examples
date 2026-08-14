@@ -47,10 +47,12 @@ The local demo uses `http://localhost:8080` and the test-only bearer token
 The JAR packages the authoritative v1 JSON Schema and provides:
 
 - strict `DomainCapabilityPackageDraft`, `DomainCapabilityPackageSnapshot`,
-  `PackageReadinessReport`, `CapabilityProposalDraft`, `CapabilityProposalSnapshot`, and
+  `PackageReadinessReport`, `CapabilityProposalDraft`, stored Proposal revision/save receipt/page,
+  `CapabilityProposalSnapshot`, and
   `BusinessAssetLink` schemas, plus fail-closed Legacy Graph projection/catalog schemas;
   `BusinessMirrorProtocol` validates these files offline and ships complete cancellation-fee
-  Package, simulation-only Proposal, and server-produced loan-decision migration fixtures without
+  Package, simulation-only Proposal, exact Proposal save receipt, and server-produced
+  loan-decision migration fixtures without
   linking the Resource Gateway server or Spring Boot;
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite

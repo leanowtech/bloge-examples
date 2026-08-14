@@ -127,6 +127,49 @@ class BusinessMirrorProtocolTest {
     }
 
     @Test
+    void validatesDurableProposalApiEnvelopesAndExactReceiptFixture() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ObjectNode page = JSON.createObjectNode();
+        page.put("schemaVersion", BusinessMirrorProtocol.CAPABILITY_PROPOSAL_PAGE_V1);
+        page.putArray("items").add(receipt.path("result").deepCopy());
+        page.put("nextCursor", "");
+
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireStoredProposalDraft(receipt.path("result")));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalSaveReceipt(receipt));
+        assertThatNoException().isThrownBy(() ->
+                BusinessMirrorProtocol.requireProposalPage(page));
+        assertThat(receipt.path("result").path("draft").path("simulationRuntimeBinding")
+                .path("realExternalCallsAllowed").asBoolean()).isFalse();
+    }
+
+    @Test
+    void rejectsTamperedProposalFingerprintAndDuplicateProposalPages() throws Exception {
+        ObjectNode receipt = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ((ArrayNode) receipt.path("result").path("draft").path("assumptions"))
+                .add("schema-valid tamper");
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireProposalSaveReceipt(receipt))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PROPOSAL_DRAFT_FINGERPRINT_MISMATCH")
+                .hasMessageNotContaining("schema-valid tamper");
+
+        ObjectNode clean = (ObjectNode) fixture(
+                BusinessMirrorProtocol.PROPOSAL_SAVE_RECEIPT_FIXTURE_RESOURCE);
+        ObjectNode page = JSON.createObjectNode();
+        page.put("schemaVersion", BusinessMirrorProtocol.CAPABILITY_PROPOSAL_PAGE_V1);
+        page.putArray("items")
+                .add(clean.path("result").deepCopy())
+                .add(clean.path("result").deepCopy());
+        page.put("nextCursor", "trip-cancellation-attribution-query");
+        assertThatThrownBy(() -> BusinessMirrorProtocol.requireProposalPage(page))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("RG.BUSINESS_MIRROR.CLIENT.PROPOSAL_PAGE_ORDER_INVALID");
+    }
+
+    @Test
     void rejectsTamperedDurablePackageApiEnvelopeShape() throws Exception {
         ObjectNode receipt = (ObjectNode) fixture(
                 BusinessMirrorProtocol.PACKAGE_SAVE_RECEIPT_FIXTURE_RESOURCE);

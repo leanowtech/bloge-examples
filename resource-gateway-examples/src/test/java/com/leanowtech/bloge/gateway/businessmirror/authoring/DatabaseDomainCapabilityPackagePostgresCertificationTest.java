@@ -119,6 +119,36 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 Long.class, "postgres-compile")).isEqualTo(2);
     }
 
+    @Test
+    void appliesProposalDdlAndSerializesTwoIndependentProposalReplicas() throws Exception {
+        DataSource firstDataSource = postgres.getPostgresDatabase();
+        DataSource secondDataSource = postgres.getPostgresDatabase();
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260814_003__business_mirror_proposal_authoring.sql"))
+                .execute(firstDataSource);
+        ProposalReplica first = proposalReplica(firstDataSource);
+        ProposalReplica second = proposalReplica(secondDataSource);
+        CountDownLatch start = new CountDownLatch(1);
+
+        CompletableFuture<CapabilityProposalSaveCoordinator.Outcome> left =
+                CompletableFuture.supplyAsync(() -> proposalAfter(start, first));
+        CompletableFuture<CapabilityProposalSaveCoordinator.Outcome> right =
+                CompletableFuture.supplyAsync(() -> proposalAfter(start, second));
+        start.countDown();
+
+        var outcomes = List.of(left.get(15, TimeUnit.SECONDS), right.get(15, TimeUnit.SECONDS));
+        assertThat(outcomes).extracting(CapabilityProposalSaveCoordinator.Outcome::replayed)
+                .containsExactlyInAnyOrder(false, true);
+        assertThat(outcomes.get(0).receipt()).isEqualTo(outcomes.get(1).receipt());
+        JdbcTemplate jdbc = new JdbcTemplate(firstDataSource);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM business_mirror_proposal_draft_revisions", Long.class))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM business_mirror_proposal_save_receipts", Long.class))
+                .isEqualTo(1);
+    }
+
     private DomainCapabilityPackageSaveCoordinator.Outcome executeAfter(
             CountDownLatch start, Replica replica) {
         try {
@@ -171,6 +201,31 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
     }
 
+    private CapabilityProposalSaveCoordinator.Outcome proposalAfter(
+            CountDownLatch start, ProposalReplica replica) {
+        try {
+            start.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failure);
+        }
+        return replica.transactions().execute(status -> replica.service().create(
+                BusinessMirrorAuthoringFixtures.proposal("postgres-proposal", 0, "v1"),
+                "proposal:create:postgres", BusinessMirrorAuthoringFixtures.identity()));
+    }
+
+    private ProposalReplica proposalReplica(DataSource dataSource) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        var drafts = new DatabaseCapabilityProposalDraftRepository(jdbc, mapper);
+        drafts.init();
+        var receipts = new DatabaseCapabilityProposalSaveReceiptRepository(jdbc, mapper);
+        receipts.init();
+        var service = new CapabilityProposalAuthoringService(drafts,
+                new CapabilityProposalSaveCoordinator(receipts, mapper), mapper);
+        return new ProposalReplica(service,
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+    }
+
     private record Replica(
             DomainCapabilityPackageAuthoringService service,
             TransactionTemplate transactions) {
@@ -178,6 +233,11 @@ class DatabaseDomainCapabilityPackagePostgresCertificationTest {
 
     private record CompilationReplica(
             PackageCompilationService service,
+            TransactionTemplate transactions) {
+    }
+
+    private record ProposalReplica(
+            CapabilityProposalAuthoringService service,
             TransactionTemplate transactions) {
     }
 }

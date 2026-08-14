@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-proposal-save-receipt-v1.schema.json",
+  "title": "Capability Proposal Save Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "requestFingerprint", "result", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityProposalSaveReceipt.v1" },
+    "requestFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "result": { "$ref": "stored-capability-proposal-draft-v1.schema.json" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  }
+}

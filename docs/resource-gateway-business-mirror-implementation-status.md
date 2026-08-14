@@ -4,7 +4,7 @@
 >
 > 蓝图：[客户业务能力镜像蓝图差距评估与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 >
-> 当前迭代：BM-005 Business Mirror Workspace 已完成；下一迭代 BM-006 CapabilityProposal simulation loop
+> 当前迭代：BM-006 CapabilityProposal durable authoring 已完成；下一迭代 BM-007 Proposal simulation
 >
 > 最近更新：2026-08-14
 
@@ -517,4 +517,81 @@ BM-005 关闭了“业务人员只能面对协议、JSON 或纯画布”“存�
 
 风险加权差距由约 `17%` 降至约 `14%`。降幅保持克制，因为高权重能力仍未完成：CapabilityProposal 尚不能在严格隔离域内形成 Fixture 驱动的模拟与业务验收闭环；Visual Graph、Scenario、Fidelity 和 Outcome 仍缺少持久化 Authority；生产 KMS、HA/DR、升级、容量和多组织运营尚未认证；客户业务验收也不是仓库内测试可以替代的证据。
 
-下一迭代进入 BM-006：实现 CapabilityProposal durable authoring、`SIMULATION_ONLY` binding、Fixture、验收套件和确定性模拟运行。任何未匹配调用、真实网络、Secret 或生产副作用都必须失败关闭，模拟成功也不能自动晋级为 IMPLEMENTED 或 CONFORMANT。
+下一迭代进入 BM-006：先实现 CapabilityProposal durable authoring，再由 BM-007 接入 Fixture、验收套件和确定性模拟运行。任何未匹配调用、真实网络、Secret 或生产副作用都必须失败关闭，模拟成功也不能自动晋级为 IMPLEMENTED 或 CONFORMANT。
+
+## 13. Iteration 6：BM-006 CapabilityProposal durable authoring
+
+### 13.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| Proposal command/query port | 新增 `CapabilityProposalAuthoringService` 与 repository interfaces；HTTP、事务编排和 JDBC 存储保持分层 |
+| Current 与 immutable history | `DatabaseCapabilityProposalDraftRepository` 以五段企业 Scope 和 `proposalId` 定位 current/history；保存后重算 canonical fingerprint |
+| 乐观并发控制 | create 仅接受 revision `0`；save 必须同时匹配 path id、body id 和 `expectedRevision`；冲突不覆盖 current |
+| Durable exact replay | `(Scope, Idempotency-Key)` 数据库锁、canonical command fingerprint 和持久回执共同保证响应丢失、重启及跨副本重试返回原结果 |
+| 认证 Authoring API | `/api/business-mirror/proposals` 提供 create、save、list、current、history 和 exact revision；read/write 使用独立 `IntegrationOperation` |
+| PostgreSQL 部署协议 | `V20260814_003__business_mirror_proposal_authoring.sql` 建立 current、history、command lock 和 receipt 表及约束 |
+| 严格跨语言协议 | 新增 stored draft、save receipt、page 三份 JSON Schema 和固定取消费 Proposal receipt；Test Kit 可离线校验、复算 fingerprint 与检查排序/Scope |
+| 能力发现 | `businessMirrorProposalApi=true`，并显式保持 `businessMirrorProposalSimulation=false`；capability endpoint 只广告本轮真实存在的六个 API |
+| 使用与运维文档 | 新增 Proposal authoring 指南，覆盖启动、能力探针、创建、保存、查询、exact replay、隔离、错误恢复、DDL 和停止服务 |
+
+### 13.2 事务、身份与隔离语义
+
+一次写请求的原子边界为：
+
+```text
+authenticate complete enterprise Scope
+  -> validate proposal identity, revision and SIMULATION_ONLY binding
+  -> reject raw Secret material
+  -> acquire (Scope, Idempotency-Key) database row lock
+  -> replay exact receipt or reject key/material drift
+  -> compare current revision
+  -> write current + immutable history
+  -> write exact receipt
+  -> commit once
+```
+
+以下边界必须分开理解：
+
+1. `CapabilityProposalDraft` 已经只允许 `SIMULATION_ONLY` binding，并把 real external call、external credential 和 network egress 固定为 `false`。
+2. 本轮没有 Proposal 执行 API，因而没有任何路径可触达真实网络、凭据或生产副作用。这是「尚未开放执行面」的安全事实，不是 BM-007 运行时隔离已经认证。
+3. 作者可以声明 Fixture 和 acceptance suite 的 exact refs，但本轮不会把引用存在解释为已解析、已运行或已通过。
+4. 保存成功只表示作者态持久化成功；不会创建 `CapabilityProposalSnapshot`，也不会把 evidence state 提升为 `SIMULATED`、`IMPLEMENTED` 或更高状态。
+5. Scope 只来自已验证的 `IntegrationRequestContext`。请求体 Scope 不一致时返回 `403`，列表、历史和幂等回执均不能跨 Scope 读取。
+
+### 13.3 开发红灯与根治
+
+| 红灯 | 病根 | 根治与回归保护 |
+|---|---|---|
+| Spring 上下文无法代理 Proposal repository | `@Transactional` repository 被声明为 `final`，CGLIB 无法创建事务代理 | 移除实现类的 `final` 限制；Spring 完整装配测试验证 AOP、Controller、认证和数据库真实链路 |
+| Test Kit `clean verify` 在测试全绿后仍失败 | 新增 public protocol API 缺少完整 Javadoc，发布门禁正确阻止不完整客户端 | 补齐所有 `@param`、`@return` 和 `@throws`；完整 Javadoc/JAR/shade 门禁保持开启 |
+| 首次 Resource Gateway 全量回归在最后失败 | capability endpoint 的 exact golden 清单未登记六个新 Proposal API，5977 个测试中 1 个严格协议断言发现漂移 | 更新权威清单，保留 `containsExactlyInAnyOrder` 严格断言；定向重跑 capability、Proposal、Spring 和 PostgreSQL 共 `59/59` 通过 |
+
+这些红灯都来自强门禁，修复方式是补齐被证明存在的工程事实，而不是降低断言或关闭发布检查。
+
+### 13.4 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---|---|
+| Proposal domain/authoring focused suite | `23/23` 通过 | binding 失败关闭、readiness、H2 transaction、rollback、history/page、Scope、revision、exact replay、双实例并发、Controller、Spring 与 PostgreSQL |
+| Endpoint regression focused suite | `59/59` 通过 | capability exact endpoint 清单、Proposal 协议、认证 HTTP、Spring 装配和原生 PostgreSQL |
+| Test Kit focused suite | `20/20` 通过 | 三份新增 Schema、固定 receipt、fingerprint/Scope/page/tamper/duplicate 校验 |
+| Resource Gateway Test Kit | `546` tests，`0` failures，`0` errors，`0` skipped | `clean verify`、Schema packaging、shade、Javadoc 与 JAR 全绿 |
+
+Resource Gateway 完整 `clean verify` 在修正 endpoint golden 清单后通过：`5977` 项测试，`0` 失败、`0` 错误、`13` 跳过，并完成真实 Chromium 工作流、原生 PostgreSQL 认证和可执行 Spring Boot JAR 打包。全量门禁结果与定向测试结论一致。
+
+### 13.5 架构漂移审计
+
+1. Proposal repository 只存作者态和保存回执，没有成为 Contract、Fixture、Suite、Package、Graph 或治理状态的新 Authority。
+2. `CapabilityProposalSnapshot` 仍是服务端派生、内容寻址的不可变事实；作者 API 不能直接写 snapshot 或 evidence state。
+3. Proposal API 使用现有 Integration authentication、Scope、problem contract、canonical fingerprint 和 PostgreSQL 事务模式，没有另建旁路身份或存储协议。
+4. `businessMirrorProposalApi` 与 `businessMirrorProposalSimulation` 分开广告，避免客户端把「可编辑」误判成「可运行」。
+5. fixed fixture、server output 和独立 Test Kit 使用同一 wire contract，但 Test Kit 不依赖 Resource Gateway server 或 Spring Boot artifacts。
+
+### 13.6 差距复评
+
+BM-006 关闭了 Proposal 只能以领域 record 或固定 JSON 存在、无法被企业 Scope 隔离地创建和演进、并发编辑会静默覆盖、重试可能重复写入、外部消费者无法独立验真的根问题。它为 BM-007 提供了稳定的 authoring source、exact refs 和部署协议。
+
+风险加权差距由约 `14%` 降至约 `12%`。降幅保持克制：Proposal 仍不能解析 Fixture/Suite Authority、不能生成 temporary snapshot/MirrorPlan、不能试跑 acceptance suite，也没有分层 simulation evidence；Visual Graph、Scenario、Fidelity 与 Outcome 的完整持久 Authority，以及生产 KMS、HA/DR、容量、多区域和组织运营认证仍未完成。
+
+下一迭代进入 BM-007：从一个 exact Proposal revision 冻结 temporary snapshot，解析并 pin Fixture/acceptance suite，复用既有 `MirrorPlanCompiler`、Fixture runtime 和 Test evidence 内核执行模拟。未匹配调用必须 `ABSTAINED/FIXTURE_NOT_FOUND`，物理禁止真实网络、Secret 和 External Write；证据必须标注 `SIMULATED`、fixture 来源、匹配规则、调用次数、限制与不确定性，并且不能被实现或发布门禁当成 conformance evidence。

@@ -151,6 +151,14 @@ public record CapabilityProposalDraft(
                 businessAcceptanceSuiteRefs, simulationRuntimeBinding, expiresAt);
     }
 
+    /** Returns this authoring value with a repository-assigned optimistic revision. */
+    public CapabilityProposalDraft withRevision(long value) {
+        return new CapabilityProposalDraft(schemaVersion, proposalId, value, scope,
+                businessIntent, candidateContract, fixturePackRefs,
+                businessAcceptanceSuiteRefs, simulationRuntimeBinding, assumptions,
+                limitations, expiresAt, provenance, lifecycle);
+    }
+
     private static List<String> readinessBlockers(
             BusinessIntent businessIntent,
             CapabilityContract candidateContract,

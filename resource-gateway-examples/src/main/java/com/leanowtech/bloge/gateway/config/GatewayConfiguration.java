@@ -14,6 +14,12 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.carrier.TenantMdcCarrier;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseDomainCapabilityPackageDraftRepository;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseDomainCapabilityPackageSaveReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalAuthoringService;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalDraftRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalSaveCoordinator;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.CapabilityProposalSaveReceiptRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseCapabilityProposalDraftRepository;
+import com.leanowtech.bloge.gateway.businessmirror.authoring.DatabaseCapabilityProposalSaveReceiptRepository;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageAuthoringService;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageDraftRepository;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageSaveCoordinator;
@@ -568,6 +574,41 @@ public class GatewayConfiguration {
             DomainCapabilityPackageSaveCoordinator saves,
             ObjectMapper objectMapper) {
         return new DomainCapabilityPackageAuthoringService(drafts, saves, objectMapper);
+    }
+
+    /** Durable, fully scoped current and historical Capability Proposal authoring state. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityProposalDraftRepository capabilityProposalDraftRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCapabilityProposalDraftRepository(jdbc, objectMapper);
+    }
+
+    /** Restart-safe exact-response journal for Capability Proposal create and save commands. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityProposalSaveReceiptRepository capabilityProposalSaveReceiptRepository(
+            JdbcTemplate jdbc, ObjectMapper objectMapper) {
+        return new DatabaseCapabilityProposalSaveReceiptRepository(jdbc, objectMapper);
+    }
+
+    /** Cross-replica idempotency coordinator for Capability Proposal mutations. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityProposalSaveCoordinator capabilityProposalSaveCoordinator(
+            CapabilityProposalSaveReceiptRepository receipts,
+            ObjectMapper objectMapper) {
+        return new CapabilityProposalSaveCoordinator(receipts, objectMapper);
+    }
+
+    /** Authenticated Capability Proposal command/query application boundary. */
+    @Bean
+    @ConditionalOnMissingBean
+    public CapabilityProposalAuthoringService capabilityProposalAuthoringService(
+            CapabilityProposalDraftRepository drafts,
+            CapabilityProposalSaveCoordinator saves,
+            ObjectMapper objectMapper) {
+        return new CapabilityProposalAuthoringService(drafts, saves, objectMapper);
     }
 
     /** Exact read adapter over the shipped Graph, Contract, test-suite and capability authorities. */

@@ -34,6 +34,7 @@ integration something the business flow can see, reason about, test, and change.
 | Consistent draft export | Frozen operator/library/binding/activation/test-suite refs, deterministic dependency fingerprints, and retryable 409 conflict on assembly-time drift |
 | Governed capability closures | Sealed Resource/Operator/Graph projections, exact cycle-checked closure for all seven shipped graphs, nested foreach/loop boundary inventory, full enterprise scope, append-only lifecycle revisions, classification-aware reads, and honest mirror readiness flags |
 | Business Mirror workspace | The default product entry turns shipped Graph/Contract facts into a searchable Package portfolio, six readiness tasks, an L0-L3 capability map, exact lineage, durable guided edits, and deterministic compilation; English, Simplified Chinese, responsive layouts, and a serverless VS Code fixed task share the same fail-closed domain semantics |
+| Capability Proposal authoring | Missing business capabilities have durable, Scope-isolated drafts, immutable history, optimistic revisions, restart-safe exact receipts, strict offline verification, and a fixed `SIMULATION_ONLY` binding that cannot request real network, credentials, or egress |
 | Governed capability observations | Signed payload-free invocation facts, operator-owned admission policy, external vault/proof verification, durable admitted-or-quarantined decisions, full-scope idempotency, and independent offline verification |
 | Governed capability corpora | Immutable quarantine review, exact admitted-source candidates, metadata risk gates, independent owner-reviewed publication lineage, second source-authority verification, and honest resolver readiness |
 | Governed scenario rehearsal | Append-only Scenario assets, exact compilation, durable per-case execution, independently signed aggregate and batch evidence, multi-hold retention/deletion proof at both levels, deterministic ANEKE workbook seeds, separate opt-in regional DAG/KMS schedulers, and a server-authorized two-person remediation transaction kernel |
@@ -147,9 +148,13 @@ To exercise the new Business Mirror Package authoring API with the cancellation-
 [Business Mirror Package Authoring guide](../docs/resource-gateway-business-mirror-package-authoring-guide.md).
 It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
 PostgreSQL migration boundary, compile/read commands, and stop command. The
+[Capability Proposal Authoring guide](../docs/resource-gateway-business-mirror-proposal-authoring-guide.md)
+covers create/save/history, exact replay, strict isolation and offline verification. Proposal
+authoring is available now; Proposal simulation remains explicitly unavailable until the next
+runtime work package. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, six-step Package workflow, L0-L3 map, browser task, VS Code offline
-mode, and recovery semantics. Proposal simulation remains a later work package.
+mode, and recovery semantics.
 
 Existing graphs can be migrated incrementally without rewriting their topology. The
 [Legacy Graph migration guide](../docs/resource-gateway-business-mirror-legacy-migration-guide.md)
