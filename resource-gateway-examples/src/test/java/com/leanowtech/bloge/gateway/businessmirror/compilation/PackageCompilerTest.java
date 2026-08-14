@@ -166,6 +166,46 @@ class PackageCompilerTest {
     }
 
     @Test
+    void admitsAuthorityOwnedL0AssetsWhenTheyConnectToAPackageRoot() {
+        StoredDomainCapabilityPackageDraft source = stored(completeDraft(List.of()));
+        BusinessAssetRef resource = asset(BusinessAssetRef.Layer.L0_RESOURCE,
+                BusinessAssetRef.Kind.RESOURCE, "trip-api", 'e');
+        BusinessAssetRef operator = asset(BusinessAssetRef.Layer.L0_RESOURCE,
+                BusinessAssetRef.Kind.OPERATOR, "trip-query", 'f');
+        List<BusinessAssetLink> complete = new ArrayList<>(links());
+        complete.add(link(resource, operator, BusinessAssetLink.Relation.IMPLEMENTS));
+        complete.add(link(operator, source.draft().solutionRefs().getFirst(),
+                BusinessAssetLink.Relation.USES));
+
+        PackageCompilationResult result = compiler(frozen(
+                source.draft(), observations(source.draft()), complete))
+                .compile(source, 1, COMPILED_AT);
+
+        assertThat(result.compiled()).isTrue();
+        assertThat(result.businessAssetLinkClosure().assets())
+                .contains(resource, operator);
+    }
+
+    @Test
+    void blocksAuthorityLinkIslandsThatDoNotBelongToThePackage() {
+        StoredDomainCapabilityPackageDraft source = stored(completeDraft(List.of()));
+        BusinessAssetRef resource = asset(BusinessAssetRef.Layer.L0_RESOURCE,
+                BusinessAssetRef.Kind.RESOURCE, "unrelated-api", 'e');
+        BusinessAssetRef operator = asset(BusinessAssetRef.Layer.L0_RESOURCE,
+                BusinessAssetRef.Kind.OPERATOR, "unrelated-query", 'f');
+        List<BusinessAssetLink> disconnected = new ArrayList<>(links());
+        disconnected.add(link(resource, operator, BusinessAssetLink.Relation.IMPLEMENTS));
+
+        PackageCompilationResult result = compiler(frozen(
+                source.draft(), observations(source.draft()), disconnected))
+                .compile(source, 1, COMPILED_AT);
+
+        assertThat(result.compiled()).isFalse();
+        assertThat(codes(result)).contains("BUSINESS_ASSET_LINK_CLOSURE_INVALID");
+        assertThat(result.snapshot()).isNull();
+    }
+
+    @Test
     void fencesDependencyDriftAfterAllCompilationWork() {
         StoredDomainCapabilityPackageDraft source = stored(completeDraft(List.of()));
         FrozenPackageDependencies frozen = frozen(source.draft(), observations(source.draft()), links());

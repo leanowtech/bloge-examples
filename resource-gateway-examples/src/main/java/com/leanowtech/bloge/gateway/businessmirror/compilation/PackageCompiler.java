@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.businessmirror.domain.BusinessAssetRef;
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageDraft;
 import com.leanowtech.bloge.gateway.businessmirror.domain.DomainCapabilityPackageSnapshot;
 import com.leanowtech.bloge.gateway.businessmirror.domain.PackageReadinessReport;
+import com.leanowtech.bloge.gateway.businessmirror.impact.BusinessAssetImpactProjection;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
@@ -76,6 +77,14 @@ public final class PackageCompiler {
 
         BusinessAssetLinkClosure linkClosure = compileLinkClosure(
                 draft, frozen, snapshotRevision, exactCompiledAt, findings);
+        try {
+            BusinessAssetImpactProjection.compile(linkClosure);
+        } catch (BusinessAssetImpactProjection.ProjectionLimitException tooLarge) {
+            findings.add(finding(tooLarge.getMessage(),
+                    PackageReadinessReport.Severity.ERROR,
+                    PackageReadinessReport.Category.INDEX,
+                    "/businessAssetLinks", linkClosure.artifactRef()));
+        }
         if (frozen.capabilityClosureRef() == null) {
             findings.add(finding("CAPABILITY_CLOSURE_MISSING",
                     PackageReadinessReport.Severity.ERROR,
@@ -227,15 +236,23 @@ public final class PackageCompiler {
         assets.addAll(draft.solutionRefs());
         assets.addAll(draft.carrierRefs());
         assets.addAll(draft.channelRefs());
+        for (var link : frozen.businessAssetLinks()) {
+            assets.add(link.sourceRef());
+            assets.add(link.targetRef());
+        }
+        assets = assets.stream().distinct().toList();
         if (!assets.isEmpty() && frozen.businessAssetLinks().isEmpty()) {
             findings.add(finding("BUSINESS_ASSET_LINKS_MISSING",
                     PackageReadinessReport.Severity.ERROR,
                     PackageReadinessReport.Category.INDEX, "/businessAssetLinks", null));
         }
         try {
-            return new BusinessAssetLinkClosure(BusinessAssetLinkClosure.SCHEMA_VERSION,
+            BusinessAssetLinkClosure closure = new BusinessAssetLinkClosure(
+                    BusinessAssetLinkClosure.SCHEMA_VERSION,
                     draft.packageId() + "-asset-links", revision, "", draft.scope(),
                     draft.packageId(), assets, frozen.businessAssetLinks(), compiledAt).seal(mapper);
+            requireConnectedToPackageRoots(draft, closure);
+            return closure;
         } catch (IllegalArgumentException invalid) {
             findings.add(finding("BUSINESS_ASSET_LINK_CLOSURE_INVALID",
                     PackageReadinessReport.Severity.ERROR,
@@ -243,6 +260,37 @@ public final class PackageCompiler {
             return new BusinessAssetLinkClosure(BusinessAssetLinkClosure.SCHEMA_VERSION,
                     draft.packageId() + "-asset-links", revision, "", draft.scope(),
                     draft.packageId(), assets, List.of(), compiledAt).seal(mapper);
+        }
+    }
+
+    private static void requireConnectedToPackageRoots(
+            DomainCapabilityPackageDraft draft, BusinessAssetLinkClosure closure) {
+        Set<BusinessAssetRef> roots = new LinkedHashSet<>();
+        roots.addAll(draft.solutionRefs());
+        roots.addAll(draft.carrierRefs());
+        roots.addAll(draft.channelRefs());
+        if (closure.assets().isEmpty() || roots.isEmpty()) {
+            return;
+        }
+        Map<BusinessAssetRef, Set<BusinessAssetRef>> adjacency = new HashMap<>();
+        for (var link : closure.links()) {
+            adjacency.computeIfAbsent(link.sourceRef(), ignored -> new LinkedHashSet<>())
+                    .add(link.targetRef());
+            adjacency.computeIfAbsent(link.targetRef(), ignored -> new LinkedHashSet<>())
+                    .add(link.sourceRef());
+        }
+        Set<BusinessAssetRef> connected = new LinkedHashSet<>(roots);
+        java.util.ArrayDeque<BusinessAssetRef> pending = new java.util.ArrayDeque<>(roots);
+        while (!pending.isEmpty()) {
+            for (BusinessAssetRef next : adjacency.getOrDefault(pending.remove(), Set.of())) {
+                if (connected.add(next)) {
+                    pending.add(next);
+                }
+            }
+        }
+        if (!connected.containsAll(closure.assets())) {
+            throw new IllegalArgumentException(
+                    "business asset link closure contains an island unrelated to Package roots");
         }
     }
 
