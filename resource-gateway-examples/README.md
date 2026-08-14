@@ -41,6 +41,7 @@ integration something the business flow can see, reason about, test, and change.
 | Reconstructable domain fidelity | Owner-approved content-addressed coverage inventory, append-only full-scope persistence, managed signed payload-free seven-dimension profiles, protected register/read APIs, independently re-verified Scenario projection, v3 signed read-only Shadow comparison with exact normalization/source-resolution and double-observed online-authority closure, a protected full-scope durable sample-ordinal queue, append-only lifecycle API, optional bounded scheduler, owner/epoch fenced worker kernel, a governed fail-closed data-plane composition with double-observed grant/kill-switch/egress authority and isolated connector boundaries, signed authoritative-outcome observations with pre-treatment cohort proof, event-time delayed/censored/conflicting reconciliation and an independently supplied business-authority verifier, typed dynamic readiness, fail-closed freshness/abstention/low-sample semantics, Wilson 95% confidence, exact source lineage, and independent Test Kit verification without a composite score |
 | Runtime certification | Plan-first, non-production-only fault certification with a fixed 12-scenario denominator, single-use external authorization, customer-owned environment adapters, epoch-fenced PostgreSQL journal, recovery SLO enforcement, independently signed reports, and self-contained payload-free replay bundles |
 | ANEKE Package integration | Additive protocol 1.1 registry-ingest bundles, exact Package/Evidence closure, externally signed governance projections, monotonic generation fencing, freshness-aware authoring views, and independent offline verification without duplicating ANEKE registry or publish authority |
+| Pilot acceptance protocol | A non-waivable ten-gate manifest binds the owner-frozen scenario denominator, exact evidence refs, customer observation window, and external acceptance decision without turning local fixtures into customer approval |
 | Stateful mirror sessions | Versioned entity/write/session/checkpoint/write-attempt protocols, atomic multi-entity mutations, exact replay, AES-GCM isolated persistence, lease/fence/CAS concurrency, durable crash-window reconciliation, TTL/destroy, payload-free signed state evidence, signed same-data-plane restart recovery admission, ANEKE workbook seeds, and independently verified clients |
 | Governed replay payloads | Payload values detached from immutable evidence, classification ABAC, selective retention, legal hold, bounded expiry, and signed deletion proof |
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
@@ -192,6 +193,10 @@ enforcement and customer-owned KMS/Vault/PKI/network infrastructure. The
 defines protocol 1.1 compatibility, immutable registry-ingest closure, signed external governance
 projection, monotonic generation persistence, stale/expired behavior, Test Kit verification,
 PostgreSQL certification, startup steps, and the RG/ANEKE authority boundary. The
+[cancellation-fee pilot acceptance guide](../docs/resource-gateway-cancellation-fee-pilot-acceptance-guide.md)
+defines the owner-frozen denominator, ten non-waivable exit gates, exact evidence kinds,
+observation window, customer decision boundary, reference fixture, and independent fail-closed
+verification. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, seven-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

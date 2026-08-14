@@ -35,8 +35,8 @@ class SuiteStabilityServingInventoryProtocolSchemaTest {
         assertThat(schema.at("/$defs/material/properties/schemaVersion/const").asText())
                 .isEqualTo(TestSuiteStabilityServingInventory.Material.SCHEMA_VERSION);
         assertThat(ProtocolFingerprint.of(objectMapper, inventory.material()))
-                .isEqualTo("sha256:aa895f2dcd3491b286f2cbd5c59ac472"
-                        + "ddca87c5c837ff5a067c72c049918414");
+                .isEqualTo("sha256:9d4f931fcd5380a4b1f8e599cf19dcc3"
+                        + "b800052ca050605a554d25c44393e017");
         assertThat(List.of("inventory", "material", "authoritySignature"))
                 .allSatisfy(definition -> assertThat(
                         schema.at("/$defs/" + definition + "/additionalProperties")

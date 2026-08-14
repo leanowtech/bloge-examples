@@ -212,6 +212,9 @@ bloge-examples/
   `resource-gateway-test-kit/README.md` remains the exhaustive API and protocol reference
 - `docs/resource-gateway-aneke-package-integration-guide.md` for protocol 1.1 Package registry
   ingest, signed governance projection, freshness, Test Kit verification, and PostgreSQL operations
+- `docs/resource-gateway-cancellation-fee-pilot-acceptance-guide.md` for the owner-frozen
+  cancellation-fee denominator, ten exit gates, observation window, customer decision boundary,
+  reference Manifest, and independent verification
 - `docs/bloge-visual-canvas-product-and-system-guide.md` for the visual canvas
   product guide, demo scripts, and system usage notes
 - `docs/bloge-vscode-extension-lightweight-authoring-plan.md` for the lighter

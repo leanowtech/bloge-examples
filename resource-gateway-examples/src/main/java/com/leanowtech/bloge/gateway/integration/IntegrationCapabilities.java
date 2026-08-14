@@ -345,6 +345,9 @@ public record IntegrationCapabilities(
         objects.put("packageGovernanceProjectionReceipt", List.of(
                 com.leanowtech.bloge.gateway.businessmirror.governance
                         .PackageGovernanceProjectionReceipt.SCHEMA_VERSION));
+        objects.put("businessMirrorPilotAcceptanceManifest", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.pilot
+                        .BusinessMirrorPilotAcceptanceManifest.SCHEMA_VERSION));
         objects.put("authoritativeOutcomeSourcePage", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror
                         .AuthoritativeOutcomeSourcePage.SCHEMA_VERSION));
@@ -1070,6 +1073,7 @@ public record IntegrationCapabilities(
         features.put("businessMirrorAssetImpactFreshness", true);
         features.put("businessMirrorPackageEvidenceProtocol", true);
         features.put("businessMirrorPackageGovernanceProtocol", true);
+        features.put("businessMirrorPilotAcceptanceProtocol", true);
         features.put("businessMirrorPackageRegistryIngestApi", false);
         features.put("businessMirrorPackageGovernanceProjectionApi", false);
         features.put("businessMirrorPackageGovernanceProjectionIngestReady", false);

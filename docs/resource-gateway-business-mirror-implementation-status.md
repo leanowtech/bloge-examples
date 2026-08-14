@@ -1172,3 +1172,67 @@ generation fork”和“消费者必须信任服务端自证”七类工程差�
 registry/workbook/gate、跨系统 cursor、组织审批、故障演练和长期运行必须在客户环境形成证据。仓库内最后一个工作包是
 BM-015：形成取消费申诉试点验收 Manifest，把第 16.5 节十项门禁、Owner 冻结分母、exact evidence refs、观察窗和
 “未获客户验收”状态形式化，避免用演示数据冒充业务验收。
+
+## 23. Iteration 15：BM-015 cancellation-fee pilot acceptance package
+
+### 23.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 双层内容地址 | `ScenarioDenominator` 和 `BusinessMirrorPilotAcceptanceManifest` 分别计算 canonical SHA-256；修改覆盖、未知范围或 Gate 后必须形成新的 exact 坐标 |
+| Owner-frozen denominator | 记录 Owner freeze attestation、12 个取消费场景族、高风险义务总数/覆盖数和显式未知范围；参考数值不冒充客户批准分母 |
+| 固定十 Gate 协议 | 第 16.5 节十项门禁固定顺序、固定 Authority 且不可裁剪，没有 `WAIVED`；`PASSED` 强制 Gate-specific evidence kinds 与 `assessedAt`，`FAILED` 强制原因码 |
+| 跨对象闭包 | Gate 1/2 必须引用同一 Package/denominator；高风险 Gate 通过要求完整覆盖；Gate 9 与实际 Outcome population 必须一致 |
+| 观察窗与时间线 | `PLANNED/ACTIVE/COMPLETED/INVALIDATED` 显式建模；评估、观察和客户决策不得晚于 Manifest 组装时间，客户接受不得早于观察完成 |
+| 外部客户决策 | `CUSTOMER_ACCEPTED/REJECTED` 必须有客户 Authority 的 exact decision ref；本地 fixture、RG Gate 或 ANEKE projection 都不能代替客户签字 |
+| 严格协议资产 | 新增 strict Schema 和 server-produced reference fixture；fixture 保持 `PREPARING / NOT_REQUESTED / 0 passed`，真实显示 3 项材料可评估、7 项等待客户证据 |
+| 独立 Test Kit | `BusinessMirrorPilotAcceptanceProtocol` 独立重算两层地址、十 Gate、分母、证据种类、核心 refs、时序和派生状态，只返回 payload-free 坐标与计数 |
+| 能力发现 | capability probe 广告 `businessMirrorPilotAcceptanceManifest` 与 `businessMirrorPilotAcceptanceProtocol=true`，不虚构不存在的验收 API 或客户 readiness |
+| 操作指南 | [取消费申诉试点验收指南](resource-gateway-cancellation-fee-pilot-acceptance-guide.md)覆盖 Authority、12 场景、十 Gate、状态推导、离线体验、现场顺序、错误恢复和上线清单 |
+
+### 23.2 实施中发现并根治的问题
+
+| 审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 既有 Package、Simulation、Conformance、Impact fixture 的 ID/Scope 不完全一致 | 这些资产按不同阶段证明协议，历史上没有统一的客户试点 Authority | reference Manifest 只引用可闭合的 Package/Evidence 坐标，其余七 Gate 明确 `BLOCKED`；文档要求目标 Scope 重新生产，不做拼接式全绿 |
+| 只有外层 fingerprint 时，分母可被替换后整体重签 | Owner 分母和验收索引的 Authority/lifecycle 不同，却共享一个地址 | denominator 单独内容寻址并由 Gate 1/2 exact 引用；Test Kit 先验内层、再验外层 |
+| 可变 Gate 列表允许删除困难门禁 | 把检查项当普通数组，而不是试点退出协议分母 | 固定十项、固定顺序、无 waiver enum；Schema、服务端 constructor 和 Test Kit 三层拒绝裁剪/乱序 |
+| 高风险 Gate 可在 `14/18` 时仅凭证据 ref 标绿 | 只检查“有材料”，没有检查业务覆盖分母 | `PASSED` 跨字段要求 `coveredHighRiskObligationCount == highRiskObligationCount`；未知范围仍显式保留 |
+| Outcome Gate 可引用与观察窗不同的数据集 | Fidelity 结论与客户观察人口没有 exact closure | `COMPLETED` 观察窗必须引用 authoritative population，Gate 9 必须引用同一 exact ref |
+| 调用方可直接填写 `CUSTOMER_ACCEPTED` | 把派生状态和外部客户 Authority 混成一个自由文本字段 | 总状态严格派生；十 Gate、观察窗、客户 exact decision ref 和合法时序缺一不可；测试覆盖本地伪造拒绝 |
+| 未来时间或先验收后观察可进入索引 | 只有字段格式，没有因果时间约束 | 所有评估/观察/决策时间不得晚于 `assembledAt`，客户接受不得早于观察完成；服务端与 Test Kit 双重验证 |
+| Gate Authority 可被调用方替换 | Authority 只是自由枚举，没有与十项固定 Gate 形成协议闭包 | Schema、服务端和 Test Kit 固定逐 Gate Authority；RG 不能代替业务 Owner、ANEKE 或客户平台评估 |
+| `ACTIVE.actualFrom` 可晚于组装时间，Gate 1/2 可早于分母冻结 | 只约束观察结束和未来评估，没有约束实际开始与所引用事实的产生顺序 | 实际观察开始不得晚于 `assembledAt`；Gate 1/2 和客户最终决策不得早于 denominator `frozenAt` |
+| `FAILED` Gate 可以没有原因 | 失败状态有证据但无机器可读诊断，无法进入治理工作簿 | `FAILED` 与 `BLOCKED` 都必须携带原因码；strict Schema、模型和 Test Kit 一致失败关闭 |
+
+### 23.3 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| 服务端 Manifest / Integrity / Schema | `8/8` 通过 | 12 场景、未知范围、双层地址、十 Gate、固定 Authority、因果时序、防伪接受、Gate-specific evidence、完整 synthetic acceptance、fixed fixture |
+| capability 回归 | `39/39` 通过 | 新对象与 protocol feature 可发现，不增加虚假 runtime endpoint/readiness |
+| 独立 Test Kit | `10/10` 通过 | strict Schema、两层 tamper、裁剪/乱序/未知字段、Authority 替换、无原因失败、不完整 PASS、高风险缩水、观察窗偷带/未来开始、冻结前评估、本地伪造接受和完整 synthetic acceptance |
+| Resource Gateway 发布门禁 | `6170` tests，`0` failures，`0` errors，`13` skipped | 最终源码完整 `clean verify`、原生 PostgreSQL、真实 Chromium E2E、架构守卫与可执行 Spring Boot JAR 全绿 |
+| Test Kit 发布门禁 | `590` tests，`0` failures，`0` errors，`0` skipped | 最终源码完整 `clean verify`、strict Schema packaging、shade、Javadoc 与 JAR 全绿 |
+
+首次 Resource Gateway 全量运行发现一项协议版本升级后的黄金指纹仍锁定旧摘要；刷新受版本字段影响的确定性摘要后，Authority 与因果时序审计又新增防伪约束。上述数字来自全部修正完成后、最终源码从干净目录执行的发布门禁；没有复用早期全绿数字，没有关闭测试或放宽断言，也没有把 `13` 项有明确环境前置条件的 skipped 用例伪报为通过。
+
+### 23.4 架构漂移审计
+
+1. Manifest 是 evidence index，不是业务 Owner、ANEKE、Outcome Authority、客户平台或客户验收委员会。
+2. 没有新增第二套执行引擎、Scenario repository、Fidelity 算法、publish gate 或客户审批工作流。
+3. reference fixture 只证明 wire compatibility；`PREPARING` 和七个 blocker 是产品事实，不是演示瑕疵。
+4. synthetic accepted object 仅存在于测试，证明合法状态机路径；它不作为 fixture、API 数据或客户证据发布。
+5. Manifest payload-free，只携带 exact refs、计数、状态、原因码和时间；原始请求、响应、fixture 和凭证仍留在各自 Authority。
+6. 协议支持通过 capability probe 广告；未实现 Manifest runtime API，因此不制造 endpoint/readiness 信号。
+
+### 23.5 差距复评
+
+BM-015 关闭了仓库内“试点门禁只存在于文字”“场景分母可缩水”“Gate 可裁剪或豁免”“不同
+Scope 的演示 fixture 可拼成假全绿”“Outcome 可换证”“未来时间线可入档”“本地状态可冒充客户签字”和“独立消费者
+无法复验验收索引”八类工程缺口。
+
+相对蓝图的风险加权**仓库实现差距**由约 `2.8%` 降至约 `2.2%`，低于既定 `3%` 收口阈值。
+剩余部分是不能通过继续堆本地代码消除的客户现场事实：真实 Owner 冻结分母、同 Scope 全链证据、ANEKE 私有 trust、
+目标基础设施认证、完整 Outcome 观察窗、组织审批与长期运营指标。它们已经被形式化为可执行 Gate 和 blocker，
+但在客户 Authority 实际出具证据前，试点状态必须保持 `PREPARING`，不能表述为客户已验收。

@@ -160,6 +160,7 @@ class ToolStudioIntegrationServiceTest {
                 .containsEntry("businessMirrorWorkspace", true)
                 .containsEntry("businessMirrorLegacyMigrationAuthorityReady", false)
                 .containsEntry("businessMirrorPackageGovernanceProtocol", true)
+                .containsEntry("businessMirrorPilotAcceptanceProtocol", true)
                 .containsEntry("businessMirrorPackageRegistryIngestApi", false)
                 .containsEntry("businessMirrorPackageGovernanceProjectionApi", false)
                 .containsEntry("businessMirrorPackageGovernanceProjectionIngestReady", false)
@@ -271,7 +272,8 @@ class ToolStudioIntegrationServiceTest {
                         "packageRegistryIngestBundle",
                         "domainCapabilityPackageGovernanceProjection",
                         "domainCapabilityPackageGovernanceView",
-                        "packageGovernanceProjectionReceipt");
+                        "packageGovernanceProjectionReceipt",
+                        "businessMirrorPilotAcceptanceManifest");
         assertThat(envelope.payload().supportedObjects())
                 .containsEntry("mirrorPlan", List.of(
                         com.leanowtech.bloge.gateway.integration.mirror

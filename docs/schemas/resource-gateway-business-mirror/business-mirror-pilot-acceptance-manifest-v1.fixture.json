@@ -1,0 +1,237 @@
+{
+  "schemaVersion" : "resourceGateway.businessMirrorPilotAcceptanceManifest.v1",
+  "manifestFingerprint" : "sha256:40b913365ff323ec5d5f85d05d0267f4f0b75cb91bf40d979cc258c51088c4d4",
+  "manifestId" : "ride.cancellation-fee-dispute.reference-pilot",
+  "revision" : 1,
+  "scope" : {
+    "tenantId" : "ride-hailing",
+    "organizationId" : "customer-service",
+    "projectId" : "cancellation",
+    "environmentId" : "test",
+    "region" : "sg"
+  },
+  "pilotDomainId" : "ride.cancellation-fee-dispute.v1",
+  "packageSnapshotRef" : {
+    "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+    "id" : "cancellation-package",
+    "revision" : 7,
+    "fingerprint" : "sha256:131279a278840732b8a6e1cbf954945b270729220a03df4ca11cfc1b44b90fe1"
+  },
+  "scenarioDenominator" : {
+    "schemaVersion" : "resourceGateway.businessMirrorPilotScenarioDenominator.v1",
+    "denominatorFingerprint" : "sha256:20fa7eb3a44b0790baf3f37833232b8c1f59cce7f1bc409eb8a53ef7bb4e6b81",
+    "denominatorId" : "ride.cancellation-fee-dispute.denominator",
+    "revision" : 1,
+    "frozenBy" : "cancellation-service-owner",
+    "frozenAt" : "2026-08-14T02:00:00Z",
+    "ownerFreezeAttestationRef" : {
+      "kind" : "BUSINESS_OWNER_FREEZE_ATTESTATION",
+      "id" : "reference:cancellation-owner-freeze",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "declaredFamilyCount" : 12,
+    "highRiskObligationCount" : 18,
+    "coveredHighRiskObligationCount" : 14,
+    "unknownRangeCount" : 2,
+    "scenarioFamilyRefs" : [ {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "conversation-recovery-and-missing-information",
+      "revision" : 1,
+      "fingerprint" : "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "driver-arrived-rider-timeout-fee-valid",
+      "revision" : 1,
+      "fingerprint" : "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "driver-not-arrived-waiver",
+      "revision" : 1,
+      "fingerprint" : "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "duplicate-dispute-refund-idempotency",
+      "revision" : 1,
+      "fingerprint" : "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "high-risk-or-insufficient-evidence-abstain",
+      "revision" : 1,
+      "fingerprint" : "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "order-state-delay-or-conflict",
+      "revision" : 1,
+      "fingerprint" : "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "outcome-late-conflict-censored",
+      "revision" : 1,
+      "fingerprint" : "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "proposal-fixture-unmatched-fail-closed",
+      "revision" : 1,
+      "fingerprint" : "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "rule-version-city-vehicle-variation",
+      "revision" : 1,
+      "fingerprint" : "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "simulation-implementation-difference",
+      "revision" : 1,
+      "fingerprint" : "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "time-threshold-minus-plus-one-minute",
+      "revision" : 1,
+      "fingerprint" : "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    }, {
+      "kind" : "SCENARIO_FAMILY",
+      "id" : "upstream-timeout-partial-fallback-handoff",
+      "revision" : 1,
+      "fingerprint" : "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    } ],
+    "unknownRangeRefs" : [ {
+      "kind" : "SCENARIO_UNKNOWN_RANGE",
+      "id" : "future-city-policy",
+      "revision" : 1,
+      "fingerprint" : "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }, {
+      "kind" : "SCENARIO_UNKNOWN_RANGE",
+      "id" : "unmapped-risk-code",
+      "revision" : 1,
+      "fingerprint" : "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    } ],
+    "limitations" : [ "Coverage is a reference denominator, not a customer-approved count" ]
+  },
+  "acceptanceGates" : [ {
+    "gateId" : "PACKAGE_DEFINITION_COMPLETE",
+    "authority" : "RESOURCE_GATEWAY",
+    "state" : "EVIDENCE_AVAILABLE",
+    "evidenceRefs" : [ {
+      "kind" : "DOMAIN_CAPABILITY_PACKAGE",
+      "id" : "cancellation-package",
+      "revision" : 7,
+      "fingerprint" : "sha256:131279a278840732b8a6e1cbf954945b270729220a03df4ca11cfc1b44b90fe1"
+    }, {
+      "kind" : "PACKAGE_READINESS_REPORT",
+      "id" : "cancellation-readiness",
+      "revision" : 7,
+      "fingerprint" : "sha256:bf2bd6dd0e02a9382cc610ed5ba9b415b0a070a678b0941fe0c98ca60ef52a80"
+    }, {
+      "kind" : "SCENARIO_DENOMINATOR",
+      "id" : "ride.cancellation-fee-dispute.denominator",
+      "revision" : 1,
+      "fingerprint" : "sha256:20fa7eb3a44b0790baf3f37833232b8c1f59cce7f1bc409eb8a53ef7bb4e6b81"
+    } ],
+    "reasonCodes" : [ ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "HIGH_RISK_BRANCH_OBLIGATIONS",
+    "authority" : "CUSTOMER_BUSINESS_OWNER",
+    "state" : "EVIDENCE_AVAILABLE",
+    "evidenceRefs" : [ {
+      "kind" : "BUSINESS_ACCEPTANCE_SUITE",
+      "id" : "cancellation-business-acceptance",
+      "revision" : 1,
+      "fingerprint" : "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }, {
+      "kind" : "SCENARIO_DENOMINATOR",
+      "id" : "ride.cancellation-fee-dispute.denominator",
+      "revision" : 1,
+      "fingerprint" : "sha256:20fa7eb3a44b0790baf3f37833232b8c1f59cce7f1bc409eb8a53ef7bb4e6b81"
+    } ],
+    "reasonCodes" : [ ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "ISOLATED_PROPOSAL_REHEARSAL",
+    "authority" : "RESOURCE_GATEWAY",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "COHERENT_PILOT_SIMULATION_EVIDENCE_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "SAME_SUITE_IMPLEMENTATION_CONFORMANCE",
+    "authority" : "RESOURCE_GATEWAY",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "CUSTOMER_IMPLEMENTATION_BINDING_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "ZERO_EXTERNAL_BUSINESS_WRITES",
+    "authority" : "CUSTOMER_PLATFORM",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "CUSTOMER_MIRROR_EXECUTION_WINDOW_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "EVIDENCE_TRACEABILITY",
+    "authority" : "RESOURCE_GATEWAY",
+    "state" : "EVIDENCE_AVAILABLE",
+    "evidenceRefs" : [ {
+      "kind" : "PACKAGE_EVIDENCE_INDEX",
+      "id" : "cancellation-package",
+      "revision" : 3,
+      "fingerprint" : "sha256:b0b55653f6ed236986e98bd253f7f3e16c66aed4c632a80d6877be4ed9a6c8fe"
+    } ],
+    "reasonCodes" : [ ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "ANEKE_GOVERNANCE_ROUND_TRIP",
+    "authority" : "ANEKE",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ {
+      "kind" : "PACKAGE_REGISTRY_INGEST_BUNDLE",
+      "id" : "package-registry-ingest:cancellation-package",
+      "revision" : 7,
+      "fingerprint" : "sha256:02e3441e2989c88f8a1c45d63d8c90d00437b507ea505b47fb3e7eb15a4c313b"
+    } ],
+    "reasonCodes" : [ "CUSTOMER_ANEKE_TRUST_AND_GATE_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "CHANGE_IMPACT_ANALYSIS",
+    "authority" : "RESOURCE_GATEWAY",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "COHERENT_PILOT_IMPACT_REPORT_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "OUTCOME_FIDELITY_FAIL_CLOSED",
+    "authority" : "CUSTOMER_BUSINESS_OWNER",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "CUSTOMER_AUTHORITATIVE_OUTCOME_WINDOW_PENDING" ],
+    "assessedAt" : null
+  }, {
+    "gateId" : "TARGET_ENVIRONMENT_CERTIFICATION",
+    "authority" : "CUSTOMER_PLATFORM",
+    "state" : "BLOCKED",
+    "evidenceRefs" : [ ],
+    "reasonCodes" : [ "CUSTOMER_TARGET_ENVIRONMENT_CERTIFICATION_PENDING" ],
+    "assessedAt" : null
+  } ],
+  "observationWindow" : {
+    "status" : "PLANNED",
+    "plannedFrom" : "2026-09-01T00:00:00Z",
+    "plannedTo" : "2026-10-01T00:00:00Z",
+    "actualFrom" : null,
+    "actualTo" : null,
+    "authoritativeOutcomePopulationRef" : null,
+    "reasonCodes" : [ "CUSTOMER_OUTCOME_WINDOW_NOT_STARTED" ]
+  },
+  "customerAcceptance" : {
+    "status" : "NOT_REQUESTED",
+    "decidedBy" : "",
+    "decidedAt" : null,
+    "decisionRef" : null,
+    "reasonCodes" : [ "REFERENCE_FIXTURE_ONLY" ]
+  },
+  "status" : "PREPARING",
+  "assembledAt" : "2026-08-15T02:00:00Z",
+  "assembler" : "resource-gateway:reference-pilot",
+  "limitations" : [ "Customer ANEKE and target-environment evidence are pending", "This reference fixture is not a customer acceptance decision" ]
+}

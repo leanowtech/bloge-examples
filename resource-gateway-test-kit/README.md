@@ -34,6 +34,7 @@ discover exact target
 | Verify Outcome source pages, commands, and checkpoints offline | `AuthoritativeOutcomeSourceProtocolVerifier` + caller-owned Source trust callback |
 | Verify a self-contained HA/failure certification package | `RuntimeCertificationVerifier.requireReplayBundle` + caller-owned regional, approval, and evidence trust callbacks |
 | Verify ANEKE Package registry and governance exchange | `PackageGovernanceProtocol` + caller-owned ANEKE projection trust callback |
+| Verify a Business Mirror pilot acceptance package | `BusinessMirrorPilotAcceptanceProtocol` + packaged cancellation-fee reference fixture |
 
 Build the library and start the local test-profile Gateway:
 
@@ -357,6 +358,21 @@ coordinates, freshness contradictions, and rebuild count/cursor consistency. The
 Resource-to-Channel fixture is exposed as
 `BusinessMirrorProtocol.BUSINESS_ASSET_IMPACT_FIXTURE_RESOURCE`. See the
 [Business Asset Impact guide](../docs/resource-gateway-business-asset-impact-index-guide.md).
+
+Pilot acceptance manifests can be verified without loading Resource Gateway server classes:
+
+```java
+BusinessMirrorPilotAcceptanceProtocol.VerifiedPilotAcceptance verified =
+        BusinessMirrorPilotAcceptanceProtocol.verify(manifest);
+```
+
+The verifier recomputes both the owner-frozen denominator and Manifest content addresses, enforces
+the fixed ten-gate order and Authority assignment, checks gate-specific evidence kinds and failed
+reason codes, closes Package/denominator/Outcome references, validates causal event time, and
+independently derives the overall status. It does not resolve
+evidence refs or grant customer, ANEKE, business-owner, or target-environment authority. The
+packaged fixture is deliberately `PREPARING / NOT_REQUESTED`; see the
+[cancellation-fee pilot acceptance guide](../docs/resource-gateway-cancellation-fee-pilot-acceptance-guide.md).
 
 Mirror consumers should negotiate the server before importing artifacts. Pass the decoded
 `/api/integration/capabilities` payload to `CapabilityMirrorCompatibility`; the integration envelope

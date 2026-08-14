@@ -1,0 +1,449 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-mirror-pilot-acceptance-manifest-v1.schema.json",
+  "title": "Resource Gateway Business Mirror Pilot Acceptance Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "manifestFingerprint", "manifestId", "revision", "scope",
+    "pilotDomainId", "packageSnapshotRef", "scenarioDenominator", "acceptanceGates",
+    "observationWindow", "customerAcceptance", "status", "assembledAt", "assembler",
+    "limitations"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resourceGateway.businessMirrorPilotAcceptanceManifest.v1"
+    },
+    "manifestFingerprint": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint"
+    },
+    "manifestId": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+    },
+    "revision": { "type": "integer", "minimum": 1 },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "pilotDomainId": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+    },
+    "packageSnapshotRef": {
+      "allOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "properties": { "kind": { "const": "DOMAIN_CAPABILITY_PACKAGE" } } }
+      ]
+    },
+    "scenarioDenominator": { "$ref": "#/$defs/scenarioDenominator" },
+    "acceptanceGates": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "prefixItems": [
+        { "$ref": "#/$defs/packageDefinitionGate" },
+        { "$ref": "#/$defs/highRiskBranchGate" },
+        { "$ref": "#/$defs/isolatedProposalGate" },
+        { "$ref": "#/$defs/sameSuiteGate" },
+        { "$ref": "#/$defs/zeroWriteGate" },
+        { "$ref": "#/$defs/evidenceTraceabilityGate" },
+        { "$ref": "#/$defs/anekeRoundTripGate" },
+        { "$ref": "#/$defs/changeImpactGate" },
+        { "$ref": "#/$defs/outcomeFidelityGate" },
+        { "$ref": "#/$defs/targetEnvironmentGate" }
+      ],
+      "items": false
+    },
+    "observationWindow": { "$ref": "#/$defs/observationWindow" },
+    "customerAcceptance": { "$ref": "#/$defs/customerAcceptance" },
+    "status": {
+      "enum": [
+        "PREPARING", "READY_FOR_CUSTOMER_VALIDATION", "CUSTOMER_ACCEPTED",
+        "CUSTOMER_REJECTED"
+      ]
+    },
+    "assembledAt": { "type": "string", "format": "date-time" },
+    "assembler": {
+      "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+    },
+    "limitations": { "$ref": "#/$defs/textList" }
+  },
+  "$defs": {
+    "nullableTime": {
+      "oneOf": [
+        { "type": "string", "format": "date-time" },
+        { "type": "null" }
+      ]
+    },
+    "nullableArtifactRef": {
+      "oneOf": [
+        { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+        { "type": "null" }
+      ]
+    },
+    "textList": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    },
+    "reasonCodeList": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+      }
+    },
+    "artifactRefList": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef"
+      }
+    },
+    "scenarioFamilyRefList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+          { "properties": { "kind": { "const": "SCENARIO_FAMILY" } } }
+        ]
+      }
+    },
+    "unknownRangeRefList": {
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+          { "properties": { "kind": { "const": "SCENARIO_UNKNOWN_RANGE" } } }
+        ]
+      }
+    },
+    "scenarioDenominator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "denominatorFingerprint", "denominatorId", "revision",
+        "frozenBy", "frozenAt", "ownerFreezeAttestationRef", "declaredFamilyCount",
+        "highRiskObligationCount", "coveredHighRiskObligationCount", "unknownRangeCount",
+        "scenarioFamilyRefs", "unknownRangeRefs", "limitations"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "resourceGateway.businessMirrorPilotScenarioDenominator.v1"
+        },
+        "denominatorFingerprint": {
+          "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint"
+        },
+        "denominatorId": {
+          "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "frozenBy": {
+          "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+        },
+        "frozenAt": { "type": "string", "format": "date-time" },
+        "ownerFreezeAttestationRef": {
+          "allOf": [
+            { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+            {
+              "properties": {
+                "kind": { "const": "BUSINESS_OWNER_FREEZE_ATTESTATION" }
+              }
+            }
+          ]
+        },
+        "declaredFamilyCount": { "type": "integer", "minimum": 1, "maximum": 4096 },
+        "highRiskObligationCount": { "type": "integer", "minimum": 1, "maximum": 65536 },
+        "coveredHighRiskObligationCount": {
+          "type": "integer", "minimum": 0, "maximum": 65536
+        },
+        "unknownRangeCount": { "type": "integer", "minimum": 0, "maximum": 4096 },
+        "scenarioFamilyRefs": { "$ref": "#/$defs/scenarioFamilyRefList" },
+        "unknownRangeRefs": { "$ref": "#/$defs/unknownRangeRefList" },
+        "limitations": { "$ref": "#/$defs/textList" }
+      }
+    },
+    "acceptanceGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "gateId", "authority", "state", "evidenceRefs", "reasonCodes", "assessedAt"
+      ],
+      "properties": {
+        "gateId": {
+          "enum": [
+            "PACKAGE_DEFINITION_COMPLETE", "HIGH_RISK_BRANCH_OBLIGATIONS",
+            "ISOLATED_PROPOSAL_REHEARSAL", "SAME_SUITE_IMPLEMENTATION_CONFORMANCE",
+            "ZERO_EXTERNAL_BUSINESS_WRITES", "EVIDENCE_TRACEABILITY",
+            "ANEKE_GOVERNANCE_ROUND_TRIP", "CHANGE_IMPACT_ANALYSIS",
+            "OUTCOME_FIDELITY_FAIL_CLOSED", "TARGET_ENVIRONMENT_CERTIFICATION"
+          ]
+        },
+        "authority": {
+          "enum": [
+            "RESOURCE_GATEWAY", "ANEKE", "CUSTOMER_BUSINESS_OWNER", "CUSTOMER_PLATFORM"
+          ]
+        },
+        "state": {
+          "enum": ["NOT_EVALUATED", "EVIDENCE_AVAILABLE", "PASSED", "FAILED", "BLOCKED"]
+        },
+        "evidenceRefs": { "$ref": "#/$defs/artifactRefList" },
+        "reasonCodes": { "$ref": "#/$defs/reasonCodeList" },
+        "assessedAt": { "$ref": "#/$defs/nullableTime" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "enum": ["PASSED", "FAILED"] } },
+            "required": ["state"]
+          },
+          "then": {
+            "properties": {
+              "evidenceRefs": { "minItems": 1 },
+              "assessedAt": { "type": "string", "format": "date-time" }
+            }
+          },
+          "else": { "properties": { "assessedAt": { "type": "null" } } }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "EVIDENCE_AVAILABLE" } },
+            "required": ["state"]
+          },
+          "then": { "properties": { "evidenceRefs": { "minItems": 1 } } }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "BLOCKED" } },
+            "required": ["state"]
+          },
+          "then": { "properties": { "reasonCodes": { "minItems": 1 } } }
+        },
+        {
+          "if": {
+            "properties": { "state": { "const": "FAILED" } },
+            "required": ["state"]
+          },
+          "then": { "properties": { "reasonCodes": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "packageDefinitionGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "PACKAGE_DEFINITION_COMPLETE" },
+            "authority": { "const": "RESOURCE_GATEWAY" }
+          }
+        }
+      ]
+    },
+    "highRiskBranchGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "HIGH_RISK_BRANCH_OBLIGATIONS" },
+            "authority": { "const": "CUSTOMER_BUSINESS_OWNER" }
+          }
+        }
+      ]
+    },
+    "isolatedProposalGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "ISOLATED_PROPOSAL_REHEARSAL" },
+            "authority": { "const": "RESOURCE_GATEWAY" }
+          }
+        }
+      ]
+    },
+    "sameSuiteGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "SAME_SUITE_IMPLEMENTATION_CONFORMANCE" },
+            "authority": { "const": "RESOURCE_GATEWAY" }
+          }
+        }
+      ]
+    },
+    "zeroWriteGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "ZERO_EXTERNAL_BUSINESS_WRITES" },
+            "authority": { "const": "CUSTOMER_PLATFORM" }
+          }
+        }
+      ]
+    },
+    "evidenceTraceabilityGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "EVIDENCE_TRACEABILITY" },
+            "authority": { "const": "RESOURCE_GATEWAY" }
+          }
+        }
+      ]
+    },
+    "anekeRoundTripGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "ANEKE_GOVERNANCE_ROUND_TRIP" },
+            "authority": { "const": "ANEKE" }
+          }
+        }
+      ]
+    },
+    "changeImpactGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "CHANGE_IMPACT_ANALYSIS" },
+            "authority": { "const": "RESOURCE_GATEWAY" }
+          }
+        }
+      ]
+    },
+    "outcomeFidelityGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "OUTCOME_FIDELITY_FAIL_CLOSED" },
+            "authority": { "const": "CUSTOMER_BUSINESS_OWNER" }
+          }
+        }
+      ]
+    },
+    "targetEnvironmentGate": {
+      "allOf": [
+        { "$ref": "#/$defs/acceptanceGate" },
+        {
+          "properties": {
+            "gateId": { "const": "TARGET_ENVIRONMENT_CERTIFICATION" },
+            "authority": { "const": "CUSTOMER_PLATFORM" }
+          }
+        }
+      ]
+    },
+    "observationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status", "plannedFrom", "plannedTo", "actualFrom", "actualTo",
+        "authoritativeOutcomePopulationRef", "reasonCodes"
+      ],
+      "properties": {
+        "status": { "enum": ["PLANNED", "ACTIVE", "COMPLETED", "INVALIDATED"] },
+        "plannedFrom": { "type": "string", "format": "date-time" },
+        "plannedTo": { "type": "string", "format": "date-time" },
+        "actualFrom": { "$ref": "#/$defs/nullableTime" },
+        "actualTo": { "$ref": "#/$defs/nullableTime" },
+        "authoritativeOutcomePopulationRef": { "$ref": "#/$defs/nullableArtifactRef" },
+        "reasonCodes": { "$ref": "#/$defs/reasonCodeList" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "const": "COMPLETED" } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "actualFrom": { "type": "string", "format": "date-time" },
+              "actualTo": { "type": "string", "format": "date-time" },
+              "authoritativeOutcomePopulationRef": {
+                "allOf": [
+                  { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "AUTHORITATIVE_OUTCOME_SELECTED_POPULATION_MANIFEST"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "INVALIDATED" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "reasonCodes": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "customerAcceptance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "decidedBy", "decidedAt", "decisionRef", "reasonCodes"],
+      "properties": {
+        "status": { "enum": ["NOT_REQUESTED", "IN_REVIEW", "ACCEPTED", "REJECTED"] },
+        "decidedBy": { "type": "string", "maxLength": 512 },
+        "decidedAt": { "$ref": "#/$defs/nullableTime" },
+        "decisionRef": { "$ref": "#/$defs/nullableArtifactRef" },
+        "reasonCodes": { "$ref": "#/$defs/reasonCodeList" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "status": { "enum": ["ACCEPTED", "REJECTED"] } },
+            "required": ["status"]
+          },
+          "then": {
+            "properties": {
+              "decidedBy": {
+                "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier"
+              },
+              "decidedAt": { "type": "string", "format": "date-time" },
+              "decisionRef": {
+                "allOf": [
+                  { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+                  {
+                    "properties": {
+                      "kind": { "const": "CUSTOMER_ACCEPTANCE_DECISION" }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "decidedBy": { "const": "" },
+              "decidedAt": { "type": "null" },
+              "decisionRef": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "status": { "const": "REJECTED" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "reasonCodes": { "minItems": 1 } } }
+        }
+      ]
+    }
+  }
+}

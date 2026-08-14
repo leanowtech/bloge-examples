@@ -57,7 +57,8 @@ final class BusinessMirrorSchemaValidator {
             "capability-implementation-conformance-request-v1.schema.json",
             "capability-implementation-test-evidence-v1.schema.json",
             "capability-implementation-conformance-report-v1.schema.json",
-            "stored-capability-implementation-conformance-v1.schema.json");
+            "stored-capability-implementation-conformance-v1.schema.json",
+            "business-mirror-pilot-acceptance-manifest-v1.schema.json");
     private static final List<String> MIRROR_SCHEMA_NAMES = List.of(
             "artifact-provenance-v1.schema.json",
             "effect-contract-v1.schema.json",

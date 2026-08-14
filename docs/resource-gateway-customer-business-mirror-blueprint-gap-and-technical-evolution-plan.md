@@ -680,7 +680,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 | RG-BM-012 | P0 并行 | Regional Data Plane | **仓库内工程实现已完成：**七组件 deployment contract、短期外部 certification、v2 isolation binding、运行准入/确认/提交三次复核、KMS/CA age 与 overlap、zero-write、restart-safe persistence、动态 capability、strict Schema、fixed fixture 与 Test Kit | 聚焦与完整发布门禁全绿；客户真实 KMS/Vault/PKI/State/Resolver/egress 设施及 rotation/write-escape 证据归现场认证 |
 | RG-BM-013 | P0 并行 | Runtime certification harness | **仓库内工程实现已完成：**固定 12 场景 Manifest、plan-first Harness、单次外部授权、客户 Environment Adapter port、数据库时钟与 epoch-fenced Journal、恢复 SLO、完整签名 Report、自包含 Replay Bundle、strict Schema、动态 capability 与独立 Test Kit | H2/原生 PostgreSQL、崩溃恢复、双副本消费、防重放、stale epoch、Schema/tamper 和离线闭包门禁全绿；客户真实 HA/kill/partition/upgrade/restore/rotation/write-escape 证据归现场认证 |
 | RG-BM-014 | P1 | ANEKE package integration | **仓库内工程实现已完成：**additive protocol 1.1、完整 registry-ingest bundle、ANEKE 签名 governance projection、单调 generation 日志、freshness view、change event、strict Schema、fixed fixture、独立 Test Kit 与 mixed-version 兼容 | RG/ANEKE Authority 保持分离；`1.1.0/1.0.0` 消费者混部、H2/PostgreSQL 双副本竞争、exact replay、rollback/fork/gap/takeover、stale/expired/trust unavailable/tamper 全部失败关闭；真实 ANEKE key/registry/gate 联调归客户环境认证 |
-| RG-BM-015 | P0 | 首个业务域试点 | 取消费申诉 L0-L3 Package、Proposal、Conformance、Outcome | 满足第 16 节全部试点门禁 |
+| RG-BM-015 | P0 | 首个业务域试点 | **仓库内验收协议已完成：**取消费申诉 Owner-frozen denominator、固定十 Gate Manifest、exact evidence refs、Outcome 观察窗、客户决策边界、双层内容地址、strict Schema、诚实的 `PREPARING` reference fixture 与独立 Test Kit | 协议不允许裁剪/豁免 Gate、分母缩水、跨 Outcome 换证、未来时间证据或本地伪造 `CUSTOMER_ACCEPTED`；真实同 Scope Proposal/Conformance/Outcome/ANEKE/目标环境证据及客户签字归试点现场完成 |
 
 ### 14.2 依赖与并行策略
 
@@ -817,6 +817,30 @@ BM-001 → BM-002 → BM-003 → BM-005 → BM-006 → BM-007 → BM-015
 8. 至少完成一次规则变更影响分析，能定位受影响的 Scenario、SOP、Agent 和渠道。
 9. 真实 Outcome 不可用、迟到或冲突时，Fidelity 返回 stale/abstained/indeterminate，不误绿。
 10. 目标环境通过 PostgreSQL、KMS、网络、证书、备份恢复和数据权利认证。
+
+### 16.6 试点验收协议实现
+
+仓库以 `BusinessMirrorPilotAcceptanceManifest` 固化上述十项门禁。Manifest 不是新的审批
+Authority，而是一个内容寻址的证据索引：
+
+1. `ScenarioDenominator` 单独内容寻址，必须携带业务 Owner freeze attestation、完整场景族、
+   高风险义务覆盖和显式未知范围。
+2. `acceptanceGates` 固定十项、固定顺序和逐 Gate Authority，没有 `WAIVED`；RG 不能代替
+   业务 Owner、ANEKE 或客户平台评估；`EVIDENCE_AVAILABLE` 不等于 `PASSED`，后者必须具备
+   Gate-specific evidence kinds 和评估时间，`FAILED` 必须有原因码。
+3. Gate 1/2 必须引用同一 exact Package/denominator；高风险 Gate 通过时覆盖数必须等于分母。
+4. Outcome 观察窗完成时，Gate 9 必须引用同一个 authoritative population，禁止换证。
+5. 只有十 Gate 全部通过、观察窗完成、客户 Decision exact ref 存在且时序合法时，才允许
+   `CUSTOMER_ACCEPTED`。
+6. 实际观察开始不得晚于组装时间；引用分母的 Gate 1/2 评估和客户最终决策不得早于
+   Owner `frozenAt`，禁止使用尚未产生的事实。
+7. 服务端模型与独立 Test Kit 分别重算 denominator/Manifest 两层 canonical fingerprint；
+   strict Schema 拒绝未知字段，验证结果不携带业务 Payload。
+
+固定取消费 reference fixture 保留 12 个场景族，但明确标记为
+`PREPARING / NOT_REQUESTED`：3 项只有参考证据，7 项等待同 Scope 客户证据，0 项声称通过。
+该 fixture 用于协议兼容和操作演示，不能作为 BM-015 客户退出签字。完整操作见
+[取消费申诉试点验收指南](resource-gateway-cancellation-fee-pilot-acceptance-guide.md)。
 
 ## 17. 运营指标与负熵机制
 
