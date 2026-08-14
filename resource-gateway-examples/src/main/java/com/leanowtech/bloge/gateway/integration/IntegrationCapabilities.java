@@ -318,6 +318,24 @@ public record IntegrationCapabilities(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.SCHEMA_VERSION));
         objects.put("capabilityClosure", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.CapabilityClosure.SCHEMA_VERSION));
+        objects.put("businessAssetLink", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .BusinessAssetLink.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackageDraft", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .DomainCapabilityPackageDraft.SCHEMA_VERSION));
+        objects.put("domainCapabilityPackageSnapshot", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .DomainCapabilityPackageSnapshot.SCHEMA_VERSION));
+        objects.put("packageReadinessReport", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .PackageReadinessReport.SCHEMA_VERSION));
+        objects.put("capabilityProposalDraft", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .CapabilityProposalDraft.SCHEMA_VERSION));
+        objects.put("capabilityProposalSnapshot", List.of(
+                com.leanowtech.bloge.gateway.businessmirror.domain
+                        .CapabilityProposalSnapshot.SCHEMA_VERSION));
         objects.put("mirrorPlan", List.of(
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION_V1,
                 com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan.SCHEMA_VERSION));
@@ -919,6 +937,9 @@ public record IntegrationCapabilities(
         features.put("capabilitySnapshotProtocol", true);
         features.put("capabilityProjection", true);
         features.put("capabilityClosureProtocol", true);
+        features.put("businessMirrorProtocol", true);
+        features.put("businessMirrorPackageApi", false);
+        features.put("businessMirrorProposalSimulation", false);
         features.put("mirrorPlanProtocol", true);
         features.put("builtInCapabilityClosureProjection", true);
         features.put("visualCapabilityClosureProjection", true);

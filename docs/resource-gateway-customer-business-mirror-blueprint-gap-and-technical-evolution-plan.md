@@ -9,6 +9,10 @@
 > 蓝图基线：[客户业务能力镜像战略洞见](resource-gateway-customer-business-mirror-strategy-insights.md)
 >
 > 既有技术基线：[业务能力镜像与保真演练工业化方案](resource-gateway-mock.md)
+>
+> 实施跟踪：[客户业务能力镜像实施状态](resource-gateway-business-mirror-implementation-status.md)
+
+> **基线口径说明：**第 1-4 节保留 2026-08-14 开工前评估，作为差距基线；已落地事实及复评结果以实施跟踪文档为准。
 
 ## 1. 结论先行
 
@@ -63,7 +67,7 @@ Resource Gateway 已经拥有一套罕见地完整的可视化编排、契约测
 | [UX Round 3 最终复评](resource-gateway-ux-round3-final-expert-reassessment.md) | E2 工程成熟度 `97/100`，但组织成熟度诚实保持 `89`，真实用户与两团队周期尚未执行 |
 | [Mirror 工业化方案](resource-gateway-mock.md) | 记录技术内核 `91.37%`，同时明确生产 Outcome Connector、HA/DR、WORM、跨区域与环境认证仍未完成 |
 
-代码搜索未发现 `DomainCapabilityPackage`、`CapabilityProposal`、`ServiceCarrier` 或 `ProblemDefinition` 的 Java/TypeScript 一等对象。这不是命名问题：当前 API、能力探针和顶层路由同样没有承载这些业务概念。
+开工前代码搜索未发现 `DomainCapabilityPackage`、`CapabilityProposal`、`ServiceCarrier` 或 `ProblemDefinition` 的 Java/TypeScript 一等对象。首轮实施已经补齐 Package、Proposal、Readiness 和 L0-L3 Business Asset Link 协议内核，但 repository、API、事件、Deep Link 和默认产品任务流仍未完成，不能据此宣称业务闭环已经成立。
 
 ### 2.3 证据限制
 
@@ -655,7 +659,7 @@ Proposal 通过生成 temporary capability snapshot 进入现有 MirrorPlan，�
 
 | Ticket | 优先级 | 工作包 | 主要交付 | 退出门禁 |
 |---|---|---|---|---|
-| RG-BM-001 | P0 | 权威与协议冻结 | 领域词汇、source-of-truth、v1 Schema、ADR | RG/ANEKE/业务/TEE 四方签字；无双主字段 |
+| RG-BM-001 | P0 | 权威与协议冻结 | 领域词汇、source-of-truth、v1 Schema、ADR | **实施中：**协议内核、严格 Schema、固定 fixtures 和 Test Kit 已完成；RG/ANEKE/业务/TEE 四方签字及 mixed-version 消费者认证待完成 |
 | RG-BM-002 | P0 | Package protocol 与 repository | Draft/Snapshot/Readiness、严格 Schema、DB migration、idempotent API | 并发保存、漂移、跨 Scope、重启 exact replay 全绿 |
 | RG-BM-003 | P0 | PackageCompiler | closure、link、scenario、fidelity、outcome 编译和 fail-closed report | deterministic fingerprint；TOCTOU 与 property tests 全绿 |
 | RG-BM-004 | P0 | Legacy migration | Graph → Package projector、gap inventory、逐包迁移 | 七个内置 Graph 均可包装且缺失项不误绿 |

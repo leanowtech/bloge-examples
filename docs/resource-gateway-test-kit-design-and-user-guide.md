@@ -568,6 +568,7 @@ try {
 
 | 能力族 | 入口类型 | 何时使用 |
 | --- | --- | --- |
+| Business Mirror | `BusinessMirrorProtocol` | 在无服务端环境中校验 Package、Proposal、Readiness 和 L0-L3 Business Asset Link；可从打包的取消费 fixtures 开始 |
 | Capability Mirror | `CapabilityMirrorCompatibility`、`CapabilityMirrorVerifier` | 导入 sealed capability snapshot/closure |
 | Stateful Mirror | `MirrorStateProtocolVerifier`、`MirrorSessionCheckpointVerifier` | 验证状态模型、写入、checkpoint 和恢复 |
 | Read-only Shadow | `ReadOnlyShadow*Verifier`、`OnlineReadOnlyShadow*Verifier` | 验证 baseline/candidate/source binding 与 comparison |
@@ -595,6 +596,7 @@ target 或 generation 的对象仍然不可接受。
 
 - [Testing Control Plane API](resource-gateway-testing-control-plane-api.md)
 - [Domain Fidelity Profile](resource-gateway-domain-fidelity-profile.md)
+- [客户业务能力镜像实施状态](resource-gateway-business-mirror-implementation-status.md)
 - [Test Kit polyglot certification](../resource-gateway-test-kit/polyglot/README.md)
 - [Test Kit API reference and advanced examples](../resource-gateway-test-kit/README.md)
 

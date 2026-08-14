@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-proposal-snapshot-v1.schema.json",
+  "title": "Resource Gateway Capability Proposal Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "proposalId", "revision", "fingerprint", "scope", "sourceDraftRevision", "sourceDraftFingerprint", "businessIntent", "candidateContract", "fixturePackRefs", "businessAcceptanceSuiteRefs", "simulationRuntimeBinding", "implementationBindingRef", "evidenceState", "evidenceRefs", "assumptions", "limitations", "expiresAt", "provenance", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityProposalSnapshot.v1" },
+    "proposalId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "sourceDraftRevision": { "type": "integer", "minimum": 1 },
+    "sourceDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "businessIntent": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessIntent" },
+    "candidateContract": { "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/capability-contract-v1.schema.json" },
+    "fixturePackRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "businessAcceptanceSuiteRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "simulationRuntimeBinding": { "$ref": "business-mirror-common-v1.schema.json#/$defs/simulationRuntimeBinding" },
+    "implementationBindingRef": { "oneOf": [{ "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" }, { "type": "null" }] },
+    "evidenceState": { "enum": ["NOT_RUN", "SIMULATED", "IMPLEMENTED", "CONFORMANT", "CALIBRATED"] },
+    "evidenceRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "assumptions": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" },
+    "limitations": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "provenance": { "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/artifact-provenance-v1.schema.json" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "if": { "properties": { "evidenceState": { "const": "NOT_RUN" } }, "required": ["evidenceState"] }, "then": { "properties": { "evidenceRefs": { "maxItems": 0 } } } },
+    { "if": { "properties": { "evidenceState": { "enum": ["SIMULATED", "IMPLEMENTED", "CONFORMANT", "CALIBRATED"] } }, "required": ["evidenceState"] }, "then": { "properties": { "evidenceRefs": { "contains": { "properties": { "kind": { "const": "PROPOSAL_SIMULATION_EVIDENCE" } }, "required": ["kind"] } } } } },
+    { "if": { "properties": { "evidenceState": { "enum": ["IMPLEMENTED", "CONFORMANT", "CALIBRATED"] } }, "required": ["evidenceState"] }, "then": { "properties": { "implementationBindingRef": { "type": "object", "properties": { "kind": { "const": "PROPOSAL_IMPLEMENTATION_BINDING" } }, "required": ["kind"] } } } },
+    { "if": { "properties": { "evidenceState": { "enum": ["CONFORMANT", "CALIBRATED"] } }, "required": ["evidenceState"] }, "then": { "properties": { "evidenceRefs": { "contains": { "properties": { "kind": { "const": "IMPLEMENTATION_CONFORMANCE_REPORT" } }, "required": ["kind"] } } } } },
+    { "if": { "properties": { "evidenceState": { "const": "CALIBRATED" } }, "required": ["evidenceState"] }, "then": { "properties": { "evidenceRefs": { "contains": { "properties": { "kind": { "enum": ["DOMAIN_FIDELITY_PROFILE", "AUTHORITATIVE_OUTCOME_OBSERVATION"] } }, "required": ["kind"] } } } } }
+  ]
+}

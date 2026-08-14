@@ -30,6 +30,7 @@ discover exact target
 | Gate a release in CI | `ResourceGatewaySuiteCli` + payload-free JUnit XML |
 | Verify release-grade evidence | exact Suite revision + caller-pinned trust material |
 | Integrate Mirror, Shadow, Scenario, or Fidelity governance | the specialized verifier named in the [capability map](../docs/resource-gateway-test-kit-design-and-user-guide.md#11-高级能力导航) |
+| Validate Business Mirror Package or Proposal files offline | `BusinessMirrorProtocol` + the packaged cancellation-fee fixtures |
 
 Build the library and start the local test-profile Gateway:
 
@@ -44,6 +45,12 @@ The local demo uses `http://localhost:8080` and the test-only bearer token
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:
+
+- strict `DomainCapabilityPackageDraft`, `DomainCapabilityPackageSnapshot`,
+  `PackageReadinessReport`, `CapabilityProposalDraft`, `CapabilityProposalSnapshot`, and
+  `BusinessAssetLink` schemas; `BusinessMirrorProtocol` validates these files offline and ships
+  complete cancellation-fee Package and simulation-only Proposal fixtures without linking the
+  Resource Gateway server or Spring Boot;
 
 - a bounded JDK HTTP client for graph/operator target discovery, fixture and immutable-suite
   registries, deterministic property planning/materialization/execution, pure-DSL mutation

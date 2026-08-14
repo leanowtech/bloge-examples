@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/capability-proposal-draft-v1.schema.json",
+  "title": "Resource Gateway Capability Proposal Draft v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "proposalId", "revision", "scope", "businessIntent", "candidateContract", "fixturePackRefs", "businessAcceptanceSuiteRefs", "simulationRuntimeBinding", "assumptions", "limitations", "expiresAt", "provenance", "lifecycle"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.capabilityProposalDraft.v1" },
+    "proposalId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "businessIntent": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessIntent" },
+    "candidateContract": { "oneOf": [{ "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/capability-contract-v1.schema.json" }, { "type": "null" }] },
+    "fixturePackRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "businessAcceptanceSuiteRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "simulationRuntimeBinding": { "oneOf": [{ "$ref": "business-mirror-common-v1.schema.json#/$defs/simulationRuntimeBinding" }, { "type": "null" }] },
+    "assumptions": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" },
+    "limitations": { "$ref": "business-mirror-common-v1.schema.json#/$defs/textList" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "provenance": { "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/artifact-provenance-v1.schema.json" },
+    "lifecycle": { "enum": ["DRAFT", "READY_FOR_REVIEW", "SUBMITTED", "SUPERSEDED"] }
+  }
+}

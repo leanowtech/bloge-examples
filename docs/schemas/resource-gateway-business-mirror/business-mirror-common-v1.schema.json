@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-mirror-common-v1.schema.json",
+  "title": "Resource Gateway Business Mirror Common Types v1",
+  "$defs": {
+    "identifier": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9@._:/-]{0,511}$" },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "optionalFingerprint": { "type": "string", "pattern": "^(|sha256:[a-f0-9]{64})$" },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "organizationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "projectId": { "type": "string", "maxLength": 255 },
+        "environmentId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "region": { "type": "string", "maxLength": 64 }
+      }
+    },
+    "artifactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}$" },
+        "id": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "businessAssetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layer", "kind", "id", "revision", "fingerprint", "authority", "scope"],
+      "properties": {
+        "layer": { "enum": ["L0_RESOURCE", "L1_SERVICE_DESIGN", "L2_SERVICE_CARRIER", "L3_APPLICATION"] },
+        "kind": { "enum": ["RESOURCE", "OPERATOR", "BUILT_IN_FUNCTION", "FEATURE", "SCENARIO", "SOLUTION", "SOP", "AGENT", "WORKFLOW", "CHANNEL_APPLICATION"] },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authority": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/scope" }
+      },
+      "allOf": [
+        { "if": { "properties": { "layer": { "const": "L0_RESOURCE" } }, "required": ["layer"] }, "then": { "properties": { "kind": { "enum": ["RESOURCE", "OPERATOR", "BUILT_IN_FUNCTION"] } } } },
+        { "if": { "properties": { "layer": { "const": "L1_SERVICE_DESIGN" } }, "required": ["layer"] }, "then": { "properties": { "kind": { "enum": ["FEATURE", "SCENARIO", "SOLUTION"] } } } },
+        { "if": { "properties": { "layer": { "const": "L2_SERVICE_CARRIER" } }, "required": ["layer"] }, "then": { "properties": { "kind": { "enum": ["SOP", "AGENT", "WORKFLOW"] } } } },
+        { "if": { "properties": { "layer": { "const": "L3_APPLICATION" } }, "required": ["layer"] }, "then": { "properties": { "kind": { "const": "CHANNEL_APPLICATION" } } } }
+      ]
+    },
+    "businessDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["domainId", "problemTaxonomyRef", "problemCode", "businessGoal", "expectedOutcome", "riskClass", "accountableOwner", "collaboratingOwners"],
+      "properties": {
+        "domainId": { "type": "string", "maxLength": 512 },
+        "problemTaxonomyRef": { "oneOf": [{ "$ref": "#/$defs/artifactRef" }, { "type": "null" }] },
+        "problemCode": { "type": "string", "maxLength": 2048 },
+        "businessGoal": { "type": "string", "maxLength": 2048 },
+        "expectedOutcome": { "type": "string", "maxLength": 2048 },
+        "riskClass": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "accountableOwner": { "type": "string", "maxLength": 2048 },
+        "collaboratingOwners": { "$ref": "#/$defs/textList" }
+      }
+    },
+    "businessIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capabilityGap", "expectedValue", "applicableScenarioRefs", "candidatePackageRefs", "candidateGraphRefs", "owner"],
+      "properties": {
+        "capabilityGap": { "type": "string", "maxLength": 2048 },
+        "expectedValue": { "type": "string", "maxLength": 2048 },
+        "applicableScenarioRefs": { "$ref": "#/$defs/artifactRefList" },
+        "candidatePackageRefs": { "$ref": "#/$defs/artifactRefList" },
+        "candidateGraphRefs": { "$ref": "#/$defs/artifactRefList" },
+        "owner": { "type": "string", "maxLength": 2048 }
+      }
+    },
+    "simulationRuntimeBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "resolverPolicyRef", "realExternalCallsAllowed", "externalCredentialsAllowed", "networkEgressAllowed"],
+      "properties": {
+        "kind": { "const": "SIMULATION_ONLY" },
+        "resolverPolicyRef": { "$ref": "#/$defs/artifactRef" },
+        "realExternalCallsAllowed": { "const": false },
+        "externalCredentialsAllowed": { "const": false },
+        "networkEgressAllowed": { "const": false }
+      }
+    },
+    "textList": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 2048 } },
+    "artifactRefList": { "type": "array", "maxItems": 4096, "uniqueItems": true, "items": { "$ref": "#/$defs/artifactRef" } },
+    "businessAssetRefList": { "type": "array", "maxItems": 4096, "uniqueItems": true, "items": { "$ref": "#/$defs/businessAssetRef" } }
+  }
+}

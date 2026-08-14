@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/domain-capability-package-snapshot-v1.schema.json",
+  "title": "Resource Gateway Domain Capability Package Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "packageId", "revision", "fingerprint", "scope", "sourceDraftRevision", "sourceDraftFingerprint", "businessDefinition", "packageContractRef", "capabilityClosureRef", "mirrorPlanRefs", "businessAssetLinkClosureRef", "readinessReportRef", "dependencyManifest", "evidenceRefs", "compilerVersion", "policyGenerationRef", "provenance", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.domainCapabilityPackageSnapshot.v1" },
+    "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "sourceDraftRevision": { "type": "integer", "minimum": 1 },
+    "sourceDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "businessDefinition": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessDefinition" },
+    "packageContractRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+    "capabilityClosureRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+    "mirrorPlanRefs": { "type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": true, "items": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" } },
+    "businessAssetLinkClosureRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+    "readinessReportRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+    "dependencyManifest": { "type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": true, "items": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" } },
+    "evidenceRefs": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRefList" },
+    "compilerVersion": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "policyGenerationRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" },
+    "provenance": { "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/artifact-provenance-v1.schema.json" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

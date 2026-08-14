@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/package-readiness-report-v1.schema.json",
+  "title": "Resource Gateway Package Readiness Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "reportId", "revision", "fingerprint", "scope", "packageId", "sourceDraftRevision", "sourceDraftFingerprint", "status", "findings", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.packageReadinessReport.v1" },
+    "reportId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "business-mirror-common-v1.schema.json#/$defs/scope" },
+    "packageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "sourceDraftRevision": { "type": "integer", "minimum": 1 },
+    "sourceDraftFingerprint": { "$ref": "business-mirror-common-v1.schema.json#/$defs/fingerprint" },
+    "status": { "enum": ["READY", "REVIEW_REQUIRED", "BLOCKED"] },
+    "findings": { "type": "array", "maxItems": 4096, "uniqueItems": true, "items": { "$ref": "#/$defs/finding" } },
+    "createdAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["findingId", "code", "severity", "category", "fieldPath", "artifactRef", "messageId"],
+      "properties": {
+        "findingId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "severity": { "enum": ["INFO", "WARNING", "ERROR"] },
+        "category": { "enum": ["BUSINESS_DEFINITION", "CONTRACT", "DEPENDENCY", "ISOLATION", "SCENARIO", "OUTCOME", "GOVERNANCE", "INDEX"] },
+        "fieldPath": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+        "artifactRef": { "oneOf": [{ "$ref": "business-mirror-common-v1.schema.json#/$defs/artifactRef" }, { "type": "null" }] },
+        "messageId": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "findings": { "contains": { "properties": { "severity": { "const": "ERROR" } }, "required": ["severity"] } } }, "required": ["findings"] }, "then": { "properties": { "status": { "const": "BLOCKED" } } } },
+    { "if": { "properties": { "findings": { "not": { "contains": { "properties": { "severity": { "const": "ERROR" } }, "required": ["severity"] } }, "contains": { "properties": { "severity": { "const": "WARNING" } }, "required": ["severity"] } } }, "required": ["findings"] }, "then": { "properties": { "status": { "const": "REVIEW_REQUIRED" } } } }
+  ]
+}

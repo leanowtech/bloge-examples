@@ -99,6 +99,15 @@
                     <include>*.fixture.json</include>
                 </includes>
             </resource>
+            <resource>
+                <directory>../docs/schemas/resource-gateway-business-mirror</directory>
+                <targetPath>schemas/resource-gateway-business-mirror</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>*.schema.json</include>
+                    <include>*.fixture.json</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

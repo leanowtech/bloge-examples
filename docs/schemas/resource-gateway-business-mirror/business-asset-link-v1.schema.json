@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-business-mirror/business-asset-link-v1.schema.json",
+  "title": "Resource Gateway Business Asset Link v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceRef", "targetRef", "relation", "condition", "risk", "owner", "provenance"],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.businessAssetLink.v1" },
+    "sourceRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessAssetRef" },
+    "targetRef": { "$ref": "business-mirror-common-v1.schema.json#/$defs/businessAssetRef" },
+    "relation": { "enum": ["USES", "COMPOSES", "IMPLEMENTS", "DELIVERED_BY", "EXPOSED_ON", "VALIDATED_BY", "CALIBRATED_BY"] },
+    "condition": { "type": "string", "maxLength": 2048 },
+    "risk": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+    "owner": { "$ref": "business-mirror-common-v1.schema.json#/$defs/identifier" },
+    "provenance": { "$ref": "https://bloge.dev/schemas/resource-gateway-mirror/artifact-provenance-v1.schema.json" }
+  }
+}
