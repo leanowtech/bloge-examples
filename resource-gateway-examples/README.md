@@ -181,6 +181,11 @@ defines the deployment-owned live baseline, bounded source adapter, independent 
 authority, durable stage/apply/commit checkpoint, Backfill and generation-revocation operations,
 dynamic readiness, PostgreSQL migration, incident handling, and the boundary between repository
 certification and a real customer connector. The
+[Regional Data Plane certification guide](../docs/resource-gateway-regional-data-plane-certification-guide.md)
+defines the seven-component deployment contract, short-lived externally signed certification,
+KMS/CA age and overlap checks, v2 isolation binding, three runtime rechecks, restart-safe persistence,
+dynamic capability probe, offline Test Kit verification, and the boundary between repository
+enforcement and customer-owned KMS/Vault/PKI/network infrastructure. The
 [Business Mirror Workspace guide](../docs/resource-gateway-business-mirror-workspace-guide.md)
 covers the default Portfolio, seven-step Package workflow, L0-L3 map, browser task, VS Code offline
 mode, and recovery semantics.

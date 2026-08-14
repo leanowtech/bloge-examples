@@ -996,3 +996,56 @@ BM-011 关闭了仓库内「生产事实没有持续 Source port」「cursor 与
 风险加权差距由约 `6.5%` 降至约 `5.5%`。这不是客户生产 Connector 已认证的声明：实际 Adapter、Source Authority、Observation Authority、数据授权、业务 watermark SLO 和目标源断流/迟到/冲突演练只能在客户环境完成。仓库剩余高权重差距为 Regional Data Plane 与私有 PKI/KMS/egress 隔离（BM-012）、HA/kill/partition/upgrade/backup certification（BM-013）、ANEKE protocol 1.1 与 stale governance projection（BM-014），以及真实取消费域 Owner 冻结分母和完整观察窗试点（BM-015）。
 
 下一迭代进入 BM-012。目标不是再造一个业务运行平台，而是把 Vault、Secret、State、Resolver、KMS、mTLS 和 egress policy 组合为可验证的 regional deployment contract，并让缺失、陈旧、rotation 中断和 write escape 失败关闭。
+
+## 20. Iteration 12：BM-012 Regional Data Plane certification
+
+### 20.1 已交付
+
+| 交付 | 结果 |
+|---|---|
+| 七组件部署契约 | `EVIDENCE_KMS`、`PAYLOAD_VAULT`、`SECRET_AUTHORITY`、`SESSION_STATE_STORE`、`FIXTURE_RESOLVER`、`MUTUAL_TLS` 和 `EGRESS_ISOLATION` 必须在同一 Scope、region、environment、deployment 下完整闭合；缺一项即拒绝认证 |
+| 短期外部认证 | `RegionalDataPlaneCertification` 由部署方 Authority 出具，最长存活 15 分钟；绑定 exact contract、七项组件观测、KMS/CA rotation、零 write attempt/escape 与外部 Ed25519 seal |
+| 原子 material source | `RegionalDataPlaneCertificationMaterialSource` 是客户 Adapter port，一次读取同一观测窗口内的 contract、certification 和 key set，避免跨次读取产生 TOCTOU；仓库不提供冒充客户基础设施的默认实现 |
+| 运行期三次复核 | `RegionalDataPlaneCertifiedRunTrustAuthority` 组合既有隔离 Authority，在 admission、execution confirmation 和 commit permit 三个时点重新读取并验证短期认证；运行过程中吊销、过期或 rotation 漂移均失败关闭 |
+| v2 隔离闭包 | `MirrorDeploymentIsolationAttestationBundle` v2 强制携带 exact regional certification ref；v1 canonical fingerprint 保持不变，v2 在内容地址中纳入 certification ref，避免旧消费者被静默破坏 |
+| 重启与撤销安全 | 数据库持久化 bundle schema version 与 regional certification ref；重建、revoke 和 restart 不丢 v2 坐标，同一 attestation revision 绑定不同 certification ref 被判定为 `REVISION_FORK` |
+| Rotation 语义 | KMS 与 CA 分别记录 generation 激活时间、实际 overlap、上一代撤销、全副本收敛、旧 session 排空和无重启；服务端与 Test Kit 同时验证最大 age、最小 overlap 和 serving generation |
+| 动态能力探针 | 协议对象与 v1/v2 支持始终可发现；`mirrorRegionalDataPlaneCertificationReady` 独立探测 regional authority，不再复用旧 isolation readiness；配置 `gateway.testing.mirror.regional-data-plane.required=true` 时缺客户 Adapter 启动失败 |
+| 跨语言协议 | Deployment Contract、Certification、v2 Isolation Bundle 三份 strict Schema、三份 server-produced fixed fixture，以及不依赖服务端/Spring 的 Test Kit verifier 已完成 |
+| 接入与运维文档 | [Regional Data Plane 认证指南](resource-gateway-regional-data-plane-certification-guide.md)覆盖责任边界、Adapter、启动、探针、三次复核、轮转、事故处置、Test Kit 与上线清单 |
+
+### 20.2 实施中发现并根治的问题
+
+| 红灯或审计发现 | 病根 | 根治与回归保护 |
+|---|---|---|
+| 契约声明 rotation age/overlap，但认证只保存布尔通过 | 把策略期望当成了已观测事实，无法证明证书和密钥是否真的在窗口内轮转 | rotation observation 增加 generation 激活时间与实际 overlap；服务端和 Test Kit 计算 age、比较 minimum overlap，并核对撤销、收敛和旧 session 排空 |
+| v2 certification ref 在数据库重建或 revoke 后丢失 | 只把兼容字段放在 Java record，持久层仍按 v1 形状重建 | additive DDL 持久化 schema version 与 exact ref；所有读写、撤销和重启路径纳入回归，same revision/different ref 明确拒绝为 fork |
+| Regional readiness 一度直接映射旧 isolation readiness | “网络/Secret 隔离已证明”不等于“七组件短期认证当前有效” | capability snapshot 独立调用 regional authority；未装配、过期、吊销或 Scope 不闭合时仅该 feature false，协议支持仍保持可发现 |
+| 子组件观测可晚于聚合认证观测时间 | 时间模型只校验 freshness，没有校验父子观测的因果顺序 | 所有 component/rotation observation 必须不晚于 certification `observedAt`，并完整覆盖 run window；构造器、服务端 verifier 与 Test Kit 三层固定 |
+| 固定 fixture 容易被误读成客户现场认证 | server-produced fixture 只验证 wire compatibility，没有连接真实私有基础设施 | fixture、能力文案和指南统一标记为协议样例；客户 Adapter、Authority、KMS/Vault/PKI/egress 现场证据仍是上线硬门禁 |
+
+### 20.3 自动化验证
+
+| 范围 | 结果 | 证明内容 |
+|---|---:|---|
+| BM-012 服务端聚焦门禁 | `79/79` 通过 | Contract/Certification/v2 bundle integrity、外部签名、Scope、freshness、rotation、zero-write、三阶段复核、持久化、fork、动态 capability、Schema 和 Spring 装配 |
+| Test Kit 完整发布门禁 | `568/568` 通过 | 三份 strict Schema、三份 server-produced fixture、独立 verifier、tamper/expiry/rotation/ref closure、shaded JAR 和零警告公共 API Javadoc |
+| Resource Gateway 完整发布门禁 | `6118` 项，`0` failure，`0` error，`13` skipped | 干净编译、整库行为、数据库、真实浏览器、协议和可执行 JAR 重打包通过 |
+
+### 20.4 架构漂移审计
+
+1. Regional certification 只证明部署基础设施的当前可用与隔离事实，不成为业务 Outcome、Fixture、Contract 或 ANEKE 治理 Authority。
+2. KMS、Vault、PKI、State、Resolver 和 egress enforcement 仍由客户部署拥有；Resource Gateway 只定义 Adapter、认证闭包和运行期失败关闭，不建立第二套基础设施控制面。
+3. 运行时复用既有 `MirrorRunTrustAuthority`，只做组合校验，没有建立第二套 DAG runtime、session lifecycle 或 commit protocol。
+4. capability 明确区分“消费者支持协议”和“当前部署认证 ready”，固定 fixture 不会把运行面误报为可用。
+5. 所有持久化与 capability 数据保持 payload-free；认证只携带内容地址、状态、时间、generation 和计数，不泄露 secret、certificate、fixture 或业务请求响应。
+6. v1 bundle 保持既有 fingerprint 与读取语义；v2 是显式升级，旧消费者可继续读取 v1，不会把未知字段静默解释为已认证。
+7. 本地 H2/PostgreSQL 回归证明协议、持久化和失败关闭，不宣称客户多区域基础设施、真实轮转或网络出口控制已经达标。
+
+### 20.5 差距复评
+
+BM-012 关闭了仓库内“区域运行面只有散落配置、没有形式化部署闭包”“运行开始后认证可被撤销却继续提交”“密钥/证书轮转只有声明没有实测坐标”“v2 认证引用无法跨重启保持”“能力探针把旧隔离状态冒充区域认证”和“外部消费者无法复验”的工程差距。
+
+风险加权差距由约 `5.5%` 降至约 `4.5%`。该数字不包含客户基础设施已经通过认证的承诺：真实 KMS/Vault/PKI/State/Resolver/egress Adapter、私有 Authority、rotation 观察窗和 write-escape 探测必须由部署方完成。仓库剩余差距集中在三处：可移植的 HA/kill/partition/upgrade/backup 运行时认证包（BM-013）、ANEKE protocol 1.1 与 freshness-aware gate projection（BM-014），以及由客户业务 Owner 冻结分母并完成观察窗的取消费申诉试点（BM-015）。
+
+下一迭代进入 BM-013。目标是把故障注入从不可审计的运维脚本升级为显式 manifest、受保护环境 Adapter、逐场景证据和严格离线 verifier；默认只生成计划，任何破坏性动作都必须由客户沙箱授权，禁止在生产环境执行。

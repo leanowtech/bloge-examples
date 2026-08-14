@@ -168,6 +168,13 @@ server-produced public fixture in TypeScript and Go. See the
 The fidelity profile protocol and offline verification flow are documented in
 the [domain fidelity profile guide](../docs/resource-gateway-domain-fidelity-profile.md).
 
+Regional infrastructure certification can be verified without server or Spring dependencies by
+`RegionalDataPlaneCertificationVerifier`. It validates the packaged strict Contract,
+Certification, and isolation-bundle v2 Schemas; recomputes every content address; checks exact
+Scope/deployment/component/rotation/window/zero-write closure; and delegates only the
+customer-owned external seal decision. The complete integration and incident procedure is in the
+[regional data-plane certification guide](../docs/resource-gateway-regional-data-plane-certification-guide.md).
+
 Authoritative business outcomes require two independent trust decisions.
 `AuthoritativeOutcomeObservationVerifier` first validates the packaged strict
 `resourceGateway.authoritativeOutcomeObservation.v1` Schema, derives the

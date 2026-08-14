@@ -39,6 +39,9 @@ offline artifact verification live in the independent `resource-gateway-test-kit
 | `mirror-deployment-isolation-attestation-v1.schema.json` | `MirrorDeploymentIsolationAttestation` | Short-lived external proof binding an exact deployment generation to fail-closed egress and credential controls |
 | `mirror-deployment-isolation-attestation-status-v1.schema.json` | `MirrorDeploymentIsolationAttestationStatusPublication` | Locally content-addressed `ACTIVE` or irreversible `REVOKED` status for one exact attestation revision |
 | `mirror-deployment-isolation-attestation-bundle-v1.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | Atomic current-only distribution of authority reference, external attestation body, and local status |
+| `mirror-deployment-isolation-attestation-bundle-v2.schema.json` | `MirrorDeploymentIsolationAttestationBundle` | V1 isolation closure plus an exact externally signed regional data-plane certification reference |
+| `regional-data-plane-deployment-contract-v1.schema.json` | `RegionalDataPlaneDeploymentContract` | Exact seven-component regional KMS/Vault/Secret/State/Resolver/mTLS/egress and rotation requirements |
+| `regional-data-plane-certification-v1.schema.json` | `RegionalDataPlaneCertification` | Short-lived externally signed component, key/CA age, overlap, convergence, and zero-write observations |
 | `mirror-deployment-isolation-agent-snapshot-v1.schema.json` | `MirrorDeploymentIsolationAgentSnapshot` | Crash-safe local cache generation binding refresh deadline, optional denial-only authority body, and atomic attestation bundle |
 | `mirror-deployment-isolation-run-trust-v1.schema.json` | `MirrorDeploymentIsolationRunTrust.Binding` | Stable decision plus admitted/committed local agent observations signed into v2 evidence |
 | `mirror-deployment-isolation-attestation-revocation-request-v1.schema.json` | `MirrorDeploymentIsolationAttestationRevocationRequest` | Exact-current optimistic command for one irreversible status transition |
@@ -389,6 +392,13 @@ fixture. It contains one short-lived deployment-isolation attestation, the exter
 public key, immutable expected deployment coordinates, and a covered execution window. It contains
 neither a private key nor business payload. Both the producer implementation and the standalone
 test-kit verify this exact file.
+
+The three `regional-data-plane-*.fixture.json` and
+`mirror-deployment-isolation-attestation-bundle-v2.fixture.json` files form one public-only regional
+certification closure. The server producer and standalone Test Kit independently recompute the
+Contract, Certification, and v2 decision fingerprints. The placeholder external signature exists
+only for deterministic compatibility testing; it is not customer infrastructure evidence. See the
+[regional data-plane certification guide](../../resource-gateway-regional-data-plane-certification-guide.md).
 
 `mirror-deployment-isolation-authority-key-set-stage1-v1.fixture.json` is the fixed public-only
 trusted-publication fixture. It contains one generation-one publication, two independent
