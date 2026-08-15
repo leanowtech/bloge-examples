@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.businessmirror.transport.PackageCompilationC
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceController;
+import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -45,7 +46,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         DomainCapabilityPackageController.class,
         PackageCompilationController.class,
         LegacyGraphPackageController.class,
-        CorrectnessWorkspaceController.class
+        CorrectnessWorkspaceController.class,
+        CoverageInventoryController.class
 })
 public class IntegrationProblemHandler {
 

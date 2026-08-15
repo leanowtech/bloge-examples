@@ -29,6 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -36,6 +38,7 @@ import java.time.ZoneOffset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,6 +49,7 @@ class CoverageInventoryServiceTest {
 
     private DatabaseCoverageInventoryRepository repository;
     private ObjectMapper mapper;
+    private JdbcTemplate jdbc;
 
     @BeforeEach
     void setUp() {
@@ -56,8 +60,8 @@ class CoverageInventoryServiceTest {
                 .build();
         new ResourceDatabasePopulator(new ClassPathResource(
                 "correctness/h2-coverage-inventory-schema.sql")).execute(database);
-        repository = new DatabaseCoverageInventoryRepository(
-                new JdbcTemplate(database), mapper, fixedClock());
+        jdbc = new JdbcTemplate(database);
+        repository = new DatabaseCoverageInventoryRepository(jdbc, mapper, fixedClock());
     }
 
     @Test
@@ -68,7 +72,8 @@ class CoverageInventoryServiceTest {
                 0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
 
         CoverageInventoryService.FreezeResult frozen = service.freeze(
-                scope(), "loan-inventory", draft.inventory().revision(), approvedReview(), reviewer());
+                scope(), "loan-inventory", draft.inventory().revision(),
+                "Freeze denominator", reviewer());
 
         assertThat(frozen.stored().inventory().lifecycle()).isEqualTo(InventoryLifecycle.FROZEN);
         assertThat(frozen.stored().inventory().revision()).isEqualTo(2);
@@ -91,7 +96,7 @@ class CoverageInventoryServiceTest {
         denied.saveDraft(0, inventory(
                 0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
         assertCode(() -> denied.freeze(
-                scope(), "loan-inventory", 1, approvedReview(), reviewer()),
+                scope(), "loan-inventory", 1, "Freeze denominator", reviewer()),
                 "RG.CORRECTNESS.FREEZE_FORBIDDEN");
 
         DatabaseCoverageInventoryRepository proposedRepository = newRepository();
@@ -101,7 +106,7 @@ class CoverageInventoryServiceTest {
                 obligation("policy.eligibility", "Eligibility", ObligationLifecycle.PROPOSED,
                         null, RiskLevel.CRITICAL))), author());
         assertCode(() -> proposed.freeze(
-                scope(), "loan-inventory", 1, approvedReview(), reviewer()),
+                scope(), "loan-inventory", 1, "Freeze denominator", reviewer()),
                 "RG.CORRECTNESS.OBLIGATION_REVIEW_REQUIRED");
 
         DatabaseCoverageInventoryRepository expiredRepository = newRepository();
@@ -110,7 +115,7 @@ class CoverageInventoryServiceTest {
         expired.saveDraft(0, inventory(
                 0, resolvedObligations(waiverExpiring("2026-08-15T07:59:59Z"))), author());
         assertCode(() -> expired.freeze(
-                scope(), "loan-inventory", 1, approvedReview(), reviewer()),
+                scope(), "loan-inventory", 1, "Freeze denominator", reviewer()),
                 "RG.CORRECTNESS.WAIVER_EXPIRED");
 
         DatabaseCoverageInventoryRepository sameActorRepository = newRepository();
@@ -118,10 +123,8 @@ class CoverageInventoryServiceTest {
                 sameActorRepository, (scope, inventory, actor) -> true, unchangedSource());
         sameActor.saveDraft(0, inventory(
                 0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
-        ReviewRecord selfReview = new ReviewRecord(
-                ReviewStatus.APPROVED, author(), NOW.minusSeconds(10), "Self review");
         assertCode(() -> sameActor.freeze(
-                scope(), "loan-inventory", 1, selfReview, author()),
+                scope(), "loan-inventory", 1, "Self review", author()),
                 "RG.CORRECTNESS.FOUR_EYES_REQUIRED");
     }
 
@@ -146,7 +149,7 @@ class CoverageInventoryServiceTest {
                 (scope, inventory, actor) -> true, source);
         service.saveDraft(0, inventory(
                 0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
-        service.freeze(scope(), "loan-inventory", 1, approvedReview(), reviewer());
+        service.freeze(scope(), "loan-inventory", 1, "Freeze denominator", reviewer());
 
         CoverageImpactProposal proposal = service.proposeImpact(
                 scope(), "loan-inventory", nextTarget);
@@ -174,7 +177,7 @@ class CoverageInventoryServiceTest {
                 0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
         assertCode(() -> service.proposeImpact(scope(), "loan-inventory", target()),
                 "RG.CORRECTNESS.DENOMINATOR_NOT_FROZEN");
-        service.freeze(scope(), "loan-inventory", 1, approvedReview(), reviewer());
+        service.freeze(scope(), "loan-inventory", 1, "Freeze denominator", reviewer());
 
         CoverageInventoryService compromised = serviceWith(
                 repository, (scope, inventory, actor) -> true,
@@ -183,6 +186,71 @@ class CoverageInventoryServiceTest {
                         requested, sources(), List.of()));
         assertCode(() -> compromised.proposeImpact(scope(), "loan-inventory", target()),
                 "RG.CORRECTNESS.DERIVATION_SOURCE_INVALID");
+    }
+
+    @Test
+    void freezeIdempotencyReplaysExactResultAndRejectsKeyReuse() {
+        CoverageInventoryService service = new CoverageInventoryService(
+                repository, (scope, inventory, actor) -> true, unchangedSource(),
+                new DatabaseCoverageFreezeReceiptRepository(jdbc, mapper), mapper, fixedClock());
+        service.saveDraft(0, inventory(
+                0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
+
+        var first = service.freezeIdempotently(
+                scope(), "loan-inventory", 1, "Reviewed denominator", reviewer(),
+                "freeze-loan-v1");
+        var replay = service.freezeIdempotently(
+                scope(), "loan-inventory", 1, "Reviewed denominator", reviewer(),
+                "freeze-loan-v1");
+
+        assertThat(first.replayed()).isFalse();
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.stored()).isEqualTo(first.stored());
+        assertThat(repository.revisions(scope(), "loan-inventory")).hasSize(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_correctness_command_receipts", Integer.class))
+                .isEqualTo(1);
+        assertCode(() -> service.freezeIdempotently(
+                scope(), "loan-inventory", 1, "A different review", reviewer(),
+                "freeze-loan-v1"), "RG.CORRECTNESS.IDEMPOTENCY_CONFLICT");
+    }
+
+    @Test
+    void freezeRevisionAndReceiptRollBackAsOneTransaction() {
+        CoverageFreezeReceiptRepository failingReceipts = new CoverageFreezeReceiptRepository() {
+            @Override
+            public Optional<CoverageFreezeReceipt> find(
+                    EnterpriseScope scope,
+                    String idempotencyKeyFingerprint
+            ) {
+                return Optional.empty();
+            }
+
+            @Override
+            public boolean saveIfAbsent(CoverageFreezeReceipt receipt) {
+                throw new IllegalStateException("receipt store unavailable");
+            }
+        };
+        CoverageInventoryService service = new CoverageInventoryService(
+                repository, (scope, inventory, actor) -> true, unchangedSource(),
+                failingReceipts, mapper, fixedClock());
+        service.saveDraft(0, inventory(
+                0, resolvedObligations(waiverExpiring("2027-08-15T00:00:00Z"))), author());
+        TransactionTemplate transaction = new TransactionTemplate(
+                new DataSourceTransactionManager(jdbc.getDataSource()));
+
+        assertThatThrownBy(() -> transaction.executeWithoutResult(ignored ->
+                service.freezeIdempotently(
+                        scope(), "loan-inventory", 1, "Reviewed denominator", reviewer(),
+                        "freeze-loan-v1")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("receipt store unavailable");
+
+        assertThat(repository.findHead(scope(), "loan-inventory")
+                .orElseThrow().inventory().lifecycle()).isEqualTo(InventoryLifecycle.DRAFT);
+        assertThat(repository.revisions(scope(), "loan-inventory")).hasSize(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_correctness_outbox", Integer.class)).isEqualTo(1);
     }
 
     @Test
@@ -198,6 +266,7 @@ class CoverageInventoryServiceTest {
                 "bloge-stored-coverage-inventory-v1.schema.json",
                 "bloge-coverage-inventory-changed-v1.schema.json",
                 "bloge-coverage-inventory-frozen-v1.schema.json",
+                "bloge-coverage-freeze-receipt-v1.schema.json",
                 "bloge-coverage-impact-proposal-v1.schema.json")) {
             var document = mapper.readTree(Files.readString(Path.of(
                     "..", "docs", "schemas", schema)));
@@ -210,6 +279,10 @@ class CoverageInventoryServiceTest {
         var proposal = mapper.readTree(Files.readString(Path.of(
                 "..", "docs", "schemas", "bloge-coverage-impact-proposal-v1.schema.json")));
         assertThat(proposal.at("/properties/changes/maxItems").asInt()).isEqualTo(20_000);
+        var receipt = mapper.readTree(Files.readString(Path.of(
+                "..", "docs", "schemas", "bloge-coverage-freeze-receipt-v1.schema.json")));
+        assertThat(receipt.toString()).doesNotContain(
+                "idempotencyKey\"", "reviewComment", "statement", "payload");
     }
 
     private CoverageInventoryService service(
@@ -289,11 +362,6 @@ class CoverageInventoryServiceTest {
     private Waiver waiverExpiring(String expiresAt) {
         return new Waiver("Approved temporary exception", Instant.parse(expiresAt), reviewer(),
                 NOW.minusSeconds(3600));
-    }
-
-    private ReviewRecord approvedReview() {
-        return new ReviewRecord(
-                ReviewStatus.APPROVED, reviewer(), NOW.minusSeconds(10), "Freeze denominator");
     }
 
     private List<ExactSourceSnapshotRef> sources() {

@@ -388,6 +388,31 @@ CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempt_history (
     )
 );
 
+CREATE TABLE IF NOT EXISTS rg_correctness_command_receipts (
+    tenant_id VARCHAR(255) NOT NULL,
+    organization_id VARCHAR(255) NOT NULL,
+    project_id VARCHAR(255) NOT NULL,
+    environment_id VARCHAR(255) NOT NULL,
+    region_id VARCHAR(128) NOT NULL,
+    command_kind VARCHAR(64) NOT NULL,
+    idempotency_key_fingerprint VARCHAR(80) NOT NULL
+        CHECK (idempotency_key_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    request_fingerprint VARCHAR(80) NOT NULL
+        CHECK (request_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    result_kind VARCHAR(64) NOT NULL,
+    result_id VARCHAR(512) NOT NULL,
+    result_revision BIGINT NOT NULL CHECK (result_revision > 0),
+    result_fingerprint VARCHAR(80) NOT NULL
+        CHECK (result_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    actor_id VARCHAR(512) NOT NULL,
+    receipt_json JSONB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (
+        tenant_id, organization_id, project_id, environment_id, region_id,
+        command_kind, idempotency_key_fingerprint
+    )
+);
+
 CREATE TABLE IF NOT EXISTS rg_correctness_outbox (
     tenant_id VARCHAR(255) NOT NULL,
     organization_id VARCHAR(255) NOT NULL,

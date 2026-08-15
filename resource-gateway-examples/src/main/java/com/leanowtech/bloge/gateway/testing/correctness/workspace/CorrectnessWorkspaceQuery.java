@@ -92,7 +92,8 @@ public final class CorrectnessWorkspaceQuery {
                         "limit", caseLimit),
                 MAX_CANONICAL_BYTES);
         Components snapshot = components.load(
-                new Coordinate(scope, definitionRef, definition.target()),
+                new Coordinate(
+                        scope, definitionRef, definition.target(), definition.activeInventoryRef()),
                 new PageRequest(cursor, caseLimit, pageQueryFingerprint));
         validateSnapshot(snapshot, pageQueryFingerprint, caseLimit, identity);
 

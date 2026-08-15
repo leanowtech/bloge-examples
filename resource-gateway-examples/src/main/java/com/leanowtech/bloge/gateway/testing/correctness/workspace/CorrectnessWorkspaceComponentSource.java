@@ -24,7 +24,8 @@ public interface CorrectnessWorkspaceComponentSource {
     record Coordinate(
             EnterpriseScope scope,
             ExactAssetRef definitionRef,
-            ExactTargetRef target
+            ExactTargetRef target,
+            ExactAssetRef activeInventoryRef
     ) {
         public Coordinate {
             if (scope == null || definitionRef == null || target == null) {

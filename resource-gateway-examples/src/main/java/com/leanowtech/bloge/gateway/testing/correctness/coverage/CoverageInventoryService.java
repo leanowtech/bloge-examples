@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactTargetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ReviewRecord;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ReviewStatus;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.RiskLevel;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CoverageInventory;
@@ -17,6 +18,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CoverageInventory
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CoverageInventory.ObligationLifecycle;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.CoverageInventoryRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredCoverageInventory;
+
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +35,7 @@ public final class CoverageInventoryService {
     private final CoverageInventoryRepository inventories;
     private final CoverageReviewAuthorizer authorizer;
     private final CoverageDerivationSource derivationSource;
+    private final CoverageFreezeReceiptRepository freezeReceipts;
     private final ObjectMapper mapper;
     private final Clock clock;
 
@@ -41,7 +45,7 @@ public final class CoverageInventoryService {
             CoverageDerivationSource derivationSource,
             ObjectMapper mapper
     ) {
-        this(inventories, authorizer, derivationSource, mapper, Clock.systemUTC());
+        this(inventories, authorizer, derivationSource, null, mapper, Clock.systemUTC());
     }
 
     public CoverageInventoryService(
@@ -51,9 +55,21 @@ public final class CoverageInventoryService {
             ObjectMapper mapper,
             Clock clock
     ) {
+        this(inventories, authorizer, derivationSource, null, mapper, clock);
+    }
+
+    public CoverageInventoryService(
+            CoverageInventoryRepository inventories,
+            CoverageReviewAuthorizer authorizer,
+            CoverageDerivationSource derivationSource,
+            CoverageFreezeReceiptRepository freezeReceipts,
+            ObjectMapper mapper,
+            Clock clock
+    ) {
         this.inventories = Objects.requireNonNull(inventories, "inventories");
         this.authorizer = authorizer == null ? CoverageReviewAuthorizer.denyAll() : authorizer;
         this.derivationSource = Objects.requireNonNull(derivationSource, "derivationSource");
+        this.freezeReceipts = freezeReceipts;
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
@@ -64,10 +80,9 @@ public final class CoverageInventoryService {
             PrincipalRef actor
     ) {
         requireActor(actor);
-        if (candidate == null || candidate.lifecycle() != InventoryLifecycle.DRAFT
-                || candidate.freezeReview().status()
-                        != com.leanowtech.bloge.gateway.testing.correctness.domain
-                                .CorrectnessProtocol.ReviewStatus.PENDING) {
+        if (candidate == null || candidate.revision() != expectedRevision
+                || candidate.lifecycle() != InventoryLifecycle.DRAFT
+                || candidate.freezeReview().status() != ReviewStatus.PENDING) {
             throw failure("RG.CORRECTNESS.INVENTORY_DRAFT_INVALID",
                     "Draft save requires a DRAFT Inventory with a pending freeze review.");
         }
@@ -91,20 +106,19 @@ public final class CoverageInventoryService {
                 .orElseThrow(CoverageInventoryService::conflict);
     }
 
-    public FreezeResult freeze(
+    FreezeResult freeze(
             EnterpriseScope scope,
             String inventoryId,
             long expectedRevision,
-            ReviewRecord approval,
+            String reviewComment,
             PrincipalRef actor
     ) {
         requireActor(actor);
+        String comment = reviewComment == null ? "" : reviewComment.trim();
         if (scope == null || inventoryId == null || inventoryId.isBlank()
-                || expectedRevision < 1 || approval == null || !approval.approved()
-                || approval.reviewer() == null
-                || !approval.reviewer().id().equals(actor.id())) {
+                || expectedRevision < 1 || comment.isEmpty() || comment.length() > 4096) {
             throw failure("RG.CORRECTNESS.FREEZE_REVIEW_INVALID",
-                    "Freeze requires an approved review performed by the command actor.");
+                    "Freeze requires a bounded review comment from the command actor.");
         }
         StoredCoverageInventory stored = inventories.findHead(scope, inventoryId.trim())
                 .orElseThrow(() -> failure("RG.CORRECTNESS.INVENTORY_NOT_FOUND",
@@ -119,6 +133,8 @@ public final class CoverageInventoryService {
             throw failure("RG.CORRECTNESS.FREEZE_FORBIDDEN",
                     "The actor is not authorized to freeze this denominator.");
         }
+        ReviewRecord approval = new ReviewRecord(
+                ReviewStatus.APPROVED, actor, clock.instant(), comment);
         validateFreeze(current, approval, actor);
 
         CoverageInventory frozen = new CoverageInventory(
@@ -131,7 +147,66 @@ public final class CoverageInventoryService {
                 .filter(value -> value.lifecycle() == ObligationLifecycle.WAIVED).count();
         int retired = (int) result.inventory().obligations().stream()
                 .filter(value -> value.lifecycle() == ObligationLifecycle.RETIRED).count();
-        return new FreezeResult(result, result.inventory().obligations().size(), waived, retired);
+        return new FreezeResult(
+                result, result.inventory().obligations().size(), waived, retired, false);
+    }
+
+    @Transactional
+    public FreezeResult freezeIdempotently(
+            EnterpriseScope scope,
+            String inventoryId,
+            long expectedRevision,
+            String reviewComment,
+            PrincipalRef actor,
+            String idempotencyKey
+    ) {
+        requireActor(actor);
+        if (scope == null || inventoryId == null || inventoryId.isBlank()
+                || expectedRevision < 1) {
+            throw failure("RG.CORRECTNESS.FREEZE_REVIEW_INVALID",
+                    "Freeze requires an exact scoped Inventory revision.");
+        }
+        if (freezeReceipts == null) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                    "Coverage freeze is unavailable because its durable receipt store is missing.");
+        }
+        String key = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (!key.matches("[A-Za-z0-9._~:-]{1,160}")) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_KEY_INVALID",
+                    "Idempotency-Key must use 1-160 portable non-whitespace characters.");
+        }
+        String comment = reviewComment == null ? "" : reviewComment.trim();
+        String keyFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of("idempotencyKey", key));
+        String requestFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of(
+                        "scope", scope,
+                        "inventoryId", inventoryId == null ? "" : inventoryId.trim(),
+                        "expectedRevision", expectedRevision,
+                        "reviewComment", comment,
+                        "actorId", actor == null ? "" : actor.id()));
+        CoverageFreezeReceipt existing = freezeReceipts.find(scope, keyFingerprint).orElse(null);
+        if (existing != null) {
+            return replay(existing, requestFingerprint);
+        }
+
+        FreezeResult result = freeze(
+                scope, inventoryId, expectedRevision, comment, actor);
+        CoverageFreezeReceipt receipt = new CoverageFreezeReceipt(
+                "", scope, keyFingerprint, requestFingerprint,
+                new ExactAssetRef(
+                        "INVENTORY", result.stored().inventory().inventoryId(),
+                        result.stored().inventory().revision(),
+                        result.stored().inventoryFingerprint()),
+                result.obligationCount(), result.waivedCount(), result.retiredCount(),
+                actor.id(), clock.instant());
+        if (!freezeReceipts.saveIfAbsent(receipt)) {
+            CoverageFreezeReceipt winner = freezeReceipts.find(scope, keyFingerprint)
+                    .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                            "The concurrent Coverage freeze receipt is not yet readable."));
+            return replay(winner, requestFingerprint);
+        }
+        return result;
     }
 
     public CoverageImpactProposal proposeImpact(
@@ -293,6 +368,26 @@ public final class CoverageInventoryService {
                 "The Coverage Inventory changed; reload the exact head and retry.");
     }
 
+    private FreezeResult replay(
+            CoverageFreezeReceipt receipt,
+            String requestFingerprint
+    ) {
+        if (!receipt.requestFingerprint().equals(requestFingerprint)) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_CONFLICT",
+                    "Idempotency-Key was already used for a different Coverage freeze command.");
+        }
+        ExactAssetRef ref = receipt.inventoryRef();
+        StoredCoverageInventory stored = inventories.findRevision(
+                receipt.scope(), ref.id(), ref.revision())
+                .filter(value -> value.inventoryFingerprint().equals(ref.fingerprint()))
+                .filter(value -> value.inventory().lifecycle() == InventoryLifecycle.FROZEN)
+                .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_RECEIPT_STALE",
+                        "The frozen Inventory referenced by the command receipt is unavailable."));
+        return new FreezeResult(
+                stored, receipt.obligationCount(), receipt.waivedCount(),
+                receipt.retiredCount(), true);
+    }
+
     private static CoverageCommandException failure(String code, String message) {
         return new CoverageCommandException(code, message);
     }
@@ -301,7 +396,8 @@ public final class CoverageInventoryService {
             StoredCoverageInventory stored,
             int obligationCount,
             int waivedCount,
-            int retiredCount
+            int retiredCount,
+            boolean replayed
     ) {
         public FreezeResult {
             if (stored == null || stored.inventory().lifecycle() != InventoryLifecycle.FROZEN

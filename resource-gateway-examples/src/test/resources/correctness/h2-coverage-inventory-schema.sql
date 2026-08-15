@@ -82,3 +82,25 @@ CREATE TABLE rg_correctness_outbox (
     occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
     published_at TIMESTAMP WITH TIME ZONE
 );
+
+CREATE TABLE rg_correctness_command_receipts (
+    tenant_id VARCHAR(255) NOT NULL,
+    organization_id VARCHAR(255) NOT NULL,
+    project_id VARCHAR(255) NOT NULL,
+    environment_id VARCHAR(255) NOT NULL,
+    region_id VARCHAR(128) NOT NULL,
+    command_kind VARCHAR(64) NOT NULL,
+    idempotency_key_fingerprint VARCHAR(80) NOT NULL,
+    request_fingerprint VARCHAR(80) NOT NULL,
+    result_kind VARCHAR(64) NOT NULL,
+    result_id VARCHAR(512) NOT NULL,
+    result_revision BIGINT NOT NULL,
+    result_fingerprint VARCHAR(80) NOT NULL,
+    actor_id VARCHAR(512) NOT NULL,
+    receipt_json CLOB NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    PRIMARY KEY (
+        tenant_id, organization_id, project_id, environment_id, region_id,
+        command_kind, idempotency_key_fingerprint
+    )
+);

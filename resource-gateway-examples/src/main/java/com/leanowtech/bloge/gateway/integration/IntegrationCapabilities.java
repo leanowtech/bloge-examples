@@ -672,6 +672,18 @@ public record IntegrationCapabilities(
         objects.put("coverageInventory", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .CoverageInventory.SCHEMA_VERSION));
+        objects.put("coverageImpactProposal", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.coverage
+                        .CoverageImpactProposal.SCHEMA_VERSION));
+        objects.put("coverageFreezeReceipt", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.coverage
+                        .CoverageFreezeReceipt.SCHEMA_VERSION));
+        objects.put("coverageInventoryChangedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .CoverageInventoryChanged.SCHEMA_VERSION));
+        objects.put("coverageInventoryFrozenEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .CoverageInventoryFrozen.SCHEMA_VERSION));
         objects.put("businessOracle", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .BusinessOracle.SCHEMA_VERSION));
@@ -1258,6 +1270,8 @@ public record IntegrationCapabilities(
         features.put("correctnessAuthoringProtocol", true);
         features.put("correctnessWorkspaceProtocol", true);
         features.put("correctnessWorkspaceApi", false);
+        features.put("correctnessCoverageProtocol", true);
+        features.put("correctnessCoverageApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

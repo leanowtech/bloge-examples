@@ -170,7 +170,9 @@ class CorrectnessWorkspaceQueryTest {
         assertThat(capabilities.features())
                 .containsEntry("correctnessAuthoringProtocol", true)
                 .containsEntry("correctnessWorkspaceProtocol", true)
-                .containsEntry("correctnessWorkspaceApi", false);
+                .containsEntry("correctnessWorkspaceApi", false)
+                .containsEntry("correctnessCoverageProtocol", true)
+                .containsEntry("correctnessCoverageApi", false);
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {

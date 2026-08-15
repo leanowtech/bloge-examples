@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-freeze-receipt-v1.schema.json",
+  "title": "BLOGE Coverage Freeze Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "idempotencyKeyFingerprint", "requestFingerprint", "inventoryRef", "obligationCount", "waivedCount", "retiredCount", "actorId", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageFreezeReceipt.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "idempotencyKeyFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "requestFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "inventoryRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "obligationCount": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "waivedCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "retiredCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

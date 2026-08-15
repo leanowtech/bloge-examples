@@ -222,6 +222,7 @@ class DatabaseCorrectnessDefinitionRepositoryTest {
                 "rg_fixture_usage_index",
                 "rg_correctness_publications",
                 "rg_correctness_publication_attempt_history",
+                "rg_correctness_command_receipts",
                 "rg_correctness_outbox",
                 "canonical_json JSONB NOT NULL");
         assertThat(migration).doesNotContain("fixture_payload", "request_payload", "response_payload");
