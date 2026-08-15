@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-oracle-approval-receipt-v1.schema.json",
+  "title": "BLOGE Oracle Approval Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "idempotencyKeyFingerprint", "requestFingerprint", "oracleRef", "basisCount", "actorId", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.oracleApprovalReceipt.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "idempotencyKeyFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "requestFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "oracleRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "basisCount": { "type": "integer", "minimum": 1 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

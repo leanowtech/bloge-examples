@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-assertion-compilation-report-v1.schema.json",
+  "title": "BLOGE Assertion Compilation Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sourceFingerprint", "compatibility", "dispositions", "runtimeAssertions", "evidenceAssertionCount", "gateExpectationCount"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.assertionCompilationReport.v1" },
+    "sourceFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "compatibility": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/compilationCompatibility" },
+    "dispositions": {
+      "type": "array",
+      "maxItems": 2000,
+      "items": { "$ref": "#/$defs/assertionDisposition" }
+    },
+    "runtimeAssertions": {
+      "type": "array",
+      "maxItems": 4000,
+      "items": { "$ref": "resource-gateway-testing/testing-control-plane-v1.schema.json#/$defs/assertion" }
+    },
+    "evidenceAssertionCount": { "type": "integer", "minimum": 0 },
+    "gateExpectationCount": { "type": "integer", "minimum": 0 }
+  },
+  "$defs": {
+    "assertionDisposition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertionId", "evaluationKind", "capability", "status", "reasonCode", "loweredAssertionCount"],
+      "properties": {
+        "assertionId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE", "GATE"] },
+        "capability": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "status": { "enum": ["COMPILED_RUNTIME", "BOUND_EVIDENCE", "RETAINED_GATE", "UNSUPPORTED"] },
+        "reasonCode": { "type": "string", "maxLength": 255 },
+        "loweredAssertionCount": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

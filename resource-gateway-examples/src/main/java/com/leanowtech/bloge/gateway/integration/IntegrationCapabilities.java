@@ -705,6 +705,12 @@ public record IntegrationCapabilities(
         objects.put("assertionSetChangedEvent", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.persistence
                         .AssertionSetChanged.SCHEMA_VERSION));
+        objects.put("assertionCompilationReport", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.oracle
+                        .AssertionCompilationReport.SCHEMA_VERSION));
+        objects.put("oracleApprovalReceipt", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.oracle
+                        .OracleApprovalReceipt.SCHEMA_VERSION));
         objects.put("scenarioDraftSetV2", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .ScenarioDraftSetV2.SCHEMA_VERSION));
