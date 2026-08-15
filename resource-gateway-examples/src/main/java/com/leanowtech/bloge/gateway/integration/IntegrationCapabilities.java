@@ -687,9 +687,24 @@ public record IntegrationCapabilities(
         objects.put("businessOracle", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .BusinessOracle.SCHEMA_VERSION));
+        objects.put("storedBusinessOracle", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .StoredBusinessOracle.SCHEMA_VERSION));
+        objects.put("businessOracleChangedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .BusinessOracleChanged.SCHEMA_VERSION));
+        objects.put("businessOracleApprovedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .BusinessOracleApproved.SCHEMA_VERSION));
         objects.put("assertionSet", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .AssertionSet.SCHEMA_VERSION));
+        objects.put("storedAssertionSet", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .StoredAssertionSet.SCHEMA_VERSION));
+        objects.put("assertionSetChangedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .AssertionSetChanged.SCHEMA_VERSION));
         objects.put("scenarioDraftSetV2", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .ScenarioDraftSetV2.SCHEMA_VERSION));
@@ -1272,6 +1287,8 @@ public record IntegrationCapabilities(
         features.put("correctnessWorkspaceApi", false);
         features.put("correctnessCoverageProtocol", true);
         features.put("correctnessCoverageApi", false);
+        features.put("correctnessOracleAssertionProtocol", true);
+        features.put("correctnessOracleAssertionApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

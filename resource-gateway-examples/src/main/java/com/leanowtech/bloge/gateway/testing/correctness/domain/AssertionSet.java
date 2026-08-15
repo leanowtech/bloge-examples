@@ -70,6 +70,16 @@ public record AssertionSet(
         }
     }
 
+    /** Returns the server-owned persisted revision without changing assertion semantics. */
+    public AssertionSet persistedAs(long persistedRevision, AuditMetadata persistedMetadata) {
+        if (persistedRevision < 1) {
+            throw new IllegalArgumentException("Persisted Assertion Set revision must be positive");
+        }
+        return new AssertionSet(
+                schemaVersion, assertionSetId, persistedRevision, target, oracleRef,
+                lifecycle, assertions, compatibility, persistedMetadata);
+    }
+
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
     @JsonSubTypes({
             @JsonSubTypes.Type(value = OutputAssertion.class, name = "OUTPUT"),

@@ -68,4 +68,15 @@ public record BusinessOracle(
                     "Approved Oracle requires exact basis references and approval");
         }
     }
+
+    /** Returns the server-owned persisted revision without changing business content. */
+    public BusinessOracle persistedAs(long persistedRevision, AuditMetadata persistedMetadata) {
+        if (persistedRevision < 1) {
+            throw new IllegalArgumentException("Persisted Oracle revision must be positive");
+        }
+        return new BusinessOracle(
+                schemaVersion, oracleId, persistedRevision, scope, target, statement,
+                forbiddenOutcomes, basisRefs, owner, lifecycle, approval,
+                assertionSetRefs, persistedMetadata);
+    }
 }

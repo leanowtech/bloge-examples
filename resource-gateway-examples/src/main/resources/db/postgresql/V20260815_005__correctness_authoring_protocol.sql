@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS rg_business_oracle_heads (
     oracle_id VARCHAR(512) NOT NULL,
     revision BIGINT NOT NULL CHECK (revision > 0),
     fingerprint VARCHAR(80) NOT NULL CHECK (fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    basis_fingerprint VARCHAR(80) NOT NULL CHECK (basis_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
     target_kind VARCHAR(32) NOT NULL,
     target_id VARCHAR(512) NOT NULL,
     target_revision BIGINT NOT NULL CHECK (target_revision > 0),

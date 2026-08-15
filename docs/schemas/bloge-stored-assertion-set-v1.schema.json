@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-assertion-set-v1.schema.json",
+  "title": "BLOGE Stored Assertion Set v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "assertionSetFingerprint", "assertionSet"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedAssertionSet.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "assertionSetFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "assertionSet": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/assertionSet" }
+  }
+}

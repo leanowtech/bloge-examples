@@ -335,6 +335,16 @@ public record AssertionSet(
 
 Oracle approval 与 Assertion validity 是两个独立条件。业务 Owner 可以批准“什么是正确”，但不能因为自然语言已经批准，就假装技术检查已经可执行。
 
+持久化和事件机器合同见
+[`bloge-stored-business-oracle-v1.schema.json`](schemas/bloge-stored-business-oracle-v1.schema.json)、
+[`bloge-stored-assertion-set-v1.schema.json`](schemas/bloge-stored-assertion-set-v1.schema.json)、
+[`bloge-business-oracle-changed-v1.schema.json`](schemas/bloge-business-oracle-changed-v1.schema.json)、
+[`bloge-business-oracle-approved-v1.schema.json`](schemas/bloge-business-oracle-approved-v1.schema.json) 和
+[`bloge-assertion-set-changed-v1.schema.json`](schemas/bloge-assertion-set-changed-v1.schema.json)。canonical revision、head CAS 与
+payload-free outbox 已实现；事件只携带 exact coordinate、状态、数量、Owner/Actor 和 evaluator 版本，不携带 Oracle 文本、禁止结果或
+断言 expected 值。审批命令、确定性编译器与 HTTP adapter 在 COR-04 后续切片接入前，Capability Probe 仍诚实返回
+`correctnessOracleAssertionApi=false`。
+
 ### 4.5 `ScenarioDraftSet v2`
 
 不原地修改 `bloge.scenarioDraftSet.v1`。新增 v2，并提供 v1 dual-read/lowering adapter：
@@ -1200,7 +1210,7 @@ Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母�
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact 与 shadow projection 已完成，生产装配/fulfillment 待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
-| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |
+| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；CAS/history/outbox 与协议 Schema 已完成，审批/编译命令待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |

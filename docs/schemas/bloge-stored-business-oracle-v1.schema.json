@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-business-oracle-v1.schema.json",
+  "title": "BLOGE Stored Business Oracle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "oracleFingerprint", "oracle"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedBusinessOracle.v1" },
+    "oracleFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "oracle": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/businessOracle" }
+  }
+}

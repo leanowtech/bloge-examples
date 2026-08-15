@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-business-oracle-changed-v1.schema.json",
+  "title": "BLOGE Business Oracle Changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "oracleRef", "target", "lifecycle", "ownerId", "basisCount", "assertionSetCount", "actorId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.businessOracleChanged.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "oracleRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "lifecycle": { "enum": ["PROPOSED", "APPROVED", "SUPERSEDED"] },
+    "ownerId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "basisCount": { "type": "integer", "minimum": 0 },
+    "assertionSetCount": { "type": "integer", "minimum": 0 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}
