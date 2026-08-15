@@ -144,6 +144,70 @@ class TestSuiteExecutionServiceTest {
     }
 
     @Test
+    void selectedCasesReuseTheSuiteRunnerAndRemainAnExplicitPartialProof() {
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
+        when(executions.describeGraphTarget("graph-a", identity))
+                .thenReturn(graphTarget(TARGET, true));
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                        "", "", TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE));
+        TestSuiteExecutionRequest request = request(
+                "selected-request", TestSuiteExecutionRequest.Strategy.COLLECT_ALL);
+
+        TestSuiteExecutionResponse result = service.executeSelected(
+                "suite-a", request, List.of("golden"), identity);
+
+        assertThat(result.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.PARTIAL);
+        assertThat(result.evidence().caseResults())
+                .extracting(TestSuiteRunEvidence.CaseResult::caseId)
+                .containsExactly("golden");
+        assertThat(result.evidence().coverage().status())
+                .isEqualTo(TestSuiteRunEvidence.CoverageStatus.INCOMPLETE);
+        assertThat(result.evidence().promotion().status())
+                .isEqualTo(TestSuiteRunEvidence.PromotionStatus.BLOCKED);
+        assertThat(result.evidence().promotion().reasons())
+                .contains("SUITE_RUN_INCOMPLETE", "COVERAGE_INCOMPLETE");
+        assertThat(result.evidence().metadata())
+                .containsEntry("selectionMode", "SELECTED")
+                .containsEntry("selectedCaseCount", 1)
+                .containsKey("selectedCaseIdsFingerprint");
+        assertThat(result.attestation().childEvidenceRefs())
+                .extracting(TestSuiteRunAttestation.ChildEvidenceRef::runId)
+                .containsExactly("run-golden");
+
+        assertThat(service.executeSelected(
+                "suite-a", request, List.of("golden"), identity)).isEqualTo(result);
+        assertThatThrownBy(() -> service.executeSelected(
+                "suite-a", request, List.of("negative"), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.SUITE_RUN_IDEMPOTENCY_CONFLICT"));
+        verify(executions).executeAdmittedSuiteGraphCase(any(), eq(identity));
+    }
+
+    @Test
+    void invalidOrSpecializedSuiteSelectionFailsBeforeAChildCanRun() {
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuite());
+
+        assertThatThrownBy(() -> service.executeSelected("suite-a",
+                request("missing-selection", TestSuiteExecutionRequest.Strategy.COLLECT_ALL),
+                List.of("absent"), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.SUITE_SELECTION_CASE_NOT_FOUND"));
+
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedPropertySuite());
+        assertThatThrownBy(() -> service.executeSelected("suite-a",
+                request("property-selection", TestSuiteExecutionRequest.Strategy.COLLECT_ALL),
+                List.of("property-001"), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.SUITE_SELECTION_GENERATION_UNSUPPORTED"));
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
+    }
+
+    @Test
     void ordinaryRunnerFailsClosedForMaterializedMutationSuites() {
         StoredTestSuite stored = storedMutationSuite();
         when(registry.find("suite-a", 3, identity)).thenReturn(stored);

@@ -194,9 +194,45 @@ public final class TestSuiteExecutionService {
     public TestSuiteExecutionResponse execute(String suiteId,
                                               TestSuiteExecutionRequest request,
                                               IntegrationRequestContext identity) {
+        return execute(suiteId, request, null, identity);
+    }
+
+    /**
+     * Executes an exact non-empty case subset through the same suite runtime and evidence chain.
+     *
+     * <p>A selected run is intentionally not a complete suite proof. Aggregate coverage and
+     * promotion remain fail-closed unless the selected set happens to equal the full immutable
+     * suite. Schema-admission, property, and mutation generations require their specialized full
+     * closure runners and reject partial selection.</p>
+     */
+    public TestSuiteExecutionResponse executeSelected(
+            String suiteId,
+            TestSuiteExecutionRequest request,
+            List<String> caseIds,
+            IntegrationRequestContext identity) {
+        List<String> selected = normalizedCaseIds(caseIds);
+        return execute(suiteId, request, selected, identity);
+    }
+
+    private TestSuiteExecutionResponse execute(
+            String suiteId,
+            TestSuiteExecutionRequest request,
+            List<String> selectedCaseIds,
+            IntegrationRequestContext identity) {
         requireExecutionIdentity(identity);
         validateRequest(suiteId, request, identity);
-        String requestFingerprint = ProtocolFingerprint.of(objectMapper, request);
+        if (selectedCaseIds != null && (selectedCaseIds.isEmpty()
+                || selectedCaseIds.stream().anyMatch(String::isBlank)
+                || selectedCaseIds.size() > TestSuiteRegistryService.MAX_CASES)) {
+            throw badRequest(identity, "RG.TEST.SUITE_SELECTION_INVALID",
+                    "Selected execution requires between 1 and 100 distinct case ids.", Map.of());
+        }
+        String requestFingerprint = selectedCaseIds == null
+                ? ProtocolFingerprint.of(objectMapper, request)
+                : ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.selectedTestSuiteExecutionIntent.v1",
+                "request", request,
+                "caseIds", selectedCaseIds));
         Optional<TestSuiteRunRecord> existing = findByClientRequestId(
                 request.clientRequestId(), identity);
         if (existing.isPresent()) {
@@ -215,6 +251,14 @@ public final class TestSuiteExecutionService {
                     "Mutation suites require the isolated mutation runner; ordinary suite execution is forbidden.",
                     Map.of("suiteId", stored.suiteId(), "revision", stored.revision()));
         }
+        List<TestSuite.TestCase> executionCases = executionCases(
+                stored.suite(), selectedCaseIds, identity);
+        if (selectedCaseIds != null && (stored.suite() instanceof TestSuiteV3
+                || stored.suite() instanceof TestSuiteV4)) {
+            throw conflict(identity, "RG.TEST.SUITE_SELECTION_GENERATION_UNSUPPORTED",
+                    "Selected execution is unavailable for schema-admission, property, and mutation suites.",
+                    Map.of("schemaVersion", stored.suite().schemaVersion()));
+        }
         if (stored.suite() instanceof TestSuiteV3 admissionSuite) {
             return executeSchemaAdmission(
                     stored, admissionSuite, request, identity, requestFingerprint);
@@ -222,7 +266,7 @@ public final class TestSuiteExecutionService {
 
         Instant startedAt = Instant.now();
         String suiteRunId = UUID.randomUUID().toString();
-        List<TestSuiteEvidenceAggregator.CaseObservation> observations = pending(stored.suite());
+        List<TestSuiteEvidenceAggregator.CaseObservation> observations = pending(executionCases);
         TestSuiteRunEvidenceProtocol running = evidence(stored, request, identity, suiteRunId, startedAt,
                 null, TestSuiteRunEvidence.Status.RUNNING, observations,
                 pendingCoverage(stored.suite()), pendingSemanticCoverage(stored.suite()),
@@ -252,7 +296,7 @@ public final class TestSuiteExecutionService {
                 stored.suiteId(), subjects.operatorRefs(), subjects.dependencyRefs());
         try (AdmissionGuard admission = admissions.admit(identity, intent)) {
             TestSuiteExecutionResponse response = executeAdmitted(
-                    record, stored, request, identity, observations);
+                    record, stored, request, identity, executionCases, observations);
             admission.checkpoint();
             return response;
         }
@@ -407,6 +451,7 @@ public final class TestSuiteExecutionService {
             StoredTestSuite stored,
             TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
+            List<TestSuite.TestCase> executionCases,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
         TestSuiteRunRecord record = initial;
         try {
@@ -425,13 +470,15 @@ public final class TestSuiteExecutionService {
         }
 
         try (TestSuiteRunLeaseCoordinator.LeaseGuard lease = leaseCoordinator.monitor(record)) {
-            return executeOwned(record, stored, request, identity, observations, lease);
+            return executeOwned(
+                    record, stored, request, identity, executionCases, observations, lease);
         }
     }
 
     private TestSuiteExecutionResponse executeOwned(
             TestSuiteRunRecord record, StoredTestSuite stored, TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
+            List<TestSuite.TestCase> executionCases,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TargetPreflight target;
@@ -451,19 +498,19 @@ public final class TestSuiteExecutionService {
                     "The suite target changed after this immutable revision was registered.");
         }
 
-        for (int index = 0; index < stored.suite().cases().size(); index++) {
+        for (int index = 0; index < executionCases.size(); index++) {
             if (!lease.held()) {
-                markRemaining(observations, stored.suite(), index, "SUITE_RUN_LEASE_LOST",
+                markRemaining(observations, index, "SUITE_RUN_LEASE_LOST",
                         "Case scheduling stopped because active suite-run ownership could not be renewed.");
                 return finishEvidenceIncomplete(record, stored, request, identity, observations,
                         target.state(), "SUITE_RUN_LEASE_LOST", lease);
             }
-            TestSuite.TestCase testCase = stored.suite().cases().get(index);
+            TestSuite.TestCase testCase = executionCases.get(index);
             observations.set(index, executeCase(stored, request, record.suiteRunId(), testCase, identity));
             try {
                 checkpoint(record, stored, request, identity, observations, lease);
             } catch (RuntimeException persistenceFailure) {
-                markRemaining(observations, stored.suite(), index + 1,
+                markRemaining(observations, index + 1,
                         "SUITE_RUN_STORE_UNAVAILABLE",
                         "Case scheduling stopped because aggregate progress could not be persisted.");
                 return finishEvidenceIncomplete(record, stored, request, identity, observations,
@@ -471,7 +518,7 @@ public final class TestSuiteExecutionService {
             }
             if (request.strategy() == TestSuiteExecutionRequest.Strategy.FAIL_FAST
                     && failFastBoundary(stored.suite(), observations, index)) {
-                markRemaining(observations, stored.suite(), index + 1,
+                markRemaining(observations, index + 1,
                         "FAIL_FAST_STOP",
                         "Not scheduled after an earlier case failed under FAIL_FAST.");
                 break;
@@ -775,7 +822,7 @@ public final class TestSuiteExecutionService {
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease,
             String diagnosticCode, String diagnostic) {
-        markRemaining(observations, stored.suite(), 0, diagnosticCode, diagnostic);
+        markRemaining(observations, 0, diagnosticCode, diagnostic);
         return finish(record, stored, request, identity, observations,
                 new TestSuiteEvidenceAggregator.TargetState(false, false), List.of(diagnosticCode), lease);
     }
@@ -892,6 +939,14 @@ public final class TestSuiteExecutionService {
         metadata.put("classification", stored.suite().classification());
         metadata.put("correlationId", identity.correlationId());
         metadata.put("strategy", request.strategy().name());
+        List<String> executedCaseIds = observations.stream()
+                .map(value -> value.result().caseId()).sorted().toList();
+        metadata.put("selectionMode", executedCaseIds.size() == stored.suite().cases().size()
+                ? "ALL" : "SELECTED");
+        metadata.put("selectedCaseCount", executedCaseIds.size());
+        metadata.put("selectedCaseIdsFingerprint", ProtocolFingerprint.of(objectMapper, Map.of(
+                "schemaVersion", "bloge.testSuiteExecutedCaseSet.v1",
+                "caseIds", executedCaseIds)));
         metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(objectMapper,
                 request.metadata()));
         List<TestSuiteRunEvidence.CaseResult> results = observations.stream()
@@ -925,9 +980,10 @@ public final class TestSuiteExecutionService {
                 completedAt, results, coverage, promotion, diagnostics, metadata);
     }
 
-    private static List<TestSuiteEvidenceAggregator.CaseObservation> pending(TestSuiteProtocol suite) {
+    private static List<TestSuiteEvidenceAggregator.CaseObservation> pending(
+            List<TestSuite.TestCase> cases) {
         List<TestSuiteEvidenceAggregator.CaseObservation> observations = new ArrayList<>();
-        for (TestSuite.TestCase testCase : suite.cases()) {
+        for (TestSuite.TestCase testCase : cases) {
             observations.add(new TestSuiteEvidenceAggregator.CaseObservation(
                     new TestSuiteRunEvidence.CaseResult(testCase.caseId(), testCase.caseType(),
                             testCase.fixtureBundleRef(), TestSuiteRunEvidence.CaseStatus.PENDING,
@@ -959,13 +1015,13 @@ public final class TestSuiteExecutionService {
     }
 
     private static void markRemaining(List<TestSuiteEvidenceAggregator.CaseObservation> observations,
-                                      TestSuiteProtocol suite, int fromIndex, String code,
+                                      int fromIndex, String code,
                                       String diagnostic) {
-        for (int index = fromIndex; index < suite.cases().size(); index++) {
-            TestSuite.TestCase testCase = suite.cases().get(index);
+        for (int index = fromIndex; index < observations.size(); index++) {
+            TestSuiteRunEvidence.CaseResult previous = observations.get(index).result();
             observations.set(index, new TestSuiteEvidenceAggregator.CaseObservation(
-                    new TestSuiteRunEvidence.CaseResult(testCase.caseId(), testCase.caseType(),
-                            testCase.fixtureBundleRef(), TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED,
+                    new TestSuiteRunEvidence.CaseResult(previous.caseId(), previous.caseType(),
+                            previous.fixtureBundleRef(), TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED,
                             "", null, null, 0, 0, code, diagnostic), null));
         }
     }
@@ -1291,6 +1347,31 @@ public final class TestSuiteExecutionService {
                     "Suite execution metadata keys and values must be non-null.", Map.of());
         }
         requireBounded(request.metadata(), MAX_METADATA_BYTES, "metadata", identity);
+    }
+
+    private static List<TestSuite.TestCase> executionCases(
+            TestSuiteProtocol suite,
+            List<String> selectedCaseIds,
+            IntegrationRequestContext identity
+    ) {
+        if (selectedCaseIds == null) {
+            return suite.cases();
+        }
+        Set<String> selected = Set.copyOf(selectedCaseIds);
+        Set<String> available = suite.cases().stream()
+                .map(TestSuite.TestCase::caseId).collect(java.util.stream.Collectors.toSet());
+        if (!available.containsAll(selected)) {
+            throw conflict(identity, "RG.TEST.SUITE_SELECTION_CASE_NOT_FOUND",
+                    "Selected case ids are outside the exact immutable suite revision.", Map.of());
+        }
+        return suite.cases().stream()
+                .filter(testCase -> selected.contains(testCase.caseId())).toList();
+    }
+
+    private static List<String> normalizedCaseIds(List<String> caseIds) {
+        if (caseIds == null) return List.of();
+        return caseIds.stream().map(TestSuiteExecutionService::normalized)
+                .distinct().sorted().toList();
     }
 
     private void requireExecutionIdentity(IntegrationRequestContext identity) {

@@ -73,6 +73,9 @@ public final class TestSuiteEvidenceAggregator {
                 == TestSuiteRunEvidence.CaseStatus.FAILED)) {
             return TestSuiteRunEvidence.Status.COMPLETED_WITH_FAILURES;
         }
+        if (coverage.status() == TestSuiteRunEvidence.CoverageStatus.INCOMPLETE) {
+            return TestSuiteRunEvidence.Status.PARTIAL;
+        }
         boolean semanticSatisfied = semanticCoverage.status()
                 == SemanticCoverageVerdict.Status.NOT_EVALUATED
                 || semanticCoverage.status() == SemanticCoverageVerdict.Status.SATISFIED;
@@ -91,7 +94,7 @@ public final class TestSuiteEvidenceAggregator {
         Set<String> assertionViolations = new LinkedHashSet<>();
         Set<String> consumptionViolations = new LinkedHashSet<>();
         int completed = 0;
-        boolean incompleteEvidence = false;
+        boolean incompleteEvidence = observations.size() != suite.cases().size();
 
         for (CaseObservation observation : observations) {
             TestSuiteRunEvidence.CaseResult result = observation.result();
