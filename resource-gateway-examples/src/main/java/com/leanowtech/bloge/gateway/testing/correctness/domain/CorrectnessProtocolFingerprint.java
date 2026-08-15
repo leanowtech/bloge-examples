@@ -71,6 +71,46 @@ public final class CorrectnessProtocolFingerprint {
         }
     }
 
+    /** Fingerprints one normalized obligation for exact Case-to-denominator references. */
+    public static String obligationFingerprint(
+            ObjectMapper mapper,
+            CoverageInventory.CoverageObligation obligation
+    ) {
+        if (mapper == null || obligation == null) {
+            throw new IllegalArgumentException("A Coverage obligation and mapper are required");
+        }
+        return fingerprintCanonicalNode(mapper, mapper.valueToTree(obligation));
+    }
+
+    /** Fingerprints a derived, payload-free proposal without treating it as a canonical asset. */
+    public static String derivedFingerprint(ObjectMapper mapper, Object value) {
+        if (mapper == null || value == null) {
+            throw new IllegalArgumentException("A derived correctness value and mapper are required");
+        }
+        return fingerprintCanonicalNode(mapper, mapper.valueToTree(value));
+    }
+
+    private static String fingerprintCanonicalNode(ObjectMapper mapper, JsonNode source) {
+        ObjectMapper canonicalMapper = mapper.copy()
+                .registerModule(new JavaTimeModule())
+                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        JsonNode canonical = canonicalNode(source);
+        try {
+            byte[] bytes = canonicalMapper.writeValueAsBytes(canonical);
+            if (bytes.length > MAXIMUM_BYTES) {
+                throw new IllegalArgumentException(
+                        "Canonical correctness value exceeds " + MAXIMUM_BYTES + " bytes");
+            }
+            return "sha256:" + HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(bytes));
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException(
+                    "Correctness value cannot be canonically fingerprinted", exception);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("JVM does not provide SHA-256", exception);
+        }
+    }
+
     private static JsonNode canonicalNode(JsonNode value) {
         if (value == null || value.isNull() || value.isValueNode()) return value;
         if (value.isArray()) {

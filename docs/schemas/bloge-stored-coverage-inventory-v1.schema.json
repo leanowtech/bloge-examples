@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-coverage-inventory-v1.schema.json",
+  "title": "BLOGE Stored Coverage Inventory v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "inventoryFingerprint", "inventory"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedCoverageInventory.v1" },
+    "inventoryFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "inventory": { "$ref": "bloge-coverage-inventory-v1.schema.json" }
+  }
+}

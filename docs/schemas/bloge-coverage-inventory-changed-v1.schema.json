@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-inventory-changed-v1.schema.json",
+  "title": "BLOGE Coverage Inventory Changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "inventoryRef", "target", "lifecycle", "obligationCount", "actorId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageInventoryChanged.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "inventoryRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "lifecycle": { "enum": ["DRAFT", "SUPERSEDED"] },
+    "obligationCount": { "type": "integer", "minimum": 0 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

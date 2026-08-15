@@ -50,6 +50,9 @@ public record CoverageInventory(
         obligations = obligations == null ? List.of() : obligations.stream()
                 .sorted(Comparator.comparing(CoverageObligation::obligationId))
                 .toList();
+        if (obligations.size() > 10_000) {
+            throw new IllegalArgumentException("Coverage obligation limit is 10000");
+        }
         if (new HashSet<>(obligations.stream().map(CoverageObligation::obligationId).toList())
                 .size() != obligations.size()) {
             throw new IllegalArgumentException("Coverage obligation ids must be unique");
@@ -60,6 +63,9 @@ public record CoverageInventory(
                         .thenComparing(ExactSourceSnapshotRef::id)
                         .thenComparingLong(ExactSourceSnapshotRef::revision))
                 .toList();
+        if (derivationSources.size() > 1000) {
+            throw new IllegalArgumentException("Coverage derivation source limit is 1000");
+        }
         freezeReview = freezeReview == null ? ReviewRecord.pending() : freezeReview;
         metadata = required(metadata, "metadata");
         if (lifecycle == InventoryLifecycle.FROZEN) {
@@ -103,5 +109,15 @@ public record CoverageInventory(
                         "Only a waived obligation may carry a complete waiver");
             }
         }
+    }
+
+    /** Returns the server-owned persisted revision without changing inventory content. */
+    public CoverageInventory persistedAs(long persistedRevision, AuditMetadata persistedMetadata) {
+        if (persistedRevision < 1) {
+            throw new IllegalArgumentException("Persisted revision must be positive");
+        }
+        return new CoverageInventory(
+                schemaVersion, inventoryId, persistedRevision, scope, target, lifecycle,
+                obligations, derivationSources, freezeReview, persistedMetadata);
     }
 }

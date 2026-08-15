@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-impact-proposal-v1.schema.json",
+  "title": "BLOGE Coverage Impact Proposal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "proposalFingerprint", "scope", "currentInventoryRef", "currentTarget", "proposedTarget", "currentSources", "proposedSources", "changes", "targetDrifted", "sourcesDrifted", "generatedAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageImpactProposal.v1" },
+    "proposalFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "currentInventoryRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "currentTarget": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "proposedTarget": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "currentSources": { "$ref": "#/$defs/sourceList" },
+    "proposedSources": { "$ref": "#/$defs/sourceList" },
+    "changes": {
+      "type": "array",
+      "maxItems": 20000,
+      "items": { "$ref": "#/$defs/obligationChange" }
+    },
+    "targetDrifted": { "type": "boolean" },
+    "sourcesDrifted": { "type": "boolean" },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "sourceList": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSourceSnapshotRef" }
+    },
+    "nullableFingerprint": {
+      "oneOf": [
+        { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+        { "const": "" }
+      ]
+    },
+    "nullableObligation": {
+      "oneOf": [
+        { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/coverageObligation" },
+        { "type": "null" }
+      ]
+    },
+    "obligationChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligationId", "kind", "previousFingerprint", "proposedFingerprint", "previous", "proposed"],
+      "properties": {
+        "obligationId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+        "kind": { "enum": ["ADDED", "MODIFIED", "REMOVAL_PROPOSED", "UNCHANGED"] },
+        "previousFingerprint": { "$ref": "#/$defs/nullableFingerprint" },
+        "proposedFingerprint": { "$ref": "#/$defs/nullableFingerprint" },
+        "previous": { "$ref": "#/$defs/nullableObligation" },
+        "proposed": { "$ref": "#/$defs/nullableObligation" }
+      }
+    }
+  }
+}

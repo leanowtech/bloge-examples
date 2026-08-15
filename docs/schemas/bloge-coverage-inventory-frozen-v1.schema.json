@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-inventory-frozen-v1.schema.json",
+  "title": "BLOGE Coverage Inventory Frozen v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "inventoryRef", "target", "derivationSources", "obligationCount", "waivedCount", "reviewerId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.coverageInventoryFrozen.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "inventoryRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "derivationSources": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSourceSnapshotRef" }
+    },
+    "obligationCount": { "type": "integer", "minimum": 1 },
+    "waivedCount": { "type": "integer", "minimum": 0 },
+    "reviewerId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

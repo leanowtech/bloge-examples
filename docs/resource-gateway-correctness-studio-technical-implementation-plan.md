@@ -278,6 +278,13 @@ public record CoverageObligation(
 5. 更新 Definition 的 active inventory ref，使用独立 CAS；失败时 frozen revision 保留，可安全重试绑定。
 6. 发送 payload-free `CoverageInventoryFrozen` outbox event。
 
+机器合同见
+[`bloge-stored-coverage-inventory-v1.schema.json`](schemas/bloge-stored-coverage-inventory-v1.schema.json)、
+[`bloge-coverage-inventory-changed-v1.schema.json`](schemas/bloge-coverage-inventory-changed-v1.schema.json)、
+[`bloge-coverage-inventory-frozen-v1.schema.json`](schemas/bloge-coverage-inventory-frozen-v1.schema.json) 和
+[`bloge-coverage-impact-proposal-v1.schema.json`](schemas/bloge-coverage-impact-proposal-v1.schema.json)。Impact proposal
+可以携带供作者审阅的义务文本差异，但不进入 outbox，也不存在自动 apply/freeze 语义；跨系统事件只携带 exact coordinate、数量和审核身份。
+
 ### 4.4 `BusinessOracle v1` 与 `AssertionSet v1`
 
 ```java
@@ -1174,6 +1181,13 @@ payload leakage 均有回归测试。
 生产装配保持关闭；COR-03 至 COR-06 接入 Inventory、Oracle/Assertion、Scenario v2、Fixture 和 Evidence 的权威 projection 后才可
 翻转 API capability。这个状态是部署真值，不把“有类型”冒充“已可用”。
 
+COR-03 的写侧内核已经完成：Coverage Inventory 具备完整 scope 的 head、不可变 revision、数据库 CAS、义务 fingerprint 索引和
+transactional outbox；读取时 canonical document 与索引互相校验，任一侧被篡改都会失败关闭。`saveDraft`、`freeze` 和
+`proposeImpact` 是三个独立应用命令。Freeze 要求授权审核人、无 `PROPOSED` 义务、非空 exact derivation sources、有效未过期 waiver，
+且 HIGH/CRITICAL 分母强制 author/reviewer 双人复核。Contract/DAG/Policy 的 target 或 source snapshot 漂移只产生稳定指纹的
+`ADDED / MODIFIED / REMOVAL_PROPOSED / UNCHANGED` diff，不修改 frozen revision。仓储、并发、scope、回滚、防篡改、无 payload
+事件和状态机均已有自动化测试；HTTP command adapter 与 Workspace Coverage projection 尚待接入。
+
 ### 16.1 Epic 总览
 
 | Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
@@ -1181,7 +1195,7 @@ payload leakage 均有回归测试。
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
-| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |
+| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、状态机、freeze 与 impact proposal 已完成，HTTP/projection 待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |

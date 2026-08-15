@@ -194,8 +194,8 @@
         "scope": { "$ref": "#/$defs/enterpriseScope" },
         "target": { "$ref": "#/$defs/exactTargetRef" },
         "lifecycle": { "enum": ["DRAFT", "FROZEN", "SUPERSEDED"] },
-        "obligations": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/coverageObligation" } },
-        "derivationSources": { "type": "array", "items": { "$ref": "#/$defs/exactSourceSnapshotRef" } },
+        "obligations": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/coverageObligation" } },
+        "derivationSources": { "type": "array", "maxItems": 1000, "items": { "$ref": "#/$defs/exactSourceSnapshotRef" } },
         "freezeReview": { "$ref": "#/$defs/reviewRecord" },
         "metadata": { "$ref": "#/$defs/auditMetadata" }
       }
