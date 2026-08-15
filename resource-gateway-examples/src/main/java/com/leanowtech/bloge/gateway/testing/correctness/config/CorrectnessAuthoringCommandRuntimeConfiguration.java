@@ -45,6 +45,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
 import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.publication.DatabaseCorrectnessPublicationRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessPreflightFacade;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.DatabaseScenarioCanonicalApprovalReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationAdapter;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioCanonicalApprovalReceiptRepository;
@@ -340,5 +341,19 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     ) {
         return new CorrectnessPublicationService(
                 compilation, publications, registry, mapper);
+    }
+
+    @Bean
+    @ConditionalOnBean({CorrectnessPublicationRepository.class,
+            CorrectnessTestingRegistryGateway.class, TestExecutionApiService.class})
+    @ConditionalOnMissingBean
+    CorrectnessPreflightFacade correctnessPreflightFacade(
+            CorrectnessPublicationRepository publications,
+            CorrectnessTestingRegistryGateway registry,
+            TestExecutionApiService executions,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessPreflightFacade(
+                publications, registry, executions, mapper);
     }
 }

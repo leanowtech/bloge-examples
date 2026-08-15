@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCont
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialController;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationController;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationController;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessRunController;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -62,7 +63,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         FixtureAssetController.class,
         FixtureMaterialController.class,
         CorrectnessCompilationController.class,
-        CorrectnessPublicationController.class
+        CorrectnessPublicationController.class,
+        CorrectnessRunController.class
 })
 public class IntegrationProblemHandler {
 

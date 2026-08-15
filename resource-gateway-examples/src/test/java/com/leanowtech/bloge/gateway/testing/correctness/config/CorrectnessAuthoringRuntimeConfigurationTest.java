@@ -71,7 +71,7 @@ class CorrectnessAuthoringRuntimeConfigurationTest {
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                                     true, false, false, false, false, false,
-                                    false, false));
+                                    false, false, false));
                 });
     }
 

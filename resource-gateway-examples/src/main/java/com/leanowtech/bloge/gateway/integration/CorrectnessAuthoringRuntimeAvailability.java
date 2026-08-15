@@ -9,10 +9,11 @@ public record CorrectnessAuthoringRuntimeAvailability(
         boolean fixtureCatalogApi,
         boolean fixtureMaterialApi,
         boolean compilationApi,
-        boolean publicationApi
+        boolean publicationApi,
+        boolean preflightApi
 ) {
     public static CorrectnessAuthoringRuntimeAvailability unavailable() {
         return new CorrectnessAuthoringRuntimeAvailability(
-                false, false, false, false, false, false, false, false);
+                false, false, false, false, false, false, false, false, false);
     }
 }

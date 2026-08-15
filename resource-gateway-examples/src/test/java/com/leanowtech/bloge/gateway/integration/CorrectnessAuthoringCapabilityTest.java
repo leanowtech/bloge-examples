@@ -27,7 +27,7 @@ class CorrectnessAuthoringCapabilityTest {
         var service = new ToolStudioIntegrationService(null, null, null, null);
         service.configureCorrectnessAuthoringRuntime(
                 new CorrectnessAuthoringRuntimeAvailability(
-                        true, true, false, true, true, false, true, true));
+                        true, true, false, true, true, false, true, true, true));
 
         var capabilities = service.capabilities().payload();
 
@@ -39,7 +39,8 @@ class CorrectnessAuthoringCapabilityTest {
                 .containsEntry("correctnessFixtureCatalogApi", true)
                 .containsEntry("correctnessFixtureMaterialApi", false)
                 .containsEntry("correctnessCompilationApi", true)
-                .containsEntry("correctnessPublicationApi", true);
+                .containsEntry("correctnessPublicationApi", true)
+                .containsEntry("correctnessPreflightApi", true);
         assertThat(capabilities.endpoints())
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/correctness-workspaces/"))
@@ -49,6 +50,8 @@ class CorrectnessAuthoringCapabilityTest {
                         "/api/visual/correctness-publications:compile-preview"))
                 .anyMatch(endpoint -> endpoint.path().equals(
                         "/api/visual/correctness-publications"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-runs:preflight"))
                 .noneMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/fixture-materials"));
     }
