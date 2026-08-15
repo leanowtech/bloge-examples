@@ -71,6 +71,20 @@ public record FixtureAssetDescriptor(
         }
     }
 
+    public FixtureAssetDescriptor persistedAs(long persistedRevision, AuditMetadata persistedMetadata) {
+        return new FixtureAssetDescriptor(
+                schemaVersion, fixtureAssetId, persistedRevision, scope, name, source,
+                materialRef, schemaRef, variantKey, lifecycle, classification, owner,
+                redaction, retention, quality, tags, persistedMetadata);
+    }
+
+    public FixtureAssetDescriptor withLifecycle(FixtureLifecycle nextLifecycle) {
+        return new FixtureAssetDescriptor(
+                schemaVersion, fixtureAssetId, revision, scope, name, source,
+                materialRef, schemaRef, variantKey, nextLifecycle, classification, owner,
+                redaction, retention, quality, tags, metadata);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record FixtureSource(SourceKind kind, ExactAssetRef sourceRef) {
         public FixtureSource {

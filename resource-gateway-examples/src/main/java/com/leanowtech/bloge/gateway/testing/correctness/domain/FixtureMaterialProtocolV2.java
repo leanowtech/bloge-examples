@@ -100,4 +100,25 @@ public final class FixtureMaterialProtocolV2 {
             }
         }
     }
+
+    /** Authorized exact-revision material read. This type is forbidden in Workspace projections. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Material(
+            String schemaVersion,
+            Receipt receipt,
+            Object payload,
+            boolean payloadReturned
+    ) {
+        public static final String SCHEMA_VERSION = "bloge.fixtureMaterial.v2";
+
+        public Material {
+            schemaVersion = protocolVersion(schemaVersion, SCHEMA_VERSION);
+            receipt = required(receipt, "receipt");
+            payload = ProtocolJsonValue.freeze(payload);
+            if (!payloadReturned) {
+                throw new IllegalArgumentException(
+                        "Authorized Fixture material response must declare payload return");
+            }
+        }
+    }
 }
