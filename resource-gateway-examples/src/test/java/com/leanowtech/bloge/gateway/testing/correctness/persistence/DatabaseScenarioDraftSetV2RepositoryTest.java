@@ -92,7 +92,7 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
         assertThat(firstPage.total()).isEqualTo(2);
         assertThat(firstPage.rows()).extracting(value -> value.caseId())
                 .containsExactly("case-canonical");
-        assertThat(firstPage.nextCursor()).startsWith("v1.");
+        assertThat(firstPage.nextCursor()).startsWith("v2.");
         var secondPage = repository.pageByTarget(
                 scope("tenant-a"), target(), firstPage.nextCursor(), 1);
         assertThat(secondPage.rows()).extracting(value -> value.caseId())
@@ -132,6 +132,31 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
         assertThatThrownBy(() -> repository.findHead(scope("tenant-a"), "loan-scenarios"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("integrity");
+    }
+
+    @Test
+    void compositeCursorDoesNotLoseDuplicateCaseIdsAcrossDraftSets() {
+        repository.saveIfRevision(
+                0, scenarioSet(scope("tenant-a"), "set-a", 0, "Draft A"), author())
+                .orElseThrow();
+        repository.saveIfRevision(
+                0, scenarioSet(scope("tenant-a"), "set-b", 0, "Draft B"), author())
+                .orElseThrow();
+
+        List<String> coordinates = new java.util.ArrayList<>();
+        String cursor = "";
+        ScenarioDraftSetV2Repository.ScenarioCasePage page;
+        do {
+            page = repository.pageByTarget(scope("tenant-a"), target(), cursor, 1);
+            page.rows().forEach(row -> coordinates.add(
+                    row.scenarioDraftSetRef().id() + ":" + row.caseId()));
+            cursor = page.nextCursor();
+        } while (!cursor.isEmpty());
+
+        assertThat(page.scenarioDraftSetRefs()).hasSize(2);
+        assertThat(coordinates).containsExactly(
+                "set-a:case-canonical", "set-a:case-exploratory",
+                "set-b:case-canonical", "set-b:case-exploratory");
     }
 
     @Test
@@ -213,8 +238,17 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
             long revision,
             String exploratoryName
     ) {
+        return scenarioSet(scope, "loan-scenarios", revision, exploratoryName);
+    }
+
+    private ScenarioDraftSetV2 scenarioSet(
+            EnterpriseScope scope,
+            String scenarioDraftSetId,
+            long revision,
+            String exploratoryName
+    ) {
         return new ScenarioDraftSetV2(
-                "", "loan-scenarios", revision, scope, target(),
+                "", scenarioDraftSetId, revision, scope, target(),
                 new ExactAssetRef("CONTRACT", "loan-contract", 2, fingerprint('c')),
                 List.of(
                         scenario("case-canonical", "Canonical decision",

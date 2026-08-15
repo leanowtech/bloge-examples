@@ -154,7 +154,7 @@ public final class DatabaseScenarioDraftSetV2Repository
         if (limit < 1 || limit > 100) {
             throw new IllegalArgumentException("Scenario Case page limit must be 1..100");
         }
-        String afterCaseId = decodeCursor(cursor);
+        MatrixCursor after = decodeCursor(cursor);
         long total = jdbc.queryForObject("""
                         SELECT COUNT(*)
                         FROM rg_scenario_case_v2_index i
@@ -172,7 +172,22 @@ public final class DatabaseScenarioDraftSetV2Repository
                           AND h.target_revision = ? AND h.target_fingerprint = ?
                         """, Long.class,
                 targetArgs(exactScope, exactTarget));
-        Object[] args = append(targetArgs(exactScope, exactTarget), afterCaseId, limit + 1);
+        List<ExactAssetRef> setRefs = jdbc.query("""
+                        SELECT scenario_draft_set_id, revision, fingerprint
+                        FROM rg_scenario_draft_set_v2_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ?
+                          AND target_revision = ? AND target_fingerprint = ?
+                        ORDER BY scenario_draft_set_id
+                        """, (result, row) -> new ExactAssetRef(
+                        "SCENARIO_DRAFT_SET", result.getString("scenario_draft_set_id"),
+                        result.getLong("revision"), result.getString("fingerprint")),
+                targetArgs(exactScope, exactTarget));
+        Object[] args = append(
+                targetArgs(exactScope, exactTarget),
+                after.scenarioDraftSetId(), after.scenarioDraftSetId(), after.caseId(),
+                limit + 1);
         List<ScenarioCaseSummary> queried = jdbc.query("""
                         SELECT i.*, h.fingerprint AS scenario_draft_set_fingerprint
                         FROM rg_scenario_case_v2_index i
@@ -188,15 +203,17 @@ public final class DatabaseScenarioDraftSetV2Repository
                           AND h.environment_id = ? AND h.region_id = ?
                           AND h.target_kind = ? AND h.target_id = ?
                           AND h.target_revision = ? AND h.target_fingerprint = ?
-                          AND i.case_id > ?
-                        ORDER BY i.case_id
+                          AND (i.scenario_draft_set_id > ?
+                            OR (i.scenario_draft_set_id = ? AND i.case_id > ?))
+                        ORDER BY i.scenario_draft_set_id, i.case_id
                         LIMIT ?
                         """, (result, row) -> readSummary(result), args);
         boolean more = queried.size() > limit;
         List<ScenarioCaseSummary> rows = more
                 ? List.copyOf(queried.subList(0, limit)) : List.copyOf(queried);
-        String next = more ? encodeCursor(rows.getLast().caseId()) : "";
-        return new ScenarioCasePage(total, rows, next);
+        String next = more ? encodeCursor(
+                rows.getLast().scenarioDraftSetRef().id(), rows.getLast().caseId()) : "";
+        return new ScenarioCasePage(total, rows, next, setRefs);
     }
 
     @Override
@@ -527,24 +544,32 @@ public final class DatabaseScenarioDraftSetV2Repository
                 .filter(scenario -> scenario.lifecycle() == lifecycle).count();
     }
 
-    private static String encodeCursor(String caseId) {
-        return "v1." + Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(caseId.getBytes(StandardCharsets.UTF_8));
+    private static String encodeCursor(String scenarioDraftSetId, String caseId) {
+        Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
+        return "v2."
+                + encoder.encodeToString(scenarioDraftSetId.getBytes(StandardCharsets.UTF_8))
+                + "." + encoder.encodeToString(caseId.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static String decodeCursor(String cursor) {
+    private static MatrixCursor decodeCursor(String cursor) {
         String normalized = cursor == null ? "" : cursor.trim();
-        if (normalized.isEmpty()) return "";
-        if (!normalized.startsWith("v1.") || normalized.length() > 1024) {
+        if (normalized.isEmpty()) return new MatrixCursor("", "");
+        if (!normalized.startsWith("v2.") || normalized.length() > 1536) {
             throw new IllegalArgumentException("Invalid Scenario Case cursor");
         }
         try {
-            String decoded = new String(Base64.getUrlDecoder().decode(normalized.substring(3)),
-                    StandardCharsets.UTF_8);
-            if (decoded.isBlank() || decoded.length() > 512) {
+            String[] parts = normalized.split("\\.", -1);
+            if (parts.length != 3) {
                 throw new IllegalArgumentException("Invalid Scenario Case cursor");
             }
-            return decoded;
+            Base64.Decoder decoder = Base64.getUrlDecoder();
+            String setId = new String(decoder.decode(parts[1]), StandardCharsets.UTF_8);
+            String caseId = new String(decoder.decode(parts[2]), StandardCharsets.UTF_8);
+            if (setId.isBlank() || setId.length() > 512
+                    || caseId.isBlank() || caseId.length() > 512) {
+                throw new IllegalArgumentException("Invalid Scenario Case cursor");
+            }
+            return new MatrixCursor(setId, caseId);
         } catch (IllegalArgumentException failure) {
             throw new IllegalArgumentException("Invalid Scenario Case cursor", failure);
         }
@@ -578,6 +603,8 @@ public final class DatabaseScenarioDraftSetV2Repository
         System.arraycopy(values, 0, result, source.length, values.length);
         return result;
     }
+
+    private record MatrixCursor(String scenarioDraftSetId, String caseId) {}
 
     private record IndexedCase(
             String caseId,

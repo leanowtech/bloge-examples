@@ -146,14 +146,17 @@ public record CorrectnessWorkspaceProjection(
             if (total < rows.size()) {
                 throw new IllegalArgumentException("Case total cannot be smaller than the returned page");
             }
-            if (availability == Availability.AVAILABLE && scenarioDraftSetRef == null) {
-                throw new IllegalArgumentException("Available cases require an exact Scenario ref");
+            if (scenarioDraftSetRef != null && rows.stream().anyMatch(
+                    row -> !scenarioDraftSetRef.equals(row.scenarioDraftSetRef()))) {
+                throw new IllegalArgumentException(
+                        "A common Scenario ref must match every returned Case row");
             }
         }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record CaseSummary(
+            ExactAssetRef scenarioDraftSetRef,
             String caseId,
             String caseFingerprint,
             String name,
@@ -170,6 +173,11 @@ public record CorrectnessWorkspaceProjection(
             List<String> tags
     ) {
         public CaseSummary {
+            if (scenarioDraftSetRef == null
+                    || !"SCENARIO_DRAFT_SET".equals(scenarioDraftSetRef.kind())) {
+                throw new IllegalArgumentException(
+                        "Case summary requires an exact Scenario Draft Set ref");
+            }
             caseId = required(caseId, "caseId");
             caseFingerprint = exactFingerprint(caseFingerprint, "caseFingerprint");
             name = required(name, "name");

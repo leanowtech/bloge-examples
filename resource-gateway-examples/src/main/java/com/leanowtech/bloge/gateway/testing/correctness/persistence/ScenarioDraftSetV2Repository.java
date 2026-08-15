@@ -39,13 +39,35 @@ public interface ScenarioDraftSetV2Repository {
             ExactTargetRef target,
             ExactAssetRef inventoryRef);
 
-    record ScenarioCasePage(long total, List<ScenarioCaseSummary> rows, String nextCursor) {
+    record ScenarioCasePage(
+            long total,
+            List<ScenarioCaseSummary> rows,
+            String nextCursor,
+            List<ExactAssetRef> scenarioDraftSetRefs
+    ) {
         public ScenarioCasePage {
             rows = rows == null ? List.of() : List.copyOf(rows);
             nextCursor = nextCursor == null ? "" : nextCursor.trim();
+            scenarioDraftSetRefs = scenarioDraftSetRefs == null ? List.of()
+                    : scenarioDraftSetRefs.stream().distinct()
+                            .sorted(java.util.Comparator.comparing(ExactAssetRef::id)
+                                    .thenComparingLong(ExactAssetRef::revision))
+                            .toList();
+            List<ExactAssetRef> declaredRefs = scenarioDraftSetRefs;
             if (total < rows.size()) {
                 throw new IllegalArgumentException("Scenario Case total is smaller than page rows");
             }
+            if (rows.stream().anyMatch(row ->
+                    !declaredRefs.contains(row.scenarioDraftSetRef()))) {
+                throw new IllegalArgumentException(
+                        "Scenario Case row references an undeclared Draft Set");
+            }
+        }
+
+        public ScenarioCasePage(long total, List<ScenarioCaseSummary> rows, String nextCursor) {
+            this(total, rows, nextCursor,
+                    rows == null ? List.of() : rows.stream()
+                            .map(ScenarioCaseSummary::scenarioDraftSetRef).distinct().toList());
         }
     }
 

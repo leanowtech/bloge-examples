@@ -79,6 +79,24 @@ class InventoryCorrectnessWorkspaceComponentSourceTest {
                 .containsExactly("INVENTORY_REFERENCE_STALE");
     }
 
+    @Test
+    void derivesFulfillmentOnlyFromCanonicalExactScenarioReferences() {
+        StoredCoverageInventory stored = storedInventory();
+        var source = new InventoryCorrectnessWorkspaceComponentSource(
+                new DefinitionOnlyCorrectnessWorkspaceComponentSource(),
+                new SingleInventoryRepository(stored),
+                (scope, target, inventoryRef) ->
+                        java.util.Set.of("policy", "unknown-obligation"));
+
+        Components result = source.load(
+                coordinate(inventoryRef(stored)), page());
+
+        assertThat(result.coverage().fulfilled()).isEqualTo(1);
+        assertThat(result.coverage().waived()).isEqualTo(1);
+        assertThat(result.coverage().uncovered()).isEqualTo(1);
+        assertThat(result.capabilities()).contains("COVERAGE_FULFILLMENT_V1");
+    }
+
     private StoredCoverageInventory storedInventory() {
         Instant now = Instant.parse("2026-08-15T08:00:00Z");
         CoverageInventory inventory = new CoverageInventory(

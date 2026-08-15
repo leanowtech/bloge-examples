@@ -140,11 +140,12 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "caseId", "caseFingerprint", "name", "businessIntent", "caseType", "risk",
+        "scenarioDraftSetRef", "caseId", "caseFingerprint", "name", "businessIntent", "caseType", "risk",
         "owner", "lifecycle", "obligationCount", "oracleCount", "assertionSetCount",
         "dependencyCount", "reviewStatus", "tags"
       ],
       "properties": {
+        "scenarioDraftSetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
         "caseId": { "$ref": "#/$defs/identifier" },
         "caseFingerprint": { "$ref": "#/$defs/fingerprint" },
         "name": { "$ref": "#/$defs/identifier" },

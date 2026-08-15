@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /** Adds an exact frozen-denominator summary without deriving fulfillment client-side. */
 public final class InventoryCorrectnessWorkspaceComponentSource
@@ -23,13 +24,23 @@ public final class InventoryCorrectnessWorkspaceComponentSource
 
     private final CorrectnessWorkspaceComponentSource delegate;
     private final CoverageInventoryRepository inventories;
+    private final CoverageFulfillmentSource fulfillment;
 
     public InventoryCorrectnessWorkspaceComponentSource(
             CorrectnessWorkspaceComponentSource delegate,
             CoverageInventoryRepository inventories
     ) {
+        this(delegate, inventories, null);
+    }
+
+    public InventoryCorrectnessWorkspaceComponentSource(
+            CorrectnessWorkspaceComponentSource delegate,
+            CoverageInventoryRepository inventories,
+            CoverageFulfillmentSource fulfillment
+    ) {
         this.delegate = Objects.requireNonNull(delegate, "delegate");
         this.inventories = Objects.requireNonNull(inventories, "inventories");
+        this.fulfillment = fulfillment;
     }
 
     @Override
@@ -55,20 +66,33 @@ public final class InventoryCorrectnessWorkspaceComponentSource
                 .filter(value -> value.lifecycle() != ObligationLifecycle.RETIRED).count();
         int waived = (int) inventory.obligations().stream()
                 .filter(value -> value.lifecycle() == ObligationLifecycle.WAIVED).count();
-        int uncovered = (int) inventory.obligations().stream()
-                .filter(value -> value.lifecycle() == ObligationLifecycle.FROZEN).count();
+        Set<String> actionable = inventory.obligations().stream()
+                .filter(value -> value.lifecycle() == ObligationLifecycle.FROZEN)
+                .map(CoverageInventory.CoverageObligation::obligationId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        Set<String> fulfilledIds = fulfillment == null ? Set.of()
+                : Objects.requireNonNull(fulfillment.fulfilledObligationIds(
+                        coordinate.scope(), coordinate.target(), requested),
+                        "fulfilledObligationIds");
+        int fulfilled = (int) fulfilledIds.stream().filter(actionable::contains).count();
+        int uncovered = actionable.size() - fulfilled;
         CoverageSummary coverage = new CoverageSummary(
                 Availability.AVAILABLE, requested, inventory.lifecycle().name(),
-                total, 0, waived, uncovered);
+                total, fulfilled, waived, uncovered);
         CoverageVerdict coverageVerdict = uncovered == 0
                 ? CoverageVerdict.COMPLETE : CoverageVerdict.INCOMPLETE;
-        String reason = uncovered == 0 ? "COVERAGE_WAIVERS_RECORDED" : "COVERAGE_CASES_REQUIRED";
-        String action = uncovered == 0 ? "REVIEW_WAIVERS" : "CREATE_CASES_FROM_OBLIGATIONS";
+        String reason = uncovered == 0
+                ? (waived == 0 ? "COVERAGE_COMPLETE" : "COVERAGE_WAIVERS_RECORDED")
+                : "COVERAGE_CASES_REQUIRED";
+        String action = uncovered == 0
+                ? (waived == 0 ? "REVIEW_CASE_EVIDENCE" : "REVIEW_WAIVERS")
+                : "CREATE_CASES_FROM_OBLIGATIONS";
         ReviewSummary reviews = new ReviewSummary(
                 base.reviews().pending(), base.reviews().approved() + 1,
                 base.reviews().rejected(), base.reviews().stale());
         List<String> capabilities = new ArrayList<>(base.capabilities());
         capabilities.add("COVERAGE_INVENTORY_READ_V1");
+        if (fulfillment != null) capabilities.add("COVERAGE_FULFILLMENT_V1");
         return copy(base, coverage,
                 verdict(base.verdict(), coverageVerdict, reason, action),
                 base.staleReasons(), reviews, List.copyOf(capabilities));

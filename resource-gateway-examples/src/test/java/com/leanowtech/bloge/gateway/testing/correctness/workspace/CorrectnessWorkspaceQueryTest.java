@@ -159,6 +159,9 @@ class CorrectnessWorkspaceQueryTest {
                 .asBoolean(true)).isFalse();
         assertThat(projectionSchema.at("/$defs/casePage/properties/rows/maxItems").asInt())
                 .isEqualTo(100);
+        assertThat(projectionSchema.at("/$defs/caseSummary/required"))
+                .extracting(com.fasterxml.jackson.databind.JsonNode::asText)
+                .contains("scenarioDraftSetRef");
         assertThat(projectionSchema.at("/$defs/fixtureSummary/properties/materialFingerprint")
                 .path("$ref").asText()).isEqualTo("#/$defs/fingerprint");
         assertThat(projectionSchema.toString()).doesNotContain(
@@ -202,8 +205,12 @@ class CorrectnessWorkspaceQueryTest {
             String nextCursor
     ) {
         List<CaseSummary> rows = new ArrayList<>();
+        var scenarioRef = new com.leanowtech.bloge.gateway.testing.correctness.domain
+                .CorrectnessProtocol.ExactAssetRef(
+                "SCENARIO_DRAFT_SET", "suite-a", 4, fingerprint('e'));
         for (int index = 0; index < returned; index++) {
             rows.add(new CaseSummary(
+                    scenarioRef,
                     "case-" + index, fingerprint("0123456789abcdef".charAt(index % 16)),
                     "Case " + index, "Prove business branch " + index,
                     index % 2 == 0 ? "GOLDEN" : "BOUNDARY", RiskLevel.HIGH, owner(),
@@ -212,10 +219,7 @@ class CorrectnessWorkspaceQueryTest {
         return new Components(
                 CoverageSummary.unavailable(),
                 OracleAssertionSummary.unavailable(),
-                new CasePage(Availability.AVAILABLE,
-                        new com.leanowtech.bloge.gateway.testing.correctness.domain
-                                .CorrectnessProtocol.ExactAssetRef(
-                                "SCENARIO_DRAFT_SET", "suite-a", 4, fingerprint('e')),
+                new CasePage(Availability.AVAILABLE, scenarioRef,
                         total, rows, nextCursor, page.queryFingerprint()),
                 FixtureCatalogSummary.unavailable(), ReviewSummary.empty(), null, null,
                 blockedVerdict(), List.of(), List.of("CORRECTNESS_CASE_SUMMARY_V1"),

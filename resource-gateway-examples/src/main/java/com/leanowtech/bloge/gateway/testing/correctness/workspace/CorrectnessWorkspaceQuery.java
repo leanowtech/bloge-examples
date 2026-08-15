@@ -146,7 +146,9 @@ public final class CorrectnessWorkspaceQuery {
     ) {
         if (snapshot == null || snapshot.cases().rows().size() > caseLimit
                 || !snapshot.cases().queryFingerprint().equals(pageQueryFingerprint)
-                || snapshot.cases().rows().stream().map(row -> row.caseId()).distinct().count()
+                || snapshot.cases().rows().stream().map(row ->
+                        row.scenarioDraftSetRef().id() + "\u0000" + row.caseId())
+                        .distinct().count()
                 != snapshot.cases().rows().size()) {
             throw new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
                     "RG.CORRECTNESS.PROJECTION_INVALID",
