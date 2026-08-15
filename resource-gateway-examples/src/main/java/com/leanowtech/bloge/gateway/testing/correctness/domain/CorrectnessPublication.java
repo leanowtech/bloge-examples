@@ -98,12 +98,24 @@ public record CorrectnessPublication(
     public record CompilationCoordinate(
             ExactAssetRef definitionRef,
             ExactAssetRef inventoryRef,
-            ExactAssetRef scenarioDraftSetRef
+            ExactAssetRef scenarioDraftSetRef,
+            List<ExactAssetRef> oracleRefs,
+            List<ExactAssetRef> assertionSetRefs,
+            List<ExactAssetRef> fixtureAssetRefs,
+            ExactTargetRef target
     ) {
         public CompilationCoordinate {
             definitionRef = required(definitionRef, "definitionRef");
             inventoryRef = required(inventoryRef, "inventoryRef");
             scenarioDraftSetRef = required(scenarioDraftSetRef, "scenarioDraftSetRef");
+            oracleRefs = refs(oracleRefs);
+            assertionSetRefs = refs(assertionSetRefs);
+            fixtureAssetRefs = refs(fixtureAssetRefs);
+            target = required(target, "target");
+            if (oracleRefs.isEmpty() || assertionSetRefs.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Compilation coordinate requires Oracle and Assertion Set closure");
+            }
         }
     }
 

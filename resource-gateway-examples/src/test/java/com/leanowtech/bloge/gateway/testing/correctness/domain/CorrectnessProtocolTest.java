@@ -473,7 +473,11 @@ class CorrectnessProtocolTest {
                 new CompilationCoordinate(
                         asset("DEFINITION", "loan-correctness", 4, '1'),
                         asset("INVENTORY", "loan-inventory", 7, 'c'),
-                        asset("SCENARIO_DRAFT_SET", "loan-scenarios", 5, '2')),
+                        asset("SCENARIO_DRAFT_SET", "loan-scenarios", 5, '2'),
+                        List.of(asset("ORACLE", "loan-oracle", 2, 'a')),
+                        List.of(asset("ASSERTION_SET", "loan-assertions", 2, 'd')),
+                        List.of(asset("FIXTURE_ASSET", "prime-applicant", 3, '7')),
+                        target()),
                 CorrectnessPublication.AttemptStage.COMPILED,
                 List.of(asset("ORACLE", "loan-oracle", 2, 'a')),
                 Failure.none(), metadata(CREATED));

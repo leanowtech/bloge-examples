@@ -582,11 +582,26 @@
     "compilationCoordinate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["definitionRef", "inventoryRef", "scenarioDraftSetRef"],
+      "required": ["definitionRef", "inventoryRef", "scenarioDraftSetRef", "oracleRefs", "assertionSetRefs", "fixtureAssetRefs", "target"],
       "properties": {
         "definitionRef": { "$ref": "#/$defs/exactAssetRef" },
         "inventoryRef": { "$ref": "#/$defs/exactAssetRef" },
-        "scenarioDraftSetRef": { "$ref": "#/$defs/exactAssetRef" }
+        "scenarioDraftSetRef": { "$ref": "#/$defs/exactAssetRef" },
+        "oracleRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/exactAssetRef" }
+        },
+        "assertionSetRefs": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/exactAssetRef" }
+        },
+        "fixtureAssetRefs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/exactAssetRef" }
+        },
+        "target": { "$ref": "#/$defs/exactTargetRef" }
       }
     },
     "failure": {
