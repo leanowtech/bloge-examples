@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-compilation-report-v1.schema.json",
+  "title": "BLOGE Correctness Compilation Report v1",
+  "description": "Payload-free deterministic compilation result. Registration requests and Fixture material are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "publishable", "compilerVersion", "coordinate",
+    "compilationFingerprint", "sourceMap", "compiledAssets", "diagnostics", "riskSummary"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.correctnessCompilationReport.v1" },
+    "publishable": { "type": "boolean" },
+    "compilerVersion": { "$ref": "#/$defs/identifier" },
+    "coordinate": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/compilationCoordinate" },
+    "compilationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "sourceMap": {
+      "type": "array",
+      "maxItems": 100000,
+      "items": { "$ref": "#/$defs/sourceMapping" }
+    },
+    "compiledAssets": {
+      "type": "array",
+      "maxItems": 1001,
+      "items": { "$ref": "#/$defs/compiledAssetSummary" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "riskSummary": { "$ref": "#/$defs/executionRiskSummary" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "sourceCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetRef", "elementKind", "elementId"],
+      "properties": {
+        "assetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "elementKind": { "$ref": "#/$defs/identifier" },
+        "elementId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "outputCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetRef", "elementKind", "elementId"],
+      "properties": {
+        "assetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "elementKind": { "$ref": "#/$defs/identifier" },
+        "elementId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "sourceMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "output"],
+      "properties": {
+        "source": { "$ref": "#/$defs/sourceCoordinate" },
+        "output": { "$ref": "#/$defs/outputCoordinate" }
+      }
+    },
+    "compiledAssetSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assetRef", "sourceElementCount"],
+      "properties": {
+        "assetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "sourceElementCount": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "assetRef", "fieldPath", "messageId"],
+      "properties": {
+        "severity": { "enum": ["INFO", "WARNING", "ERROR"] },
+        "code": { "$ref": "#/$defs/identifier" },
+        "assetRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+          ]
+        },
+        "fieldPath": { "type": "string", "maxLength": 2048 },
+        "messageId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "executionRiskSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "realDependencyCount", "controlledDependencyCount", "faultDependencyCount",
+        "deniedDependencyCount", "fallbackToRealCount", "transportBoundaryCount",
+        "logicalClockRequired", "riskCodes"
+      ],
+      "properties": {
+        "realDependencyCount": { "type": "integer", "minimum": 0 },
+        "controlledDependencyCount": { "type": "integer", "minimum": 0 },
+        "faultDependencyCount": { "type": "integer", "minimum": 0 },
+        "deniedDependencyCount": { "type": "integer", "minimum": 0 },
+        "fallbackToRealCount": { "type": "integer", "minimum": 0 },
+        "transportBoundaryCount": { "type": "integer", "minimum": 0 },
+        "logicalClockRequired": { "type": "boolean" },
+        "riskCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/identifier" }
+        }
+      }
+    }
+  }
+}
