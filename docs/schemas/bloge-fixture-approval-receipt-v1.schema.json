@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-fixture-approval-receipt-v1.schema.json",
+  "title": "BLOGE Fixture Approval Receipt v1",
+  "description": "Payload-free durable receipt for one idempotent Fixture Owner approval.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "idempotencyKeyFingerprint", "requestFingerprint", "fixtureAssetRef", "materialRef", "schemaRef", "reviewCommentFingerprint", "actorId", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureApprovalReceipt.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "idempotencyKeyFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "requestFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "fixtureAssetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "materialRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "schemaRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSchemaRef" },
+    "reviewCommentFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

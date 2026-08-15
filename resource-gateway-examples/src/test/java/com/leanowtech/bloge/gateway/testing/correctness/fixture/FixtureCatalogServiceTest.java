@@ -43,20 +43,23 @@ class FixtureCatalogServiceTest {
     private static final Instant NOW = Instant.parse("2026-08-15T11:00:00Z");
 
     private DatabaseFixtureAssetRepository repository;
+    private ObjectMapper mapper;
+    private JdbcTemplate jdbc;
     private Receipt receipt;
     private FixtureCatalogService service;
 
     @BeforeEach
     void setUp() {
-        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        mapper = new ObjectMapper().findAndRegisterModules();
         var database = new EmbeddedDatabaseBuilder()
                 .setType(EmbeddedDatabaseType.H2)
                 .generateUniqueName(true)
                 .build();
         new ResourceDatabasePopulator(new ClassPathResource(
                 "correctness/h2-correctness-fixture-schema.sql")).execute(database);
+        jdbc = new JdbcTemplate(database);
         repository = new DatabaseFixtureAssetRepository(
-                new JdbcTemplate(database), mapper, Clock.fixed(NOW, ZoneOffset.UTC));
+                jdbc, mapper, Clock.fixed(NOW, ZoneOffset.UTC));
         receipt = receipt();
         FixtureMaterialMetadataSource materials = (scope, ref) ->
                 scope.equals(scope()) && ref.equals(receipt.materialRef())
@@ -155,6 +158,41 @@ class FixtureCatalogServiceTest {
                 .contains(active);
         assertThat(repository.findRevision(scope(), "prime-applicant", draft.descriptor().revision()))
                 .contains(draft);
+    }
+
+    @Test
+    void ownerApprovalIsIdempotentAndRawKeyNeverPersists() {
+        FixtureCatalogService governed = new FixtureCatalogService(
+                repository,
+                (scope, ref) -> ref.equals(receipt.materialRef())
+                        ? Optional.of(receipt) : Optional.empty(),
+                (scope, schema) -> schema.equals(schema()),
+                (scope, fixture, actor) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview(),
+                new DatabaseFixtureApprovalReceiptRepository(jdbc, mapper), mapper,
+                Clock.fixed(NOW, ZoneOffset.UTC));
+        governed.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        governed.submitForReview(scope(), "prime-applicant", 1, author());
+
+        var first = governed.approveIdempotently(
+                scope(), "prime-applicant", 2, "PII redaction and lineage reviewed",
+                owner(), "fixture-approval-key-1");
+        var replay = governed.approveIdempotently(
+                scope(), "prime-applicant", 2, "PII redaction and lineage reviewed",
+                owner(), "fixture-approval-key-1");
+
+        assertThat(first.replayed()).isFalse();
+        assertThat(replay.replayed()).isTrue();
+        assertThat(replay.stored()).isEqualTo(first.stored());
+        String receiptJson = jdbc.queryForObject(
+                "SELECT receipt_json FROM rg_correctness_command_receipts", String.class);
+        assertThat(receiptJson).doesNotContain("fixture-approval-key-1");
+        assertThat(receiptJson).doesNotContain("PII redaction and lineage reviewed");
+        assertThatThrownBy(() -> governed.approveIdempotently(
+                scope(), "prime-applicant", 2, "Different review", owner(),
+                "fixture-approval-key-1"))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.IDEMPOTENCY_CONFLICT");
     }
 
     private FixtureAssetDescriptor descriptor(

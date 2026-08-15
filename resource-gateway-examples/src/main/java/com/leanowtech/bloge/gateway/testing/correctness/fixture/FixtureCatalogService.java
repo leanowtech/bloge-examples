@@ -1,7 +1,10 @@
 package com.leanowtech.bloge.gateway.testing.correctness.fixture;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.FixtureLifecycle;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.QualityProfile;
@@ -10,16 +13,21 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAut
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 
+import org.springframework.transaction.annotation.Transactional;
+
 import java.time.Clock;
+import java.util.Map;
 import java.util.Objects;
 
 /** Governs Fixture descriptor draft, review, activation, and revocation without decrypt capability. */
-public final class FixtureCatalogService {
+public class FixtureCatalogService {
 
     private final FixtureAssetRepository fixtures;
     private final FixtureMaterialMetadataSource materials;
     private final FixtureSchemaSource schemas;
     private final FixtureReviewAuthorizer authorizer;
+    private final FixtureApprovalReceiptRepository approvalReceipts;
+    private final ObjectMapper mapper;
     private final Clock clock;
 
     public FixtureCatalogService(
@@ -27,7 +35,7 @@ public final class FixtureCatalogService {
             FixtureMaterialMetadataSource materials,
             FixtureSchemaSource schemas,
             FixtureReviewAuthorizer authorizer) {
-        this(fixtures, materials, schemas, authorizer, Clock.systemUTC());
+        this(fixtures, materials, schemas, authorizer, null, null, Clock.systemUTC());
     }
 
     public FixtureCatalogService(
@@ -36,10 +44,23 @@ public final class FixtureCatalogService {
             FixtureSchemaSource schemas,
             FixtureReviewAuthorizer authorizer,
             Clock clock) {
+        this(fixtures, materials, schemas, authorizer, null, null, clock);
+    }
+
+    public FixtureCatalogService(
+            FixtureAssetRepository fixtures,
+            FixtureMaterialMetadataSource materials,
+            FixtureSchemaSource schemas,
+            FixtureReviewAuthorizer authorizer,
+            FixtureApprovalReceiptRepository approvalReceipts,
+            ObjectMapper mapper,
+            Clock clock) {
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
         this.materials = materials == null ? FixtureMaterialMetadataSource.denyAll() : materials;
         this.schemas = schemas == null ? FixtureSchemaSource.denyAll() : schemas;
         this.authorizer = authorizer == null ? FixtureReviewAuthorizer.denyAll() : authorizer;
+        this.approvalReceipts = approvalReceipts;
+        this.mapper = mapper;
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -123,6 +144,57 @@ public final class FixtureCatalogService {
                 FixtureLifecycle.APPROVED, FixtureLifecycle.ACTIVE, true);
     }
 
+    @Transactional
+    public ApprovalResult approveIdempotently(
+            EnterpriseScope scope,
+            String fixtureAssetId,
+            long expectedRevision,
+            String reviewComment,
+            PrincipalRef actor,
+            String idempotencyKey) {
+        requireActor(actor);
+        String id = fixtureAssetId == null ? "" : fixtureAssetId.trim();
+        String comment = reviewComment == null ? "" : reviewComment.trim();
+        String key = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (scope == null || id.isEmpty() || expectedRevision < 1
+                || comment.isEmpty() || comment.length() > 4096) {
+            throw failure("RG.CORRECTNESS.FIXTURE_REVIEW_INVALID",
+                    "Fixture approval requires an exact revision and bounded review comment");
+        }
+        if (approvalReceipts == null || mapper == null) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                    "Fixture approval is unavailable because its receipt store is missing");
+        }
+        if (!key.matches("[A-Za-z0-9._~:-]{1,160}")) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_KEY_INVALID",
+                    "Idempotency-Key must use 1-160 portable non-whitespace characters");
+        }
+        String keyFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of("idempotencyKey", key));
+        String requestFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of(
+                        "scope", scope, "fixtureAssetId", id,
+                        "expectedRevision", expectedRevision,
+                        "reviewComment", comment, "actorId", actor.id()));
+        FixtureApprovalReceipt existing = approvalReceipts.find(scope, keyFingerprint).orElse(null);
+        if (existing != null) return replay(existing, requestFingerprint);
+
+        StoredFixtureAsset stored = approve(scope, id, expectedRevision, actor);
+        FixtureApprovalReceipt receipt = new FixtureApprovalReceipt(
+                "", scope, keyFingerprint, requestFingerprint, stored.exactRef(),
+                stored.descriptor().materialRef(), stored.descriptor().schemaRef(),
+                CorrectnessProtocolFingerprint.derivedFingerprint(
+                        mapper, Map.of("reviewComment", comment)),
+                actor.id(), clock.instant());
+        if (!approvalReceipts.saveIfAbsent(receipt)) {
+            FixtureApprovalReceipt winner = approvalReceipts.find(scope, keyFingerprint)
+                    .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                            "The concurrent Fixture approval receipt is not yet readable"));
+            return replay(winner, requestFingerprint);
+        }
+        return new ApprovalResult(stored, false);
+    }
+
     public StoredFixtureAsset revoke(
             EnterpriseScope scope,
             String fixtureAssetId,
@@ -169,6 +241,25 @@ public final class FixtureCatalogService {
         FixtureAssetDescriptor candidate = current.descriptor().withLifecycle(lifecycle);
         return fixtures.saveIfRevision(current.descriptor().revision(), candidate, actor)
                 .orElseThrow(FixtureCatalogService::conflict);
+    }
+
+    private ApprovalResult replay(
+            FixtureApprovalReceipt receipt,
+            String requestFingerprint) {
+        if (!receipt.requestFingerprint().equals(requestFingerprint)) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_CONFLICT",
+                    "Idempotency-Key was already used for a different Fixture approval command");
+        }
+        ExactAssetRef ref = receipt.fixtureAssetRef();
+        StoredFixtureAsset stored = fixtures.findRevision(
+                        receipt.scope(), ref.id(), ref.revision())
+                .filter(value -> value.descriptorFingerprint().equals(ref.fingerprint()))
+                .filter(value -> value.descriptor().lifecycle() == FixtureLifecycle.APPROVED)
+                .filter(value -> value.descriptor().materialRef().equals(receipt.materialRef()))
+                .filter(value -> value.descriptor().schemaRef().equals(receipt.schemaRef()))
+                .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_RECEIPT_STALE",
+                        "The approved Fixture referenced by the command receipt is unavailable"));
+        return new ApprovalResult(stored, true);
     }
 
     private StoredFixtureAsset requireHead(
@@ -244,5 +335,14 @@ public final class FixtureCatalogService {
 
     private static FixtureCatalogCommandException failure(String code, String message) {
         return new FixtureCatalogCommandException(code, message);
+    }
+
+    public record ApprovalResult(StoredFixtureAsset stored, boolean replayed) {
+        public ApprovalResult {
+            if (stored == null
+                    || stored.descriptor().lifecycle() != FixtureLifecycle.APPROVED) {
+                throw new IllegalArgumentException("Approved Fixture result is required");
+            }
+        }
     }
 }
