@@ -162,6 +162,10 @@ export function useWorkspaceContinuity<TPayload>({
 
   useEffect(() => {
     if (!enabled || !restoreChecked || !hasContent) return;
+    if (debounceTimerRef.current !== null) {
+      window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
     const sequence = ++fingerprintSequenceRef.current;
     void sha256Fingerprint(fingerprintValue).then((fingerprint) => {
       if (sequence !== fingerprintSequenceRef.current) return;
