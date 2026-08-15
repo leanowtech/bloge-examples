@@ -92,11 +92,19 @@ public final class CorrectnessPreflightFacade {
         String expectedSelectionFingerprint = selectionFingerprint(
                 request.selection().mode(), selected.stream()
                         .map(TestSuite.TestCase::caseId).toList());
-        if (!expectedSelectionFingerprint.equals(
-                request.selection().selectionFingerprint())) {
+        if (!request.selection().expectedSelectionFingerprint().isEmpty()
+                && !expectedSelectionFingerprint.equals(
+                request.selection().expectedSelectionFingerprint())) {
             throw failure(409, "RG.CORRECTNESS.SELECTION_FINGERPRINT_CONFLICT",
                     "Case selection changed after it was reviewed", false);
         }
+        CorrectnessRunRequest.Selection canonicalSelection =
+                new CorrectnessRunRequest.Selection(
+                        request.selection().mode(),
+                        request.selection().mode() == CorrectnessRunRequest.Selection.Mode.ALL
+                                ? List.of()
+                                : selected.stream().map(TestSuite.TestCase::caseId).toList(),
+                        expectedSelectionFingerprint);
 
         Set<ExactAssetRef> publishedFixtures = Set.copyOf(
                 publication.compiledFixtureBundleRefs());
@@ -131,7 +139,7 @@ public final class CorrectnessPreflightFacade {
         fingerprintMaterial.put("publicationRef", request.publicationRef());
         fingerprintMaterial.put("target", publication.target());
         fingerprintMaterial.put("compiledTestSuiteRef", suiteRef);
-        fingerprintMaterial.put("selection", request.selection());
+        fingerprintMaterial.put("selection", canonicalSelection);
         fingerprintMaterial.put("proofLevel", proof);
         fingerprintMaterial.put("cases", cases);
         fingerprintMaterial.put("riskSummary", risk);
@@ -140,7 +148,7 @@ public final class CorrectnessPreflightFacade {
                 mapper, fingerprintMaterial);
         return new CorrectnessPreflightReport(
                 "", request.publicationRef(), publication.target(), suiteRef,
-                request.selection(), proof, cases, risk, blockers, preflightFingerprint);
+                canonicalSelection, proof, cases, risk, blockers, preflightFingerprint);
     }
 
     /** Computes the server-canonical selection fingerprint used by query and command adapters. */
@@ -295,7 +303,7 @@ public final class CorrectnessPreflightFacade {
     }
 
     private static List<TestSuite.TestCase> selectedCases(
-            CorrectnessRunRequest.Selection selection,
+            CorrectnessPreflightRequest.SelectionIntent selection,
             List<TestSuite.TestCase> available
     ) {
         Map<String, TestSuite.TestCase> byId = available.stream().collect(Collectors.toMap(

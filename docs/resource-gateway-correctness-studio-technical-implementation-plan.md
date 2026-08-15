@@ -991,6 +991,9 @@ Run request 只接受 `publicationRef + case selection + authorized purpose`，�
 ```
 
 服务端重新计算 preflight；客户端 preflight fingerprint 只用于检测用户看到的计划是否已变化，不能替代授权和校验。
+首次 preflight 请求只提交 `SelectionIntent {mode, caseIds}`，`expectedSelectionFingerprint` 可以为空；服务端从 exact compiled TestSuite
+解析完整选择并在报告中返回 canonical Selection。后续 run 或重审可以携带该 fingerprint 作为 stale-view guard。客户端不得为 `ALL` 下载完整
+Case 闭包，也不得复制服务器 canonical fingerprint 算法。
 
 ### 10.3 Evidence 绑定
 

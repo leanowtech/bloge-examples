@@ -57,7 +57,15 @@ class CorrectnessRunProtocolSchemaTest {
         JsonNode definitions = read(SCHEMAS.resolve(ROOTS.getFirst())).path("$defs");
         CorrectnessRunRequest request = request();
         CorrectnessPreflightReport report = report(request);
+        CorrectnessPreflightRequest preflightRequest = new CorrectnessPreflightRequest(
+                "", request.publicationRef(),
+                new CorrectnessPreflightRequest.SelectionIntent(
+                        CorrectnessRunRequest.Selection.Mode.SELECTED,
+                        List.of("case-1"), ""));
 
+        assertThat(fieldNames(mapper.valueToTree(preflightRequest)))
+                .containsExactlyInAnyOrderElementsOf(fieldNames(
+                        definitions.path("preflightRequest").path("properties")));
         assertThat(fieldNames(mapper.valueToTree(request)))
                 .containsExactlyInAnyOrderElementsOf(fieldNames(
                         definitions.path("runRequest").path("properties")));

@@ -112,6 +112,24 @@ class CorrectnessPreflightFacadeTest {
     }
 
     @Test
+    void unreviewedSelectionIntentIsResolvedAndFingerprintByTheServer() {
+        CorrectnessPreflightRequest.SelectionIntent intent =
+                new CorrectnessPreflightRequest.SelectionIntent(
+                        CorrectnessRunRequest.Selection.Mode.SELECTED,
+                        List.of("approved"), "");
+
+        CorrectnessPreflightReport report = facade.preflight(
+                new CorrectnessPreflightRequest("", publicationRef(), intent),
+                identity("test"));
+
+        assertThat(report.selection().caseIds()).containsExactly("approved");
+        assertThat(report.selection().selectionFingerprint()).isEqualTo(
+                facade.selectionFingerprint(
+                        CorrectnessRunRequest.Selection.Mode.SELECTED,
+                        List.of("approved")));
+    }
+
+    @Test
     void allSelectionFingerprintBindsTheResolvedImmutableCaseClosure() {
         CorrectnessRunRequest.Selection selection = selection(
                 CorrectnessRunRequest.Selection.Mode.ALL, List.of("approved", "declined"));
