@@ -80,38 +80,38 @@ describe('table-driven verdict vocabulary', () => {
   }>([
     {
       verdict: verdict('NOT_RUN', 'NONE', 'CURRENT', 'SCHEMA'),
-      labelId: 'table.verdict.notRun',
+      labelId: 'correctness.verdict.notRun.label',
       tone: 'neutral',
     },
     {
       verdict: verdict('SUCCESS', 'NONE', 'CURRENT', 'MOCK'),
-      labelId: 'table.verdict.mockSucceeded',
+      labelId: 'correctness.verdict.unproven.label',
       tone: 'warning',
     },
     {
       verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'MOCK'),
-      labelId: 'table.verdict.mockMatched',
-      tone: 'passed',
+      labelId: 'correctness.verdict.coverageNotEvaluated.label',
+      tone: 'warning',
     },
     {
       verdict: verdict('SUCCESS', 'FAILED', 'CURRENT', 'RUNTIME'),
-      labelId: 'table.verdict.assertionsFailed',
+      labelId: 'correctness.verdict.assertionsFailed.label',
       tone: 'failed',
     },
     {
       verdict: verdict('TIMEOUT', 'NONE', 'CURRENT', 'SANDBOX'),
-      labelId: 'table.verdict.executionTimeout',
+      labelId: 'correctness.verdict.executionFailed.label',
       tone: 'failed',
     },
     {
       verdict: verdict('SUCCESS', 'PASSED', 'STALE', 'CERTIFIABLE'),
-      labelId: 'table.verdict.evidenceStale',
+      labelId: 'correctness.verdict.evidenceStale.label',
       tone: 'stale',
     },
     {
       verdict: verdict('BUDGET_STOPPED', 'NONE', 'CURRENT', 'MOCK'),
-      labelId: 'table.verdict.budgetStopped',
-      tone: 'warning',
+      labelId: 'correctness.verdict.executionFailed.label',
+      tone: 'failed',
     },
   ])('presents $labelId without collapsing independent status axes', ({ verdict, labelId, tone }) => {
     expect(presentTableCaseVerdict(verdict)).toMatchObject({
@@ -134,7 +134,7 @@ describe('table-driven verdict vocabulary', () => {
     },
     {
       name: 'current certifiable pass',
-      verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'CERTIFIABLE'),
+      verdict: verdict('SUCCESS', 'PASSED', 'CURRENT', 'CERTIFIABLE', 'COMPLETE'),
       eligibility: 'ELIGIBLE',
     },
     {
@@ -151,6 +151,15 @@ describe('table-driven verdict vocabulary', () => {
 
     expect(authority.freshness.messageId).toBe('table.freshness.notEvaluated.label');
   });
+
+  it('blocks terminal executions without assertions or a frozen coverage denominator', () => {
+    expect(presentTableCaseAuthority(
+      verdict('SUCCESS', 'NONE', 'CURRENT', 'CERTIFIABLE', 'COMPLETE'),
+    ).governanceEligibility).toBe('INELIGIBLE');
+    expect(presentTableCaseAuthority(
+      verdict('SUCCESS', 'PASSED', 'CURRENT', 'CERTIFIABLE'),
+    ).governanceEligibility).toBe('INELIGIBLE');
+  });
 });
 
 function verdict(
@@ -158,8 +167,9 @@ function verdict(
   assertions: TableCaseVerdict['assertions'],
   freshness: TableCaseVerdict['freshness'],
   proofStrength: TableCaseVerdict['proofStrength'],
+  coverage?: TableCaseVerdict['coverage'],
 ): TableCaseVerdict {
-  return { execution, assertions, freshness, proofStrength };
+  return { execution, assertions, freshness, proofStrength, coverage };
 }
 
 function fingerprint(seed: string): string {

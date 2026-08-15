@@ -1098,7 +1098,9 @@ class VisualAuthoringBrowserDomTest {
                 .hasSizeGreaterThanOrEqualTo(3);
         assertThat(driver.findElement(By.cssSelector(".scenario-list-row.selected")).getText()).isNotBlank();
         assertThat(driver.findElement(By.cssSelector(".scenario-editor")).getText())
-                .contains("Run success is enough until an assertion is added.");
+                .contains("Unproven")
+                .contains("no business assertion was evaluated")
+                .doesNotContain("Run success is enough");
         assertPageNoHorizontalOverflow();
     }
 

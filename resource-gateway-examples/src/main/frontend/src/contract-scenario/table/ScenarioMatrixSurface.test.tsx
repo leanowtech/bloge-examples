@@ -333,7 +333,7 @@ describe('ScenarioMatrixSurface', () => {
     await renderProjection(projection);
 
     const row = host.querySelector(`[data-testid="scenario-matrix-row-${caseId}"]`);
-    expect(row?.textContent).toContain('Execution timed out');
+    expect(row?.textContent).toContain('Execution failed');
     expect(row?.textContent).not.toContain('DEPENDENCY_TIMEOUT');
     expect(row?.textContent).not.toContain('Socket deadline exceeded');
 

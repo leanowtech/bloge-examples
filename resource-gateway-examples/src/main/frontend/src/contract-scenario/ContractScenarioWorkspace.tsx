@@ -1964,7 +1964,10 @@ function ScenarioTab({
                   />
                 ))}
                 {selectedScenario.then.assertions.length === 0 && (
-                  <p className="scenario-assertion-empty">{t('Run success is enough until an assertion is added.')}</p>
+                  <p className="scenario-assertion-empty" role="status">
+                    <strong>{m('correctness.verdict.unproven.label')}</strong>
+                    <span>{m('correctness.verdict.unproven.detail')}</span>
+                  </p>
                 )}
               </div>
             </section>

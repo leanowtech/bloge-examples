@@ -875,7 +875,6 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Then': '预期结果',
   'Compare public output by whole value or path': '按完整值或路径比较公开输出',
   '+ Assertion': '+ 断言',
-  'Run success is enough until an assertion is added.': '添加断言前，仅校验运行是否成功。',
   'Advanced Scenario JSON': '高级测试场景 JSON',
   'Apply valid JSON': '应用有效 JSON',
   '{dependencies} dependencies · {assertions} assertions': '{dependencies} 个依赖 · {assertions} 个断言',

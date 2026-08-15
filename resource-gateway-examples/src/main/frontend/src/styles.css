@@ -4900,8 +4900,16 @@ button.primary:disabled {
 .scenario-assertion-empty {
   margin: 0;
   padding: 9px;
-  color: #64748b;
+  display: grid;
+  gap: 3px;
+  border-left: 3px solid #c47a16;
+  background: #fff8e8;
+  color: #69410b;
   font-size: var(--rg-font-aux);
+}
+
+.scenario-assertion-empty strong {
+  color: #7a4908;
 }
 
 .scenario-run-errors {

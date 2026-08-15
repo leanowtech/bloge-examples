@@ -1,3 +1,15 @@
+import {
+  presentCorrectnessVerdict,
+  type CorrectnessCoverageStatus,
+  type CorrectnessEvidenceStatus,
+  type CorrectnessExecutionStatus,
+  type CorrectnessVerdictPresentation,
+} from '../correctness-studio/model/verdictPresentationPolicy';
+import type {
+  ProductMessageDescriptor,
+  ProductMessageId,
+} from '../i18n/messageCatalog';
+
 /** Execution is a runtime fact and must never be collapsed into assertion or governance state. */
 export type TableCaseExecutionStatus =
   'NOT_RUN'
@@ -29,6 +41,8 @@ export interface TableCaseVerdict {
   assertions: TableCaseAssertionStatus;
   freshness: TableCaseEvidenceFreshness;
   proofStrength: TableCaseProofStrength;
+  /** Legacy Scenario rows have no frozen inventory and therefore remain NOT_EVALUATED. */
+  coverage?: CorrectnessCoverageStatus;
 }
 
 export interface TableCaseVerdictPresentation {
@@ -40,6 +54,7 @@ export interface TableCaseVerdictPresentation {
 export type TableCaseGovernanceEligibility = 'ELIGIBLE' | 'INELIGIBLE' | 'NOT_EVALUATED';
 
 export interface TableCaseAuthorityPresentation {
+  verdict: CorrectnessVerdictPresentation;
   behavior: ProductMessageDescriptor;
   proof: ProductMessageDescriptor;
   proofDetail: ProductMessageDescriptor;
@@ -58,52 +73,19 @@ export interface TableCaseAuthorityPresentation {
 export function presentTableCaseVerdict(
   verdict: TableCaseVerdict,
 ): TableCaseVerdictPresentation {
-  if (verdict.freshness !== 'CURRENT') {
-    return presentation(
-      'stale',
-      verdict.freshness === 'STALE'
-        ? 'table.verdict.evidenceStale'
-        : 'table.verdict.evidenceSuperseded',
-      'table.detail.rerunCurrent',
-    );
-  }
-  if (verdict.execution === 'NOT_RUN') {
-    return presentation('neutral', 'table.verdict.notRun', 'table.detail.noEvidence');
-  }
-  if (verdict.execution === 'QUEUED' || verdict.execution === 'RUNNING') {
-    return presentation(
-      'running',
-      verdict.execution === 'QUEUED' ? 'table.verdict.queued' : 'table.verdict.running',
-      'table.detail.inProgress',
-    );
-  }
-  if (verdict.execution !== 'SUCCESS') {
-    return presentation(
-      verdict.execution === 'SKIPPED' || verdict.execution === 'BUDGET_STOPPED'
-        ? 'warning'
-        : 'failed',
-      executionLabel(verdict.execution),
-      'table.detail.executionFailed',
-    );
-  }
-  if (verdict.assertions === 'FAILED') {
-    return presentation('failed', 'table.verdict.assertionsFailed', 'table.detail.assertionsFailed');
-  }
-  if (verdict.assertions === 'INCONCLUSIVE') {
-    return presentation(
-      'warning',
-      'table.verdict.assertionsInconclusive',
-      'table.detail.assertionsInconclusive',
-    );
-  }
-  if (verdict.assertions === 'NONE') {
-    return presentation('warning', proofSucceededLabel(verdict.proofStrength), 'table.detail.noAssertions');
-  }
-  return presentation('passed', proofPassedLabel(verdict.proofStrength), 'table.detail.assertionsPassed');
+  const correctness = correctnessVerdictForTableCase(verdict);
+  return {
+    tone: correctness.tone,
+    label: correctness.primary,
+    detail: correctness.detail,
+  };
 }
 
 export function presentTableCaseAuthority(verdict: TableCaseVerdict): TableCaseAuthorityPresentation {
-  const behavior = presentTableCaseVerdict(verdict).label;
+  const correctness = correctnessVerdictForTableCase(verdict);
+  const behavior = verdict.execution === 'SUCCESS' && verdict.assertions === 'PASSED'
+    ? { messageId: proofPassedLabel(verdict.proofStrength) }
+    : correctness.primary;
   const governanceEligibility = governanceEligibilityFor(verdict);
   const freshness = verdict.execution === 'NOT_RUN'
     || verdict.execution === 'QUEUED'
@@ -114,6 +96,7 @@ export function presentTableCaseAuthority(verdict: TableCaseVerdict): TableCaseA
     ? 'eligible'
     : governanceEligibility === 'INELIGIBLE' ? 'ineligible' : 'notEvaluated';
   return {
+    verdict: correctness,
     behavior,
     proof: { messageId: proofMessageId(verdict.proofStrength, 'label') },
     proofDetail: { messageId: proofMessageId(verdict.proofStrength, 'detail') },
@@ -125,48 +108,35 @@ export function presentTableCaseAuthority(verdict: TableCaseVerdict): TableCaseA
 }
 
 export function governanceEligibilityFor(verdict: TableCaseVerdict): TableCaseGovernanceEligibility {
-  if (verdict.execution === 'NOT_RUN'
-    || verdict.execution === 'QUEUED'
-    || verdict.execution === 'RUNNING'
-    || verdict.assertions === 'NONE') {
-    return 'NOT_EVALUATED';
-  }
-  return verdict.execution === 'SUCCESS'
-    && verdict.assertions === 'PASSED'
-    && verdict.freshness === 'CURRENT'
-    && verdict.proofStrength === 'CERTIFIABLE'
+  const gate = correctnessVerdictForTableCase(verdict).axes.gate.status;
+  return gate === 'ACCEPTED'
     ? 'ELIGIBLE'
-    : 'INELIGIBLE';
+    : gate === 'BLOCKED' ? 'INELIGIBLE' : 'NOT_EVALUATED';
 }
 
-function presentation(
-  tone: TableCaseVerdictPresentation['tone'],
-  label: ProductMessageId,
-  detail: ProductMessageId,
-): TableCaseVerdictPresentation {
-  return { tone, label: { messageId: label }, detail: { messageId: detail } };
-}
-
-function executionLabel(
-  status: Exclude<TableCaseExecutionStatus, 'NOT_RUN' | 'QUEUED' | 'RUNNING' | 'SUCCESS'>,
-): ProductMessageId {
-  switch (status) {
-    case 'ERROR': return 'table.verdict.executionError';
-    case 'TIMEOUT': return 'table.verdict.executionTimeout';
-    case 'SKIPPED': return 'table.verdict.skipped';
-    case 'CANCELLED': return 'table.verdict.cancelled';
-    case 'BUDGET_STOPPED': return 'table.verdict.budgetStopped';
-  }
-}
-
-function proofSucceededLabel(proof: TableCaseProofStrength): ProductMessageId {
-  switch (proof) {
-    case 'SCHEMA': return 'table.verdict.schemaSucceeded';
-    case 'MOCK': return 'table.verdict.mockSucceeded';
-    case 'SANDBOX': return 'table.verdict.sandboxSucceeded';
-    case 'RUNTIME': return 'table.verdict.runtimeSucceeded';
-    case 'CERTIFIABLE': return 'table.verdict.certifiableSucceeded';
-  }
+export function correctnessVerdictForTableCase(
+  verdict: TableCaseVerdict,
+): CorrectnessVerdictPresentation {
+  const execution = correctnessExecution(verdict.execution);
+  const evidence = correctnessEvidence(verdict);
+  const coverage = verdict.coverage ?? 'NOT_EVALUATED';
+  const gate = execution === 'NOT_RUN' || execution === 'QUEUED' || execution === 'RUNNING'
+    ? 'NOT_EVALUATED'
+    : verdict.proofStrength === 'CERTIFIABLE'
+      && execution === 'SUCCESS'
+      && verdict.assertions === 'PASSED'
+      && coverage === 'COMPLETE'
+      && evidence === 'CURRENT'
+      ? 'ACCEPTED'
+      : 'BLOCKED';
+  return presentCorrectnessVerdict({
+    execution,
+    assertions: verdict.assertions,
+    coverage,
+    evidence,
+    gate,
+    proofLevel: verdict.proofStrength,
+  });
 }
 
 function proofPassedLabel(proof: TableCaseProofStrength): ProductMessageId {
@@ -193,7 +163,20 @@ function freshnessMessageId(freshness: TableCaseEvidenceFreshness): ProductMessa
     : freshness === 'STALE' ? 'stale' : 'superseded';
   return `table.freshness.${freshnessKey}.label`;
 }
-import type {
-  ProductMessageDescriptor,
-  ProductMessageId,
-} from '../i18n/messageCatalog';
+
+function correctnessExecution(status: TableCaseExecutionStatus): CorrectnessExecutionStatus {
+  if (status === 'ERROR') return 'FAILED';
+  if (status === 'BUDGET_STOPPED') return 'PARTIAL';
+  return status;
+}
+
+function correctnessEvidence(verdict: TableCaseVerdict): CorrectnessEvidenceStatus {
+  if (verdict.execution === 'NOT_RUN'
+    || verdict.execution === 'QUEUED'
+    || verdict.execution === 'RUNNING') {
+    return 'NOT_AVAILABLE';
+  }
+  if (verdict.freshness === 'STALE') return 'STALE';
+  if (verdict.freshness === 'SUPERSEDED') return 'SUPERSEDED';
+  return verdict.proofStrength === 'CERTIFIABLE' ? 'CURRENT' : 'EXPLORATORY';
+}

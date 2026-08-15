@@ -196,9 +196,10 @@ describe('ContractScenarioWorkspace', () => {
     expect(receipt?.querySelector(`code[title="${fingerprint('d')}"]`)).not.toBeNull();
     expect(text()).toContain('PromotionPartial only');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-1"]')?.textContent)
-      .toContain('Mock behavior matched');
+      .toContain('Coverage not evaluated');
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved-3"]')?.textContent)
-      .toContain('Mock behavior matched');
+      .toContain('Coverage not evaluated');
+    expect(text()).toContain('Mock simulation');
     const inspect = document.querySelector<HTMLButtonElement>(
       '[aria-label="Inspect Approved applicant 1"]',
     );
@@ -224,13 +225,25 @@ describe('ContractScenarioWorkspace', () => {
 
     expect(onRun).toHaveBeenCalledTimes(1);
     expect(document.querySelector('[data-testid="scenario-matrix-row-approved"]')?.textContent)
-      .toContain('Mock behavior matched');
+      .toContain('Coverage not evaluated');
     const inspect = document.querySelector<HTMLButtonElement>('[aria-label="Inspect Approved applicant"]');
     expect(inspect).not.toBeNull();
     await act(async () => inspect?.click());
     expect(text()).toContain('Expected / Actual / Diff');
     expect(text()).toContain('Matched');
     expect(text()).toContain('Real target execution');
+  });
+
+  it('marks a Case without business assertions as unproven instead of successful', async () => {
+    await renderWorkspace({
+      initialTab: 'scenarios',
+      presentation: 'surface',
+      withoutAssertions: true,
+    });
+
+    expect(text()).toContain('Unproven');
+    expect(text()).toContain('no business assertion was evaluated');
+    expect(text()).not.toContain('Run success is enough until an assertion is added');
   });
 
   it('limits central-surface asset commands to the active authoring task', async () => {
@@ -1078,6 +1091,7 @@ describe('ContractScenarioWorkspace', () => {
     onCoordinateChange?: ReturnType<typeof vi.fn>;
     onRunEvidence?: ReturnType<typeof vi.fn>;
     presentation?: 'dialog' | 'surface';
+    withoutAssertions?: boolean;
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -1105,6 +1119,12 @@ describe('ContractScenarioWorkspace', () => {
     const draftSet = {
       ...projectedDraftSet,
       revision: options.scenarioRevision ?? projectedDraftSet.revision,
+      scenarios: options.withoutAssertions
+        ? projectedDraftSet.scenarios.map((scenario) => ({
+          ...scenario,
+          then: { assertions: [] },
+        }))
+        : projectedDraftSet.scenarios,
     };
     await act(async () => {
       root = createRoot(host);
