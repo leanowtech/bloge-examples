@@ -28,6 +28,7 @@ export interface ContinuityState {
 }
 
 export type ContinuityEvent =
+  | { type: 'CONTENT_EDITED'; epoch: number }
   | { type: 'CONTENT_CHANGED'; epoch: number; fingerprint: string }
   | { type: 'SAVE_STARTED'; epoch: number }
   | { type: 'SAVE_SUCCEEDED'; epoch: number; fingerprint: string; revision: number }
@@ -75,6 +76,14 @@ export function reduceContinuityState(
   event: ContinuityEvent,
 ): ContinuityState {
   switch (event.type) {
+    case 'CONTENT_EDITED':
+      if (event.epoch <= state.contentEpoch) return state;
+      return {
+        ...state,
+        lifecycle: 'DIRTY',
+        contentEpoch: event.epoch,
+        errorCode: '',
+      };
     case 'CONTENT_CHANGED':
       if (event.epoch < state.contentEpoch) return state;
       if (event.epoch === state.contentEpoch && event.fingerprint === state.contentFingerprint) {

@@ -9,10 +9,13 @@ export async function sha256Fingerprint(value: unknown): Promise<string> {
   const digest = globalThis.crypto?.subtle
     ? new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))
     : sha256Digest(bytes);
-  const hex = Array.from(digest)
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-  return `sha256:${hex}`;
+  return formatSha256Fingerprint(digest);
+}
+
+/** Computes the same exact coordinate without depending on an asynchronously scheduled Web Crypto job. */
+export function sha256FingerprintSync(value: unknown): string {
+  const bytes = new TextEncoder().encode(canonicalJson(value));
+  return formatSha256Fingerprint(sha256Digest(bytes));
 }
 
 const SHA256_CONSTANTS = new Uint32Array([
@@ -91,6 +94,13 @@ function sha256Digest(bytes: Uint8Array): Uint8Array {
 
 function rotateRight(value: number, bits: number): number {
   return (value >>> bits) | (value << (32 - bits));
+}
+
+function formatSha256Fingerprint(digest: Uint8Array): string {
+  const hex = Array.from(digest)
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return `sha256:${hex}`;
 }
 
 function canonicalValue(value: unknown, ancestors: Set<object>): string {

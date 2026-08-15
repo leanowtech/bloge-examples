@@ -12,6 +12,19 @@ import {
 describe('workspace continuity', () => {
   beforeEach(() => window.sessionStorage.clear());
 
+  it('marks content dirty before its exact fingerprint has finished', () => {
+    const edited = reduceContinuityState(initialContinuityState('session-a'), {
+      type: 'CONTENT_EDITED',
+      epoch: 1,
+    });
+
+    expect(edited).toMatchObject({
+      lifecycle: 'DIRTY',
+      contentEpoch: 1,
+      contentFingerprint: '',
+    });
+  });
+
   it('keeps a newer dirty epoch when an older save receipt arrives', () => {
     const dirty = reduceContinuityState(initialContinuityState('session-a'), {
       type: 'CONTENT_CHANGED',

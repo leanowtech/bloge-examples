@@ -7,7 +7,11 @@ import {
   useState,
 } from 'react';
 
-import { canonicalJson, sha256Fingerprint } from '../../contract-scenario/fingerprint';
+import {
+  canonicalJson,
+  sha256Fingerprint,
+  sha256FingerprintSync,
+} from '../../contract-scenario/fingerprint';
 import { useWorkspaceNavigationGuard } from './SafeWorkspaceNavigation';
 import { HOST_WILL_DISPOSE_EVENT, joinHostDisposal } from '../../host/hostLifecycle';
 import {
@@ -96,6 +100,7 @@ export function useWorkspaceContinuity<TPayload>({
   const payloadRef = useRef(payload);
   const fingerprintValueRef = useRef(fingerprintValue);
   const coordinateRef = useRef(coordinate);
+  const canonicalFingerprintValueRef = useRef('');
   const fingerprintRef = useRef('');
   const epochRef = useRef(0);
   const fingerprintSequenceRef = useRef(0);
@@ -141,6 +146,9 @@ export function useWorkspaceContinuity<TPayload>({
         sessionIdRef.current = envelope.sessionId;
         epochRef.current = envelope.contentEpoch;
         fingerprintRef.current = envelope.contentFingerprint;
+        canonicalFingerprintValueRef.current = canonicalJson(
+          recoveryFingerprintValueRef.current(envelope.payload),
+        );
         latestEnvelopeRef.current = raw ?? '';
         onRestoreRef.current(envelope.payload, envelope.capturedAt);
         dispatch({
@@ -166,22 +174,26 @@ export function useWorkspaceContinuity<TPayload>({
       window.clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
     }
+    const canonical = canonicalJson(fingerprintValue);
+    if (canonical !== canonicalFingerprintValueRef.current) {
+      canonicalFingerprintValueRef.current = canonical;
+      epochRef.current += 1;
+      dispatch({ type: 'CONTENT_EDITED', epoch: epochRef.current });
+    }
+    const epoch = epochRef.current;
     const sequence = ++fingerprintSequenceRef.current;
     void sha256Fingerprint(fingerprintValue).then((fingerprint) => {
       if (sequence !== fingerprintSequenceRef.current) return;
-      if (fingerprint !== fingerprintRef.current) {
-        fingerprintRef.current = fingerprint;
-        epochRef.current += 1;
-      }
+      fingerprintRef.current = fingerprint;
       dispatch({
         type: 'CONTENT_CHANGED',
-        epoch: epochRef.current,
+        epoch,
         fingerprint,
       });
       if (authoritativelySaved) {
         dispatch({
           type: 'SAVE_SUCCEEDED',
-          epoch: epochRef.current,
+          epoch,
           fingerprint,
           revision: savedRevision,
         });
@@ -196,23 +208,33 @@ export function useWorkspaceContinuity<TPayload>({
     maxWaitTimerRef.current = null;
   }, []);
 
+  const synchronizeFingerprint = useCallback(() => {
+    const currentValue = fingerprintValueRef.current;
+    const canonical = canonicalJson(currentValue);
+    if (canonical !== canonicalFingerprintValueRef.current) {
+      canonicalFingerprintValueRef.current = canonical;
+      epochRef.current += 1;
+      fingerprintSequenceRef.current += 1;
+      dispatch({ type: 'CONTENT_EDITED', epoch: epochRef.current });
+    }
+    const fingerprint = sha256FingerprintSync(currentValue);
+    fingerprintRef.current = fingerprint;
+    dispatch({
+      type: 'CONTENT_CHANGED',
+      epoch: epochRef.current,
+      fingerprint,
+    });
+    return { epoch: epochRef.current, fingerprint };
+  }, []);
+
   const flushRecovery = useCallback(async (): Promise<boolean> => {
     if (!enabled || !hasContent) return true;
     try {
-      const fingerprint = await sha256Fingerprint(fingerprintValueRef.current);
-      if (fingerprint !== fingerprintRef.current) {
-        fingerprintRef.current = fingerprint;
-        epochRef.current += 1;
-        dispatch({
-          type: 'CONTENT_CHANGED',
-          epoch: epochRef.current,
-          fingerprint,
-        });
-      }
+      const { epoch, fingerprint } = synchronizeFingerprint();
       const envelope = createRecoveryEnvelope({
         sessionId: sessionIdRef.current,
         coordinate: coordinateRef.current,
-        contentEpoch: epochRef.current,
+        contentEpoch: epoch,
         contentFingerprint: fingerprint,
         payload: payloadRef.current,
       });
@@ -222,7 +244,7 @@ export function useWorkspaceContinuity<TPayload>({
       clearRecoveryTimers();
       dispatch({
         type: 'RECOVERY_STORED',
-        epoch: epochRef.current,
+        epoch,
         capturedAt: envelope.capturedAt,
       });
       return true;
@@ -230,7 +252,7 @@ export function useWorkspaceContinuity<TPayload>({
       dispatch({ type: 'SAVE_FAILED', offline: true, errorCode: 'RG.AUTHOR.RECOVERY.WRITE_FAILED' });
       return false;
     }
-  }, [clearRecoveryTimers, enabled, hasContent, store]);
+  }, [clearRecoveryTimers, enabled, hasContent, store, synchronizeFingerprint]);
 
   useEffect(() => {
     if (!enabled || !restoreChecked || !hasContent || !authoritativelySaved || savedRevision < 1) {
@@ -243,12 +265,7 @@ export function useWorkspaceContinuity<TPayload>({
     if (!enabled || !hasContent) return Promise.resolve(true);
     if (saveInFlightRef.current) return saveInFlightRef.current;
     const task = (async (): Promise<boolean> => {
-      const fingerprint = fingerprintRef.current || await sha256Fingerprint(fingerprintValueRef.current);
-      if (!fingerprintRef.current) {
-        fingerprintRef.current = fingerprint;
-        epochRef.current += 1;
-      }
-      const epoch = epochRef.current;
+      const { epoch, fingerprint } = synchronizeFingerprint();
       dispatch({ type: 'SAVE_STARTED', epoch });
       try {
         await onSaveRef.current({
@@ -277,7 +294,7 @@ export function useWorkspaceContinuity<TPayload>({
       if (saveInFlightRef.current === task) saveInFlightRef.current = null;
     });
     return task;
-  }, [enabled, hasContent, savedRevision]);
+  }, [enabled, hasContent, savedRevision, synchronizeFingerprint]);
 
   const discard = useCallback(async () => {
     clearRecoveryTimers();

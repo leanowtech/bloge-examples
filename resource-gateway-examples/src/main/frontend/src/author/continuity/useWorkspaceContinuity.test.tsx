@@ -82,6 +82,28 @@ describe('useWorkspaceContinuity', () => {
     expect(onSave).toHaveBeenCalledOnce();
   });
 
+  it('protects an edit on the recovery deadline even while Web Crypto is still pending', async () => {
+    vi.useFakeTimers();
+    const store = new MemoryRecoveryStore();
+    const digest = vi.spyOn(globalThis.crypto.subtle, 'digest').mockImplementation(
+      () => new Promise<ArrayBuffer>(() => undefined),
+    );
+
+    await render({ draftId: 'draft-a', revision: 1 }, false, 0, store, {
+      debounceMs: 350,
+      maxWaitMs: 5_000,
+    });
+    expect(lifecycle()).toBe('DIRTY');
+
+    await act(async () => vi.advanceTimersByTimeAsync(350));
+
+    expect(store.saveCount).toBe(1);
+    expect(store.serialized).toContain('"revision":1');
+    expect(store.serialized).toContain('"contentFingerprint":"sha256:');
+
+    digest.mockRestore();
+  });
+
   it('captures continuously changing work no later than the five-second max wait', async () => {
     vi.useFakeTimers();
     const store = new MemoryRecoveryStore();

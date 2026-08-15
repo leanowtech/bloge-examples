@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { canonicalJson, sha256Fingerprint } from './fingerprint';
+import { canonicalJson, sha256Fingerprint, sha256FingerprintSync } from './fingerprint';
 
 describe('sha256Fingerprint', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -34,6 +34,15 @@ describe('sha256Fingerprint', () => {
     vi.stubGlobal('crypto', {});
 
     expect(await sha256Fingerprint(value)).toBe(expected);
+  });
+
+  it('keeps the synchronous recovery coordinate identical to Web Crypto', async () => {
+    const value = {
+      graph: 'customer-refund',
+      nodes: Array.from({ length: 64 }, (_, index) => ({ id: `node-${index}`, enabled: true })),
+    };
+
+    expect(sha256FingerprintSync(value)).toBe(await sha256Fingerprint(value));
   });
 
   it('keeps canonical object ordering identical across native and fallback implementations', async () => {
