@@ -2,6 +2,11 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
+import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
+import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionSetService;
+import com.leanowtech.bloge.gateway.testing.correctness.oracle.BusinessOracleService;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.AssertionSetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.BusinessOracleRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.CorrectnessDefinitionRepository;
@@ -14,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseFixt
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseScenarioDraftSetV2Repository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Service;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.DefinitionOnlyCorrectnessWorkspaceComponentSource;
@@ -23,6 +29,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.OracleAssertio
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioV2CoverageFulfillmentSource;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -136,8 +143,21 @@ public class CorrectnessAuthoringRuntimeConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    CorrectnessAuthoringRuntimeAvailability correctnessAuthoringRuntimeAvailability() {
+    CorrectnessAuthoringRuntimeAvailability correctnessAuthoringRuntimeAvailability(
+            ObjectProvider<CorrectnessWorkspaceQuery> workspace,
+            ObjectProvider<CoverageInventoryService> coverage,
+            ObjectProvider<BusinessOracleService> oracles,
+            ObjectProvider<AssertionSetService> assertions,
+            ObjectProvider<ScenarioDraftSetV2Service> scenarios,
+            ObjectProvider<FixtureCatalogService> fixtures,
+            ObjectProvider<FixtureMaterialService> materials
+    ) {
         return new CorrectnessAuthoringRuntimeAvailability(
-                true, false, false, false, false, false);
+                workspace.getIfAvailable() != null,
+                coverage.getIfAvailable() != null,
+                oracles.getIfAvailable() != null && assertions.getIfAvailable() != null,
+                scenarios.getIfAvailable() != null,
+                fixtures.getIfAvailable() != null,
+                materials.getIfAvailable() != null);
     }
 }
