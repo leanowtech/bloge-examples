@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-fixture-material-receipt-v2.schema.json",
+  "title": "BLOGE Fixture Material Receipt v2",
+  "description": "Payload-free receipt. Plain material is never returned by the write operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixtureAssetId", "materialRef", "payloadFingerprint", "source", "subject", "target", "schemaRef", "classification", "retention", "redaction", "lineageRefs", "payloadPersisted", "payloadReturned"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureMaterialReceipt.v2" },
+    "fixtureAssetId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "materialRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "payloadFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "source": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fixtureSource" },
+    "subject": { "enum": ["GRAPH", "OPERATOR", "FUNCTION", "SCENARIO"] },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "schemaRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSchemaRef" },
+    "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+    "retention": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/retentionDescriptor" },
+    "redaction": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/redactionDescriptor" },
+    "lineageRefs": { "type": "array", "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" } },
+    "payloadPersisted": { "const": true },
+    "payloadReturned": { "const": false }
+  }
+}

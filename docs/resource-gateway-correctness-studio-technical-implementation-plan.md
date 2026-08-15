@@ -172,6 +172,15 @@ com.leanowtech.bloge.gateway.testing.correctness
 - set 语义数组在 fingerprint 前排序；业务顺序有意义的数组保持原顺序。
 - payload 和 secret 不进入错误、日志、metrics、普通 receipt 或 Workspace projection。
 
+权威生产者 Schema 由
+[`bloge-correctness-authoring-v1.schema.json`](schemas/bloge-correctness-authoring-v1.schema.json)
+统一复用公共 exact ref、scope、review、assertion union 与 value-source union 定义；每种顶层资产另提供可独立引用的轻量入口 Schema。
+Fixture material 写入与 receipt 分别使用
+[`bloge-fixture-material-write-request-v2.schema.json`](schemas/bloge-fixture-material-write-request-v2.schema.json)
+和
+[`bloge-fixture-material-receipt-v2.schema.json`](schemas/bloge-fixture-material-receipt-v2.schema.json)。生产者必须通过封闭 Schema；旧 reader
+在同一 major 版本内可以忽略新增字段以支持滚动升级，但未知 enum、未知联合类型和未知 schema version 必须失败关闭。
+
 通用 exact reference：
 
 ```java
@@ -208,6 +217,7 @@ public record CorrectnessDefinition(
         RiskLevel riskLevel,
         PrincipalRef owner,
         List<ExactBasisRef> policyRefs,
+        Waiver policyWaiver,
         ExactAssetRef activeInventoryRef,
         DefinitionLifecycle lifecycle,
         ReviewRecord review,
@@ -1137,12 +1147,18 @@ COR-08 仍须实现服务端 `CorrectnessPreflightFacade`，并委托既有 `Exe
 
 当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 
+COR-01 的协议核心已经落地：`testing/correctness/domain` 包含 Definition、Inventory、Oracle、Assertion Set、Scenario v2、Fixture
+descriptor/material wire、Publication/Attempt 与五轴 Verdict；所有跨资产引用都冻结 revision 与 fingerprint，集合语义在构造期规范化，canonical
+fingerprint 使用固定 golden 防止历史漂移。JSON Schema 与 Java 序列化字段、封闭 assertion/value-source union、未知 enum、additive reader
+兼容和 payload-free receipt 均有自动化测试。COR-01 仍未达到退出条件，剩余工作是 PostgreSQL migration、通用 revision repository、scope/CAS
+并发测试和迁移回滚验证。
+
 ### 16.1 Epic 总览
 
 | Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
-| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 未开始 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
+| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 协议与 Schema 已完成；持久化进行中 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 未开始 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |

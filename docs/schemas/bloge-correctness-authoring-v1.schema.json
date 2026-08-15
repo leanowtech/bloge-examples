@@ -1,0 +1,652 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-authoring-v1.schema.json",
+  "title": "BLOGE Correctness Authoring Protocol Bundle v1",
+  "description": "Closed producer schemas for versioned correctness authoring assets. Readers may tolerate additive fields during rolling upgrades, but producers must validate against the selected closed definition.",
+  "oneOf": [
+    { "$ref": "#/$defs/correctnessDefinition" },
+    { "$ref": "#/$defs/coverageInventory" },
+    { "$ref": "#/$defs/businessOracle" },
+    { "$ref": "#/$defs/assertionSet" },
+    { "$ref": "#/$defs/scenarioDraftSetV2" },
+    { "$ref": "#/$defs/fixtureAssetDescriptor" },
+    { "$ref": "#/$defs/correctnessPublication" },
+    { "$ref": "#/$defs/publicationAttempt" },
+    { "$ref": "#/$defs/correctnessVerdict" }
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "stringList": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 4096,
+      "items": { "type": "string", "maxLength": 4096 }
+    },
+    "riskLevel": {
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+    "enterpriseScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environment", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environment": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "exactAssetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "$ref": "#/$defs/identifier" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "exactTargetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "enum": ["GRAPH", "OPERATOR", "FUNCTION"] },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "exactBasisRef": {
+      "$ref": "#/$defs/exactAssetRef"
+    },
+    "exactSourceSnapshotRef": {
+      "$ref": "#/$defs/exactAssetRef"
+    },
+    "exactSchemaRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "fingerprint"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "exactObligationRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inventoryRef", "obligationId", "obligationFingerprint"],
+      "properties": {
+        "inventoryRef": { "$ref": "#/$defs/exactAssetRef" },
+        "obligationId": { "$ref": "#/$defs/identifier" },
+        "obligationFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "principalRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "displayName"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["USER", "TEAM", "SERVICE"] },
+        "displayName": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "reviewRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reviewer", "reviewedAt", "comment"],
+      "properties": {
+        "status": { "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "reviewer": {
+          "oneOf": [{ "$ref": "#/$defs/principalRef" }, { "type": "null" }]
+        },
+        "reviewedAt": { "type": ["string", "null"], "format": "date-time" },
+        "comment": { "type": "string", "maxLength": 4096 }
+      }
+    },
+    "waiver": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "expiresAt", "approvedBy", "approvedAt"],
+      "properties": {
+        "reason": { "$ref": "#/$defs/identifier" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "approvedBy": { "$ref": "#/$defs/principalRef" },
+        "approvedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "nullableWaiver": {
+      "oneOf": [{ "$ref": "#/$defs/waiver" }, { "type": "null" }]
+    },
+    "auditMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["createdAt", "updatedAt", "createdBy", "updatedBy"],
+      "properties": {
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "createdBy": { "$ref": "#/$defs/principalRef" },
+        "updatedBy": { "$ref": "#/$defs/principalRef" }
+      }
+    },
+    "correctnessDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "definitionId", "revision", "scope", "target", "title", "businessIntent", "successCriteria", "riskLevel", "owner", "policyRefs", "policyWaiver", "activeInventoryRef", "lifecycle", "review", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.correctnessDefinition.v1" },
+        "definitionId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "title": { "$ref": "#/$defs/identifier" },
+        "businessIntent": { "$ref": "#/$defs/identifier" },
+        "successCriteria": { "$ref": "#/$defs/stringList" },
+        "riskLevel": { "$ref": "#/$defs/riskLevel" },
+        "owner": { "$ref": "#/$defs/principalRef" },
+        "policyRefs": { "type": "array", "items": { "$ref": "#/$defs/exactBasisRef" } },
+        "policyWaiver": { "$ref": "#/$defs/nullableWaiver" },
+        "activeInventoryRef": {
+          "oneOf": [{ "$ref": "#/$defs/exactAssetRef" }, { "type": "null" }]
+        },
+        "lifecycle": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "SUPERSEDED"] },
+        "review": { "$ref": "#/$defs/reviewRecord" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "coverageObligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["obligationId", "dimension", "title", "statement", "risk", "owner", "source", "lifecycle", "waiver", "tags"],
+      "properties": {
+        "obligationId": { "$ref": "#/$defs/identifier" },
+        "dimension": { "enum": ["CONTRACT", "PATH", "POLICY", "RISK", "INCIDENT", "BOUNDARY"] },
+        "title": { "$ref": "#/$defs/identifier" },
+        "statement": { "$ref": "#/$defs/identifier" },
+        "risk": { "$ref": "#/$defs/riskLevel" },
+        "owner": { "$ref": "#/$defs/principalRef" },
+        "source": { "enum": ["AUTOMATED", "BUSINESS", "INCIDENT", "MIGRATED"] },
+        "lifecycle": { "enum": ["PROPOSED", "FROZEN", "WAIVED", "RETIRED"] },
+        "waiver": { "$ref": "#/$defs/nullableWaiver" },
+        "tags": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "coverageInventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "inventoryId", "revision", "scope", "target", "lifecycle", "obligations", "derivationSources", "freezeReview", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.coverageInventory.v1" },
+        "inventoryId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "lifecycle": { "enum": ["DRAFT", "FROZEN", "SUPERSEDED"] },
+        "obligations": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/coverageObligation" } },
+        "derivationSources": { "type": "array", "items": { "$ref": "#/$defs/exactSourceSnapshotRef" } },
+        "freezeReview": { "$ref": "#/$defs/reviewRecord" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "businessOracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "oracleId", "revision", "scope", "target", "statement", "forbiddenOutcomes", "basisRefs", "owner", "lifecycle", "approval", "assertionSetRefs", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.businessOracle.v1" },
+        "oracleId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "statement": { "$ref": "#/$defs/identifier" },
+        "forbiddenOutcomes": { "$ref": "#/$defs/stringList" },
+        "basisRefs": { "type": "array", "items": { "$ref": "#/$defs/exactBasisRef" } },
+        "owner": { "$ref": "#/$defs/principalRef" },
+        "lifecycle": { "enum": ["PROPOSED", "APPROVED", "SUPERSEDED"] },
+        "approval": { "$ref": "#/$defs/reviewRecord" },
+        "assertionSetRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "outputAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "path", "operator", "expected"],
+      "properties": {
+        "type": { "const": "OUTPUT" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "path": { "type": "string", "maxLength": 4096 },
+        "operator": { "enum": ["EQUALS", "CONTAINS", "RANGE", "SET", "SCHEMA", "EXISTS", "ABSENT"] },
+        "expected": true
+      }
+    },
+    "errorAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "code", "errorType", "retryable"],
+      "properties": {
+        "type": { "const": "ERROR" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "code": { "type": "string", "maxLength": 512 },
+        "errorType": { "type": "string", "maxLength": 512 },
+        "retryable": { "type": ["boolean", "null"] }
+      }
+    },
+    "nodeAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "nodeId", "operator", "expected"],
+      "properties": {
+        "type": { "const": "NODE" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "nodeId": { "$ref": "#/$defs/identifier" },
+        "operator": { "enum": ["STATUS", "SKIPPED", "FALLBACK", "RETRY_COUNT"] },
+        "expected": true
+      }
+    },
+    "edgeAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "fromNodeId", "toNodeId", "operator", "expected"],
+      "properties": {
+        "type": { "const": "EDGE" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "fromNodeId": { "$ref": "#/$defs/identifier" },
+        "toNodeId": { "$ref": "#/$defs/identifier" },
+        "operator": { "enum": ["TRANSFER", "SCHEMA", "DATA_MINIMIZATION"] },
+        "expected": true
+      }
+    },
+    "invocationAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "operatorRef", "operator", "expected"],
+      "properties": {
+        "type": { "const": "INVOCATION" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "operatorRef": { "$ref": "#/$defs/identifier" },
+        "operator": { "enum": ["USED", "NOT_USED", "COUNT", "INPUT_MATCH"] },
+        "expected": true
+      }
+    },
+    "stateEffectAssertion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "operator", "stateOrEffect", "expected"],
+      "properties": {
+        "type": { "const": "STATE_EFFECT" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "enum": ["RUNTIME", "EVIDENCE"] },
+        "operator": { "enum": ["STATE_TRANSITION", "SIDE_EFFECT", "COMPENSATION"] },
+        "stateOrEffect": { "$ref": "#/$defs/identifier" },
+        "expected": true
+      }
+    },
+    "governanceExpectation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "assertionId", "evaluationKind", "operator", "expected"],
+      "properties": {
+        "type": { "const": "GOVERNANCE" },
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "evaluationKind": { "const": "GATE" },
+        "operator": { "enum": ["OWNER", "RISK", "BASIS", "EVIDENCE_EXPECTATION"] },
+        "expected": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "executableAssertion": {
+      "oneOf": [
+        { "$ref": "#/$defs/outputAssertion" },
+        { "$ref": "#/$defs/errorAssertion" },
+        { "$ref": "#/$defs/nodeAssertion" },
+        { "$ref": "#/$defs/edgeAssertion" },
+        { "$ref": "#/$defs/invocationAssertion" },
+        { "$ref": "#/$defs/stateEffectAssertion" },
+        { "$ref": "#/$defs/governanceExpectation" }
+      ]
+    },
+    "compilationCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported", "evaluatorVersion", "capabilities", "reasonCode"],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "evaluatorVersion": { "type": "string", "maxLength": 512 },
+        "capabilities": { "$ref": "#/$defs/stringList" },
+        "reasonCode": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "assertionSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "assertionSetId", "revision", "target", "oracleRef", "lifecycle", "assertions", "compatibility", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.assertionSet.v1" },
+        "assertionSetId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "oracleRef": { "$ref": "#/$defs/exactAssetRef" },
+        "lifecycle": { "enum": ["DRAFT", "VALID", "STALE"] },
+        "assertions": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/executableAssertion" } },
+        "compatibility": { "$ref": "#/$defs/compilationCompatibility" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "inlineValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": { "kind": { "const": "INLINE" }, "value": true }
+    },
+    "fixtureVariantRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "fixtureAssetRef", "variantKey"],
+      "properties": {
+        "kind": { "const": "FIXTURE_VARIANT" },
+        "fixtureAssetRef": { "$ref": "#/$defs/exactAssetRef" },
+        "variantKey": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "generatedValueRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "generatorRef", "deterministicSeedFingerprint"],
+      "properties": {
+        "kind": { "const": "GENERATED" },
+        "generatorRef": { "$ref": "#/$defs/exactAssetRef" },
+        "deterministicSeedFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "replayMaterialRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "replayMaterialRef"],
+      "properties": {
+        "kind": { "const": "REPLAY_MATERIAL" },
+        "replayMaterialRef": { "$ref": "#/$defs/exactAssetRef" }
+      }
+    },
+    "valueSource": {
+      "oneOf": [
+        { "$ref": "#/$defs/inlineValue" },
+        { "$ref": "#/$defs/fixtureVariantRef" },
+        { "$ref": "#/$defs/generatedValueRef" },
+        { "$ref": "#/$defs/replayMaterialRef" }
+      ]
+    },
+    "givenV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input"],
+      "properties": { "input": { "$ref": "#/$defs/valueSource" } }
+    },
+    "pathMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "expected"],
+      "properties": { "path": { "$ref": "#/$defs/identifier" }, "expected": true }
+    },
+    "dependencySelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graphPath", "nodeId", "operatorRef", "resourceRef", "functionRef", "attempts", "occurrences", "correlationKey", "pathMatches"],
+      "properties": {
+        "graphPath": { "type": "string", "maxLength": 4096 },
+        "nodeId": { "type": "string", "maxLength": 512 },
+        "operatorRef": { "type": "string", "maxLength": 512 },
+        "resourceRef": { "type": "string", "maxLength": 512 },
+        "functionRef": { "type": "string", "maxLength": 512 },
+        "attempts": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+        "occurrences": { "type": "array", "uniqueItems": true, "items": { "type": "integer", "minimum": 1 } },
+        "correlationKey": { "type": "string", "maxLength": 512 },
+        "pathMatches": { "type": "array", "items": { "$ref": "#/$defs/pathMatch" } }
+      }
+    },
+    "controlledBehavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "boundary", "value", "errorCode", "delayMs"],
+      "properties": {
+        "kind": { "enum": ["REAL", "RETURN", "ERROR", "DELAY", "TIMEOUT", "REPLAY", "OBSERVE", "MUST_NOT_CALL"] },
+        "boundary": { "enum": ["NODE", "TRANSPORT"] },
+        "value": { "oneOf": [{ "$ref": "#/$defs/valueSource" }, { "type": "null" }] },
+        "errorCode": { "type": "string", "maxLength": 512 },
+        "delayMs": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "consumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required", "minUses", "maxUses", "onExhausted", "onUnmatched"],
+      "properties": {
+        "required": { "type": "boolean" },
+        "minUses": { "type": "integer", "minimum": 0 },
+        "maxUses": { "type": "integer", "minimum": 0 },
+        "onExhausted": { "enum": ["FAIL", "REPEAT_LAST", "FALLBACK_TO_REAL"] },
+        "onUnmatched": { "enum": ["FAIL", "ALLOW_REAL"] }
+      }
+    },
+    "controlledDependencyV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dependencyId", "selector", "behavior", "consumption"],
+      "properties": {
+        "dependencyId": { "$ref": "#/$defs/identifier" },
+        "selector": { "$ref": "#/$defs/dependencySelector" },
+        "behavior": { "$ref": "#/$defs/controlledBehavior" },
+        "consumption": { "$ref": "#/$defs/consumption" }
+      }
+    },
+    "scenarioDraftV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioId", "name", "businessIntent", "description", "caseType", "risk", "owner", "lifecycle", "obligationRefs", "oracleRefs", "assertionSetRefs", "sourceRefs", "given", "dependencies", "review", "tags"],
+      "properties": {
+        "scenarioId": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "businessIntent": { "$ref": "#/$defs/identifier" },
+        "description": { "type": "string", "maxLength": 8192 },
+        "caseType": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"] },
+        "risk": { "$ref": "#/$defs/riskLevel" },
+        "owner": { "$ref": "#/$defs/principalRef" },
+        "lifecycle": { "enum": ["EXPLORATORY", "REVIEW_READY", "CANONICAL", "RETIRED"] },
+        "obligationRefs": { "type": "array", "items": { "$ref": "#/$defs/exactObligationRef" } },
+        "oracleRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "assertionSetRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "sourceRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "given": { "$ref": "#/$defs/givenV2" },
+        "dependencies": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/controlledDependencyV2" } },
+        "review": { "$ref": "#/$defs/reviewRecord" },
+        "tags": { "$ref": "#/$defs/stringList" }
+      }
+    },
+    "scenarioDraftSetV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "scenarioDraftSetId", "revision", "scope", "target", "contractRef", "scenarios", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.scenarioDraftSet.v2" },
+        "scenarioDraftSetId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "contractRef": { "$ref": "#/$defs/exactAssetRef" },
+        "scenarios": { "type": "array", "maxItems": 100000, "items": { "$ref": "#/$defs/scenarioDraftV2" } },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "fixtureSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "sourceRef"],
+      "properties": {
+        "kind": { "enum": ["SAMPLE", "SCHEMA_GENERATED", "SCENARIO", "INCIDENT_CAPTURE", "REPLAY_DERIVATION", "OPERATOR_TEST_CASE", "FUNCTION_TEST_CASE", "MIGRATED"] },
+        "sourceRef": { "oneOf": [{ "$ref": "#/$defs/exactAssetRef" }, { "type": "null" }] }
+      }
+    },
+    "redactionDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profileVersion", "redactedPaths", "reviewed"],
+      "properties": {
+        "profileVersion": { "$ref": "#/$defs/identifier" },
+        "redactedPaths": { "$ref": "#/$defs/stringList" },
+        "reviewed": { "type": "boolean" }
+      }
+    },
+    "retentionDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "retentionDays", "expiresAt"],
+      "properties": {
+        "policyVersion": { "$ref": "#/$defs/identifier" },
+        "retentionDays": { "type": "integer", "minimum": 1 },
+        "expiresAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "qualityProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaValid", "redactionVerified", "duplicateCandidateCount", "usageCount"],
+      "properties": {
+        "schemaValid": { "type": "boolean" },
+        "redactionVerified": { "type": "boolean" },
+        "duplicateCandidateCount": { "type": "integer", "minimum": 0 },
+        "usageCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "fixtureAssetDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "fixtureAssetId", "revision", "scope", "name", "source", "materialRef", "schemaRef", "variantKey", "lifecycle", "classification", "owner", "redaction", "retention", "quality", "tags", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.fixtureAssetDescriptor.v1" },
+        "fixtureAssetId": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 0 },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "source": { "$ref": "#/$defs/fixtureSource" },
+        "materialRef": { "$ref": "#/$defs/exactAssetRef" },
+        "schemaRef": { "$ref": "#/$defs/exactSchemaRef" },
+        "variantKey": { "$ref": "#/$defs/identifier" },
+        "lifecycle": { "enum": ["DRAFT", "PROPOSED", "APPROVED", "ACTIVE", "STALE", "REVOKED", "EXPIRED"] },
+        "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "owner": { "$ref": "#/$defs/principalRef" },
+        "redaction": { "$ref": "#/$defs/redactionDescriptor" },
+        "retention": { "$ref": "#/$defs/retentionDescriptor" },
+        "quality": { "$ref": "#/$defs/qualityProfile" },
+        "tags": { "$ref": "#/$defs/stringList" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "correctnessPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "publicationId", "scope", "target", "definitionRef", "inventoryRef", "scenarioDraftSetRef", "oracleRefs", "assertionSetRefs", "fixtureAssetRefs", "compiledFixtureBundleRefs", "compiledTestSuiteRef", "compilerVersion", "compilationFingerprint", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.correctnessPublication.v1" },
+        "publicationId": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/enterpriseScope" },
+        "target": { "$ref": "#/$defs/exactTargetRef" },
+        "definitionRef": { "$ref": "#/$defs/exactAssetRef" },
+        "inventoryRef": { "$ref": "#/$defs/exactAssetRef" },
+        "scenarioDraftSetRef": { "$ref": "#/$defs/exactAssetRef" },
+        "oracleRefs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "assertionSetRefs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "fixtureAssetRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "compiledFixtureBundleRefs": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "compiledTestSuiteRef": { "$ref": "#/$defs/exactAssetRef" },
+        "compilerVersion": { "$ref": "#/$defs/identifier" },
+        "compilationFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "compilationCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["definitionRef", "inventoryRef", "scenarioDraftSetRef"],
+      "properties": {
+        "definitionRef": { "$ref": "#/$defs/exactAssetRef" },
+        "inventoryRef": { "$ref": "#/$defs/exactAssetRef" },
+        "scenarioDraftSetRef": { "$ref": "#/$defs/exactAssetRef" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "retryable"],
+      "properties": {
+        "code": { "type": "string", "maxLength": 512 },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "publicationAttempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "attemptId", "stateVersion", "idempotencyKeyFingerprint", "coordinate", "stage", "verifiedAssets", "failure", "metadata"],
+      "properties": {
+        "schemaVersion": { "const": "bloge.correctnessPublicationAttempt.v1" },
+        "attemptId": { "$ref": "#/$defs/identifier" },
+        "stateVersion": { "type": "integer", "minimum": 1 },
+        "idempotencyKeyFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "coordinate": { "$ref": "#/$defs/compilationCoordinate" },
+        "stage": { "enum": ["PREPARING", "COMPILED", "REGISTERING", "COMMITTED", "FAILED"] },
+        "verifiedAssets": { "type": "array", "items": { "$ref": "#/$defs/exactAssetRef" } },
+        "failure": { "$ref": "#/$defs/failure" },
+        "metadata": { "$ref": "#/$defs/auditMetadata" }
+      }
+    },
+    "verdictReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "axis", "messageId"],
+      "properties": {
+        "code": { "$ref": "#/$defs/identifier" },
+        "axis": { "$ref": "#/$defs/identifier" },
+        "messageId": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "verdictRemediation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "reasonCode"],
+      "properties": {
+        "command": { "$ref": "#/$defs/identifier" },
+        "reasonCode": { "type": "string", "maxLength": 512 }
+      }
+    },
+    "correctnessVerdict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["execution", "assertions", "coverage", "evidence", "gate", "proofLevel", "reasons", "nextActions"],
+      "properties": {
+        "execution": { "enum": ["NOT_RUN", "RUNNING", "SUCCESS", "FAILED", "PARTIAL", "CANCELLED"] },
+        "assertions": { "enum": ["NOT_EVALUATED", "NONE", "PASSED", "FAILED", "INCONCLUSIVE"] },
+        "coverage": { "enum": ["NOT_EVALUATED", "UNFROZEN", "COMPLETE", "INCOMPLETE", "STALE"] },
+        "evidence": { "enum": ["NONE", "EXPLORATORY", "CURRENT", "STALE", "REVOKED"] },
+        "gate": { "enum": ["NOT_EVALUATED", "BLOCKED", "REVIEW", "ACCEPTED"] },
+        "proofLevel": { "enum": ["STRUCTURAL", "SIMULATED_BUSINESS", "CONTROLLED_INTEGRATION", "REPLAY_DERIVED"] },
+        "reasons": { "type": "array", "items": { "$ref": "#/$defs/verdictReason" } },
+        "nextActions": { "type": "array", "items": { "$ref": "#/$defs/verdictRemediation" } }
+      }
+    }
+  }
+}

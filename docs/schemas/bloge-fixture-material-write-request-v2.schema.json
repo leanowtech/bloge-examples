@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-fixture-material-write-request-v2.schema.json",
+  "title": "BLOGE Fixture Material Write Request v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "fixtureAssetId", "expectedRevision", "source", "subject", "target", "schemaRef", "classification", "retention", "redaction", "payload"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureMaterialWriteRequest.v2" },
+    "fixtureAssetId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "expectedRevision": { "type": "integer", "minimum": 0 },
+    "source": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fixtureSource" },
+    "subject": { "enum": ["GRAPH", "OPERATOR", "FUNCTION", "SCENARIO"] },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "schemaRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSchemaRef" },
+    "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+    "retention": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/retentionDescriptor" },
+    "redaction": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/redactionDescriptor" },
+    "payload": true
+  }
+}

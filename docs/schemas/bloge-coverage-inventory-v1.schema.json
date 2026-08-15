@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-coverage-inventory-v1.schema.json",
+  "title": "BLOGE Coverage Inventory v1",
+  "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/coverageInventory"
+}
