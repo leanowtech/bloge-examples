@@ -17,7 +17,11 @@ class CorrectnessAuthoringCapabilityTest {
                 .containsEntry("correctnessFixtureCatalogProtocol", true)
                 .containsEntry("correctnessFixtureCatalogApi", false)
                 .containsEntry("correctnessFixtureMaterialProtocol", true)
-                .containsEntry("correctnessFixtureMaterialApi", false);
+                .containsEntry("correctnessFixtureMaterialApi", false)
+                .containsEntry("correctnessRunProtocol", true)
+                .containsEntry("correctnessRunApi", false)
+                .containsEntry("correctnessEvidenceCompanionProtocol", true)
+                .containsEntry("correctnessEvidenceCompanionApi", false);
         assertThat(capabilities.endpoints())
                 .noneMatch(endpoint -> endpoint.path().startsWith("/api/visual/fixture-"));
     }
@@ -27,7 +31,8 @@ class CorrectnessAuthoringCapabilityTest {
         var service = new ToolStudioIntegrationService(null, null, null, null);
         service.configureCorrectnessAuthoringRuntime(
                 new CorrectnessAuthoringRuntimeAvailability(
-                        true, true, false, true, true, false, true, true, true));
+                        true, true, false, true, true, false, true, true, true,
+                        true, true));
 
         var capabilities = service.capabilities().payload();
 
@@ -40,7 +45,9 @@ class CorrectnessAuthoringCapabilityTest {
                 .containsEntry("correctnessFixtureMaterialApi", false)
                 .containsEntry("correctnessCompilationApi", true)
                 .containsEntry("correctnessPublicationApi", true)
-                .containsEntry("correctnessPreflightApi", true);
+                .containsEntry("correctnessPreflightApi", true)
+                .containsEntry("correctnessRunApi", true)
+                .containsEntry("correctnessEvidenceCompanionApi", true);
         assertThat(capabilities.endpoints())
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/correctness-workspaces/"))
@@ -52,6 +59,10 @@ class CorrectnessAuthoringCapabilityTest {
                         "/api/visual/correctness-publications"))
                 .anyMatch(endpoint -> endpoint.path().equals(
                         "/api/visual/correctness-runs:preflight"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-runs"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-runs/{suiteRunId}/evidence-companion"))
                 .noneMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/fixture-materials"));
     }

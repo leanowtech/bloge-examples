@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-preflight-report-v1.schema.json",
+  "title": "BLOGE Correctness Preflight Report v1",
+  "$ref": "bloge-correctness-run-protocol-v1.schema.json#/$defs/preflightReport"
+}

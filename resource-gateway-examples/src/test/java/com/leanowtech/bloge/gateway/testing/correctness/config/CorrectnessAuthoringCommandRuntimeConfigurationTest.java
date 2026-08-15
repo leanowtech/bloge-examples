@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageDerivationSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageReviewAuthorizer;
@@ -65,7 +66,7 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                     .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                             true, false, false, false, false, false,
-                            false, false, false));
+                            false, false, false, false, false));
         });
     }
 
@@ -100,15 +101,20 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                         () -> mock(TestExecutionApiService.class))
                 .withBean(TestSuiteRegistryService.class,
                         () -> mock(TestSuiteRegistryService.class))
+                .withBean(TestSuiteExecutionService.class,
+                        () -> mock(TestSuiteExecutionService.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                                     true, true, true, true, true, true,
-                                    true, true, true));
+                                    true, true, true, true, true));
                     assertThat(context).hasSingleBean(
                             com.leanowtech.bloge.gateway.testing.correctness.run
                                     .CorrectnessPreflightFacade.class);
+                    assertThat(context).hasSingleBean(
+                            com.leanowtech.bloge.gateway.testing.correctness.run
+                                    .CorrectnessRunService.class);
                 });
     }
 

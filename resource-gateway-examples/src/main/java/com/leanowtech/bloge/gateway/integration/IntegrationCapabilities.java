@@ -759,6 +759,18 @@ public record IntegrationCapabilities(
         objects.put("correctnessPreflightReport", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.run
                         .CorrectnessPreflightReport.SCHEMA_VERSION));
+        objects.put("correctnessRunRequest", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.run
+                        .CorrectnessRunRequest.SCHEMA_VERSION));
+        objects.put("correctnessRunResponse", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.run
+                        .CorrectnessRunResponse.SCHEMA_VERSION));
+        objects.put("correctnessEvidenceCompanion", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.run
+                        .CorrectnessEvidenceCompanion.SCHEMA_VERSION));
+        objects.put("storedCorrectnessEvidenceCompanion", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.run
+                        .StoredCorrectnessEvidenceCompanion.SCHEMA_VERSION));
         objects.put("correctnessWorkspaceProjection", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.workspace
                         .CorrectnessWorkspaceProjection.SCHEMA_VERSION));
@@ -1346,6 +1358,10 @@ public record IntegrationCapabilities(
         features.put("correctnessPublicationApi", false);
         features.put("correctnessPreflightProtocol", true);
         features.put("correctnessPreflightApi", false);
+        features.put("correctnessRunProtocol", true);
+        features.put("correctnessRunApi", false);
+        features.put("correctnessEvidenceCompanionProtocol", true);
+        features.put("correctnessEvidenceCompanionApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

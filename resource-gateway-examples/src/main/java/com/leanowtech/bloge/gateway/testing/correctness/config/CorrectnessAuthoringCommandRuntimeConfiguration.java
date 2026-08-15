@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationReferenceSource;
@@ -46,6 +47,11 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraf
 import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.publication.DatabaseCorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessPreflightFacade;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessEvidenceCompanionFactory;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessEvidenceRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessRunService;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessVerdictProjector;
+import com.leanowtech.bloge.gateway.testing.correctness.run.DatabaseCorrectnessEvidenceRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.DatabaseScenarioCanonicalApprovalReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationAdapter;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioCanonicalApprovalReceiptRepository;
@@ -320,6 +326,34 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    CorrectnessEvidenceRepository correctnessEvidenceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseCorrectnessEvidenceRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessVerdictProjector correctnessVerdictProjector() {
+        return new CorrectnessVerdictProjector();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessEvidenceCompanionFactory correctnessEvidenceCompanionFactory(
+            ScenarioDraftSetV2Repository scenarios,
+            FixtureAssetRepository fixtures,
+            CorrectnessVerdictProjector verdicts,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessEvidenceCompanionFactory(
+                scenarios, fixtures, verdicts, mapper);
+    }
+
+    @Bean
     @ConditionalOnBean({TestExecutionApiService.class, TestSuiteRegistryService.class})
     @ConditionalOnMissingBean
     CorrectnessTestingRegistryGateway correctnessTestingRegistryGateway(
@@ -355,5 +389,22 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     ) {
         return new CorrectnessPreflightFacade(
                 publications, registry, executions, mapper);
+    }
+
+    @Bean
+    @ConditionalOnBean({CorrectnessPreflightFacade.class,
+            CorrectnessPublicationRepository.class, TestSuiteExecutionService.class,
+            CorrectnessEvidenceCompanionFactory.class, CorrectnessEvidenceRepository.class})
+    @ConditionalOnMissingBean
+    CorrectnessRunService correctnessRunService(
+            CorrectnessPreflightFacade preflight,
+            CorrectnessPublicationRepository publications,
+            TestSuiteExecutionService suiteExecutions,
+            CorrectnessEvidenceCompanionFactory companions,
+            CorrectnessEvidenceRepository evidence,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessRunService(
+                preflight, publications, suiteExecutions, companions, evidence, mapper);
     }
 }

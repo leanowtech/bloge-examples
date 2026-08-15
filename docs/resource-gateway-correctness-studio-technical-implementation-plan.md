@@ -759,9 +759,15 @@ material payload。
 | `POST /api/visual/correctness-publications` | `TEST_SCENARIO_PUBLISH` | key | durable publication receipt |
 | `POST /api/visual/correctness-runs:preflight` | `TEST_EXECUTION` | key | exact plan summary + blockers |
 | `POST /api/visual/correctness-runs` | `TEST_EXECUTION` | key | async run receipt |
+| `GET /api/visual/correctness-runs/{suiteRunId}/evidence-companion` | `TEST_SUITE_READ` / `GOVERNANCE_EVIDENCE_INGESTION` | no | scoped immutable evidence companion |
 | `POST /api/visual/outcomes:propose-regression` | `CORRECTNESS_WRITE` | key | proposal pack，永远是 PROPOSED |
 
 不新增一个万能 `PATCH /workspace`。每个命令绑定一个聚合、不变量和权限，Workspace 只是组合读模型。
+
+Preflight、run 和 evidence 的机器合同由
+[`bloge-correctness-run-protocol-v1.schema.json`](schemas/bloge-correctness-run-protocol-v1.schema.json)
+统一定义，并通过六个稳定根 Schema 分别暴露。生产者 Schema 全部关闭未知字段；Evidence Companion 只包含 exact ref、执行状态、source
+map、五轴 verdict 和 attestation，不包含 Case 输入、节点输出、Fixture material、请求/响应 payload 或 secret。
 
 ### 7.4 标准错误码
 
@@ -1207,7 +1213,20 @@ Stage 0 的浏览器/VS Code host 事件使用 `bloge.correctnessTaskEvent.v1`�
 
 当前本地投影只解决 CUX-003 的「运行前可理解」问题，不是 `EffectiveExecutionPlan`，也不是安全授权边界。非生产 READ 场景中的显式真实调用显示为 `REVIEW`；生产类环境、WRITE、回退真实调用和无法证明的执行闭包显示为 `BLOCKED`。按钮禁用和命令处理器使用同一投影，避免通过非可视入口绕过前端阻断。
 
-COR-08 仍须实现服务端 `CorrectnessPreflightFacade`，并委托既有 `ExecutionControlCompiler` 与 `SafetyPreflight` 重新解析 exact publication、runtime binding、secret、side effect 和 fixture material。服务端返回的 preflight fingerprint 才能参与 run admission；届时前端本地投影退化为即时预览，并由服务端 canonical projection 覆盖。禁止把当前 TypeScript 投影移植到后端形成第二套 Planner。
+COR-08 后端执行闭包已经完成。`CorrectnessPreflightFacade` 委托既有 `TestExecutionApiService.preflight` 解析 exact Publication、runtime
+binding、secret requirement、side effect 和 Fixture material；`CorrectnessRunService` 在执行前重新计算 canonical preflight，并将客户端
+fingerprint 仅作为 stale-view guard。阻断项、非 test/staging 环境、过期发布或缺失 Publication-to-Attempt 精确绑定均在业务节点执行前失败关闭。
+服务只委托既有 `TestSuiteExecutionService` 的全量或精确 Case 选择入口，不维护第二套 runner。
+
+终态运行会生成不可变 `CorrectnessEvidenceCompanion`。Companion 将 Publication、Definition、Inventory、Scenario、Case、Oracle、Assertion
+Set、Fixture descriptor、编译产物、Case execution、source map、suite evidence 和 terminal attestation 绑定到同一 fingerprint 闭包，并由唯一
+`CorrectnessVerdictProjector` 输出 execution、assertions、coverage、evidence、gate 五个独立轴。零断言、选择性覆盖、过期发布或不可独立验证的
+attestation 均不能得到 `ACCEPTED`。V008/V009 migration 分别建立 Publication-to-Attempt 精确关系与 scoped Evidence Companion 存储；旧发布
+没有可靠关系时必须重新发布，禁止通过相似 fingerprint 猜测回填。
+
+`POST /api/visual/correctness-runs` 与 Evidence Companion 查询端点均要求受认证 purpose、完整企业作用域并返回 `no-store`。Capability Probe
+仅在 `CorrectnessRunService` 真实装配时声明两个 API 可用。COR-08 剩余工作是将 Workspace Run Center 从本地预览切换为服务端 canonical
+preflight、运行回执与五轴 evidence 展示；前端本地投影继续只承担即时编辑反馈，禁止充当授权边界或第二套 Planner。
 
 当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 
@@ -1287,7 +1306,7 @@ compile preview、publish、publication/attempt/history 查询 API 和动态 cap
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端已完成；Case Builder/Matrix 前端待接入 | governed Case exact closure 已通过 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端已完成；部署 authority 与 Fixture Editor 待接入 | metadata/payload 隔离与泄露测试已通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端已完成；发布前端与灰度配置待接入 | deterministic/source-map/retry/closure tests 已通过 | 2 周 |
-| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |
+| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 后端 preflight/run/evidence 已完成；Run Center 服务端适配待完成 | real-call 风险前置、evidence exact 绑定已通过 | 2 周 |
 | COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
 | COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
 

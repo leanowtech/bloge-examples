@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
 import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessPreflightFacade;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessRunService;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Service;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
@@ -162,7 +163,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
             ObjectProvider<FixtureMaterialService> materials,
             ObjectProvider<CorrectnessCompilationService> compilation,
             ObjectProvider<CorrectnessPublicationService> publication,
-            ObjectProvider<CorrectnessPreflightFacade> preflight
+            ObjectProvider<CorrectnessPreflightFacade> preflight,
+            ObjectProvider<CorrectnessRunService> run
     ) {
         return new CorrectnessAuthoringRuntimeAvailability(
                 workspace.getIfAvailable() != null,
@@ -173,6 +175,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
                 materials.getIfAvailable() != null,
                 compilation.getIfAvailable() != null,
                 publication.getIfAvailable() != null,
-                preflight.getIfAvailable() != null);
+                preflight.getIfAvailable() != null,
+                run.getIfAvailable() != null,
+                run.getIfAvailable() != null);
     }
 }

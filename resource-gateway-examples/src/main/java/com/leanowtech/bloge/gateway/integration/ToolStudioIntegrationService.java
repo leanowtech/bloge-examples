@@ -722,6 +722,10 @@ public class ToolStudioIntegrationService {
                 correctnessAuthoringRuntime.publicationApi());
         features.put("correctnessPreflightApi",
                 correctnessAuthoringRuntime.preflightApi());
+        features.put("correctnessRunApi",
+                correctnessAuthoringRuntime.runApi());
+        features.put("correctnessEvidenceCompanionApi",
+                correctnessAuthoringRuntime.evidenceCompanionApi());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2513,6 +2517,14 @@ public class ToolStudioIntegrationService {
         if (correctnessAuthoringRuntime.preflightApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/visual/correctness-runs:preflight"));
+        }
+        if (correctnessAuthoringRuntime.runApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/correctness-runs"));
+        }
+        if (correctnessAuthoringRuntime.evidenceCompanionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-runs/{suiteRunId}/evidence-companion"));
         }
     }
 
