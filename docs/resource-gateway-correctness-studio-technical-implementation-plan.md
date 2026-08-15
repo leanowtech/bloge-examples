@@ -1026,6 +1026,18 @@ Node/edge payload 继续遵循现有 evidence 脱敏和授权读取协议。普�
 禁止 target id、case id、user id、payload path 和 error message 作为高基数 label。分布式 trace 通过 correlation id 连接
 Workspace command、publication saga、run 与 evidence，不记录业务 payload。
 
+Stage 0 的浏览器/VS Code host 事件使用 `bloge.correctnessTaskEvent.v1`，只承担 UX 基线观测，不替代服务端 audit 或 trace：
+
+| 事件 | 允许的事实 |
+|---|---|
+| `WORKSPACE_OPENED` / `WORKSPACE_EXITED` | 阶段、Case 数、停留时长、受控退出类型 |
+| `STAGE_VIEWED` | `CONTRACT/SCENARIO/COMPATIBILITY/EVIDENCE` |
+| `PREFLIGHT_EVALUATED` | scope、`SAFE/REVIEW/BLOCKED`、有界调用与 blocker 数 |
+| `RUN_REQUESTED` / `RUN_COMPLETED` | local/server、scope、Case/失败数、受控状态、耗时 |
+| `COMMAND_REJECTED` | 受控 rejection reason 和产品级 error code |
+
+任意未知键、未知枚举、负数、非整数、超上限计数或耗时均拒绝创建事件。埋点错误只会丢弃当前事件，不能阻断创作与运行。
+
 ## 14. 测试战略与质量门禁
 
 ### 14.1 分层测试
@@ -1113,22 +1125,23 @@ Workspace command、publication saga、run 与 evidence，不记录业务 payloa
 
 ### 16.0 实施状态与架构边界
 
-截至当前实现，Stage 0 已完成两项前端止血能力：
+截至当前实现，Stage 0 已完成三项前端止血能力：
 
 1. `correctness-studio/model/verdictPresentationPolicy.ts` 已成为现有 Case、Matrix 和算子测试表的统一五轴展示策略。空断言不再显示为通过，未计算覆盖时必须显示 `NOT_EVALUATED/UNPROVEN`。
 2. `correctness-studio/model/preflightRiskProjection.ts` 已提供 payload-free 的本地创作风险投影。Case 和 Matrix 在运行前可看到 `SUBJECT/REAL/MOCKED/FAULT/REPLAY/OBSERVE/DENIED` 数量，并对生产类环境、WRITE 目标、回退真实调用、缺失 Oracle、无法解析的依赖和当前瞬态运行器不支持的高级行为执行失败关闭。
+3. `correctness-studio/telemetry/correctnessTaskTelemetry.ts` 已提供 `bloge.correctnessTaskEvent.v1`。当前工作区会记录进入、阶段查看、预检、运行请求、运行完成、命令拒绝和退出。协议只接受有界计数、耗时和受控枚举，并拒绝 `id/ref/path/message/schema/input/output/fixture/payload/secret` 等元数据词段。
 
 当前本地投影只解决 CUX-003 的「运行前可理解」问题，不是 `EffectiveExecutionPlan`，也不是安全授权边界。非生产 READ 场景中的显式真实调用显示为 `REVIEW`；生产类环境、WRITE、回退真实调用和无法证明的执行闭包显示为 `BLOCKED`。按钮禁用和命令处理器使用同一投影，避免通过非可视入口绕过前端阻断。
 
 COR-08 仍须实现服务端 `CorrectnessPreflightFacade`，并委托既有 `ExecutionControlCompiler` 与 `SafetyPreflight` 重新解析 exact publication、runtime binding、secret、side effect 和 fixture material。服务端返回的 preflight fingerprint 才能参与 run admission；届时前端本地投影退化为即时预览，并由服务端 canonical projection 覆盖。禁止把当前 TypeScript 投影移植到后端形成第二套 Planner。
 
-当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 尚未完成，因为 payload-free 任务遥测基线仍待实现。
+当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 
 ### 16.1 Epic 总览
 
 | Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
 |---|---|---|---|---|---:|
-| COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 进行中：verdict 与本地 preflight 已完成，遥测待实现 | zero assertion 全面 UNPROVEN | 1 周 |
+| COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 未开始 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 未开始 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |

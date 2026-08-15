@@ -18,6 +18,10 @@ import {
   nodes,
   successfulResponse,
 } from './testFixtures';
+import {
+  CORRECTNESS_TASK_EVENT_TYPE,
+  type CorrectnessTaskEvent,
+} from '../correctness-studio/telemetry/correctnessTaskTelemetry';
 
 describe('ContractScenarioWorkspace', () => {
   let root: Root | null = null;
@@ -263,6 +267,45 @@ describe('ContractScenarioWorkspace', () => {
     const matrixRun = document.querySelector<HTMLButtonElement>('[data-testid="scenario-run-primary"]');
     expect(matrixRun?.disabled).toBe(true);
     expect(onRun).not.toHaveBeenCalled();
+  });
+
+  it('emits payload-free stage, preflight, run, and exit telemetry', async () => {
+    const events: CorrectnessTaskEvent[] = [];
+    const listener = (event: Event) => {
+      events.push((event as CustomEvent<CorrectnessTaskEvent>).detail);
+    };
+    window.addEventListener(CORRECTNESS_TASK_EVENT_TYPE, listener);
+    try {
+      await renderWorkspace({ initialTab: 'scenarios', presentation: 'surface' });
+      await act(async () => button('Run current case').click());
+      await settleAsyncWork();
+      await settleAsyncWork();
+      await act(async () => root?.unmount());
+      root = null;
+
+      expect(events.map((event) => event.name)).toEqual(expect.arrayContaining([
+        'WORKSPACE_OPENED',
+        'STAGE_VIEWED',
+        'PREFLIGHT_EVALUATED',
+        'RUN_REQUESTED',
+        'RUN_COMPLETED',
+        'WORKSPACE_EXITED',
+      ]));
+      expect(events.find((event) => event.name === 'RUN_COMPLETED')?.metadata).toMatchObject({
+        stage: 'SCENARIO',
+        scope: 'CASE',
+        source: 'LOCAL',
+        runStatus: 'PASSED',
+        caseCount: 1,
+        failureCount: 0,
+      });
+      const serialized = JSON.stringify(events);
+      expect(serialized).not.toContain('applicantId');
+      expect(serialized).not.toContain('approved@example.com');
+      expect(serialized).not.toContain('graph-case-approved');
+    } finally {
+      window.removeEventListener(CORRECTNESS_TASK_EVENT_TYPE, listener);
+    }
   });
 
   it('limits central-surface asset commands to the active authoring task', async () => {

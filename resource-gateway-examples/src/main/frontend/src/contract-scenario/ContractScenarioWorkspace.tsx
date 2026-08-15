@@ -7,6 +7,11 @@ import {
   projectScenarioRunPreflight,
   type ScenarioRunPreflightProjection,
 } from '../correctness-studio/model/preflightRiskProjection';
+import {
+  correctnessTaskElapsedMs,
+  recordCorrectnessTaskEvent,
+  type CorrectnessTaskScope,
+} from '../correctness-studio/telemetry/correctnessTaskTelemetry';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import type { AuthorCommandAvailability } from '../author/task/taskStateProjection';
@@ -246,10 +251,15 @@ export default function ContractScenarioWorkspace({
   const workspaceBodyRef = useRef<HTMLDivElement>(null);
   const workspaceDialogRef = useRef<HTMLElement>(null);
   const autoLoadAttemptRef = useRef('');
+  const correctnessStageRef = useRef(activeTab);
+  const correctnessCaseCountRef = useRef(0);
+  const preflightTelemetrySignatureRef = useRef('');
   const scenarioChangeRef = useRef(onScenarioDraftSetChange);
   scenarioChangeRef.current = onScenarioDraftSetChange;
 
   const scenarios = scenarioDraftSet?.scenarios ?? [];
+  correctnessStageRef.current = activeTab;
+  correctnessCaseCountRef.current = scenarios.length;
   const selectedScenario = scenarios.find((scenario) => scenario.scenarioId === selectedScenarioId)
     ?? scenarios[0]
     ?? null;
@@ -419,6 +429,59 @@ export default function ContractScenarioWorkspace({
     dialogRef: workspaceDialogRef,
     onDismiss: onClose,
   });
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const startedAt = performance.now();
+    preflightTelemetrySignatureRef.current = '';
+    recordCorrectnessTaskEvent('WORKSPACE_OPENED', {
+      stage: correctnessTaskStage(correctnessStageRef.current),
+      caseCount: correctnessCaseCountRef.current,
+    });
+    return () => {
+      recordCorrectnessTaskEvent('WORKSPACE_EXITED', {
+        stage: correctnessTaskStage(correctnessStageRef.current),
+        exitKind: 'CLOSED',
+        durationMs: correctnessTaskElapsedMs(startedAt),
+      });
+      preflightTelemetrySignatureRef.current = '';
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    recordCorrectnessTaskEvent('STAGE_VIEWED', {
+      stage: correctnessTaskStage(activeTab),
+    });
+  }, [activeTab, open]);
+
+  useEffect(() => {
+    if (!open || !selectedCasePreflight || !selectedScenario) return;
+    const blockerCount = selectedCasePreflight.reasons
+      .filter((reason) => reason.severity === 'BLOCKING').length;
+    const signature = [
+      selectedScenario.scenarioId,
+      selectedCasePreflight.status,
+      selectedCasePreflight.selectedCaseCount,
+      selectedCasePreflight.counts.real,
+      selectedCasePreflight.counts.observe,
+      selectedCasePreflight.counts.mocked,
+      selectedCasePreflight.counts.fault,
+      blockerCount,
+    ].join(':');
+    if (signature === preflightTelemetrySignatureRef.current) return;
+    preflightTelemetrySignatureRef.current = signature;
+    recordCorrectnessTaskEvent('PREFLIGHT_EVALUATED', {
+      stage: 'SCENARIO',
+      scope: 'CASE',
+      preflightStatus: selectedCasePreflight.status,
+      caseCount: selectedCasePreflight.selectedCaseCount,
+      realCount: selectedCasePreflight.counts.real + selectedCasePreflight.counts.observe,
+      mockedCount: selectedCasePreflight.counts.mocked,
+      faultCount: selectedCasePreflight.counts.fault,
+      blockerCount,
+    });
+  }, [open, selectedCasePreflight, selectedScenario]);
 
   useEffect(() => {
     if (selectedScenario && selectedScenario.scenarioId !== selectedScenarioId) {
@@ -792,10 +855,21 @@ export default function ContractScenarioWorkspace({
   const runScenarioClosure = async (
     caseIds: string[],
     openEvidenceAfterRun: boolean,
+    telemetryScope: CorrectnessTaskScope,
+    preflightStatus: ScenarioRunPreflightProjection['status'],
     commandReceipt?: ScenarioCommandReceipt,
   ) => {
     const closure = scenarios.filter((scenario) => caseIds.includes(scenario.scenarioId));
     if (closure.length === 0) return;
+    const taskStartedAt = performance.now();
+    const failedCaseIds = new Set<string>();
+    recordCorrectnessTaskEvent('RUN_REQUESTED', {
+      stage: 'SCENARIO',
+      scope: telemetryScope,
+      source: 'LOCAL',
+      preflightStatus,
+      caseCount: closure.length,
+    });
     const admittedReceipt = commandReceipt
       ? { ...commandReceipt, state: 'ADMITTED' as const }
       : undefined;
@@ -848,6 +922,7 @@ export default function ContractScenarioWorkspace({
           contractFingerprint,
         );
         if (!compilation.compiled || !compilation.request || !compilation.proof) {
+          failedCaseIds.add(scenario.scenarioId);
           const diagnosticMessages = compilation.diagnostics.map((diagnostic) => diagnostic.message);
           const message = diagnosticMessages[0]
             ?? 'Scenario compilation did not produce fingerprint closure proof.';
@@ -875,6 +950,7 @@ export default function ContractScenarioWorkspace({
           ? await onRun(compilation.request)
           : await onRun(compilation.request, { reviewMode: 'MATRIX' });
         const nextComparison = compareScenarioRun(scenario, response);
+        if (!nextComparison.passed) failedCaseIds.add(scenario.scenarioId);
         const durationMs = Math.round(performance.now() - startedAt);
         setRunResponse(response);
         setComparison(nextComparison);
@@ -899,6 +975,7 @@ export default function ContractScenarioWorkspace({
             )
           : true;
         if (evidenceAccepted === false) {
+          failedCaseIds.add(scenario.scenarioId);
           const message = 'The Scenario changed during execution. Rerun to create current evidence.';
           messages.push(`${scenario.name}: ${message}`);
           setTableEvidence((currentEvidence) => ({
@@ -913,6 +990,7 @@ export default function ContractScenarioWorkspace({
         }
         lastCompleted = { scenario, response, comparison: nextComparison };
       } catch (cause: unknown) {
+        failedCaseIds.add(scenario.scenarioId);
         const message = cause instanceof Error ? cause.message : String(cause);
         messages.push(`${scenario.name}: ${message}`);
         setTableEvidence((currentEvidence) => ({
@@ -930,6 +1008,17 @@ export default function ContractScenarioWorkspace({
     setCompileMessages(messages);
     setRunningCaseIds([]);
     setRunning(false);
+    recordCorrectnessTaskEvent('RUN_COMPLETED', {
+      stage: 'SCENARIO',
+      scope: telemetryScope,
+      source: 'LOCAL',
+      runStatus: failedCaseIds.size === 0
+        ? 'PASSED'
+        : failedCaseIds.size >= closure.length ? 'FAILED' : 'PARTIAL',
+      caseCount: closure.length,
+      failureCount: failedCaseIds.size,
+      durationMs: correctnessTaskElapsedMs(taskStartedAt),
+    });
     if (admittedReceipt) {
       const terminalReceipt = { ...admittedReceipt, state: 'TERMINAL' as const };
       if (openEvidenceAfterRun) setEvidenceCommandReceipt(terminalReceipt);
@@ -954,8 +1043,18 @@ export default function ContractScenarioWorkspace({
   const runSelectedScenario = () => {
     if (!selectedScenario || !tableProjection) return;
     if (selectedCasePreflight?.status === 'BLOCKED') {
+      const blockerCount = selectedCasePreflight.reasons
+        .filter((reason) => reason.severity === 'BLOCKING').length;
+      recordCorrectnessTaskEvent('COMMAND_REJECTED', {
+        stage: 'SCENARIO',
+        scope: 'CASE',
+        rejectionReason: 'PREFLIGHT_BLOCKED',
+        errorCode: 'RG.CORRECTNESS.PREFLIGHT_BLOCKED',
+        caseCount: selectedCasePreflight.selectedCaseCount,
+        blockerCount,
+      });
       setCompileMessages([m('correctness.preflight.runBlocked', {
-        count: selectedCasePreflight.reasons.filter((reason) => reason.severity === 'BLOCKING').length,
+        count: blockerCount,
       })]);
       return;
     }
@@ -967,15 +1066,31 @@ export default function ContractScenarioWorkspace({
     );
     const receipt = localCommandReceipt(scope, 'LOCAL');
     setEvidenceCommandReceipt(receipt);
-    void runScenarioClosure([selectedScenario.scenarioId], true, receipt);
+    void runScenarioClosure(
+      [selectedScenario.scenarioId],
+      true,
+      'CASE',
+      selectedCasePreflight?.status ?? 'REVIEW',
+      receipt,
+    );
   };
 
   const runTableSelection = async (mode: ScenarioRunSelectionMode) => {
     if (!scenarioDraftSet || !contract || !current) return;
     const preflight = tablePreflightByMode[mode];
     if (preflight?.status === 'BLOCKED') {
+      const blockerCount = preflight.reasons
+        .filter((reason) => reason.severity === 'BLOCKING').length;
+      recordCorrectnessTaskEvent('COMMAND_REJECTED', {
+        stage: 'SCENARIO',
+        scope: correctnessScopeForMode(mode),
+        rejectionReason: 'PREFLIGHT_BLOCKED',
+        errorCode: 'RG.CORRECTNESS.PREFLIGHT_BLOCKED',
+        caseCount: preflight.selectedCaseCount,
+        blockerCount,
+      });
       setTableRunError(m('correctness.preflight.runBlocked', {
-        count: preflight.reasons.filter((reason) => reason.severity === 'BLOCKING').length,
+        count: blockerCount,
       }));
       return;
     }
@@ -993,16 +1108,37 @@ export default function ContractScenarioWorkspace({
           ? localCommandReceipt({ ...scope, caseIds: localCaseIds }, 'LOCAL')
           : undefined;
         if (receipt) setTableCommandReceipt(receipt);
-        await runScenarioClosure(localCaseIds, false, receipt);
+        await runScenarioClosure(
+          localCaseIds,
+          false,
+          correctnessScopeForMode(mode),
+          preflight?.status ?? 'REVIEW',
+          receipt,
+        );
       }
       return;
     }
     if (['FAILED', 'CHANGED', 'AFFECTED'].includes(mode) && !baselineBatchId) {
+      recordCorrectnessTaskEvent('COMMAND_REJECTED', {
+        stage: 'SCENARIO',
+        scope: correctnessScopeForMode(mode),
+        rejectionReason: 'BASELINE_REQUIRED',
+        errorCode: 'RG.CORRECTNESS.BASELINE_REQUIRED',
+        caseCount: preflight?.selectedCaseCount ?? 0,
+        blockerCount: 1,
+      });
       setTableRunError('Run all once to create the complete baseline required for differential selection.');
       return;
     }
     setTableRunError('');
     try {
+      recordCorrectnessTaskEvent('RUN_REQUESTED', {
+        stage: 'SCENARIO',
+        scope: correctnessScopeForMode(mode),
+        source: 'SERVER',
+        preflightStatus: preflight?.status ?? 'REVIEW',
+        caseCount: preflight?.selectedCaseCount ?? 0,
+      });
       const command = createTableSuiteRunCommand(
         graphDraft,
         contract,
@@ -1020,6 +1156,18 @@ export default function ContractScenarioWorkspace({
       setTableCommandReceipt(submittedReceipt);
       adoptTableBatch(await submitTableSuiteRun(command), submittedReceipt);
     } catch (cause: unknown) {
+      const selectionEmpty = cause instanceof BlogeApiRequestError
+        && cause.detail.includes('RG.TABLE_RUN.SELECTION_EMPTY');
+      recordCorrectnessTaskEvent('COMMAND_REJECTED', {
+        stage: 'SCENARIO',
+        scope: correctnessScopeForMode(mode),
+        rejectionReason: selectionEmpty ? 'SELECTION_EMPTY' : 'API_ERROR',
+        errorCode: selectionEmpty
+          ? 'RG.CORRECTNESS.SELECTION_EMPTY'
+          : 'RG.CORRECTNESS.API_ERROR',
+        caseCount: preflight?.selectedCaseCount ?? 0,
+        blockerCount: 1,
+      });
       setTableRunError(cause instanceof BlogeApiRequestError
         && cause.detail.includes('RG.TABLE_RUN.SELECTION_EMPTY')
         ? 'No cases match this differential selection. The complete baseline is already current.'
@@ -2938,4 +3086,17 @@ function clearTableRunSession(key: string): void {
   } catch {
     // A blocked storage API must not block the authoring workspace.
   }
+}
+
+function correctnessTaskStage(tab: WorkspaceTab): 'CONTRACT' | 'SCENARIO' | 'COMPATIBILITY' | 'EVIDENCE' {
+  switch (tab) {
+    case 'interface': return 'CONTRACT';
+    case 'scenarios': return 'SCENARIO';
+    case 'compatibility': return 'COMPATIBILITY';
+    case 'evidence': return 'EVIDENCE';
+  }
+}
+
+function correctnessScopeForMode(mode: ScenarioRunSelectionMode): CorrectnessTaskScope {
+  return mode === 'ALL' ? 'SUITE' : 'SELECTION';
 }
