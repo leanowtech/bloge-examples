@@ -183,6 +183,11 @@ class CorrectnessWorkspaceQueryTest {
                 .containsEntry("correctnessOracleAssertionApi", false)
                 .containsEntry("correctnessScenarioV2Protocol", true)
                 .containsEntry("correctnessScenarioV2Api", false);
+        assertThat(capabilities.supportedObjects())
+                .containsEntry("scenarioClosureReport",
+                        List.of("bloge.scenarioClosureReport.v1"))
+                .containsEntry("scenarioCanonicalApprovalReceipt",
+                        List.of("bloge.scenarioCanonicalApprovalReceipt.v1"));
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {

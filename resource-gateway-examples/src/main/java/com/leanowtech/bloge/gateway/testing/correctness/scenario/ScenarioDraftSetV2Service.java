@@ -1,15 +1,21 @@
 package com.leanowtech.bloge.gateway.testing.correctness.scenario;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactCaseRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ReviewRecord;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ReviewStatus;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioDraftV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioLifecycle;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredScenarioDraftSetV2;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosureReport.ClosurePhase;
+
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.ArrayList;
@@ -19,11 +25,13 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Application boundary for governed Scenario v2 draft and review transitions. */
-public final class ScenarioDraftSetV2Service {
+public class ScenarioDraftSetV2Service {
 
     private final ScenarioDraftSetV2Repository scenarios;
     private final ScenarioClosureValidator closureValidator;
     private final ScenarioReviewAuthorizer reviewAuthorizer;
+    private final ScenarioCanonicalApprovalReceiptRepository approvalReceipts;
+    private final ObjectMapper mapper;
     private final Clock clock;
 
     public ScenarioDraftSetV2Service(
@@ -31,7 +39,7 @@ public final class ScenarioDraftSetV2Service {
             ScenarioClosureValidator closureValidator,
             ScenarioReviewAuthorizer reviewAuthorizer
     ) {
-        this(scenarios, closureValidator, reviewAuthorizer, Clock.systemUTC());
+        this(scenarios, closureValidator, reviewAuthorizer, null, null, Clock.systemUTC());
     }
 
     public ScenarioDraftSetV2Service(
@@ -40,10 +48,23 @@ public final class ScenarioDraftSetV2Service {
             ScenarioReviewAuthorizer reviewAuthorizer,
             Clock clock
     ) {
+        this(scenarios, closureValidator, reviewAuthorizer, null, null, clock);
+    }
+
+    public ScenarioDraftSetV2Service(
+            ScenarioDraftSetV2Repository scenarios,
+            ScenarioClosureValidator closureValidator,
+            ScenarioReviewAuthorizer reviewAuthorizer,
+            ScenarioCanonicalApprovalReceiptRepository approvalReceipts,
+            ObjectMapper mapper,
+            Clock clock
+    ) {
         this.scenarios = Objects.requireNonNull(scenarios, "scenarios");
         this.closureValidator = Objects.requireNonNull(closureValidator, "closureValidator");
         this.reviewAuthorizer = reviewAuthorizer == null
                 ? ScenarioReviewAuthorizer.denyAll() : reviewAuthorizer;
+        this.approvalReceipts = approvalReceipts;
+        this.mapper = mapper;
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -92,7 +113,7 @@ public final class ScenarioDraftSetV2Service {
                 selected, ScenarioLifecycle.REVIEW_READY, ReviewRecord.pending());
         StoredScenarioDraftSetV2 stored = saveTransition(
                 current, replaceCase(current.scenarios(), transitioned), actor);
-        return new TransitionResult(stored, closure);
+        return new TransitionResult(stored, closure, false);
     }
 
     public TransitionResult approveCanonical(
@@ -136,7 +157,94 @@ public final class ScenarioDraftSetV2Service {
                 selected, ScenarioLifecycle.CANONICAL, approval);
         StoredScenarioDraftSetV2 stored = saveTransition(
                 current, replaceCase(current.scenarios(), transitioned), actor);
-        return new TransitionResult(stored, closure);
+        return new TransitionResult(stored, closure, false);
+    }
+
+    @Transactional
+    public TransitionResult approveCanonicalIdempotently(
+            EnterpriseScope scope,
+            String scenarioDraftSetId,
+            String scenarioId,
+            long expectedRevision,
+            String reviewComment,
+            PrincipalRef actor,
+            String idempotencyKey
+    ) {
+        requireActor(actor);
+        if (approvalReceipts == null || mapper == null) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                    "Canonical Scenario approval is unavailable because its receipt store is missing.");
+        }
+        String key = idempotencyKey == null ? "" : idempotencyKey.trim();
+        if (!key.matches("[A-Za-z0-9._~:-]{1,160}")) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_KEY_INVALID",
+                    "Idempotency-Key must use 1-160 portable non-whitespace characters.");
+        }
+        String exactSetId = scenarioDraftSetId == null ? "" : scenarioDraftSetId.trim();
+        String exactCaseId = scenarioId == null ? "" : scenarioId.trim();
+        String comment = reviewComment == null ? "" : reviewComment.trim();
+        String keyFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of("idempotencyKey", key));
+        String requestFingerprint = CorrectnessProtocolFingerprint.derivedFingerprint(
+                mapper, Map.of(
+                        "scope", scope,
+                        "scenarioDraftSetId", exactSetId,
+                        "scenarioId", exactCaseId,
+                        "expectedRevision", expectedRevision,
+                        "reviewComment", comment,
+                        "actorId", actor.id()));
+        ScenarioCanonicalApprovalReceipt existing = approvalReceipts.find(
+                scope, keyFingerprint).orElse(null);
+        if (existing != null) return replay(existing, requestFingerprint);
+
+        TransitionResult result = approveCanonical(
+                scope, exactSetId, exactCaseId, expectedRevision, comment, actor);
+        StoredScenarioDraftSetV2 stored = result.stored();
+        ScenarioDraftV2 canonical = findCase(stored.scenarioDraftSet(), exactCaseId);
+        ExactAssetRef setRef = new ExactAssetRef(
+                "SCENARIO_DRAFT_SET", stored.scenarioDraftSet().scenarioDraftSetId(),
+                stored.scenarioDraftSet().revision(), stored.scenarioDraftSetFingerprint());
+        ScenarioCanonicalApprovalReceipt receipt = new ScenarioCanonicalApprovalReceipt(
+                "", scope, keyFingerprint, requestFingerprint,
+                new ExactCaseRef(
+                        setRef, exactCaseId,
+                        CorrectnessProtocolFingerprint.scenarioFingerprint(mapper, canonical)),
+                result.closure(), actor.id(), clock.instant());
+        if (!approvalReceipts.saveIfAbsent(receipt)) {
+            ScenarioCanonicalApprovalReceipt winner = approvalReceipts.find(
+                            scope, keyFingerprint)
+                    .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_UNAVAILABLE",
+                            "The concurrent Scenario approval receipt is not yet readable."));
+            return replay(winner, requestFingerprint);
+        }
+        return result;
+    }
+
+    private TransitionResult replay(
+            ScenarioCanonicalApprovalReceipt receipt,
+            String requestFingerprint
+    ) {
+        if (!receipt.requestFingerprint().equals(requestFingerprint)) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_CONFLICT",
+                    "Idempotency-Key was already used for a different Scenario approval command.");
+        }
+        var ref = receipt.caseRef().scenarioDraftSetRef();
+        StoredScenarioDraftSetV2 stored = scenarios.findRevision(
+                        receipt.scope(), ref.id(), ref.revision())
+                .orElseThrow(() -> failure("RG.CORRECTNESS.IDEMPOTENCY_RECEIPT_STALE",
+                        "The Scenario approval result revision is no longer available."));
+        ScenarioDraftV2 scenario = findCase(
+                stored.scenarioDraftSet(), receipt.caseRef().caseId());
+        String caseFingerprint = CorrectnessProtocolFingerprint.scenarioFingerprint(
+                mapper, scenario);
+        if (!stored.scenarioDraftSetFingerprint().equals(ref.fingerprint())
+                || !caseFingerprint.equals(receipt.caseRef().caseFingerprint())
+                || scenario.lifecycle() != ScenarioLifecycle.CANONICAL
+                || !scenario.review().approved()) {
+            throw failure("RG.CORRECTNESS.IDEMPOTENCY_RECEIPT_STALE",
+                    "The Scenario approval receipt no longer matches its exact result.");
+        }
+        return new TransitionResult(stored, receipt.closure(), true);
     }
 
     private void validateDraftMutation(
@@ -280,7 +388,8 @@ public final class ScenarioDraftSetV2Service {
 
     public record TransitionResult(
             StoredScenarioDraftSetV2 stored,
-            ScenarioClosureReport closure
+            ScenarioClosureReport closure,
+            boolean replayed
     ) {
         public TransitionResult {
             if (stored == null || closure == null || !closure.complete()) {

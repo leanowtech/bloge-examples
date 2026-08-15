@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-canonical-approval-receipt-v1.schema.json",
+  "title": "BLOGE Scenario Canonical Approval Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "idempotencyKeyFingerprint", "requestFingerprint", "caseRef", "closure", "actorId", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioCanonicalApprovalReceipt.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "idempotencyKeyFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "requestFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "caseRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactCaseRef" },
+    "closure": { "$ref": "bloge-scenario-closure-report-v1.schema.json" },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

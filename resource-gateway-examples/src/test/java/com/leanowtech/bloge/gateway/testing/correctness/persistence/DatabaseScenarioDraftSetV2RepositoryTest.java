@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactCaseRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactObligationRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactTargetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalKind;
@@ -18,6 +19,12 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.InlineValue;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioDraftV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioLifecycle;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.DatabaseScenarioCanonicalApprovalReceiptRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioCanonicalApprovalReceipt;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosureReport;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosureReport.CheckStatus;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosureReport.ClosureCheck;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosureReport.ClosurePhase;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -159,6 +166,41 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
         assertSchema("bloge-stored-scenario-draft-set-v2.schema.json", stored);
         assertSchema("bloge-scenario-draft-set-changed-v2.schema.json",
                 mapper.readValue(eventJson, ScenarioDraftSetV2Changed.class));
+    }
+
+    @Test
+    void persistsAndIntegrityChecksPayloadFreeCanonicalApprovalReceipt() throws Exception {
+        var receipts = new DatabaseScenarioCanonicalApprovalReceiptRepository(jdbc, mapper);
+        ExactAssetRef setRef = new ExactAssetRef(
+                "SCENARIO_DRAFT_SET", "loan-scenarios", 3, fingerprint('3'));
+        ScenarioClosureReport closure = new ScenarioClosureReport(
+                "", "case-canonical", ClosurePhase.CANONICAL, true,
+                List.of(new ClosureCheck(
+                        "contract", "CONTRACT",
+                        new ExactAssetRef("CONTRACT", "loan-contract", 2, fingerprint('c')),
+                        "", CheckStatus.VERIFIED, "")));
+        ScenarioCanonicalApprovalReceipt receipt = new ScenarioCanonicalApprovalReceipt(
+                "", scope("tenant-a"), fingerprint('1'), fingerprint('2'),
+                new ExactCaseRef(setRef, "case-canonical", fingerprint('4')),
+                closure, reviewer().id(), SECOND_SAVE);
+
+        assertThat(receipts.saveIfAbsent(receipt)).isTrue();
+        assertThat(receipts.saveIfAbsent(receipt)).isFalse();
+        assertThat(receipts.find(scope("tenant-a"), fingerprint('1')))
+                .contains(receipt);
+        assertSchema("bloge-scenario-canonical-approval-receipt-v1.schema.json", receipt);
+        String json = jdbc.queryForObject(
+                "SELECT receipt_json FROM rg_correctness_command_receipts", String.class);
+        assertThat(json).doesNotContain("applicantId", "A-100", "Prime decision");
+
+        jdbc.update("""
+                UPDATE rg_correctness_command_receipts
+                SET result_fingerprint = ?
+                WHERE command_kind = 'SCENARIO_CANONICAL_APPROVE'
+                """, fingerprint('5'));
+        assertThatThrownBy(() -> receipts.find(scope("tenant-a"), fingerprint('1')))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("integrity");
     }
 
     private DatabaseScenarioDraftSetV2Repository repositoryAt(Instant time) {

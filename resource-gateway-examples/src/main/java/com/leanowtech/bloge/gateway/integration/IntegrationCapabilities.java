@@ -720,6 +720,12 @@ public record IntegrationCapabilities(
         objects.put("scenarioDraftSetV2ChangedEvent", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.persistence
                         .ScenarioDraftSetV2Changed.SCHEMA_VERSION));
+        objects.put("scenarioClosureReport", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.scenario
+                        .ScenarioClosureReport.SCHEMA_VERSION));
+        objects.put("scenarioCanonicalApprovalReceipt", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.scenario
+                        .ScenarioCanonicalApprovalReceipt.SCHEMA_VERSION));
         objects.put("fixtureAssetDescriptor", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .FixtureAssetDescriptor.SCHEMA_VERSION));

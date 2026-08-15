@@ -54,6 +54,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -77,6 +78,7 @@ class ScenarioDraftSetV2ServiceTest {
     private StoredCoverageInventory inventory;
     private StoredBusinessOracle oracle;
     private StoredAssertionSet assertionSet;
+    private InMemoryApprovalReceipts approvalReceipts;
 
     @BeforeEach
     void setUp() {
@@ -88,6 +90,7 @@ class ScenarioDraftSetV2ServiceTest {
         inventory = StoredCoverageInventory.verified(mapper, inventory());
         oracle = StoredBusinessOracle.verified(mapper, oracle());
         assertionSet = StoredAssertionSet.verified(mapper, scope(), assertionSet(oracleRef()));
+        approvalReceipts = new InMemoryApprovalReceipts();
         when(inventories.findRevision(any(), any(), any(Long.class)))
                 .thenReturn(Optional.of(inventory));
         when(oracles.findRevision(any(), any(), any(Long.class)))
@@ -100,6 +103,7 @@ class ScenarioDraftSetV2ServiceTest {
         service = new ScenarioDraftSetV2Service(
                 scenarios, validator, (scope, set, scenario, actor) ->
                         ScenarioReviewAuthorizer.ReviewDecision.governed(),
+                approvalReceipts, mapper,
                 Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
@@ -199,6 +203,32 @@ class ScenarioDraftSetV2ServiceTest {
                 .isInstanceOfSatisfying(ScenarioV2CommandException.class, failure ->
                         assertThat(failure.code()).isEqualTo(
                                 "RG.CORRECTNESS.REVISION_CONFLICT"));
+    }
+
+    @Test
+    void canonicalApprovalReplaysByHashedIdempotencyKeyAndRejectsKeyReuse() {
+        service.saveDraft(0, draftSet(0), author());
+        service.markReviewReady(scope(), "loan-scenarios", "prime-approved", 1, author());
+
+        var approved = service.approveCanonicalIdempotently(
+                scope(), "loan-scenarios", "prime-approved", 2,
+                "Independent approval", reviewer(), "scenario-approval-1");
+        var replayed = service.approveCanonicalIdempotently(
+                scope(), "loan-scenarios", "prime-approved", 2,
+                "Independent approval", reviewer(), "scenario-approval-1");
+
+        assertThat(approved.replayed()).isFalse();
+        assertThat(replayed.replayed()).isTrue();
+        assertThat(replayed.stored()).isEqualTo(approved.stored());
+        assertThat(approvalReceipts.receipts.keySet())
+                .allMatch(key -> key.startsWith("sha256:"))
+                .noneMatch(key -> key.contains("scenario-approval-1"));
+        assertThatThrownBy(() -> service.approveCanonicalIdempotently(
+                scope(), "loan-scenarios", "prime-approved", 2,
+                "Different approval", reviewer(), "scenario-approval-1"))
+                .isInstanceOfSatisfying(ScenarioV2CommandException.class, failure ->
+                        assertThat(failure.code()).isEqualTo(
+                                "RG.CORRECTNESS.IDEMPOTENCY_CONFLICT"));
     }
 
     @Test
@@ -454,6 +484,27 @@ class ScenarioDraftSetV2ServiceTest {
                 ExactAssetRef inventoryRef
         ) {
             return Set.of();
+        }
+    }
+
+    private static final class InMemoryApprovalReceipts
+            implements ScenarioCanonicalApprovalReceiptRepository {
+        private final Map<String, ScenarioCanonicalApprovalReceipt> receipts =
+                new LinkedHashMap<>();
+
+        @Override
+        public Optional<ScenarioCanonicalApprovalReceipt> find(
+                EnterpriseScope scope,
+                String idempotencyKeyFingerprint
+        ) {
+            ScenarioCanonicalApprovalReceipt value = receipts.get(idempotencyKeyFingerprint);
+            return value != null && value.scope().equals(scope)
+                    ? Optional.of(value) : Optional.empty();
+        }
+
+        @Override
+        public boolean saveIfAbsent(ScenarioCanonicalApprovalReceipt receipt) {
+            return receipts.putIfAbsent(receipt.idempotencyKeyFingerprint(), receipt) == null;
         }
     }
 }

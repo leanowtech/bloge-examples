@@ -399,8 +399,10 @@ head revision，旧 revision 不会混入；`rg_scenario_case_obligation_ref_ind
 `CANONICAL` Case 会进入 fulfillment 结果。应用层现已集中实现 `EXPLORATORY -> REVIEW_READY -> CANONICAL` 状态机：通用 draft
 保存不能伪造晋级或修改已评审 Case；晋级会一次性校验 contract、frozen obligation、approved Oracle、valid executable Assertion Set
 及所有 Fixture/Generator/Replay exact ref，并返回有序、payload-free closure report；canonical 审批由服务端注入审核身份、时间和意见，
-同时执行授权及四眼约束。HTTP adapter、durable transition receipt 和 v1 lowering adapter 在 COR-05 后续切片接入前，Capability Probe
-保持 `correctnessScenarioV2Api=false`。
+同时执行授权及四眼约束。认证 HTTP adapter 已分别提供 draft save、review-ready 和 canonical approve 命令，统一强制 purpose、完整
+scope 与 `If-Match`；canonical approve 另要求 `Idempotency-Key`，使用通用 command receipt 表保存哈希键、请求指纹、exact Case
+坐标及 payload-free closure，重放时反查不可变 revision 并校验内容完整性。closure 缺口作为结构化 Problem detail 返回。生产 bean、企业
+external-reference resolver 和 v1 lowering adapter 接入前，Capability Probe 保持 `correctnessScenarioV2Api=false`。
 
 ### 4.6 `FixtureAssetDescriptor v1`
 
