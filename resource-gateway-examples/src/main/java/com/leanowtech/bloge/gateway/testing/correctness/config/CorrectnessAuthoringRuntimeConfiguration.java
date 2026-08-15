@@ -3,6 +3,8 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionSetService;
@@ -150,7 +152,9 @@ public class CorrectnessAuthoringRuntimeConfiguration {
             ObjectProvider<AssertionSetService> assertions,
             ObjectProvider<ScenarioDraftSetV2Service> scenarios,
             ObjectProvider<FixtureCatalogService> fixtures,
-            ObjectProvider<FixtureMaterialService> materials
+            ObjectProvider<FixtureMaterialService> materials,
+            ObjectProvider<CorrectnessCompilationService> compilation,
+            ObjectProvider<CorrectnessPublicationService> publication
     ) {
         return new CorrectnessAuthoringRuntimeAvailability(
                 workspace.getIfAvailable() != null,
@@ -158,6 +162,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
                 oracles.getIfAvailable() != null && assertions.getIfAvailable() != null,
                 scenarios.getIfAvailable() != null,
                 fixtures.getIfAvailable() != null,
-                materials.getIfAvailable() != null);
+                materials.getIfAvailable() != null,
+                compilation.getIfAvailable() != null,
+                publication.getIfAvailable() != null);
     }
 }

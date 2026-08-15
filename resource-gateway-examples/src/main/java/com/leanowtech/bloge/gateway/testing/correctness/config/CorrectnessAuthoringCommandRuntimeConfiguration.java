@@ -2,6 +2,13 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePayloadProtector;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompiler;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessTestingRegistryGateway;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.TestingControlPlaneCorrectnessRegistryGateway;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageDerivationSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageFreezeReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
@@ -13,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureApprovalR
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialMetadataSource;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureScenarioExternalReferenceSource;
@@ -29,9 +37,12 @@ import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleBasisSource
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.AssertionSetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.BusinessOracleRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.CorrectnessDefinitionRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.CoverageInventoryRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.publication.DatabaseCorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.DatabaseScenarioCanonicalApprovalReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationAdapter;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioCanonicalApprovalReceiptRepository;
@@ -117,6 +128,16 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     @ConditionalOnMissingBean
     AssertionEvaluatorProfile assertionEvaluatorProfile() {
         return AssertionEvaluatorProfile.fixtureEvaluatorV1();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessCompiler correctnessCompiler(
+            ObjectMapper mapper,
+            AssertionSetCompiler assertionCompiler,
+            AssertionEvaluatorProfile evaluatorProfile
+    ) {
+        return new CorrectnessCompiler(mapper, assertionCompiler, evaluatorProfile);
     }
 
     @Bean
@@ -253,5 +274,58 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     ) {
         return new FixtureCatalogService(
                 fixtures, materials, schemas, authorizer, receipts, mapper, Clock.systemUTC());
+    }
+
+    @Bean
+    @ConditionalOnBean(FixtureMaterialResolver.class)
+    @ConditionalOnMissingBean
+    CorrectnessCompilationService correctnessCompilationService(
+            CorrectnessDefinitionRepository definitions,
+            CoverageInventoryRepository inventories,
+            BusinessOracleRepository oracles,
+            AssertionSetRepository assertionSets,
+            ScenarioDraftSetV2Repository scenarios,
+            FixtureAssetRepository fixtures,
+            FixtureMaterialResolver materials,
+            CorrectnessCompiler compiler,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessCompilationService(
+                definitions, inventories, oracles, assertionSets, scenarios, fixtures,
+                materials, compiler, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessPublicationRepository correctnessPublicationRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseCorrectnessPublicationRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnBean({TestExecutionApiService.class, TestSuiteRegistryService.class})
+    @ConditionalOnMissingBean
+    CorrectnessTestingRegistryGateway correctnessTestingRegistryGateway(
+            TestExecutionApiService executions,
+            TestSuiteRegistryService suites
+    ) {
+        return new TestingControlPlaneCorrectnessRegistryGateway(executions, suites);
+    }
+
+    @Bean
+    @ConditionalOnBean({CorrectnessCompilationService.class,
+            CorrectnessTestingRegistryGateway.class})
+    @ConditionalOnMissingBean
+    CorrectnessPublicationService correctnessPublicationService(
+            CorrectnessCompilationService compilation,
+            CorrectnessPublicationRepository publications,
+            CorrectnessTestingRegistryGateway registry,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessPublicationService(
+                compilation, publications, registry, mapper);
     }
 }

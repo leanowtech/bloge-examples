@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.testing.correctness.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageDerivationSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
@@ -21,6 +23,7 @@ import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class CorrectnessAuthoringCommandRuntimeConfigurationTest {
 
@@ -41,6 +44,9 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             "rg_fixture_asset_heads",
             "rg_fixture_asset_revisions",
             "rg_fixture_usage_index",
+            "rg_correctness_publications",
+            "rg_correctness_publication_attempts",
+            "rg_correctness_publication_attempt_history",
             "rg_correctness_outbox",
             "rg_correctness_command_receipts");
 
@@ -57,7 +63,8 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             assertThat(context).hasNotFailed();
             assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                     .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
-                            true, false, false, false, false, false));
+                            true, false, false, false, false, false,
+                            false, false));
         });
     }
 
@@ -88,11 +95,16 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                                 FixtureReviewAuthorizer.ApprovalDecision.ownerReview())
                 .withBean(FixtureSchemaSource.class,
                         () -> (scope, schema) -> true)
+                .withBean(TestExecutionApiService.class,
+                        () -> mock(TestExecutionApiService.class))
+                .withBean(TestSuiteRegistryService.class,
+                        () -> mock(TestSuiteRegistryService.class))
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
-                                    true, true, true, true, true, true));
+                                    true, true, true, true, true, true,
+                                    true, true));
                 });
     }
 

@@ -163,7 +163,9 @@ public final class CorrectnessPublicationService {
             IntegrationRequestContext identity
     ) {
         requireIdentity(identity);
-        return publications.attemptHistory(scope(identity), normalized(attemptId));
+        String exactAttemptId = normalized(attemptId);
+        findAttempt(exactAttemptId, identity);
+        return publications.attemptHistory(scope(identity), exactAttemptId);
     }
 
     private StoredCorrectnessPublicationAttempt registerFixtures(

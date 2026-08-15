@@ -7,10 +7,12 @@ public record CorrectnessAuthoringRuntimeAvailability(
         boolean oracleAssertionApi,
         boolean scenarioV2Api,
         boolean fixtureCatalogApi,
-        boolean fixtureMaterialApi
+        boolean fixtureMaterialApi,
+        boolean compilationApi,
+        boolean publicationApi
 ) {
     public static CorrectnessAuthoringRuntimeAvailability unavailable() {
         return new CorrectnessAuthoringRuntimeAvailability(
-                false, false, false, false, false, false);
+                false, false, false, false, false, false, false, false);
     }
 }

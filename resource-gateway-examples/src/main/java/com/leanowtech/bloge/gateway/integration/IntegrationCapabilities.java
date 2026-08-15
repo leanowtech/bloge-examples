@@ -1334,6 +1334,10 @@ public record IntegrationCapabilities(
         features.put("correctnessFixtureCatalogApi", false);
         features.put("correctnessFixtureMaterialProtocol", true);
         features.put("correctnessFixtureMaterialApi", false);
+        features.put("correctnessCompilationProtocol", true);
+        features.put("correctnessCompilationApi", false);
+        features.put("correctnessPublicationProtocol", true);
+        features.put("correctnessPublicationApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

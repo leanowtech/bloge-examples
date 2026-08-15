@@ -174,6 +174,16 @@ class CorrectnessPublicationServiceTest {
                                 .isEqualTo("RG.CORRECTNESS.PUBLICATION_IDEMPOTENCY_CONFLICT"));
     }
 
+    @Test
+    void missingAttemptHistoryFailsClosedInsteadOfLookingEmpty() {
+        assertThatThrownBy(() -> service.history("missing-attempt", identity()))
+                .isInstanceOfSatisfying(CorrectnessPublicationException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(404);
+                    assertThat(failure.code())
+                            .isEqualTo("RG.CORRECTNESS.PUBLICATION_ATTEMPT_NOT_FOUND");
+                });
+    }
+
     private IntegrationRequestContext identity() {
         return new IntegrationRequestContext(
                 "tenant-a", "org-a", "loan", "test", "sg", "USER", "publisher", "",

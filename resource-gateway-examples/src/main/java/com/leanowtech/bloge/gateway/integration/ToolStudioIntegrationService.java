@@ -716,6 +716,10 @@ public class ToolStudioIntegrationService {
                 correctnessAuthoringRuntime.fixtureCatalogApi());
         features.put("correctnessFixtureMaterialApi",
                 correctnessAuthoringRuntime.fixtureMaterialApi());
+        features.put("correctnessCompilationApi",
+                correctnessAuthoringRuntime.compilationApi());
+        features.put("correctnessPublicationApi",
+                correctnessAuthoringRuntime.publicationApi());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2489,6 +2493,20 @@ public class ToolStudioIntegrationService {
                     "POST", "/api/visual/fixture-materials"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/visual/fixture-materials/{fixtureAssetId}"));
+        }
+        if (correctnessAuthoringRuntime.compilationApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/correctness-publications:compile-preview"));
+        }
+        if (correctnessAuthoringRuntime.publicationApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/correctness-publications"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-publications/{publicationId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-publications/attempts/{attemptId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-publications/attempts/{attemptId}/history"));
         }
     }
 

@@ -16,7 +16,10 @@ import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSe
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationController;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetController;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialController;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationController;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationController;
 
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -57,7 +60,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         ScenarioDraftSetV2Controller.class,
         LegacyScenarioV1MigrationController.class,
         FixtureAssetController.class,
-        FixtureMaterialController.class
+        FixtureMaterialController.class,
+        CorrectnessCompilationController.class,
+        CorrectnessPublicationController.class
 })
 public class IntegrationProblemHandler {
 
@@ -65,6 +70,7 @@ public class IntegrationProblemHandler {
     public ResponseEntity<IntegrationProblem> handle(IntegrationProblemException failure) {
         IntegrationProblem problem = failure.problem();
         ResponseEntity.BodyBuilder response = ResponseEntity.status(problem.status());
+        response.cacheControl(CacheControl.noStore()).header(HttpHeaders.PRAGMA, "no-cache");
         if (problem.status() == 401) {
             response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer realm=\"resource-gateway-integration\"");
         }

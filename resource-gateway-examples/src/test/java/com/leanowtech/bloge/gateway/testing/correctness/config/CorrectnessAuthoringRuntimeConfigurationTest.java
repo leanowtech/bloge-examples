@@ -33,6 +33,9 @@ class CorrectnessAuthoringRuntimeConfigurationTest {
             "rg_fixture_asset_heads",
             "rg_fixture_asset_revisions",
             "rg_fixture_usage_index",
+            "rg_correctness_publications",
+            "rg_correctness_publication_attempts",
+            "rg_correctness_publication_attempt_history",
             "rg_correctness_outbox",
             "rg_correctness_command_receipts");
 
@@ -67,7 +70,8 @@ class CorrectnessAuthoringRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(CorrectnessWorkspaceQuery.class);
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
-                                    true, false, false, false, false, false));
+                                    true, false, false, false, false, false,
+                                    false, false));
                 });
     }
 
