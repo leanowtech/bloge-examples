@@ -3,7 +3,7 @@ package com.leanowtech.bloge.gateway.testing.correctness.publication;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationReport;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompiler;
-import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilerTest;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationTestData;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.FrozenCompilationInput;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
@@ -51,7 +51,7 @@ class DatabaseCorrectnessPublicationRepositoryTest {
         jdbc = new JdbcTemplate(dataSource);
         createSchema();
         repository = new DatabaseCorrectnessPublicationRepository(jdbc, mapper);
-        source = new CorrectnessCompilerTest().input(
+        source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         CorrectnessCompiler compiler = new CorrectnessCompiler(
                 mapper, new AssertionSetCompiler(mapper),

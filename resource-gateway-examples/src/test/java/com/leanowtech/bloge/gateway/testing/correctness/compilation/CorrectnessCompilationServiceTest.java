@@ -70,7 +70,7 @@ class CorrectnessCompilationServiceTest {
 
     @BeforeEach
     void setUp() {
-        source = new CorrectnessCompilerTest().input(
+        source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         stubAuthoringClosure(source);
         stubMaterial(source, source.coordinate().target());

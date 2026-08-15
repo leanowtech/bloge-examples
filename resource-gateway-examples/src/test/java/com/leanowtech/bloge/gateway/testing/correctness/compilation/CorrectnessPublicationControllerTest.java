@@ -57,7 +57,7 @@ class CorrectnessPublicationControllerTest {
 
     @Test
     void exposesPayloadFreePreviewAndDurablePublicationReads() throws Exception {
-        FrozenCompilationInput source = new CorrectnessCompilerTest().input(
+        FrozenCompilationInput source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         CorrectnessCompiler compiler = new CorrectnessCompiler(
                 mapper, new AssertionSetCompiler(mapper),
@@ -122,7 +122,7 @@ class CorrectnessPublicationControllerTest {
 
     @Test
     void rejectsMissingIdempotencyKeyAndMapsCompilationFailures() throws Exception {
-        FrozenCompilationInput source = new CorrectnessCompilerTest().input(
+        FrozenCompilationInput source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         CorrectnessCompilationService compilation = mock(CorrectnessCompilationService.class);
         CorrectnessPublicationService publication = mock(CorrectnessPublicationService.class);

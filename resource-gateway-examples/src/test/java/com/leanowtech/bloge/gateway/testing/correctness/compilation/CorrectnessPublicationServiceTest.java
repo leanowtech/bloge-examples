@@ -57,7 +57,7 @@ class CorrectnessPublicationServiceTest {
 
     @BeforeEach
     void setUp() {
-        source = new CorrectnessCompilerTest().input(
+        source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         CorrectnessCompiler compiler = new CorrectnessCompiler(
                 mapper, new AssertionSetCompiler(mapper),
@@ -135,7 +135,7 @@ class CorrectnessPublicationServiceTest {
 
     @Test
     void blockedCompilationPersistsPayloadFreeFailureWithoutRegistryWrites() throws Exception {
-        FrozenCompilationInput unsupported = new CorrectnessCompilerTest().input(
+        FrozenCompilationInput unsupported = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), false);
         CorrectnessCompiler compiler = new CorrectnessCompiler(
                 mapper, new AssertionSetCompiler(mapper),

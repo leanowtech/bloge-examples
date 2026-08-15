@@ -2,7 +2,7 @@ package com.leanowtech.bloge.gateway.testing.correctness.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompiler;
-import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilerTest;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationTestData;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.FrozenCompilationInput;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
@@ -36,7 +36,7 @@ class PublicationCorrectnessWorkspaceComponentSourceTest {
 
     @Test
     void projectsLatestExactManifestWithoutCompiledPayload() throws Exception {
-        FrozenCompilationInput source = new CorrectnessCompilerTest().input(
+        FrozenCompilationInput source = CorrectnessCompilationTestData.input(
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         StoredCorrectnessPublication publication = publication(source);
         CorrectnessPublicationRepository repository = mock(CorrectnessPublicationRepository.class);
