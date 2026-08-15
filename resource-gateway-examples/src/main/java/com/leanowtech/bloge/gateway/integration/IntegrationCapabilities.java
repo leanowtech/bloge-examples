@@ -732,6 +732,24 @@ public record IntegrationCapabilities(
         objects.put("fixtureAssetDescriptor", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .FixtureAssetDescriptor.SCHEMA_VERSION));
+        objects.put("storedFixtureAsset", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .StoredFixtureAsset.SCHEMA_VERSION));
+        objects.put("fixtureAssetChangedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .FixtureAssetChanged.SCHEMA_VERSION));
+        objects.put("fixtureMaterialWriteRequest", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureMaterialProtocolV2.WriteRequest.SCHEMA_VERSION));
+        objects.put("fixtureMaterialReceipt", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureMaterialProtocolV2.Receipt.SCHEMA_VERSION));
+        objects.put("fixtureMaterial", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureMaterialProtocolV2.Material.SCHEMA_VERSION));
+        objects.put("fixtureApprovalReceipt", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.fixture
+                        .FixtureApprovalReceipt.SCHEMA_VERSION));
         objects.put("correctnessPublication", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .CorrectnessPublication.SCHEMA_VERSION));
@@ -1312,6 +1330,10 @@ public record IntegrationCapabilities(
         features.put("correctnessOracleAssertionApi", false);
         features.put("correctnessScenarioV2Protocol", true);
         features.put("correctnessScenarioV2Api", false);
+        features.put("correctnessFixtureCatalogProtocol", true);
+        features.put("correctnessFixtureCatalogApi", false);
+        features.put("correctnessFixtureMaterialProtocol", true);
+        features.put("correctnessFixtureMaterialApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

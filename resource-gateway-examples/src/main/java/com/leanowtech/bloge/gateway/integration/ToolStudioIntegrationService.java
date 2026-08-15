@@ -195,6 +195,8 @@ public class ToolStudioIntegrationService {
     private PackageCompilationAuthority packageCompilationAuthority =
             new UnavailablePackageCompilationAuthority();
     private boolean legacyGraphPackageProjectorReady;
+    private CorrectnessAuthoringRuntimeAvailability correctnessAuthoringRuntime =
+            CorrectnessAuthoringRuntimeAvailability.unavailable();
 
     @Autowired
     public ToolStudioIntegrationService(GraphDraftRepository draftRepository,
@@ -246,6 +248,15 @@ public class ToolStudioIntegrationService {
     void configurePackageCompilationAuthority(PackageCompilationAuthority authority) {
         this.packageCompilationAuthority = authority == null
                 ? new UnavailablePackageCompilationAuthority() : authority;
+    }
+
+    /** Advertises Correctness APIs only when their protected runtime surfaces exist. */
+    @Autowired(required = false)
+    void configureCorrectnessAuthoringRuntime(
+            CorrectnessAuthoringRuntimeAvailability availability
+    ) {
+        this.correctnessAuthoringRuntime = availability == null
+                ? CorrectnessAuthoringRuntimeAvailability.unavailable() : availability;
     }
 
     /** Receives the built-in Legacy migration authority only when its source catalog is installed. */
@@ -696,6 +707,15 @@ public class ToolStudioIntegrationService {
                 businessMirrorPackageGovernanceApi);
         features.put("businessMirrorPackageGovernanceProjectionIngestReady",
                 businessMirrorPackageGovernanceIngestReady);
+        features.put("correctnessWorkspaceApi", correctnessAuthoringRuntime.workspaceApi());
+        features.put("correctnessCoverageApi", correctnessAuthoringRuntime.coverageApi());
+        features.put("correctnessOracleAssertionApi",
+                correctnessAuthoringRuntime.oracleAssertionApi());
+        features.put("correctnessScenarioV2Api", correctnessAuthoringRuntime.scenarioV2Api());
+        features.put("correctnessFixtureCatalogApi",
+                correctnessAuthoringRuntime.fixtureCatalogApi());
+        features.put("correctnessFixtureMaterialApi",
+                correctnessAuthoringRuntime.fixtureMaterialApi());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2035,6 +2055,7 @@ public class ToolStudioIntegrationService {
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
+        addCorrectnessAuthoringEndpoints(endpoints);
         if (domainFidelityRuntimeAvailability.inventoryApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST",
@@ -2412,6 +2433,63 @@ public class ToolStudioIntegrationService {
                 endpoints);
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
+    }
+
+    private void addCorrectnessAuthoringEndpoints(
+            List<IntegrationCapabilities.Endpoint> endpoints
+    ) {
+        if (correctnessAuthoringRuntime.workspaceApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-workspaces/{targetKind}/{targetId}"));
+        }
+        if (correctnessAuthoringRuntime.coverageApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT", "/api/visual/coverage-inventories/{inventoryId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/coverage-inventories/{inventoryId}:freeze"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/coverage-inventories/{inventoryId}:impact"));
+        }
+        if (correctnessAuthoringRuntime.oracleAssertionApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT", "/api/visual/oracles/{oracleId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/oracles/{oracleId}:approve"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT", "/api/visual/assertion-sets/{assertionSetId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/assertion-sets:compile-preview"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/assertion-sets/{assertionSetId}:validate"));
+        }
+        if (correctnessAuthoringRuntime.scenarioV2Api()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT", "/api/visual/scenario-draft-sets-v2/{scenarioDraftSetId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/scenario-draft-sets-v2/{scenarioDraftSetId}/cases/{scenarioId}:review-ready"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/scenario-draft-sets-v2/{scenarioDraftSetId}/cases/{scenarioId}:approve"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/scenario-draft-sets-v2:migrate-v1-preview"));
+        }
+        if (correctnessAuthoringRuntime.fixtureCatalogApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "PUT", "/api/visual/fixture-assets/{fixtureAssetId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/fixture-assets/{fixtureAssetId}:review-ready"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/fixture-assets/{fixtureAssetId}:approve"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/fixture-assets/{fixtureAssetId}:activate"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/fixture-assets/{fixtureAssetId}:revoke"));
+        }
+        if (correctnessAuthoringRuntime.fixtureMaterialApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/fixture-materials"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/fixture-materials/{fixtureAssetId}"));
+        }
     }
 
     private boolean regionalDataPlaneCertificationReady() {
