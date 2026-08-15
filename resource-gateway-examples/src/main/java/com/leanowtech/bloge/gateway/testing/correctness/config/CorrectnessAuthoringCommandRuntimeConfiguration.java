@@ -5,10 +5,12 @@ import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePa
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationService;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationReferenceSource;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompiler;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationService;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessTestingRegistryGateway;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.TestingControlPlaneCorrectnessRegistryGateway;
+import com.leanowtech.bloge.gateway.testing.correctness.compilation.ScenarioExternalCompilationReferenceSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageDerivationSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageFreezeReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
@@ -277,7 +279,17 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     }
 
     @Bean
-    @ConditionalOnBean(FixtureMaterialResolver.class)
+    @ConditionalOnBean(ScenarioExternalReferenceSource.class)
+    @ConditionalOnMissingBean
+    CorrectnessCompilationReferenceSource correctnessCompilationReferenceSource(
+            List<ScenarioExternalReferenceSource> externalSources
+    ) {
+        return new ScenarioExternalCompilationReferenceSource(externalSources);
+    }
+
+    @Bean
+    @ConditionalOnBean({FixtureMaterialResolver.class,
+            CorrectnessCompilationReferenceSource.class})
     @ConditionalOnMissingBean
     CorrectnessCompilationService correctnessCompilationService(
             CorrectnessDefinitionRepository definitions,
@@ -287,12 +299,13 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
             ScenarioDraftSetV2Repository scenarios,
             FixtureAssetRepository fixtures,
             FixtureMaterialResolver materials,
+            CorrectnessCompilationReferenceSource externalReferences,
             CorrectnessCompiler compiler,
             ObjectMapper mapper
     ) {
         return new CorrectnessCompilationService(
                 definitions, inventories, oracles, assertionSets, scenarios, fixtures,
-                materials, compiler, mapper);
+                materials, externalReferences, compiler, mapper);
     }
 
     @Bean

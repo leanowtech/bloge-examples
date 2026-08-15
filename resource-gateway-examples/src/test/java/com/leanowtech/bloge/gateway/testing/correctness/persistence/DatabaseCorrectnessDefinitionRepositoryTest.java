@@ -247,6 +247,15 @@ class DatabaseCorrectnessDefinitionRepositoryTest {
         assertThat(storedDefinitionSchema.path("additionalProperties").asBoolean(true)).isFalse();
         assertThat(storedDefinitionSchema.at("/properties/definition/$ref").asText())
                 .isEqualTo("bloge-correctness-definition-v1.schema.json");
+
+        String projectionIndexMigration = Files.readString(Path.of(
+                "src", "main", "resources", "db", "postgresql",
+                "V20260815_006__correctness_publication_projection_index.sql"));
+        assertThat(projectionIndexMigration).contains(
+                "CREATE INDEX IF NOT EXISTS rg_correctness_publication_definition_latest_idx",
+                "tenant_id, organization_id, project_id, environment_id, region_id",
+                "definition_id, definition_revision, definition_fingerprint",
+                "committed_at DESC, publication_id DESC");
     }
 
     private DatabaseCorrectnessDefinitionRepository repositoryAt(Instant instant) {

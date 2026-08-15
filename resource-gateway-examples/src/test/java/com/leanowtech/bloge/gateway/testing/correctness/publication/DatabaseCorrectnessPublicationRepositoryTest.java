@@ -88,6 +88,9 @@ class DatabaseCorrectnessPublicationRepositoryTest {
         assertThat(result.publication()).isEqualTo(storedPublication);
         assertThat(repository.findPublication(source.scope(), "publication-1"))
                 .contains(storedPublication);
+        assertThat(repository.findLatestPublication(
+                source.scope(), source.coordinate().definitionRef(),
+                source.coordinate().target())).contains(storedPublication);
         assertThat(repository.attemptHistory(source.scope(), "attempt-1"))
                 .extracting(value -> value.attempt().stage())
                 .containsExactly(
@@ -192,6 +195,49 @@ class DatabaseCorrectnessPublicationRepositoryTest {
                 .attempt().stage()).isEqualTo(AttemptStage.REGISTERING);
         assertThat(repository.findPublication(source.scope(), "publication-1")).isEmpty();
         assertThat(repository.attemptHistory(source.scope(), "attempt-1")).hasSize(3);
+    }
+
+    @Test
+    void rejectsSubstitutedVerifiedAssetsAndOutboxCoordinates() {
+        repository.saveAttemptIfVersion(
+                source.scope(), 0,
+                state(1, AttemptStage.PREPARING, null, List.of(), Failure.none())).orElseThrow();
+        repository.saveAttemptIfVersion(
+                source.scope(), 1,
+                state(2, AttemptStage.COMPILED, report, List.of(), Failure.none())).orElseThrow();
+        repository.saveAttemptIfVersion(
+                source.scope(), 2,
+                state(3, AttemptStage.REGISTERING, report,
+                        List.of(compiledRef("FIXTURE_BUNDLE")), Failure.none())).orElseThrow();
+        StoredCorrectnessPublication publication = publication();
+        StoredCorrectnessPublicationAttempt missingSuite = state(
+                4, AttemptStage.COMMITTED, report,
+                List.of(compiledRef("FIXTURE_BUNDLE")), Failure.none());
+
+        assertThatThrownBy(() -> repository.commitIfVersion(
+                source.scope(), 3, missingSuite, publication, event(publication)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("closure");
+
+        StoredCorrectnessPublicationAttempt complete = state(
+                4, AttemptStage.COMMITTED, report,
+                report.compiledAssets().stream().map(value -> value.assetRef()).toList(),
+                Failure.none());
+        CorrectnessPublicationCompleted expected = event(publication);
+        CorrectnessPublicationCompleted substituted = new CorrectnessPublicationCompleted(
+                "", expected.eventId(), expected.scope(), expected.publicationRef(),
+                source.definition().target(), expected.definitionRef(), expected.inventoryRef(),
+                expected.scenarioDraftSetRef(), expected.compiledFixtureBundleRefs(),
+                expected.compiledTestSuiteRef(), expected.compilationFingerprint(),
+                "different-actor", expected.occurredAt());
+
+        assertThatThrownBy(() -> repository.commitIfVersion(
+                source.scope(), 3, complete, publication, substituted))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("closure");
+        assertThat(repository.findPublication(source.scope(), "publication-1")).isEmpty();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_correctness_outbox", Integer.class)).isZero();
     }
 
     @Test

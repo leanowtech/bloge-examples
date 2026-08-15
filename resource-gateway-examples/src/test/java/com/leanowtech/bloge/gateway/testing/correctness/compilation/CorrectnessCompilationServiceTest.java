@@ -57,12 +57,14 @@ class CorrectnessCompilationServiceTest {
             mock(ScenarioDraftSetV2Repository.class);
     private final FixtureAssetRepository fixtures = mock(FixtureAssetRepository.class);
     private final FixtureMaterialResolver materials = mock(FixtureMaterialResolver.class);
+    private final CorrectnessCompilationReferenceSource externalReferences =
+            mock(CorrectnessCompilationReferenceSource.class);
     private final CorrectnessCompiler compiler = new CorrectnessCompiler(
             mapper, new AssertionSetCompiler(mapper),
             AssertionEvaluatorProfile.fixtureEvaluatorV1());
     private final CorrectnessCompilationService service = new CorrectnessCompilationService(
             definitions, inventories, oracles, assertions, scenarios, fixtures,
-            materials, compiler, mapper);
+            materials, externalReferences, compiler, mapper);
 
     private FrozenCompilationInput source;
 
@@ -72,6 +74,9 @@ class CorrectnessCompilationServiceTest {
                 new InlineValue(Map.of("decision", "APPROVE")), true);
         stubAuthoringClosure(source);
         stubMaterial(source, source.coordinate().target());
+        when(externalReferences.referenceIsCurrent(
+                eq(source.scope()), eq(source.coordinate().target()), any(), any()))
+                .thenReturn(true);
     }
 
     @Test
@@ -120,6 +125,22 @@ class CorrectnessCompilationServiceTest {
                     assertThat(failure.code())
                             .isEqualTo("RG.CORRECTNESS.FIXTURE_MATERIAL_CLOSURE_DRIFT");
                 });
+    }
+
+    @Test
+    void rejectsDriftedContractBeforeReadingFixtureMaterial() {
+        when(externalReferences.referenceIsCurrent(
+                eq(source.scope()), eq(source.coordinate().target()),
+                eq(source.scenarioDraftSet().contractRef()), any()))
+                .thenReturn(false);
+
+        assertThatThrownBy(() -> service.compile(source.coordinate(), identity()))
+                .isInstanceOfSatisfying(CorrectnessCompilationException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(409);
+                    assertThat(failure.code())
+                            .isEqualTo("RG.CORRECTNESS.EXTERNAL_REFERENCE_DRIFT");
+                });
+        verify(materials, org.mockito.Mockito.never()).resolve(any(), any(), any());
     }
 
     @Test

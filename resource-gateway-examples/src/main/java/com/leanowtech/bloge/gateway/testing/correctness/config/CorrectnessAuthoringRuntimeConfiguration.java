@@ -21,6 +21,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseFixt
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseScenarioDraftSetV2Repository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Service;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
@@ -28,6 +29,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.DefinitionOnly
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.FixtureCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.InventoryCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.OracleAssertionCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.PublicationCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioV2CoverageFulfillmentSource;
 
@@ -121,7 +123,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
             BusinessOracleRepository oracles,
             AssertionSetRepository assertionSets,
             ScenarioDraftSetV2Repository scenarios,
-            FixtureAssetRepository fixtures
+            FixtureAssetRepository fixtures,
+            ObjectProvider<CorrectnessPublicationRepository> publications
     ) {
         CorrectnessWorkspaceComponentSource source =
                 new DefinitionOnlyCorrectnessWorkspaceComponentSource();
@@ -130,7 +133,10 @@ public class CorrectnessAuthoringRuntimeConfiguration {
         source = new OracleAssertionCorrectnessWorkspaceComponentSource(
                 source, oracles, assertionSets);
         source = new ScenarioCorrectnessWorkspaceComponentSource(source, scenarios);
-        return new FixtureCorrectnessWorkspaceComponentSource(source, scenarios, fixtures);
+        source = new FixtureCorrectnessWorkspaceComponentSource(source, scenarios, fixtures);
+        CorrectnessPublicationRepository publication = publications.getIfAvailable();
+        return publication == null ? source
+                : new PublicationCorrectnessWorkspaceComponentSource(source, publication);
     }
 
     @Bean

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactTargetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessPublication;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessPublication.AttemptStage;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -43,6 +45,42 @@ public final class DatabaseCorrectnessPublicationRepository
                         """,
                 (result, row) -> readPublication(result, exactScope, exactId),
                 scopeArgs(exactScope, exactId)).stream().flatMap(Optional::stream).findFirst();
+    }
+
+    @Override
+    public Optional<StoredCorrectnessPublication> findLatestPublication(
+            EnterpriseScope scope,
+            ExactAssetRef definitionRef,
+            ExactTargetRef target
+    ) {
+        EnterpriseScope exactScope = Objects.requireNonNull(scope, "scope");
+        ExactAssetRef exactDefinition = Objects.requireNonNull(definitionRef, "definitionRef");
+        ExactTargetRef exactTarget = Objects.requireNonNull(target, "target");
+        if (!"DEFINITION".equals(exactDefinition.kind())) {
+            throw new IllegalArgumentException("Latest Publication query requires a Definition ref");
+        }
+        List<Optional<StoredCorrectnessPublication>> rows = jdbc.query("""
+                        SELECT * FROM rg_correctness_publications
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND definition_id = ? AND definition_revision = ?
+                          AND definition_fingerprint = ?
+                        ORDER BY committed_at DESC, publication_id DESC
+                        LIMIT 1
+                        """,
+                (result, row) -> readPublication(
+                        result, exactScope, result.getString("publication_id")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), exactDefinition.id(),
+                exactDefinition.revision(), exactDefinition.fingerprint());
+        Optional<StoredCorrectnessPublication> latest = rows.stream()
+                .flatMap(Optional::stream).findFirst();
+        if (latest.isPresent()
+                && !latest.orElseThrow().publication().target().equals(exactTarget)) {
+            throw new IllegalStateException(
+                    "Stored Correctness Publication target integrity check failed");
+        }
+        return latest;
     }
 
     @Override
@@ -357,6 +395,23 @@ public final class DatabaseCorrectnessPublicationRepository
         PublicationAttempt state = attempt.attempt();
         CorrectnessPublication publication = storedPublication.publication();
         String computed = CorrectnessProtocolFingerprint.fingerprint(mapper, publication);
+        List<ExactAssetRef> compiledRefs = new ArrayList<>(
+                publication.compiledFixtureBundleRefs());
+        compiledRefs.add(publication.compiledTestSuiteRef());
+        compiledRefs = compiledRefs.stream().sorted(java.util.Comparator
+                        .comparing(ExactAssetRef::kind)
+                        .thenComparing(ExactAssetRef::id)
+                        .thenComparingLong(ExactAssetRef::revision)
+                        .thenComparing(ExactAssetRef::fingerprint))
+                .toList();
+        List<ExactAssetRef> reportRefs = attempt.compilationReport() == null
+                ? List.of() : attempt.compilationReport().compiledAssets().stream()
+                .map(value -> value.assetRef())
+                .sorted(java.util.Comparator.comparing(ExactAssetRef::kind)
+                        .thenComparing(ExactAssetRef::id)
+                        .thenComparingLong(ExactAssetRef::revision)
+                        .thenComparing(ExactAssetRef::fingerprint))
+                .toList();
         if (state.stage() != AttemptStage.COMMITTED
                 || attempt.compilationReport() == null
                 || !attempt.compilationReport().publishable()
@@ -371,11 +426,25 @@ public final class DatabaseCorrectnessPublicationRepository
                 || !state.coordinate().target().equals(publication.target())
                 || !attempt.compilationReport().compilationFingerprint()
                 .equals(publication.compilationFingerprint())
+                || !attempt.compilationReport().compilerVersion()
+                .equals(publication.compilerVersion())
+                || !compiledRefs.equals(reportRefs)
+                || !compiledRefs.equals(state.verifiedAssets())
                 || !event.scope().equals(scope)
                 || !event.publicationRef().id().equals(publication.publicationId())
+                || event.publicationRef().revision() != 1
                 || !event.publicationRef().fingerprint()
                 .equals(storedPublication.publicationFingerprint())
-                || !event.compilationFingerprint().equals(publication.compilationFingerprint())) {
+                || !event.target().equals(publication.target())
+                || !event.definitionRef().equals(publication.definitionRef())
+                || !event.inventoryRef().equals(publication.inventoryRef())
+                || !event.scenarioDraftSetRef().equals(publication.scenarioDraftSetRef())
+                || !event.compiledFixtureBundleRefs()
+                .equals(publication.compiledFixtureBundleRefs())
+                || !event.compiledTestSuiteRef().equals(publication.compiledTestSuiteRef())
+                || !event.compilationFingerprint().equals(publication.compilationFingerprint())
+                || !event.actorId().equals(publication.metadata().updatedBy().id())
+                || !event.occurredAt().equals(publication.metadata().updatedAt())) {
             throw new IllegalArgumentException("Publication commit closure is invalid");
         }
     }

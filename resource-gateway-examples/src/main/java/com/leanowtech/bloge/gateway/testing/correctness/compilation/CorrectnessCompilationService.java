@@ -15,6 +15,11 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescr
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.FixtureSubject;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Receipt;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.FixtureVariantRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.GeneratedValueRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.InlineValue;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ReplayMaterialRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ValueSource;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.MaterialAccessContext;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.ResolvedFixtureMaterial;
@@ -33,6 +38,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtur
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredScenarioDraftSetV2;
 
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -50,6 +57,7 @@ public final class CorrectnessCompilationService {
     private final ScenarioDraftSetV2Repository scenarios;
     private final FixtureAssetRepository fixtures;
     private final FixtureMaterialResolver materials;
+    private final CorrectnessCompilationReferenceSource externalReferences;
     private final CorrectnessCompiler compiler;
     private final ObjectMapper mapper;
 
@@ -61,6 +69,7 @@ public final class CorrectnessCompilationService {
             ScenarioDraftSetV2Repository scenarios,
             FixtureAssetRepository fixtures,
             FixtureMaterialResolver materials,
+            CorrectnessCompilationReferenceSource externalReferences,
             CorrectnessCompiler compiler,
             ObjectMapper mapper
     ) {
@@ -71,6 +80,8 @@ public final class CorrectnessCompilationService {
         this.scenarios = Objects.requireNonNull(scenarios, "scenarios");
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
         this.materials = Objects.requireNonNull(materials, "materials");
+        this.externalReferences = Objects.requireNonNull(
+                externalReferences, "externalReferences");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
     }
@@ -101,6 +112,7 @@ public final class CorrectnessCompilationService {
         CorrectnessDefinition definition = definition(scope, coordinate.definitionRef());
         CoverageInventory inventory = inventory(scope, coordinate.inventoryRef());
         ScenarioDraftSetV2 scenarioSet = scenario(scope, coordinate.scenarioDraftSetRef());
+        requireExternalClosure(scope, scenarioSet, identity);
         List<BusinessOracle> resolvedOracles = coordinate.oracleRefs().stream()
                 .map(ref -> oracle(scope, ref)).toList();
         List<AssertionSet> resolvedAssertions = coordinate.assertionSetRefs().stream()
@@ -120,6 +132,54 @@ public final class CorrectnessCompilationService {
         return new FrozenCompilationInput(
                 scope, coordinate, definition, inventory, scenarioSet,
                 resolvedOracles, resolvedAssertions, resolvedFixtures);
+    }
+
+    private void requireExternalClosure(
+            EnterpriseScope scope,
+            ScenarioDraftSetV2 scenarioSet,
+            IntegrationRequestContext identity
+    ) {
+        for (ExactAssetRef ref : externalRefs(scenarioSet)) {
+            boolean current = callStore(() -> externalReferences.referenceIsCurrent(
+                    scope, scenarioSet.target(), ref, identity));
+            if (!current) {
+                throw conflict(
+                        "RG.CORRECTNESS.EXTERNAL_REFERENCE_DRIFT",
+                        "A frozen Scenario external reference is unavailable or no longer current");
+            }
+        }
+    }
+
+    private static List<ExactAssetRef> externalRefs(ScenarioDraftSetV2 scenarioSet) {
+        var refs = new LinkedHashSet<ExactAssetRef>();
+        refs.add(scenarioSet.contractRef());
+        for (ScenarioDraftSetV2.ScenarioDraftV2 scenario : scenarioSet.scenarios()) {
+            refs.addAll(scenario.sourceRefs());
+            addExternalValueRef(refs, scenario.given().input());
+            scenario.dependencies().forEach(dependency ->
+                    addExternalValueRef(refs, dependency.behavior().value()));
+        }
+        return refs.stream()
+                .sorted(Comparator.comparing(ExactAssetRef::kind)
+                        .thenComparing(ExactAssetRef::id)
+                        .thenComparingLong(ExactAssetRef::revision)
+                        .thenComparing(ExactAssetRef::fingerprint))
+                .toList();
+    }
+
+    private static void addExternalValueRef(
+            LinkedHashSet<ExactAssetRef> refs,
+            ValueSource value
+    ) {
+        if (value == null || value instanceof InlineValue
+                || value instanceof FixtureVariantRef) {
+            return;
+        }
+        if (value instanceof GeneratedValueRef generated) {
+            refs.add(generated.generatorRef());
+        } else if (value instanceof ReplayMaterialRef replay) {
+            refs.add(replay.replayMaterialRef());
+        }
     }
 
     private CorrectnessDefinition definition(EnterpriseScope scope, ExactAssetRef ref) {
