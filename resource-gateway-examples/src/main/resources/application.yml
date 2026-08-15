@@ -46,6 +46,10 @@ gateway:
   # Automatically seed or refresh the built-in demo descriptors on startup.
   seed-descriptors: true
   testing:
+    correctness:
+      # Opt-in metadata-only Correctness Workspace. The versioned database migration must be
+      # applied before startup; command and material surfaces remain independently disabled.
+      enabled: ${RG_CORRECTNESS_AUTHORING_ENABLED:false}
     mirror:
       # Requires the test or staging profile and is physically excluded whenever production is active.
       enabled: ${RG_MIRROR_RUNTIME_ENABLED:false}

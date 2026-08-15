@@ -1,0 +1,143 @@
+package com.leanowtech.bloge.gateway.testing.correctness.config;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvailability;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.AssertionSetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.BusinessOracleRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.CorrectnessDefinitionRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.CoverageInventoryRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseAssertionSetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseBusinessOracleRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseCorrectnessDefinitionRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseCoverageInventoryRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseFixtureAssetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.DefinitionOnlyCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.FixtureCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.InventoryCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.OracleAssertionCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.ScenarioV2CoverageFulfillmentSource;
+
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+/** Opt-in production assembly for the payload-free Correctness Workspace read model. */
+@Configuration(proxyBeanMethods = false)
+@ConditionalOnProperty(
+        prefix = "gateway.testing.correctness",
+        name = "enabled",
+        havingValue = "true")
+public class CorrectnessAuthoringRuntimeConfiguration {
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessAuthoringSchemaReadiness correctnessAuthoringSchemaReadiness(
+            JdbcTemplate jdbc
+    ) {
+        return new CorrectnessAuthoringSchemaReadiness(jdbc);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessDefinitionRepository correctnessDefinitionRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseCorrectnessDefinitionRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CoverageInventoryRepository coverageInventoryRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseCoverageInventoryRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    BusinessOracleRepository businessOracleRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseBusinessOracleRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    AssertionSetRepository assertionSetRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseAssertionSetRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    ScenarioDraftSetV2Repository scenarioDraftSetV2Repository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseScenarioDraftSetV2Repository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    FixtureAssetRepository fixtureAssetRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseFixtureAssetRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessWorkspaceComponentSource correctnessWorkspaceComponentSource(
+            CoverageInventoryRepository inventories,
+            BusinessOracleRepository oracles,
+            AssertionSetRepository assertionSets,
+            ScenarioDraftSetV2Repository scenarios,
+            FixtureAssetRepository fixtures
+    ) {
+        CorrectnessWorkspaceComponentSource source =
+                new DefinitionOnlyCorrectnessWorkspaceComponentSource();
+        source = new InventoryCorrectnessWorkspaceComponentSource(
+                source, inventories, new ScenarioV2CoverageFulfillmentSource(scenarios));
+        source = new OracleAssertionCorrectnessWorkspaceComponentSource(
+                source, oracles, assertionSets);
+        source = new ScenarioCorrectnessWorkspaceComponentSource(source, scenarios);
+        return new FixtureCorrectnessWorkspaceComponentSource(source, scenarios, fixtures);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessWorkspaceQuery correctnessWorkspaceQuery(
+            CorrectnessDefinitionRepository definitions,
+            CorrectnessWorkspaceComponentSource components,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessWorkspaceQuery(definitions, components, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessAuthoringRuntimeAvailability correctnessAuthoringRuntimeAvailability() {
+        return new CorrectnessAuthoringRuntimeAvailability(
+                true, false, false, false, false, false);
+    }
+}
