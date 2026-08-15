@@ -300,10 +300,14 @@ function Overview({
         <section className="correctness-attention">
           <header><ShieldCheck aria-hidden="true" size={19} /><strong>{t('Required attention')}</strong></header>
           {workspace.staleReasons.map((reason) => (
-            <p key={`${reason.code}:${reason.assetKind}`}>{t(reason.code)} · {t(reason.assetKind)}</p>
+            <p key={`${reason.code}:${reason.assetKind}`}>
+              {t(correctnessReasonLabel(reason.code))} · {t(correctnessAssetLabel(reason.assetKind))}
+            </p>
           ))}
           {workspace.verdict.nextActions.map((action) => (
-            <p key={`${action.command}:${action.reasonCode}`}>{t(action.command)} · {t(action.reasonCode)}</p>
+            <p key={`${action.command}:${action.reasonCode}`}>
+              {t(correctnessCommandLabel(action.command))} · {t(correctnessReasonLabel(action.reasonCode))}
+            </p>
           ))}
         </section>
       )}
@@ -585,6 +589,46 @@ function percent(value: number, total: number): number {
 function shortFingerprint(value: string): string {
   if (value.length <= 22) return value;
   return `${value.slice(0, 12)}...${value.slice(-7)}`;
+}
+
+export function correctnessCommandLabel(command: string): string {
+  const labels: Record<string, string> = {
+    CREATE_CASE_FROM_GAP: 'Create Case from coverage gap',
+    OPEN_ASSERTION_BUILDER: 'Open Assertion Builder',
+    OPEN_COVERAGE_INVENTORY: 'Open Coverage Inventory',
+    REVIEW_GOVERNANCE_GATE: 'Review governance gate',
+    REFRESH_STALE_ASSETS: 'Refresh stale assets',
+  };
+  return labels[command] ?? humanizeProtocolCode(command);
+}
+
+export function correctnessReasonLabel(reasonCode: string): string {
+  const labels: Record<string, string> = {
+    ASSERTION_NONE: 'No executable assertion is bound',
+    AUTHORING_ASSETS_INCOMPLETE: 'Authoring assets are incomplete',
+    COVERAGE_GAPS_REMAIN: 'Frozen obligations remain unproven',
+    EVIDENCE_STALE: 'Evidence no longer matches the current assets',
+    REFERENCE_MISSING: 'An exact referenced asset is missing',
+    HEAD_DRIFT: 'A referenced asset has a newer head revision',
+    NOT_ACTIVE: 'A referenced asset is not active',
+    RETENTION_EXPIRED: 'Fixture retention has expired',
+  };
+  return labels[reasonCode] ?? humanizeProtocolCode(reasonCode);
+}
+
+function correctnessAssetLabel(assetKind: string): string {
+  const labels: Record<string, string> = {
+    ASSERTION_SET: 'Assertion Set',
+    COVERAGE_INVENTORY: 'Coverage Inventory',
+    FIXTURE_ASSET: 'Fixture asset',
+    SCENARIO_DRAFT_SET: 'Scenario set',
+  };
+  return labels[assetKind] ?? humanizeProtocolCode(assetKind);
+}
+
+function humanizeProtocolCode(value: string): string {
+  const words = value.trim().toLocaleLowerCase().replace(/_/g, ' ');
+  return words ? words[0].toLocaleUpperCase() + words.slice(1) : 'Review required';
 }
 
 function errorMessage(cause: unknown): string {

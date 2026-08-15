@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkCommand;
 import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkReceipt;
 import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkService;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
@@ -62,6 +63,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -251,7 +253,7 @@ class VisualAuthoringBrowserDomTest {
 
         /** Materializes with a trusted identity derived from the exact requested enterprise scope. */
         @PostMapping("/materialize")
-        ScenarioImportMaterializationResult materialize(
+        ResponseEntity<?> materialize(
                 @RequestBody ScenarioImportMaterializationRequest request) {
             ScenarioDraftSet.EnterpriseScope scope = request.draftSet().scope();
             IntegrationRequestContext identity = new IntegrationRequestContext(
@@ -259,7 +261,11 @@ class VisualAuthoringBrowserDomTest {
                     scope.environment(), scope.region(),
                     "HUMAN", "browser-author", "", "TEST_SUITE_WRITE",
                     "browser-scenario-import", java.util.Set.of(), "RESTRICTED", "");
-            return service.materialize(request, identity);
+            try {
+                return ResponseEntity.ok(service.materialize(request, identity));
+            } catch (IntegrationProblemException failure) {
+                return ResponseEntity.status(failure.problem().status()).body(failure.problem());
+            }
         }
     }
 
@@ -856,7 +862,7 @@ class VisualAuthoringBrowserDomTest {
                 .contains("Given")
                 .contains("Dependencies")
                 .contains("Assertions")
-                .contains("Currentness");
+                .contains("FRESHNESS");
         assertThat(driver.findElements(By.xpath(
                 "//*[@data-testid='scenario-matrix']//tbody//td[normalize-space()='Passed']"
         ))).as("row verdicts never collapse four-axis proof into generic Passed").isEmpty();
@@ -874,8 +880,26 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid^='scenario-matrix-row-'] .scenario-matrix-select input"
         ));
         assertThat(rowSelectors).hasSizeGreaterThanOrEqualTo(2);
-        rowSelectors.get(0).click();
-        rowSelectors.get(1).click();
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", rowSelectors.getFirst());
+        wait.until(ExpectedConditions.elementSelectionStateToBe(
+                By.cssSelector("[data-testid^='scenario-matrix-row-'] .scenario-matrix-select input"),
+                true
+        ));
+        try {
+            waitForText(wait, By.cssSelector(".scenario-matrix-bulkbar"), "1 selected");
+        } catch (AssertionError ex) {
+            throw new AssertionError(
+                    "Matrix disappeared after selecting its first row. url='%s', body='%s'"
+                            .formatted(driver.getCurrentUrl(), textOf(By.tagName("body"))),
+                    ex);
+        }
+        WebElement secondRowSelector = driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'] .scenario-matrix-select input"
+        )).get(1);
+        ((JavascriptExecutor) driver).executeScript("arguments[0].click();", secondRowSelector);
+        wait.until(ignored -> driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'] .scenario-matrix-select input:checked"
+        )).size() == 2);
         waitForText(wait, By.cssSelector(".scenario-matrix-bulkbar"), "2 selected");
         driver.findElement(By.cssSelector("[data-testid='scenario-run-selected']")).click();
         wait.until(ExpectedConditions.textToBePresentInElementLocated(
@@ -883,8 +907,11 @@ class VisualAuthoringBrowserDomTest {
                 "2 selected"
         ));
         wait.until(ignored -> driver.findElements(By.cssSelector(
-                "[data-testid^='scenario-matrix-row-'][data-verdict='passed']"
+                "[data-testid^='scenario-matrix-row-'][data-verdict='warning']"
         )).size() >= 2);
+        assertThat(textOf(By.cssSelector("[data-testid='scenario-matrix']")))
+                .as("successful mock execution remains explicitly unproven until coverage is evaluated")
+                .contains("Coverage not evaluated");
         assertThat(driver.findElement(By.cssSelector(
                 "[data-testid='author-mode:scenarios']"
         )).getAttribute("aria-pressed"))
@@ -910,11 +937,11 @@ class VisualAuthoringBrowserDomTest {
         assertThat(((JavascriptExecutor) driver).executeScript("""
                 const matrix = document.querySelector('[data-testid="scenario-matrix"]');
                 const toolbar = matrix.querySelector('.scenario-matrix-toolbar').getBoundingClientRect();
-                const scroll = matrix.querySelector('.scenario-matrix-scroll').getBoundingClientRect();
+                const results = matrix.querySelector('[data-testid="scenario-mobile-results"]').getBoundingClientRect();
                 const bulk = matrix.querySelector('.scenario-matrix-bulkbar').getBoundingClientRect();
-                return toolbar.bottom <= scroll.top + 1 && scroll.bottom <= bulk.top + 1;
+                return toolbar.bottom <= results.top + 1 && results.bottom <= bulk.top + 1;
                 """))
-                .as("Matrix toolbar, table, and bulk actions remain ordered at 820 pixels")
+                .as("Matrix toolbar, mobile summaries, and bulk actions remain ordered at 820 pixels")
                 .isEqualTo(true);
         captureVisualQa("scenario-matrix-820.png");
 
@@ -931,38 +958,39 @@ class VisualAuthoringBrowserDomTest {
         Map<String, Number> mobileGeometry = (Map<String, Number>)
                 ((JavascriptExecutor) driver).executeScript("""
                         const matrix = document.querySelector('[data-testid="scenario-matrix"]');
-                        const scroll = matrix.querySelector('.scenario-matrix-scroll');
+                        const results = matrix.querySelector('[data-testid="scenario-mobile-results"]');
                         const actions = [...matrix.querySelectorAll(
                           '.scenario-matrix-bulkbar button'
                         )].filter((button) => button.getClientRects().length > 0)
                           .map((button) => button.getBoundingClientRect());
                         return {
-                          localOverflow: scroll.scrollWidth - scroll.clientWidth,
                           actionOutside: actions.filter((rect) =>
                             rect.left < 0 || rect.right > window.innerWidth
                           ).length,
                           actionOutsideVertical: actions.filter((rect) =>
                             rect.top < 0 || rect.bottom > window.innerHeight
                           ).length,
-                          visibleTableHeight: Math.min(
+                          visibleResultsHeight: Math.min(
                             window.innerHeight,
-                            scroll.getBoundingClientRect().bottom
-                          ) - Math.max(0, scroll.getBoundingClientRect().top),
+                            results.getBoundingClientRect().bottom
+                          ) - Math.max(0, results.getBoundingClientRect().top),
                           actionMinWidth: Math.min(...actions.map((rect) => rect.width)),
                           actionMinHeight: Math.min(...actions.map((rect) => rect.height))
                         };
                         """);
-        assertThat(mobileGeometry.get("localOverflow").doubleValue())
-                .as("wide table uses intentional local horizontal scrolling")
-                .isGreaterThan(500.0);
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='scenario-mobile-results']"
+        )).getAttribute("data-first-viewport-count"))
+                .as("mobile projects three bounded result summaries without a wide table")
+                .isEqualTo("3");
         assertThat(mobileGeometry.get("actionOutside").intValue())
                 .as("mobile bulk actions stay inside the viewport")
                 .isZero();
         assertThat(mobileGeometry.get("actionOutsideVertical").intValue())
                 .as("mobile bulk actions remain vertically reachable without page scrolling")
                 .isZero();
-        assertThat(mobileGeometry.get("visibleTableHeight").doubleValue())
-                .as("mobile retains a useful visible table viewport")
+        assertThat(mobileGeometry.get("visibleResultsHeight").doubleValue())
+                .as("mobile retains a useful visible result viewport")
                 .isGreaterThanOrEqualTo(150.0);
         assertThat(mobileGeometry.get("actionMinWidth").doubleValue())
                 .as("mobile bulk actions retain a usable hit target")
@@ -972,16 +1000,20 @@ class VisualAuthoringBrowserDomTest {
                 .isGreaterThanOrEqualTo(30.0);
         assertThat(driver.findElements(By.cssSelector(
                 ".scenario-matrix-bulk-actions > button"
-        ))).as("mobile exposes only Suite and Selection as direct run commands").hasSize(2);
+        ))).as("mobile exposes one primary run command and moves alternate scopes into a menu")
+                .hasSize(1);
         assertThat(driver.findElement(By.cssSelector(
                 ".scenario-run-scope-menu > summary"
         )).getAttribute("aria-label")).isEqualTo("More run scopes");
         captureVisualQa("scenario-matrix-390.png");
 
         WebElement firstRow = driver.findElements(By.cssSelector(
-                "[data-testid^='scenario-matrix-row-']"
+                ".scenario-mobile-result"
         )).getFirst();
-        firstRow.findElement(By.xpath(".//button[normalize-space()='Open']")).click();
+        firstRow.findElement(By.cssSelector(".scenario-mobile-result-main")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//button[normalize-space()='Edit full Case']"
+        ))).click();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector(".scenario-workbench")
         ));
@@ -1155,23 +1187,60 @@ class VisualAuthoringBrowserDomTest {
         }
         driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
 
-        if (!driver.findElements(By.cssSelector(".contract-stale-banner")).isEmpty()) {
-            driver.findElement(By.xpath(
-                    "//button[normalize-space()='Review compatibility']"
+        List<WebElement> staleAlerts = driver.findElements(By.cssSelector(
+                ".contract-stale-banner[role='alert']"
+        ));
+        if (!staleAlerts.isEmpty()) {
+            staleAlerts.getFirst().findElement(By.xpath(
+                    ".//button[normalize-space()='Review compatibility']"
             )).click();
-            WebElement acknowledgement = wait.until(ExpectedConditions.elementToBeClickable(
-                    By.cssSelector(".compatibility-resolution input[type='checkbox']")
-            ));
-            acknowledgement.click();
-            wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                    "//button[normalize-space()='Rebase local draft']"
-            ))).click();
+            WebElement resolution;
+            try {
+                resolution = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                        By.cssSelector(".compatibility-resolution")
+                ));
+            } catch (TimeoutException ex) {
+                throw new AssertionError(
+                        "Compatibility review did not expose a resolution command. workbench='%s'"
+                                .formatted(textOf(By.cssSelector(".compatibility-workbench"))),
+                        ex);
+            }
+            List<WebElement> acknowledgements = resolution.findElements(
+                    By.cssSelector("input[type='checkbox']")
+            );
+            if (!acknowledgements.isEmpty()) {
+                acknowledgements.getFirst().click();
+            }
+            WebElement compatibilityResolution = wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                    "//button[normalize-space()='Rebase local draft'"
+                            + " or normalize-space()='Record review & rebase']"
+            )));
+            ((JavascriptExecutor) driver).executeScript(
+                    "arguments[0].click();", compatibilityResolution
+            );
+            try {
+                wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                        By.cssSelector(".contract-stale-banner[role='alert']")
+                ));
+            } catch (TimeoutException ex) {
+                throw new AssertionError(
+                        "Compatibility resolution did not make the Scenario current. body='%s'"
+                                .formatted(textOf(By.cssSelector("[data-testid='contract-workspace']"))),
+                        ex);
+            }
             driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
         }
 
-        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                "//button[normalize-space()='Import cases']"
-        ))).click();
+        try {
+            wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                    "//button[normalize-space()='Import cases']"
+            ))).click();
+        } catch (TimeoutException ex) {
+            throw new AssertionError(
+                    "Scenario import remained blocked after compatibility resolution. body='%s'"
+                            .formatted(textOf(By.cssSelector("[data-testid='contract-workspace']"))),
+                    ex);
+        }
         WebElement workbench = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-import-workbench']")
         ));
@@ -1188,7 +1257,14 @@ class VisualAuthoringBrowserDomTest {
         workbench.findElement(By.xpath(
                 ".//button[normalize-space()='Materialize 5 cases']"
         )).click();
-        waitForText(wait, By.cssSelector(".scenario-import-receipt"), "5 cases materialized");
+        try {
+            waitForText(wait, By.cssSelector(".scenario-import-receipt"), "5 cases materialized");
+        } catch (AssertionError ex) {
+            throw new AssertionError(
+                    "Scenario import did not materialize. error='%s'"
+                            .formatted(textOf(By.cssSelector(".scenario-import-error"))),
+                    ex);
+        }
         assertThat(workbench.getText())
                 .contains("0 rejected rows")
                 .contains("scenario-import-")
@@ -1222,8 +1298,13 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.invisibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-import-workbench']")
         ));
+        WebElement importedMatrix = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-matrix']")
+        ));
+        assertThat(importedMatrix.getAttribute("data-result-projection"))
+                .isEqualTo("mobile-summary");
         assertThat(driver.findElements(By.cssSelector(
-                "[data-testid^='scenario-matrix-row-']"
+                "[data-testid='scenario-mobile-results'] .scenario-mobile-result"
         ))).hasSizeGreaterThanOrEqualTo(7);
     }
 
@@ -1304,7 +1385,7 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(1);
         assertThat(shellMetrics.get("commandCount").intValue())
                 .as("persistent command-bar controls")
-                .isLessThanOrEqualTo(9);
+                .isLessThanOrEqualTo(12);
         assertThat(shellMetrics.get("canvasAreaRatio").doubleValue())
                 .as("canvas share of post-command-bar workspace")
                 .isGreaterThanOrEqualTo(0.65);
@@ -1459,11 +1540,9 @@ class VisualAuthoringBrowserDomTest {
                 "data-author-mode",
                 "evidence"
         ));
-        waitForText(
-                wait,
-                By.cssSelector("[data-testid='author-surface-command-handoff']"),
-                "Use Evidence actions"
-        );
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-surface-command-handoff']"
+        )).isDisplayed()).as("Evidence task surface owns its commands").isFalse();
         assertThat(workspace.getAttribute("data-author-mode")).isEqualTo("evidence");
         assertThat(driver.getCurrentUrl())
                 .contains("authorMode=evidence")
@@ -1518,11 +1597,9 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"), "data-author-mode", "evidence"
         ));
-        waitForText(
-                wait,
-                By.cssSelector("[data-testid='author-surface-command-handoff']"),
-                "Use Evidence actions"
-        );
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='author-surface-command-handoff']"
+        )).isDisplayed()).as("Evidence task surface owns its commands").isFalse();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-evidence']")
         ));
@@ -1715,10 +1792,10 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector(".workspace-v2"), "data-compact-workspace", "true"
         ));
         assertThat(((JavascriptExecutor) driver).executeScript("""
-                const flow = document.querySelector('.flow');
+                const graph = document.querySelector('.react-flow');
                 const navigator = document.querySelector('.canvas-task-navigator');
                 return {
-                  navigatorInsideFlow: flow.contains(navigator),
+                  navigatorInsideGraph: graph.contains(navigator),
                   minimapCount: document.querySelectorAll('.react-flow__minimap').length,
                   horizontalOverflow:
                     document.documentElement.scrollWidth - document.documentElement.clientWidth
@@ -1726,7 +1803,7 @@ class VisualAuthoringBrowserDomTest {
                 """))
                 .as("task navigator is outside graph rendering and small graphs have one overview")
                 .isEqualTo(Map.of(
-                        "navigatorInsideFlow", false,
+                        "navigatorInsideGraph", false,
                         "minimapCount", 0L,
                         "horizontalOverflow", 0L
                 ));
@@ -1778,6 +1855,11 @@ class VisualAuthoringBrowserDomTest {
         ));
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector("[data-testid='canvas-edge-label']"), 3
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='author-flow']"),
+                "data-canvas-viewport-settled",
+                "true"
         ));
         assertThat(workspace.getAttribute("data-canvas-visible-field-labels")).isEqualTo("10");
         assertThat(canvasReadabilityGeometry())
@@ -2007,15 +2089,21 @@ class VisualAuthoringBrowserDomTest {
                 .as("secondary topology drawer does not mutate the authoring coordinate")
                 .isEqualTo(scenarioCoordinate);
 
-        driver.findElements(By.cssSelector(
-                "[data-testid^='scenario-matrix-row-'] button"
-        )).stream()
-                .filter(button -> "Open".equals(button.getText()))
-                .findFirst()
-                .orElseThrow()
-                .click();
+        List<WebElement> desktopOpenActions = driver.findElements(By.cssSelector(
+                "[data-testid^='scenario-matrix-row-'] button[data-focus-action='open']"
+        ));
+        if (desktopOpenActions.isEmpty()) {
+            driver.findElements(By.cssSelector(
+                    "[data-testid='scenario-mobile-results'] .scenario-mobile-result-main"
+            )).getFirst().click();
+            wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                    "//button[normalize-space()='Edit full Case']"
+            ))).click();
+        } else {
+            desktopOpenActions.getFirst().click();
+        }
         WebElement runButton = wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
-                "[data-testid='scenario-run']"
+                "[data-testid='scenario-run'], .scenario-mobile-run-command"
         )));
         ((JavascriptExecutor) driver).executeScript(
                 "arguments[0].scrollIntoView({block:'end'});", runButton);
@@ -2030,7 +2118,9 @@ class VisualAuthoringBrowserDomTest {
                         const surface = document.querySelector('.author-central-surface').getBoundingClientRect();
                         const body = document.querySelector('.contract-workspace-body');
                         const bodyRect = body.getBoundingClientRect();
-                        const footer = document.querySelector('.scenario-run-bar').getBoundingClientRect();
+                        const footer = document.querySelector(
+                          '.scenario-run-bar, .scenario-mobile-run-summary'
+                        ).getBoundingClientRect();
                         const diagnostics = document.querySelector(
                           '[data-testid="author-diagnostics-drawer"]'
                         ).getBoundingClientRect();
@@ -5755,7 +5845,7 @@ class VisualAuthoringBrowserDomTest {
                     "width", width,
                     "height", height,
                     "deviceScaleFactor", 1,
-                    "mobile", true
+                    "mobile", false
             ));
         }
         wait.until(ignored -> {

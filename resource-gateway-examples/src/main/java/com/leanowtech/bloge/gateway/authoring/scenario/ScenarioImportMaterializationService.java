@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSecretGuard;
 
 import org.apache.commons.csv.CSVFormat;
@@ -119,8 +120,16 @@ public final class ScenarioImportMaterializationService {
                 source, plan, request.draftSet(), request.templateScenarioId(), identity);
         ScenarioValidationReport validation = authoring.validate(candidate.draftSet(), identity);
         if (!validation.valid()) {
-            throw badRequest(identity, "RG.SCENARIO_IMPORT.MATERIALIZED_INVALID",
-                    "Materialized Scenarios do not satisfy the exact current Contract.");
+            throw badRequest(
+                    identity,
+                    "RG.SCENARIO_IMPORT.MATERIALIZED_INVALID",
+                    "Materialized Scenarios do not satisfy the exact current Contract.",
+                    Map.of("diagnosticCodes", validation.diagnostics().stream()
+                            .map(VisualDiagnostic::code)
+                            .filter(code -> code != null && !code.isBlank())
+                            .distinct()
+                            .sorted()
+                            .toList()));
         }
         return receipts.saveIfAbsent(scope, planFingerprint, candidate);
     }
@@ -840,8 +849,16 @@ public final class ScenarioImportMaterializationService {
             IntegrationRequestContext identity,
             String code,
             String title) {
+        return badRequest(identity, code, title, Map.of());
+    }
+
+    private IntegrationProblemException badRequest(
+            IntegrationRequestContext identity,
+            String code,
+            String title,
+            Map<String, Object> details) {
         return new IntegrationProblemException(IntegrationProblem.badRequest(
-                code, title, identity.correlationId(), Map.of()));
+                code, title, identity.correlationId(), details));
     }
 
     private static String pointer(String header) {

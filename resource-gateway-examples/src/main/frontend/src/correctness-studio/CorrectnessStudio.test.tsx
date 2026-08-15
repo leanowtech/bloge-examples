@@ -100,9 +100,17 @@ describe('CorrectnessStudio', () => {
     expect(host.textContent).toContain('业务权威');
     expect(host.textContent).toContain('冻结义务');
     expect(host.textContent).toContain('未证明');
+    expect(host.textContent).toContain('打开断言编辑器');
+    expect(host.textContent).toContain('尚未绑定可执行断言');
+    expect(host.textContent).not.toContain('OPEN_ASSERTION_BUILDER');
+    expect(host.textContent).not.toContain('ASSERTION_NONE');
     expect(workspace).toHaveBeenCalledWith(expect.objectContaining({
       targetId: 'loan-decision', targetFingerprint: 'sha256:graph',
     }));
+
+    await click(button('用例数'));
+    expect(host.textContent).toContain('已批准');
+    expect(host.textContent).not.toContain('APPROVED');
   });
 
   async function render() {

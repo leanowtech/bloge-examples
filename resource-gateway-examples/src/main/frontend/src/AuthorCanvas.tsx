@@ -4836,6 +4836,31 @@ function canonicalExecutionGraphDraft(draft: GraphDraft): string {
   });
 }
 
+/**
+ * Rebinds locally authored content to the exact stored coordinate while preserving the portable
+ * export rule that empty server-derived operator maps are omitted. Without this normalization an
+ * empty map returned by the server and an omitted map emitted by the canvas look spuriously dirty.
+ */
+function savedCanvasDraftAtRevision(local: GraphDraft, stored: GraphDraft): GraphDraft {
+  const {
+    operatorFingerprints: _localFingerprints,
+    operatorSnapshots: _localSnapshots,
+    ...authored
+  } = local;
+  const operatorFingerprints = stored.operatorFingerprints ?? {};
+  const operatorSnapshots = stored.operatorSnapshots ?? {};
+  return {
+    ...authored,
+    draftId: stored.draftId,
+    revision: stored.revision,
+    tenantId: stored.tenantId ?? local.tenantId,
+    namespace: stored.namespace ?? local.namespace,
+    environment: stored.environment ?? local.environment,
+    ...(Object.keys(operatorFingerprints).length > 0 ? { operatorFingerprints } : {}),
+    ...(Object.keys(operatorSnapshots).length > 0 ? { operatorSnapshots } : {}),
+  };
+}
+
 function visualLayoutWithImportSourceMap(
   visualLayout: Record<string, unknown>,
   sourceMap: DslSourceMap | undefined,
@@ -5245,11 +5270,15 @@ export interface AuthorCanvasProps {
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
   const { locale, t, m, d } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
-  const initialWorkspaceLocation = parseAuthorWorkspaceLocation(window.location.search);
-  const initialTaskCoordinate = parseTaskCoordinate(window.location.href);
-  const returnTaskCoordinate = parseTaskReturnCoordinate(window.location.href);
-  const sessionTenantId = new URLSearchParams(window.location.search).get('sessionTenantId')?.trim()
-    || initialTaskCoordinate.tenantId;
+  const [initialWorkspaceLocation] = useState(() => (
+    parseAuthorWorkspaceLocation(window.location.search)
+  ));
+  const [initialTaskCoordinate] = useState(() => parseTaskCoordinate(window.location.href));
+  const [returnTaskCoordinate] = useState(() => parseTaskReturnCoordinate(window.location.href));
+  const [sessionTenantId] = useState(() => (
+    new URLSearchParams(window.location.search).get('sessionTenantId')?.trim()
+    || initialTaskCoordinate.tenantId
+  ));
   const [initialDslHandoff] = useState(() => (
     isTaskWorkspace ? peekDslAuthorHandoff() : null
   ));
@@ -5897,15 +5926,27 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     }
   }, []);
 
-  const fitCanvasToView = useCallback((graphSize?: { nodeCount: number; edgeCount: number }) => {
+  const fitCanvasToView = useCallback((
+    graphSize?: { nodeCount: number; edgeCount: number },
+    requestedTaskMode?: CanvasTaskMode,
+  ) => {
     const complex = graphSize
       ? graphSize.nodeCount >= COMPLEX_GRAPH_NODE_THRESHOLD
         || graphSize.edgeCount >= COMPLEX_GRAPH_EDGE_THRESHOLD
       : isComplexGraph;
+    const fitTaskMode: CanvasTaskMode = requestedTaskMode ?? (focusPathNodeId
+      ? 'focus'
+      : selectedNodeId
+        ? 'inspect'
+        : 'overview');
+    const minimumZoom = isTaskWorkspace
+      ? semanticZoomContract(fitTaskMode).minimumZoom
+      : CANVAS_MIN_ZOOM;
     const fitOptions = {
       // Preserve readable type; a post-fit pan below contains labels outside the node bounds.
       padding: complex ? 0.14 : 0.1,
       duration: 240,
+      minZoom: minimumZoom,
       maxZoom: 1,
     };
     const containSemanticLabels = () => {
@@ -5935,7 +5976,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         renderingViewport.getBoundingClientRect(),
         content,
         viewport,
-        CANVAS_MIN_ZOOM,
+        minimumZoom,
         2,
       );
       const changed = Math.abs(contained.x - viewport.x) >= 1
@@ -5943,6 +5984,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         || Math.abs(contained.zoom - viewport.zoom) >= 0.001;
       if (!changed) {
         flow.dataset.canvasViewportSettled = 'true';
+        refreshViewportZoom();
         return;
       }
       instance.setViewport(contained);
@@ -5974,7 +6016,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } else {
       window.setTimeout(updateZoom, 0);
     }
-  }, [isComplexGraph, refreshViewportZoom]);
+  }, [focusPathNodeId, isComplexGraph, isTaskWorkspace, refreshViewportZoom, selectedNodeId]);
 
   useEffect(() => () => {
     if (fitCanvasTimerRef.current !== null) {
@@ -6086,7 +6128,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     if (!layoutPreview) {
       return undefined;
     }
-    const handle = window.setTimeout(() => fitCanvasToView(), 80);
+    const handle = window.setTimeout(() => fitCanvasToView(undefined, 'overview'), 80);
     return () => window.clearTimeout(handle);
   }, [fitCanvasToView, layoutPreview]);
 
@@ -6780,6 +6822,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     () => semanticZoomContract(canvasTaskMode),
     [canvasTaskMode],
   );
+  useEffect(() => {
+    if (!isTaskWorkspace) return;
+    const instance = flowInstanceRef.current;
+    const minimumZoom = canvasSemanticZoom.minimumZoom;
+    if (!instance || instance.getZoom() >= minimumZoom) return;
+    void instance.zoomTo(minimumZoom, { duration: 0 });
+    setViewportZoom(minimumZoom);
+  }, [canvasSemanticZoom.minimumZoom, isTaskWorkspace]);
   const canvasSemantics = useMemo(
     () => projectCanvasSemantics(canvasNodes, canvasEdges, {
       mode: canvasTaskMode,
@@ -7119,9 +7169,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     });
     const graphSize = { nodeCount: nextNodes.length, edgeCount: nextEdges.length };
     if (typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => fitCanvasToView(graphSize));
+      window.requestAnimationFrame(() => fitCanvasToView(graphSize, 'inspect'));
     } else {
-      fitCanvasToView(graphSize);
+      fitCanvasToView(graphSize, 'inspect');
     }
   }, [fitCanvasToView, isTaskWorkspace, operatorByRef, resetRunResult, t]);
   const requestLoadCanvasExample = useCallback((template: CanvasExampleTemplate) => {
@@ -7642,16 +7692,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         throw new Error('Graph persistence did not return an exact draft revision.');
       }
       const projection = await fetchScenarioGraphContract(stored.draftId);
-      const savedCanvasDraft: GraphDraft = {
-        ...exportableDraft,
-        draftId: stored.draftId,
-        revision: stored.revision,
-        tenantId: stored.tenantId ?? exportableDraft.tenantId,
-        namespace: stored.namespace ?? exportableDraft.namespace,
-        environment: stored.environment ?? exportableDraft.environment,
-        operatorFingerprints: stored.operatorFingerprints ?? exportableDraft.operatorFingerprints,
-        operatorSnapshots: stored.operatorSnapshots ?? exportableDraft.operatorSnapshots,
-      };
+      const savedCanvasDraft = savedCanvasDraftAtRevision(exportableDraft, stored);
       authoritativeContractRef.current = {
         canvasSnapshot: canonicalJson(savedCanvasDraft),
         executionSnapshot: canonicalExecutionGraphDraft(savedCanvasDraft),
@@ -7720,17 +7761,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         throw new Error('The conflict fork did not return an exact Graph revision.');
       }
       const projection = await fetchScenarioGraphContract(stored.draftId);
-      const savedCanvasDraft: GraphDraft = {
-        ...conflict.localDraft,
-        draftId: stored.draftId,
-        revision: stored.revision,
-        tenantId: stored.tenantId ?? conflict.localDraft.tenantId,
-        namespace: stored.namespace ?? conflict.localDraft.namespace,
-        environment: stored.environment ?? conflict.localDraft.environment,
-        operatorFingerprints: stored.operatorFingerprints
-          ?? conflict.localDraft.operatorFingerprints,
-        operatorSnapshots: stored.operatorSnapshots ?? conflict.localDraft.operatorSnapshots,
-      };
+      const savedCanvasDraft = savedCanvasDraftAtRevision(conflict.localDraft, stored);
       authoritativeContractRef.current = {
         canvasSnapshot: canonicalJson(savedCanvasDraft),
         executionSnapshot: canonicalExecutionGraphDraft(savedCanvasDraft),
@@ -7843,6 +7874,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [isTaskWorkspace, nodes, operatorTestSuites, selectedNodeId]);
 
   const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
+    if (contractDraft && canonicalJson(contractDraft) === canonicalJson(nextContract)) {
+      return;
+    }
     authoritativeContractRef.current = null;
     setContractDraft(nextContract);
     setGraphInputSchema(nextContract.inputSchema);
@@ -7851,7 +7885,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setRunInputValue((current) =>
       reconcileRunInputWithSchema(nextContract.inputSchema, current, sample));
     setGraphVisualLayout((current) => visualLayoutWithContractSemantics(current, nextContract));
-  }, []);
+  }, [contractDraft]);
 
   const journey = useMemo(
     () => authoringJourney(operators.length, canvasSummary, fixtureRows, result),
@@ -9960,18 +9994,22 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     if (!selectedNodeId) return;
     const path = canvasFocusPath(canvasNodes, canvasEdges, selectedNodeId);
     setFocusPathNodeId(selectedNodeId);
-    const pathNodes = nodes.filter((node) => path.nodeIds.has(node.id));
-    flowInstanceRef.current?.fitView({
-      nodes: pathNodes,
-      padding: 0.08,
-      duration: 240,
-      minZoom: semanticZoomContract('focus').minimumZoom,
-    });
+    if (isTaskWorkspace) {
+      fitCanvasToView(undefined, 'focus');
+    } else {
+      flowInstanceRef.current?.fitView({
+        nodes: nodes.filter((node) => path.nodeIds.has(node.id)),
+        padding: 0.08,
+        duration: 240,
+        minZoom: semanticZoomContract('focus').minimumZoom,
+      });
+    }
   }, [
     canvasEdges,
     canvasNodes,
     fitCanvasToView,
     focusPathNodeId,
+    isTaskWorkspace,
     nodes,
     selectedNodeId,
   ]);
@@ -10000,23 +10038,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       if (compactWorkspace) {
         setInspectorCollapsed(true);
       }
-      fitCanvasToView();
+      fitCanvasToView(undefined, 'overview');
       return;
     }
     if (!selectedNodeId) return;
     if (mode === 'focus') {
-      const path = canvasFocusPath(canvasNodes, canvasEdges, selectedNodeId);
       setFocusPathNodeId(selectedNodeId);
       if (compactWorkspace) {
         setPaletteCollapsed(true);
         setInspectorCollapsed(true);
       }
-      flowInstanceRef.current?.fitView({
-        nodes: nodes.filter((node) => path.nodeIds.has(node.id)),
-        padding: 0.08,
-        duration: 240,
-        minZoom: semanticZoomContract('focus').minimumZoom,
-      });
+      fitCanvasToView(undefined, 'focus');
       return;
     }
     setFocusPathNodeId('');
@@ -10025,11 +10057,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setInspectorCollapsed(false);
     }
   }, [
-    canvasEdges,
-    canvasNodes,
     compactWorkspace,
     fitCanvasToView,
-    nodes,
     selectedNodeId,
   ]);
 
@@ -11875,6 +11904,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   lastRun={activeScenarioEvidence?.response ?? null}
                   lastRunScenarioId={activeScenarioEvidence?.scenarioId}
                   lastComparison={activeScenarioEvidence?.comparison}
+                  targetStored={exactSavedDraft}
                   onContractChange={updateContractSemantics}
                   onImportWorkspace={importScenarioWorkspace}
                   onScenarioDraftSetChange={setScenarioDraftSet}
@@ -13031,6 +13061,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             lastRun={activeScenarioEvidence?.response ?? result}
             lastRunScenarioId={activeScenarioEvidence?.scenarioId}
             lastComparison={activeScenarioEvidence?.comparison}
+            targetStored={exactSavedDraft}
             onContractChange={updateContractSemantics}
             onImportWorkspace={importScenarioWorkspace}
             onScenarioDraftSetChange={setScenarioDraftSet}

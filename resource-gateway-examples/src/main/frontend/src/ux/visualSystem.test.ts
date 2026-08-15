@@ -40,6 +40,22 @@ describe('Stage 5 visual-system contract', () => {
     expect(mobileTopbar).not.toContain('overflow-x: auto');
   });
 
+  it('keeps medium-width navigation and non-compose task tabs inside their layout tracks', () => {
+    expect(responsiveCss).toMatch(
+      /@media \(min-width: 841px\) and \(max-width: 1100px\)[\s\S]*\.topbar-nav-toggle[\s\S]*display: grid/,
+    );
+    expect(responsiveCss).toMatch(
+      /workspace-v2:not\(\[data-author-mode='compose'\]\) > \.author-command-bar[\s\S]*grid-template-columns: auto minmax\(0, 1fr\) auto/,
+    );
+    expect(responsiveCss).toMatch(
+      /grid-template-areas:[\s\S]*'identity identity identity'[\s\S]*'modes truth secondary'/,
+    );
+    expect(responsiveCss).toMatch(
+      /workspace-v2 \.flow > \.compact-canvas-launchers[\s\S]*position: relative[\s\S]*grid-row: 2/,
+    );
+    expect(responsiveCss).toMatch(/workspace-v2 \.flow > \.react-flow[\s\S]*grid-row: 3/);
+  });
+
   it('enforces 40px controls for compact viewports and coarse pointers', () => {
     expect(responsiveCss).toMatch(/@media \(max-width: 840px\)[\s\S]*min-height: var\(--rg-touch-target\)/);
     expect(responsiveCss).toMatch(/button\.icon-button[\s\S]*min-width: var\(--rg-touch-target\)/);
@@ -82,8 +98,13 @@ describe('Stage 5 visual-system contract', () => {
     expect(responsiveCss).toMatch(/scenario-command-receipt > dl[\s\S]*display: none/);
   });
 
+  it('bounds Matrix preflight detail so result and run commands remain visible', () => {
+    expect(legacyCss).toMatch(/scenario-matrix[\s\S]*minmax\(120px, 1fr\)/);
+    expect(legacyCss).toMatch(/scenario-matrix-run-stack[\s\S]*max-height: min\(22vh, 200px\)[\s\S]*overflow: auto/);
+  });
+
   it('projects mobile Matrix results as three bounded summaries with diff-first expansion', () => {
-    expect(responsiveCss).toMatch(/\.scenario-mobile-results[\s\S]*min-height: 186px/);
+    expect(responsiveCss).toMatch(/\.scenario-mobile-results[\s\S]*min-height: 0/);
     expect(responsiveCss).toMatch(/scenario-mobile-result-main[\s\S]*min-height: 62px/);
     expect(responsiveCss).toMatch(/scenario-mobile-result-detail[\s\S]*section:first-child[\s\S]*background: #fff/);
   });

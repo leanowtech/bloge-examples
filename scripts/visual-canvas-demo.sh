@@ -25,6 +25,7 @@ SHADOW_JOBS="${BLOGE_VISUAL_CANVAS_SHADOW_JOBS:-0}"
 SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-0}}"
 SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}"
 OUTCOME_CONTINUOUS_ASSESSMENT="${BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT:-${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-0}}"
+CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-0}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -56,7 +57,8 @@ Options:
   --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
   --shadow-detached-data-plane  Install exact detached source connectors and verifier; authorities still fail closed.
   --outcome-continuous-assessment  Enable selected-population freshness workers; customer authorities are still required.
-  --open            Open the default /business-mirror/ product page after startup.
+  --correctness     Enable the read-only Correctness Studio sample in test/staging.
+  --open            Open Correctness Studio when --correctness is set; otherwise Business Mirror.
   -h, --help        Show this help.
 
 Environment:
@@ -74,6 +76,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER default: 0; same effect as --shadow-scheduler
   BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE default: 0; same effect as --shadow-detached-data-plane
   BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT default: 0; same effect as --outcome-continuous-assessment
+  BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 0; same effect as --correctness
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
@@ -273,6 +276,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh --shadow-scheduler
   scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
   scripts/start-visual-canvas-demo.sh --outcome-continuous-assessment
+  scripts/start-visual-canvas-demo.sh --correctness --open
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -2055,6 +2059,14 @@ business_mirror_url() {
     echo "http://localhost:$(configured_port)/business-mirror/"
 }
 
+correctness_url() {
+    echo "http://localhost:$(configured_port)/correctness/?targetKind=GRAPH&targetId=loan-decision-with-fallback&targetFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&definitionId=loan-correctness-demo&correctnessView=overview&lang=zh-CN"
+}
+
+correctness_workspace_api_url() {
+    echo "http://localhost:$(configured_port)/api/visual/correctness-workspaces/GRAPH/loan-decision-with-fallback?targetFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&definitionId=loan-correctness-demo&caseLimit=100"
+}
+
 libraries_url() {
     echo "http://localhost:$(configured_port)/libraries/"
 }
@@ -2109,6 +2121,7 @@ artifact_has_visual_frontend() {
     jar tf "${artifact}" 2>/dev/null | awk '
         $0 == "BOOT-INF/classes/static/business-mirror/index.html" ||
         $0 == "BOOT-INF/classes/static/author/index.html" ||
+        $0 == "BOOT-INF/classes/static/correctness/index.html" ||
         $0 == "BOOT-INF/classes/static/libraries/index.html" ||
         $0 == "BOOT-INF/classes/static/rehearsals/index.html" ||
         $0 == "BOOT-INF/classes/static/showcase/index.html" {
@@ -2116,7 +2129,7 @@ artifact_has_visual_frontend() {
                 found++
             }
         }
-        END { exit found == 5 ? 0 : 1 }
+        END { exit found == 6 ? 0 : 1 }
     '
 }
 
@@ -2186,6 +2199,7 @@ print_urls() {
     if truthy "${BUILD_FRONTEND}" && artifact_has_visual_frontend; then
         cat <<EOF
   Business Mirror: $(business_mirror_url)
+$(truthy "${CORRECTNESS_DEMO}" && printf '  Correctness:     %s\n' "$(correctness_url)")
   Author canvas:   $(author_url)
   Library author:  $(libraries_url)
   Rehearsals:      $(rehearsals_url)
@@ -2203,6 +2217,7 @@ Integration API templates:
   Draft workbook:    GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
   Semantic workbook: GET  /api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook
   Gate feedback:     POST /api/integration/gate-results
+  Correctness sample: GET  /api/visual/correctness-workspaces/GRAPH/loan-decision-with-fallback (--correctness; X-Purpose: CORRECTNESS_READ)
   Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
   Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
   Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
@@ -2251,6 +2266,7 @@ build_app() {
 visual_routes_ready() {
     curl -fsS "$(business_mirror_url)" >/dev/null 2>&1 &&
         curl -fsS "$(author_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(correctness_url)" >/dev/null 2>&1 &&
         curl -fsS "$(libraries_url)" >/dev/null 2>&1 &&
         curl -fsS "$(rehearsals_url)" >/dev/null 2>&1 &&
         curl -fsS "$(showcase_url)" >/dev/null 2>&1
@@ -2281,6 +2297,33 @@ wait_for_ready() {
             fi
             if truthy "${BUILD_FRONTEND}"; then
                 visual_readiness=", and visual route probes passed"
+            fi
+            if truthy "${CORRECTNESS_DEMO}"; then
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${response}" | jq -e '
+                        .payload.features.correctnessWorkspaceApi == true
+                        and .payload.features.correctnessRunApi == false
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${response}" |
+                    grep -Eq '"correctnessWorkspaceApi"[[:space:]]*:[[:space:]]*true' ||
+                    ! printf '%s' "${response}" |
+                    grep -Eq '"correctnessRunApi"[[:space:]]*:[[:space:]]*false'; then
+                    sleep 2
+                    continue
+                fi
+                local correctness_response
+                if ! correctness_response="$(curl -fsS \
+                    -H 'Authorization: Bearer bloge-aneke-demo-token' \
+                    -H 'X-Purpose: CORRECTNESS_READ' \
+                    "$(correctness_workspace_api_url)" 2>/dev/null)" ||
+                    ! printf '%s' "${correctness_response}" |
+                    grep -Fq '"title":"Loan decision correctness"'; then
+                    sleep 2
+                    continue
+                fi
             fi
             if truthy "${SHADOW_JOBS}"; then
                 if command -v jq >/dev/null 2>&1; then
@@ -2426,6 +2469,10 @@ wait_for_ready() {
                 echo "Demo service ready; Shadow job, lifecycle, and source-resolution API probes passed${visual_readiness}: ${url}"
                 return 0
             fi
+            if truthy "${CORRECTNESS_DEMO}"; then
+                echo "Demo service ready; Correctness capability and exact Workspace probes passed${visual_readiness}: ${url}"
+                return 0
+            fi
             echo "Demo service ready; integration capability probe passed${visual_readiness}: ${url}"
             return 0
         fi
@@ -2447,7 +2494,11 @@ open_author_if_requested() {
         return 0
     fi
     if command -v open >/dev/null 2>&1; then
-        open "$(business_mirror_url)" >/dev/null 2>&1 || true
+        if truthy "${CORRECTNESS_DEMO}"; then
+            open "$(correctness_url)" >/dev/null 2>&1 || true
+        else
+            open "$(business_mirror_url)" >/dev/null 2>&1 || true
+        fi
     else
         echo "Browser open requested, but the 'open' command is unavailable."
     fi
@@ -2484,6 +2535,15 @@ start_service() {
     local -a args
     log="$(log_file)"
     args=("--server.port=$(configured_port)" "--spring.profiles.active=${SPRING_PROFILE}")
+    if truthy "${CORRECTNESS_DEMO}"; then
+        case ",${SPRING_PROFILE}," in
+            *,production,*)
+                echo "The Correctness sample is physically unavailable in production." >&2
+                return 1
+                ;;
+        esac
+        args+=("--gateway.testing.correctness.demo.enabled=true")
+    fi
     if [ "${#APP_ARGS[@]}" -gt 0 ]; then
         args+=("${APP_ARGS[@]}")
     fi
@@ -2617,6 +2677,10 @@ parse_options() {
                 ;;
             --outcome-continuous-assessment)
                 OUTCOME_CONTINUOUS_ASSESSMENT=1
+                shift
+                ;;
+            --correctness)
+                CORRECTNESS_DEMO=1
                 shift
                 ;;
             --open)

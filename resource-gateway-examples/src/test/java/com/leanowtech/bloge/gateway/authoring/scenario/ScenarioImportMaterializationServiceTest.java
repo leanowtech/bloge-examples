@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
+import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -115,6 +116,39 @@ class ScenarioImportMaterializationServiceTest {
                 request(source, plan, draftSet), identity);
 
         assertThat(result.receipt().path("acceptedRowCount").asInt()).isOne();
+    }
+
+    @Test
+    void exposesOnlyStableDiagnosticCodesWhenMaterializedScenariosFailValidation() {
+        String source = "id,name\nA,do-not-echo";
+        ScenarioDraftSet draftSet = draftSet();
+        ObjectNode plan = plan(source, draftSet, List.of(
+                binding("/name", "case:name", "NAME", List.of(), "IDENTITY", "VALUE")
+        ), "/id");
+        when(authoring.validate(any(), any())).thenReturn(new ScenarioValidationReport(
+                "", TARGET_FINGERPRINT, CONTRACT_FINGERPRINT, 1,
+                ScenarioValidationReport.Status.INVALID,
+                List.of(
+                        VisualDiagnostic.error("visual.scenario.target.contractMismatch",
+                                "do-not-echo", "/target"),
+                        VisualDiagnostic.error("visual.scenario.contract.stale",
+                                "do-not-echo", "/contractFingerprint"),
+                        VisualDiagnostic.error("visual.scenario.contract.stale",
+                                "do-not-echo", "/contractFingerprint")),
+                List.of(), List.of(), List.of(), List.of()));
+
+        assertThatThrownBy(() -> service.materialize(request(source, plan, draftSet), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.SCENARIO_IMPORT.MATERIALIZED_INVALID");
+                    assertThat(failure.problem().details()).containsEntry(
+                            "diagnosticCodes",
+                            List.of(
+                                    "visual.scenario.contract.stale",
+                                    "visual.scenario.target.contractMismatch"));
+                    assertThat(failure.problem().toString()).doesNotContain("do-not-echo");
+                });
+        assertThat(receipts.results).isEmpty();
     }
 
     @Test

@@ -1242,9 +1242,19 @@ execution、assertions、coverage、evidence、gate 五个独立轴、Case 终�
 继续显示 `UNPROVEN/BLOCKED`。浏览器不复制 planner、gate 或 freshness 规则。
 
 Correctness 路由使用随路由懒加载的中英文词典，并有 literal key 与 placeholder parity 门禁；全局语言目录拆成独立长期缓存 chunk。
-生产构建继续保持原 `180 KiB` shell 预算，Correctness 路由启动闭包为 `181.70 KiB gzip`，低于 `350 KiB` 门禁。当前前端全量
-`110` 个测试文件、`830` 条测试通过；其中新增测试覆盖 capability-first、exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、
+生产构建继续保持原 `180 KiB` shell 预算，Correctness 路由启动闭包为 `182.69 KiB gzip`，低于 `350 KiB` 门禁。当前前端全量
+`110` 个测试文件、`831` 条测试通过；其中新增测试覆盖 capability-first、exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、
 blocker fail-closed、五轴 evidence 和 source-map 展示。
+
+Correctness Studio 已进入正式 Spring Boot 产物：Maven 前端 profile 会将同一 Vite bundle 复制到 `static/correctness`，服务端只为
+`/correctness` 与 `/correctness/` 提供 SPA forward，不创建第二套前端。`scripts/start-visual-canvas-demo.sh --correctness --open`
+会在 `test/staging` 显式装配一个只读贷款策略样板，使用正式 Workspace Query、认证作用域和 exact coordinate；它只声明 Workspace API，
+不声明命令、发布、预检或 Run API。启动 readiness 同时验证 Capability Probe 和实际 Workspace 请求，防止“路由能打开但能力未装配”。
+
+样板包含 9 条冻结义务、7 条已履行义务、2 个缺口、8 条复杂 Case、5 个 metadata-only Fixture、Oracle/Assertion 摘要、Publication、
+历史 Run 摘要和五轴 Verdict。真实 Chromium 已在 320、768、1440 像素宽度验收 Overview、Cases、Fixtures 与 Runs；根文档无横向溢出，
+宽表格和标签栏只在任务区域内滚动，中文主文案不泄露 `APPROVED`、`SECURITY`、`CREATE_CASE_FROM_GAP` 等 wire code，控制台无
+warning/error。完整操作与边界见 `docs/resource-gateway-correctness-studio-demo-guide.md`。
 
 当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 

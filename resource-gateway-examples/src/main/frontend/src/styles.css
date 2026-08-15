@@ -2731,7 +2731,7 @@ button.primary:disabled {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(220px, 1fr) auto auto;
+  grid-template-rows: auto auto auto auto minmax(120px, 1fr) auto auto;
   overflow: hidden;
   background: #fff;
 }
@@ -2955,6 +2955,8 @@ button.primary:disabled {
 }
 
 .scenario-matrix-run-stack {
+  max-height: min(22vh, 200px);
+  overflow: auto;
   border-bottom: 1px solid #c8d2df;
   background: #fff;
 }

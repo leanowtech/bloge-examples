@@ -10,6 +10,7 @@ const SURFACES = [
   './runs/RunCenter.tsx',
   './shared/FiveAxisVerdict.tsx',
 ] as const;
+const STYLES = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 
 describe('Correctness Studio route locale', () => {
   it('covers every literal task string in the lazy route dictionary or global catalog', () => {
@@ -33,6 +34,13 @@ describe('Correctness Studio route locale', () => {
       return sourceArgs.join('|') === translatedArgs.join('|') ? [] : [source];
     });
     expect(failures).toEqual([]);
+  });
+
+  it('keeps horizontal overflow inside task-owned navigation and table containers', () => {
+    expect(STYLES).toMatch(/\.correctness-studio\s*\{[\s\S]*?overflow-x:\s*hidden/);
+    expect(STYLES).toMatch(/\.correctness-workspace-context\s*\{[\s\S]*?contain:\s*inline-size layout paint[\s\S]*?overflow-x:\s*auto/);
+    expect(STYLES).toMatch(/\.correctness-view-tabs\s*\{[\s\S]*?contain:\s*inline-size layout paint[\s\S]*?overflow-x:\s*auto/);
+    expect(STYLES).toMatch(/\.correctness-table-scroll\s*\{[\s\S]*?contain:\s*inline-size layout paint[\s\S]*?overflow:\s*auto/);
   });
 });
 

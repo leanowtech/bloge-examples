@@ -155,12 +155,16 @@ async function readJsonMutation<T>(response: Response): Promise<T> {
 async function readTestingJson<T>(response: Response): Promise<T> {
   const payload = await readJsonBody<T & {
     code?: string;
+    title?: string;
     detail?: string;
+    details?: { diagnosticCodes?: string[] };
     diagnostics?: Array<{ message?: string; code?: string }>;
   }>(response);
   if (!response.ok) {
     const firstDiagnostic = payload?.diagnostics?.find((diagnostic) => diagnostic.message || diagnostic.code);
+    const diagnosticCodes = payload?.details?.diagnosticCodes?.filter(Boolean).join(', ');
     const detail = payload?.detail || firstDiagnostic?.message || firstDiagnostic?.code
+      || (payload?.title && diagnosticCodes ? `${payload.title} (${diagnosticCodes})` : payload?.title)
       || payload?.code || response.statusText;
     throw new BlogeApiRequestError(response.status, detail);
   }

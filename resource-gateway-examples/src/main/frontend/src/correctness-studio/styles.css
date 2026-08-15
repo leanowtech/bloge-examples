@@ -1,7 +1,10 @@
 .correctness-studio {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   background: #f5f7fa;
   color: #202938;
 }
@@ -99,6 +102,7 @@
   gap: 0;
   min-height: 44px;
   padding: 0 clamp(18px, 3vw, 44px);
+  contain: inline-size layout paint;
   overflow-x: auto;
   border-bottom: 1px solid #dce1e8;
   background: #fbfcfd;
@@ -148,6 +152,7 @@
   display: flex;
   min-height: 49px;
   padding: 0 clamp(18px, 3vw, 44px);
+  contain: inline-size layout paint;
   overflow-x: auto;
   border-bottom: 1px solid #cfd6e0;
   background: #fff;
@@ -389,6 +394,7 @@
 
 .correctness-table-scroll {
   max-width: 100%;
+  contain: inline-size layout paint;
   overflow: auto;
   border: 1px solid #d7dde6;
   background: #fff;

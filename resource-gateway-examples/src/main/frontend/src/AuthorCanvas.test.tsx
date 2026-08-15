@@ -671,6 +671,7 @@ describe('AuthorCanvas operator-library intake', () => {
     expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
       padding: 0.1,
       duration: 240,
+      minZoom: 0.04,
       maxZoom: 1,
     });
 
@@ -704,6 +705,10 @@ describe('AuthorCanvas operator-library intake', () => {
     await waitFor(() => expect(document.body.textContent).toContain('1 nodes'));
 
     expect(document.querySelector('[data-testid="react-flow-controls"]')).toBeNull();
+    await click(query<HTMLButtonElement>('[data-testid="navigator-fit-all"]'));
+    expect(reactFlowMocks.fitView).toHaveBeenCalledWith(expect.objectContaining({
+      minZoom: 0.8,
+    }));
 
     const workspace = query<HTMLElement>('.workspace');
     const expandCanvas = query<HTMLButtonElement>('[data-testid="navigator-expand-canvas"]');
@@ -972,6 +977,7 @@ describe('AuthorCanvas operator-library intake', () => {
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
         padding: 0.14,
         duration: 240,
+        minZoom: 0.04,
         maxZoom: 1,
       }),
     );
@@ -1616,6 +1622,142 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === '/api/visual/graphs/simulate'))
       .toHaveLength(1);
   });
+
+  it('keeps a complete Workspace fork current across the autosave window', async () => {
+    let storedDraft: Record<string, any> | null = null;
+    let storedScenarios: Record<string, any> | null = null;
+    let unexpectedUpdates = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({
+          operators: [
+            loanApplicantResourceOperator(),
+            primaryCreditResourceOperator(),
+            secondaryCreditResourceOperator(),
+            decisionTableOperator(),
+            transformOperator(),
+          ],
+        });
+      }
+      if (url === '/api/authoring/workspace-forks') {
+        const command = JSON.parse(String(init?.body ?? '{}'));
+        storedDraft = {
+          ...command.seed.graphDraft,
+          draftId: 'draft-complete-fork',
+          revision: 1,
+          operatorFingerprints: {},
+          operatorSnapshots: {},
+        };
+        storedScenarios = {
+          ...command.seed.scenarioDraftSets[0],
+          scenarioDraftSetId: 'draft-complete-fork-scenarios',
+          revision: 1,
+          target: {
+            kind: 'GRAPH',
+            id: 'draft-complete-fork',
+            revision: 1,
+            fingerprint: `sha256:${'f'.repeat(64)}`,
+          },
+          contractFingerprint: `sha256:${'e'.repeat(64)}`,
+        };
+        return jsonResponse({
+          schemaVersion: 'bloge.workspaceForkReceipt.v1',
+          workspaceId: 'workspace-complete-fork',
+          graphCoordinate: {
+            draftId: 'draft-complete-fork', revision: 1, fingerprint: `sha256:${'f'.repeat(64)}`,
+          },
+          contractCoordinate: {
+            target: storedScenarios?.target,
+            fingerprint: `sha256:${'e'.repeat(64)}`,
+          },
+          scenarioSuiteCoordinates: [{
+            kind: 'SCENARIO_SUITE',
+            id: 'draft-complete-fork-scenarios',
+            revision: 1,
+            fingerprint: `sha256:${'d'.repeat(64)}`,
+          }],
+          fixtureCoordinates: [],
+          sourceTemplateFingerprint: `sha256:${'c'.repeat(64)}`,
+          forkedWorkspaceFingerprint: `sha256:${'b'.repeat(64)}`,
+          runtimeProfile: 'SANDBOX_MOCK',
+          proofStrength: 'EXPLORATORY',
+          warnings: [],
+          replayed: false,
+        });
+      }
+      if (url === '/api/visual/drafts/draft-complete-fork' && init?.method === 'PUT') {
+        unexpectedUpdates += 1;
+        return jsonResponse({ ...storedDraft, revision: 2 });
+      }
+      if (url === '/api/visual/drafts/draft-complete-fork') {
+        return jsonResponse(storedDraft);
+      }
+      if (url === '/api/visual/scenario-draft-sets/draft-complete-fork-scenarios') {
+        return jsonResponse({
+          schemaVersion: 'bloge.storedScenarioDraftSet.v1',
+          scenarioDraftSetId: 'draft-complete-fork-scenarios',
+          revision: 1,
+          fingerprint: `sha256:${'d'.repeat(64)}`,
+          draftSet: storedScenarios,
+          savedAt: '2026-08-09T00:00:00Z',
+          savedBy: 'author-canvas',
+        });
+      }
+      if (url === '/api/visual/scenario-draft-sets/targets/graphs/draft-complete-fork/contract') {
+        return jsonResponse(graphContractProjection(
+          'draft-complete-fork',
+          1,
+          storedDraft as Record<string, any>,
+        ));
+      }
+      if (url.startsWith('/api/visual/governance-gates/drafts/')) {
+        return jsonResponse({ code: 'RG.GATE.NOT_FOUND' }, { status: 404 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    await click(query<HTMLButtonElement>('[data-testid="author-start-choice:examples"]'));
+    await waitFor(() =>
+      expect(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]').disabled)
+        .toBe(false),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
+    await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:contract"]'));
+    await waitFor(() => expect(Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .some((button) => button.textContent?.trim() === 'Save Graph')).toBe(true));
+    await click(buttonByText('Save Graph'));
+
+    await waitFor(() => expect(query('.workspace').getAttribute('data-draft-lifecycle')).toBe('saved'));
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 1_700)));
+    expect(query('.workspace').getAttribute('data-draft-lifecycle')).toBe('saved');
+    expect(unexpectedUpdates).toBe(0);
+    const beforeScenarioMode = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+
+    await click(query<HTMLButtonElement>('[data-testid="author-mode:scenarios"]'));
+    const afterScenarioMode = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    );
+    expect(afterScenarioMode).toEqual(beforeScenarioMode);
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 500)));
+    expect(authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export-v2"]'),
+    )).toEqual(beforeScenarioMode);
+    await waitFor(() => {
+      const importCases = buttonByText('Import cases');
+      expect(
+        importCases.disabled,
+        `${importCases.title} lifecycle=${query('.workspace').getAttribute('data-draft-lifecycle')}`,
+      ).toBe(false);
+    });
+  }, 10_000);
 
   it('previews destructive node impact and restores every authored asset with one Undo', async () => {
     await act(async () => {
@@ -2763,6 +2905,7 @@ describe('AuthorCanvas connection guide', () => {
       expect(reactFlowMocks.fitView).toHaveBeenCalledWith({
         padding: 0.1,
         duration: 240,
+        minZoom: 0.04,
         maxZoom: 1,
       }),
     );

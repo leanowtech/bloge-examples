@@ -73,6 +73,7 @@ import SchemaValueForm from './SchemaValueForm';
 import ScenarioCaseStepRail from './ScenarioCaseStepRail';
 import {
   compareScenarioRun,
+  rebaseScenarioDraftSet,
   scenarioSetIsCurrent,
   type ScenarioComparison,
   type ScenarioNodeOption,
@@ -247,6 +248,8 @@ export default function ContractScenarioWorkspace({
   const [compatibilityLoading, setCompatibilityLoading] = useState(false);
   const [compatibilityError, setCompatibilityError] = useState('');
   const [compatibilityReviewed, setCompatibilityReviewed] = useState(false);
+  const [compatibilityRetainedRevisionUnavailable, setCompatibilityRetainedRevisionUnavailable] =
+    useState(false);
   const workspaceInputRef = useRef<HTMLInputElement>(null);
   const workspaceBodyRef = useRef<HTMLDivElement>(null);
   const workspaceDialogRef = useRef<HTMLElement>(null);
@@ -616,6 +619,7 @@ export default function ContractScenarioWorkspace({
     setCompatibilityLoading(true);
     setCompatibilityError('');
     setCompatibilityReviewed(false);
+    setCompatibilityRetainedRevisionUnavailable(false);
     fetchScenarioCompatibility(
       scenarioDraftSet.scenarioDraftSetId,
       scenarioDraftSet.revision,
@@ -626,7 +630,12 @@ export default function ContractScenarioWorkspace({
       .catch((cause: unknown) => {
         if (!cancelled) {
           setCompatibilityReport(null);
-          setCompatibilityError(errorMessage(cause));
+          if (cause instanceof BlogeApiRequestError && cause.status === 404) {
+            setCompatibilityError('');
+            setCompatibilityRetainedRevisionUnavailable(true);
+          } else {
+            setCompatibilityError(errorMessage(cause));
+          }
         }
       })
       .finally(() => {
@@ -830,6 +839,27 @@ export default function ContractScenarioWorkspace({
   };
 
   const resolveCompatibility = () => {
+    if (compatibilityRetainedRevisionUnavailable) {
+      autoLoadAttemptRef.current = `${scenarioDraftSet.scenarioDraftSetId}:${contract.target.fingerprint}`;
+      onScenarioDraftSetChange({
+        ...rebaseScenarioDraftSet(
+          scenarioDraftSet,
+          contract.target,
+          contractFingerprint,
+        ),
+        revision: 0,
+      });
+      setSavedSnapshot('');
+      setCompatibilityRetainedRevisionUnavailable(false);
+      setPublication(null);
+      setRunResponse(null);
+      setComparison(null);
+      setAssetNotice({
+        level: 'ok',
+        message: 'The unavailable Scenario revision was adopted as an unsaved local draft. Save it to create a new immutable baseline.',
+      });
+      return;
+    }
     if (!compatibilityReport) {
       onRebase();
       return;
@@ -1642,6 +1672,7 @@ export default function ContractScenarioWorkspace({
               report={compatibilityReport}
               loading={compatibilityLoading}
               error={compatibilityError}
+              retainedRevisionUnavailable={compatibilityRetainedRevisionUnavailable}
               reviewed={compatibilityReviewed}
               onReviewedChange={setCompatibilityReviewed}
               onApplyMigrations={applyCompatibilityMigrations}
@@ -2284,6 +2315,7 @@ function CompatibilityTab({
   report,
   loading,
   error,
+  retainedRevisionUnavailable,
   reviewed,
   onReviewedChange,
   onApplyMigrations,
@@ -2296,6 +2328,7 @@ function CompatibilityTab({
   report: ContractCompatibilityReport | null;
   loading: boolean;
   error: string;
+  retainedRevisionUnavailable: boolean;
   reviewed: boolean;
   onReviewedChange: (reviewed: boolean) => void;
   onApplyMigrations: () => void;
@@ -2358,11 +2391,13 @@ function CompatibilityTab({
           <span>{error}</span>
         </div>
       )}
-      {!loading && !error && scenarioDraftSet.revision < 1 && (
+      {!loading && !error && (scenarioDraftSet.revision < 1 || retainedRevisionUnavailable) && (
         <>
           <div className="compatibility-report-state">
             <strong>{t('Review this local draft before establishing its first baseline')}</strong>
-            <span>{t('Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.')}</span>
+            <span>{retainedRevisionUnavailable
+              ? t('The retained Scenario revision is unavailable in this scope. Continue only to adopt this payload as an unsaved local draft.')
+              : t('Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.')}</span>
           </div>
           {!current && (
             <section className="compatibility-resolution">

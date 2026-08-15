@@ -805,6 +805,37 @@ describe('ContractScenarioWorkspace', () => {
     expect(onRebase).toHaveBeenCalledOnce();
   });
 
+  it('adopts a missing retained revision as an explicit unsaved local draft', async () => {
+    const onChange = vi.fn();
+    const onRebase = vi.fn();
+    await renderWorkspace({
+      stale: true,
+      scenarioRevision: 1,
+      onChange,
+      onRebase,
+    });
+
+    await act(async () => button('Review compatibility').click());
+    await settleAsyncWork();
+
+    expect(text()).not.toContain('Request failed: 404');
+    expect(text()).toContain('adopt this payload as an unsaved local draft');
+    expect(button('Rebase local draft').disabled).toBe(true);
+    const acknowledgement = document.querySelector(
+      '.compatibility-resolution input[type="checkbox"]',
+    );
+    expect(acknowledgement).toBeInstanceOf(HTMLInputElement);
+    await act(async () => (acknowledgement as HTMLInputElement).click());
+    await act(async () => button('Rebase local draft').click());
+
+    expect(onRebase).not.toHaveBeenCalled();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      revision: 0,
+      target: expect.objectContaining({ fingerprint: fingerprint('a') }),
+      contractFingerprint: fingerprint('b'),
+    }));
+  });
+
   it('explains one stale run blocker in place and routes its remediation to compatibility', async () => {
     const onRun = vi.fn().mockResolvedValue(successfulResponse());
     await renderWorkspace({ stale: true, initialTab: 'scenarios', onRun });

@@ -106,6 +106,18 @@ class GatewayExampleControllerTest {
     }
 
     @Test
+    void pageControllerForwardsCleanUrlToCorrectnessStudio() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/correctness"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/correctness/index.html"));
+        pageMvc.perform(get("/correctness/"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/correctness/index.html"));
+    }
+
+    @Test
     void pageControllerForwardsCleanUrlToLibraryWorkbench() throws Exception {
         MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
 

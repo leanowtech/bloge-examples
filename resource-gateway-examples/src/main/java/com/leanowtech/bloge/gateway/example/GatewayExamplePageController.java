@@ -50,6 +50,16 @@ public class GatewayExamplePageController {
     }
 
     /**
+     * Forwards the first-class Correctness Studio route to the shared Vite-built SPA.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping({"/correctness", "/correctness/"})
+    public String correctnessStudio() {
+        return "forward:/correctness/index.html";
+    }
+
+    /**
      * Forwards the progressive operator-library Workbench route to the shared Vite SPA.
      *
      * @return static resource forward target

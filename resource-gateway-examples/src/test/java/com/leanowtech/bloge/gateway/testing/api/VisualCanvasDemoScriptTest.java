@@ -70,11 +70,13 @@ class VisualCanvasDemoScriptTest {
         assertThat(source).contains(
                 "BOOT-INF/classes/static/business-mirror/index.html",
                 "BOOT-INF/classes/static/author/index.html",
+                "BOOT-INF/classes/static/correctness/index.html",
                 "BOOT-INF/classes/static/libraries/index.html",
                 "BOOT-INF/classes/static/rehearsals/index.html",
                 "BOOT-INF/classes/static/showcase/index.html",
                 "curl -fsS \"$(business_mirror_url)\"",
                 "curl -fsS \"$(author_url)\"",
+                "curl -fsS \"$(correctness_url)\"",
                 "curl -fsS \"$(libraries_url)\"",
                 "curl -fsS \"$(rehearsals_url)\"",
                 "curl -fsS \"$(showcase_url)\"");

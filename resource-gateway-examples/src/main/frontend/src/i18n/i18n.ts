@@ -633,6 +633,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Analyzing retained Contract baseline...': '正在分析已保留的契约基线...',
   'Compatibility report unavailable': '兼容性报告不可用',
   'Review this local draft before establishing its first baseline': '建立首个基线前，请检查此本地草稿',
+  'The retained Scenario revision is unavailable in this scope. Continue only to adopt this payload as an unsaved local draft.': '当前范围内无法获取已保留的测试场景修订版。仅在确认将此内容采用为未保存的本地草稿时继续。',
   'Semantic comparison starts after revision 1; the current draft has no retained Contract snapshot.': '语义比较从修订版 1 开始；当前草稿尚无保留的契约快照。',
   'I reviewed the current Contract and this unsaved local Scenario.': '我已检查当前契约和此未保存的本地测试场景。',
   'Rebase local draft': 'Rebase 本地草稿',

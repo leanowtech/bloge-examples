@@ -284,6 +284,31 @@ html[data-density='comfortable'] .author-command-bar .author-secondary-actions :
   }
 }
 
+@media (max-width: 1100px) {
+  .workspace-v2 .flow {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .workspace-v2 .flow > .compact-canvas-launchers {
+    position: relative;
+    z-index: 12;
+    top: auto;
+    left: auto;
+    grid-row: 2;
+    justify-self: stretch;
+    min-height: 36px;
+    overflow: hidden;
+    border-width: 0 0 1px;
+    border-radius: 0;
+    background: #f8fafc;
+    box-shadow: none;
+  }
+
+  .workspace-v2 .flow > .react-flow {
+    grid-row: 3;
+  }
+}
+
 @media (min-width: 461px) and (max-width: 840px) {
   .author-truth-status {
     grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -295,6 +320,59 @@ html[data-density='comfortable'] .author-command-bar .author-secondary-actions :
 }
 
 @media (min-width: 841px) and (max-width: 1100px) {
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(124px, 1fr) auto auto;
+    grid-template-rows: auto auto;
+    gap: 8px 10px;
+    padding-inline: 12px;
+  }
+
+  .topbar-brand {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .topbar-nav-toggle {
+    grid-column: 3;
+    grid-row: 1;
+    display: grid;
+  }
+
+  .topbar-actions {
+    display: contents;
+  }
+
+  .topbar-preferences {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .topbar-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    display: none;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+  }
+
+  .topbar-nav[data-open='true'] {
+    display: grid;
+  }
+
+  .topbar-link {
+    min-width: 0;
+  }
+
+  .workspace-v2:not([data-author-mode='compose']) > .author-command-bar {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'identity identity identity'
+      'modes truth secondary';
+  }
+
   .workspace-v2:not([data-author-mode='compose'])
     .contract-workspace-header-actions :is(button, a):disabled {
     display: none;
@@ -849,7 +927,7 @@ html[data-density='comfortable'] .author-command-bar .author-secondary-actions :
 
   .scenario-mobile-results {
     min-width: 0;
-    min-height: 186px;
+    min-height: 0;
     display: grid;
     align-content: start;
     grid-auto-rows: minmax(62px, auto);

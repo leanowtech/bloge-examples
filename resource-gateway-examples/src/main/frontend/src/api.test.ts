@@ -700,6 +700,31 @@ describe('operator library API client', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('surfaces payload-free Scenario materialization diagnostics from a Problem response', async () => {
+    const request = {
+      schemaVersion: 'bloge.scenarioImportMaterializationRequest.v1',
+      sourceText: 'id,name\nA,Case A',
+      plan: { schemaVersion: 'bloge.scenarioMaterializationPlan.v1' },
+      draftSet: { scenarioDraftSetId: 'loan-scenarios' },
+      templateScenarioId: 'template',
+    } as Parameters<typeof materializeScenarioImportOnServer>[0];
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      code: 'RG.SCENARIO_IMPORT.MATERIALIZED_INVALID',
+      title: 'Materialized Scenarios do not satisfy the exact current Contract.',
+      details: {
+        diagnosticCodes: [
+          'visual.scenario.contract.stale',
+          'visual.scenario.target.contractMismatch',
+        ],
+      },
+    }), { status: 400, statusText: 'Bad Request' }));
+
+    await expect(materializeScenarioImportOnServer(request)).rejects.toThrow(
+      'Request failed: 400 Materialized Scenarios do not satisfy the exact current Contract. '
+      + '(visual.scenario.contract.stale, visual.scenario.target.contractMismatch)',
+    );
+  });
+
   it('persists a Graph before loading its authoritative Scenario Contract coordinate', async () => {
     const draft = {
       schemaVersion: 'bloge.visualGraphDraft.v1',

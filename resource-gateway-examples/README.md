@@ -75,6 +75,20 @@ From the repository root:
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
+To open the read-only Correctness Studio sample with its exact deep link:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --correctness --open
+```
+
+The sample contains one loan-decision correctness definition, a frozen `9 / 7 / 2`
+coverage denominator, 8 governed Cases, 5 Fixture descriptors, Business Oracle and
+Assertion summaries, publication metadata, and a five-axis verdict. It deliberately
+advertises `correctnessWorkspaceApi=true` and `correctnessRunApi=false`: the Run view
+must remain unavailable until a deployment assembles the real governed runtime. See the
+[Correctness Studio demo guide](../docs/resource-gateway-correctness-studio-demo-guide.md)
+for the walkthrough, exact URL, API probe, stop command, and capability boundary.
+
 This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
 profile by default so `/api/testing/**` is available; use `--profile production`
@@ -98,6 +112,7 @@ silently consuming work.
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
+| `http://localhost:8080/correctness/` | Inspect the exact, payload-free Correctness Workspace started with `--correctness`; use the printed deep link rather than omitting its target coordinate |
 | `http://localhost:8080/showcase/` | Run real Gateway examples and inspect sample outputs; diagram JSON and the legacy runner stay under Advanced |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
