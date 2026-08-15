@@ -1362,6 +1362,10 @@ public record IntegrationCapabilities(
         features.put("correctnessRunApi", false);
         features.put("correctnessEvidenceCompanionProtocol", true);
         features.put("correctnessEvidenceCompanionApi", false);
+        features.put("correctnessOutcomeCalibrationProtocol", true);
+        features.put("correctnessOutcomeCalibrationApi", false);
+        features.put("correctnessGovernanceFeedbackProtocol", true);
+        features.put("correctnessGovernanceFeedbackApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

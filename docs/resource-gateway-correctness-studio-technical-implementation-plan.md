@@ -836,6 +836,7 @@ UI 先读 capability，再决定显示、禁用还是解释功能；不能通过
 | `rg_correctness_publication_attempts` | Saga current attempts | unique scope + idempotency fingerprint，CAS state version |
 | `rg_correctness_publication_attempt_history` | Saga transitions | PK(attempt id, state version) |
 | `rg_outcome_calibration_proposals` | 业务事实反馈提案 | index source/status/owner/target |
+| `rg_correctness_governance_feedback` | ANEKE 治理反馈不可变投影 | unique scope + source decision revision；index exact publication/produced time |
 | `rg_correctness_outbox` | payload-free domain events | index unpublished_at/aggregate/order |
 
 ### 8.3 典型 revision 表结构
@@ -1286,6 +1287,15 @@ Correctness authoring 由 `gateway.testing.correctness.enabled` 显式启用。C
 主迁移未应用、企业 authority 缺失、material key ring 缺失或 testing registry 未装配时，对应 Bean 不存在且 capability 保持关闭；
 不能把“类已经编译”冒充“部署已经可用”。
 
+COR-09 的后端协议和投影内核已经完成。`OutcomeCalibrationProposal` 必须从一个 exact evidence companion 派生，调用方只能选择该证据
+闭包内已有的 Case 和 Oracle；对象只允许 `PROPOSED`，不能通过同一协议直接改写 Oracle 或生成 canonical regression。提案说明保存在
+受控 canonical document 中，但 `OutcomeCalibrationProposed.v1` outbox 只携带 exact coordinate、mismatch/reason code、actor 和
+correlation id。ANEKE 反馈使用独立的 `toolStudio.resourceGateway.correctnessFeedback.v1` 协议，绑定 exact Publication、外部 decision
+revision/fingerprint、workbook、Owner approval、breaking migration 与结构化 finding；Resource Gateway 只追加不可变投影，不复制
+ANEKE 状态机。Workspace decorator 可以把有效反馈映射为 Gate blocker/review/remediation；外部 `ACCEPTED` 不得覆盖本地 execution、
+assertion、coverage 或 evidence 轴，过期反馈自动降为 `REVIEW`。PostgreSQL migration、完整 scope、canonical/index 防篡改、幂等冲突、
+payload-free event、动态 capability 和协议端点已有自动化测试。Correctness Studio 的提案与反馈交互仍在 COR-09 前端任务中。
+
 COR-03 的写侧内核已经完成：Coverage Inventory 具备完整 scope 的 head、不可变 revision、数据库 CAS、义务 fingerprint 索引和
 transactional outbox；读取时 canonical document 与索引互相校验，任一侧被篡改都会失败关闭。`saveDraft`、`freeze` 和
 `proposeImpact` 是三个独立应用命令。Freeze 要求授权审核人、无 `PROPOSED` 义务、非空 exact derivation sources、有效未过期 waiver，
@@ -1349,7 +1359,7 @@ compiled assets、执行风险和阻断诊断；只有同一预览 `publishable=
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端与 Fixture Editor 已完成；真实企业 authority 待部署验收 | metadata/payload 隔离、显式 load、receipt 后 exact rebind 已通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端与 Publication Studio 已完成；企业灰度参数待部署验收 | deterministic/source-map/retry/closure、preview-before-publish 已通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 已完成 | 服务端 canonical preflight、审查后运行、exact evidence、五轴展示与前端 fail-closed 测试已通过 | 2 周 |
-| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
+| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 后端协议、持久化、outbox、capability 与 Gate 投影已完成；前端交互进行中 | proposed-only、exact evidence/publication closure 与治理边界测试已通过 | 2 周 |
 | COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
 
 两组后端可在 COR-01 后并行推进 COR-03/04 与 COR-06 material port；前端先完成 COR-00/02，再在稳定 projection 上构建 surface。

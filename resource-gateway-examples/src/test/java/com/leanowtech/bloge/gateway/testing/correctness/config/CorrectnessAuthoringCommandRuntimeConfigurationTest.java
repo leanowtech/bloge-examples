@@ -49,6 +49,8 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             "rg_correctness_publication_attempts",
             "rg_correctness_publication_attempt_history",
             "rg_correctness_evidence_companions",
+            "rg_outcome_calibration_proposals",
+            "rg_correctness_governance_feedback",
             "rg_correctness_outbox",
             "rg_correctness_command_receipts");
 
@@ -66,7 +68,7 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                     .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                             true, false, false, false, false, false,
-                            false, false, false, false, false));
+                            false, false, false, false, false, true, true));
         });
     }
 
@@ -108,7 +110,7 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                                     true, true, true, true, true, true,
-                                    true, true, true, true, true));
+                                    true, true, true, true, true, true, true));
                     assertThat(context).hasSingleBean(
                             com.leanowtech.bloge.gateway.testing.correctness.run
                                     .CorrectnessPreflightFacade.class);

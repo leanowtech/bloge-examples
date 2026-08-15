@@ -168,7 +168,7 @@ public class CorrectnessDemoRuntimeConfiguration {
     CorrectnessAuthoringRuntimeAvailability correctnessDemoRuntimeAvailability() {
         return new CorrectnessAuthoringRuntimeAvailability(
                 true, false, false, false, false, false,
-                false, false, false, false, false);
+                false, false, false, false, false, false, false);
     }
 
     private static List<CaseSummary> cases() {

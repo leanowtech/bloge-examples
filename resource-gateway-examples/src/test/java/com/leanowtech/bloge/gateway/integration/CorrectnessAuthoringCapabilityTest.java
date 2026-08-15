@@ -32,7 +32,7 @@ class CorrectnessAuthoringCapabilityTest {
         service.configureCorrectnessAuthoringRuntime(
                 new CorrectnessAuthoringRuntimeAvailability(
                         true, true, false, true, true, false, true, true, true,
-                        true, true));
+                        true, true, true, true));
 
         var capabilities = service.capabilities().payload();
 
@@ -47,7 +47,9 @@ class CorrectnessAuthoringCapabilityTest {
                 .containsEntry("correctnessPublicationApi", true)
                 .containsEntry("correctnessPreflightApi", true)
                 .containsEntry("correctnessRunApi", true)
-                .containsEntry("correctnessEvidenceCompanionApi", true);
+                .containsEntry("correctnessEvidenceCompanionApi", true)
+                .containsEntry("correctnessOutcomeCalibrationApi", true)
+                .containsEntry("correctnessGovernanceFeedbackApi", true);
         assertThat(capabilities.endpoints())
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/correctness-workspaces/"))
@@ -66,6 +68,10 @@ class CorrectnessAuthoringCapabilityTest {
                         "/api/visual/correctness-runs"))
                 .anyMatch(endpoint -> endpoint.path().equals(
                         "/api/visual/correctness-runs/{suiteRunId}/evidence-companion"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-outcome-calibration-proposals"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/integration/correctness-publications/{publicationId}/governance-feedback"))
                 .noneMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/fixture-materials"));
     }

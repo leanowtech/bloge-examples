@@ -29,6 +29,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAut
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureScenarioExternalReferenceSource;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureUsageProjectionService;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.RepositoryFixtureMaterialMetadataSource;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionEvaluatorProfile;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionSetCompiler;
@@ -406,5 +408,17 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     ) {
         return new CorrectnessRunService(
                 preflight, publications, suiteExecutions, companions, evidence, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
+    CorrectnessGovernanceService correctnessGovernanceService(
+            CorrectnessGovernanceRepository governance,
+            CorrectnessPublicationRepository publications,
+            CorrectnessEvidenceRepository evidence,
+            ObjectMapper mapper
+    ) {
+        return new CorrectnessGovernanceService(
+                governance, publications, evidence, mapper, Clock.systemUTC());
     }
 }

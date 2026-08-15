@@ -726,6 +726,10 @@ public class ToolStudioIntegrationService {
                 correctnessAuthoringRuntime.runApi());
         features.put("correctnessEvidenceCompanionApi",
                 correctnessAuthoringRuntime.evidenceCompanionApi());
+        features.put("correctnessOutcomeCalibrationApi",
+                correctnessAuthoringRuntime.outcomeCalibrationApi());
+        features.put("correctnessGovernanceFeedbackApi",
+                correctnessAuthoringRuntime.governanceFeedbackApi());
         features.put("mirrorPlanCompilation", mirrorPlanReady);
         features.put("mirrorExternalLeafInterception", mirrorPlanReady);
         features.put("mirrorScenarioArtifactRegistry", mirrorPlanReady);
@@ -2535,6 +2539,18 @@ public class ToolStudioIntegrationService {
         if (correctnessAuthoringRuntime.evidenceCompanionApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "GET", "/api/visual/correctness-runs/{suiteRunId}/evidence-companion"));
+        }
+        if (correctnessAuthoringRuntime.outcomeCalibrationApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/correctness-outcome-calibration-proposals"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-outcome-calibration-proposals/{proposalId}"));
+        }
+        if (correctnessAuthoringRuntime.governanceFeedbackApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/integration/correctness-publications/{publicationId}/governance-feedback"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-publications/{publicationId}/governance-feedback"));
         }
     }
 

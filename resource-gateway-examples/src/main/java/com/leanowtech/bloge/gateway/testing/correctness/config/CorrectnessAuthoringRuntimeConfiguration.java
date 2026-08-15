@@ -7,6 +7,9 @@ import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessC
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceService;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.DatabaseCorrectnessGovernanceRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionSetService;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.BusinessOracleService;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.AssertionSetRepository;
@@ -29,6 +32,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.DefinitionOnlyCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.FixtureCorrectnessWorkspaceComponentSource;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.GovernanceFeedbackCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.InventoryCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.OracleAssertionCorrectnessWorkspaceComponentSource;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.PublicationCorrectnessWorkspaceComponentSource;
@@ -41,6 +45,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.time.Clock;
 
 /** Opt-in production assembly for the payload-free Correctness Workspace read model. */
 @Configuration(proxyBeanMethods = false)
@@ -120,13 +126,24 @@ public class CorrectnessAuthoringRuntimeConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    CorrectnessGovernanceRepository correctnessGovernanceRepository(
+            JdbcTemplate jdbc,
+            ObjectMapper mapper,
+            CorrectnessAuthoringSchemaReadiness readiness
+    ) {
+        return new DatabaseCorrectnessGovernanceRepository(jdbc, mapper);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     CorrectnessWorkspaceComponentSource correctnessWorkspaceComponentSource(
             CoverageInventoryRepository inventories,
             BusinessOracleRepository oracles,
             AssertionSetRepository assertionSets,
             ScenarioDraftSetV2Repository scenarios,
             FixtureAssetRepository fixtures,
-            ObjectProvider<CorrectnessPublicationRepository> publications
+            ObjectProvider<CorrectnessPublicationRepository> publications,
+            ObjectProvider<CorrectnessGovernanceRepository> governance
     ) {
         CorrectnessWorkspaceComponentSource source =
                 new DefinitionOnlyCorrectnessWorkspaceComponentSource();
@@ -137,8 +154,13 @@ public class CorrectnessAuthoringRuntimeConfiguration {
         source = new ScenarioCorrectnessWorkspaceComponentSource(source, scenarios);
         source = new FixtureCorrectnessWorkspaceComponentSource(source, scenarios, fixtures);
         CorrectnessPublicationRepository publication = publications.getIfAvailable();
-        return publication == null ? source
-                : new PublicationCorrectnessWorkspaceComponentSource(source, publication);
+        if (publication != null) {
+            source = new PublicationCorrectnessWorkspaceComponentSource(source, publication);
+        }
+        CorrectnessGovernanceRepository feedback = governance.getIfAvailable();
+        return publication == null || feedback == null ? source
+                : new GovernanceFeedbackCorrectnessWorkspaceComponentSource(
+                        source, feedback, Clock.systemUTC());
     }
 
     @Bean
@@ -164,7 +186,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
             ObjectProvider<CorrectnessCompilationService> compilation,
             ObjectProvider<CorrectnessPublicationService> publication,
             ObjectProvider<CorrectnessPreflightFacade> preflight,
-            ObjectProvider<CorrectnessRunService> run
+            ObjectProvider<CorrectnessRunService> run,
+            ObjectProvider<CorrectnessGovernanceService> governance
     ) {
         return new CorrectnessAuthoringRuntimeAvailability(
                 workspace.getIfAvailable() != null,
@@ -177,6 +200,8 @@ public class CorrectnessAuthoringRuntimeConfiguration {
                 publication.getIfAvailable() != null,
                 preflight.getIfAvailable() != null,
                 run.getIfAvailable() != null,
-                run.getIfAvailable() != null);
+                run.getIfAvailable() != null,
+                governance.getIfAvailable() != null,
+                governance.getIfAvailable() != null);
     }
 }
