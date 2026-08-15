@@ -6,6 +6,7 @@ import type {
   BusinessOracle,
   CorrectnessCompilationCoordinate,
   CorrectnessCompilationReport,
+  CorrectnessPublicationCommit,
   CoverageInventory,
   FixtureAssetDescriptor,
   FixtureMaterial,
@@ -233,7 +234,7 @@ export async function previewCorrectnessCompilation(
 export async function publishCorrectness(
   coordinate: CorrectnessCompilationCoordinate,
   idempotencyKey: string,
-): Promise<CorrectnessApiEnvelope<Record<string, unknown>>> {
+): Promise<CorrectnessApiEnvelope<CorrectnessPublicationCommit>> {
   return exchangeCorrectnessApi('/api/visual/correctness-publications',
     'TEST_SCENARIO_PUBLISH', { method: 'POST', idempotencyKey, body: coordinate });
 }

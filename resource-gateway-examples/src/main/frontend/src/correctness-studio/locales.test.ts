@@ -11,6 +11,7 @@ const SURFACES = [
   './authoring/CaseStudio.tsx',
   './authoring/OracleStudio.tsx',
   './authoring/FixtureStudio.tsx',
+  './authoring/PublicationStudio.tsx',
   './authoring/shared.tsx',
   './runs/RunCenter.tsx',
   './shared/FiveAxisVerdict.tsx',

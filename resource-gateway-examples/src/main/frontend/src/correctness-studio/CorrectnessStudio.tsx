@@ -33,6 +33,7 @@ import CoverageStudio from './authoring/CoverageStudio';
 import CaseStudio from './authoring/CaseStudio';
 import OracleStudio from './authoring/OracleStudio';
 import FixtureStudio from './authoring/FixtureStudio';
+import PublicationStudio from './authoring/PublicationStudio';
 import CorrectnessI18nProvider from './CorrectnessI18nProvider';
 import './styles.css';
 
@@ -229,7 +230,12 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
       </nav>
 
       <section className="correctness-view" role="tabpanel">
-        {view === 'overview' && <Overview workspace={workspace} onOpen={changeView} />}
+        {view === 'overview' && <Overview
+          workspace={workspace}
+          deployment={deployment}
+          onOpen={changeView}
+          onRefresh={() => setReloadEpoch((current) => current + 1)}
+        />}
         {view === 'coverage' && <Coverage workspace={workspace} deployment={deployment} />}
         {view === 'cases' && <Cases workspace={workspace} deployment={deployment} />}
         {view === 'fixtures' && <Fixtures workspace={workspace} deployment={deployment} />}
@@ -242,10 +248,14 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
 
 function Overview({
   workspace,
+  deployment,
   onOpen,
+  onRefresh,
 }: {
   workspace: CorrectnessWorkspaceProjection;
+  deployment: CorrectnessDeploymentCapabilities;
   onOpen(view: CorrectnessView): void;
+  onRefresh(): void;
 }) {
   const { t } = useI18n();
   const coveragePercent = percent(workspace.coverage.fulfilled, workspace.coverage.total);
@@ -315,6 +325,12 @@ function Overview({
           ))}
         </section>
       )}
+      <PublicationStudio
+        workspace={workspace}
+        compilationAvailable={deployment.features.correctnessCompilationApi === true}
+        publicationAvailable={deployment.features.correctnessPublicationApi === true}
+        onPublished={onRefresh}
+      />
     </div>
   );
 }

@@ -1331,8 +1331,10 @@ payload leakage 均有回归测试。
 Publication 使用可恢复 Saga：持久化 attempt/history，按内容寻址注册 FixtureBundle/TestSuite，逐项 read-after-write 验证，最后
 原子提交不可变 manifest 与 outbox。重试复用已验证资产，异义 idempotency key、引用漂移、注册读回损坏和 commit closure 替换均
 失败关闭。Workspace 只投影最近一次 exact Publication 的元数据摘要；Fixture payload 不进入 report、manifest、event 或 Workspace。
-compile preview、publish、publication/attempt/history 查询 API 和动态 capability 已完成。COR-07 剩余项仅是 Correctness Studio 的
-发布交互与灰度运营配置，不再阻塞 COR-08 后端开工。
+compile preview、publish、publication/attempt/history 查询 API 和动态 capability 已完成。Correctness Studio 已接入 Publication Studio：
+从 exact Definition、Inventory、Scenario、Oracle、Assertion 与 Fixture refs 自动构建 compilation coordinate，先展示 compiler、source map、
+compiled assets、执行风险和阻断诊断；只有同一预览 `publishable=true` 时才开放发布命令。Saga commit 后立即刷新 Workspace，Run Center
+只消费新的不可变 Publication。COR-07 仅剩真实企业灰度运营参数验收，不再存在产品主链缺口。
 
 ### 16.1 Epic 总览
 
@@ -1345,7 +1347,7 @@ compile preview、publish、publication/attempt/history 查询 API 和动态 cap
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 后端与 Oracle/Assertion Builder 已完成；真实浏览器视觉验收待 COR-10 | Owner 可审、compiler 无静默丢失、preview-before-validate 已通过 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端与 Case Builder 已完成；500/5000 Case 性能验收待 COR-10 | governed Case exact closure、图形化 Given/受控依赖编辑已通过 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端与 Fixture Editor 已完成；真实企业 authority 待部署验收 | metadata/payload 隔离、显式 load、receipt 后 exact rebind 已通过 | 2.5 周 |
-| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端已完成；发布前端与灰度配置待接入 | deterministic/source-map/retry/closure tests 已通过 | 2 周 |
+| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端与 Publication Studio 已完成；企业灰度参数待部署验收 | deterministic/source-map/retry/closure、preview-before-publish 已通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 已完成 | 服务端 canonical preflight、审查后运行、exact evidence、五轴展示与前端 fail-closed 测试已通过 | 2 周 |
 | COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
 | COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |

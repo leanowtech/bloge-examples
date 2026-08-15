@@ -311,3 +311,21 @@ export interface CorrectnessCompilationReport {
     riskCodes: string[];
   };
 }
+
+export interface CorrectnessPublicationCommit {
+  attempt: {
+    schemaVersion: string;
+    attempt: { attemptId: string; stateVersion: number; stage: string };
+    compilationReport: CorrectnessCompilationReport;
+  };
+  publication: {
+    schemaVersion: string;
+    publicationFingerprint: string;
+    publication: {
+      schemaVersion: string;
+      publicationId: string;
+      compilationFingerprint: string;
+      compilerVersion: string;
+    };
+  };
+}
