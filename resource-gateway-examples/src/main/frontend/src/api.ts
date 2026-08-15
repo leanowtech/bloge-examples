@@ -1175,6 +1175,33 @@ type OperatorTestingPurpose =
   | 'TEST_SUITE_WRITE'
   | 'TEST_SCENARIO_PUBLISH';
 
+export type CorrectnessApiPurpose =
+  'CORRECTNESS_READ'
+  | 'TEST_EXECUTION'
+  | 'TEST_SUITE_READ'
+  | 'GOVERNANCE_EVIDENCE_INGESTION';
+
+/** Uses the host-aware transport and workload identity for the isolated Correctness API family. */
+export async function exchangeCorrectnessApi<T>(
+  path: string,
+  purpose: CorrectnessApiPurpose,
+  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+): Promise<T> {
+  if (!path.startsWith('/api/visual/correctness-')
+      && path !== '/api/integration/capabilities') {
+    throw new Error('Correctness API requests must use an approved same-origin endpoint.');
+  }
+  return readTestingJson<T>(await sendRequest(path, {
+    method: options.method ?? 'GET',
+    headers: {
+      ...operatorTestHeadersProvider(),
+      'X-Purpose': purpose,
+      ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+  }));
+}
+
 function operatorTestingHeaders(purpose: OperatorTestingPurpose, json = false): Record<string, string> {
   return {
     ...operatorTestHeadersProvider(),

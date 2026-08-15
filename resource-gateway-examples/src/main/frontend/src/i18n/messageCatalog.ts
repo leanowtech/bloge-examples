@@ -428,6 +428,7 @@ export const MESSAGE_CATALOG = {
   'correctness.axis.execution.skipped': { en: 'Skipped', 'zh-CN': '已跳过' },
   'correctness.axis.execution.cancelled': { en: 'Cancelled', 'zh-CN': '已取消' },
   'correctness.axis.assertions.none': { en: 'None evaluated', 'zh-CN': '未评估断言' },
+  'correctness.axis.assertions.notEvaluated': { en: 'Not evaluated', 'zh-CN': '尚未评估' },
   'correctness.axis.assertions.passed': { en: 'Passed', 'zh-CN': '断言通过' },
   'correctness.axis.assertions.failed': { en: 'Failed', 'zh-CN': '断言失败' },
   'correctness.axis.assertions.inconclusive': { en: 'Inconclusive', 'zh-CN': '断言无法确定' },
@@ -435,6 +436,9 @@ export const MESSAGE_CATALOG = {
   'correctness.axis.coverage.unfrozen': { en: 'Unfrozen', 'zh-CN': '分母未冻结' },
   'correctness.axis.coverage.gapped': { en: 'Gapped', 'zh-CN': '存在覆盖缺口' },
   'correctness.axis.coverage.complete': { en: 'Complete', 'zh-CN': '覆盖完整' },
+  'correctness.axis.coverage.incomplete': { en: 'Incomplete', 'zh-CN': '覆盖不完整' },
+  'correctness.axis.coverage.stale': { en: 'Stale', 'zh-CN': '覆盖已过期' },
+  'correctness.axis.evidence.none': { en: 'No evidence', 'zh-CN': '尚无证据' },
   'correctness.axis.evidence.notAvailable': { en: 'Not available', 'zh-CN': '尚无证据' },
   'correctness.axis.evidence.exploratory': { en: 'Exploratory', 'zh-CN': '探索性证据' },
   'correctness.axis.evidence.current': { en: 'Current', 'zh-CN': '当前证据' },
@@ -443,6 +447,7 @@ export const MESSAGE_CATALOG = {
   'correctness.axis.evidence.superseded': { en: 'Superseded', 'zh-CN': '证据已被取代' },
   'correctness.axis.gate.notEvaluated': { en: 'Not evaluated', 'zh-CN': '尚未评估' },
   'correctness.axis.gate.blocked': { en: 'Blocked', 'zh-CN': '已阻断' },
+  'correctness.axis.gate.review': { en: 'Review', 'zh-CN': '需要审阅' },
   'correctness.axis.gate.accepted': { en: 'Accepted', 'zh-CN': '已接受' },
   'correctness.verdict.notRun.label': { en: 'Not run', 'zh-CN': '尚未运行' },
   'correctness.verdict.notRun.detail': {
@@ -489,6 +494,11 @@ export const MESSAGE_CATALOG = {
     en: 'At least one frozen obligation lacks current proving evidence.',
     'zh-CN': '至少一项已冻结义务缺少当前有效的证明证据。',
   },
+  'correctness.verdict.coverageStale.label': { en: 'Coverage stale', 'zh-CN': '覆盖已过期' },
+  'correctness.verdict.coverageStale.detail': {
+    en: 'The frozen coverage coordinate changed after this evidence was produced.',
+    'zh-CN': '生成此证据后，冻结的覆盖坐标已发生变化。',
+  },
   'correctness.verdict.evidenceNotAvailable.label': { en: 'Evidence unavailable', 'zh-CN': '证据不可用' },
   'correctness.verdict.evidenceNotAvailable.detail': {
     en: 'No retained evidence can support this correctness decision.',
@@ -523,6 +533,11 @@ export const MESSAGE_CATALOG = {
   'correctness.verdict.gateNotEvaluated.detail': {
     en: 'The proving axes are complete, but no external gate decision exists yet.',
     'zh-CN': '证明轴已经完整，但尚无外部门禁决定。',
+  },
+  'correctness.verdict.gateReview.label': { en: 'Gate review required', 'zh-CN': '门禁需要审阅' },
+  'correctness.verdict.gateReview.detail': {
+    en: 'The evidence is available, but an accountable reviewer must decide before acceptance.',
+    'zh-CN': '证据已经生成，但必须由责任审阅人完成决策后才能接受。',
   },
   'correctness.verdict.accepted.label': { en: 'Gate accepted', 'zh-CN': '门禁已接受' },
   'correctness.verdict.accepted.detail': {

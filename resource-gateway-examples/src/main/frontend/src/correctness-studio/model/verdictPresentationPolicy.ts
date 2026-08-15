@@ -14,17 +14,24 @@ export type CorrectnessExecutionStatus =
   | 'SKIPPED'
   | 'CANCELLED';
 
-export type CorrectnessAssertionStatus = 'NONE' | 'PASSED' | 'FAILED' | 'INCONCLUSIVE';
-export type CorrectnessCoverageStatus = 'NOT_EVALUATED' | 'UNFROZEN' | 'GAPPED' | 'COMPLETE';
+export type CorrectnessAssertionStatus =
+  'NOT_EVALUATED' | 'NONE' | 'PASSED' | 'FAILED' | 'INCONCLUSIVE';
+export type CorrectnessCoverageStatus =
+  'NOT_EVALUATED' | 'UNFROZEN' | 'GAPPED' | 'COMPLETE' | 'INCOMPLETE' | 'STALE';
 export type CorrectnessEvidenceStatus =
+  | 'NONE'
   | 'NOT_AVAILABLE'
   | 'EXPLORATORY'
   | 'CURRENT'
   | 'STALE'
   | 'REVOKED'
   | 'SUPERSEDED';
-export type CorrectnessGateStatus = 'NOT_EVALUATED' | 'BLOCKED' | 'ACCEPTED';
+export type CorrectnessGateStatus = 'NOT_EVALUATED' | 'BLOCKED' | 'REVIEW' | 'ACCEPTED';
 export type CorrectnessProofLevel =
+  | 'STRUCTURAL'
+  | 'SIMULATED_BUSINESS'
+  | 'CONTROLLED_INTEGRATION'
+  | 'REPLAY_DERIVED'
   | 'SCHEMA'
   | 'MOCK'
   | 'SANDBOX'
@@ -41,6 +48,7 @@ export type CorrectnessVerdictReason =
   | 'COVERAGE_NOT_EVALUATED'
   | 'COVERAGE_UNFROZEN'
   | 'COVERAGE_GAPPED'
+  | 'COVERAGE_STALE'
   | 'EVIDENCE_NOT_AVAILABLE'
   | 'EVIDENCE_EXPLORATORY'
   | 'EVIDENCE_STALE'
@@ -48,6 +56,7 @@ export type CorrectnessVerdictReason =
   | 'EVIDENCE_SUPERSEDED'
   | 'GATE_BLOCKED'
   | 'GATE_NOT_EVALUATED'
+  | 'GATE_REVIEW'
   | 'ACCEPTED';
 
 export type CorrectnessVerdictTone =
@@ -101,16 +110,16 @@ const EXECUTION_MESSAGES = statusMessages<CorrectnessExecutionStatus>('execution
   'NOT_RUN', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'TIMEOUT', 'PARTIAL', 'SKIPPED', 'CANCELLED',
 ]);
 const ASSERTION_MESSAGES = statusMessages<CorrectnessAssertionStatus>('assertions', [
-  'NONE', 'PASSED', 'FAILED', 'INCONCLUSIVE',
+  'NOT_EVALUATED', 'NONE', 'PASSED', 'FAILED', 'INCONCLUSIVE',
 ]);
 const COVERAGE_MESSAGES = statusMessages<CorrectnessCoverageStatus>('coverage', [
-  'NOT_EVALUATED', 'UNFROZEN', 'GAPPED', 'COMPLETE',
+  'NOT_EVALUATED', 'UNFROZEN', 'GAPPED', 'COMPLETE', 'INCOMPLETE', 'STALE',
 ]);
 const EVIDENCE_MESSAGES = statusMessages<CorrectnessEvidenceStatus>('evidence', [
-  'NOT_AVAILABLE', 'EXPLORATORY', 'CURRENT', 'STALE', 'REVOKED', 'SUPERSEDED',
+  'NONE', 'NOT_AVAILABLE', 'EXPLORATORY', 'CURRENT', 'STALE', 'REVOKED', 'SUPERSEDED',
 ]);
 const GATE_MESSAGES = statusMessages<CorrectnessGateStatus>('gate', [
-  'NOT_EVALUATED', 'BLOCKED', 'ACCEPTED',
+  'NOT_EVALUATED', 'BLOCKED', 'REVIEW', 'ACCEPTED',
 ]);
 
 const REASON_TONES: Record<CorrectnessVerdictReason, CorrectnessVerdictTone> = {
@@ -123,6 +132,7 @@ const REASON_TONES: Record<CorrectnessVerdictReason, CorrectnessVerdictTone> = {
   COVERAGE_NOT_EVALUATED: 'warning',
   COVERAGE_UNFROZEN: 'warning',
   COVERAGE_GAPPED: 'warning',
+  COVERAGE_STALE: 'stale',
   EVIDENCE_NOT_AVAILABLE: 'warning',
   EVIDENCE_EXPLORATORY: 'warning',
   EVIDENCE_STALE: 'stale',
@@ -130,6 +140,7 @@ const REASON_TONES: Record<CorrectnessVerdictReason, CorrectnessVerdictTone> = {
   EVIDENCE_SUPERSEDED: 'stale',
   GATE_BLOCKED: 'failed',
   GATE_NOT_EVALUATED: 'warning',
+  GATE_REVIEW: 'warning',
   ACCEPTED: 'passed',
 };
 
@@ -167,15 +178,20 @@ function primaryReason(input: CorrectnessVerdictInput): CorrectnessVerdictReason
   if (input.execution === 'NOT_RUN') return 'NOT_RUN';
   if (input.execution === 'QUEUED' || input.execution === 'RUNNING') return 'IN_PROGRESS';
   if (input.execution !== 'SUCCESS') return 'EXECUTION_FAILED';
+  if (input.assertions === 'NOT_EVALUATED') return 'UNPROVEN';
   if (input.assertions === 'NONE') return 'UNPROVEN';
   if (input.assertions === 'FAILED') return 'ASSERTIONS_FAILED';
   if (input.assertions === 'INCONCLUSIVE') return 'ASSERTIONS_INCONCLUSIVE';
   if (input.coverage === 'NOT_EVALUATED') return 'COVERAGE_NOT_EVALUATED';
   if (input.coverage === 'UNFROZEN') return 'COVERAGE_UNFROZEN';
-  if (input.coverage === 'GAPPED') return 'COVERAGE_GAPPED';
-  if (input.evidence === 'NOT_AVAILABLE') return 'EVIDENCE_NOT_AVAILABLE';
+  if (input.coverage === 'GAPPED' || input.coverage === 'INCOMPLETE') return 'COVERAGE_GAPPED';
+  if (input.coverage === 'STALE') return 'COVERAGE_STALE';
+  if (input.evidence === 'NONE' || input.evidence === 'NOT_AVAILABLE') {
+    return 'EVIDENCE_NOT_AVAILABLE';
+  }
   if (input.evidence === 'EXPLORATORY') return 'EVIDENCE_EXPLORATORY';
   if (input.gate === 'BLOCKED') return 'GATE_BLOCKED';
+  if (input.gate === 'REVIEW') return 'GATE_REVIEW';
   if (input.gate !== 'ACCEPTED') return 'GATE_NOT_EVALUATED';
   return 'ACCEPTED';
 }
@@ -184,6 +200,7 @@ function normalizedGate(reason: CorrectnessVerdictReason): CorrectnessGateStatus
   if (reason === 'NOT_RUN' || reason === 'IN_PROGRESS' || reason === 'GATE_NOT_EVALUATED') {
     return 'NOT_EVALUATED';
   }
+  if (reason === 'GATE_REVIEW') return 'REVIEW';
   return reason === 'ACCEPTED' ? 'ACCEPTED' : 'BLOCKED';
 }
 
@@ -239,6 +256,7 @@ function assertionTone(status: CorrectnessAssertionStatus): CorrectnessVerdictTo
 
 function coverageTone(status: CorrectnessCoverageStatus): CorrectnessVerdictTone {
   if (status === 'COMPLETE') return 'passed';
+  if (status === 'STALE') return 'stale';
   return status === 'NOT_EVALUATED' ? 'neutral' : 'warning';
 }
 
@@ -246,11 +264,12 @@ function evidenceTone(status: CorrectnessEvidenceStatus): CorrectnessVerdictTone
   if (status === 'CURRENT') return 'passed';
   if (status === 'STALE' || status === 'SUPERSEDED') return 'stale';
   if (status === 'REVOKED') return 'failed';
-  return status === 'NOT_AVAILABLE' ? 'neutral' : 'warning';
+  return status === 'NONE' || status === 'NOT_AVAILABLE' ? 'neutral' : 'warning';
 }
 
 function gateTone(status: CorrectnessGateStatus): CorrectnessVerdictTone {
   if (status === 'ACCEPTED') return 'passed';
   if (status === 'BLOCKED') return 'failed';
+  if (status === 'REVIEW') return 'warning';
   return 'neutral';
 }
