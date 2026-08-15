@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryController;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleAssertionController;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Controller;
+import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -51,7 +52,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CorrectnessWorkspaceController.class,
         CoverageInventoryController.class,
         OracleAssertionController.class,
-        ScenarioDraftSetV2Controller.class
+        ScenarioDraftSetV2Controller.class,
+        LegacyScenarioV1MigrationController.class
 })
 public class IntegrationProblemHandler {
 
