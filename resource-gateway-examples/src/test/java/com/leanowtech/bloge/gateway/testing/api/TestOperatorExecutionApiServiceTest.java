@@ -175,6 +175,39 @@ class TestOperatorExecutionApiServiceTest {
     }
 
     @Test
+    void operatorPreflightUsesTheCanonicalMicroGraphWithoutExecutingTheBinding() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget(
+                "customer.greeting", identity());
+        FixtureBundle bundle = bundle("greeting-preflight", target.target().fingerprint(),
+                new FixtureRule(FixtureRule.SCHEMA_VERSION, "subject-spy",
+                        FixtureRule.Selector.operator("customer.greeting"),
+                        FixtureRule.Behavior.spy(), FixtureRule.Consumption.once(),
+                        FixtureRule.SchemaCheck.strict()));
+        StoredFixtureBundle stored = service.registerFixture("greeting-preflight",
+                new FixtureBundleRegistrationRequest("", target.target(), bundle), identity());
+
+        TestExecutionPreflightResponse response = service.preflightOperator(
+                "customer.greeting", request(target.target(), Map.of("name", "Ada"), null,
+                        new TestExecutionApiRequest.FixtureBundleRef(
+                                stored.fixtureBundleId(), stored.revision(), stored.fingerprint())),
+                identity());
+
+        assertThat(response.target()).isEqualTo(target.target());
+        assertThat(response.effectivePlan().authorizedPurpose()).isEqualTo("OPERATOR_UNIT_TEST");
+        assertThat(response.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.invocationSiteId()).isEqualTo("/root/subject#PRIMARY");
+            assertThat(site.behavior()).isEqualTo(FixtureRule.BehaviorKind.SPY);
+        });
+        assertThat(response.invocationSites()).singleElement().satisfies(site -> {
+            assertThat(site.site().operatorRef()).isEqualTo("customer.greeting");
+            assertThat(site.sideEffectType()).isEqualTo("READ_ONLY");
+        });
+        assertThat(response.rulePolicies()).singleElement().satisfies(rule ->
+                assertThat(rule.ruleId()).isEqualTo("subject-spy"));
+        assertThat(runs.values).isEmpty();
+    }
+
+    @Test
     void governedOutputDoubleCannotUpgradeAnOpaqueRuntimeToCertifiableEvidence() {
         TestOperatorTargetDescriptor target = service.describeOperatorTarget("legacy.external", identity());
         assertThat(target.testabilityClass()).isEqualTo(OperatorExecutionTargetSnapshot.OPAQUE_RUNTIME);

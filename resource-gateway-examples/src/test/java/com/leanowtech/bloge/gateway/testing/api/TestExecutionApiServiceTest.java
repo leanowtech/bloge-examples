@@ -231,6 +231,12 @@ class TestExecutionApiServiceTest {
             assertThat(site.site().operatorRef()).isNotBlank();
             assertThat(site.sideEffectType()).isEqualTo("MIXED");
         });
+        assertThat(response.rulePolicies()).singleElement().satisfies(rule -> {
+            assertThat(rule.ruleId()).isEqualTo("controlled-subject");
+            assertThat(rule.behavior()).isEqualTo(FixtureRule.BehaviorKind.RETURN);
+            assertThat(rule.onUnmatched()).isEqualTo(FixtureRule.UnmatchedAction.FAIL);
+            assertThat(rule.onExhausted()).isEqualTo(FixtureRule.ExhaustedAction.FAIL);
+        });
         assertThat(runs.values).isEmpty();
         assertThat(mapper.writeValueAsString(response)).doesNotContain("must-not-leak");
     }

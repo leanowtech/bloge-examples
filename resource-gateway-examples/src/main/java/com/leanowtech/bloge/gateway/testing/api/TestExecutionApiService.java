@@ -437,16 +437,70 @@ public final class TestExecutionApiService {
                 target.graph(), fixture.bundle(), AUTHORIZED_PURPOSE,
                 target.fingerprint(), resolvedReplays, resolvedSecrets);
 
+        return preflightResponse(
+                new TestExecutionApiRequest.Target(
+                        "GRAPH", request.target().id(), target.fingerprint()),
+                fixture, compiled);
+    }
+
+    /** Resolves the canonical one-node operator graph through the same trusted planner boundary. */
+    public TestExecutionPreflightResponse preflightOperator(
+            String operatorRef,
+            TestOperatorExecutionApiRequest request,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        validateOperatorRequest(operatorRef, request, identity);
+        OperatorExecutionTargetSnapshot target = requireOperator(operatorRef, identity);
+        if (!target.executionSupported()) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_EXECUTION_MODEL_UNSUPPORTED",
+                    "testing-control-plane v1 only executes synchronous operator bindings.",
+                    Map.of("executionModel", target.executionModel()));
+        }
+        requireTargetFingerprint(request.target(), target.fingerprint(), identity);
+        ResolvedFixture fixture = resolveFixture(request.fixtureBundle(), request.fixtureBundleRef(),
+                target.fingerprint(), identity);
+        ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResolvedTestSecrets resolvedSecrets = resolveTestSecrets(fixture.bundle(),
+                target.fingerprint(), target.fingerprint(), AUTHORIZED_OPERATOR_PURPOSE, identity);
+        try {
+            OperatorInputCoercer.coerce(request.input(), target.metadata(), objectMapper);
+        } catch (IllegalArgumentException invalidInput) {
+            throw badRequest(identity, "RG.TEST.OPERATOR_INPUT_INVALID",
+                    invalidInput.getMessage(), Map.of());
+        }
+        Graph graph = OperatorMicroGraphRunner.microGraph(
+                target.operatorRef(), target.synchronousOperator());
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(
+                operatorRegistry, objectMapper).compileWithSecrets(
+                graph, fixture.bundle(), AUTHORIZED_OPERATOR_PURPOSE,
+                target.fingerprint(), resolvedReplays, resolvedSecrets);
+        return preflightResponse(
+                new TestExecutionApiRequest.Target(
+                        "OPERATOR", target.operatorRef(), target.fingerprint()),
+                fixture, compiled);
+    }
+
+    private TestExecutionPreflightResponse preflightResponse(
+            TestExecutionApiRequest.Target target,
+            ResolvedFixture fixture,
+            CompiledExecutionControl compiled) {
         List<TestExecutionPreflightResponse.InvocationSiteDescriptor> sites =
                 compiled.inventory().entries().stream()
                         .map(entry -> new TestExecutionPreflightResponse.InvocationSiteDescriptor(
                                 entry.site(), sideEffectType(entry.frozenOperator())))
                         .toList();
+        List<TestExecutionPreflightResponse.RulePolicyDescriptor> policies =
+                compiled.rules().stream()
+                        .map(rule -> new TestExecutionPreflightResponse.RulePolicyDescriptor(
+                                rule.ruleId(), rule.behavior().kind(), rule.behavior().boundary(),
+                                rule.consumption().required(), rule.consumption().minUses(),
+                                rule.consumption().maxUses(), rule.consumption().onUnmatched(),
+                                rule.consumption().onExhausted(), rule.schemaCheck().mode()))
+                        .toList();
         return new TestExecutionPreflightResponse(
                 TestExecutionPreflightResponse.SCHEMA_VERSION,
-                new TestExecutionApiRequest.Target(
-                        "GRAPH", request.target().id(), target.fingerprint()),
-                fixture.reference(), compiled.effectivePlan(), sites);
+                target,
+                fixture.reference(), compiled.effectivePlan(), sites, policies);
     }
 
     private TestExecutionApiResponse execute(
