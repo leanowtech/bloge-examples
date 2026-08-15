@@ -1,0 +1,266 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-workspace-projection-v1.schema.json",
+  "title": "BLOGE Correctness Workspace Projection v1",
+  "description": "Closed metadata-only aggregate projection. Fixture material, Scenario Given values, assertion actual values, and business payloads are intentionally absent.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "queryFingerprint", "target", "definition", "coverage",
+    "cases", "fixtures", "reviews", "lastPublication", "lastRun", "verdict",
+    "staleReasons", "capabilities", "commandPolicy", "deepLinks"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.correctnessWorkspaceProjection.v1" },
+    "queryFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "definition": { "$ref": "#/$defs/definitionSummary" },
+    "coverage": { "$ref": "#/$defs/coverageSummary" },
+    "cases": { "$ref": "#/$defs/casePage" },
+    "fixtures": { "$ref": "#/$defs/fixtureCatalogSummary" },
+    "reviews": { "$ref": "#/$defs/reviewSummary" },
+    "lastPublication": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/publicationSummary" }]
+    },
+    "lastRun": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/runSummary" }]
+    },
+    "verdict": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/correctnessVerdict" },
+    "staleReasons": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/staleReason" }
+    },
+    "capabilities": { "$ref": "#/$defs/stringSet" },
+    "commandPolicy": { "$ref": "#/$defs/commandPolicy" },
+    "deepLinks": { "$ref": "#/$defs/deepLinks" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "stringSet": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 4096,
+      "items": { "type": "string", "minLength": 1, "maxLength": 4096 }
+    },
+    "availability": { "enum": ["AVAILABLE", "UNAVAILABLE"] },
+    "definitionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "definitionRef", "title", "businessIntent", "successCriteria", "riskLevel",
+        "owner", "lifecycle"
+      ],
+      "properties": {
+        "definitionRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "title": { "$ref": "#/$defs/identifier" },
+        "businessIntent": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "successCriteria": { "$ref": "#/$defs/stringSet" },
+        "riskLevel": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "owner": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/principalRef" },
+        "lifecycle": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "SUPERSEDED"] }
+      }
+    },
+    "coverageSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability", "inventoryRef", "lifecycle", "total", "fulfilled", "waived", "uncovered"
+      ],
+      "properties": {
+        "availability": { "$ref": "#/$defs/availability" },
+        "inventoryRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+          ]
+        },
+        "lifecycle": { "type": "string", "maxLength": 64 },
+        "total": { "type": "integer", "minimum": 0 },
+        "fulfilled": { "type": "integer", "minimum": 0 },
+        "waived": { "type": "integer", "minimum": 0 },
+        "uncovered": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "casePage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability", "scenarioDraftSetRef", "total", "rows", "nextCursor", "queryFingerprint"
+      ],
+      "properties": {
+        "availability": { "$ref": "#/$defs/availability" },
+        "scenarioDraftSetRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+          ]
+        },
+        "total": { "type": "integer", "minimum": 0 },
+        "rows": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/caseSummary" }
+        },
+        "nextCursor": { "type": "string", "maxLength": 512 },
+        "queryFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "caseSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId", "caseFingerprint", "name", "businessIntent", "caseType", "risk",
+        "owner", "lifecycle", "obligationCount", "oracleCount", "assertionSetCount",
+        "dependencyCount", "reviewStatus", "tags"
+      ],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/identifier" },
+        "caseFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "businessIntent": { "type": "string", "minLength": 1, "maxLength": 16384 },
+        "caseType": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "REGRESSION", "PROPERTY"] },
+        "risk": { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+        "owner": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/principalRef" },
+        "lifecycle": { "enum": ["EXPLORATORY", "REVIEW_READY", "CANONICAL", "RETIRED"] },
+        "obligationCount": { "type": "integer", "minimum": 0 },
+        "oracleCount": { "type": "integer", "minimum": 0 },
+        "assertionSetCount": { "type": "integer", "minimum": 0 },
+        "dependencyCount": { "type": "integer", "minimum": 0 },
+        "reviewStatus": { "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "tags": { "$ref": "#/$defs/stringSet" }
+      }
+    },
+    "fixtureCatalogSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["availability", "total", "active", "stale", "rows"],
+      "properties": {
+        "availability": { "$ref": "#/$defs/availability" },
+        "total": { "type": "integer", "minimum": 0 },
+        "active": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 },
+        "rows": {
+          "type": "array",
+          "maxItems": 100,
+          "items": { "$ref": "#/$defs/fixtureSummary" }
+        }
+      }
+    },
+    "fixtureSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "descriptorRef", "name", "variantKey", "lifecycle", "classification",
+        "schemaRef", "materialFingerprint", "usageCount"
+      ],
+      "properties": {
+        "descriptorRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "variantKey": { "$ref": "#/$defs/identifier" },
+        "lifecycle": {
+          "enum": ["DRAFT", "PROPOSED", "APPROVED", "ACTIVE", "STALE", "REVOKED", "EXPIRED"]
+        },
+        "classification": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED"] },
+        "schemaRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactSchemaRef" },
+        "materialFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "usageCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "reviewSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pending", "approved", "rejected", "stale"],
+      "properties": {
+        "pending": { "type": "integer", "minimum": 0 },
+        "approved": { "type": "integer", "minimum": 0 },
+        "rejected": { "type": "integer", "minimum": 0 },
+        "stale": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "publicationSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publicationRef", "lifecycle", "publishedAt"],
+      "properties": {
+        "publicationRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+        "lifecycle": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "publishedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "runSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "finishedAt", "executionStatus", "assertionStatus", "evidenceRef"],
+      "properties": {
+        "runId": { "$ref": "#/$defs/identifier" },
+        "finishedAt": { "type": "string", "format": "date-time" },
+        "executionStatus": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "assertionStatus": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "evidenceRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+          ]
+        }
+      }
+    },
+    "staleReason": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "assetKind", "assetRef"],
+      "properties": {
+        "code": { "$ref": "#/$defs/identifier" },
+        "assetKind": { "$ref": "#/$defs/identifier" },
+        "assetRef": {
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+          ]
+        }
+      }
+    },
+    "commandPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands"],
+      "properties": {
+        "commands": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": { "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+          "additionalProperties": { "$ref": "#/$defs/commandAvailability" }
+        }
+      }
+    },
+    "commandAvailability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowed", "reasonCode"],
+      "properties": {
+        "allowed": { "type": "boolean" },
+        "reasonCode": { "type": "string", "maxLength": 256 }
+      }
+    },
+    "deepLinks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspace", "definition", "cases", "fixtures", "lastRun"],
+      "properties": {
+        "workspace": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "definition": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "cases": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "fixtures": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "lastRun": { "type": "string", "maxLength": 2048 }
+      }
+    }
+  }
+}

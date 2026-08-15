@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.TargetKind;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 
 import org.springframework.dao.DuplicateKeyException;
@@ -53,6 +54,32 @@ public class DatabaseCorrectnessDefinitionRepository
             String definitionId
     ) {
         return queryOne(HEAD_TABLE, exactScope(scope), exactId(definitionId), 0);
+    }
+
+    @Override
+    public List<StoredCorrectnessDefinition> findHeadCandidatesByTarget(
+            EnterpriseScope scope,
+            TargetKind targetKind,
+            String targetId,
+            String targetFingerprint
+    ) {
+        EnterpriseScope exactScope = exactScope(scope);
+        TargetKind exactKind = Objects.requireNonNull(targetKind, "targetKind");
+        String exactTargetId = exactId(targetId);
+        String exactFingerprint = exactFingerprint(targetFingerprint);
+        return jdbc.query("""
+                        SELECT * FROM rg_correctness_definition_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ? AND target_fingerprint = ?
+                        ORDER BY updated_at DESC, definition_id ASC
+                        LIMIT 2
+                        """,
+                (result, row) -> readAndVerify(
+                        result, exactScope, result.getString("definition_id")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), exactKind.name(), exactTargetId,
+                exactFingerprint).stream().flatMap(Optional::stream).toList();
     }
 
     @Override
@@ -280,6 +307,14 @@ public class DatabaseCorrectnessDefinitionRepository
     private static String exactId(String value) {
         String normalized = value == null ? "" : value.trim();
         if (normalized.isEmpty()) throw new IllegalArgumentException("definitionId is required");
+        return normalized;
+    }
+
+    private static String exactFingerprint(String value) {
+        String normalized = value == null ? "" : value.trim();
+        if (!normalized.matches("sha256:[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("targetFingerprint must be an exact SHA-256 fingerprint");
+        }
         return normalized;
     }
 

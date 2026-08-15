@@ -116,9 +116,18 @@ class DatabaseCorrectnessDefinitionRepositoryTest {
                 .contains(tenantA);
         assertThat(repository.findHead(scope("tenant-b"), "loan-correctness"))
                 .contains(tenantB);
+        assertThat(repository.findHeadCandidatesByTarget(
+                scope("tenant-a"), TargetKind.GRAPH, "loan-graph", fingerprint('a')))
+                .containsExactly(tenantA);
+        assertThat(repository.findHeadCandidatesByTarget(
+                scope("tenant-b"), TargetKind.GRAPH, "loan-graph", fingerprint('a')))
+                .containsExactly(tenantB);
         assertThat(repository.findHead(
                 new EnterpriseScope("tenant-a", "other-org", "credit", "test", "sg"),
                 "loan-correctness")).isEmpty();
+        assertThat(repository.findHeadCandidatesByTarget(
+                new EnterpriseScope("tenant-a", "other-org", "credit", "test", "sg"),
+                TargetKind.GRAPH, "loan-graph", fingerprint('a'))).isEmpty();
     }
 
     @Test

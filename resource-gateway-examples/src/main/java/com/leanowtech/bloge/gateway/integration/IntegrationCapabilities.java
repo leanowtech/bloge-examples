@@ -666,6 +666,33 @@ public record IntegrationCapabilities(
                 GovernanceGateResult.SCHEMA_VERSION_V1, GovernanceGateResult.SCHEMA_VERSION_V2,
                 GovernanceGateResult.SCHEMA_VERSION));
         objects.put("correctnessWorkbookBundle", List.of(CorrectnessWorkbookBundle.SCHEMA_VERSION));
+        objects.put("correctnessDefinition", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .CorrectnessDefinition.SCHEMA_VERSION));
+        objects.put("coverageInventory", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .CoverageInventory.SCHEMA_VERSION));
+        objects.put("businessOracle", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .BusinessOracle.SCHEMA_VERSION));
+        objects.put("assertionSet", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .AssertionSet.SCHEMA_VERSION));
+        objects.put("scenarioDraftSetV2", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .ScenarioDraftSetV2.SCHEMA_VERSION));
+        objects.put("fixtureAssetDescriptor", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .FixtureAssetDescriptor.SCHEMA_VERSION));
+        objects.put("correctnessPublication", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.domain
+                        .CorrectnessPublication.SCHEMA_VERSION));
+        objects.put("correctnessWorkspaceProjection", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.workspace
+                        .CorrectnessWorkspaceProjection.SCHEMA_VERSION));
+        objects.put("correctnessApiEnvelope", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.workspace
+                        .CorrectnessApiEnvelope.PROTOCOL_VERSION));
         objects.put("integrationEvent", List.of(IntegrationChangeEvent.SCHEMA_VERSION));
         objects.put("eventCursor", List.of(IntegrationEventCursorCodec.SCHEMA_VERSION));
         objects.put("changeFeed", List.of(IntegrationChangeFeed.SCHEMA_VERSION));
@@ -1228,6 +1255,9 @@ public record IntegrationCapabilities(
         features.put("deepLinks", true);
         features.put("governanceGateFeedback", true);
         features.put("correctnessWorkbookProjection", true);
+        features.put("correctnessAuthoringProtocol", true);
+        features.put("correctnessWorkspaceProtocol", true);
+        features.put("correctnessWorkspaceApi", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);

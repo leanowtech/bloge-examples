@@ -677,6 +677,13 @@ GET /api/visual/correctness-workspaces/{targetKind}/{targetId}
 - last publication、last run、五轴 verdict 和 primary next action。
 - stale reasons、capabilities、command policy 和 deep links。
 
+机器合同见
+[`bloge-correctness-workspace-projection-v1.schema.json`](schemas/bloge-correctness-workspace-projection-v1.schema.json)
+和
+[`bloge-correctness-api-envelope-v1.schema.json`](schemas/bloge-correctness-api-envelope-v1.schema.json)。Projection 是闭合的
+metadata-only 合同，Case 行没有 `given/input/output`，Fixture 行只有 descriptor、schema 和 material fingerprint，不能承载
+material payload。
+
 服务器是 canonical status 的唯一来源。前端可以做 optimistic form editing，但不能重新计算 publication/evidence freshness 或 gate verdict。
 
 ### 7.3 Command API
@@ -1155,13 +1162,25 @@ fingerprint 使用固定 golden 防止历史漂移。JSON Schema 与 Java 序列
 scope 隔离、数据库 CAS 并发胜者唯一、列/JSON 防篡改以及 outbox 失败时三写原子回滚。其他 aggregate repository 必须复用该约束，不得自行降低为
 last-write-wins 或启动时建表。
 
+COR-02 的读侧协议内核已经完成：`CorrectnessWorkspaceQuery` 从认证身份推导完整 enterprise scope，以 exact target 和可选
+Definition id 解析当前 Definition；同一 target 存在两份 head 时失败关闭，要求作者显式选择。Workspace projection 固定包含
+Definition、Coverage、Case page、Fixture descriptor summary、review、publication、run、五轴 Verdict、command policy 和 deep
+link，但没有 Fixture material、Scenario Given、assertion actual value 或聚合 `success`。Case page 上限为 100，cursor 与 exact
+Definition/target/scope 一起进入 query fingerprint；component source 返回越界页、重复 case 或错误 fingerprint 时统一按投影故障
+拒绝。500-case 测试验证 Overview 只返回 100 条摘要并满足本地 1 秒预算，完整 scope、target drift、Definition 歧义、认证和
+payload leakage 均有回归测试。
+
+当前 `correctnessWorkspaceProtocol=true`，`correctnessWorkspaceApi=false`。Controller 和 definition-only shadow source 已实现，但
+生产装配保持关闭；COR-03 至 COR-06 接入 Inventory、Oracle/Assertion、Scenario v2、Fixture 和 Evidence 的权威 projection 后才可
+翻转 API capability。这个状态是部署真值，不把“有类型”冒充“已可用”。
+
 ### 16.1 Epic 总览
 
 | Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
-| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 未开始 | 500-case overview SLO、scope tests | 1.5 周 |
+| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |

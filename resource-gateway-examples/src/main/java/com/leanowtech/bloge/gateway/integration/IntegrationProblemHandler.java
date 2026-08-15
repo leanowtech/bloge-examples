@@ -9,6 +9,7 @@ import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageC
 import com.leanowtech.bloge.gateway.businessmirror.transport.PackageCompilationController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -43,7 +44,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         VisualLibraryAuthoringTestController.class,
         DomainCapabilityPackageController.class,
         PackageCompilationController.class,
-        LegacyGraphPackageController.class
+        LegacyGraphPackageController.class,
+        CorrectnessWorkspaceController.class
 })
 public class IntegrationProblemHandler {
 

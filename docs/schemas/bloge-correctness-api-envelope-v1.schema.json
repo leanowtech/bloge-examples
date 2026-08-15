@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-api-envelope-v1.schema.json",
+  "title": "BLOGE Correctness API Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocolVersion", "correlationId", "capabilities", "scope", "data"],
+  "properties": {
+    "protocolVersion": { "const": "bloge.correctnessApi.v1" },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "capabilities": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 256,
+      "items": { "type": "string", "minLength": 1, "maxLength": 256 }
+    },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "data": { "$ref": "bloge-correctness-workspace-projection-v1.schema.json" }
+  }
+}
