@@ -105,7 +105,10 @@ export async function saveAssertionSet(
 export async function validateAssertionSet(
   assertionSetId: string,
   revision: number,
-): Promise<CorrectnessApiEnvelope<{ stored: StoredAssertionSet; report: AssertionCompilationReport }>> {
+): Promise<CorrectnessApiEnvelope<{
+  stored: StoredAssertionSet;
+  compilation: AssertionCompilationReport;
+}>> {
   return exchangeCorrectnessApi(
     `/api/visual/assertion-sets/${encodeURIComponent(assertionSetId)}:validate`,
     'CORRECTNESS_WRITE',

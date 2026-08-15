@@ -99,7 +99,7 @@ export interface ExecutableAssertionSpec {
   assertionId: string;
   evaluationKind: 'RUNTIME' | 'EVIDENCE' | 'GATE';
   path?: string;
-  operator: string;
+  operator?: string;
   expected?: unknown;
   code?: string;
   errorType?: string;
@@ -136,16 +136,24 @@ export interface StoredAssertionSet {
 
 export interface AssertionCompilationReport {
   schemaVersion: 'bloge.assertionCompilationReport.v1';
-  supported: boolean;
-  evaluatorVersion: string;
-  capabilities: string[];
+  sourceFingerprint: string;
+  compatibility: {
+    supported: boolean;
+    evaluatorVersion: string;
+    capabilities: string[];
+    reasonCode: string;
+  };
   dispositions: Array<{
     assertionId: string;
-    type: AssertionType;
-    supported: boolean;
+    evaluationKind: 'RUNTIME' | 'EVIDENCE' | 'GATE';
+    capability: string;
+    status: 'COMPILED_RUNTIME' | 'BOUND_EVIDENCE' | 'RETAINED_GATE' | 'UNSUPPORTED';
     reasonCode: string;
+    loweredAssertionCount: number;
   }>;
-  diagnostics: Array<{ severity: string; code: string; fieldPath: string }>;
+  runtimeAssertions: Array<Record<string, unknown>>;
+  evidenceAssertionCount: number;
+  gateExpectationCount: number;
 }
 
 export type ScenarioValueSource =

@@ -7,6 +7,11 @@ import { CORRECTNESS_TRANSLATIONS } from './locales';
 
 const SURFACES = [
   './CorrectnessStudio.tsx',
+  './authoring/CoverageStudio.tsx',
+  './authoring/CaseStudio.tsx',
+  './authoring/OracleStudio.tsx',
+  './authoring/FixtureStudio.tsx',
+  './authoring/shared.tsx',
   './runs/RunCenter.tsx',
   './shared/FiveAxisVerdict.tsx',
 ] as const;

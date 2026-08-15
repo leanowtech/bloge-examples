@@ -29,6 +29,10 @@ import type {
 } from './model/domain';
 import RunCenter from './runs/RunCenter';
 import FiveAxisVerdict from './shared/FiveAxisVerdict';
+import CoverageStudio from './authoring/CoverageStudio';
+import CaseStudio from './authoring/CaseStudio';
+import OracleStudio from './authoring/OracleStudio';
+import FixtureStudio from './authoring/FixtureStudio';
 import CorrectnessI18nProvider from './CorrectnessI18nProvider';
 import './styles.css';
 
@@ -226,10 +230,10 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
 
       <section className="correctness-view" role="tabpanel">
         {view === 'overview' && <Overview workspace={workspace} onOpen={changeView} />}
-        {view === 'coverage' && <Coverage workspace={workspace} />}
-        {view === 'cases' && <Cases workspace={workspace} />}
-        {view === 'fixtures' && <Fixtures workspace={workspace} />}
-        {view === 'oracle' && <Oracle workspace={workspace} />}
+        {view === 'coverage' && <Coverage workspace={workspace} deployment={deployment} />}
+        {view === 'cases' && <Cases workspace={workspace} deployment={deployment} />}
+        {view === 'fixtures' && <Fixtures workspace={workspace} deployment={deployment} />}
+        {view === 'oracle' && <Oracle workspace={workspace} deployment={deployment} />}
         {view === 'runs' && <RunCenter workspace={workspace} deployment={deployment} />}
       </section>
     </main>
@@ -315,7 +319,10 @@ function Overview({
   );
 }
 
-function Coverage({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
+function Coverage({ workspace, deployment }: {
+  workspace: CorrectnessWorkspaceProjection;
+  deployment: CorrectnessDeploymentCapabilities;
+}) {
   const { t } = useI18n();
   const value = percent(workspace.coverage.fulfilled, workspace.coverage.total);
   return (
@@ -336,20 +343,27 @@ function Coverage({ workspace }: { workspace: CorrectnessWorkspaceProjection }) 
           <p className="correctness-projection-note">
             {t('Coverage is derived from the exact frozen inventory and canonical Case bindings. It cannot be edited as a green status.')}
           </p>
+          <CoverageStudio
+            workspace={workspace}
+            available={deployment.features.correctnessCoverageApi === true}
+          />
         </>
       )}
     </div>
   );
 }
 
-function Cases({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
+function Cases({ workspace, deployment }: {
+  workspace: CorrectnessWorkspaceProjection;
+  deployment: CorrectnessDeploymentCapabilities;
+}) {
   const { t } = useI18n();
   return (
     <div className="correctness-surface">
       <SurfaceHeading eyebrow="BUSINESS EXAMPLES" title="Canonical Cases" refValue={workspace.cases.scenarioDraftSetRef} />
       {workspace.cases.availability === 'UNAVAILABLE' ? <UnavailableProjection /> : (
-        <div className="correctness-table-scroll">
-          <table>
+        <>
+          <div className="correctness-table-scroll"><table>
             <thead><tr>
               <th>{t('Case')}</th><th>{t('Type')}</th><th>{t('Risk')}</th><th>{t('Proof assets')}</th>
               <th>{t('Dependencies')}</th><th>{t('Review')}</th><th>{t('Owner')}</th>
@@ -365,27 +379,34 @@ function Cases({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
                 <td>{testCase.owner.displayName}</td>
               </tr>
             ))}</tbody>
-          </table>
+          </table></div>
           {workspace.cases.nextCursor && <p className="correctness-projection-note">
             {t('Showing {count} of {total} Cases from a bounded server projection.', {
               count: workspace.cases.rows.length,
               total: workspace.cases.total,
             })}
           </p>}
-        </div>
+          <CaseStudio
+            workspace={workspace}
+            available={deployment.features.correctnessScenarioV2Api === true}
+          />
+        </>
       )}
     </div>
   );
 }
 
-function Fixtures({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
+function Fixtures({ workspace, deployment }: {
+  workspace: CorrectnessWorkspaceProjection;
+  deployment: CorrectnessDeploymentCapabilities;
+}) {
   const { t } = useI18n();
   return (
     <div className="correctness-surface">
       <SurfaceHeading eyebrow="CONTROLLED TEST DATA" title="Fixture catalog" />
       {workspace.fixtures.availability === 'UNAVAILABLE' ? <UnavailableProjection /> : (
-        <div className="correctness-table-scroll">
-          <table>
+        <>
+          <div className="correctness-table-scroll"><table>
             <thead><tr>
               <th>{t('Fixture')}</th><th>{t('Variant')}</th><th>{t('Classification')}</th>
               <th>{t('Lifecycle')}</th><th>{t('Schema')}</th><th>{t('Used by')}</th>
@@ -400,8 +421,13 @@ function Fixtures({ workspace }: { workspace: CorrectnessWorkspaceProjection }) 
                 <td>{fixture.usageCount}</td>
               </tr>
             ))}</tbody>
-          </table>
-        </div>
+          </table></div>
+          <FixtureStudio
+            workspace={workspace}
+            catalogAvailable={deployment.features.correctnessFixtureCatalogApi === true}
+            materialAvailable={deployment.features.correctnessFixtureMaterialApi === true}
+          />
+        </>
       )}
       <p className="correctness-projection-note">
         {t('This catalog is metadata-only. Fixture material is loaded only through an authorized, no-store editor session.')}
@@ -410,7 +436,10 @@ function Fixtures({ workspace }: { workspace: CorrectnessWorkspaceProjection }) 
   );
 }
 
-function Oracle({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
+function Oracle({ workspace, deployment }: {
+  workspace: CorrectnessWorkspaceProjection;
+  deployment: CorrectnessDeploymentCapabilities;
+}) {
   const { t } = useI18n();
   return (
     <div className="correctness-surface">
@@ -440,6 +469,11 @@ function Oracle({ workspace }: { workspace: CorrectnessWorkspaceProjection }) {
       <p className="correctness-projection-note">
         {t('Business Oracle approval and Assertion Set executability are independent. An approved sentence is not executable proof by itself.')}
       </p>
+      <OracleStudio
+        workspace={workspace}
+        available={deployment.features.correctnessOracleAssertionApi === true
+          && deployment.features.correctnessScenarioV2Api === true}
+      />
     </div>
   );
 }
