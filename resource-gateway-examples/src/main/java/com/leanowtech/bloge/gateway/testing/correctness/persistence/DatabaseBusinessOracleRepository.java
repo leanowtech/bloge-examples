@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.BusinessOracle.Or
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactTargetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 
@@ -75,6 +76,29 @@ public final class DatabaseBusinessOracleRepository implements BusinessOracleRep
                         """,
                 (result, row) -> readAndVerify(result, exactScope, exactId),
                 scopeArgs(exactScope, exactId)).stream().flatMap(Optional::stream).toList();
+    }
+
+    @Override
+    public OracleTargetSummary summarize(EnterpriseScope scope, ExactTargetRef target) {
+        EnterpriseScope exactScope = exactScope(scope);
+        ExactTargetRef exactTarget = Objects.requireNonNull(target, "target");
+        return jdbc.queryForObject("""
+                        SELECT COUNT(*) AS total,
+                               SUM(CASE WHEN lifecycle = 'PROPOSED' THEN 1 ELSE 0 END) AS proposed,
+                               SUM(CASE WHEN lifecycle = 'APPROVED' THEN 1 ELSE 0 END) AS approved,
+                               SUM(CASE WHEN lifecycle = 'SUPERSEDED' THEN 1 ELSE 0 END) AS superseded
+                        FROM rg_business_oracle_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ?
+                          AND target_revision = ? AND target_fingerprint = ?
+                        """,
+                (result, row) -> new OracleTargetSummary(
+                        result.getInt("total"), result.getInt("proposed"),
+                        result.getInt("approved"), result.getInt("superseded")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), exactTarget.kind().name(),
+                exactTarget.id(), exactTarget.revision(), exactTarget.fingerprint());
     }
 
     @Override

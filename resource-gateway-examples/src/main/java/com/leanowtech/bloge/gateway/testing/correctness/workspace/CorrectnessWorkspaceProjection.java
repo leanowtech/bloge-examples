@@ -21,6 +21,7 @@ public record CorrectnessWorkspaceProjection(
         ExactTargetRef target,
         DefinitionSummary definition,
         CoverageSummary coverage,
+        OracleAssertionSummary oracleAssertions,
         CasePage cases,
         FixtureCatalogSummary fixtures,
         ReviewSummary reviews,
@@ -37,13 +38,47 @@ public record CorrectnessWorkspaceProjection(
     public CorrectnessWorkspaceProjection {
         schemaVersion = defaulted(schemaVersion, SCHEMA_VERSION);
         queryFingerprint = exactFingerprint(queryFingerprint, "queryFingerprint");
-        if (target == null || definition == null || coverage == null || cases == null
+        if (target == null || definition == null || coverage == null || oracleAssertions == null
+                || cases == null
                 || fixtures == null || reviews == null || verdict == null
                 || commandPolicy == null || deepLinks == null) {
             throw new IllegalArgumentException("Correctness Workspace projection is incomplete");
         }
         staleReasons = staleReasons == null ? List.of() : List.copyOf(staleReasons);
         capabilities = normalizedList(capabilities);
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public record OracleAssertionSummary(
+            Availability availability,
+            int oracleTotal,
+            int proposedOracles,
+            int approvedOracles,
+            int supersededOracles,
+            int assertionSetTotal,
+            int draftAssertionSets,
+            int validAssertionSets,
+            int staleAssertionSets,
+            int unsupportedAssertionSets
+    ) {
+        public OracleAssertionSummary {
+            availability = availability == null ? Availability.UNAVAILABLE : availability;
+            if (oracleTotal < 0 || proposedOracles < 0 || approvedOracles < 0
+                    || supersededOracles < 0
+                    || proposedOracles + approvedOracles + supersededOracles != oracleTotal
+                    || assertionSetTotal < 0 || draftAssertionSets < 0 || validAssertionSets < 0
+                    || staleAssertionSets < 0 || unsupportedAssertionSets < 0
+                    || draftAssertionSets + validAssertionSets + staleAssertionSets
+                            != assertionSetTotal
+                    || unsupportedAssertionSets > assertionSetTotal) {
+                throw new IllegalArgumentException("Oracle and Assertion summary counts are invalid");
+            }
+        }
+
+        public static OracleAssertionSummary unavailable() {
+            return new OracleAssertionSummary(
+                    Availability.UNAVAILABLE, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)

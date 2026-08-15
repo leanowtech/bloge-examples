@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CommandPolicy;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CoverageSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.FixtureCatalogSummary;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.OracleAssertionSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.ReviewSummary;
 
 import java.util.List;
@@ -30,6 +31,7 @@ public final class DefinitionOnlyCorrectnessWorkspaceComponentSource
                         "OPEN_COVERAGE_INVENTORY", "AUTHORING_ASSETS_UNAVAILABLE")));
         return new Components(
                 CoverageSummary.unavailable(),
+                OracleAssertionSummary.unavailable(),
                 new CasePage(
                         Availability.UNAVAILABLE, null, 0, List.of(), "",
                         pageRequest.queryFingerprint()),

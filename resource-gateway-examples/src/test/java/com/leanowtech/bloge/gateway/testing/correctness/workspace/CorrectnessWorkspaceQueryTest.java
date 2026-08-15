@@ -22,6 +22,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CommandPolicy;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CoverageSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.FixtureCatalogSummary;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.OracleAssertionSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.ReviewSummary;
 
 import org.junit.jupiter.api.Test;
@@ -151,6 +152,11 @@ class CorrectnessWorkspaceQueryTest {
                 "..", "docs", "schemas", "bloge-correctness-api-envelope-v1.schema.json")));
 
         assertThat(projectionSchema.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(projectionSchema.path("required"))
+                .extracting(com.fasterxml.jackson.databind.JsonNode::asText)
+                .contains("oracleAssertions");
+        assertThat(projectionSchema.at("/$defs/oracleAssertionSummary/additionalProperties")
+                .asBoolean(true)).isFalse();
         assertThat(projectionSchema.at("/$defs/casePage/properties/rows/maxItems").asInt())
                 .isEqualTo(100);
         assertThat(projectionSchema.at("/$defs/fixtureSummary/properties/materialFingerprint")
@@ -172,7 +178,9 @@ class CorrectnessWorkspaceQueryTest {
                 .containsEntry("correctnessWorkspaceProtocol", true)
                 .containsEntry("correctnessWorkspaceApi", false)
                 .containsEntry("correctnessCoverageProtocol", true)
-                .containsEntry("correctnessCoverageApi", false);
+                .containsEntry("correctnessCoverageApi", false)
+                .containsEntry("correctnessOracleAssertionProtocol", true)
+                .containsEntry("correctnessOracleAssertionApi", false);
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {
@@ -196,6 +204,7 @@ class CorrectnessWorkspaceQueryTest {
         }
         return new Components(
                 CoverageSummary.unavailable(),
+                OracleAssertionSummary.unavailable(),
                 new CasePage(Availability.AVAILABLE,
                         new com.leanowtech.bloge.gateway.testing.correctness.domain
                                 .CorrectnessProtocol.ExactAssetRef(

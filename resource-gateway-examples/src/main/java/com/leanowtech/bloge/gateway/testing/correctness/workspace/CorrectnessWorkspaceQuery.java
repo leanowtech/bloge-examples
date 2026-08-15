@@ -106,8 +106,9 @@ public final class CorrectnessWorkspaceQuery {
         DeepLinks deepLinks = deepLinks(kind, id, definition.definitionId(), snapshot.lastRun());
         return new CorrectnessWorkspaceProjection(
                 "", pageQueryFingerprint, definition.target(), definitionSummary,
-                snapshot.coverage(), snapshot.cases(), snapshot.fixtures(), snapshot.reviews(),
-                snapshot.lastPublication(), snapshot.lastRun(), snapshot.verdict(),
+                snapshot.coverage(), snapshot.oracleAssertions(), snapshot.cases(),
+                snapshot.fixtures(), snapshot.reviews(), snapshot.lastPublication(),
+                snapshot.lastRun(), snapshot.verdict(),
                 snapshot.staleReasons(), capabilities, snapshot.commandPolicy(), deepLinks);
     }
 

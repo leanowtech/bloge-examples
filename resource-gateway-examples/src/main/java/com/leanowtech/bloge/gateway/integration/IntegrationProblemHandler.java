@@ -11,6 +11,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuth
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceController;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryController;
+import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleAssertionController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -47,7 +48,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         PackageCompilationController.class,
         LegacyGraphPackageController.class,
         CorrectnessWorkspaceController.class,
-        CoverageInventoryController.class
+        CoverageInventoryController.class,
+        OracleAssertionController.class
 })
 public class IntegrationProblemHandler {
 

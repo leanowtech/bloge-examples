@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.AssertionSet;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactTargetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 
@@ -80,6 +81,32 @@ public final class DatabaseAssertionSetRepository implements AssertionSetReposit
                         """,
                 (result, row) -> readAndVerify(result, exactScope, exactId),
                 scopeArgs(exactScope, exactId)).stream().flatMap(Optional::stream).toList();
+    }
+
+    @Override
+    public AssertionTargetSummary summarize(EnterpriseScope scope, ExactTargetRef target) {
+        EnterpriseScope exactScope = exactScope(scope);
+        ExactTargetRef exactTarget = Objects.requireNonNull(target, "target");
+        return jdbc.queryForObject("""
+                        SELECT COUNT(*) AS total,
+                               SUM(CASE WHEN lifecycle = 'DRAFT' THEN 1 ELSE 0 END) AS draft,
+                               SUM(CASE WHEN lifecycle = 'VALID' THEN 1 ELSE 0 END) AS valid,
+                               SUM(CASE WHEN lifecycle = 'STALE' THEN 1 ELSE 0 END) AS stale,
+                               SUM(CASE WHEN compatibility_supported = FALSE THEN 1 ELSE 0 END)
+                                   AS unsupported
+                        FROM rg_assertion_set_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ?
+                          AND target_revision = ? AND target_fingerprint = ?
+                        """,
+                (result, row) -> new AssertionTargetSummary(
+                        result.getInt("total"), result.getInt("draft"),
+                        result.getInt("valid"), result.getInt("stale"),
+                        result.getInt("unsupported")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), exactTarget.kind().name(),
+                exactTarget.id(), exactTarget.revision(), exactTarget.fingerprint());
     }
 
     @Override

@@ -118,7 +118,8 @@ public final class InventoryCorrectnessWorkspaceComponentSource
             List<String> capabilities
     ) {
         return new Components(
-                coverage, base.cases(), base.fixtures(), reviews, base.lastPublication(),
-                base.lastRun(), verdict, staleReasons, capabilities, base.commandPolicy());
+                coverage, base.oracleAssertions(), base.cases(), base.fixtures(), reviews,
+                base.lastPublication(), base.lastRun(), verdict, staleReasons, capabilities,
+                base.commandPolicy());
     }
 }

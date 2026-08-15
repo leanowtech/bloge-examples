@@ -347,7 +347,9 @@ payload-free outbox 已实现；事件只携带 exact coordinate、状态、数�
 断言 expected 值。Oracle approval 由服务端注入 reviewer/time，强制 basis exactness、授权策略与可配置 four-eyes；持久化幂等回执只保留
 key/request fingerprint 和 approved exact ref。纯 Assertion Set compiler 为每条输入 spec 生成 source-map disposition；只有当前
 evaluator 明确支持且存在确定性 lowering 的语义才能进入 `VALID`，未知能力、错误 capability 广告和 gate-only 集合均 fail closed。
-HTTP adapter 接入前，Capability Probe 仍诚实返回 `correctnessOracleAssertionApi=false`。
+认证 HTTP adapter 已提供 propose/approve、draft/compile-preview/validate 独立命令，强制 purpose、scope、CAS，并返回统一 Problem 合同。
+Workspace 新增 metadata-only `oracleAssertions` summary，通过 exact target 索引聚合生命周期与兼容性计数，不读取正文或 expected 值。
+生产 bean 与企业授权/basis resolver 接入前，Capability Probe 仍诚实返回 `correctnessOracleAssertionApi=false`。
 
 ### 4.5 `ScenarioDraftSet v2`
 
@@ -1214,7 +1216,7 @@ Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母�
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact 与 shadow projection 已完成，生产装配/fulfillment 待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
-| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等回执、纯 compiler 与服务端 validity 已完成，HTTP/projection 待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
+| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等、纯 compiler、HTTP 与 Workspace summary 已完成，生产装配待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |

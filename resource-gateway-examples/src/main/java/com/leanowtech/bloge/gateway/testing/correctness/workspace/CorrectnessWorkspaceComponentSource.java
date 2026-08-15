@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CommandPolicy;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.CoverageSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.FixtureCatalogSummary;
+import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.OracleAssertionSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.PublicationSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.ReviewSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.RunSummary;
@@ -47,6 +48,7 @@ public interface CorrectnessWorkspaceComponentSource {
 
     record Components(
             CoverageSummary coverage,
+            OracleAssertionSummary oracleAssertions,
             CasePage cases,
             FixtureCatalogSummary fixtures,
             ReviewSummary reviews,
@@ -58,7 +60,8 @@ public interface CorrectnessWorkspaceComponentSource {
             CommandPolicy commandPolicy
     ) {
         public Components {
-            if (coverage == null || cases == null || fixtures == null || reviews == null
+            if (coverage == null || oracleAssertions == null || cases == null
+                    || fixtures == null || reviews == null
                     || verdict == null || commandPolicy == null) {
                 throw new IllegalArgumentException("Workspace components are incomplete");
             }

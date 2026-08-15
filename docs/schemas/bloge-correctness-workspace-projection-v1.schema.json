@@ -6,7 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schemaVersion", "queryFingerprint", "target", "definition", "coverage",
+    "schemaVersion", "queryFingerprint", "target", "definition", "coverage", "oracleAssertions",
     "cases", "fixtures", "reviews", "lastPublication", "lastRun", "verdict",
     "staleReasons", "capabilities", "commandPolicy", "deepLinks"
   ],
@@ -16,6 +16,7 @@
     "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
     "definition": { "$ref": "#/$defs/definitionSummary" },
     "coverage": { "$ref": "#/$defs/coverageSummary" },
+    "oracleAssertions": { "$ref": "#/$defs/oracleAssertionSummary" },
     "cases": { "$ref": "#/$defs/casePage" },
     "fixtures": { "$ref": "#/$defs/fixtureCatalogSummary" },
     "reviews": { "$ref": "#/$defs/reviewSummary" },
@@ -88,6 +89,27 @@
         "fulfilled": { "type": "integer", "minimum": 0 },
         "waived": { "type": "integer", "minimum": 0 },
         "uncovered": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "oracleAssertionSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "availability", "oracleTotal", "proposedOracles", "approvedOracles",
+        "supersededOracles", "assertionSetTotal", "draftAssertionSets",
+        "validAssertionSets", "staleAssertionSets", "unsupportedAssertionSets"
+      ],
+      "properties": {
+        "availability": { "$ref": "#/$defs/availability" },
+        "oracleTotal": { "type": "integer", "minimum": 0 },
+        "proposedOracles": { "type": "integer", "minimum": 0 },
+        "approvedOracles": { "type": "integer", "minimum": 0 },
+        "supersededOracles": { "type": "integer", "minimum": 0 },
+        "assertionSetTotal": { "type": "integer", "minimum": 0 },
+        "draftAssertionSets": { "type": "integer", "minimum": 0 },
+        "validAssertionSets": { "type": "integer", "minimum": 0 },
+        "staleAssertionSets": { "type": "integer", "minimum": 0 },
+        "unsupportedAssertionSets": { "type": "integer", "minimum": 0 }
       }
     },
     "casePage": {

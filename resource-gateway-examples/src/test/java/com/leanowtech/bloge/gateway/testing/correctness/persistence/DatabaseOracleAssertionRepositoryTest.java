@@ -84,6 +84,8 @@ class DatabaseOracleAssertionRepositoryTest {
                 .extracting(value -> value.oracle().revision())
                 .containsExactly(2L, 1L);
         assertThat(oracles.findHead(scope("tenant-b"), "loan-approved")).isEmpty();
+        assertThat(oracles.summarize(scope("tenant-a"), target()))
+                .isEqualTo(new BusinessOracleRepository.OracleTargetSummary(1, 0, 1, 0));
 
         String eventJson = jdbc.queryForObject("""
                 SELECT event_json FROM rg_correctness_outbox
@@ -123,6 +125,8 @@ class DatabaseOracleAssertionRepositoryTest {
                 .extracting(value -> value.assertionSet().revision())
                 .containsExactly(2L, 1L);
         assertThat(assertionSets.findHead(scope("tenant-b"), "loan-checks")).isEmpty();
+        assertThat(assertionSets.summarize(scope("tenant-a"), target()))
+                .isEqualTo(new AssertionSetRepository.AssertionTargetSummary(1, 0, 1, 0, 0));
 
         String eventJson = jdbc.queryForObject("""
                 SELECT event_json FROM rg_correctness_outbox
