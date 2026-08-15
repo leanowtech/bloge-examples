@@ -88,6 +88,12 @@ class DatabaseCorrectnessPublicationRepositoryTest {
         assertThat(result.publication()).isEqualTo(storedPublication);
         assertThat(repository.findPublication(source.scope(), "publication-1"))
                 .contains(storedPublication);
+        assertThat(repository.findCommittedAttemptForPublication(
+                source.scope(), "publication-1")).contains(committed);
+        assertThat(jdbc.queryForObject("""
+                        SELECT publication_attempt_id FROM rg_correctness_publications
+                        WHERE publication_id = 'publication-1'
+                        """, String.class)).isEqualTo("attempt-1");
         assertThat(repository.findLatestPublication(
                 source.scope(), source.coordinate().definitionRef(),
                 source.coordinate().target())).contains(storedPublication);
@@ -250,6 +256,64 @@ class DatabaseCorrectnessPublicationRepositoryTest {
 
         assertThat(repository.findAttempt(other, "attempt-1")).isEmpty();
         assertThat(repository.attemptHistory(other, "attempt-1")).isEmpty();
+        assertThat(repository.findCommittedAttemptForPublication(
+                other, "publication-1")).isEmpty();
+    }
+
+    @Test
+    void legacyPublicationWithoutExactAttemptBindingFailsClosed() throws Exception {
+        StoredCorrectnessPublication publication = publication();
+        CorrectnessPublication value = publication.publication();
+        jdbc.update("""
+                        INSERT INTO rg_correctness_publications (
+                            tenant_id, organization_id, project_id, environment_id, region_id,
+                            publication_id, publication_fingerprint,
+                            definition_id, definition_revision, definition_fingerprint,
+                            inventory_id, inventory_revision, inventory_fingerprint,
+                            scenario_draft_set_id, scenario_draft_set_revision,
+                            scenario_draft_set_fingerprint, publication_attempt_id, canonical_json,
+                            committed_at, committed_by
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
+                        """,
+                value.scope().tenantId(), value.scope().organizationId(), value.scope().projectId(),
+                value.scope().environment(), value.scope().region(), value.publicationId(),
+                publication.publicationFingerprint(), value.definitionRef().id(),
+                value.definitionRef().revision(), value.definitionRef().fingerprint(),
+                value.inventoryRef().id(), value.inventoryRef().revision(),
+                value.inventoryRef().fingerprint(), value.scenarioDraftSetRef().id(),
+                value.scenarioDraftSetRef().revision(), value.scenarioDraftSetRef().fingerprint(),
+                mapper.writeValueAsString(publication), value.metadata().updatedAt(),
+                value.metadata().updatedBy().id());
+
+        assertThat(repository.findCommittedAttemptForPublication(
+                source.scope(), value.publicationId())).isEmpty();
+    }
+
+    @Test
+    void refusesTamperedPublicationAttemptBinding() {
+        StoredCorrectnessPublicationAttempt preparing = state(
+                1, AttemptStage.PREPARING, null, List.of(), Failure.none());
+        repository.saveAttemptIfVersion(source.scope(), 0, preparing).orElseThrow();
+        repository.saveAttemptIfVersion(source.scope(), 1,
+                state(2, AttemptStage.COMPILED, report, List.of(), Failure.none())).orElseThrow();
+        repository.saveAttemptIfVersion(source.scope(), 2,
+                state(3, AttemptStage.REGISTERING, report,
+                        List.of(compiledRef("FIXTURE_BUNDLE")), Failure.none())).orElseThrow();
+        StoredCorrectnessPublication publication = publication();
+        repository.commitIfVersion(source.scope(), 3,
+                state(4, AttemptStage.COMMITTED, report,
+                        report.compiledAssets().stream().map(value -> value.assetRef()).toList(),
+                        Failure.none()), publication, event(publication)).orElseThrow();
+        jdbc.update("""
+                UPDATE rg_correctness_publications
+                SET publication_attempt_id = 'missing-attempt'
+                WHERE publication_id = 'publication-1'
+                """);
+
+        assertThatThrownBy(() -> repository.findCommittedAttemptForPublication(
+                source.scope(), "publication-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("unavailable");
     }
 
     private StoredCorrectnessPublicationAttempt state(
@@ -327,6 +391,7 @@ class DatabaseCorrectnessPublicationRepositoryTest {
                     scenario_draft_set_id VARCHAR(512) NOT NULL,
                     scenario_draft_set_revision BIGINT NOT NULL,
                     scenario_draft_set_fingerprint VARCHAR(80) NOT NULL,
+                    publication_attempt_id VARCHAR(512),
                     canonical_json CLOB NOT NULL,
                     committed_at TIMESTAMP WITH TIME ZONE NOT NULL,
                     committed_by VARCHAR(512) NOT NULL,

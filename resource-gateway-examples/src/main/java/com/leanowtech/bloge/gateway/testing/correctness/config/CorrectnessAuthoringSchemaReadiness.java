@@ -43,5 +43,17 @@ public final class CorrectnessAuthoringSchemaReadiness {
                         missingOrUnauthorized);
             }
         }
+        try {
+            jdbc.queryForList("""
+                    SELECT publication_attempt_id
+                    FROM rg_correctness_publications
+                    WHERE 1 = 0
+                    """);
+        } catch (RuntimeException missingOrUnauthorized) {
+            throw new IllegalStateException(
+                    "Correctness Publication traceability schema is unavailable; "
+                            + "apply V20260815_008 before enabling the runtime",
+                    missingOrUnauthorized);
+        }
     }
 }

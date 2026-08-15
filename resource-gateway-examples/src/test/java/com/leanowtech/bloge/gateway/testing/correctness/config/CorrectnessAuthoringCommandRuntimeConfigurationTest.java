@@ -124,8 +124,9 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                 .setType(EmbeddedDatabaseType.H2)
                 .generateUniqueName(true)
                 .build());
-        AUTHORING_TABLES.forEach(table ->
-                jdbc.execute("CREATE TABLE " + table + " (id INTEGER)"));
+        AUTHORING_TABLES.forEach(table -> jdbc.execute("CREATE TABLE " + table
+                + ("rg_correctness_publications".equals(table)
+                ? " (id INTEGER, publication_attempt_id VARCHAR(512))" : " (id INTEGER)")));
         if (material) {
             jdbc.execute("CREATE TABLE rg_fixture_material_v2_revisions (id INTEGER)");
             jdbc.execute("CREATE TABLE rg_fixture_material_access_audit (id INTEGER)");

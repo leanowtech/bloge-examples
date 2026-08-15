@@ -48,6 +48,31 @@ public final class DatabaseCorrectnessPublicationRepository
     }
 
     @Override
+    public Optional<StoredCorrectnessPublicationAttempt> findCommittedAttemptForPublication(
+            EnterpriseScope scope, String publicationId) {
+        EnterpriseScope exactScope = Objects.requireNonNull(scope, "scope");
+        String exactId = required(publicationId, "publicationId");
+        List<String> attemptIds = jdbc.queryForList("""
+                        SELECT publication_attempt_id FROM rg_correctness_publications
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ? AND publication_id = ?
+                        """, String.class, scopeArgs(exactScope, exactId));
+        if (attemptIds.isEmpty() || attemptIds.getFirst() == null
+                || attemptIds.getFirst().isBlank()) {
+            return Optional.empty();
+        }
+        StoredCorrectnessPublication publication = findPublication(exactScope, exactId)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Correctness Publication disappeared during traceability lookup"));
+        StoredCorrectnessPublicationAttempt attempt = findAttempt(
+                        exactScope, attemptIds.getFirst())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Correctness Publication commit Attempt is unavailable"));
+        requirePublicationAttemptClosure(publication, attempt);
+        return Optional.of(attempt);
+    }
+
+    @Override
     public Optional<StoredCorrectnessPublication> findLatestPublication(
             EnterpriseScope scope,
             ExactAssetRef definitionRef,
@@ -169,7 +194,8 @@ public final class DatabaseCorrectnessPublicationRepository
         if (updateAttempt(committedAttempt, attemptJson, expectedStateVersion) == 0) {
             return Optional.empty();
         }
-        StoredCorrectnessPublication persisted = createOrVerifyPublication(publication);
+        StoredCorrectnessPublication persisted = createOrVerifyPublication(
+                publication, committedAttempt.attempt().attemptId());
         insertHistory(committedAttempt, attemptJson);
         insertEvent(event);
         return Optional.of(new CommitResult(committedAttempt, persisted));
@@ -192,8 +218,10 @@ public final class DatabaseCorrectnessPublicationRepository
     }
 
     private StoredCorrectnessPublication createOrVerifyPublication(
-            StoredCorrectnessPublication candidate) {
+            StoredCorrectnessPublication candidate,
+            String publicationAttemptId) {
         CorrectnessPublication value = candidate.publication();
+        String exactAttemptId = required(publicationAttemptId, "publicationAttemptId");
         String json = serialize(candidate);
         try {
             jdbc.update("""
@@ -203,9 +231,9 @@ public final class DatabaseCorrectnessPublicationRepository
                                 definition_id, definition_revision, definition_fingerprint,
                                 inventory_id, inventory_revision, inventory_fingerprint,
                                 scenario_draft_set_id, scenario_draft_set_revision,
-                                scenario_draft_set_fingerprint, canonical_json,
+                                scenario_draft_set_fingerprint, publication_attempt_id, canonical_json,
                                 committed_at, committed_by
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
                     value.scope().tenantId(), value.scope().organizationId(),
                     value.scope().projectId(), value.scope().environment(), value.scope().region(),
@@ -214,13 +242,24 @@ public final class DatabaseCorrectnessPublicationRepository
                     value.definitionRef().fingerprint(), value.inventoryRef().id(),
                     value.inventoryRef().revision(), value.inventoryRef().fingerprint(),
                     value.scenarioDraftSetRef().id(), value.scenarioDraftSetRef().revision(),
-                    value.scenarioDraftSetRef().fingerprint(), json,
+                    value.scenarioDraftSetRef().fingerprint(), exactAttemptId, json,
                     value.metadata().updatedAt(), value.metadata().updatedBy().id());
             return candidate;
         } catch (DuplicateKeyException idempotentOrConflict) {
             StoredCorrectnessPublication existing = findPublication(
                     value.scope(), value.publicationId()).orElse(null);
-            if (candidate.equals(existing)) return existing;
+            if (candidate.equals(existing)) {
+                StoredCorrectnessPublicationAttempt linked =
+                        findCommittedAttemptForPublication(value.scope(), value.publicationId())
+                                .orElseThrow(() -> new IllegalStateException(
+                                        "Existing Correctness Publication has no exact commit Attempt"));
+                if (!linked.compilationReport().compilationFingerprint()
+                        .equals(value.compilationFingerprint())) {
+                    throw new IllegalStateException(
+                            "Existing Correctness Publication commit relation conflicts with content");
+                }
+                return existing;
+            }
             throw new IllegalStateException(
                     "Correctness Publication immutable identity conflicts with stored content");
         }
@@ -446,6 +485,50 @@ public final class DatabaseCorrectnessPublicationRepository
                 || !event.actorId().equals(publication.metadata().updatedBy().id())
                 || !event.occurredAt().equals(publication.metadata().updatedAt())) {
             throw new IllegalArgumentException("Publication commit closure is invalid");
+        }
+    }
+
+    private static void requirePublicationAttemptClosure(
+            StoredCorrectnessPublication storedPublication,
+            StoredCorrectnessPublicationAttempt attempt
+    ) {
+        CorrectnessPublication publication = storedPublication.publication();
+        PublicationAttempt state = attempt.attempt();
+        List<ExactAssetRef> compiledRefs = new ArrayList<>(
+                publication.compiledFixtureBundleRefs());
+        compiledRefs.add(publication.compiledTestSuiteRef());
+        compiledRefs = compiledRefs.stream().sorted(java.util.Comparator
+                        .comparing(ExactAssetRef::kind)
+                        .thenComparing(ExactAssetRef::id)
+                        .thenComparingLong(ExactAssetRef::revision)
+                        .thenComparing(ExactAssetRef::fingerprint))
+                .toList();
+        List<ExactAssetRef> reportRefs = attempt.compilationReport() == null
+                ? List.of() : attempt.compilationReport().compiledAssets().stream()
+                .map(value -> value.assetRef())
+                .sorted(java.util.Comparator.comparing(ExactAssetRef::kind)
+                        .thenComparing(ExactAssetRef::id)
+                        .thenComparingLong(ExactAssetRef::revision)
+                        .thenComparing(ExactAssetRef::fingerprint))
+                .toList();
+        boolean valid = state.stage() == AttemptStage.COMMITTED
+                && attempt.compilationReport() != null
+                && attempt.compilationReport().publishable()
+                && state.coordinate().definitionRef().equals(publication.definitionRef())
+                && state.coordinate().inventoryRef().equals(publication.inventoryRef())
+                && state.coordinate().scenarioDraftSetRef().equals(publication.scenarioDraftSetRef())
+                && state.coordinate().oracleRefs().equals(publication.oracleRefs())
+                && state.coordinate().assertionSetRefs().equals(publication.assertionSetRefs())
+                && state.coordinate().fixtureAssetRefs().equals(publication.fixtureAssetRefs())
+                && state.coordinate().target().equals(publication.target())
+                && attempt.compilationReport().compilationFingerprint()
+                .equals(publication.compilationFingerprint())
+                && attempt.compilationReport().compilerVersion().equals(publication.compilerVersion())
+                && compiledRefs.equals(reportRefs)
+                && compiledRefs.equals(state.verifiedAssets());
+        if (!valid) {
+            throw new IllegalStateException(
+                    "Correctness Publication commit Attempt closure is invalid");
         }
     }
 

@@ -13,6 +13,17 @@ public interface CorrectnessPublicationRepository {
     Optional<StoredCorrectnessPublication> findPublication(
             EnterpriseScope scope, String publicationId);
 
+    /**
+     * Resolves the exact committed Saga state that supplied an immutable Publication manifest.
+     *
+     * <p>Legacy Publications without an explicit commit relation return empty. Callers must fail
+     * closed instead of guessing an Attempt by compilation fingerprint.</p>
+     */
+    default Optional<StoredCorrectnessPublicationAttempt> findCommittedAttemptForPublication(
+            EnterpriseScope scope, String publicationId) {
+        return Optional.empty();
+    }
+
     default Optional<StoredCorrectnessPublication> findLatestPublication(
             EnterpriseScope scope,
             ExactAssetRef definitionRef,

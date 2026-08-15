@@ -62,6 +62,22 @@ class CorrectnessAuthoringRuntimeConfigurationTest {
     }
 
     @Test
+    void failsStartupWhenPublicationTraceabilityMigrationWasSkipped() {
+        runner.withPropertyValues("gateway.testing.correctness.enabled=true")
+                .withBean(JdbcTemplate.class, () -> {
+                    JdbcTemplate jdbc = jdbc();
+                    TABLES.forEach(table ->
+                            jdbc.execute("CREATE TABLE " + table + " (id INTEGER)"));
+                    return jdbc;
+                })
+                .run(context -> {
+                    assertThat(context).hasFailed();
+                    assertThat(context.getStartupFailure())
+                            .hasStackTraceContaining("publication_attempt_id");
+                });
+    }
+
+    @Test
     void assemblesTheFullMetadataOnlyWorkspaceAfterSchemaReadiness() {
         runner.withPropertyValues("gateway.testing.correctness.enabled=true")
                 .withBean(JdbcTemplate.class, () -> jdbcWithReadinessTables())
@@ -77,7 +93,9 @@ class CorrectnessAuthoringRuntimeConfigurationTest {
 
     private static JdbcTemplate jdbcWithReadinessTables() {
         JdbcTemplate jdbc = jdbc();
-        TABLES.forEach(table -> jdbc.execute("CREATE TABLE " + table + " (id INTEGER)"));
+        TABLES.forEach(table -> jdbc.execute("CREATE TABLE " + table
+                + ("rg_correctness_publications".equals(table)
+                ? " (id INTEGER, publication_attempt_id VARCHAR(512))" : " (id INTEGER)")));
         return jdbc;
     }
 
