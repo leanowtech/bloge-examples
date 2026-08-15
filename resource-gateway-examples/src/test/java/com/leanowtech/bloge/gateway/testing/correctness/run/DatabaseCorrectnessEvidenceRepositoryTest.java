@@ -160,7 +160,10 @@ class DatabaseCorrectnessEvidenceRepositoryTest {
                 List.of(ref("FIXTURE_ASSET", "fixture", 'f')),
                 List.of(fixtureBundleRef), suiteRef, selection,
                 List.of(new CorrectnessEvidenceCompanion.CaseExecutionRef(
-                        "case-1", fixtureBundleRef, fp('0'), "child-run-1",
+                        "case-1", fixtureBundleRef, fp('0'),
+                        com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence
+                                .CaseStatus.PASSED,
+                        "child-run-1",
                         TestRunEvidence.EvidenceClass.CERTIFIABLE)),
                 List.of(new SourceMapping(
                         new SourceCoordinate(scenarioRef, "SCENARIO_CASE", "case-1"),

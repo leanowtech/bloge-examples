@@ -10,6 +10,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessVerdict;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunAttestation;
+import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 
 import java.util.Comparator;
 import java.util.List;
@@ -103,6 +104,7 @@ public record CorrectnessEvidenceCompanion(
             String caseId,
             ExactAssetRef fixtureBundleRef,
             String executionPlanFingerprint,
+            TestSuiteRunEvidence.CaseStatus status,
             String childRunId,
             TestRunEvidence.EvidenceClass evidenceClass
     ) {
@@ -110,10 +112,17 @@ public record CorrectnessEvidenceCompanion(
             caseId = required(caseId, "caseId");
             executionPlanFingerprint = fingerprint(
                     executionPlanFingerprint, "executionPlanFingerprint");
-            childRunId = required(childRunId, "childRunId");
-            if (fixtureBundleRef == null || evidenceClass == null) {
+            childRunId = childRunId == null ? "" : childRunId.trim();
+            if (fixtureBundleRef == null || status == null
+                    || status == TestSuiteRunEvidence.CaseStatus.PENDING) {
                 throw new IllegalArgumentException(
-                        "Case execution requires exact Fixture and evidence class");
+                        "Terminal Case execution requires exact Fixture and status");
+            }
+            boolean unscheduled = status == TestSuiteRunEvidence.CaseStatus.NOT_SCHEDULED;
+            if (unscheduled != childRunId.isEmpty() || (!unscheduled && evidenceClass == null)
+                    || (unscheduled && evidenceClass != null)) {
+                throw new IllegalArgumentException(
+                        "Case child evidence identity must match its scheduling status");
             }
         }
     }
