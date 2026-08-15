@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-governance-feedback-received-v1.schema.json",
+  "title": "BLOGE Correctness Governance Feedback Received Event v1",
+  "description": "Payload-free event. Finding messages and remediation stay in the authorized feedback projection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "feedbackRef", "publicationRef", "decision", "sourceSystem", "sourceDecisionId", "sourceDecisionRevision", "actorId", "correlationId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "CorrectnessGovernanceFeedbackReceived.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "feedbackRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "publicationRef": { "$ref": "bloge-correctness-run-protocol-v1.schema.json#/$defs/publicationRef" },
+    "decision": { "enum": ["ACCEPTED", "BLOCKED", "REVIEW_REQUIRED", "NOT_EVALUATED"] },
+    "sourceSystem": { "const": "ANEKE_TOOL_STUDIO" },
+    "sourceDecisionId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "sourceDecisionRevision": { "type": "integer", "minimum": 1 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "correlationId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

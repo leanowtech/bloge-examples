@@ -60,6 +60,9 @@ public record CorrectnessGovernanceFeedback(
                 .sorted(Comparator.comparing(Finding::severity)
                         .thenComparing(Finding::code)
                         .thenComparing(Finding::findingId)).toList();
+        if (findings.size() > 500) {
+            throw new IllegalArgumentException("Governance feedback supports at most 500 findings");
+        }
         if (decision == GateDecision.BLOCKED
                 && findings.stream().noneMatch(value -> value.severity() == Severity.BLOCKING)) {
             throw new IllegalArgumentException(
@@ -67,9 +70,6 @@ public record CorrectnessGovernanceFeedback(
         }
         if (expiresAt != null && !expiresAt.isAfter(producedAt)) {
             throw new IllegalArgumentException("expiresAt must follow producedAt");
-        }
-        if (receivedAt.isBefore(producedAt)) {
-            throw new IllegalArgumentException("receivedAt must not precede producedAt");
         }
         receivedBy = required(receivedBy, "receivedBy");
         correlationId = required(correlationId, "correlationId");
@@ -95,9 +95,16 @@ public record CorrectnessGovernanceFeedback(
                 throw new IllegalArgumentException("Finding severity and category are required");
             }
             code = required(code, "code").toUpperCase(Locale.ROOT);
+            if (!code.matches("[A-Z][A-Z0-9_.-]{0,127}")) {
+                throw new IllegalArgumentException(
+                        "Finding code must be an uppercase stable code of at most 128 characters");
+            }
             message = bounded(message, "message", 1000);
             remediation = bounded(remediation, "remediation", 1000);
             deepLink = deepLink == null ? "" : deepLink.trim();
+            if (deepLink.length() > 2048) {
+                throw new IllegalArgumentException("Finding deepLink exceeds 2048 characters");
+            }
             if (!deepLink.isEmpty() && !(deepLink.startsWith("/")
                     || deepLink.startsWith("https://"))) {
                 throw new IllegalArgumentException("Finding deepLink must be relative or HTTPS");

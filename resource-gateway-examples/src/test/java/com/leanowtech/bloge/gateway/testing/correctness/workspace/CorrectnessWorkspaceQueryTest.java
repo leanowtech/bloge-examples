@@ -70,6 +70,27 @@ class CorrectnessWorkspaceQueryTest {
     }
 
     @Test
+    void keepsFiveThousandCaseWorkspaceBoundedToOneMetadataPage() throws Exception {
+        InMemoryDefinitions definitions = new InMemoryDefinitions();
+        definitions.add(stored("definition-a", scope("tenant-a"), target()));
+        CorrectnessWorkspaceQuery query = new CorrectnessWorkspaceQuery(
+                definitions, boundedCaseSource(5_000), mapper);
+
+        long started = System.nanoTime();
+        CorrectnessWorkspaceProjection result = query.get(
+                TargetKind.GRAPH, "loan-graph", fingerprint('a'), "", "", 100,
+                identity("tenant-a"));
+        Duration elapsed = Duration.ofNanos(System.nanoTime() - started);
+
+        assertThat(result.cases().total()).isEqualTo(5_000);
+        assertThat(result.cases().rows()).hasSize(100);
+        assertThat(result.cases().nextCursor()).isEqualTo("case:100");
+        assertThat(mapper.writeValueAsString(result)).doesNotContain(
+                "SECRET-MARKER", "\"given\"", "\"input\"", "\"output\"", "\"payload\"");
+        assertThat(elapsed).isLessThan(Duration.ofSeconds(1));
+    }
+
+    @Test
     void isolatesEveryWorkspaceReadByFullEnterpriseScope() {
         InMemoryDefinitions definitions = new InMemoryDefinitions();
         definitions.add(stored("definition-a", scope("tenant-a"), target()));
@@ -196,8 +217,12 @@ class CorrectnessWorkspaceQueryTest {
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {
-        return (coordinate, page) -> components(page, 500, page.limit(),
-                page.limit() < 500 ? "case:" + page.limit() : "");
+        return boundedCaseSource(500);
+    }
+
+    private CorrectnessWorkspaceComponentSource boundedCaseSource(int total) {
+        return (coordinate, page) -> components(page, total, page.limit(),
+                page.limit() < total ? "case:" + page.limit() : "");
     }
 
     private Components components(

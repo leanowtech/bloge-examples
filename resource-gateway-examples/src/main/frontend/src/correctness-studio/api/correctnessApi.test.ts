@@ -2,9 +2,11 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { resetBlogeApiTransport, setBlogeApiTransport } from '../../api';
 import {
+  createOutcomeCalibrationProposal,
   executeCorrectnessRun,
   fetchCorrectnessCapabilities,
   fetchCorrectnessEvidence,
+  fetchCorrectnessGovernanceFeedback,
   fetchCorrectnessWorkspace,
   preflightCorrectnessRun,
   publicationRef,
@@ -100,6 +102,30 @@ describe('correctnessApi', () => {
       .toBe('/api/visual/correctness-runs/suite%2Frun%201/evidence-companion');
     expect(headers(requests[0]?.init).get('X-Purpose'))
       .toBe('GOVERNANCE_EVIDENCE_INGESTION');
+  });
+
+  it('writes proposed calibration and reads exact governance feedback with separated purposes', async () => {
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      requests.push({ input: String(input), init });
+      return json({ data: {} });
+    });
+
+    await createOutcomeCalibrationProposal({
+      proposalId: 'proposal-1', suiteRunId: 'suite-run-1',
+      evidenceCompanionFingerprint: fp('e'), affectedCaseIds: ['case-1'],
+      affectedOracleIds: ['oracle-1'], mismatchKind: 'EXPECTED_OUTCOME_DIFFERED',
+      reasonCode: 'OUTCOME_MISMATCH', businessRationale: 'Reviewed truth changed.',
+      proposedRegressionTitle: 'Preserve reviewed truth',
+    });
+    await fetchCorrectnessGovernanceFeedback('publication/1');
+
+    expect(requests[0]?.input)
+      .toBe('/api/visual/correctness-outcome-calibration-proposals');
+    expect(headers(requests[0]?.init).get('X-Purpose')).toBe('CORRECTNESS_WRITE');
+    expect(requests[1]?.input)
+      .toBe('/api/visual/correctness-publications/publication%2F1/governance-feedback');
+    expect(headers(requests[1]?.init).get('X-Purpose')).toBe('CORRECTNESS_READ');
   });
 
   it('maps only immutable publication revision one into a run coordinate', () => {

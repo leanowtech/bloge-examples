@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  Clock3,
   LoaderCircle,
   Play,
   RefreshCw,
@@ -14,8 +15,10 @@ import { BlogeApiRequestError } from '../../api';
 import { useI18n } from '../../i18n/I18nProvider';
 import {
   correctnessClientRequestId,
+  createOutcomeCalibrationProposal,
   executeCorrectnessRun,
   fetchCorrectnessEvidence,
+  fetchCorrectnessGovernanceFeedback,
   preflightCorrectnessRun,
   publicationRef,
   selectionIntent,
@@ -31,8 +34,10 @@ import type {
   StoredCorrectnessEvidenceCompanion,
 } from '../model/domain';
 import FiveAxisVerdict from '../shared/FiveAxisVerdict';
+import GovernanceFeedbackPanel, { type GovernanceFeedbackApi } from './GovernanceFeedbackPanel';
+import OutcomeCalibrationPanel, { type OutcomeCalibrationApi } from './OutcomeCalibrationPanel';
 
-export interface CorrectnessRunApi {
+export interface CorrectnessRunApi extends GovernanceFeedbackApi, OutcomeCalibrationApi {
   preflight(request: Parameters<typeof preflightCorrectnessRun>[0]):
   Promise<CorrectnessApiEnvelope<CorrectnessPreflightReport>>;
   execute(request: CorrectnessRunRequest):
@@ -45,6 +50,8 @@ const DEFAULT_API: CorrectnessRunApi = {
   preflight: preflightCorrectnessRun,
   execute: executeCorrectnessRun,
   evidence: fetchCorrectnessEvidence,
+  calibrate: createOutcomeCalibrationProposal,
+  governanceFeedback: fetchCorrectnessGovernanceFeedback,
 };
 
 interface RunCenterProps {
@@ -69,6 +76,8 @@ export default function RunCenter({ workspace, deployment, api = DEFAULT_API }: 
   const preflightAvailable = deployment.features.correctnessPreflightApi === true;
   const runAvailable = deployment.features.correctnessRunApi === true;
   const evidenceAvailable = deployment.features.correctnessEvidenceCompanionApi === true;
+  const calibrationAvailable = deployment.features.correctnessOutcomeCalibrationApi === true;
+  const governanceAvailable = deployment.features.correctnessGovernanceFeedbackApi === true;
   const selectedCount = mode === 'ALL' ? workspace.cases.total : selectedCaseIds.length;
   const canReview = Boolean(publication && preflightAvailable
     && selectedCount > 0 && phase !== 'PREFLIGHT' && phase !== 'RUNNING');
@@ -177,6 +186,12 @@ export default function RunCenter({ workspace, deployment, api = DEFAULT_API }: 
           {t('This deployment does not advertise governed run preflight.')}
         </Notice>
       )}
+
+      <GovernanceFeedbackPanel
+        publication={publication}
+        available={governanceAvailable}
+        api={api}
+      />
 
       <section className="correctness-run-compose" aria-label={t('Run selection')}>
         <div className="correctness-run-controls">
@@ -354,7 +369,13 @@ export default function RunCenter({ workspace, deployment, api = DEFAULT_API }: 
         </section>
       )}
 
-      {evidence && <EvidenceResult evidence={evidence} />}
+      {evidence && (
+        <EvidenceResult
+          evidence={evidence}
+          calibrationAvailable={calibrationAvailable}
+          api={api}
+        />
+      )}
     </div>
   );
 }
@@ -380,7 +401,15 @@ function RiskSummary({ summary }: { summary: CorrectnessPreflightReport['riskSum
   );
 }
 
-function EvidenceResult({ evidence }: { evidence: StoredCorrectnessEvidenceCompanion }) {
+function EvidenceResult({
+  evidence,
+  calibrationAvailable,
+  api,
+}: {
+  evidence: StoredCorrectnessEvidenceCompanion;
+  calibrationAvailable: boolean;
+  api: CorrectnessRunApi;
+}) {
   const { t } = useI18n();
   const value = evidence.companion;
   return (
@@ -389,12 +418,19 @@ function EvidenceResult({ evidence }: { evidence: StoredCorrectnessEvidenceCompa
         <div><p className="eyebrow">{t('IMMUTABLE EVIDENCE')}</p><h3>{t('Five-axis result')}</h3></div>
         <span className="correctness-coordinate">{value.suiteRunId}</span>
       </div>
+      <p className="correctness-evidence-snapshot">
+        <Clock3 aria-hidden="true" size={17} />
+        <span>{t(
+          'This is the immutable gate snapshot sealed at {time}. It does not grant current publication permission; check the current ANEKE decision above.',
+          { time: new Date(value.metadata.createdAt).toLocaleString() },
+        )}</span>
+      </p>
       <FiveAxisVerdict verdict={value.verdict} />
       <div className="correctness-evidence-meta">
         <span><strong>{t('Cases')}</strong>{value.caseExecutions.length}</span>
         <span><strong>{t('Proof level')}</strong>{t(value.verdict.proofLevel)}</span>
         <span><strong>{t('Attestation')}</strong>{t(value.attestation.signatureStatus)}</span>
-        <span><strong>{t('Classifications')}</strong>{value.dataClassifications.join(', ') || '—'}</span>
+        <span><strong>{t('Classifications')}</strong>{value.dataClassifications.map((classification) => t(classification)).join(', ') || '—'}</span>
       </div>
       <div className="correctness-table-scroll">
         <table>
@@ -423,6 +459,11 @@ function EvidenceResult({ evidence }: { evidence: StoredCorrectnessEvidenceCompa
           </table>
         </div>
       </details>
+      <OutcomeCalibrationPanel
+        evidence={evidence}
+        available={calibrationAvailable}
+        api={api}
+      />
     </section>
   );
 }

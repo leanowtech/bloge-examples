@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.correctness.governance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
@@ -134,6 +135,11 @@ public final class CorrectnessGovernanceService {
             if (!"ANEKE_TOOL_STUDIO".equals(value.sourceSystem())) {
                 throw new IllegalArgumentException(
                         "sourceSystem must be ANEKE_TOOL_STUDIO for this integration boundary");
+            }
+            if (!ToolStudioResourceGatewayProtocol.SUPPORTED_CONSUMER_VERSIONS
+                    .contains(value.sourceProtocolVersion())) {
+                throw new IllegalArgumentException(
+                        "sourceProtocolVersion is outside the supported compatibility window");
             }
             StoredCorrectnessGovernanceFeedback stored =
                     StoredCorrectnessGovernanceFeedback.verified(mapper, value);

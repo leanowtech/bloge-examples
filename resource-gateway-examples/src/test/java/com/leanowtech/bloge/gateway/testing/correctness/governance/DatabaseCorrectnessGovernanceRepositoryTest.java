@@ -16,8 +16,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -143,13 +147,58 @@ class DatabaseCorrectnessGovernanceRepositoryTest {
     void domainRejectsBlockedFeedbackWithoutBlockingFinding() {
         assertThatThrownBy(() -> new CorrectnessGovernanceFeedback(
                 "", "feedback-invalid", scope(), publicationRef(), "ANEKE_TOOL_STUDIO",
-                "toolStudio.resourceGatewayProtocol.v1", "decision-invalid", 1, fp('7'),
+                "1.1.0", "decision-invalid", 1, fp('7'),
                 CorrectnessGovernanceFeedback.GateDecision.BLOCKED,
                 CorrectnessGovernanceFeedback.WorkbookStatus.CURRENT,
                 CorrectnessGovernanceFeedback.OwnerApprovalStatus.APPROVED,
                 CorrectnessGovernanceFeedback.BreakingMigrationStatus.NONE,
                 List.of(), NOW, NOW.plusSeconds(60), NOW, "aneke", "correlation-1"))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("blocking finding");
+    }
+
+    @Test
+    void machineSchemasTrackCommandsStoredObjectsAndPayloadFreeEvents() throws Exception {
+        StoredOutcomeCalibrationProposal storedProposal = proposal("reviewed rationale");
+        OutcomeCalibrationProposed proposedEvent = proposalEvent(storedProposal);
+        StoredCorrectnessGovernanceFeedback storedFeedback = feedback(
+                "feedback-schema", 3, NOW,
+                CorrectnessGovernanceFeedback.GateDecision.BLOCKED);
+        CorrectnessGovernanceFeedbackReceived receivedEvent = feedbackEvent(storedFeedback);
+        OutcomeCalibrationRequest proposalRequest = new OutcomeCalibrationRequest(
+                "proposal-schema", "suite-run-1", fp('3'), List.of("case-1"),
+                List.of("oracle-1"),
+                OutcomeCalibrationProposal.MismatchKind.EXPECTED_OUTCOME_DIFFERED,
+                "OUTCOME_MISMATCH", "reviewed rationale", "Regression proposal");
+        CorrectnessGovernanceFeedback source = storedFeedback.feedback();
+        CorrectnessGovernanceFeedbackRequest feedbackRequest =
+                new CorrectnessGovernanceFeedbackRequest(
+                        source.feedbackId(), source.publicationRef().fingerprint(),
+                        source.sourceSystem(), source.sourceProtocolVersion(),
+                        source.sourceDecisionId(), source.sourceDecisionRevision(),
+                        source.sourceDecisionFingerprint(), source.decision(),
+                        source.workbookStatus(), source.ownerApprovalStatus(),
+                        source.breakingMigrationStatus(), source.findings(),
+                        source.producedAt(), source.expiresAt());
+
+        assertSchema("bloge-outcome-calibration-request-v1.schema.json", proposalRequest);
+        assertSchema("bloge-outcome-calibration-proposal-v1.schema.json",
+                storedProposal.proposal());
+        assertSchema("bloge-stored-outcome-calibration-proposal-v1.schema.json",
+                storedProposal);
+        assertSchema("bloge-outcome-calibration-proposed-v1.schema.json", proposedEvent);
+        assertSchema("tool-studio-resource-gateway-correctness-feedback-request-v1.schema.json",
+                feedbackRequest);
+        assertSchema("tool-studio-resource-gateway-correctness-feedback-v1.schema.json", source);
+        assertSchema("bloge-stored-correctness-governance-feedback-v1.schema.json",
+                storedFeedback);
+        assertSchema("bloge-correctness-governance-feedback-received-v1.schema.json",
+                receivedEvent);
+
+        assertThat(schemaProperties("bloge-outcome-calibration-proposed-v1.schema.json"))
+                .doesNotContain("businessRationale", "proposedRegressionTitle", "caseRefs");
+        assertThat(schemaProperties(
+                "bloge-correctness-governance-feedback-received-v1.schema.json"))
+                .doesNotContain("findings", "message", "remediation", "deepLink");
     }
 
     private StoredOutcomeCalibrationProposal proposal(String rationale) {
@@ -183,7 +232,7 @@ class DatabaseCorrectnessGovernanceRepositoryTest {
             CorrectnessGovernanceFeedback.GateDecision decision) {
         CorrectnessGovernanceFeedback value = new CorrectnessGovernanceFeedback(
                 "", id, scope(), publicationRef(), "ANEKE_TOOL_STUDIO",
-                "toolStudio.resourceGatewayProtocol.v1", "decision-" + revision, revision,
+                "1.1.0", "decision-" + revision, revision,
                 fp((char) ('6' + revision)), decision,
                 CorrectnessGovernanceFeedback.WorkbookStatus.CURRENT,
                 CorrectnessGovernanceFeedback.OwnerApprovalStatus.REQUIRED,
@@ -239,5 +288,24 @@ class DatabaseCorrectnessGovernanceRepositoryTest {
 
     private static String fp(char value) {
         return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
+    private void assertSchema(String name, Object value) throws Exception {
+        Set<String> serialized = new HashSet<>();
+        mapper.valueToTree(value).fieldNames().forEachRemaining(serialized::add);
+        Set<String> documented = new HashSet<>();
+        mapper.readTree(schemaText(name)).path("properties")
+                .fieldNames().forEachRemaining(documented::add);
+        assertThat(documented).as(name).isEqualTo(serialized);
+        assertThat(mapper.readTree(schemaText(name))
+                .path("additionalProperties").asBoolean(true)).as(name).isFalse();
+    }
+
+    private static String schemaText(String name) throws Exception {
+        return Files.readString(Path.of("..", "docs", "schemas", name));
+    }
+
+    private String schemaProperties(String name) throws Exception {
+        return mapper.readTree(schemaText(name)).path("properties").toString();
     }
 }

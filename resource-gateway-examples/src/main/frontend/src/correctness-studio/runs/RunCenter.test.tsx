@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import axe, { type AxeResults } from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../../i18n/I18nProvider';
@@ -10,7 +11,9 @@ import {
   deploymentCapabilities,
   envelope,
   preflightReport,
+  storedCalibrationProposal,
   storedEvidence,
+  storedGovernanceFeedback,
   workspaceProjection,
 } from '../testFixtures';
 
@@ -21,6 +24,8 @@ describe('Correctness Run Center', () => {
   const preflight = vi.fn();
   const execute = vi.fn();
   const evidence = vi.fn();
+  const calibrate = vi.fn();
+  const governanceFeedback = vi.fn();
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -31,7 +36,10 @@ describe('Correctness Run Center', () => {
     preflight.mockReset();
     execute.mockReset();
     evidence.mockReset();
-    api = { preflight, execute, evidence };
+    calibrate.mockReset();
+    governanceFeedback.mockReset();
+    governanceFeedback.mockResolvedValue(envelope(storedGovernanceFeedback()));
+    api = { preflight, execute, evidence, calibrate, governanceFeedback };
   });
 
   afterEach(async () => {
@@ -75,6 +83,7 @@ describe('Correctness Run Center', () => {
       strategy: 'COLLECT_ALL',
     }));
     expect(host.textContent).toContain('Gate accepted');
+    expect(host.textContent).toContain('does not grant current publication permission');
     expect(host.textContent).toContain('Execution');
     expect(host.textContent).toContain('Assertions');
     expect(host.textContent).toContain('Coverage');
@@ -115,6 +124,81 @@ describe('Correctness Run Center', () => {
     expect(button('Review run plan').disabled).toBe(true);
   });
 
+  it('shows exact ANEKE findings without claiming ownership of the gate lifecycle', async () => {
+    await render();
+
+    expect(governanceFeedback).toHaveBeenCalledWith('loan-publication');
+    expect(host.textContent).toContain('ANEKE publication decision');
+    expect(host.textContent).toContain('WORKBOOK_REQUIRED');
+    expect(host.textContent).toContain('ANEKE remains the authority');
+  });
+
+  it('creates a proposed-only calibration from exact terminal evidence', async () => {
+    const report = preflightReport();
+    const companion = storedEvidence();
+    preflight.mockResolvedValue(envelope(report));
+    execute.mockResolvedValue(envelope({
+      schemaVersion: 'bloge.correctnessRunResponse.v1' as const,
+      status: 'EVIDENCE_AVAILABLE' as const,
+      suiteExecution: {
+        schemaVersion: 'bloge.testSuiteExecution.v1', suiteRunId: 'suite-run-1',
+        evidenceFingerprint: 'sha256:evidence', evidence: { status: 'SUCCESS' },
+      },
+      evidenceCompanion: companion,
+    }));
+    calibrate.mockResolvedValue(envelope(storedCalibrationProposal()));
+    await render();
+    await click(button('Review run plan'));
+    await click(button('Run reviewed selection'));
+    await click(button('Propose calibration'));
+    await changeValue(field('Why should the reviewed truth change?'), 'Reviewed policy changed.');
+    await changeValue(field('Proposed regression title'), 'Preserve newly reviewed outcome');
+    await click(button('Create review proposal'));
+
+    expect(calibrate).toHaveBeenCalledWith(expect.objectContaining({
+      suiteRunId: 'suite-run-1',
+      evidenceCompanionFingerprint: companion.companionFingerprint,
+      affectedCaseIds: ['eligible-prime'],
+      affectedOracleIds: ['approve-eligible'],
+      mismatchKind: 'EXPECTED_OUTCOME_DIFFERED',
+    }));
+    expect(host.textContent).toContain('Review proposal created');
+    expect(host.textContent).toContain('remain unchanged');
+  });
+
+  it('has no serious or critical accessibility violations across the governed run loop', async () => {
+    const report = preflightReport();
+    const companion = storedEvidence();
+    preflight.mockResolvedValue(envelope(report));
+    execute.mockResolvedValue(envelope({
+      schemaVersion: 'bloge.correctnessRunResponse.v1' as const,
+      status: 'EVIDENCE_AVAILABLE' as const,
+      suiteExecution: {
+        schemaVersion: 'bloge.testSuiteExecution.v1', suiteRunId: 'suite-run-1',
+        evidenceFingerprint: 'sha256:evidence', evidence: { status: 'SUCCESS' },
+      },
+      evidenceCompanion: companion,
+    }));
+    await render();
+    await click(button('Review run plan'));
+    await click(button('Run reviewed selection'));
+
+    let result: AxeResults | undefined;
+    await act(async () => {
+      result = await axe.run(host, {
+        runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa'] },
+        rules: { 'color-contrast': { enabled: false } },
+      });
+    });
+    const severe = (result as AxeResults).violations.filter((violation) =>
+      violation.impact === 'serious' || violation.impact === 'critical');
+
+    expect(severe.map((violation) => ({
+      id: violation.id,
+      targets: violation.nodes.map((node) => node.target),
+    }))).toEqual([]);
+  });
+
   async function render(deployment = deploymentCapabilities()) {
     if (root) await act(async () => root?.unmount());
     await act(async () => {
@@ -138,12 +222,32 @@ describe('Correctness Run Center', () => {
     if (!element) throw new Error(`Missing checkbox: ${label}`);
     return element;
   }
+
+  function field(label: string): HTMLInputElement | HTMLTextAreaElement {
+    const wrapper = [...host.querySelectorAll('label')]
+      .find((candidate) => candidate.textContent?.includes(label));
+    const element = wrapper?.querySelector('input, textarea');
+    if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) {
+      throw new Error(`Missing field: ${label}`);
+    }
+    return element;
+  }
 });
 
 async function click(element: HTMLElement) {
   await act(async () => {
     element.click();
     await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+async function changeValue(element: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  await act(async () => {
+    const prototype = element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value);
+    element.dispatchEvent(new Event('input', { bubbles: true }));
     await Promise.resolve();
   });
 }

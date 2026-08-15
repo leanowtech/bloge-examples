@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/tool-studio-resource-gateway-correctness-feedback-request-v1.schema.json",
+  "title": "Tool Studio Resource Gateway Correctness Feedback Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feedbackId", "publicationFingerprint", "sourceSystem", "sourceProtocolVersion", "sourceDecisionId", "sourceDecisionRevision", "sourceDecisionFingerprint", "decision", "workbookStatus", "ownerApprovalStatus", "breakingMigrationStatus", "findings", "producedAt", "expiresAt"],
+  "properties": {
+    "feedbackId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "publicationFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "sourceSystem": { "const": "ANEKE_TOOL_STUDIO" },
+    "sourceProtocolVersion": { "enum": ["1.1.0", "1.0.0"] },
+    "sourceDecisionId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "sourceDecisionRevision": { "type": "integer", "minimum": 1 },
+    "sourceDecisionFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "decision": { "enum": ["ACCEPTED", "BLOCKED", "REVIEW_REQUIRED", "NOT_EVALUATED"] },
+    "workbookStatus": { "enum": ["CURRENT", "STALE", "MISSING", "NOT_EVALUATED"] },
+    "ownerApprovalStatus": { "enum": ["APPROVED", "REQUIRED", "REJECTED", "NOT_EVALUATED"] },
+    "breakingMigrationStatus": { "enum": ["NONE", "DETECTED", "REVIEW_REQUIRED", "NOT_EVALUATED"] },
+    "findings": { "type": "array", "maxItems": 500, "uniqueItems": true, "items": { "$ref": "tool-studio-resource-gateway-correctness-feedback-v1.schema.json#/$defs/finding" } },
+    "producedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

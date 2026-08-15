@@ -771,6 +771,24 @@ public record IntegrationCapabilities(
         objects.put("storedCorrectnessEvidenceCompanion", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.run
                         .StoredCorrectnessEvidenceCompanion.SCHEMA_VERSION));
+        objects.put("outcomeCalibrationProposal", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .OutcomeCalibrationProposal.SCHEMA_VERSION));
+        objects.put("storedOutcomeCalibrationProposal", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .StoredOutcomeCalibrationProposal.SCHEMA_VERSION));
+        objects.put("outcomeCalibrationProposedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .OutcomeCalibrationProposed.SCHEMA_VERSION));
+        objects.put("correctnessGovernanceFeedback", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .CorrectnessGovernanceFeedback.SCHEMA_VERSION));
+        objects.put("storedCorrectnessGovernanceFeedback", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .StoredCorrectnessGovernanceFeedback.SCHEMA_VERSION));
+        objects.put("correctnessGovernanceFeedbackReceivedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.governance
+                        .CorrectnessGovernanceFeedbackReceived.SCHEMA_VERSION));
         objects.put("correctnessWorkspaceProjection", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.workspace
                         .CorrectnessWorkspaceProjection.SCHEMA_VERSION));

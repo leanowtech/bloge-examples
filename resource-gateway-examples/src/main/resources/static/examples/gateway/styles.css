@@ -1182,6 +1182,7 @@ body.connecting-edge * {
   display: grid;
   gap: 10px;
   margin-bottom: 12px;
+  min-width: 0;
 }
 
 .graph-contract-summary {
@@ -1253,7 +1254,9 @@ body.connecting-edge * {
 
 .builder-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 10px;
+  min-width: 0;
 }
 
 .scope-controls {
@@ -3165,7 +3168,9 @@ body.dragging-operator * {
 
 .library-impact-panel {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
+  min-width: 0;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 5px;
@@ -3285,9 +3290,25 @@ body.dragging-operator * {
 }
 
 .library-impact-risk {
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  max-width: 100%;
   border-color: #bfdbfe;
   background: #eff6ff;
   color: #1d4ed8;
+}
+
+.library-impact-risk > span,
+.library-impact-risk > small {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.library-impact-risk > small {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
 }
 
 .library-impact-code.error {
@@ -4350,6 +4371,7 @@ body.dragging-operator * {
 
   .library-controls,
   .library-revision-controls,
+  .scope-controls,
   .resource-contract-controls,
   .resource-contract-actions,
   .draft-controls,

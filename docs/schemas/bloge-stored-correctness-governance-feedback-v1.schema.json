@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-correctness-governance-feedback-v1.schema.json",
+  "title": "BLOGE Stored Correctness Governance Feedback v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "feedbackFingerprint", "feedback"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedCorrectnessGovernanceFeedback.v1" },
+    "feedbackFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "feedback": { "$ref": "tool-studio-resource-gateway-correctness-feedback-v1.schema.json" }
+  }
+}

@@ -274,6 +274,94 @@ export interface StoredCorrectnessEvidenceCompanion {
   companion: CorrectnessEvidenceCompanion;
 }
 
+export type OutcomeMismatchKind =
+  | 'EXPECTED_OUTCOME_DIFFERED'
+  | 'FORBIDDEN_OUTCOME_OBSERVED'
+  | 'MISSING_BUSINESS_BRANCH'
+  | 'STALE_BUSINESS_ASSUMPTION'
+  | 'OTHER';
+
+export interface OutcomeCalibrationRequest {
+  proposalId: string;
+  suiteRunId: string;
+  evidenceCompanionFingerprint: string;
+  affectedCaseIds: string[];
+  affectedOracleIds: string[];
+  mismatchKind: OutcomeMismatchKind;
+  reasonCode: string;
+  businessRationale: string;
+  proposedRegressionTitle: string;
+}
+
+export interface StoredOutcomeCalibrationProposal {
+  schemaVersion: 'bloge.storedOutcomeCalibrationProposal.v1';
+  proposalFingerprint: string;
+  proposal: {
+    schemaVersion: 'bloge.outcomeCalibrationProposal.v1';
+    proposalId: string;
+    scope: EnterpriseScope;
+    publicationRef: CorrectnessPublicationRef;
+    suiteRunId: string;
+    evidenceCompanionRef: ExactAssetRef;
+    target: ExactTargetRef;
+    caseRefs: Array<{
+      scenarioDraftSetRef: ExactAssetRef;
+      caseId: string;
+      caseFingerprint: string;
+    }>;
+    oracleRefs: ExactAssetRef[];
+    mismatchKind: OutcomeMismatchKind;
+    reasonCode: string;
+    businessRationale: string;
+    proposedRegressionTitle: string;
+    status: 'PROPOSED';
+    owner: PrincipalRef;
+    correlationId: string;
+    metadata: {
+      createdAt: string;
+      updatedAt: string;
+      createdBy: PrincipalRef;
+      updatedBy: PrincipalRef;
+    };
+  };
+}
+
+export interface StoredCorrectnessGovernanceFeedback {
+  schemaVersion: 'bloge.storedCorrectnessGovernanceFeedback.v1';
+  feedbackFingerprint: string;
+  feedback: CorrectnessGovernanceFeedback;
+}
+
+export interface CorrectnessGovernanceFeedback {
+  schemaVersion: 'toolStudio.resourceGateway.correctnessFeedback.v1';
+  feedbackId: string;
+  scope: EnterpriseScope;
+  publicationRef: CorrectnessPublicationRef;
+  sourceSystem: 'ANEKE_TOOL_STUDIO';
+  sourceProtocolVersion: string;
+  sourceDecisionId: string;
+  sourceDecisionRevision: number;
+  sourceDecisionFingerprint: string;
+  decision: 'ACCEPTED' | 'BLOCKED' | 'REVIEW_REQUIRED' | 'NOT_EVALUATED';
+  workbookStatus: 'CURRENT' | 'STALE' | 'MISSING' | 'NOT_EVALUATED';
+  ownerApprovalStatus: 'APPROVED' | 'REQUIRED' | 'REJECTED' | 'NOT_EVALUATED';
+  breakingMigrationStatus: 'NONE' | 'DETECTED' | 'REVIEW_REQUIRED' | 'NOT_EVALUATED';
+  findings: Array<{
+    findingId: string;
+    severity: 'BLOCKING' | 'WARNING' | 'INFO';
+    category: 'CONTRACT' | 'WORKBOOK' | 'OWNER' | 'MIGRATION' | 'RUNTIME' | 'POLICY';
+    code: string;
+    message: string;
+    remediation: string;
+    deepLink: string;
+  }>;
+  producedAt: string;
+  expiresAt: string | null;
+  receivedAt: string;
+  receivedBy: string;
+  correlationId: string;
+}
+
 export interface CorrectnessEvidenceCompanion {
   schemaVersion: 'bloge.correctnessEvidenceCompanion.v1';
   evidenceCompanionId: string;

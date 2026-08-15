@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-outcome-calibration-proposal-v1.schema.json",
+  "title": "BLOGE Stored Outcome Calibration Proposal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "proposalFingerprint", "proposal"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedOutcomeCalibrationProposal.v1" },
+    "proposalFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "proposal": { "$ref": "bloge-outcome-calibration-proposal-v1.schema.json" }
+  }
+}

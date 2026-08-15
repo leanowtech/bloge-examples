@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-outcome-calibration-proposed-v1.schema.json",
+  "title": "BLOGE Outcome Calibration Proposed Event v1",
+  "description": "Payload-free event. Business rationale and regression content stay in the authorized aggregate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "proposalRef", "publicationRef", "evidenceCompanionRef", "target", "suiteRunId", "mismatchKind", "reasonCode", "actorId", "correlationId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "OutcomeCalibrationProposed.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "proposalRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "publicationRef": { "$ref": "bloge-correctness-run-protocol-v1.schema.json#/$defs/publicationRef" },
+    "evidenceCompanionRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "suiteRunId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "mismatchKind": { "enum": ["EXPECTED_OUTCOME_DIFFERED", "FORBIDDEN_OUTCOME_OBSERVED", "MISSING_BUSINESS_BRANCH", "STALE_BUSINESS_ASSUMPTION", "OTHER"] },
+    "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "correlationId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

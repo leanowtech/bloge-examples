@@ -67,6 +67,10 @@ public record OutcomeCalibrationProposal(
                     "Calibration proposal requires affected Case and Oracle refs");
         }
         reasonCode = required(reasonCode, "reasonCode").toUpperCase(Locale.ROOT);
+        if (!reasonCode.matches("[A-Z][A-Z0-9_]{0,127}")) {
+            throw new IllegalArgumentException(
+                    "reasonCode must be an uppercase stable code of at most 128 characters");
+        }
         businessRationale = bounded(businessRationale, "businessRationale", 4000);
         proposedRegressionTitle = bounded(
                 proposedRegressionTitle, "proposedRegressionTitle", 240);

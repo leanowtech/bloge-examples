@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-outcome-calibration-request-v1.schema.json",
+  "title": "BLOGE Outcome Calibration Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["proposalId", "suiteRunId", "evidenceCompanionFingerprint", "affectedCaseIds", "affectedOracleIds", "mismatchKind", "reasonCode", "businessRationale", "proposedRegressionTitle"],
+  "properties": {
+    "proposalId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "suiteRunId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "evidenceCompanionFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "affectedCaseIds": { "type": "array", "maxItems": 100, "uniqueItems": true, "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" } },
+    "affectedOracleIds": { "type": "array", "maxItems": 10000, "uniqueItems": true, "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" } },
+    "mismatchKind": { "enum": ["EXPECTED_OUTCOME_DIFFERED", "FORBIDDEN_OUTCOME_OBSERVED", "MISSING_BUSINESS_BRANCH", "STALE_BUSINESS_ASSUMPTION", "OTHER"] },
+    "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+    "businessRationale": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "proposedRegressionTitle": { "type": "string", "minLength": 1, "maxLength": 240 }
+  }
+}

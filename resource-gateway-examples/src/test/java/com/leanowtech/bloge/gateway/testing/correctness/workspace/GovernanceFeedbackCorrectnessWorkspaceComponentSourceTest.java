@@ -132,7 +132,7 @@ class GovernanceFeedbackCorrectnessWorkspaceComponentSourceTest {
         CorrectnessGovernanceFeedback feedback = new CorrectnessGovernanceFeedback(
                 "", "feedback-1", scope(),
                 new PublicationRef("publication-1", 1, fp('1')),
-                "ANEKE_TOOL_STUDIO", "toolStudio.resourceGatewayProtocol.v1",
+                "ANEKE_TOOL_STUDIO", "1.1.0",
                 "decision-1", 1, fp('2'), decision,
                 CorrectnessGovernanceFeedback.WorkbookStatus.CURRENT,
                 CorrectnessGovernanceFeedback.OwnerApprovalStatus.APPROVED,

@@ -14,6 +14,8 @@ const SURFACES = [
   './authoring/PublicationStudio.tsx',
   './authoring/shared.tsx',
   './runs/RunCenter.tsx',
+  './runs/GovernanceFeedbackPanel.tsx',
+  './runs/OutcomeCalibrationPanel.tsx',
   './shared/FiveAxisVerdict.tsx',
 ] as const;
 const STYLES = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');

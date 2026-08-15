@@ -5805,23 +5805,39 @@ class VisualAuthoringBrowserDomTest {
                   }
                   return false;
                 };
-                return JSON.stringify([...document.querySelectorAll('body *')]
+                const describe = (element, tagOverride) => {
+                  const rect = element.getBoundingClientRect();
+                  const style = window.getComputedStyle(element);
+                  return {
+                    tag: tagOverride || element.tagName.toLowerCase(),
+                    id: element.id || '',
+                    className: String(element.className || ''),
+                    overflow: Math.max(0, rect.right + window.scrollX - viewportWidth),
+                    left: rect.left + window.scrollX,
+                    right: rect.right + window.scrollX,
+                    width: rect.width,
+                    minWidth: style.minWidth,
+                    display: style.display,
+                    gridTemplateColumns: style.gridTemplateColumns,
+                    clipped: hasClippingAncestor(element)
+                  };
+                };
+                const overflowElements = [...document.querySelectorAll('body *')]
                   .map((element) => {
-                    const rect = element.getBoundingClientRect();
-                    return {
-                      tag: element.tagName.toLowerCase(),
-                      id: element.id || '',
-                      className: String(element.className || ''),
-                      overflow: Math.max(0, rect.right - viewportWidth),
-                      width: rect.width,
-                      clipped: hasClippingAncestor(element)
-                    };
+                    return describe(element);
                   })
                   .filter((item) => item.overflow > 2 && !item.clipped)
                   .sort((left, right) => right.overflow - left.overflow)
-                  .slice(0, 5)
+                  .slice(0, 5);
+                const draft = document.getElementById('draft-select');
+                const layoutChain = [];
+                for (let element = draft; element && element !== document.body; element = element.parentElement) {
+                  layoutChain.push(describe(element, 'layout-chain'));
+                }
+                return JSON.stringify(overflowElements
+                  .concat(layoutChain)
                   .concat([{
-                    tag: 'metrics',
+                    tag: 'viewport-metrics',
                     id: '',
                     className: '',
                     overflow: Math.max(
@@ -5830,7 +5846,18 @@ class VisualAuthoringBrowserDomTest {
                       document.body ? document.body.scrollWidth - viewportWidth : 0
                     ),
                     width: viewportWidth,
-                    clipped: false
+                    clipped: false,
+                    scrollX: window.scrollX,
+                    visualViewportWidth: window.visualViewport?.width || 0,
+                    documentClientWidth: document.documentElement.clientWidth,
+                    documentScrollWidth: document.documentElement.scrollWidth,
+                    documentRectWidth: document.documentElement.getBoundingClientRect().width,
+                    bodyClientWidth: document.body?.clientWidth || 0,
+                    bodyScrollWidth: document.body?.scrollWidth || 0,
+                    bodyRectWidth: document.body?.getBoundingClientRect().width || 0,
+                    rootClientWidth: document.getElementById('root')?.clientWidth || 0,
+                    rootScrollWidth: document.getElementById('root')?.scrollWidth || 0,
+                    rootRectWidth: document.getElementById('root')?.getBoundingClientRect().width || 0
                   }]));
                 """));
         assertThat(overflow.doubleValue())

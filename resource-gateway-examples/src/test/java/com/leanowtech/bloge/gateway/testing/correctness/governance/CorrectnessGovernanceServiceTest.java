@@ -102,7 +102,7 @@ class CorrectnessGovernanceServiceTest {
         publication();
         CorrectnessGovernanceFeedbackRequest request = new CorrectnessGovernanceFeedbackRequest(
                 "feedback-1", fp('1'), "ANEKE_TOOL_STUDIO",
-                "toolStudio.resourceGatewayProtocol.v1", "decision-1", 1, fp('9'),
+                "1.1.0", "decision-1", 1, fp('9'),
                 CorrectnessGovernanceFeedback.GateDecision.BLOCKED,
                 CorrectnessGovernanceFeedback.WorkbookStatus.MISSING,
                 CorrectnessGovernanceFeedback.OwnerApprovalStatus.REQUIRED,
@@ -122,6 +122,44 @@ class CorrectnessGovernanceServiceTest {
                 .isEqualTo(new PublicationRef("publication-1", 1, fp('1')));
         assertThat(result.feedback().receivedAt()).isEqualTo(NOW);
         assertThat(result.feedback().receivedBy()).isEqualTo("aneke-sidecar");
+    }
+
+    @Test
+    void toleratesBoundedCrossSystemClockSkewWithoutWeakeningExpirySemantics() {
+        publication();
+        CorrectnessGovernanceFeedbackRequest request = new CorrectnessGovernanceFeedbackRequest(
+                "feedback-clock-skew", fp('1'), "ANEKE_TOOL_STUDIO",
+                "1.1.0", "decision-clock-skew", 1, fp('8'),
+                CorrectnessGovernanceFeedback.GateDecision.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.WorkbookStatus.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.OwnerApprovalStatus.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.BreakingMigrationStatus.NOT_EVALUATED,
+                List.of(), NOW.plusSeconds(30), NOW.plusSeconds(3600));
+
+        StoredCorrectnessGovernanceFeedback result = service.receiveFeedback(
+                "publication-1", request, governanceIdentity());
+
+        assertThat(result.feedback().producedAt()).isAfter(result.feedback().receivedAt());
+        assertThat(result.feedback().expiresAt()).isAfter(result.feedback().producedAt());
+    }
+
+    @Test
+    void rejectsFeedbackOutsideTheAdvertisedProtocolCompatibilityWindow() {
+        publication();
+        CorrectnessGovernanceFeedbackRequest request = new CorrectnessGovernanceFeedbackRequest(
+                "feedback-unsupported-protocol", fp('1'), "ANEKE_TOOL_STUDIO",
+                "0.8.0", "decision-unsupported-protocol", 1, fp('7'),
+                CorrectnessGovernanceFeedback.GateDecision.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.WorkbookStatus.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.OwnerApprovalStatus.NOT_EVALUATED,
+                CorrectnessGovernanceFeedback.BreakingMigrationStatus.NOT_EVALUATED,
+                List.of(), NOW.minusSeconds(30), NOW.plusSeconds(3600));
+
+        assertThatThrownBy(() -> service.receiveFeedback(
+                "publication-1", request, governanceIdentity()))
+                .isInstanceOf(CorrectnessGovernanceException.class)
+                .extracting("code")
+                .isEqualTo("RG.CORRECTNESS.GOVERNANCE_FEEDBACK_INVALID");
     }
 
     @Test
@@ -175,7 +213,7 @@ class CorrectnessGovernanceServiceTest {
             String source, String publicationFingerprint) {
         return new CorrectnessGovernanceFeedbackRequest(
                 "feedback-1", publicationFingerprint, source,
-                "toolStudio.resourceGatewayProtocol.v1", "decision-1", 1, fp('9'),
+                "1.1.0", "decision-1", 1, fp('9'),
                 CorrectnessGovernanceFeedback.GateDecision.NOT_EVALUATED,
                 CorrectnessGovernanceFeedback.WorkbookStatus.NOT_EVALUATED,
                 CorrectnessGovernanceFeedback.OwnerApprovalStatus.NOT_EVALUATED,

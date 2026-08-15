@@ -6,10 +6,13 @@ import type {
   CorrectnessPreflightRequest,
   CorrectnessRunRequest,
   CorrectnessRunResponse,
+  OutcomeCalibrationRequest,
+  StoredCorrectnessGovernanceFeedback,
   CorrectnessWorkspaceCoordinate,
   CorrectnessWorkspaceProjection,
   IntegrationEnvelope,
   StoredCorrectnessEvidenceCompanion,
+  StoredOutcomeCalibrationProposal,
 } from '../model/domain';
 
 export async function fetchCorrectnessCapabilities(): Promise<CorrectnessDeploymentCapabilities> {
@@ -59,6 +62,26 @@ export async function fetchCorrectnessEvidence(
   return exchangeCorrectnessApi(
     `/api/visual/correctness-runs/${encodeURIComponent(suiteRunId)}/evidence-companion`,
     'GOVERNANCE_EVIDENCE_INGESTION',
+  );
+}
+
+export async function createOutcomeCalibrationProposal(
+  request: OutcomeCalibrationRequest,
+): Promise<CorrectnessApiEnvelope<StoredOutcomeCalibrationProposal>> {
+  return exchangeCorrectnessApi(
+    '/api/visual/correctness-outcome-calibration-proposals',
+    'CORRECTNESS_WRITE',
+    { method: 'POST', body: request },
+  );
+}
+
+export async function fetchCorrectnessGovernanceFeedback(
+  publicationId: string,
+): Promise<CorrectnessApiEnvelope<StoredCorrectnessGovernanceFeedback>> {
+  return exchangeCorrectnessApi(
+    `/api/visual/correctness-publications/${encodeURIComponent(publicationId)}`
+      + '/governance-feedback',
+    'CORRECTNESS_READ',
   );
 }
 

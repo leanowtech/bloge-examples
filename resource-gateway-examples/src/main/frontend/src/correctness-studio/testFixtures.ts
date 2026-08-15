@@ -6,6 +6,8 @@ import type {
   CorrectnessWorkspaceProjection,
   ExactAssetRef,
   StoredCorrectnessEvidenceCompanion,
+  StoredCorrectnessGovernanceFeedback,
+  StoredOutcomeCalibrationProposal,
 } from './model/domain';
 
 const FP = 'sha256:1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
@@ -24,6 +26,8 @@ export function deploymentCapabilities(
       correctnessPreflightApi: true,
       correctnessRunApi: true,
       correctnessEvidenceCompanionApi: true,
+      correctnessOutcomeCalibrationApi: true,
+      correctnessGovernanceFeedbackApi: true,
       ...overrides,
     },
     endpoints: [],
@@ -223,5 +227,66 @@ export function envelope<T>(data: T): CorrectnessApiEnvelope<T> {
       environment: 'test', region: 'sg',
     },
     data,
+  };
+}
+
+export function storedGovernanceFeedback(): StoredCorrectnessGovernanceFeedback {
+  return {
+    schemaVersion: 'bloge.storedCorrectnessGovernanceFeedback.v1',
+    feedbackFingerprint: `${FP}:governance-feedback`,
+    feedback: {
+      schemaVersion: 'toolStudio.resourceGateway.correctnessFeedback.v1',
+      feedbackId: 'feedback-1',
+      scope: {
+        tenantId: 'tenant-a', organizationId: 'customer-service', projectId: 'loan-assist',
+        environment: 'test', region: 'sg',
+      },
+      publicationRef: {
+        publicationId: 'loan-publication', revision: 1,
+        fingerprint: `${FP.slice(0, -2)}01`,
+      },
+      sourceSystem: 'ANEKE_TOOL_STUDIO',
+      sourceProtocolVersion: '1.1.0',
+      sourceDecisionId: 'gate-loan-2026-08-15', sourceDecisionRevision: 3,
+      sourceDecisionFingerprint: `${FP}:decision`, decision: 'BLOCKED',
+      workbookStatus: 'MISSING', ownerApprovalStatus: 'REQUIRED',
+      breakingMigrationStatus: 'NONE',
+      findings: [{
+        findingId: 'finding-workbook', severity: 'BLOCKING', category: 'WORKBOOK',
+        code: 'WORKBOOK_REQUIRED', message: 'Correctness workbook is missing.',
+        remediation: 'Create and approve the correctness workbook before publication.',
+        deepLink: 'https://aneke.example/workbooks/loan',
+      }],
+      producedAt: '2026-08-15T12:20:00Z', expiresAt: '2099-08-15T12:20:00Z',
+      receivedAt: '2026-08-15T12:20:30Z', receivedBy: 'aneke-sidecar',
+      correlationId: 'corr-governance-1',
+    },
+  };
+}
+
+export function storedCalibrationProposal(): StoredOutcomeCalibrationProposal {
+  const evidence = storedEvidence();
+  const actor = { id: 'author-1', kind: 'USER' as const, displayName: 'Author' };
+  return {
+    schemaVersion: 'bloge.storedOutcomeCalibrationProposal.v1',
+    proposalFingerprint: `${FP}:calibration`,
+    proposal: {
+      schemaVersion: 'bloge.outcomeCalibrationProposal.v1', proposalId: 'calibration-1',
+      scope: evidence.companion.scope, publicationRef: evidence.companion.publicationRef,
+      suiteRunId: evidence.companion.suiteRunId,
+      evidenceCompanionRef: exactRef(
+        'CORRECTNESS_EVIDENCE_COMPANION', evidence.companion.evidenceCompanionId, 1,
+      ),
+      target: evidence.companion.target, caseRefs: evidence.companion.caseRefs,
+      oracleRefs: evidence.companion.oracleRefs, mismatchKind: 'EXPECTED_OUTCOME_DIFFERED',
+      reasonCode: 'OBSERVED_OUTCOME_MISMATCH',
+      businessRationale: 'The reviewed policy changed after production validation.',
+      proposedRegressionTitle: 'Preserve the new reviewed outcome', status: 'PROPOSED',
+      owner: actor, correlationId: 'corr-calibration-1',
+      metadata: {
+        createdAt: '2026-08-15T12:40:00Z', updatedAt: '2026-08-15T12:40:00Z',
+        createdBy: actor, updatedBy: actor,
+      },
+    },
   };
 }
