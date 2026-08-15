@@ -392,11 +392,15 @@ InlineValue | FixtureVariantRef | GeneratedValueRef | ReplayMaterialRef
 
 机器合同见
 [`bloge-stored-scenario-draft-set-v2.schema.json`](schemas/bloge-stored-scenario-draft-set-v2.schema.json) 和
-[`bloge-scenario-draft-set-changed-v2.schema.json`](schemas/bloge-scenario-draft-set-changed-v2.schema.json)。Scenario v2 canonical
+[`bloge-scenario-draft-set-changed-v2.schema.json`](schemas/bloge-scenario-draft-set-changed-v2.schema.json)，状态晋级诊断见
+[`bloge-scenario-closure-report-v1.schema.json`](schemas/bloge-scenario-closure-report-v1.schema.json)。Scenario v2 canonical
 revision、head CAS、不可变 history 与 payload-free outbox 已实现；`rg_scenario_case_v2_index` 只承载 Matrix 所需摘要，分页查询只连接当前
 head revision，旧 revision 不会混入；`rg_scenario_case_obligation_ref_index` 保存 Case 到 exact obligation 的反向坐标，且只有
-`CANONICAL` Case 会进入 fulfillment 结果。状态迁移、exact closure 校验和 v1 lowering adapter 在 COR-05 后续切片接入前，Capability
-Probe 保持 `correctnessScenarioV2Api=false`。
+`CANONICAL` Case 会进入 fulfillment 结果。应用层现已集中实现 `EXPLORATORY -> REVIEW_READY -> CANONICAL` 状态机：通用 draft
+保存不能伪造晋级或修改已评审 Case；晋级会一次性校验 contract、frozen obligation、approved Oracle、valid executable Assertion Set
+及所有 Fixture/Generator/Replay exact ref，并返回有序、payload-free closure report；canonical 审批由服务端注入审核身份、时间和意见，
+同时执行授权及四眼约束。HTTP adapter、durable transition receipt 和 v1 lowering adapter 在 COR-05 后续切片接入前，Capability Probe
+保持 `correctnessScenarioV2Api=false`。
 
 ### 4.6 `FixtureAssetDescriptor v1`
 
