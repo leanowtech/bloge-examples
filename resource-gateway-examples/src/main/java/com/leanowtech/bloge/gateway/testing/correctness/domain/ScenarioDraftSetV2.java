@@ -59,6 +59,19 @@ public record ScenarioDraftSetV2(
         metadata = required(metadata, "metadata");
     }
 
+    /** Returns the server-owned persisted revision without changing Scenario semantics. */
+    public ScenarioDraftSetV2 persistedAs(
+            long persistedRevision,
+            AuditMetadata persistedMetadata
+    ) {
+        if (persistedRevision < 1) {
+            throw new IllegalArgumentException("Persisted Scenario v2 revision must be positive");
+        }
+        return new ScenarioDraftSetV2(
+                schemaVersion, scenarioDraftSetId, persistedRevision, scope, target,
+                contractRef, scenarios, persistedMetadata);
+    }
+
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record ScenarioDraftV2(
             String scenarioId,

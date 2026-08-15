@@ -218,6 +218,7 @@ class DatabaseCorrectnessDefinitionRepositoryTest {
                 "rg_assertion_set_revisions",
                 "rg_scenario_draft_set_v2_heads",
                 "rg_scenario_case_v2_index",
+                "rg_scenario_case_obligation_ref_index",
                 "rg_fixture_asset_revisions",
                 "rg_fixture_usage_index",
                 "rg_correctness_publications",

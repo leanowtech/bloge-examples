@@ -180,7 +180,9 @@ class CorrectnessWorkspaceQueryTest {
                 .containsEntry("correctnessCoverageProtocol", true)
                 .containsEntry("correctnessCoverageApi", false)
                 .containsEntry("correctnessOracleAssertionProtocol", true)
-                .containsEntry("correctnessOracleAssertionApi", false);
+                .containsEntry("correctnessOracleAssertionApi", false)
+                .containsEntry("correctnessScenarioV2Protocol", true)
+                .containsEntry("correctnessScenarioV2Api", false);
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {

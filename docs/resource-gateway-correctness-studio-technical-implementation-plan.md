@@ -390,6 +390,14 @@ InlineValue | FixtureVariantRef | GeneratedValueRef | ReplayMaterialRef
 - 任一 exact ref 的 target、policy、schema 或 fingerprint 漂移，projection 将 Case 标为 `STALE`，不直接篡改其历史 revision。
 - migrated v1 case 默认进入 `EXPLORATORY`；系统可以生成 `PROPOSED` obligation/oracle，但不得自动批准。
 
+机器合同见
+[`bloge-stored-scenario-draft-set-v2.schema.json`](schemas/bloge-stored-scenario-draft-set-v2.schema.json) 和
+[`bloge-scenario-draft-set-changed-v2.schema.json`](schemas/bloge-scenario-draft-set-changed-v2.schema.json)。Scenario v2 canonical
+revision、head CAS、不可变 history 与 payload-free outbox 已实现；`rg_scenario_case_v2_index` 只承载 Matrix 所需摘要，分页查询只连接当前
+head revision，旧 revision 不会混入；`rg_scenario_case_obligation_ref_index` 保存 Case 到 exact obligation 的反向坐标，且只有
+`CANONICAL` Case 会进入 fulfillment 结果。状态迁移、exact closure 校验和 v1 lowering adapter 在 COR-05 后续切片接入前，Capability
+Probe 保持 `correctnessScenarioV2Api=false`。
+
 ### 4.6 `FixtureAssetDescriptor v1`
 
 现有 `AuthoringFixtureProtocol v1` 只覆盖 operator/function authoring payload。Correctness Studio 新增 metadata-only 目录描述符，payload
@@ -1217,7 +1225,7 @@ Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母�
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact 与 shadow projection 已完成，生产装配/fulfillment 待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等、纯 compiler、HTTP 与 Workspace summary 已完成，生产装配待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
-| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |
+| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 进行中；CAS/history/outbox、Matrix index/page 与 obligation ref index 已完成，状态迁移/closure/adapter 待接入 | governed Case exact closure 完整 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |

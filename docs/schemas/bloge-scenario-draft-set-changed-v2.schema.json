@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-draft-set-changed-v2.schema.json",
+  "title": "BLOGE Scenario Draft Set Changed v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "scenarioDraftSetRef", "target", "contractRef", "caseCount", "exploratoryCount", "reviewReadyCount", "canonicalCount", "retiredCount", "actorId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioDraftSetChanged.v2" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "scenarioDraftSetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "contractRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "caseCount": { "type": "integer", "minimum": 0 },
+    "exploratoryCount": { "type": "integer", "minimum": 0 },
+    "reviewReadyCount": { "type": "integer", "minimum": 0 },
+    "canonicalCount": { "type": "integer", "minimum": 0 },
+    "retiredCount": { "type": "integer", "minimum": 0 },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

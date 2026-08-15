@@ -204,6 +204,10 @@ CREATE TABLE IF NOT EXISTS rg_scenario_draft_set_v2_heads (
     target_id VARCHAR(512) NOT NULL,
     target_revision BIGINT NOT NULL CHECK (target_revision > 0),
     target_fingerprint VARCHAR(80) NOT NULL CHECK (target_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    contract_kind VARCHAR(64) NOT NULL,
+    contract_id VARCHAR(512) NOT NULL,
+    contract_revision BIGINT NOT NULL CHECK (contract_revision > 0),
+    contract_fingerprint VARCHAR(80) NOT NULL CHECK (contract_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
     canonical_json JSONB NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -238,8 +242,16 @@ CREATE TABLE IF NOT EXISTS rg_scenario_case_v2_index (
     lifecycle VARCHAR(32) NOT NULL,
     risk VARCHAR(32) NOT NULL,
     owner_id VARCHAR(512) NOT NULL,
+    owner_kind VARCHAR(32) NOT NULL,
     case_type VARCHAR(32) NOT NULL,
     case_name VARCHAR(1024) NOT NULL,
+    business_intent VARCHAR(16384) NOT NULL,
+    obligation_count INTEGER NOT NULL CHECK (obligation_count >= 0),
+    oracle_count INTEGER NOT NULL CHECK (oracle_count >= 0),
+    assertion_set_count INTEGER NOT NULL CHECK (assertion_set_count >= 0),
+    dependency_count INTEGER NOT NULL CHECK (dependency_count >= 0),
+    review_status VARCHAR(32) NOT NULL,
+    tags_json JSONB NOT NULL,
     canonical_json JSONB NOT NULL,
     PRIMARY KEY (
         tenant_id, organization_id, project_id, environment_id, region_id,
@@ -251,6 +263,35 @@ CREATE INDEX IF NOT EXISTS rg_scenario_case_v2_filter_idx
     ON rg_scenario_case_v2_index (
         tenant_id, organization_id, project_id, environment_id, region_id,
         lifecycle, risk, owner_id, case_type, case_name, case_id
+    );
+
+CREATE TABLE IF NOT EXISTS rg_scenario_case_obligation_ref_index (
+    tenant_id VARCHAR(255) NOT NULL,
+    organization_id VARCHAR(255) NOT NULL,
+    project_id VARCHAR(255) NOT NULL,
+    environment_id VARCHAR(255) NOT NULL,
+    region_id VARCHAR(128) NOT NULL,
+    scenario_draft_set_id VARCHAR(512) NOT NULL,
+    scenario_draft_set_revision BIGINT NOT NULL CHECK (scenario_draft_set_revision > 0),
+    case_id VARCHAR(512) NOT NULL,
+    case_lifecycle VARCHAR(32) NOT NULL,
+    inventory_id VARCHAR(512) NOT NULL,
+    inventory_revision BIGINT NOT NULL CHECK (inventory_revision > 0),
+    inventory_fingerprint VARCHAR(80) NOT NULL CHECK (inventory_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    obligation_id VARCHAR(512) NOT NULL,
+    obligation_fingerprint VARCHAR(80) NOT NULL CHECK (obligation_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
+    PRIMARY KEY (
+        tenant_id, organization_id, project_id, environment_id, region_id,
+        scenario_draft_set_id, scenario_draft_set_revision, case_id,
+        inventory_id, inventory_revision, obligation_id
+    )
+);
+
+CREATE INDEX IF NOT EXISTS rg_scenario_case_obligation_lookup_idx
+    ON rg_scenario_case_obligation_ref_index (
+        tenant_id, organization_id, project_id, environment_id, region_id,
+        inventory_id, inventory_revision, inventory_fingerprint, obligation_id,
+        case_lifecycle
     );
 
 CREATE TABLE IF NOT EXISTS rg_fixture_asset_heads (

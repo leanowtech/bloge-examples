@@ -82,6 +82,17 @@ public final class CorrectnessProtocolFingerprint {
         return fingerprintCanonicalNode(mapper, mapper.valueToTree(obligation));
     }
 
+    /** Fingerprints one governed Scenario Case for exact Matrix and evidence references. */
+    public static String scenarioFingerprint(
+            ObjectMapper mapper,
+            ScenarioDraftSetV2.ScenarioDraftV2 scenario
+    ) {
+        if (mapper == null || scenario == null) {
+            throw new IllegalArgumentException("A Scenario v2 Case and mapper are required");
+        }
+        return fingerprintCanonicalNode(mapper, mapper.valueToTree(scenario));
+    }
+
     /** Fingerprints a derived, payload-free proposal without treating it as a canonical asset. */
     public static String derivedFingerprint(ObjectMapper mapper, Object value) {
         if (mapper == null || value == null) {

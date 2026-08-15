@@ -714,6 +714,12 @@ public record IntegrationCapabilities(
         objects.put("scenarioDraftSetV2", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .ScenarioDraftSetV2.SCHEMA_VERSION));
+        objects.put("storedScenarioDraftSetV2", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .StoredScenarioDraftSetV2.SCHEMA_VERSION));
+        objects.put("scenarioDraftSetV2ChangedEvent", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.persistence
+                        .ScenarioDraftSetV2Changed.SCHEMA_VERSION));
         objects.put("fixtureAssetDescriptor", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .FixtureAssetDescriptor.SCHEMA_VERSION));
@@ -1295,6 +1301,8 @@ public record IntegrationCapabilities(
         features.put("correctnessCoverageApi", false);
         features.put("correctnessOracleAssertionProtocol", true);
         features.put("correctnessOracleAssertionApi", false);
+        features.put("correctnessScenarioV2Protocol", true);
+        features.put("correctnessScenarioV2Api", false);
         features.put("workbookEvidenceReferences", true);
         features.put("transactionalOutbox", true);
         features.put("eventCursor", true);
