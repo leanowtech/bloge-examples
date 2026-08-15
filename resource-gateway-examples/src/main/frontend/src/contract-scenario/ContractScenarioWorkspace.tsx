@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { useI18n } from '../i18n/I18nProvider';
 import type { TranslationValues } from '../i18n/i18n';
+import ScenarioRunPreflightSummary from '../correctness-studio/components/ScenarioRunPreflightSummary';
+import {
+  projectScenarioRunPreflight,
+  type ScenarioRunPreflightProjection,
+} from '../correctness-studio/model/preflightRiskProjection';
 
 import useDialogFocusTrap from '../author/accessibility/useDialogFocusTrap';
 import type { AuthorCommandAvailability } from '../author/task/taskStateProjection';
@@ -199,7 +204,7 @@ export default function ContractScenarioWorkspace({
   runCommand,
   onRunRemediation,
 }: ContractScenarioWorkspaceProps) {
-  const { t, d } = useI18n();
+  const { m, t, d } = useI18n();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialTab);
   const [selectedScenarioId, setSelectedScenarioId] = useState(
     initialScenarioId || lastRunScenarioId,
@@ -335,6 +340,44 @@ export default function ContractScenarioWorkspace({
   const differentialCounts = useMemo(() => (
     scenarioDraftSet ? tableSuiteDifferentialCounts(scenarioDraftSet, tableBaselineSummary) : null
   ), [scenarioDraftSet, tableBaselineSummary]);
+  const tablePreflightByMode = useMemo<
+  Partial<Record<ScenarioRunSelectionMode, ScenarioRunPreflightProjection>>
+  >(() => {
+    if (!scenarioDraftSet || !contract || !tableProjection) return {};
+    const allCaseIds = scenarioDraftSet.scenarios.map((scenario) => scenario.scenarioId);
+    const failedCaseIds = resolveExactScenarioRunSelection(
+      tableProjection,
+      tableSelection,
+      'FAILED',
+      previousRunCaseIds,
+    ).caseIds;
+    const caseIdsByMode: Record<ScenarioRunSelectionMode, string[]> = {
+      ALL: allCaseIds,
+      SELECTED: tableSelection.selectedCaseIds,
+      FAILED: failedCaseIds,
+      CHANGED: allCaseIds,
+      AFFECTED: allCaseIds,
+    };
+    return Object.fromEntries(Object.entries(caseIdsByMode).map(([mode, caseIds]) => [
+      mode,
+      projectScenarioRunPreflight({
+        graphDraft,
+        draftSet: scenarioDraftSet,
+        targetEffect: contract.executionSemantics.effect,
+        caseIds,
+      }),
+    ]));
+  }, [contract, graphDraft, previousRunCaseIds, scenarioDraftSet, tableProjection, tableSelection]);
+  const selectedCasePreflight = useMemo(() => (
+    scenarioDraftSet && contract && selectedScenario
+      ? projectScenarioRunPreflight({
+          graphDraft,
+          draftSet: scenarioDraftSet,
+          targetEffect: contract.executionSemantics.effect,
+          caseIds: [selectedScenario.scenarioId],
+        })
+      : null
+  ), [contract, graphDraft, scenarioDraftSet, selectedScenario]);
   const tableRunStorageKey = scenarioDraftSet
     ? tableSuiteBatchStorageKey(scenarioDraftSet)
     : '';
@@ -910,6 +953,12 @@ export default function ContractScenarioWorkspace({
 
   const runSelectedScenario = () => {
     if (!selectedScenario || !tableProjection) return;
+    if (selectedCasePreflight?.status === 'BLOCKED') {
+      setCompileMessages([m('correctness.preflight.runBlocked', {
+        count: selectedCasePreflight.reasons.filter((reason) => reason.severity === 'BLOCKING').length,
+      })]);
+      return;
+    }
     const scope = resolveExactScenarioRunSelection(
       tableProjection,
       { selectedCaseIds: [selectedScenario.scenarioId] },
@@ -923,6 +972,13 @@ export default function ContractScenarioWorkspace({
 
   const runTableSelection = async (mode: ScenarioRunSelectionMode) => {
     if (!scenarioDraftSet || !contract || !current) return;
+    const preflight = tablePreflightByMode[mode];
+    if (preflight?.status === 'BLOCKED') {
+      setTableRunError(m('correctness.preflight.runBlocked', {
+        count: preflight.reasons.filter((reason) => reason.severity === 'BLOCKING').length,
+      }));
+      return;
+    }
     const scope = tableProjection
       ? resolveExactScenarioRunSelection(tableProjection, tableSelection, mode, previousRunCaseIds)
       : null;
@@ -1392,6 +1448,8 @@ export default function ContractScenarioWorkspace({
               tableBatch={tableBatch}
               tableCommandReceipt={tableCommandReceipt}
               tableRunError={tableRunError}
+              tablePreflightByMode={tablePreflightByMode}
+              selectedCasePreflight={selectedCasePreflight}
               baselineAvailable={Boolean(baselineBatchId && tableBaselineSummary)}
               differentialCounts={differentialCounts}
               importDisabled={!assetStored || !current}
@@ -1545,6 +1603,8 @@ interface ScenarioTabProps {
   tableBatch: TableSuiteRunBatch | null;
   tableCommandReceipt: ScenarioCommandReceipt | null;
   tableRunError: string;
+  tablePreflightByMode: Partial<Record<ScenarioRunSelectionMode, ScenarioRunPreflightProjection>>;
+  selectedCasePreflight: ScenarioRunPreflightProjection | null;
   baselineAvailable: boolean;
   differentialCounts: TableSuiteDifferentialCounts | null;
   importDisabled: boolean;
@@ -1592,6 +1652,8 @@ function ScenarioTab({
   tableBatch,
   tableCommandReceipt,
   tableRunError,
+  tablePreflightByMode,
+  selectedCasePreflight,
   baselineAvailable,
   differentialCounts,
   importDisabled,
@@ -1713,6 +1775,7 @@ function ScenarioTab({
           batch={tableBatch}
           commandReceipt={tableCommandReceipt}
           runError={tableRunError}
+          preflightByMode={tablePreflightByMode}
           baselineAvailable={baselineAvailable}
           differentialCounts={differentialCounts}
           disabled={running || Boolean(tableBatch && !tableSuiteBatchTerminal(tableBatch))}
@@ -1992,6 +2055,10 @@ function ScenarioTab({
                 </div>
               )}
 
+              {selectedCasePreflight && (
+                <ScenarioRunPreflightSummary projection={selectedCasePreflight} />
+              )}
+
               <details className="contract-advanced-json">
                 <summary>{t('Advanced Scenario JSON')}</summary>
                 <textarea
@@ -2030,7 +2097,7 @@ function ScenarioTab({
                   type="button"
                   className="primary"
                   onClick={onRun}
-                  disabled={!runCommand.enabled}
+                  disabled={!runCommand.enabled || selectedCasePreflight?.status === 'BLOCKED'}
                   data-testid="scenario-run"
                   data-command-scope="CASE"
                   data-scope-count="1"

@@ -33,7 +33,7 @@ describe('asset table Scenario adapters', () => {
     expect(projection.rows[0]).toMatchObject({
       caseId: 'operator-case-1',
       name: 'Valid request',
-      presentation: { label: { messageId: 'table.verdict.schemaMatched' } },
+      presentation: { label: { messageId: 'correctness.verdict.coverageNotEvaluated.label' } },
     });
     expect(projection.columns.some((column) => column.path === '/given/input/request')).toBe(true);
     expect(projection.columns.some((column) => column.group === 'DEPENDENCY')).toBe(true);
@@ -61,7 +61,7 @@ describe('asset table Scenario adapters', () => {
       caseId: 'function-case-1',
       caseType: 'NEGATIVE',
       evidence: { execution: 'SKIPPED', freshness: 'STALE', proofStrength: 'RUNTIME' },
-      presentation: { label: { messageId: 'table.verdict.evidenceStale' } },
+      presentation: { label: { messageId: 'correctness.verdict.evidenceStale.label' } },
     });
     expect(projection.rows[0].values).toMatchObject({ 'given:%2Farg1': '' });
     expect(Object.values(projection.rows[0].values)).not.toContain('Passed');

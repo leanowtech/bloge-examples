@@ -1111,21 +1111,34 @@ Workspace command、publication saga、run 与 evidence，不记录业务 payloa
 
 ## 16. 可直接开工的工作包
 
+### 16.0 实施状态与架构边界
+
+截至当前实现，Stage 0 已完成两项前端止血能力：
+
+1. `correctness-studio/model/verdictPresentationPolicy.ts` 已成为现有 Case、Matrix 和算子测试表的统一五轴展示策略。空断言不再显示为通过，未计算覆盖时必须显示 `NOT_EVALUATED/UNPROVEN`。
+2. `correctness-studio/model/preflightRiskProjection.ts` 已提供 payload-free 的本地创作风险投影。Case 和 Matrix 在运行前可看到 `SUBJECT/REAL/MOCKED/FAULT/REPLAY/OBSERVE/DENIED` 数量，并对生产类环境、WRITE 目标、回退真实调用、缺失 Oracle、无法解析的依赖和当前瞬态运行器不支持的高级行为执行失败关闭。
+
+当前本地投影只解决 CUX-003 的「运行前可理解」问题，不是 `EffectiveExecutionPlan`，也不是安全授权边界。非生产 READ 场景中的显式真实调用显示为 `REVIEW`；生产类环境、WRITE、回退真实调用和无法证明的执行闭包显示为 `BLOCKED`。按钮禁用和命令处理器使用同一投影，避免通过非可视入口绕过前端阻断。
+
+COR-08 仍须实现服务端 `CorrectnessPreflightFacade`，并委托既有 `ExecutionControlCompiler` 与 `SafetyPreflight` 重新解析 exact publication、runtime binding、secret、side effect 和 fixture material。服务端返回的 preflight fingerprint 才能参与 run admission；届时前端本地投影退化为即时预览，并由服务端 canonical projection 覆盖。禁止把当前 TypeScript 投影移植到后端形成第二套 Planner。
+
+当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 尚未完成，因为 payload-free 任务遥测基线仍待实现。
+
 ### 16.1 Epic 总览
 
-| Epic | 内容 | 依赖 | 退出门槛 | 估算 |
-|---|---|---|---|---:|
-| COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | zero assertion 全面 UNPROVEN | 1 周 |
-| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
-| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 500-case overview SLO、scope tests | 1.5 周 |
-| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | frozen denominator 可审计、无手写 COVERED | 2 周 |
-| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | Owner 可审、compiler 无静默丢失 | 2 周 |
-| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | governed Case exact closure 完整 | 2.5 周 |
-| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
-| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | deterministic/source-map/retry tests 通过 | 2 周 |
-| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | real-call 风险前置、evidence exact 绑定 | 2 周 |
-| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | proposed-only + governance boundary 通过 | 2 周 |
-| COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
+| Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
+|---|---|---|---|---|---:|
+| COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 进行中：verdict 与本地 preflight 已完成，遥测待实现 | zero assertion 全面 UNPROVEN | 1 周 |
+| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 未开始 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
+| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 未开始 | 500-case overview SLO、scope tests | 1.5 周 |
+| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |
+| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |
+| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 未开始 | governed Case exact closure 完整 | 2.5 周 |
+| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
+| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |
+| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |
+| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
+| COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
 
 两组后端可在 COR-01 后并行推进 COR-03/04 与 COR-06 material port；前端先完成 COR-00/02，再在稳定 projection 上构建 surface。
 

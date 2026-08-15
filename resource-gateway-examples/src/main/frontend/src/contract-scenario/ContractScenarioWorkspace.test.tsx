@@ -246,6 +246,25 @@ describe('ContractScenarioWorkspace', () => {
     expect(text()).not.toContain('Run success is enough until an assertion is added');
   });
 
+  it('blocks fallback-to-real from both Case and Matrix run entry points', async () => {
+    const onRun = vi.fn().mockResolvedValue(successfulResponse());
+    await renderWorkspace({
+      initialTab: 'scenarios',
+      presentation: 'surface',
+      realFallback: true,
+      onRun,
+    });
+
+    expect(text()).toContain('Run blocked');
+    expect(text()).toContain('1 dependency invocations would call a real operator');
+    expect(text()).toContain('1 dependency controls can fall back to a real call');
+    expect(button('Run current case').disabled).toBe(true);
+    await act(async () => button('Matrix').click());
+    const matrixRun = document.querySelector<HTMLButtonElement>('[data-testid="scenario-run-primary"]');
+    expect(matrixRun?.disabled).toBe(true);
+    expect(onRun).not.toHaveBeenCalled();
+  });
+
   it('limits central-surface asset commands to the active authoring task', async () => {
     await renderWorkspace({ presentation: 'surface', initialTab: 'interface' });
 
@@ -1092,6 +1111,7 @@ describe('ContractScenarioWorkspace', () => {
     onRunEvidence?: ReturnType<typeof vi.fn>;
     presentation?: 'dialog' | 'surface';
     withoutAssertions?: boolean;
+    realFallback?: boolean;
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -1119,12 +1139,21 @@ describe('ContractScenarioWorkspace', () => {
     const draftSet = {
       ...projectedDraftSet,
       revision: options.scenarioRevision ?? projectedDraftSet.revision,
-      scenarios: options.withoutAssertions
-        ? projectedDraftSet.scenarios.map((scenario) => ({
+      scenarios: projectedDraftSet.scenarios.map((scenario) => ({
           ...scenario,
-          then: { assertions: [] },
-        }))
-        : projectedDraftSet.scenarios,
+          dependencies: options.realFallback
+            ? scenario.dependencies.map((dependency) => ({
+                ...dependency,
+                behavior: dependency.selector.nodeId === 'score'
+                  ? { ...dependency.behavior, kind: 'REAL' as const }
+                  : dependency.behavior,
+                consumption: dependency.selector.nodeId === 'score'
+                  ? { ...dependency.consumption, onUnmatched: 'ALLOW_REAL' as const }
+                  : dependency.consumption,
+              }))
+            : scenario.dependencies,
+          then: options.withoutAssertions ? { assertions: [] } : scenario.then,
+        })),
     };
     await act(async () => {
       root = createRoot(host);

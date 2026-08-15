@@ -616,15 +616,17 @@ correctness-studio/
 
 ### Stage 0：语义止血与基线（1 周）
 
-| ID | 工作项 | 验收 |
-|---|---|---|
-| CUX-001 | 空断言 verdict 改为 UNPROVEN | 任何界面都不出现“无断言通过” |
-| CUX-002 | 五轴状态文案统一 | Case、Matrix、Evidence、Rehearsal 一致 |
-| CUX-003 | 真实调用风险文案与 preflight 摘要 | 用户运行前可回答哪些依赖会真实调用 |
-| CUX-004 | 修复中文混杂英文 | 核心命令、状态、错误、路径类型通过 locale coverage gate |
-| CUX-005 | 建立匿名遥测基线 | 不记录 payload，只记录任务阶段、耗时、退出和错误码 |
+| ID | 工作项 | 当前状态 | 验收 |
+|---|---|---|---|
+| CUX-001 | 空断言 verdict 改为 UNPROVEN | 已完成现有前端止血 | 任何界面都不出现“无断言通过” |
+| CUX-002 | 五轴状态文案统一 | 已完成现有前端统一策略 | Case、Matrix、Evidence、Rehearsal 一致 |
+| CUX-003 | 真实调用风险文案与 preflight 摘要 | 已完成本地创作风险投影；服务端权威 preflight 待 COR-08 | 用户运行前可回答哪些依赖会真实调用 |
+| CUX-004 | 修复中文混杂英文 | 进行中，当前新增状态已进入 locale completeness gate | 核心命令、状态、错误、路径类型通过 locale coverage gate |
+| CUX-005 | 建立匿名遥测基线 | 未开始 | 不记录 payload，只记录任务阶段、耗时、退出和错误码 |
 
-退出门槛：错误正确性认知风险为 0；现有 wire contract 不变。
+退出门槛：错误正确性认知风险为 0；现有 wire contract 不变。当前尚未退出 Stage 0，剩余主阻断项是 CUX-005，以及对所有 legacy surface 的双语与 verdict inventory 复核。
+
+当前 CUX-003 的 TypeScript 投影只读取 Graph/Scenario 元数据，不读取或输出 Given、Fixture 和错误 payload。它负责即时解释与前端失败关闭，不负责运行授权。COR-08 必须由服务端复用 `ExecutionControlCompiler` 与 `SafetyPreflight` 生成 canonical `EffectiveExecutionPlan`；严禁复制当前投影逻辑形成第二套运行语义。
 
 ### Stage 1：正确性一级入口与分母先行（2–3 周）
 

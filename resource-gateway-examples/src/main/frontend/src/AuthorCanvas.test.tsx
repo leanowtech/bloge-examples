@@ -2168,7 +2168,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await waitFor(() => {
       const rows = Array.from(document.querySelectorAll('[data-testid^="scenario-matrix-row-"]'));
       expect(rows).toHaveLength(3);
-      expect(rows.every((row) => row.textContent?.includes('Mock behavior matched'))).toBe(true);
+      expect(rows.every((row) => row.textContent?.includes('Coverage not evaluated'))).toBe(true);
       expect(rows.every((row) => !row.textContent?.includes('Evidence stale'))).toBe(true);
     }, 5_000);
   });

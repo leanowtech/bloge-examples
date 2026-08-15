@@ -529,6 +529,77 @@ export const MESSAGE_CATALOG = {
     en: 'Execution, assertions, coverage, evidence, and the external gate all support this exact result.',
     'zh-CN': '执行、断言、覆盖、证据和外部门禁均支持当前精确结果。',
   },
+  'correctness.preflight.title': { en: 'Run preflight', 'zh-CN': '运行预检' },
+  'correctness.preflight.status.safe': { en: 'Safe to run', 'zh-CN': '可以安全运行' },
+  'correctness.preflight.status.review': { en: 'Review before run', 'zh-CN': '运行前需复核' },
+  'correctness.preflight.status.blocked': { en: 'Run blocked', 'zh-CN': '运行已阻断' },
+  'correctness.preflight.summary': {
+    en: '{cases} Cases · {subject} SUBJECT · {real} REAL · {mocked} MOCKED · {fault} FAULT · {fallback} fallback-to-real',
+    'zh-CN': '{cases} 个用例 · {subject} 个被测主体 · {real} 个 REAL · {mocked} 个 MOCKED · {fault} 个 FAULT · {fallback} 个回退真实调用',
+  },
+  'correctness.preflight.environment': { en: 'Environment', 'zh-CN': '环境' },
+  'correctness.preflight.targetEffect': { en: 'Target effect', 'zh-CN': '目标副作用' },
+  'correctness.preflight.subject': { en: 'SUBJECT', 'zh-CN': '被测主体' },
+  'correctness.preflight.invocations': { en: 'Invocation plan', 'zh-CN': '调用计划' },
+  'correctness.preflight.caseCount': { en: '{count} Cases', 'zh-CN': '{count} 个用例' },
+  'correctness.preflight.groupsTruncated': {
+    en: '{count} more invocation groups are omitted from this bounded preview.',
+    'zh-CN': '有 {count} 个调用分组未在此有界预览中展开。',
+  },
+  'correctness.preflight.runBlocked': {
+    en: 'Run blocked by {count} preflight findings. Resolve real-call, environment, oracle, or runtime compatibility risks first.',
+    'zh-CN': '运行被 {count} 项预检发现阻断。请先处理真实调用、环境、业务预期或运行时兼容风险。',
+  },
+  'correctness.preflight.mode.real': { en: 'REAL', 'zh-CN': '真实调用' },
+  'correctness.preflight.mode.mocked': { en: 'MOCKED', 'zh-CN': '模拟返回' },
+  'correctness.preflight.mode.fault': { en: 'FAULT', 'zh-CN': '故障注入' },
+  'correctness.preflight.mode.replay': { en: 'REPLAY', 'zh-CN': '回放' },
+  'correctness.preflight.mode.observe': { en: 'OBSERVE', 'zh-CN': '观察真实调用' },
+  'correctness.preflight.mode.denied': { en: 'DENIED', 'zh-CN': '禁止调用' },
+  'correctness.preflight.reason.emptySelection': {
+    en: 'No Case is included in the exact run selection.',
+    'zh-CN': '精确运行范围内没有用例。',
+  },
+  'correctness.preflight.reason.unknownCaseSelection': {
+    en: '{count} selected Case coordinates do not exist in the current Scenario revision.',
+    'zh-CN': '有 {count} 个已选用例坐标不属于当前测试场景版本。',
+  },
+  'correctness.preflight.reason.productionEnvironment': {
+    en: 'Scenario execution is disabled in a production-like environment.',
+    'zh-CN': '生产类环境禁止执行测试场景。',
+  },
+  'correctness.preflight.reason.targetWriteEffect': {
+    en: 'The target declares WRITE effects and cannot enter a side-effect-free run.',
+    'zh-CN': '目标声明了 WRITE 副作用，不能进入无副作用运行。',
+  },
+  'correctness.preflight.reason.targetEffectUnknown': {
+    en: 'The target effect is UNKNOWN; confirm its runtime behavior before relying on the result.',
+    'zh-CN': '目标副作用为 UNKNOWN；依赖运行结果前需要确认其运行行为。',
+  },
+  'correctness.preflight.reason.realDependency': {
+    en: '{count} dependency invocations would call a real operator.',
+    'zh-CN': '有 {count} 次依赖调用将执行真实算子。',
+  },
+  'correctness.preflight.reason.observedRealDependency': {
+    en: '{count} OBSERVE invocations would call and record a real dependency.',
+    'zh-CN': '有 {count} 次 OBSERVE 调用将执行并记录真实依赖。',
+  },
+  'correctness.preflight.reason.realFallback': {
+    en: '{count} dependency controls can fall back to a real call when unmatched or exhausted.',
+    'zh-CN': '有 {count} 个依赖控制在未匹配或耗尽时会回退到真实调用。',
+  },
+  'correctness.preflight.reason.missingOracle': {
+    en: '{count} Cases have no business assertion and would remain unproven.',
+    'zh-CN': '有 {count} 个用例缺少业务断言，运行后仍无法证明正确性。',
+  },
+  'correctness.preflight.reason.transientRuntimeUnsupported': {
+    en: '{count} advanced dependency controls require the governed testing runtime.',
+    'zh-CN': '有 {count} 个高级依赖控制需要受治理测试运行时。',
+  },
+  'correctness.preflight.reason.unresolvedDependency': {
+    en: '{count} dependency controls cannot be resolved to one exact Graph node.',
+    'zh-CN': '有 {count} 个依赖控制无法解析到唯一的图节点。',
+  },
   'table.verdict.evidenceStale': { en: 'Evidence stale', 'zh-CN': '证据已过期' },
   'table.verdict.evidenceSuperseded': { en: 'Evidence superseded', 'zh-CN': '证据已被取代' },
   'table.verdict.notRun': { en: 'Not run', 'zh-CN': '尚未运行' },

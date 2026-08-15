@@ -2,6 +2,8 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { ChevronDown, ChevronUp, Ellipsis } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nProvider';
 import type { AuthorCommandAvailability } from '../../author/task/taskStateProjection';
+import ScenarioRunPreflightSummary from '../../correctness-studio/components/ScenarioRunPreflightSummary';
+import type { ScenarioRunPreflightProjection } from '../../correctness-studio/model/preflightRiskProjection';
 
 import type { ScenarioCaseType } from '../domain';
 import {
@@ -34,6 +36,7 @@ interface ScenarioMatrixSurfaceProps {
   batch?: TableSuiteRunBatch | null;
   commandReceipt?: ScenarioCommandReceipt | null;
   runError?: string;
+  preflightByMode?: Partial<Record<ScenarioRunSelectionMode, ScenarioRunPreflightProjection>>;
   baselineAvailable?: boolean;
   differentialCounts?: TableSuiteDifferentialCounts | null;
   disabled?: boolean;
@@ -65,6 +68,7 @@ export default function ScenarioMatrixSurface({
   batch = null,
   commandReceipt = null,
   runError = '',
+  preflightByMode = {},
   baselineAvailable = false,
   differentialCounts = null,
   disabled = false,
@@ -137,12 +141,14 @@ export default function ScenarioMatrixSurface({
     ? 'SELECTED'
     : 'ALL';
   const primaryRunScope = primaryRunMode === 'SELECTED' ? selectedScope : allScope;
+  const primaryPreflight = preflightByMode[primaryRunMode];
+  const runBlocked = (mode: ScenarioRunSelectionMode) => preflightByMode[mode]?.status === 'BLOCKED';
   const differentialRunCommands = (
     <>
       <button
         type="button"
         className="secondary"
-        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || failedCount === 0}
+        disabled={disabled || runCommand?.enabled === false || runBlocked('FAILED') || !baselineAvailable || failedCount === 0}
         onClick={() => onRunSelection('FAILED')}
       >
         {t('Run failed ({count})', { count: failedCount })}
@@ -150,7 +156,7 @@ export default function ScenarioMatrixSurface({
       <button
         type="button"
         className="secondary"
-        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || changedCount === 0}
+        disabled={disabled || runCommand?.enabled === false || runBlocked('CHANGED') || !baselineAvailable || changedCount === 0}
         onClick={() => onRunSelection('CHANGED')}
         title={!baselineAvailable
           ? t('Run all once to create a complete baseline')
@@ -162,7 +168,7 @@ export default function ScenarioMatrixSurface({
       <button
         type="button"
         className="secondary"
-        disabled={disabled || runCommand?.enabled === false || !baselineAvailable || affectedCount === 0}
+        disabled={disabled || runCommand?.enabled === false || runBlocked('AFFECTED') || !baselineAvailable || affectedCount === 0}
         onClick={() => onRunSelection('AFFECTED')}
         title={!baselineAvailable
           ? t('Run all once to create a complete baseline')
@@ -373,6 +379,7 @@ export default function ScenarioMatrixSurface({
           </section>
         )}
         {runError && <div className="scenario-matrix-run-error" role="alert">{runError}</div>}
+        {primaryPreflight && <ScenarioRunPreflightSummary projection={primaryPreflight} compact />}
       </div>
 
       {compactCommands ? (
@@ -590,7 +597,7 @@ export default function ScenarioMatrixSurface({
                 <button
                   type="button"
                   className="secondary"
-                  disabled={disabled || runCommand?.enabled === false || projection.rows.length === 0}
+                  disabled={disabled || runCommand?.enabled === false || runBlocked('ALL') || projection.rows.length === 0}
                   onClick={() => onRunSelection('ALL')}
                   data-command-scope="SUITE"
                   data-scope-count={allScope.caseIds.length}
@@ -605,7 +612,7 @@ export default function ScenarioMatrixSurface({
           <button
             type="button"
             className="primary"
-            disabled={disabled || runCommand?.enabled === false || primaryRunScope.caseIds.length === 0}
+            disabled={disabled || runCommand?.enabled === false || runBlocked(primaryRunMode) || primaryRunScope.caseIds.length === 0}
             onClick={() => onRunSelection(primaryRunMode)}
             data-testid={primaryRunMode === 'SELECTED' ? 'scenario-run-selected' : 'scenario-run-primary'}
             data-command-scope={primaryRunMode === 'SELECTED' ? 'SELECTION' : 'SUITE'}

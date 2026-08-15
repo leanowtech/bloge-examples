@@ -2963,6 +2963,166 @@ button.primary:disabled {
   border: 0;
 }
 
+.correctness-preflight {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-left: 4px solid #2563eb;
+  background: #f7faff;
+  color: #243247;
+}
+
+.correctness-preflight[data-status="safe"] {
+  border-left-color: #15803d;
+  background: #f3faf5;
+}
+
+.correctness-preflight[data-status="review"] {
+  border-left-color: #b96a0b;
+  background: #fff9e9;
+}
+
+.correctness-preflight[data-status="blocked"] {
+  border-left-color: #b42318;
+  background: #fff5f4;
+}
+
+.correctness-preflight > header {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.correctness-preflight > header > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.correctness-preflight > header > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 9px;
+  align-items: baseline;
+}
+
+.correctness-preflight > header span,
+.correctness-preflight > header small {
+  color: #5d6a7d;
+  font-size: var(--rg-font-aux);
+}
+
+.correctness-preflight > header strong {
+  font-size: var(--rg-font-small);
+}
+
+.correctness-preflight > header small {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+}
+
+.correctness-preflight > dl {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(8, minmax(62px, 1fr));
+  gap: 5px;
+  margin: 0;
+}
+
+.correctness-preflight > dl > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  padding: 5px 7px;
+  border: 1px solid #d7e0ea;
+  background: rgb(255 255 255 / 72%);
+}
+
+.correctness-preflight dt {
+  overflow: hidden;
+  color: #657185;
+  font-size: var(--rg-font-aux);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correctness-preflight dd {
+  min-width: 0;
+  margin: 0;
+  color: #243247;
+  font-size: var(--rg-font-aux);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.correctness-preflight > ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.correctness-preflight > ul > li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: #79510d;
+  font-size: var(--rg-font-aux);
+}
+
+.correctness-preflight > ul > li[data-severity="blocking"] {
+  color: #9f2018;
+}
+
+.correctness-preflight > ul svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.correctness-preflight > details {
+  min-width: 0;
+  font-size: var(--rg-font-aux);
+}
+
+.correctness-preflight > details > summary {
+  width: fit-content;
+  color: #174ea6;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.correctness-preflight-invocations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 5px;
+  margin-top: 7px;
+}
+
+.correctness-preflight-invocations > div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(58px, 0.65fr) minmax(90px, 1fr) auto;
+  gap: 6px;
+  align-items: center;
+  padding: 5px 7px;
+  border: 1px solid #d7e0ea;
+  background: #fff;
+}
+
+.correctness-preflight-invocations span,
+.correctness-preflight-invocations code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.correctness-preflight-invocations small {
+  color: #657185;
+}
+
 .scenario-command-receipt {
   display: grid;
   grid-template-columns: minmax(220px, 0.75fr) minmax(0, 2fr);
@@ -19276,6 +19436,10 @@ button.primary:disabled {
 }
 
 @media (max-width: 840px) {
+  .correctness-preflight > dl {
+    grid-template-columns: repeat(4, minmax(62px, 1fr));
+  }
+
   .scenario-viewbar,
   .scenario-matrix-bulkbar,
   .library-test-viewbar {
@@ -19419,6 +19583,30 @@ button.primary:disabled {
 }
 
 @media (max-width: 520px) {
+  .correctness-preflight > header > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .correctness-preflight > header small {
+    grid-column: 1;
+  }
+
+  .correctness-preflight > dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .correctness-preflight-invocations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .correctness-preflight-invocations > div {
+    grid-template-columns: auto minmax(58px, 0.65fr) minmax(90px, 1fr);
+  }
+
+  .correctness-preflight-invocations small {
+    grid-column: 2 / -1;
+  }
+
   .scenario-view-coordinate,
   .scenario-matrix-bulkbar span,
   .library-test-viewbar > span {

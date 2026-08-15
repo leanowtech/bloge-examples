@@ -194,7 +194,7 @@ describe('AssetTestTable', () => {
       }),
     );
     expect(query('[data-testid="scenario-matrix-row-operator-case-1"]').textContent)
-      .toContain('Schema contract valid');
+      .toContain('Coverage not evaluated');
   });
 
   it('requires explicit governance confirmation before persisting one parsed test row', async () => {
