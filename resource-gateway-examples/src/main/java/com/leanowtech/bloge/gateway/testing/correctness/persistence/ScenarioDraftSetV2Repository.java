@@ -50,6 +50,14 @@ public interface ScenarioDraftSetV2Repository {
         return List.of();
     }
 
+    /** Current exact Scenario Draft Set heads for one exact authoring target. */
+    default List<ExactAssetRef> currentDraftSetRefsByTarget(
+            EnterpriseScope scope,
+            ExactTargetRef target
+    ) {
+        return List.of();
+    }
+
     record FixtureReferenceUsage(
             ExactAssetRef scenarioDraftSetRef,
             ExactAssetRef fixtureAssetRef

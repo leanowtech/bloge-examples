@@ -176,18 +176,7 @@ public final class DatabaseScenarioDraftSetV2Repository
                           AND h.target_revision = ? AND h.target_fingerprint = ?
                         """, Long.class,
                 targetArgs(exactScope, exactTarget));
-        List<ExactAssetRef> setRefs = jdbc.query("""
-                        SELECT scenario_draft_set_id, revision, fingerprint
-                        FROM rg_scenario_draft_set_v2_heads
-                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
-                          AND environment_id = ? AND region_id = ?
-                          AND target_kind = ? AND target_id = ?
-                          AND target_revision = ? AND target_fingerprint = ?
-                        ORDER BY scenario_draft_set_id
-                        """, (result, row) -> new ExactAssetRef(
-                        "SCENARIO_DRAFT_SET", result.getString("scenario_draft_set_id"),
-                        result.getLong("revision"), result.getString("fingerprint")),
-                targetArgs(exactScope, exactTarget));
+        List<ExactAssetRef> setRefs = currentDraftSetRefsByTarget(exactScope, exactTarget);
         Object[] args = append(
                 targetArgs(exactScope, exactTarget),
                 after.scenarioDraftSetId(), after.scenarioDraftSetId(), after.caseId(),
@@ -286,6 +275,27 @@ public final class DatabaseScenarioDraftSetV2Repository
                         .thenComparing(usage -> usage.fixtureAssetRef().fingerprint())
                         .thenComparing(usage -> usage.scenarioDraftSetRef().id()))
                 .toList();
+    }
+
+    @Override
+    public List<ExactAssetRef> currentDraftSetRefsByTarget(
+            EnterpriseScope scope,
+            ExactTargetRef target
+    ) {
+        EnterpriseScope exactScope = exactScope(scope);
+        ExactTargetRef exactTarget = Objects.requireNonNull(target, "target");
+        return jdbc.query("""
+                        SELECT scenario_draft_set_id, revision, fingerprint
+                        FROM rg_scenario_draft_set_v2_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ?
+                          AND target_revision = ? AND target_fingerprint = ?
+                        ORDER BY scenario_draft_set_id
+                        """, (result, row) -> new ExactAssetRef(
+                        "SCENARIO_DRAFT_SET", result.getString("scenario_draft_set_id"),
+                        result.getLong("revision"), result.getString("fingerprint")),
+                targetArgs(exactScope, exactTarget));
     }
 
     private static List<FixtureReferenceUsage> fixtureUsages(

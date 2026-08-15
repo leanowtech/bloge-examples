@@ -129,6 +129,9 @@ class DatabaseFixtureAssetRepositoryTest {
 
         assertThat(repository.usages(scope("tenant-a"), stored.exactRef(), 100))
                 .containsExactly(new FixtureAssetRepository.FixtureUsage(stored.exactRef(), consumer));
+        ExactAssetRef nextConsumer = asset("SCENARIO_DRAFT_SET", "loan-cases", 5, 'e');
+        repository.replaceUsageForConsumer(scope("tenant-a"), nextConsumer, List.of());
+        assertThat(repository.usages(scope("tenant-a"), stored.exactRef(), 100)).isEmpty();
         assertThat(repository.resolveExact(scope("tenant-a"), List.of(stored.exactRef())))
                 .containsExactly(stored);
         assertThatThrownBy(() -> repository.resolveExact(

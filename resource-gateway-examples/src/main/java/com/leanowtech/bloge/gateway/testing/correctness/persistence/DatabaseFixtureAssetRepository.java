@@ -153,11 +153,10 @@ public class DatabaseFixtureAssetRepository implements FixtureAssetRepository {
                         DELETE FROM rg_fixture_usage_index
                         WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
                           AND environment_id = ? AND region_id = ?
-                          AND consumer_kind = ? AND consumer_id = ? AND consumer_revision = ?
+                          AND consumer_kind = ? AND consumer_id = ?
                         """,
                 exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
-                exactScope.environment(), exactScope.region(), consumer.kind(), consumer.id(),
-                consumer.revision());
+                exactScope.environment(), exactScope.region(), consumer.kind(), consumer.id());
         for (StoredFixtureAsset fixture : fixtures) {
             ExactAssetRef ref = fixture.exactRef();
             jdbc.update("""
