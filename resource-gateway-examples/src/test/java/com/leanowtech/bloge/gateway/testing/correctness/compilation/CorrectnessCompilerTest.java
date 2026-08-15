@@ -177,7 +177,7 @@ class CorrectnessCompilerTest {
                 .contains("RG.CORRECTNESS.EVALUATOR_CAPABILITY_UNSUPPORTED");
     }
 
-    private FrozenCompilationInput input(ValueSource dependencyValue, boolean supportedAssertion) {
+    FrozenCompilationInput input(ValueSource dependencyValue, boolean supportedAssertion) {
         EnterpriseScope scope = scope();
         ExactTargetRef target = target();
         PrincipalRef owner = principal("owner");
