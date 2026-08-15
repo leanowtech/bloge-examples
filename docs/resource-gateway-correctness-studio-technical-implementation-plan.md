@@ -1274,6 +1274,12 @@ Definition/target/scope 一起进入 query fingerprint；component source 返回
 拒绝。500-case 测试验证 Overview 只返回 100 条摘要并满足本地 1 秒预算，完整 scope、target drift、Definition 歧义、认证和
 payload leakage 均有回归测试。
 
+专业编辑器所需的详情查询协议也已补齐。服务端通过统一的 exact-revision authoring asset query controller，按完整企业 scope
+读取 Coverage Inventory、Business Oracle、Assertion Set、Scenario Draft Set v2 与 Fixture descriptor；只有省略 revision 时才读取
+head。响应统一 `no-store`，找不到精确修订版时以稳定 Problem 失败关闭。Capability Probe 只在相应物理运行时装配后声明这些 GET
+端点。前端通过单一类型化客户端隔离 `CORRECTNESS_READ/WRITE/REVIEW`、Fixture material 与 Publication purpose，并统一携带
+`If-Match` 和 `Idempotency-Key`。专业编辑器不得从 Workspace 摘要反向拼装写入对象。
+
 Correctness authoring 由 `gateway.testing.correctness.enabled` 显式启用。Capability Probe 不再写死 API 可用性，而是根据当前进程中
 `CorrectnessWorkspaceQuery`、各命令 Service、`CorrectnessCompilationService` 和 `CorrectnessPublicationService` 是否真实装配，分别
 声明 Workspace、Coverage、Oracle/Assertion、Scenario v2、Fixture Catalog、Fixture Material、Compilation 和 Publication 能力。

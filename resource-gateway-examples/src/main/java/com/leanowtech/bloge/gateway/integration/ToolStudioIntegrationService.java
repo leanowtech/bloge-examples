@@ -2454,6 +2454,8 @@ public class ToolStudioIntegrationService {
         }
         if (correctnessAuthoringRuntime.coverageApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/coverage-inventories/{inventoryId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
                     "PUT", "/api/visual/coverage-inventories/{inventoryId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/visual/coverage-inventories/{inventoryId}:freeze"));
@@ -2462,9 +2464,13 @@ public class ToolStudioIntegrationService {
         }
         if (correctnessAuthoringRuntime.oracleAssertionApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/oracles/{oracleId}"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
                     "PUT", "/api/visual/oracles/{oracleId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "POST", "/api/visual/oracles/{oracleId}:approve"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/assertion-sets/{assertionSetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "PUT", "/api/visual/assertion-sets/{assertionSetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
@@ -2473,6 +2479,8 @@ public class ToolStudioIntegrationService {
                     "POST", "/api/visual/assertion-sets/{assertionSetId}:validate"));
         }
         if (correctnessAuthoringRuntime.scenarioV2Api()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/scenario-draft-sets-v2/{scenarioDraftSetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "PUT", "/api/visual/scenario-draft-sets-v2/{scenarioDraftSetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
@@ -2483,6 +2491,8 @@ public class ToolStudioIntegrationService {
                     "POST", "/api/visual/scenario-draft-sets-v2:migrate-v1-preview"));
         }
         if (correctnessAuthoringRuntime.fixtureCatalogApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/fixture-assets/{fixtureAssetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(
                     "PUT", "/api/visual/fixture-assets/{fixtureAssetId}"));
             endpoints.add(new IntegrationCapabilities.Endpoint(

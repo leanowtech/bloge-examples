@@ -1181,18 +1181,40 @@ type OperatorTestingPurpose =
 
 export type CorrectnessApiPurpose =
   'CORRECTNESS_READ'
+  | 'CORRECTNESS_WRITE'
+  | 'CORRECTNESS_REVIEW'
+  | 'CORRECTNESS_FIXTURE_MATERIAL_READ'
+  | 'CORRECTNESS_FIXTURE_MATERIAL_WRITE'
   | 'TEST_EXECUTION'
   | 'TEST_SUITE_READ'
+  | 'TEST_SCENARIO_PUBLISH'
   | 'GOVERNANCE_EVIDENCE_INGESTION';
+
+const CORRECTNESS_API_PATHS = [
+  '/api/visual/correctness-',
+  '/api/visual/coverage-inventories/',
+  '/api/visual/oracles/',
+  '/api/visual/assertion-sets',
+  '/api/visual/scenario-draft-sets-v2/',
+  '/api/visual/fixture-assets/',
+  '/api/visual/fixture-materials',
+] as const;
+
+export interface CorrectnessApiExchangeOptions {
+  method?: 'GET' | 'POST' | 'PUT';
+  body?: unknown;
+  ifMatch?: number;
+  idempotencyKey?: string;
+}
 
 /** Uses the host-aware transport and workload identity for the isolated Correctness API family. */
 export async function exchangeCorrectnessApi<T>(
   path: string,
   purpose: CorrectnessApiPurpose,
-  options: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  options: CorrectnessApiExchangeOptions = {},
 ): Promise<T> {
-  if (!path.startsWith('/api/visual/correctness-')
-      && path !== '/api/integration/capabilities') {
+  if (path.includes('..') || (path !== '/api/integration/capabilities'
+      && !CORRECTNESS_API_PATHS.some((prefix) => path.startsWith(prefix)))) {
     throw new Error('Correctness API requests must use an approved same-origin endpoint.');
   }
   return readTestingJson<T>(await sendRequest(path, {
@@ -1201,6 +1223,8 @@ export async function exchangeCorrectnessApi<T>(
       ...operatorTestHeadersProvider(),
       'X-Purpose': purpose,
       ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+      ...(options.ifMatch === undefined ? {} : { 'If-Match': String(options.ifMatch) }),
+      ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
     },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
   }));

@@ -51,6 +51,9 @@ class CorrectnessAuthoringCapabilityTest {
         assertThat(capabilities.endpoints())
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/correctness-workspaces/"))
+                .anyMatch(endpoint -> endpoint.method().equals("GET")
+                        && endpoint.path().equals(
+                                "/api/visual/coverage-inventories/{inventoryId}"))
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/fixture-assets/"))
                 .anyMatch(endpoint -> endpoint.path().equals(
