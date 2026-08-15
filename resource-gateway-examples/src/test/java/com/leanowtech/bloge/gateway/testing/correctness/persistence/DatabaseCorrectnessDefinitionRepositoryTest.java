@@ -250,12 +250,23 @@ class DatabaseCorrectnessDefinitionRepositoryTest {
 
         String projectionIndexMigration = Files.readString(Path.of(
                 "src", "main", "resources", "db", "postgresql",
-                "V20260815_006__correctness_publication_projection_index.sql"));
+                "V20260815_007__correctness_publication_projection_index.sql"));
         assertThat(projectionIndexMigration).contains(
                 "CREATE INDEX IF NOT EXISTS rg_correctness_publication_definition_latest_idx",
                 "tenant_id, organization_id, project_id, environment_id, region_id",
                 "definition_id, definition_revision, definition_fingerprint",
                 "committed_at DESC, publication_id DESC");
+
+        Path migrationDirectory = Path.of(
+                "src", "main", "resources", "db", "postgresql");
+        try (var files = Files.list(migrationDirectory)) {
+            List<String> versions = files
+                    .map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith("V") && name.contains("__"))
+                    .map(name -> name.substring(0, name.indexOf("__")))
+                    .toList();
+            assertThat(versions).doesNotHaveDuplicates();
+        }
     }
 
     private DatabaseCorrectnessDefinitionRepository repositoryAt(Instant instant) {

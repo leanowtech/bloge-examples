@@ -93,7 +93,7 @@ ANEKE 只消费 Resource Gateway 输出的 exact publication、evidence 和 gate
 
 ### 3.2 推荐模块边界
 
-新增后端包：
+新增后端包与核心文件如下。清单只展示稳定边界，不枚举全部 Controller、Repository 和 receipt 类型：
 
 ```text
 com.leanowtech.bloge.gateway.testing.correctness
@@ -107,33 +107,40 @@ com.leanowtech.bloge.gateway.testing.correctness
     CorrectnessPublication.java
     CorrectnessPublicationAttempt.java
     CorrectnessVerdict.java
-  application/
+  workspace/
     CorrectnessWorkspaceQuery.java
-    CorrectnessAuthoringService.java
+    *CorrectnessWorkspaceComponentSource.java
+  coverage/
     CoverageInventoryService.java
-    OracleReviewService.java
+  oracle/
+    BusinessOracleService.java
+    AssertionSetService.java
+  scenario/
+    ScenarioDraftSetV2Service.java
+    ScenarioClosureValidator.java
+  fixture/
     FixtureCatalogService.java
+    FixtureMaterialService.java
+    FixtureMaterialResolver.java
+  compilation/
     CorrectnessCompilationService.java
     CorrectnessCompiler.java
+    CorrectnessCompilationValidator.java
+    CorrectnessScenarioLowerer.java
+    CorrectnessAssertionLowerer.java
+    CorrectnessFixtureRuleLowerer.java
+    CorrectnessSourceMapBuilder.java
+    CorrectnessCompilationCanonicalizer.java
+    CorrectnessExecutionRiskAnalyzer.java
     CorrectnessPublicationService.java
+  publication/
+    CorrectnessPublicationRepository.java
+    DatabaseCorrectnessPublicationRepository.java
+  run/                           # COR-08
     CorrectnessPreflightFacade.java
     CorrectnessVerdictProjector.java
-  port/
-    CorrectnessAssetRepository.java
-    FixtureMaterialResolver.java
-    TestingRegistryGateway.java
-    CorrectnessEventPublisher.java
-    GovernanceFeedbackPort.java
-  adapter/
-    persistence/
-    scenario/
-    testing/
-    integration/
-  api/
-    CorrectnessWorkspaceController.java
-    CorrectnessAuthoringController.java
-    CorrectnessPublicationController.java
-    CorrectnessRunController.java
+  persistence/
+    Database*Repository.java
 ```
 
 这里的重点不是增加很多 CRUD class，而是形成四个“深模块”：
@@ -1220,9 +1227,11 @@ Definition/target/scope 一起进入 query fingerprint；component source 返回
 拒绝。500-case 测试验证 Overview 只返回 100 条摘要并满足本地 1 秒预算，完整 scope、target drift、Definition 歧义、认证和
 payload leakage 均有回归测试。
 
-当前 `correctnessWorkspaceProtocol=true`，`correctnessWorkspaceApi=false`。Controller 和 definition-only shadow source 已实现，但
-生产装配保持关闭；COR-03 至 COR-06 接入 Inventory、Oracle/Assertion、Scenario v2、Fixture 和 Evidence 的权威 projection 后才可
-翻转 API capability。这个状态是部署真值，不把“有类型”冒充“已可用”。
+Correctness authoring 由 `gateway.testing.correctness.enabled` 显式启用。Capability Probe 不再写死 API 可用性，而是根据当前进程中
+`CorrectnessWorkspaceQuery`、各命令 Service、`CorrectnessCompilationService` 和 `CorrectnessPublicationService` 是否真实装配，分别
+声明 Workspace、Coverage、Oracle/Assertion、Scenario v2、Fixture Catalog、Fixture Material、Compilation 和 Publication 能力。
+主迁移未应用、企业 authority 缺失、material key ring 缺失或 testing registry 未装配时，对应 Bean 不存在且 capability 保持关闭；
+不能把“类已经编译”冒充“部署已经可用”。
 
 COR-03 的写侧内核已经完成：Coverage Inventory 具备完整 scope 的 head、不可变 revision、数据库 CAS、义务 fingerprint 索引和
 transactional outbox；读取时 canonical document 与索引互相校验，任一侧被篡改都会失败关闭。`saveDraft`、`freeze` 和
@@ -1232,18 +1241,18 @@ transactional outbox；读取时 canonical document 与索引互相校验，任�
 事件和状态机均已有自动化测试。受认证 HTTP adapter 强制 `If-Match`；freeze 另强制 `Idempotency-Key`，数据库只保存 key/request
 fingerprint、frozen exact ref 和数量回执，不保存原始 key 或审核说明；相同命令回放 exact result，异义复用返回冲突。Workspace
 Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母，并以 Scenario v2 的 Canonical Case exact obligation ref
-派生 fulfilled；客户端不能手写 `COVERED`。当前剩余工作是生产 bean/feature flag 装配。
+派生 fulfilled；客户端不能手写 `COVERED`。生产 Bean 和 feature capability 已按权威依赖条件装配；剩余工作是 Correctness Studio
+中的 Coverage Inventory 体验接入。
 
 COR-04 的业务预期内核已经完成：Business Oracle 与 Assertion Set 均具备完整 scope、不可变 revision、CAS、数据库完整性校验和
 payload-free outbox。Oracle 的 propose/approve/supersede 与 Assertion Set 的 draft/compile/validate 生命周期分离；Owner 审批执行
-四眼复核和幂等回放，纯 compiler 对不支持的 assertion 语义产生阻断诊断，不允许静默丢失。受认证 HTTP adapter 和 Workspace
-摘要已实现。当前剩余工作是生产 bean/feature flag 装配，以及在 Correctness Studio 中接入 Oracle Builder 和 Assertion Builder。
+四眼复核和幂等回放，纯 compiler 对不支持的 assertion 语义产生阻断诊断，不允许静默丢失。受认证 HTTP adapter、Workspace
+摘要和条件化生产装配已实现。剩余工作是在 Correctness Studio 中接入 Oracle Builder 和 Assertion Builder。
 
 COR-05 的 governed Scenario v2 后端内核已经完成：Scenario Draft Set 具备 CAS head、不可变历史、payload-free outbox、复合游标
 Matrix、冻结义务履行投影和 v1 migration preview。`EXPLORATORY -> REVIEW_READY -> CANONICAL` 由服务端 closure validator 控制；
 Canonical Case 必须闭合 frozen obligation、approved Oracle、valid Assertion Set、Contract 和外部 exact refs。审批执行四眼复核、
-`Idempotency-Key` 回放与 no-store HTTP 语义。当前剩余工作是生产装配、前端 Case Builder/Matrix 接入，以及由 COR-07 提供的确定性
-编译与发布。
+`Idempotency-Key` 回放与 no-store HTTP 语义。生产装配、确定性编译与发布已经接通；剩余工作是前端 Case Builder/Matrix 接入。
 
 COR-06 的 Fixture 后端内核已经完成：Fixture Catalog descriptor 与受保护 material vault 物理分离。Material 写入执行 payload
 大小/深度/节点数约束、JSON Pointer 和敏感键脱敏、AES-GCM 加密、完整 scope AAD 绑定、保留期和访问审计；普通目录、Workspace、
@@ -1251,8 +1260,20 @@ receipt 和 outbox 不包含明文。Fixture 使用 `DRAFT -> PROPOSED -> APPROV
 ACTIVE 前重新校验 exact material、Schema、脱敏和 retention。Scenario closure 只接受当前、ACTIVE、未过期的 exact Fixture ref，
 不解密 material。Workspace 从 Canonical Scenario 当前头派生 Fixture 使用次数，以及 `REFERENCE_MISSING`、`HEAD_DRIFT`、
 `NOT_ACTIVE`、`RETENTION_EXPIRED` 失效原因；反向使用索引可以从 canonical Scenario 头重建，同一逻辑消费者的新 revision 会
-替换旧索引。当前剩余工作是生产 bean/feature flag 装配、密钥与 Schema authority 的部署绑定，以及前端 Fixture
+替换旧索引。目录与 material 服务已条件化生产装配；部署仍必须提供真实密钥和 Schema authority。产品侧剩余 Fixture
 Catalog/Variant Editor 接入。
+
+COR-07 后端已经完成。`CorrectnessCompilationService` 在应用服务边界解析 exact coordinate、复核外部引用、授权读取并验证 fixture
+material receipt；纯 `CorrectnessCompiler` 只编排 Validate、Risk、Lower/Compile、Map 和 Canonicalize 阶段，不持有 repository、
+clock、network、random 或 secret manager。v2 Scenario 继续降为现有 `FixtureBundle`、`TestSuite` 与 Assertion compiler 协议；任何
+不支持语义都会生成 error diagnostic，不会静默丢弃。连续 100 次编译、locale/timezone 变化、phase composition、source map 和
+payload leakage 均有回归测试。
+
+Publication 使用可恢复 Saga：持久化 attempt/history，按内容寻址注册 FixtureBundle/TestSuite，逐项 read-after-write 验证，最后
+原子提交不可变 manifest 与 outbox。重试复用已验证资产，异义 idempotency key、引用漂移、注册读回损坏和 commit closure 替换均
+失败关闭。Workspace 只投影最近一次 exact Publication 的元数据摘要；Fixture payload 不进入 report、manifest、event 或 Workspace。
+compile preview、publish、publication/attempt/history 查询 API 和动态 capability 已完成。COR-07 剩余项仅是 Correctness Studio 的
+发布交互与灰度运营配置，不再阻塞 COR-08 后端开工。
 
 ### 16.1 Epic 总览
 
@@ -1260,12 +1281,12 @@ Catalog/Variant Editor 接入。
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
-| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 及 COR-03-06 权威 decorator 已完成，生产装配待接入 | 500-case overview SLO、scope tests | 1.5 周 |
-| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact、Workspace projection 与 Scenario exact fulfillment 已完成，生产装配待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
-| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等、纯 compiler、HTTP 与 Workspace summary 已完成，生产装配待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
-| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 进行中；CAS/history/outbox、复合游标 Matrix、fulfillment、状态机、exact closure、幂等审批、HTTP 与 no-store v1 migration preview 已完成，生产装配/前端待接入 | governed Case exact closure 完整 | 2.5 周 |
-| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 进行中；目录/物料持久化、生命周期、幂等审批、HTTP、Scenario closure、Workspace health 与反向索引重建已完成，生产装配/前端待接入 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
-| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |
+| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 后端已完成；完整前端 Workspace 和 COR-08 run/evidence decorator 待接入 | 500-case overview SLO、scope tests 已通过 | 1.5 周 |
+| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 后端已完成；Coverage Studio surface 待接入 | frozen denominator 可审计、无手写 COVERED 已通过 | 2 周 |
+| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 后端已完成；Oracle/Assertion Builder 待接入 | Owner 可审、compiler 无静默丢失已通过 | 2 周 |
+| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端已完成；Case Builder/Matrix 前端待接入 | governed Case exact closure 已通过 | 2.5 周 |
+| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端已完成；部署 authority 与 Fixture Editor 待接入 | metadata/payload 隔离与泄露测试已通过 | 2.5 周 |
+| COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端已完成；发布前端与灰度配置待接入 | deterministic/source-map/retry/closure tests 已通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |
 | COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
 | COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
