@@ -56,7 +56,7 @@ Options:
   --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
   --shadow-detached-data-plane  Install exact detached source connectors and verifier; authorities still fail closed.
   --outcome-continuous-assessment  Enable selected-population freshness workers; customer authorities are still required.
-  --open            Open /author/ in the default browser after startup.
+  --open            Open the default /business-mirror/ product page after startup.
   -h, --help        Show this help.
 
 Environment:

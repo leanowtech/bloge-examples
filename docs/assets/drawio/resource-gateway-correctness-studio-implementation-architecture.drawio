@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" version="30.0.4">
+  <diagram id="correctness-studio-implementation-architecture" name="Implementation Architecture">
+    <mxGraphModel dx="1800" dy="1060" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1060" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="Resource Gateway Correctness Studio / 技术实施架构" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=25;fontStyle=1;fontColor=#1f2937;" vertex="1" parent="1">
+          <mxGeometry x="44" y="20" width="1600" height="42" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="三条权威链：业务定义回答“证明什么” · 确定性编译回答“生成什么” · 测试控制面回答“实际证明了什么”" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=13;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="44" y="64" width="1680" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="uiLane" value="Experience Plane / Correctness Studio 任务表面" style="swimlane;startSize=38;whiteSpace=wrap;html=1;fillColor=#f4f8fc;strokeColor=#1f4e79;fontFamily=Arial;fontSize=14;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="44" y="112" width="1712" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="overview" value="Overview&#xa;定义 · 分母 · 数据 · 证明" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d9eaf7;strokeColor=#2f75b5;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="34" y="56" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="inventoryUi" value="Coverage Inventory&#xa;义务 · 冻结 · Impact" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#bf9000;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="312" y="56" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="caseUi" value="Case Builder + Matrix&#xa;Given · Controlled Data" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d9eaf7;strokeColor=#2f75b5;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="590" y="56" width="250" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="fixtureUi" value="Fixture Catalog&#xa;变体 · 来源 · 质量 · 影响" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce4d6;strokeColor=#c65911;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="878" y="56" width="250" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="oracleUi" value="Oracle Builder&#xa;业务预期 · 依据 · 断言" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e2f0d9;strokeColor=#548235;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="1166" y="56" width="240" height="66" as="geometry" />
+        </mxCell>
+        <mxCell id="runUi" value="Run + Evidence&#xa;预检 · 五轴 · 分诊" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e4dfec;strokeColor=#7030a0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="uiLane">
+          <mxGeometry x="1444" y="56" width="230" height="66" as="geometry" />
+        </mxCell>
+
+        <mxCell id="appLane" value="Application Plane / 聚合查询、命令与投影" style="swimlane;startSize=38;whiteSpace=wrap;html=1;fillColor=#fbfcfd;strokeColor=#5b6573;fontFamily=Arial;fontSize=14;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="44" y="292" width="1712" height="166" as="geometry" />
+        </mxCell>
+        <mxCell id="workspaceQuery" value="CorrectnessWorkspaceQuery&#xa;exact join · payload-free&#xa;capability · primary action" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d9eaf7;strokeColor=#2f75b5;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="appLane">
+          <mxGeometry x="40" y="56" width="285" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="commandService" value="Authoring Command Services&#xa;CAS · idempotency · review&#xa;freeze / approve / derive" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#bf9000;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="appLane">
+          <mxGeometry x="365" y="56" width="285" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="compilerFacade" value="CorrectnessCompilationService&#xa;resolve · authorize · freeze input&#xa;pure compile · source map" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e2f0d9;strokeColor=#548235;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="appLane">
+          <mxGeometry x="690" y="56" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="preflightFacade" value="CorrectnessPreflightFacade&#xa;exact plan · isolation risk&#xa;REAL / MOCKED / FAULT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce4d6;strokeColor=#c00000;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="appLane">
+          <mxGeometry x="1030" y="56" width="300" height="82" as="geometry" />
+        </mxCell>
+        <mxCell id="verdictProjector" value="Verdict + Freshness Projector&#xa;Execution · Assertion · Coverage&#xa;Evidence · Gate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e4dfec;strokeColor=#7030a0;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="appLane">
+          <mxGeometry x="1370" y="56" width="300" height="82" as="geometry" />
+        </mxCell>
+
+        <mxCell id="authorityLane" value="Authority &amp; Execution Plane / Typed Assets、确定性发布与既有测试内核" style="swimlane;startSize=38;whiteSpace=wrap;html=1;fillColor=#f7fbf8;strokeColor=#548235;fontFamily=Arial;fontSize=14;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="44" y="488" width="1712" height="210" as="geometry" />
+        </mxCell>
+        <mxCell id="businessAssets" value="Business Authority Assets&#xa;Definition · Frozen Inventory&#xa;Oracle · Assertion Set · Review" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#bf9000;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="authorityLane">
+          <mxGeometry x="40" y="64" width="290" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="scenarioAssets" value="Authoring Assets&#xa;ScenarioDraftSet v2&#xa;Fixture descriptor + exact material ref" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d9eaf7;strokeColor=#2f75b5;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="authorityLane">
+          <mxGeometry x="370" y="64" width="290" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="publication" value="Publication Attempt + Manifest&#xa;recoverable Saga -> immutable exact refs&#xa;source map · compiler fingerprint" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e2f0d9;strokeColor=#548235;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="authorityLane">
+          <mxGeometry x="700" y="64" width="300" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="testingRegistry" value="Existing Testing Registries&#xa;FixtureBundle · TestSuite&#xa;Replay · exact immutable refs" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#edf4fb;strokeColor=#5b9bd5;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="authorityLane">
+          <mxGeometry x="1040" y="64" width="290" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="testingRuntime" value="Existing Testing Runtime&#xa;ExecutionControlCompiler&#xa;EffectivePlan · RunTrace · Evidence" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e4dfec;strokeColor=#7030a0;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="authorityLane">
+          <mxGeometry x="1370" y="64" width="300" height="104" as="geometry" />
+        </mxCell>
+        <mxCell id="authorityEdge1" value="bind exact refs" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authorityLane" source="businessAssets" target="scenarioAssets"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="authorityEdge2" value="snapshot" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#455a64;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authorityLane" source="scenarioAssets" target="publication"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="authorityEdge3" value="register + verify" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#548235;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authorityLane" source="publication" target="testingRegistry"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="authorityEdge4" value="resolve exact assets" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#7030a0;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="authorityLane" source="testingRegistry" target="testingRuntime"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="platformLane" value="Enterprise Platform Plane / 存储、安全、事件与治理集成" style="swimlane;startSize=38;whiteSpace=wrap;html=1;fillColor=#fcfaf4;strokeColor=#bf9000;fontFamily=Arial;fontSize=14;fontStyle=1;container=1;pointerEvents=0;" vertex="1" parent="1">
+          <mxGeometry x="44" y="728" width="1712" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="identity" value="Identity + Policy&#xa;scope · purpose · clearance&#xa;environment hard gate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce4d6;strokeColor=#c00000;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="platformLane">
+          <mxGeometry x="40" y="62" width="330" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="postgres" value="Versioned PostgreSQL Store&#xa;heads · immutable revisions&#xa;publication history · audit" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;fillColor=#d9eaf7;strokeColor=#2f75b5;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="platformLane">
+          <mxGeometry x="440" y="55" width="330" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="projectionEvents" value="Outbox + Projections&#xa;payload-free events · rebuild&#xa;anti-entropy · metrics/trace" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#bf9000;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="platformLane">
+          <mxGeometry x="840" y="62" width="350" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="aneke" value="ANEKE Tool Studio&#xa;registry · workbook · publish gate&#xa;feedback + deep link" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e4dfec;strokeColor=#7030a0;strokeWidth=2;fontFamily=Arial;fontSize=11;fontStyle=1;" vertex="1" parent="platformLane">
+          <mxGeometry x="1260" y="62" width="410" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="platformEdge1" value="authorize" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c00000;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="platformLane" source="identity" target="postgres"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="platformEdge2" value="transactional outbox" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#bf9000;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="platformLane" source="postgres" target="projectionEvents"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="platformEdge3" value="protocol + evidence / gate feedback" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#7030a0;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="platformLane" source="projectionEvents" target="aneke"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="uiToWorkspace" value="one canonical projection" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2f75b5;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="caseUi" target="workspaceQuery"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="759" y="277"/><mxPoint x="227" y="277"/></Array></mxGeometry></mxCell>
+        <mxCell id="commandsToAssets" value="typed commands" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#bf9000;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="commandService" target="businessAssets"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="compilerToPublication" value="deterministic output" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#548235;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="compilerFacade" target="publication"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="preflightToRuntime" value="delegate, never duplicate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#c00000;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="preflightFacade" target="testingRuntime"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1224" y="473"/><mxPoint x="1564" y="473"/></Array></mxGeometry></mxCell>
+        <mxCell id="runtimeToVerdict" value="facts only" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#7030a0;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="testingRuntime" target="verdictProjector"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="authorityToStore" value="canonical revisions" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#2f75b5;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="scenarioAssets" target="postgres"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="runtimeToEvents" value="evidence coordinates" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;endArrow=classic;endFill=1;strokeColor=#7030a0;strokeWidth=2;labelBackgroundColor=#ffffff;fontFamily=Arial;fontSize=10;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="testingRuntime" target="projectionEvents"><mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1564" y="713"/><mxPoint x="1059" y="713"/></Array></mxGeometry></mxCell>
+
+        <mxCell id="legend" value="Blue = authoring/projection  ·  Yellow = business authority  ·  Green = deterministic publication  ·  Purple = execution/evidence/governance  ·  Red = security/risk gate" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=11;fontColor=#52606d;" vertex="1" parent="1">
+          <mxGeometry x="54" y="942" width="1660" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="rule" value="Hard rule / 强约束：authoring draft 不能直接成为 evidence；Workspace 不返回 payload；zero assertion 永远是 UNPROVEN；production fixture injection 硬禁用。" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fce4d6;strokeColor=#c00000;strokeWidth=2;fontFamily=Arial;fontSize=12;fontStyle=1;align=left;spacingLeft=12;" vertex="1" parent="1">
+          <mxGeometry x="44" y="986" width="1712" height="48" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

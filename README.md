@@ -78,10 +78,10 @@ PID files are written to `target/example-pids/`, and logs are written to
 Boot jar.
 
 For the newer BLOGE visual canvas product demo, use the dedicated Resource
-Gateway script. It builds the React `/author/` and `/showcase/` bundle by
-default, starts the service on port `8080` with the `test` profile, and prints
-the demo URLs. This exposes the isolated `/api/testing/**` control plane without
-enabling it in production:
+Gateway script. It builds the React Business Mirror, Author, Library, Rehearsal,
+and Showcase workspaces by default, starts the service on port `8080` with the
+`test` profile, and prints the demo URLs. This exposes the isolated
+`/api/testing/**` control plane without enabling it in production:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh
@@ -103,17 +103,22 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
-`--no-build` first verifies that the reused jar contains all four visual entry
+`--no-build` first verifies that the reused jar contains all five visual entry
 points; an API-only jar fails before Java starts and explains how to rebuild or
 use `--api-only`. Startup becomes ready only after both
-`GET /api/integration/capabilities` and the Author, Library, Rehearsal, and
-Showcase pages respond successfully. API-only mode prints API entry points and
+`GET /api/integration/capabilities` and the Business Mirror, Author, Library,
+Rehearsal, and Showcase pages respond successfully. API-only mode prints API entry points and
 does not advertise visual URLs.
 `--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
 `--shadow-scheduler` additionally starts bounded pollers while honestly leaving
 worker/serving readiness false until a trusted data-plane connector is installed.
 Runtime logs and PID files remain under `target/example-logs/` and
 `target/example-pids/`.
+
+See the [Resource Gateway product manual](docs/resource-gateway-product-manual.md)
+for the business-correctness definition and verification-data flywheel, current Chinese UI
+walkthrough, screenshots, role workflows, feature modes, and the boundary between demo evidence
+and customer production authority.
 
 To try the same Author Workspace v2 inside VS Code without starting a server or
 opening a port:

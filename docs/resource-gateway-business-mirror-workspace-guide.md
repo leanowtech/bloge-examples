@@ -1,5 +1,8 @@
 # Resource Gateway Business Mirror Workspace 使用与系统说明
 
+> 最新的跨页面体验、启动方式、角色工作流和生产边界请先阅读
+> [Resource Gateway 产品手册](resource-gateway-product-manual.md)。本文保留为 Business Mirror Workspace 专项说明。
+
 > 适用实现：RG-BM-005
 >
 > 默认入口：`http://localhost:8080/`，规范地址为 `http://localhost:8080/business-mirror/`
@@ -219,15 +222,15 @@ tail -100 target/example-logs/visual-canvas-demo.log
 
 ## 9. 当前实现边界
 
-RG-BM-005 已完成 Portfolio、Package 基础任务、Readiness、L0-L3 Capability Map、中英文、响应式与 VS Code 离线固定任务。RG-BM-010 又把五层 Evidence、七维 Fidelity、Domain Portfolio 和 Owner Task 加入第 6 步，形成七步工作区。详细操作见 [Package Evidence 与 Fidelity 使用说明](resource-gateway-package-evidence-and-fidelity-guide.md)。以下能力属于后续工作包：
+RG-BM-001 至 RG-BM-015 的仓库内协议和工程纵向切片均已完成。Workspace 已包含 Portfolio、Package
+七步任务、Readiness、L0-L3 Capability Map、五层 Evidence、七维 Fidelity、Owner Task、中英文、
+响应式与 VS Code 离线固定任务。Proposal、隔离模拟、实现 Conformance、Impact、Outcome、Regional Data
+Plane、Runtime Certification、ANEKE protocol 1.1 和 Pilot Acceptance 由各自专项 API、Schema、Fixture
+和 Test Kit 承载，不在本页面重复实现第二套编辑器。
 
-- Capability Proposal 的图形化创建、`SIMULATION_ONLY` binding 和 acceptance suite：RG-BM-006。
-- Proposal temporary snapshot、隔离运行和分层 evidence：RG-BM-007。
-- Scenario、Fidelity、Outcome 与客户业务资产的生产 Authority Adapter：RG-BM-003/BM-009/BM-011。
-- ANEKE registry ingest、publish gate、workbook 与治理反馈：RG-BM-014。
-- PostgreSQL HA、KMS、区域数据面、升级和备份恢复认证：RG-BM-012/BM-013。
-
-因此，工作区已经是可完成业务定义与迁移审阅的产品入口，但不是生产发布证明。生产准入必须继续依赖 exact evidence、客户事实源、ANEKE gate 和环境认证。
+仓库内完成不等于客户生产认证完成。真实 Outcome Authority、客户 KMS/PKI/网络/HA-DR、ANEKE
+外部签名与 gate 联调、Owner 冻结分母和完整观察窗仍必须在目标客户环境完成。生产准入必须继续依赖
+exact evidence、客户事实源、ANEKE gate 和环境认证。
 
 ## 10. 验证命令
 

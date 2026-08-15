@@ -147,6 +147,11 @@ product vocabulary is in
 and Stage 4 verification is recorded in
 [`docs/resource-gateway-ux-stage4-localization-governance.md`](../docs/resource-gateway-ux-stage4-localization-governance.md).
 
+For an end-to-end product walkthrough across Business Mirror, Author, Libraries, Rehearsals, and
+Showcase, with the business-correctness definition and verification-data accumulation workflow,
+current Chinese screenshots, and demo/production boundaries, use the
+[Resource Gateway product manual](../docs/resource-gateway-product-manual.md).
+
 To exercise the new Business Mirror Package authoring API with the cancellation-fee fixture, use the
 [Business Mirror Package Authoring guide](../docs/resource-gateway-business-mirror-package-authoring-guide.md).
 It includes the required identity Scope, create/save/read/replay commands, stable error recovery,
