@@ -1228,8 +1228,23 @@ attestation 均不能得到 `ACCEPTED`。V008/V009 migration 分别建立 Public
 没有可靠关系时必须重新发布，禁止通过相似 fingerprint 猜测回填。
 
 `POST /api/visual/correctness-runs` 与 Evidence Companion 查询端点均要求受认证 purpose、完整企业作用域并返回 `no-store`。Capability Probe
-仅在 `CorrectnessRunService` 真实装配时声明两个 API 可用。COR-08 剩余工作是将 Workspace Run Center 从本地预览切换为服务端 canonical
-preflight、运行回执与五轴 evidence 展示；前端本地投影继续只承担即时编辑反馈，禁止充当授权边界或第二套 Planner。
+仅在 `CorrectnessRunService` 真实装配时声明两个 API 可用。
+
+COR-08 前端闭环已经完成。`/correctness/` 是独立一级路由，`CorrectnessStudio` 只持有 query coordinate 并向六个视图分发同一份
+canonical Workspace projection；不会继续向 legacy `ContractScenarioWorkspace` 堆叠状态。页面先读取 Capability Probe，缺能力时不发起
+Workspace 或 Run 请求，也不通过捕获 404 猜测部署能力。Overview、Coverage、Cases、Fixtures、Oracle 和 Runs 均保留 exact target
+coordinate；切换视图与刷新不会丢失 locale、query 或 hash deep link。
+
+Run Center 已从本地风险预览切换为「服务端预检 -> 人工审查 -> exact selection 运行 -> immutable evidence」流程。初次预检只发送
+Selection Intent，不在浏览器下载完整分页闭包或伪造 selection fingerprint；选择范围或失败策略变化会立即使旧预检失效。运行按钮只消费
+服务端返回的 canonical selection 与 preflight fingerprint，任何 blocker、缺失 Publication 或未声明运行能力都会失败关闭。终态固定展示
+execution、assertions、coverage、evidence、gate 五个独立轴、Case 终态、证明等级、attestation 和 source-map 血缘；零断言即使执行成功也
+继续显示 `UNPROVEN/BLOCKED`。浏览器不复制 planner、gate 或 freshness 规则。
+
+Correctness 路由使用随路由懒加载的中英文词典，并有 literal key 与 placeholder parity 门禁；全局语言目录拆成独立长期缓存 chunk。
+生产构建继续保持原 `180 KiB` shell 预算，Correctness 路由启动闭包为 `181.70 KiB gzip`，低于 `350 KiB` 门禁。当前前端全量
+`110` 个测试文件、`830` 条测试通过；其中新增测试覆盖 capability-first、exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、
+blocker fail-closed、五轴 evidence 和 source-map 展示。
 
 当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 
@@ -1303,13 +1318,13 @@ compile preview、publish、publication/attempt/history 查询 API 和动态 cap
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
-| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 后端已完成；完整前端 Workspace 和 COR-08 run/evidence decorator 待接入 | 500-case overview SLO、scope tests 已通过 | 1.5 周 |
+| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 后端与一级只读 Workspace 已完成；专业写入 surface 由 COR-03-06 接入 | 500-case overview SLO、scope tests 与单投影前端已通过 | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 后端已完成；Coverage Studio surface 待接入 | frozen denominator 可审计、无手写 COVERED 已通过 | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 后端已完成；Oracle/Assertion Builder 待接入 | Owner 可审、compiler 无静默丢失已通过 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端已完成；Case Builder/Matrix 前端待接入 | governed Case exact closure 已通过 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端已完成；部署 authority 与 Fixture Editor 待接入 | metadata/payload 隔离与泄露测试已通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端已完成；发布前端与灰度配置待接入 | deterministic/source-map/retry/closure tests 已通过 | 2 周 |
-| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 后端 preflight/run/evidence 已完成；Run Center 服务端适配待完成 | real-call 风险前置、evidence exact 绑定已通过 | 2 周 |
+| COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 已完成 | 服务端 canonical preflight、审查后运行、exact evidence、五轴展示与前端 fail-closed 测试已通过 | 2 周 |
 | COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
 | COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
 

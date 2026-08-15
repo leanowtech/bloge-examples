@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Fragment, lazy, Suspense, useEffect, useState } from 'react';
 import { LoaderCircle, Menu, X } from 'lucide-react';
 
 import I18nProvider, { useI18n } from './i18n/I18nProvider';
@@ -15,16 +15,18 @@ import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
 
-type WorkspaceRoute = 'business-mirror' | 'author' | 'libraries' | 'rehearsals' | 'showcase';
+type WorkspaceRoute = 'business-mirror' | 'author' | 'correctness' | 'libraries' | 'rehearsals' | 'showcase';
 
 const loadBusinessMirrorWorkspace = () => import('./business-mirror/BusinessMirrorWorkspace');
 const loadAuthorCanvas = () => import('./AuthorCanvas');
+const loadCorrectnessStudio = () => import('./correctness-studio/CorrectnessStudio');
 const loadLibraryWorkbench = () => import('./library-authoring/LibraryWorkbench');
 const loadRehearsalWorkbench = () => import('./RehearsalWorkbench');
 const loadShowcase = () => import('./Showcase');
 
 const BusinessMirrorWorkspace = lazy(loadBusinessMirrorWorkspace);
 const AuthorCanvas = lazy(loadAuthorCanvas);
+const CorrectnessStudio = lazy(loadCorrectnessStudio);
 const LibraryWorkbench = lazy(loadLibraryWorkbench);
 const RehearsalWorkbench = lazy(loadRehearsalWorkbench);
 const Showcase = lazy(loadShowcase);
@@ -32,10 +34,20 @@ const Showcase = lazy(loadShowcase);
 const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
   'business-mirror': loadBusinessMirrorWorkspace,
   author: loadAuthorCanvas,
+  correctness: loadCorrectnessStudio,
   libraries: loadLibraryWorkbench,
   rehearsals: loadRehearsalWorkbench,
   showcase: loadShowcase,
 };
+
+const NAVIGATION_ROUTES: Array<{ route: WorkspaceRoute; label: string }> = [
+  { route: 'business-mirror', label: 'Business Mirror' },
+  { route: 'author', label: 'Author' },
+  { route: 'correctness', label: 'Correctness' },
+  { route: 'libraries', label: 'Libraries' },
+  { route: 'rehearsals', label: 'Rehearsals' },
+  { route: 'showcase', label: 'Run examples' },
+];
 
 /** Top-level app shell shared by the authoring, rehearsal, and showcase routes. */
 export default function App() {
@@ -55,13 +67,7 @@ function AppShell() {
   const [navigationOpen, setNavigationOpen] = useState(false);
   const vscodeHost = typeof globalThis.acquireVsCodeApi === 'function';
   const route = resolveWorkspaceRoute(window.location.pathname, window.location.search, vscodeHost);
-  const titleSource = route === 'business-mirror'
-    ? 'Business Mirror'
-    : route === 'libraries'
-    ? 'Libraries'
-    : route === 'rehearsals'
-    ? 'Rehearsals'
-    : route === 'showcase' ? 'Run examples' : 'Author';
+  const titleSource = NAVIGATION_ROUTES.find((entry) => entry.route === route)?.label ?? 'Author';
   const title = t(titleSource);
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
   const authorHref = !vscodeHost && route !== 'author'
@@ -105,63 +111,37 @@ function AppShell() {
             aria-label={t('Workspace views')}
             data-open={navigationOpen}
           >
-            <a
-              className={`topbar-link ${route === 'business-mirror' ? 'active' : ''}`}
-              href={workspaceEntryHref('business-mirror', window.location.search, vscodeHost)}
-              aria-current={route === 'business-mirror' ? 'page' : undefined}
-              onPointerEnter={prefetch('business-mirror')}
-              onFocus={prefetch('business-mirror')}
-            >
-              {t('Business Mirror')}
-            </a>
-            <a
-              className={`topbar-link ${authorIsCurrent ? 'active' : ''}`}
-              href={authorHref}
-              aria-current={authorIsCurrent ? 'page' : undefined}
-              onPointerEnter={prefetch('author')}
-              onFocus={prefetch('author')}
-            >
-              {t('Author')}
-            </a>
-            {route === 'author' && (
-              <a
-                className={`topbar-link ${legacyAuthorIsCurrent ? 'active' : ''}`}
-                href={legacyAuthorHref}
-                aria-current={legacyAuthorIsCurrent ? 'page' : undefined}
-                title={t('Open the legacy Author workspace')}
-                onPointerEnter={prefetch('author')}
-                onFocus={prefetch('author')}
-              >
-                {t('Legacy')}
-              </a>
-            )}
-            <a
-              className={`topbar-link ${route === 'libraries' ? 'active' : ''}`}
-              href={workspaceEntryHref('libraries', window.location.search, vscodeHost)}
-              aria-current={route === 'libraries' ? 'page' : undefined}
-              onPointerEnter={prefetch('libraries')}
-              onFocus={prefetch('libraries')}
-            >
-              {t('Libraries')}
-            </a>
-            <a
-              className={`topbar-link ${route === 'rehearsals' ? 'active' : ''}`}
-              href={workspaceEntryHref('rehearsals', window.location.search, vscodeHost)}
-              aria-current={route === 'rehearsals' ? 'page' : undefined}
-              onPointerEnter={prefetch('rehearsals')}
-              onFocus={prefetch('rehearsals')}
-            >
-              {t('Rehearsals')}
-            </a>
-            <a
-              className={`topbar-link ${route === 'showcase' ? 'active' : ''}`}
-              href={workspaceEntryHref('showcase', window.location.search, vscodeHost)}
-              aria-current={route === 'showcase' ? 'page' : undefined}
-              onPointerEnter={prefetch('showcase')}
-              onFocus={prefetch('showcase')}
-            >
-              {t('Run examples')}
-            </a>
+            {NAVIGATION_ROUTES.map((entry) => {
+              const current = entry.route === 'author' ? authorIsCurrent : entry.route === route;
+              const href = entry.route === 'author'
+                ? authorHref
+                : workspaceEntryHref(entry.route, window.location.search, vscodeHost);
+              return (
+                <Fragment key={entry.route}>
+                  <a
+                    className={`topbar-link ${current ? 'active' : ''}`}
+                    href={href}
+                    aria-current={current ? 'page' : undefined}
+                    onPointerEnter={prefetch(entry.route)}
+                    onFocus={prefetch(entry.route)}
+                  >
+                    {t(entry.label)}
+                  </a>
+                  {entry.route === 'author' && route === 'author' && (
+                    <a
+                      className={`topbar-link ${legacyAuthorIsCurrent ? 'active' : ''}`}
+                      href={legacyAuthorHref}
+                      aria-current={legacyAuthorIsCurrent ? 'page' : undefined}
+                      title={t('Open the legacy Author workspace')}
+                      onPointerEnter={prefetch('author')}
+                      onFocus={prefetch('author')}
+                    >
+                      {t('Legacy')}
+                    </a>
+                  )}
+                </Fragment>
+              );
+            })}
           </nav>
           <div className="topbar-preferences">
             <DensitySwitcher />
@@ -173,6 +153,8 @@ function AppShell() {
         <HostReadySignal route={route} />
         {route === 'business-mirror'
           ? <BusinessMirrorWorkspace />
+          : route === 'correctness'
+          ? <CorrectnessStudio />
           : route === 'libraries'
           ? <LibraryWorkbench />
           : route === 'showcase'
@@ -188,7 +170,7 @@ function AppShell() {
 function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boolean): WorkspaceRoute {
   if (vscodeHost) {
     const requested = new URLSearchParams(search).get('workspaceRoute');
-    if (requested === 'business-mirror' || requested === 'author' || requested === 'libraries'
+    if (requested === 'business-mirror' || requested === 'author' || requested === 'correctness' || requested === 'libraries'
         || requested === 'rehearsals' || requested === 'showcase') {
       return requested;
     }
@@ -196,6 +178,8 @@ function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boo
   }
   return pathname.startsWith('/author')
     ? 'author'
+    : pathname.startsWith('/correctness')
+    ? 'correctness'
     : pathname.startsWith('/libraries')
     ? 'libraries'
     : pathname.startsWith('/showcase')

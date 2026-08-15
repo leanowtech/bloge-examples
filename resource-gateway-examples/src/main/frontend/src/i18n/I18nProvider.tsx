@@ -20,7 +20,7 @@ import {
 } from './i18n';
 import { translateMessage, type MessageId } from './messageCatalog';
 
-interface I18nContextValue {
+export interface I18nContextValue {
   locale: Locale;
   setLocale: (locale: Locale) => void;
   t: (source: string, values?: TranslationValues) => string;
@@ -36,7 +36,7 @@ const DEFAULT_CONTEXT: I18nContextValue = {
   m: (id, values) => translateMessage('en', id, values),
 };
 
-const I18nContext = createContext<I18nContextValue>(DEFAULT_CONTEXT);
+export const I18nContext = createContext<I18nContextValue>(DEFAULT_CONTEXT);
 
 export default function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(() => resolveInitialLocale({

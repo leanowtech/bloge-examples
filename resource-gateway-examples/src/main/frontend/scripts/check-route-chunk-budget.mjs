@@ -10,13 +10,16 @@ const vendorPrefixes = ['react-runtime-', 'react-flow-'];
 const requiredApplicationChunks = [
   'BusinessMirrorWorkspace-',
   'AuthorCanvas-',
+  'CorrectnessStudio-',
   'LibraryWorkbench-',
   'RehearsalWorkbench-',
   'Showcase-',
   'author-domain-',
+  'locale-catalog-',
 ];
 const routePrefixes = [
-  'BusinessMirrorWorkspace-', 'AuthorCanvas-', 'LibraryWorkbench-', 'RehearsalWorkbench-', 'Showcase-',
+  'BusinessMirrorWorkspace-', 'AuthorCanvas-', 'CorrectnessStudio-', 'LibraryWorkbench-',
+  'RehearsalWorkbench-', 'Showcase-',
 ];
 
 const chunks = readdirSync(assetsDirectory)

@@ -21,6 +21,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Panels were reclaimed to keep the graph above its readability floor.': '已收起面板，确保编排图达到可读性下限。',
   'Author': '编排',
   'Business Mirror': '业务镜像',
+  'Correctness': '正确性',
   'Legacy': '旧版',
   'Libraries': '算子库',
   'Rehearsals': '演练',

@@ -22,6 +22,10 @@ export default defineConfig({
               || id.includes('/node_modules/scheduler/')) {
             return 'react-runtime';
           }
+          if (id.endsWith('/src/i18n/i18n.ts')
+              || id.endsWith('/src/i18n/messageCatalog.ts')) {
+            return 'locale-catalog';
+          }
           if (id.endsWith('/src/draftModel.ts')
               || id.endsWith('/src/canvasExamples.ts')
               || id.endsWith('/src/author/canvas/canvasSemantics.ts')

@@ -41,6 +41,10 @@ vi.mock('./library-authoring/LibraryWorkbench', () => ({
   default: () => <div data-testid="libraries-mock">Library workbench</div>,
 }));
 
+vi.mock('./correctness-studio/CorrectnessStudio', () => ({
+  default: () => <div data-testid="correctness-mock">Correctness Studio</div>,
+}));
+
 describe('App route shell', () => {
   let root: Root | null = null;
   let host: HTMLDivElement;
@@ -136,7 +140,15 @@ describe('App route shell', () => {
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
     expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
-    expect(document.querySelectorAll('.topbar-link')).toHaveLength(5);
+    expect(document.querySelectorAll('.topbar-link')).toHaveLength(6);
+  });
+
+  it('renders Correctness Studio as a first-class route', async () => {
+    await renderAt('/correctness/?targetKind=GRAPH&targetId=loan-decision&targetFingerprint=sha256%3Agraph');
+
+    expect(document.title).toBe('BLOGE Visual Canvas - Correctness');
+    expect(query('[data-testid="correctness-mock"]').textContent).toContain('Correctness Studio');
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/correctness/');
   });
 
   it('renders the library workbench for /libraries/', async () => {

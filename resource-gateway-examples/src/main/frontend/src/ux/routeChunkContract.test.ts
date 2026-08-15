@@ -11,11 +11,13 @@ describe('Route chunk contract', () => {
   it('loads each heavyweight workspace through a route boundary', () => {
     expect(appSource).not.toMatch(/^import BusinessMirrorWorkspace/m);
     expect(appSource).not.toMatch(/^import AuthorCanvas/m);
+    expect(appSource).not.toMatch(/^import CorrectnessStudio/m);
     expect(appSource).not.toMatch(/^import RehearsalWorkbench/m);
     expect(appSource).not.toMatch(/^import Showcase/m);
     expect(appSource).not.toMatch(/^import LibraryWorkbench/m);
     expect(appSource).toContain("lazy(loadBusinessMirrorWorkspace)");
     expect(appSource).toContain("lazy(loadAuthorCanvas)");
+    expect(appSource).toContain("lazy(loadCorrectnessStudio)");
     expect(appSource).toContain("lazy(loadLibraryWorkbench)");
     expect(appSource).toContain("lazy(loadRehearsalWorkbench)");
     expect(appSource).toContain("lazy(loadShowcase)");
@@ -32,6 +34,12 @@ describe('Route chunk contract', () => {
     expect(viteSource).toContain("return 'author-domain'");
     expect(viteSource).toContain("id.endsWith('/src/draftModel.ts')");
     expect(viteSource).toContain("id.endsWith('/src/canvasExamples.ts')");
+  });
+
+  it('keeps the global locale catalog cacheable outside the route dispatcher', () => {
+    expect(viteSource).toContain("return 'locale-catalog'");
+    expect(viteSource).toContain("id.endsWith('/src/i18n/i18n.ts')");
+    expect(viteSource).toContain("id.endsWith('/src/i18n/messageCatalog.ts')");
   });
 
   it('fails the production build when the route chunk budget drifts', () => {
