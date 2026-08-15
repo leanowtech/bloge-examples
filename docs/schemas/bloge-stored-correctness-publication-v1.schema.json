@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-correctness-publication-v1.schema.json",
+  "title": "BLOGE Stored Correctness Publication v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "publicationFingerprint", "publication"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedCorrectnessPublication.v1" },
+    "publicationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "publication": { "$ref": "bloge-correctness-publication-v1.schema.json" }
+  }
+}

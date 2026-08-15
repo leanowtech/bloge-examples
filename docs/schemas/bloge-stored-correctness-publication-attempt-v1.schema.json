@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-correctness-publication-attempt-v1.schema.json",
+  "title": "BLOGE Stored Correctness Publication Attempt v1",
+  "description": "Payload-free durable Saga state. The optional compilation report contains no Fixture material or registration request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scope", "attempt", "compilationReport"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedCorrectnessPublicationAttempt.v1" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "attempt": { "$ref": "bloge-correctness-publication-attempt-v1.schema.json" },
+    "compilationReport": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "bloge-correctness-compilation-report-v1.schema.json" }
+      ]
+    }
+  }
+}

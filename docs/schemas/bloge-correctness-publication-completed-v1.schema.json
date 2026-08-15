@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-publication-completed-v1.schema.json",
+  "title": "BLOGE Correctness Publication Completed v1",
+  "description": "Payload-free outbox notification emitted atomically with one immutable Publication manifest.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "eventId", "scope", "publicationRef", "target",
+    "definitionRef", "inventoryRef", "scenarioDraftSetRef",
+    "compiledFixtureBundleRefs", "compiledTestSuiteRef", "compilationFingerprint",
+    "actorId", "occurredAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.correctnessPublicationCompleted.v1" },
+    "eventId": { "$ref": "#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "publicationRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "definitionRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "inventoryRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "scenarioDraftSetRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "compiledFixtureBundleRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" }
+    },
+    "compiledTestSuiteRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "compilationFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "actorId": { "$ref": "#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

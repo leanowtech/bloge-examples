@@ -68,7 +68,7 @@ import java.util.TimeZone;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class CorrectnessCompilerTest {
+public class CorrectnessCompilerTest {
 
     private static final Instant CREATED = Instant.parse("2026-08-15T00:00:00Z");
     private static final String SECRET = "customer-account-secret-8848";
@@ -177,7 +177,10 @@ class CorrectnessCompilerTest {
                 .contains("RG.CORRECTNESS.EVALUATOR_CAPABILITY_UNSUPPORTED");
     }
 
-    FrozenCompilationInput input(ValueSource dependencyValue, boolean supportedAssertion) {
+    public FrozenCompilationInput input(
+            ValueSource dependencyValue,
+            boolean supportedAssertion
+    ) {
         EnterpriseScope scope = scope();
         ExactTargetRef target = target();
         PrincipalRef owner = principal("owner");

@@ -84,6 +84,11 @@ public final class CorrectnessCompiler {
         this.evaluatorProfile = Objects.requireNonNull(evaluatorProfile, "evaluatorProfile");
     }
 
+    /** Compiles an already authorized frozen input and returns only its payload-free report. */
+    public CorrectnessCompilationReport compileReport(FrozenCompilationInput input) {
+        return compile(input).report();
+    }
+
     CompiledCorrectnessPlan compile(FrozenCompilationInput input) {
         Objects.requireNonNull(input, "input");
         List<Diagnostic> diagnostics = new ArrayList<>();
