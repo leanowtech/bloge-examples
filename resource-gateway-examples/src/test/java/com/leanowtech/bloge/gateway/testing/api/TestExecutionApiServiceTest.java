@@ -200,6 +200,42 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void preflightUsesTheExecutionPlannerWithoutRunningOrLeakingFixturePayload() throws Exception {
+        FixtureBundle fixture = bundle("preflight", new FixtureRule(
+                FixtureRule.SCHEMA_VERSION, "controlled-subject",
+                FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(Map.of(
+                        "result", "ok", "password", "must-not-leak")),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict()));
+        StoredFixtureBundle stored = service.registerFixture("preflight",
+                new FixtureBundleRegistrationRequest("", target(), fixture), identity("test"));
+
+        TestExecutionPreflightResponse response = service.preflight(request(
+                null, new TestExecutionApiRequest.FixtureBundleRef(
+                        stored.fixtureBundleId(), stored.revision(), stored.fingerprint()),
+                TestExecutionApiRequest.Verbosity.STANDARD), identity("test"));
+
+        assertThat(response.schemaVersion())
+                .isEqualTo(TestExecutionPreflightResponse.SCHEMA_VERSION);
+        assertThat(response.target().fingerprint()).isEqualTo(targetFingerprint);
+        assertThat(response.fixtureBundleRef().fingerprint()).isEqualTo(stored.fingerprint());
+        assertThat(response.effectivePlan().authorizedPurpose())
+                .isEqualTo(TestExecutionApiService.AUTHORIZED_PURPOSE);
+        assertThat(response.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.invocationSiteId()).isEqualTo("/root/subject#PRIMARY");
+            assertThat(site.resolution().name()).isEqualTo("TEST_DOUBLE");
+            assertThat(site.ruleRefs()).containsExactly("controlled-subject");
+        });
+        assertThat(response.invocationSites()).singleElement().satisfies(site -> {
+            assertThat(site.site().nodeId()).isEqualTo("subject");
+            assertThat(site.site().operatorRef()).isNotBlank();
+            assertThat(site.sideEffectType()).isEqualTo("MIXED");
+        });
+        assertThat(runs.values).isEmpty();
+        assertThat(mapper.writeValueAsString(response)).doesNotContain("must-not-leak");
+    }
+
+    @Test
     void graphBoundaryPlanIsValidatorProvenAndBoundToTheCurrentTarget() {
         TestBoundaryCasePlan plan = service.planGraphBoundaryCases(
                 "controlled-graph", identity("test"));

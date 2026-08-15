@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.context.GraphContext;
 import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
@@ -32,6 +33,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityServic
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceSanitizer;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
@@ -401,6 +403,50 @@ public final class TestExecutionApiService {
                 resolvedReplays, resolvedSecrets), baselineTarget.fingerprint());
         return persistGraphExecution(request, identity, mutantGraph.name(),
                 coordinate.mutantTargetFingerprint(), fixture, result);
+    }
+
+    /**
+     * Resolves and compiles the exact graph control plan without executing an operator.
+     *
+     * <p>This method deliberately follows the same trust transition as {@link #execute}: the
+     * target and stored fixture are resolved in the verified enterprise scope, optimistic
+     * fingerprints are checked, and replay plus test-secret dependencies are authorized before
+     * the sole {@link ExecutionControlCompiler} is invoked. The returned projection contains no
+     * fixture, replay, secret, request, or response payload.</p>
+     *
+     * @param request exact graph execution intent
+     * @param identity verified non-production test identity
+     * @return payload-free effective execution plan and invocation inventory
+     */
+    public TestExecutionPreflightResponse preflight(
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        validateRequest(request, identity);
+        Graph graph = requireGraph(request.target(), identity);
+        GraphExecutionTargetSnapshot target = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        requireTargetFingerprint(request.target(), target.fingerprint(), identity);
+
+        ResolvedFixture fixture = resolveFixture(request, target.fingerprint(), identity);
+        ResolvedReplayPayloads resolvedReplays = resolveReplayPayloads(fixture.bundle(), identity);
+        ResolvedTestSecrets resolvedSecrets = resolveTestSecrets(fixture.bundle(),
+                target.fingerprint(), target.fingerprint(), AUTHORIZED_PURPOSE, identity);
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(
+                operatorRegistry, objectMapper).compileWithSecrets(
+                target.graph(), fixture.bundle(), AUTHORIZED_PURPOSE,
+                target.fingerprint(), resolvedReplays, resolvedSecrets);
+
+        List<TestExecutionPreflightResponse.InvocationSiteDescriptor> sites =
+                compiled.inventory().entries().stream()
+                        .map(entry -> new TestExecutionPreflightResponse.InvocationSiteDescriptor(
+                                entry.site(), sideEffectType(entry.frozenOperator())))
+                        .toList();
+        return new TestExecutionPreflightResponse(
+                TestExecutionPreflightResponse.SCHEMA_VERSION,
+                new TestExecutionApiRequest.Target(
+                        "GRAPH", request.target().id(), target.fingerprint()),
+                fixture.reference(), compiled.effectivePlan(), sites);
     }
 
     private TestExecutionApiResponse execute(
@@ -1421,6 +1467,13 @@ public final class TestExecutionApiService {
 
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static String sideEffectType(Object frozenOperator) {
+        if (frozenOperator instanceof Operator<?, ?> operator) {
+            return operator.sideEffectType().name();
+        }
+        return "READ_ONLY";
     }
 
     private static String compactKey(String value) {
