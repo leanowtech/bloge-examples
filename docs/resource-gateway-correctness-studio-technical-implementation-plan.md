@@ -1231,8 +1231,28 @@ transactional outbox；读取时 canonical document 与索引互相校验，任�
 `ADDED / MODIFIED / REMOVAL_PROPOSED / UNCHANGED` diff，不修改 frozen revision。仓储、并发、scope、回滚、防篡改、无 payload
 事件和状态机均已有自动化测试。受认证 HTTP adapter 强制 `If-Match`；freeze 另强制 `Idempotency-Key`，数据库只保存 key/request
 fingerprint、frozen exact ref 和数量回执，不保存原始 key 或审核说明；相同命令回放 exact result，异义复用返回冲突。Workspace
-Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母，在 Scenario v2 fulfillment projector 接入前始终把非 waived
-义务显示为 uncovered。当前剩余工作是生产 bean/feature flag 装配，以及由 COR-05 提供的 fulfillment 投影。
+Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母，并以 Scenario v2 的 Canonical Case exact obligation ref
+派生 fulfilled；客户端不能手写 `COVERED`。当前剩余工作是生产 bean/feature flag 装配。
+
+COR-04 的业务预期内核已经完成：Business Oracle 与 Assertion Set 均具备完整 scope、不可变 revision、CAS、数据库完整性校验和
+payload-free outbox。Oracle 的 propose/approve/supersede 与 Assertion Set 的 draft/compile/validate 生命周期分离；Owner 审批执行
+四眼复核和幂等回放，纯 compiler 对不支持的 assertion 语义产生阻断诊断，不允许静默丢失。受认证 HTTP adapter 和 Workspace
+摘要已实现。当前剩余工作是生产 bean/feature flag 装配，以及在 Correctness Studio 中接入 Oracle Builder 和 Assertion Builder。
+
+COR-05 的 governed Scenario v2 后端内核已经完成：Scenario Draft Set 具备 CAS head、不可变历史、payload-free outbox、复合游标
+Matrix、冻结义务履行投影和 v1 migration preview。`EXPLORATORY -> REVIEW_READY -> CANONICAL` 由服务端 closure validator 控制；
+Canonical Case 必须闭合 frozen obligation、approved Oracle、valid Assertion Set、Contract 和外部 exact refs。审批执行四眼复核、
+`Idempotency-Key` 回放与 no-store HTTP 语义。当前剩余工作是生产装配、前端 Case Builder/Matrix 接入，以及由 COR-07 提供的确定性
+编译与发布。
+
+COR-06 的 Fixture 后端内核已经完成：Fixture Catalog descriptor 与受保护 material vault 物理分离。Material 写入执行 payload
+大小/深度/节点数约束、JSON Pointer 和敏感键脱敏、AES-GCM 加密、完整 scope AAD 绑定、保留期和访问审计；普通目录、Workspace、
+receipt 和 outbox 不包含明文。Fixture 使用 `DRAFT -> PROPOSED -> APPROVED -> ACTIVE` 生命周期，审批执行四眼复核和幂等回放，
+ACTIVE 前重新校验 exact material、Schema、脱敏和 retention。Scenario closure 只接受当前、ACTIVE、未过期的 exact Fixture ref，
+不解密 material。Workspace 从 Canonical Scenario 当前头派生 Fixture 使用次数，以及 `REFERENCE_MISSING`、`HEAD_DRIFT`、
+`NOT_ACTIVE`、`RETENTION_EXPIRED` 失效原因；反向使用索引可以从 canonical Scenario 头重建，同一逻辑消费者的新 revision 会
+替换旧索引。当前剩余工作是生产 bean/feature flag 装配、密钥与 Schema authority 的部署绑定，以及前端 Fixture
+Catalog/Variant Editor 接入。
 
 ### 16.1 Epic 总览
 
@@ -1240,11 +1260,11 @@ Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母�
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
-| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
+| COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 及 COR-03-06 权威 decorator 已完成，生产装配待接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact、Workspace projection 与 Scenario exact fulfillment 已完成，生产装配待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等、纯 compiler、HTTP 与 Workspace summary 已完成，生产装配待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
 | COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 进行中；CAS/history/outbox、复合游标 Matrix、fulfillment、状态机、exact closure、幂等审批、HTTP 与 no-store v1 migration preview 已完成，生产装配/前端待接入 | governed Case exact closure 完整 | 2.5 周 |
-| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
+| COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 进行中；目录/物料持久化、生命周期、幂等审批、HTTP、Scenario closure、Workspace health 与反向索引重建已完成，生产装配/前端待接入 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |
 | COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 未开始 | proposed-only + governance boundary 通过 | 2 周 |
