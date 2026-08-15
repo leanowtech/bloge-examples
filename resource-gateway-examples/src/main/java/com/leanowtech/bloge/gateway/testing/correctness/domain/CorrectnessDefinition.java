@@ -77,4 +77,15 @@ public record CorrectnessDefinition(
                     "Active Definition requires policy basis or an explicit waiver");
         }
     }
+
+    /** Returns the server-owned persisted revision without changing business content. */
+    public CorrectnessDefinition persistedAs(long persistedRevision, AuditMetadata persistedMetadata) {
+        if (persistedRevision < 1) {
+            throw new IllegalArgumentException("Persisted revision must be positive");
+        }
+        return new CorrectnessDefinition(
+                schemaVersion, definitionId, persistedRevision, scope, target, title,
+                businessIntent, successCriteria, riskLevel, owner, policyRefs, policyWaiver,
+                activeInventoryRef, lifecycle, review, persistedMetadata);
+    }
 }

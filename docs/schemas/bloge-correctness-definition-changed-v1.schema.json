@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-correctness-definition-changed-v1.schema.json",
+  "title": "BLOGE Correctness Definition Changed v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "eventId", "scope", "definitionRef", "target", "lifecycle", "actorId", "occurredAt"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.correctnessDefinitionChanged.v1" },
+    "eventId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "scope": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/enterpriseScope" },
+    "definitionRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "target": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactTargetRef" },
+    "lifecycle": { "enum": ["DRAFT", "REVIEWED", "ACTIVE", "SUPERSEDED"] },
+    "actorId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+    "occurredAt": { "type": "string", "format": "date-time" }
+  }
+}

@@ -754,13 +754,13 @@ UI 先读 capability，再决定显示、禁用还是解释功能；不能通过
 |---|---|---|
 | `rg_correctness_definition_heads` | 当前 mutable head | unique(scope, definition_id)，CAS revision |
 | `rg_correctness_definition_revisions` | retained revisions | PK(scope, id, revision)，unique fingerprint |
-| `rg_coverage_inventory_revisions` | draft/frozen inventories | PK(scope, id, revision)，index target fingerprint/lifecycle |
+| `rg_coverage_inventory_heads` / `rg_coverage_inventory_revisions` | mutable inventory head 与 draft/frozen history | head CAS；revision PK(scope, id, revision)，index target fingerprint/lifecycle |
 | `rg_coverage_obligation_index` | obligation 查询投影 | index dimension/risk/owner/lifecycle/source |
-| `rg_business_oracle_revisions` | Oracle revisions | index target/owner/lifecycle/basis fingerprint |
-| `rg_assertion_set_revisions` | executable assertion revisions | index oracle ref/lifecycle/compatibility |
-| `rg_scenario_draft_set_v2_heads` | v2 current head | CAS；与 v1 表隔离 |
+| `rg_business_oracle_heads` / `rg_business_oracle_revisions` | Oracle head 与 revisions | head CAS；index target/owner/lifecycle/basis fingerprint |
+| `rg_assertion_set_heads` / `rg_assertion_set_revisions` | executable assertion head 与 revisions | head CAS；index oracle ref/lifecycle/compatibility |
+| `rg_scenario_draft_set_v2_heads` / `rg_scenario_draft_set_v2_revisions` | v2 current head 与 retained history | head CAS；与 v1 表隔离 |
 | `rg_scenario_case_v2_index` | Matrix server projection | index state/risk/owner/case type/name |
-| `rg_fixture_asset_revisions` | metadata-only fixture catalog | index asset/schema/variant/state/freshness/classification |
+| `rg_fixture_asset_heads` / `rg_fixture_asset_revisions` | metadata-only fixture catalog head 与 history | head CAS；index asset/schema/variant/state/freshness/classification |
 | `rg_fixture_usage_index` | exact reverse dependency | index fixture ref -> case/publication |
 | `rg_correctness_publications` | immutable publication manifests | unique publication fingerprint/exact input closure |
 | `rg_correctness_publication_attempts` | Saga current attempts | unique scope + idempotency fingerprint，CAS state version |
@@ -1147,18 +1147,20 @@ COR-08 仍须实现服务端 `CorrectnessPreflightFacade`，并委托既有 `Exe
 
 当前回归门禁：前端全量测试、TypeScript 编译和中英文目录完整性检查必须同时通过。COR-00 已达到退出条件；后续新增 surface 必须继续复用唯一 verdict policy、preflight projection adapter 和遥测白名单，不能重新引入自由文本成功状态或任意 metadata。
 
-COR-01 的协议核心已经落地：`testing/correctness/domain` 包含 Definition、Inventory、Oracle、Assertion Set、Scenario v2、Fixture
+COR-01 已经完成：`testing/correctness/domain` 包含 Definition、Inventory、Oracle、Assertion Set、Scenario v2、Fixture
 descriptor/material wire、Publication/Attempt 与五轴 Verdict；所有跨资产引用都冻结 revision 与 fingerprint，集合语义在构造期规范化，canonical
 fingerprint 使用固定 golden 防止历史漂移。JSON Schema 与 Java 序列化字段、封闭 assertion/value-source union、未知 enum、additive reader
-兼容和 payload-free receipt 均有自动化测试。COR-01 仍未达到退出条件，剩余工作是 PostgreSQL migration、通用 revision repository、scope/CAS
-并发测试和迁移回滚验证。
+兼容和 payload-free receipt 均有自动化测试。生产 migration
+`V20260815_005__correctness_authoring_protocol.sql` 建立 scoped canonical/head/index/outbox 骨架；Definition 参考 repository 已验证服务器审计字段、历史保留、完整
+scope 隔离、数据库 CAS 并发胜者唯一、列/JSON 防篡改以及 outbox 失败时三写原子回滚。其他 aggregate repository 必须复用该约束，不得自行降低为
+last-write-wins 或启动时建表。
 
 ### 16.1 Epic 总览
 
 | Epic | 内容 | 依赖 | 当前状态 | 退出门槛 | 估算 |
 |---|---|---|---|---|---:|
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
-| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 协议与 Schema 已完成；持久化进行中 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
+| COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 未开始 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 未开始 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 未开始 | Owner 可审、compiler 无静默丢失 | 2 周 |

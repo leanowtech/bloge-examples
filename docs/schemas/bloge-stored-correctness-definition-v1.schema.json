@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-stored-correctness-definition-v1.schema.json",
+  "title": "BLOGE Stored Correctness Definition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "definitionFingerprint", "definition"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.storedCorrectnessDefinition.v1" },
+    "definitionFingerprint": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/fingerprint" },
+    "definition": { "$ref": "bloge-correctness-definition-v1.schema.json" }
+  }
+}
