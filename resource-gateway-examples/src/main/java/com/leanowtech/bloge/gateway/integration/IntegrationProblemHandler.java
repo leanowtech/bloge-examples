@@ -14,6 +14,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInvento
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleAssertionController;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Controller;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationController;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetController;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialController;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -53,7 +55,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CoverageInventoryController.class,
         OracleAssertionController.class,
         ScenarioDraftSetV2Controller.class,
-        LegacyScenarioV1MigrationController.class
+        LegacyScenarioV1MigrationController.class,
+        FixtureAssetController.class,
+        FixtureMaterialController.class
 })
 public class IntegrationProblemHandler {
 
