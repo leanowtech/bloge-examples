@@ -43,6 +43,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescr
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.RetentionDescriptor;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.SourceKind;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.FixtureSubject;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Material;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Receipt;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.WriteRequest;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessPublication.CompilationCoordinate;
@@ -94,6 +95,7 @@ class CorrectnessProtocolTest {
         assertRoundTrip(fixture(), FixtureAssetDescriptor.class);
         assertRoundTrip(materialRequest(), WriteRequest.class);
         assertRoundTrip(materialReceipt(), Receipt.class);
+        assertRoundTrip(material(), Material.class);
         assertRoundTrip(publication(), CorrectnessPublication.class);
         assertRoundTrip(publicationAttempt(), PublicationAttempt.class);
         assertRoundTrip(acceptedVerdict(), CorrectnessVerdict.class);
@@ -104,6 +106,7 @@ class CorrectnessProtocolTest {
         JsonNode bundle = schema("bloge-correctness-authoring-v1.schema.json");
         JsonNode materialWrite = schema("bloge-fixture-material-write-request-v2.schema.json");
         JsonNode materialReceipt = schema("bloge-fixture-material-receipt-v2.schema.json");
+        JsonNode material = schema("bloge-fixture-material-v2.schema.json");
 
         assertProperties(mapper.valueToTree(definition(
                 4, CREATED, "Credit Team", List.of("Fallback"))),
@@ -135,6 +138,7 @@ class CorrectnessProtocolTest {
                 bundle.at("/$defs/correctnessVerdict/properties"));
         assertProperties(mapper.valueToTree(materialRequest()), materialWrite.path("properties"));
         assertProperties(mapper.valueToTree(materialReceipt()), materialReceipt.path("properties"));
+        assertProperties(mapper.valueToTree(material()), material.path("properties"));
 
         for (String definition : List.of(
                 "enterpriseScope", "exactAssetRef", "exactTargetRef", "exactSchemaRef",
@@ -167,6 +171,8 @@ class CorrectnessProtocolTest {
         assertThat(materialReceipt.path("properties").has("payload")).isFalse();
         assertThat(materialReceipt.at("/properties/payloadPersisted/const").asBoolean()).isTrue();
         assertThat(materialReceipt.at("/properties/payloadReturned/const").asBoolean(true)).isFalse();
+        assertThat(material.path("additionalProperties").asBoolean(true)).isFalse();
+        assertThat(material.at("/properties/payloadReturned/const").asBoolean()).isTrue();
     }
 
     @Test
@@ -431,7 +437,7 @@ class CorrectnessProtocolTest {
 
     private Receipt materialReceipt() {
         return new Receipt(
-                "", "prime-applicant", asset("FIXTURE_MATERIAL", "prime-material", 3, '7'),
+                "", "prime-applicant", asset("FIXTURE_MATERIAL", "prime-applicant", 3, '4'),
                 fp('4'),
                 new FixtureSource(SourceKind.SCENARIO, asset("SCENARIO", "scenario-1", 1, 'f')),
                 FixtureSubject.SCENARIO, target(), new ExactSchemaRef("loan-input", 2, fp('8')),
@@ -440,6 +446,11 @@ class CorrectnessProtocolTest {
                         Instant.parse("2026-11-13T00:00:00Z")),
                 new RedactionDescriptor("redaction-2", List.of("/phone"), true),
                 List.of(asset("SCENARIO", "scenario-1", 1, 'f')), true, false);
+    }
+
+    private Material material() {
+        return new Material(
+                "", materialReceipt(), Map.of("applicant", Map.of("score", 760)), true);
     }
 
     private CorrectnessPublication publication() {

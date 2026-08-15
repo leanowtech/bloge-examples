@@ -98,6 +98,12 @@ public final class FixtureMaterialProtocolV2 {
                 throw new IllegalArgumentException(
                         "Fixture material receipt must confirm persistence without returning payload");
             }
+            if (!"FIXTURE_MATERIAL".equals(materialRef.kind())
+                    || !fixtureAssetId.equals(materialRef.id())
+                    || !payloadFingerprint.equals(materialRef.fingerprint())) {
+                throw new IllegalArgumentException(
+                        "Fixture material ref must exactly bind its asset id and payload fingerprint");
+            }
         }
     }
 

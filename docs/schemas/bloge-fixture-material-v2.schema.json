@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-fixture-material-v2.schema.json",
+  "title": "BLOGE Fixture Material v2",
+  "description": "Authorized payload-bearing exact-revision response. This contract must never enter Workspace or event projections.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "receipt", "payload", "payloadReturned"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.fixtureMaterial.v2" },
+    "receipt": { "$ref": "bloge-fixture-material-receipt-v2.schema.json" },
+    "payload": true,
+    "payloadReturned": { "const": true }
+  }
+}
