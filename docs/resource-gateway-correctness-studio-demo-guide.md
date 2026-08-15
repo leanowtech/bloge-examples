@@ -84,6 +84,18 @@ tail -f target/example-logs/visual-canvas-demo.log
 
 完整受治理运行需要部署正式 correctness authoring/runtime 依赖，包括持久化迁移、企业身份与 purpose 授权、测试资产 registry、Fixture material authority、Publication 和 Run Service。缺少任一权威依赖时，对应 capability 必须保持关闭。
 
+### 2.7 完整运行时中的结果校准与 ANEKE 反馈
+
+只读样板不会伪造这两项能力。在完整 `test/staging` 运行时中，Run Center 还会出现：
+
+- **ANEKE 发布决策**：绑定当前 exact Publication，显示 workbook、责任人审批、breaking migration、finding、remediation 和 deep link。`404` 表示尚无反馈，capability 为 `false` 表示部署未装配，两者不会混为一谈。
+- **结果校准**：只有终态 Evidence 到达后才出现。选择「提出校准建议」，填写差异类型、原因码、业务依据和建议回归标题，并选择 Evidence 中已有的 Case。服务端从 Evidence Companion 解析 exact Case/Oracle ref，客户端不能替换为闭包外资产。
+- **历史与当前态边界**：Evidence 中五轴 Gate 是封存时快照；即使该快照是 `ACCEPTED`，ANEKE 当前仍可能因 workbook、Owner approval 或 breaking migration 显示 `BLOCKED`。页面明确提示历史证据不授予当前发布许可。
+- **提案与真值边界**：校准回执永远是 `PROPOSED`。它不修改 Business Oracle，也不自动发布 regression Case；后续必须走独立 Owner review 和 canonical revision。
+
+对应正式端点和 JSON Schema 见
+[Correctness Studio 技术实施方案](resource-gateway-correctness-studio-technical-implementation-plan.md#73-command-api)。
+
 ## 3. API 验证
 
 脚本使用内置演示身份校验精确 Workspace。可手工执行同一请求：
@@ -128,4 +140,10 @@ curl -fsS \
 - 原始状态码不作为中文界面的主要文案；
 - 浏览器控制台无 warning 或 error。
 
-该基线只证明只读体验和协议边界。完整工业验收仍需覆盖键盘与屏幕阅读器、500/5000 Case 性能、写入冲突恢复、受治理运行、证据回放和跨系统门禁闭环。
+完整 Run Center 组件另外以正式 Workspace/Evidence/ANEKE 投影在真实 Chromium 的 1280 桌面与 390 移动宽度走查：
+预检、运行、五轴 Evidence、结果校准表单/回执及中英文治理反馈均无根页面横向溢出；known proof、attestation 和
+classification 状态在中文业务视图中使用产品文案，跨系统 finding code 保留机器值便于排障。
+
+该基线只证明仓库可控的产品体验和协议边界。自动化已覆盖 500/5,000 Case 有界投影与 Run Center 的 WCAG 2
+A/AA serious/critical 检查；完整工业验收仍需在客户部署中完成屏幕阅读器人工任务、真实 PostgreSQL/KMS、生产负载
+SLO、写入冲突恢复、受治理运行、证据回放和跨系统门禁闭环。

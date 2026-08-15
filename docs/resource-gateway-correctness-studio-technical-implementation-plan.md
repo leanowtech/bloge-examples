@@ -749,18 +749,22 @@ material payload。
 |---|---|---|---|
 | `PUT /api/visual/correctness-definitions/{id}` | `CORRECTNESS_WRITE` | `If-Match` + key | stored revision + receipt |
 | `POST /api/visual/coverage-inventories/{id}:freeze` | `CORRECTNESS_REVIEW` | key | frozen exact ref + diff |
-| `PUT /api/visual/scenario-draft-sets-v2/{id}` | `TEST_SUITE_WRITE` | `If-Match` + key | stored v2 revision |
-| `POST /api/visual/scenarios-v2/{id}:review-ready` | `CORRECTNESS_REVIEW` | key | readiness report |
+| `PUT /api/visual/scenario-draft-sets-v2/{id}` | `CORRECTNESS_WRITE` | `If-Match` | stored v2 revision |
+| `POST /api/visual/scenario-draft-sets-v2/{id}/cases/{caseId}:review-ready` | `CORRECTNESS_WRITE` | `If-Match` | stored v2 revision + closure report |
 | `POST /api/visual/oracles/{id}:approve` | `CORRECTNESS_REVIEW` | key | approved exact ref |
 | `POST /api/visual/assertion-sets:compile-preview` | `CORRECTNESS_WRITE` | optional key | assertion proposal + diagnostics |
-| `POST /api/visual/fixture-assets:derive` | `TEST_FIXTURE_WRITE` | key | proposed descriptor + redacted preview ref |
-| `GET /api/visual/fixture-assets/{id}/material/{revision}` | `TEST_FIXTURE_MATERIAL_READ` | no | authorized material; no cache |
+| `PUT /api/visual/fixture-assets/{id}` | `CORRECTNESS_WRITE` | `If-Match` | payload-free descriptor revision |
+| `POST /api/visual/fixture-materials` | `CORRECTNESS_FIXTURE_MATERIAL_WRITE` | exact write request | payload-free material receipt; no cache |
+| `GET /api/visual/fixture-materials/{id}?revision=&fingerprint=` | `CORRECTNESS_FIXTURE_MATERIAL_READ` | no | authorized exact material; no cache |
 | `POST /api/visual/correctness-publications:compile-preview` | `TEST_SCENARIO_PUBLISH` | key | payload-free compilation report |
 | `POST /api/visual/correctness-publications` | `TEST_SCENARIO_PUBLISH` | key | durable publication receipt |
 | `POST /api/visual/correctness-runs:preflight` | `TEST_EXECUTION` | key | exact plan summary + blockers |
-| `POST /api/visual/correctness-runs` | `TEST_EXECUTION` | key | async run receipt |
-| `GET /api/visual/correctness-runs/{suiteRunId}/evidence-companion` | `TEST_SUITE_READ` / `GOVERNANCE_EVIDENCE_INGESTION` | no | scoped immutable evidence companion |
-| `POST /api/visual/outcomes:propose-regression` | `CORRECTNESS_WRITE` | key | proposal pack，永远是 PROPOSED |
+| `POST /api/visual/correctness-runs` | `TEST_EXECUTION` / `TEST_REPLAY` | key | terminal run response + immutable Evidence Companion ref |
+| `GET /api/visual/correctness-runs/{suiteRunId}/evidence-companion` | `TEST_EXECUTION` / `TEST_SUITE_READ` / `GOVERNANCE_EVIDENCE_INGESTION` | no | scoped immutable evidence companion |
+| `POST /api/visual/correctness-outcome-calibration-proposals` | `CORRECTNESS_WRITE` | proposal identity + content fingerprint | exact evidence-derived proposal，永远是 `PROPOSED` |
+| `GET /api/visual/correctness-outcome-calibration-proposals/{proposalId}` | `CORRECTNESS_READ` / `CORRECTNESS_WRITE` / `GOVERNANCE_EVIDENCE_INGESTION` | no | scoped exact proposal |
+| `POST /api/integration/correctness-publications/{publicationId}/governance-feedback` | `GOVERNANCE_GATE_FEEDBACK` | source decision identity + fingerprint | ANEKE feedback immutable projection |
+| `GET /api/visual/correctness-publications/{publicationId}/governance-feedback` | `CORRECTNESS_READ` / `GOVERNANCE_GATE_FEEDBACK` / `GOVERNANCE_EVIDENCE_INGESTION` | no | exact Publication 的 latest feedback |
 
 不新增一个万能 `PATCH /workspace`。每个命令绑定一个聚合、不变量和权限，Workspace 只是组合读模型。
 
@@ -768,6 +772,22 @@ Preflight、run 和 evidence 的机器合同由
 [`bloge-correctness-run-protocol-v1.schema.json`](schemas/bloge-correctness-run-protocol-v1.schema.json)
 统一定义，并通过六个稳定根 Schema 分别暴露。生产者 Schema 全部关闭未知字段；Evidence Companion 只包含 exact ref、执行状态、source
 map、五轴 verdict 和 attestation，不包含 Case 输入、节点输出、Fixture material、请求/响应 payload 或 secret。
+
+Outcome calibration 与 ANEKE feedback 的机器合同由下列封闭根 Schema 定义，Java wire model、HTTP、数据库
+canonical document、Capability Probe 和 outbox event 必须同步演进：
+
+- [`bloge-outcome-calibration-request-v1.schema.json`](schemas/bloge-outcome-calibration-request-v1.schema.json)
+  与 [`bloge-outcome-calibration-proposal-v1.schema.json`](schemas/bloge-outcome-calibration-proposal-v1.schema.json)。
+- [`bloge-stored-outcome-calibration-proposal-v1.schema.json`](schemas/bloge-stored-outcome-calibration-proposal-v1.schema.json)
+  与 payload-free [`bloge-outcome-calibration-proposed-v1.schema.json`](schemas/bloge-outcome-calibration-proposed-v1.schema.json)。
+- [`tool-studio-resource-gateway-correctness-feedback-request-v1.schema.json`](schemas/tool-studio-resource-gateway-correctness-feedback-request-v1.schema.json)
+  与 [`tool-studio-resource-gateway-correctness-feedback-v1.schema.json`](schemas/tool-studio-resource-gateway-correctness-feedback-v1.schema.json)。
+- [`bloge-stored-correctness-governance-feedback-v1.schema.json`](schemas/bloge-stored-correctness-governance-feedback-v1.schema.json)
+  与 payload-free [`bloge-correctness-governance-feedback-received-v1.schema.json`](schemas/bloge-correctness-governance-feedback-received-v1.schema.json)。
+
+反馈接收只接受 Tool Studio 协议兼容窗口内的 `1.1.0/1.0.0`；未知版本、source system 或 enum 失败关闭。
+`producedAt` 与 Resource Gateway 的 `receivedAt` 不做跨系统时钟先后假设，freshness 只由来源方
+`producedAt/expiresAt` 和接收方当前时钟判断，避免企业环境轻微 clock skew 拒绝合法反馈。
 
 ### 7.4 标准错误码
 
@@ -1088,7 +1108,7 @@ Node/edge payload 继续遵循现有 evidence 脱敏和授权读取协议。普�
 | 普通字段本地交互反馈 | P95 <= 150 ms |
 | 500 cases compile preview | P95 <= 5 s，异步显示 stage |
 | preflight preview | P95 <= 2 s，不执行业务节点 |
-| run command durable receipt | P95 <= 500 ms，执行异步 |
+| run command terminal response | 试点按图规模分档建立 P95；当前实现同步返回，超预算图演进为 durable async job |
 | authoring save availability | >= 99.9% 月度 |
 | publication/evidence coordinate 丢失 | 0 |
 | payload 出现在日志/metrics/event | 0 |
@@ -1243,9 +1263,9 @@ execution、assertions、coverage、evidence、gate 五个独立轴、Case 终�
 继续显示 `UNPROVEN/BLOCKED`。浏览器不复制 planner、gate 或 freshness 规则。
 
 Correctness 路由使用随路由懒加载的中英文词典，并有 literal key 与 placeholder parity 门禁；全局语言目录拆成独立长期缓存 chunk。
-生产构建继续保持原 `180 KiB` shell 预算，Correctness 路由启动闭包为 `182.69 KiB gzip`，低于 `350 KiB` 门禁。当前前端全量
-`110` 个测试文件、`831` 条测试通过；其中新增测试覆盖 capability-first、exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、
-blocker fail-closed、五轴 evidence 和 source-map 展示。
+生产构建继续保持原 `180 KiB` shell 预算，Correctness 路由启动闭包受 `350 KiB gzip` 门禁约束。自动化覆盖 capability-first、
+exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、blocker fail-closed、五轴 evidence、source-map、Outcome proposal、
+ANEKE feedback 和 Run Center WCAG 2 A/AA serious/critical axe 门禁；最终通过数以本次构建报告为准，不在设计文档固化易漂移计数。
 
 Correctness Studio 已进入正式 Spring Boot 产物：Maven 前端 profile 会将同一 Vite bundle 复制到 `static/correctness`，服务端只为
 `/correctness` 与 `/correctness/` 提供 SPA forward，不创建第二套前端。`scripts/start-visual-canvas-demo.sh --correctness --open`
@@ -1287,14 +1307,24 @@ Correctness authoring 由 `gateway.testing.correctness.enabled` 显式启用。C
 主迁移未应用、企业 authority 缺失、material key ring 缺失或 testing registry 未装配时，对应 Bean 不存在且 capability 保持关闭；
 不能把“类已经编译”冒充“部署已经可用”。
 
-COR-09 的后端协议和投影内核已经完成。`OutcomeCalibrationProposal` 必须从一个 exact evidence companion 派生，调用方只能选择该证据
+COR-09 的端到端协议、投影和交互已经完成。`OutcomeCalibrationProposal` 必须从一个 exact evidence companion 派生，调用方只能选择该证据
 闭包内已有的 Case 和 Oracle；对象只允许 `PROPOSED`，不能通过同一协议直接改写 Oracle 或生成 canonical regression。提案说明保存在
 受控 canonical document 中，但 `OutcomeCalibrationProposed.v1` outbox 只携带 exact coordinate、mismatch/reason code、actor 和
 correlation id。ANEKE 反馈使用独立的 `toolStudio.resourceGateway.correctnessFeedback.v1` 协议，绑定 exact Publication、外部 decision
 revision/fingerprint、workbook、Owner approval、breaking migration 与结构化 finding；Resource Gateway 只追加不可变投影，不复制
 ANEKE 状态机。Workspace decorator 可以把有效反馈映射为 Gate blocker/review/remediation；外部 `ACCEPTED` 不得覆盖本地 execution、
 assertion、coverage 或 evidence 轴，过期反馈自动降为 `REVIEW`。PostgreSQL migration、完整 scope、canonical/index 防篡改、幂等冲突、
-payload-free event、动态 capability 和协议端点已有自动化测试。Correctness Studio 的提案与反馈交互仍在 COR-09 前端任务中。
+payload-free event、动态 capability 和协议端点已有自动化测试。Correctness Studio 的 Run Center 仅在 terminal evidence 后开放图形化
+校准提案，明确显示“只创建待审核提案，不修改 Oracle、不发布 regression Case”，并展示 exact Case/Oracle/Evidence 闭包与不可变回执。
+ANEKE feedback 面板区分 capability 未装配、尚无反馈、加载失败、反馈过期和有效决策，结构化显示 workbook、责任人审批、breaking
+migration、finding、remediation 和 ANEKE deep link。历史 Evidence 的 gate 轴是封存时快照，页面明确提示它不代表当前发布许可，避免与
+上方 ANEKE 当前 `BLOCKED` 决策形成错误认知。八个封闭根 JSON Schema、协议兼容窗口、跨系统 clock skew、HTTP purpose/no-store/
+stable Problem 和 payload-free event 已纳入回归门禁。
+
+COR-10 已完成本轮可客观自动化的门禁：Workspace 在 500 与 5,000 Case 分母下都只返回 100 行 metadata page，并满足本地 1 秒预算；
+Run Center 的主流程通过 axe serious/critical 检查；中英文目录、TypeScript、route chunk、移动端根页面 overflow 和真实浏览器控制台均有
+验证。真实 Chromium 已走查 1280 桌面与 390 移动宽度的 ANEKE feedback、预检、运行、五轴 Evidence、Outcome proposal 表单和回执。
+生产 SLO、真实 PostgreSQL/Testcontainers、企业 KMS/PKI/Authority、两个业务团队的两个发布周期仍是部署验收，不得被本地测试冒充。
 
 COR-03 的写侧内核已经完成：Coverage Inventory 具备完整 scope 的 head、不可变 revision、数据库 CAS、义务 fingerprint 索引和
 transactional outbox；读取时 canonical document 与索引互相校验，任一侧被篡改都会失败关闭。`saveDraft`、`freeze` 和
@@ -1353,14 +1383,14 @@ compiled assets、执行风险和阻断诊断；只有同一预览 `publishable=
 | COR-00 | 语义止血、五轴 policy、遥测基线 | 无 | 已完成 | zero assertion 全面 UNPROVEN | 1 周 |
 | COR-01 | correctness protocols、fingerprint、migration schema | COR-00 | 已完成 | golden/compatibility/CAS tests 全绿 | 1.5 周 |
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 后端与一级只读 Workspace 已完成；专业写入 surface 由 COR-03-06 接入 | 500-case overview SLO、scope tests 与单投影前端已通过 | 1.5 周 |
-| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 后端与 Coverage Studio 已完成；真实浏览器视觉验收待 COR-10 | frozen denominator 可审计、无手写 COVERED、CAS/freeze 交互测试已通过 | 2 周 |
-| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 后端与 Oracle/Assertion Builder 已完成；真实浏览器视觉验收待 COR-10 | Owner 可审、compiler 无静默丢失、preview-before-validate 已通过 | 2 周 |
-| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端与 Case Builder 已完成；500/5000 Case 性能验收待 COR-10 | governed Case exact closure、图形化 Given/受控依赖编辑已通过 | 2.5 周 |
+| COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 后端、Coverage Studio、组件测试与既有真实浏览器基线已完成 | frozen denominator 可审计、无手写 COVERED、CAS/freeze 交互测试已通过 | 2 周 |
+| COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 后端、Oracle/Assertion Builder、组件测试与既有真实浏览器基线已完成 | Owner 可审、compiler 无静默丢失、preview-before-validate 已通过 | 2 周 |
+| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 后端与 Case Builder 已完成；500/5,000 Case 分页预算已通过 | governed Case exact closure、图形化 Given/受控依赖编辑已通过 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 后端与 Fixture Editor 已完成；真实企业 authority 待部署验收 | metadata/payload 隔离、显式 load、receipt 后 exact rebind 已通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 后端与 Publication Studio 已完成；企业灰度参数待部署验收 | deterministic/source-map/retry/closure、preview-before-publish 已通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 已完成 | 服务端 canonical preflight、审查后运行、exact evidence、五轴展示与前端 fail-closed 测试已通过 | 2 周 |
-| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 后端协议、持久化、outbox、capability 与 Gate 投影已完成；前端交互进行中 | proposed-only、exact evidence/publication closure 与治理边界测试已通过 | 2 周 |
-| COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 持续执行 | 95 分 UX gate 和工业门禁 | 贯穿 + 2 周 |
+| COR-09 | Outcome proposal、ANEKE feedback/events | COR-08 | 后端、Schema、持久化、outbox、capability、Gate 投影与前端交互已完成 | proposed-only、exact evidence/publication closure、当前治理边界和反馈 UX 测试已通过 | 2 周 |
+| COR-10 | 性能、E2E、a11y、双语、runbook | 全部 | 本地工程门禁已完成；企业部署验收持续执行 | 500/5,000 bounded projection、axe、双语、真实浏览器与 runbook 已通过；生产 SLO/Authority 现场验收 | 贯穿 + 2 周 |
 
 两组后端可在 COR-01 后并行推进 COR-03/04 与 COR-06 material port；前端先完成 COR-00/02，再在稳定 projection 上构建 surface。
 
@@ -1484,10 +1514,10 @@ compiled assets、执行风险和阻断诊断；只有同一预览 `publishable=
 
 - 新用户 5 分钟完成首条 governed Case；90% 样板用例无需编辑 JSON。
 - 运行前真实调用风险可理解；运行后 3 分钟内可解释首个失败和证明等级。
-- 500 cases 达到性能预算；中英文、键盘、焦点、移动任务投影和视觉回归门禁通过。
+- 500/5,000 Case Workspace 保持 100 行有界 metadata page 并达到本地预算；中英文、键盘、焦点、移动任务投影和视觉回归门禁通过。
 - `ContractScenarioWorkspace` 不再是新增正确性能力的默认落点；新模块具备独立单测、component test 和 E2E。
 
-## 21. 评审需要冻结的决策
+## 21. 已冻结的实施决策
 
 1. 是否接受 `ScenarioDraftSet v2` 成为新 governed write authority，而 v1 仅保留 legacy/lowering。
 2. 是否接受 obligation `COVERED` 改为派生 fulfillment，而不是可写生命周期状态。
@@ -1496,7 +1526,8 @@ compiled assets、执行风险和阻断诊断；只有同一预览 `publishable=
 5. 是否接受 publication companion manifest，避免修改既有 TestSuite/FixtureBundle 指纹协议。
 6. 首个试点是否冻结为“贷款策略与降级”，并投入业务 Owner、政策 Owner 和数据 Owner 共同验收。
 
-上述六项冻结后，COR-00、COR-01 和 COR-02 可立即并行开工；在它们之前扩写页面，只会继续放大当前状态与协议债务。
+上述六项已经在 COR-00 至 COR-09 的实现中冻结。后续若要推翻任一项，必须以新 ADR、历史 fingerprint 兼容证明、
+迁移/回滚计划和 payload/security 回归测试为前置条件，不能用局部页面诉求绕过。
 
 ## 22. 自审结论
 
@@ -1505,5 +1536,35 @@ Resource Gateway 已有 testing control plane。当前最大技术风险不是�
 truth 在新增业务语义后再次形成多套状态。方案通过 exact refs、不可变 publication manifest、单一 verdict projector 和 payload-free
 Workspace 避免这一问题。
 
-评审通过后，第一步不是铺开全部 Correctness Studio 页面，而是完成 `COR-00` 的诚实 verdict、`COR-01` 的 typed protocols，以及
-`COR-02` 的只读 Workspace projection。这三个工作包会建立后续所有体验和业务资产积累的可信地基。
+### 22.1 实现差距复审
+
+以下评分只衡量仓库可控制的实施项，不把客户生产 Authority、组织协同和两个团队发布周期伪装成代码完成度。按协议与
+正确性风险加权，当前仓库实施证据覆盖为 **97.9 / 100**，剩余差距 **2.1%**：
+
+| 维度 | 权重 | 已覆盖 | 证据/剩余差距 |
+|---|---:|---:|---|
+| Domain 与 versioned protocol | 14 | 14.0 | 封闭 Schema、exact ref、fingerprint golden、unknown enum fail-closed |
+| Persistence 与原子性 | 12 | 11.8 | CAS/revision/outbox/篡改/回滚已测；真实 PostgreSQL restore/forward-fix 属部署门禁 |
+| Definition/Coverage/Oracle/Case authoring | 16 | 15.6 | 主链闭合；gap -> Case 的上下文自动预填仍需业务任务测试收敛 |
+| Fixture 数据资产 | 12 | 11.5 | material 隔离、加密、脱敏、retention、usage/stale 已完成；observed-shape 派生与重复检测待真实数据验证 |
+| Compiler 与 Publication Saga | 12 | 12.0 | deterministic、source map、read-after-write、retry、immutable manifest |
+| Preflight、Run 与 Evidence | 14 | 13.7 | 单一 runner、canonical preflight、五轴/evidence closure；跨入口根因聚类需试点验证 |
+| Outcome 与 ANEKE | 10 | 9.5 | proposed-only 校准与 current feedback 完成；批准后 proposal pack 晋级是独立后续命令 |
+| UX、a11y、双语与性能 | 6 | 5.8 | axe、locale gate、500/5,000 bounded projection、1280/390 Chromium；持久化视觉 diff 待 CI 基础设施 |
+| 文档、启停与 capability runbook | 4 | 4.0 | 产品手册、演示指南、实际端点、失败关闭与启停脚本同步 |
+
+剩余项都不得通过扩充 `ContractScenarioWorkspace`、新增第二套 runner、普通 Workspace 携带 material、浏览器重算 Gate、
+自动接受 Oracle 或复制 ANEKE 状态机来“快速补齐”。本轮代码复审未发现这些架构漂移；新 capability 仍由真实 Bean 装配动态声明，
+只读演示继续保持写入/Run capability 关闭。
+
+### 22.2 不属于仓库完成度的工业验收
+
+- 客户 PostgreSQL/KMS/PKI、跨 region 备份恢复、outbox delivery lag 和生产 P95/P99。
+- 屏幕阅读器人工任务、真实业务人员 5 分钟首 Case、90% 无 JSON 和 3 分钟失败分诊。
+- 至少 10 个真实事故/Outcome 回流、两个业务团队连续两个发布周期、ANEKE workbook/publish gate 联合演练。
+
+这些不是“剩余 2.1% 代码”可以代替的事项，而是从工程可用走向工业可用必须取得的外部证据；未完成前不能宣称生产验收通过。
+
+当前下一步不是重做 Correctness Studio 页面或重新打开 `COR-00/01/02`，而是保持已经冻结的协议、投影与 runner 边界，完成
+PostgreSQL/KMS/PKI/ANEKE 联合部署验收和真实业务任务测试。只有外部证据确认某个剩余差距可由仓库改进解决时，才以独立 ADR、
+兼容性测试和可回滚工作包进入下一轮实施；组织流程、生产 Authority 和业务保真度问题不能伪装成前端功能继续堆叠。

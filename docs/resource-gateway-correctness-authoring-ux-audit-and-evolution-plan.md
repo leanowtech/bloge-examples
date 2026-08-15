@@ -603,12 +603,13 @@ correctness-studio/
 
 | API | 作用 |
 |---|---|
-| `GET /api/visual/correctness-workspaces/{target}` | 聚合 definition、inventory、cases、fixtures、oracles、evidence 摘要 |
+| `GET /api/visual/correctness-workspaces/{targetKind}/{targetId}` | 聚合 exact definition、inventory、cases、fixtures、oracles、publication、evidence 摘要 |
 | `POST /api/visual/coverage-inventories/{id}:freeze` | 冻结分母并生成 exact revision |
-| `POST /api/visual/scenarios:preflight` | 返回 EffectiveExecutionPlan 和阻断原因 |
-| `POST /api/visual/fixture-assets:derive` | 从 schema/trace/existing fixture 创建提案 |
-| `POST /api/visual/oracles:compile` | 将业务预期映射为可审阅断言提案 |
-| `POST /api/visual/incidents:propose-regression` | 创建 obligation/fixture/oracle/case 提案包 |
+| `POST /api/visual/correctness-runs:preflight` | 返回 canonical EffectiveExecutionPlan 投影和阻断原因 |
+| `PUT /api/visual/fixture-assets/{id}` + `/api/visual/fixture-materials` | 分离保存 descriptor 与受保护 material receipt |
+| `POST /api/visual/assertion-sets:compile-preview` | 将业务预期映射为可审阅断言提案 |
+| `POST /api/visual/correctness-outcome-calibration-proposals` | 从 exact Evidence 创建永远为 `PROPOSED` 的校准提案 |
+| `POST /api/integration/correctness-publications/{id}/governance-feedback` | 接收 ANEKE exact Publication 治理反馈投影 |
 
 所有 API 返回稳定 protocol version、capability flag、correlationId、exact target 和 fingerprint；payload 不进入普通日志。
 
@@ -690,7 +691,26 @@ CUX-005 只发送受控枚举、有界计数和耗时。`caseId`、`targetRef`�
 
 退出门槛：至少两个业务团队完成两个发布周期，且故障回流链真实使用。
 
-### 10.1 推荐团队
+### 10.1 当前实现映射（2026-08-16）
+
+当前代码已经完成“Definition -> frozen denominator -> Case/Fixture/Oracle/Assertion -> deterministic compilation ->
+Publication -> canonical preflight -> Run -> immutable Evidence -> calibration proposal / ANEKE feedback”的主链。实现状态不能
+只用“页面存在”衡量：以下状态以协议闭包、服务端不变量、前端 capability fail-closed 和自动化证据为准。
+
+| 阶段 | 已落地 | 仍需现场或后续产品化验证 |
+|---|---|---|
+| Stage 0 | 唯一 verdict policy、零断言 `UNPROVEN`、风险投影、payload-free telemetry、双语目录 | legacy surface 持续视觉回归 |
+| Stage 1 | `/correctness/` 一级入口、Overview、Coverage Studio、frozen obligation 与派生 fulfillment | 从单条 gap 进入 Case Builder 的上下文自动预填仍需任务测试收敛 |
+| Stage 2 | Case Builder、业务 Oracle/Assertion 双栏、compile preview、四眼 review、结构化 Given/依赖编辑 | “5 分钟首条 Case”和 90% 无 JSON 是业务人员实测门槛，不由组件测试替代 |
+| Stage 3 | Fixture Catalog descriptor/material 物理分离、加密、脱敏、retention、usage/stale、显式 material load | observed-shape 派生、重复检测和客户数据分类 Authority 仍需真实数据验证 |
+| Stage 4 | 服务端 canonical preflight、exact selection、Run Center、五轴 Evidence、source map、stale/fail-closed | 500 Case 失败的业务根因聚类与跨资产批量修复仍主要由 Rehearsals 承担，需在试点验证跨入口认知成本 |
+| Stage 5 | exact Evidence-derived calibration proposal、ANEKE feedback/current Gate 投影、payload-free events/deep link | 提案批准后生成 obligation/Fixture/Oracle/Case pack 的独立晋级命令、真实 Outcome 置信度和两个团队运营周期是下一阶段 |
+
+仓库可控门禁已经补齐 500/5,000 Case 有界 Workspace、Run Center axe serious/critical、1280/390 真实 Chromium、
+中英文状态映射、协议兼容窗口、跨系统 clock skew、purpose/no-store/stable Problem 与 payload-free event。外部 Authority、
+生产 SLO 和业务任务成功率仍是部署验收，不能在文档中假装已经获得。
+
+### 10.2 推荐团队
 
 | 角色 | 建议投入 |
 |---|---:|

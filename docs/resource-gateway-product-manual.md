@@ -213,6 +213,51 @@ boundary 三类可运行正确性数据。
 ./scripts/start-visual-canvas-demo.sh --scenario-batch --open
 ```
 
+### 3.7 使用 Correctness Studio 定义、运行与校准业务正确性
+
+Correctness Studio 是面向业务正确性资产的一级入口，不是 Author 画布里继续堆叠的测试浮层。先用只读样板理解
+信息架构：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --correctness --open
+```
+
+该命令会打开一份贷款决策 exact Graph 样板。只读演示只声明 `correctnessWorkspaceApi=true`，因此可以查看定义、
+冻结分母、Case、Fixture descriptor、Oracle/Assertion、Publication 摘要和五轴状态，但不能保存、发布或运行。
+这是 capability 失败关闭，不是页面故障。完整操作说明见
+[Correctness Studio 演示指南](resource-gateway-correctness-studio-demo-guide.md)。
+
+在装配完整 correctness runtime 的 `test/staging` 部署中，按下列顺序工作：
+
+1. **总览**：确认 exact target、Correctness Definition、风险、Owner、当前 Publication、五轴 verdict 和唯一下一步。
+2. **覆盖率**：维护 Coverage Inventory；检查 Contract、Path、Policy、Risk、Incident、Boundary 分母，完成独立复核后冻结。覆盖状态由 Canonical Case 的 exact obligation ref 派生，不能手工补绿。
+3. **用例数**：在 Case Builder 中填写业务意图、类型、风险、Given 来源和受控依赖。输入可选 inline KV 或 Fixture variant；依赖可选 REAL、RETURN、ERROR、DELAY、TIMEOUT、REPLAY、OBSERVE、MUST_NOT_CALL，不要求编辑原始 JSON。
+4. **模拟数据**：先维护 metadata-only Fixture descriptor，再用独立授权显式读取或写入 material。Material 写入成功后取得 payload-free receipt，再把 exact material ref 绑定回 descriptor；目录页、URL、日志和治理导出不出现明文。
+5. **业务预期**：先由业务 Owner 描述正确结果、禁止结果和依据，再由测试/研发把它编译为 Assertion Set。必须先通过 compile preview；不支持的断言语义会阻断，不会静默丢弃。
+6. **发布**：在总览下方先执行 compilation preview，审阅 diagnostics、source map、compiled assets 和真实调用风险。只有同一 exact preview `publishable=true` 时，才可创建不可变 Correctness Publication。
+7. **运行**：进入「运行」，选择全部或指定 Case、失败策略，再选择「审查运行计划」。服务端返回 canonical Selection、REAL/MOCKED/FAULT/副作用摘要和 blocker；只有已审查的 exact fingerprint 可以运行。
+8. **证据**：终态固定展示执行、断言、覆盖、证据、门禁五个独立轴，以及 Case execution、证明等级、attestation 和 source map。历史 Evidence 中的 Gate 是封存时快照，不代表当前发布许可；必须核对页面上方 ANEKE 当前决策。
+9. **结果校准**：真实 Outcome 与已批准业务真值不一致时，选择「提出校准建议」，填写差异类型、原因码、业务依据和回归标题，并选择证据闭包内的 Case。系统只创建 `PROPOSED` 提案，不改写 Oracle，也不自动发布 regression Case。
+10. **外部治理**：ANEKE feedback 面板显示 workbook、责任人审批、breaking migration、finding、remediation 和 deep link。Resource Gateway 只投影当前决策；ANEKE 继续拥有 workbook 和 publish gate 生命周期。
+
+这条链路有三个不可绕过的认知边界：执行成功不等于业务正确；历史 Evidence 不等于当前发布许可；Outcome
+提案不等于已批准业务真值。
+
+完整部署必须从 Capability Probe 看到对应能力真实装配：
+
+| 工作面 | 必需 capability |
+|---|---|
+| 只读工作区 | `correctnessWorkspaceApi` |
+| Coverage / Oracle / Case / Fixture | `correctnessCoverageApi`、`correctnessOracleAssertionApi`、`correctnessScenarioV2Api`、`correctnessFixtureCatalogApi` |
+| Fixture material | `correctnessFixtureMaterialApi` |
+| 编译与发布 | `correctnessCompilationApi`、`correctnessPublicationApi` |
+| 预检、运行与 Evidence | `correctnessPreflightApi`、`correctnessRunApi`、`correctnessEvidenceCompanionApi` |
+| Outcome 与 ANEKE | `correctnessOutcomeCalibrationApi`、`correctnessGovernanceFeedbackApi` |
+
+任一 capability 为 `false` 时，UI 禁用对应命令且不通过捕获 404 猜测能力。生产部署还必须提供 PostgreSQL
+migration、企业身份与 purpose、review authority、测试资产 registry、Fixture Schema authority 和 tenant/region
+密钥；缺少这些 Authority 时保持关闭。
+
 ## 4. 业务镜像的七步工作法
 
 | 步骤 | 要回答的业务问题 | 主要资产 | 页面行为 |
@@ -342,6 +387,7 @@ node/edge trace、断言结果、耗时和错误分类，随后生成可脱敏�
 | Evidence 与 Fidelity | 业务镜像第 6 步、Integration API | 分层证据不可互相替代，无综合分数 |
 | Outcome、Regional Data Plane、Runtime certification | capability probe、专项 API 和认证包 | 客户环境 Authority、KMS、PKI、网络与 HA 证据 |
 | ANEKE integration | protocol 1.1 bundle、governance projection | ANEKE 保持 registry 与 publish gate 权威 |
+| Correctness Studio | `/correctness/`、authoring command API、Run Center | Resource Gateway 拥有 authoring/runtime truth；ANEKE feedback 只读投影 |
 | Pilot acceptance | 十门禁 manifest、Test Kit | 客户 Owner 冻结分母并作最终接受决定 |
 
 capability probe 只声明当前部署实际装配的能力：
@@ -358,6 +404,7 @@ ANEKE 已允许发布。
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
 | 常规产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 五个页面、固定示例、test profile |
+| 正确性只读样板 | `./scripts/start-visual-canvas-demo.sh --correctness --open` | exact Workspace、8 Cases、5 Fixture descriptors；写入与 Run capability 保持关闭 |
 | 批量 Scenario worker | `./scripts/start-visual-canvas-demo.sh --scenario-batch --open` | 区域队列和隔离 evidence finalizer |
 | 有状态模拟 | `./scripts/start-visual-canvas-demo.sh --stateful --open` | 加密 Session、checkpoint 和恢复协议 |
 | Shadow API | `./scripts/start-visual-canvas-demo.sh --shadow-jobs` | 只读 submit/read/lifecycle；默认不启动 poller |
@@ -448,6 +495,8 @@ workspace trust、HTTPS、SecretStorage 凭据和路径白名单约束。
 - [Package Evidence 与 Fidelity 指南](resource-gateway-package-evidence-and-fidelity-guide.md)
 - [Scenario Rehearsal Compiler](resource-gateway-scenario-rehearsal-compiler.md)
 - [Test Kit 设计与使用手册](resource-gateway-test-kit-design-and-user-guide.md)
+- [Correctness Studio 演示指南](resource-gateway-correctness-studio-demo-guide.md)
+- [Correctness Studio 技术实施方案](resource-gateway-correctness-studio-technical-implementation-plan.md)
 - [ANEKE Package 集成指南](resource-gateway-aneke-package-integration-guide.md)
 - [取消费申诉试点验收指南](resource-gateway-cancellation-fee-pilot-acceptance-guide.md)
 - [Business Mirror 实现状态](resource-gateway-business-mirror-implementation-status.md)

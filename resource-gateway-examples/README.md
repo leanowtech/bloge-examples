@@ -87,7 +87,9 @@ Assertion summaries, publication metadata, and a five-axis verdict. It deliberat
 advertises `correctnessWorkspaceApi=true` and `correctnessRunApi=false`: the Run view
 must remain unavailable until a deployment assembles the real governed runtime. See the
 [Correctness Studio demo guide](../docs/resource-gateway-correctness-studio-demo-guide.md)
-for the walkthrough, exact URL, API probe, stop command, and capability boundary.
+for the walkthrough, exact URL, API probe, stop command, and capability boundary. The
+[product manual](../docs/resource-gateway-product-manual.md#37-使用-correctness-studio-定义运行与校准业务正确性)
+continues with the full authoring, publication, run, evidence, calibration, and ANEKE workflow.
 
 This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
