@@ -39,6 +39,31 @@ public interface ScenarioDraftSetV2Repository {
             ExactTargetRef target,
             ExactAssetRef inventoryRef);
 
+    /**
+     * Returns exact Fixture references used by Canonical Cases in current Scenario heads.
+     * Implementations must derive this projection without returning Scenario input payloads.
+     */
+    default List<FixtureReferenceUsage> fixtureUsagesByTarget(
+            EnterpriseScope scope,
+            ExactTargetRef target
+    ) {
+        return List.of();
+    }
+
+    record FixtureReferenceUsage(
+            ExactAssetRef scenarioDraftSetRef,
+            ExactAssetRef fixtureAssetRef
+    ) {
+        public FixtureReferenceUsage {
+            if (scenarioDraftSetRef == null || fixtureAssetRef == null
+                    || !"SCENARIO_DRAFT_SET".equals(scenarioDraftSetRef.kind())
+                    || !"FIXTURE_ASSET".equals(fixtureAssetRef.kind())) {
+                throw new IllegalArgumentException(
+                        "Exact Scenario Draft Set and Fixture refs are required");
+            }
+        }
+    }
+
     record ScenarioCasePage(
             long total,
             List<ScenarioCaseSummary> rows,

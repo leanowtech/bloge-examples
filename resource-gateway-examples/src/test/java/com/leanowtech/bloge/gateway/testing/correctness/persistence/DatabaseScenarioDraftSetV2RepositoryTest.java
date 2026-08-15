@@ -15,6 +15,13 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.TargetKind;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.CaseType;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.BehaviorBoundary;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.BehaviorKind;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.Consumption;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ControlledBehavior;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ControlledDependencyV2;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.DependencySelector;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.FixtureVariantRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.GivenV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.InlineValue;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioDraftV2;
@@ -160,6 +167,44 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
     }
 
     @Test
+    void derivesDistinctFixtureUsageOnlyFromCanonicalCasesWithoutPayloads() {
+        ExactAssetRef givenFixture = asset("customer-profile", 3, '7');
+        ExactAssetRef dependencyFixture = asset("pricing-response", 5, '8');
+        ScenarioDraftV2 canonical = scenario(
+                "case-canonical", "Canonical decision", ScenarioLifecycle.CANONICAL, true);
+        canonical = new ScenarioDraftV2(
+                canonical.scenarioId(), canonical.name(), canonical.businessIntent(),
+                canonical.description(), canonical.caseType(), canonical.risk(), canonical.owner(),
+                canonical.lifecycle(), canonical.obligationRefs(), canonical.oracleRefs(),
+                canonical.assertionSetRefs(), List.of(givenFixture),
+                new GivenV2(new FixtureVariantRef(givenFixture, "eligible")),
+                List.of(new ControlledDependencyV2(
+                        "pricing", new DependencySelector(
+                                "", "pricing-node", "", "", "", List.of(), List.of(), "",
+                                List.of()),
+                        new ControlledBehavior(
+                                BehaviorKind.RETURN, BehaviorBoundary.NODE,
+                                new FixtureVariantRef(dependencyFixture, "approved"), "", 0),
+                        Consumption.once())),
+                canonical.review(), canonical.tags());
+        ScenarioDraftV2 exploratory = new ScenarioDraftV2(
+                "case-exploratory", "Draft", "Draft only", "", CaseType.GOLDEN,
+                RiskLevel.LOW, owner(), ScenarioLifecycle.EXPLORATORY, List.of(), List.of(),
+                List.of(), List.of(asset("draft-only", 1, '9')),
+                new GivenV2(new InlineValue(Map.of("secret", "must-not-project"))),
+                List.of(), ReviewRecord.pending(), List.of());
+        repository.saveIfRevision(0, new ScenarioDraftSetV2(
+                "", "loan-scenarios", 0, scope("tenant-a"), target(),
+                new ExactAssetRef("CONTRACT", "loan-contract", 2, fingerprint('c')),
+                List.of(canonical, exploratory), metadata()), author()).orElseThrow();
+
+        assertThat(repository.fixtureUsagesByTarget(scope("tenant-a"), target()))
+                .extracting(usage -> usage.fixtureAssetRef().id())
+                .containsExactly("customer-profile", "pricing-response");
+        assertThat(repository.fixtureUsagesByTarget(scope("tenant-b"), target())).isEmpty();
+    }
+
+    @Test
     void rollsBackHeadHistoryAndBothIndexesWhenOutboxFails() {
         jdbc.execute("DROP TABLE rg_correctness_outbox");
         TransactionTemplate transaction = new TransactionTemplate(
@@ -287,6 +332,10 @@ class DatabaseScenarioDraftSetV2RepositoryTest {
 
     private ExactAssetRef inventoryRef() {
         return new ExactAssetRef("INVENTORY", "loan-inventory", 2, fingerprint('b'));
+    }
+
+    private ExactAssetRef asset(String id, long revision, char seed) {
+        return new ExactAssetRef("FIXTURE_ASSET", id, revision, fingerprint(seed));
     }
 
     private ExactTargetRef target() {

@@ -12,8 +12,11 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.PrincipalRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ControlledDependencyV2;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.FixtureVariantRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioDraftV2;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ScenarioLifecycle;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.ScenarioDraftSetV2.ValueSource;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -26,6 +29,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
@@ -250,6 +254,72 @@ public final class DatabaseScenarioDraftSetV2Repository
                 append(targetArgs(exactScope, exactTarget), exactInventory.id(),
                         exactInventory.revision(), exactInventory.fingerprint()));
         return Set.copyOf(new LinkedHashSet<>(ids));
+    }
+
+    @Override
+    public List<FixtureReferenceUsage> fixtureUsagesByTarget(
+            EnterpriseScope scope,
+            ExactTargetRef target
+    ) {
+        EnterpriseScope exactScope = exactScope(scope);
+        ExactTargetRef exactTarget = Objects.requireNonNull(target, "target");
+        List<StoredScenarioDraftSetV2> heads = jdbc.query("""
+                        SELECT * FROM rg_scenario_draft_set_v2_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND target_kind = ? AND target_id = ?
+                          AND target_revision = ? AND target_fingerprint = ?
+                        ORDER BY scenario_draft_set_id
+                        """,
+                (result, row) -> readAndVerify(
+                        result, exactScope, result.getString("scenario_draft_set_id")),
+                targetArgs(exactScope, exactTarget)).stream()
+                .flatMap(Optional::stream)
+                .toList();
+        return heads.stream()
+                .flatMap(stored -> fixtureUsages(stored).stream())
+                .distinct()
+                .sorted(Comparator
+                        .comparing((FixtureReferenceUsage usage) ->
+                                usage.fixtureAssetRef().id())
+                        .thenComparingLong(usage -> usage.fixtureAssetRef().revision())
+                        .thenComparing(usage -> usage.fixtureAssetRef().fingerprint())
+                        .thenComparing(usage -> usage.scenarioDraftSetRef().id()))
+                .toList();
+    }
+
+    private static List<FixtureReferenceUsage> fixtureUsages(
+            StoredScenarioDraftSetV2 stored
+    ) {
+        ScenarioDraftSetV2 draftSet = stored.scenarioDraftSet();
+        ExactAssetRef consumer = new ExactAssetRef(
+                "SCENARIO_DRAFT_SET", draftSet.scenarioDraftSetId(), draftSet.revision(),
+                stored.scenarioDraftSetFingerprint());
+        Set<ExactAssetRef> refs = new LinkedHashSet<>();
+        draftSet.scenarios().stream()
+                .filter(scenario -> scenario.lifecycle() == ScenarioLifecycle.CANONICAL)
+                .forEach(scenario -> {
+                    scenario.sourceRefs().stream()
+                            .filter(DatabaseScenarioDraftSetV2Repository::isFixtureRef)
+                            .forEach(refs::add);
+                    addFixtureRef(refs, scenario.given().input());
+                    for (ControlledDependencyV2 dependency : scenario.dependencies()) {
+                        addFixtureRef(refs, dependency.behavior().value());
+                    }
+                });
+        return refs.stream()
+                .map(ref -> new FixtureReferenceUsage(consumer, ref))
+                .toList();
+    }
+
+    private static void addFixtureRef(Set<ExactAssetRef> refs, ValueSource value) {
+        if (value instanceof FixtureVariantRef fixture) {
+            refs.add(fixture.fixtureAssetRef());
+        }
+    }
+
+    private static boolean isFixtureRef(ExactAssetRef ref) {
+        return ref != null && "FIXTURE_ASSET".equals(ref.kind());
     }
 
     private Optional<StoredScenarioDraftSetV2> queryOne(
