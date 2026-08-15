@@ -47,6 +47,7 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
             "rg_correctness_publications",
             "rg_correctness_publication_attempts",
             "rg_correctness_publication_attempt_history",
+            "rg_correctness_evidence_companions",
             "rg_correctness_outbox",
             "rg_correctness_command_receipts");
 

@@ -28,6 +28,7 @@ public final class CorrectnessAuthoringSchemaReadiness {
             "rg_correctness_publications",
             "rg_correctness_publication_attempts",
             "rg_correctness_publication_attempt_history",
+            "rg_correctness_evidence_companions",
             "rg_correctness_outbox",
             "rg_correctness_command_receipts");
 
@@ -39,7 +40,8 @@ public final class CorrectnessAuthoringSchemaReadiness {
             } catch (RuntimeException missingOrUnauthorized) {
                 throw new IllegalStateException(
                         "Correctness authoring schema is unavailable at table " + table
-                                + "; apply V20260815_005 before enabling the runtime",
+                                + "; apply migrations V20260815_005 through V20260815_009 "
+                                + "before enabling the runtime",
                         missingOrUnauthorized);
             }
         }
