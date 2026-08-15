@@ -726,6 +726,9 @@ public record IntegrationCapabilities(
         objects.put("scenarioCanonicalApprovalReceipt", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.scenario
                         .ScenarioCanonicalApprovalReceipt.SCHEMA_VERSION));
+        objects.put("scenarioV1MigrationPreview", List.of(
+                com.leanowtech.bloge.gateway.testing.correctness.scenario
+                        .LegacyScenarioV1MigrationPreview.SCHEMA_VERSION));
         objects.put("fixtureAssetDescriptor", List.of(
                 com.leanowtech.bloge.gateway.testing.correctness.domain
                         .FixtureAssetDescriptor.SCHEMA_VERSION));

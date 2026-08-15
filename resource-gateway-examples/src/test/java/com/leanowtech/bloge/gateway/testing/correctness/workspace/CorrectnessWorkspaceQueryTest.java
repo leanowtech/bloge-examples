@@ -190,7 +190,9 @@ class CorrectnessWorkspaceQueryTest {
                 .containsEntry("scenarioClosureReport",
                         List.of("bloge.scenarioClosureReport.v1"))
                 .containsEntry("scenarioCanonicalApprovalReceipt",
-                        List.of("bloge.scenarioCanonicalApprovalReceipt.v1"));
+                        List.of("bloge.scenarioCanonicalApprovalReceipt.v1"))
+                .containsEntry("scenarioV1MigrationPreview",
+                        List.of("bloge.scenarioV1MigrationPreview.v1"));
     }
 
     private CorrectnessWorkspaceComponentSource fiveHundredCaseSource() {

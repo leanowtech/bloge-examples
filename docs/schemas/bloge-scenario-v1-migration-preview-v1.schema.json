@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/bloge-scenario-v1-migration-preview-v1.schema.json",
+  "title": "BLOGE Scenario v1 Migration Preview v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "legacySourceRef", "proposedDraftSet", "assertionProposals", "diagnostics", "reviewRequired"],
+  "properties": {
+    "schemaVersion": { "const": "bloge.scenarioV1MigrationPreview.v1" },
+    "legacySourceRef": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/exactAssetRef" },
+    "proposedDraftSet": { "$ref": "bloge-scenario-draft-set-v2.schema.json" },
+    "assertionProposals": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assertionProposal" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    },
+    "reviewRequired": { "const": true }
+  },
+  "$defs": {
+    "assertionProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioId", "assertions"],
+      "properties": {
+        "scenarioId": { "$ref": "bloge-correctness-authoring-v1.schema.json#/$defs/identifier" },
+        "assertions": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "bloge-scenario-draft-set-v1.schema.json#/$defs/assertion" }
+        }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severity", "code", "scenarioId", "dependencyId"],
+      "properties": {
+        "severity": { "enum": ["INFO", "WARNING", "BLOCKER"] },
+        "code": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "scenarioId": { "type": "string", "maxLength": 512 },
+        "dependencyId": { "type": "string", "maxLength": 512 }
+      }
+    }
+  }
+}

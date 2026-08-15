@@ -405,7 +405,14 @@ Scenario 反向索引为分子，未知、旧 revision、exploratory 或 review-
 同时执行授权及四眼约束。认证 HTTP adapter 已分别提供 draft save、review-ready 和 canonical approve 命令，统一强制 purpose、完整
 scope 与 `If-Match`；canonical approve 另要求 `Idempotency-Key`，使用通用 command receipt 表保存哈希键、请求指纹、exact Case
 坐标及 payload-free closure，重放时反查不可变 revision 并校验内容完整性。closure 缺口作为结构化 Problem detail 返回。生产 bean、企业
-external-reference resolver 和 v1 lowering adapter 接入前，Capability Probe 保持 `correctnessScenarioV2Api=false`。
+external-reference resolver 和 production composition 接入前，Capability Probe 保持 `correctnessScenarioV2Api=false`。
+
+v1 迁移已提供确定性的 preview adapter 和
+[`bloge-scenario-v1-migration-preview-v1.schema.json`](schemas/bloge-scenario-v1-migration-preview-v1.schema.json)。迁移器要求调用方提供已授权
+scope、exact target、exact contract 和 exact v1 source revision；可表达的 Given/controlled dependency 降为 inline exploratory 内容，v1
+技术断言保留为待绑定 Oracle 的提案。空/重复身份、模糊 selector、非精确 replay、transport payload、非法 duration、无限 consumption
+等损失均逐项输出 blocker/warning，坏行不拖垮整批 preview。输出始终 `reviewRequired=true`，不会制造 obligation、Oracle、Assertion Set
+或 review authority；所有 Case 固定为 `EXPLORATORY`。
 
 ### 4.6 `FixtureAssetDescriptor v1`
 
@@ -1234,7 +1241,7 @@ Coverage decorator 只从 Definition 的 exact inventory ref 读取冻结分母�
 | COR-02 | Workspace BFF 与 payload-free projection | COR-01 | 进行中；协议/query/controller 已完成，权威 component source 待 COR-03-06 接入 | 500-case overview SLO、scope tests | 1.5 周 |
 | COR-03 | Coverage Inventory、freeze、impact proposal | COR-01/02 | 进行中；仓储、命令 API、幂等 freeze、impact、Workspace projection 与 Scenario exact fulfillment 已完成，生产装配待接入 | frozen denominator 可审计、无手写 COVERED | 2 周 |
 | COR-04 | Business Oracle、Assertion Set、review | COR-01/02 | 进行中；持久化、Owner approve、幂等、纯 compiler、HTTP 与 Workspace summary 已完成，生产装配待接入 | Owner 可审、compiler 无静默丢失 | 2 周 |
-| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 进行中；CAS/history/outbox、复合游标 Matrix、fulfillment、状态机、exact closure、幂等审批与 HTTP 已完成，v1 lowering/生产装配/前端待接入 | governed Case exact closure 完整 | 2.5 周 |
+| COR-05 | Scenario v2、Case Builder、Matrix 迁移 | COR-03/04 | 进行中；CAS/history/outbox、复合游标 Matrix、fulfillment、状态机、exact closure、幂等审批、HTTP 与 v1 preview adapter 已完成，预览 HTTP/生产装配/前端待接入 | governed Case exact closure 完整 | 2.5 周 |
 | COR-06 | Fixture Catalog、material port、usage/stale | COR-01/05 | 未开始 | metadata/payload 隔离与泄露测试通过 | 2.5 周 |
 | COR-07 | Compilation Service、纯 Compiler、publication manifest/saga | COR-03-06 | 未开始 | deterministic/source-map/retry tests 通过 | 2 周 |
 | COR-08 | Preflight、Run Center、五轴 evidence | COR-07 | 未开始；只有 Stage 0 本地风险投影 | real-call 风险前置、evidence exact 绑定 | 2 周 |
