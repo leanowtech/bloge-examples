@@ -77,6 +77,31 @@
 
 验收基线不是静态 PRD。它必须能被人工走查，也能被自动化测试消费。任何实现变更若改变黄金路径、页面反馈或数据语义，必须先修改并重新批准验收基线，不能先补代码、再追认预期。
 
+### 0.4 验收不是“功能清单完成”
+
+本方案中的每一项验收必须同时回答六个问题：**谁在什么前置条件下执行什么动作、看到什么结果、系统保持什么不变量、用什么证据复验**。只有页面、接口或测试代码已经存在，不构成验收通过。
+
+每条 Acceptance Contract 必须具备以下字段：
+
+| 字段 | 约束 |
+|---|---|
+| Requirement ID | 使用稳定的 `GP-*`、`SPIKE-*`、`SEC-*`、`NFR-*` 或 `S*-AC-*`，不得以 PR、组件名代替 |
+| Preconditions | 固定候选构建、Baseline、Demo Pack、Scope、语言、视口和运行模式 |
+| User outcome | 业务角色可以观察并解释的结果，不以 HTTP 200 或按钮可点击代替 |
+| System invariant | exact ref、契约闭包、确定性、零真实调用、权限和数据安全等不可破坏条件 |
+| Evidence | 可重放测试、协议结果、运行证据、视觉基线、可用性记录和内容 fingerprint |
+| Owner and decision | 责任角色、判定时间、`PASS`/`FAIL` 及限制；签署不能由构建脚本代填 |
+
+验收状态只允许按以下语义使用：
+
+- `NOT_RUN`：尚未执行，不能推断结果。
+- `FAIL`：已执行但至少一个不变量或期望不成立。
+- `PARTIAL`：已有开发证据，但完整前置、矩阵、人工签署或端到端链路尚未闭合；**不得用于阶段退出**。
+- `PASS`：所有自动和人工证据闭合，且没有未关闭的 P0/P1 问题。
+- `BLOCKED`：存在明确外部阻断，必须记录 Owner、解除条件和复验入口；不能用来隐藏失败。
+
+不设置“默认通过”或口头豁免。测试跳过、证据过期、引用 fingerprint 不匹配、签署缺失和环境不符合前置条件时，一律不能生成 `PASS`。
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -1170,7 +1195,68 @@ Stage 1 开工后，新反馈必须先归类：
 - Evidence 可被独立复验并准确回到画布、场景和数据版本。
 - 本地 fixed fixture 不会被误报为客户现场认证。
 
-### 13.1 所有阶段共用的验收纪律
+### 13.1 分阶段 Acceptance Contract
+
+下表是阶段退出的最低可执行合同。各 Stage 的原交付清单继续说明建设范围，本表负责回答“什么证据出现后才算交付完成”。任一必填项为 `NOT_RUN`、`FAIL`、`PARTIAL` 或 `BLOCKED`，阶段状态均不是 `PASS`。
+
+#### Stage 0：Acceptance Baseline
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录 | 产品、UX、QA 全部签署后 `PASS` |
+| `S0-AC-02` | Golden Demo Pack 固定为 4 API、1 Feature、1 Tool、9 Case；Case 均有 Owner、Source、Oracle、适用契约和精确引用闭包 | Demo Pack Schema 校验、Test Kit verifier、内容 fingerprint、篡改与跨 Scope 负向用例 | 业务 Owner、正确性 Owner `PASS` |
+| `S0-AC-03` | Spike A 无损下沉到既有测试 Runtime；Spike B 来自真实 BLOGE Trace；Spike C 从生产装配和协议移除注入能力 | 三份 Spike 报告与仓库测试；确定性、source map、Data Lens、生产 profile、network deny 和 counter 证据 | 架构、Runtime、画布、安全分别签署，三项均 `PASS` |
+| `S0-AC-04` | Canonical Baseline 连续运行 3 次均为 9/9；semantic fingerprint 一致；真实外部调用数始终为 0 | 三次独立 Run Evidence、断言结果、egress counter、运行环境 fingerprint | 正确性 Owner、Runtime、QA `PASS` |
+| `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
+| `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
+
+#### Stage 1：业务接口与场景数据
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S1-AC-01` | 新用户可对订单查询、城市规则两个接口完成“从样例定义边界 -> 确认契约 -> 准备场景 -> 设置依赖表现 -> 隔离试跑 -> 查看证据” | 两条端到端浏览器用例、任务时长与零 ID/零 Raw JSON 断言 | 产品、接口 Owner、QA `PASS` |
+| `S1-AC-02` | 表单、样例、JSON Schema/OpenAPI 导入和导出保持语义 round-trip；非法、缺失、敏感字段和 breaking change 均有业务化反馈 | 协议 round-trip、兼容性、unknown field、敏感字段、错误恢复测试 | 接口 Owner、架构 `PASS` |
+| `S1-AC-03` | Dataset、Case、Behavior 使用持久化 Authority、immutable revision、CAS 和 exact refs；契约变化会传播 stale，不静默继续使用 | Repository、并发冲突、重启恢复、stale propagation、跨 Scope 与篡改测试 | 正确性 Owner、数据安全 `PASS` |
+| `S1-AC-04` | 未解析依赖在调度前失败；完全隔离试跑不会访问真实服务；失败可保留编辑内容并给出恢复动作 | Preflight、单场景 Evidence、network deny/counter、错误状态浏览器证据 | Runtime、安全、QA `PASS` |
+| `S1-AC-05` | 中文/英文及 1440/1024/390 关键视口可完成主任务；键盘路径和 axe serious/critical 均无阻断 | 真实浏览器、键盘、完整 axe、视觉截图和溢出检查 | UX、前端、QA `PASS` |
+
+#### Stage 2：业务特征 DAG 与 Data Lens
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S2-AC-01` | 用户通过 Picker 和字段映射组装取消费争议 Feature，不手填引用；Graph Contract、节点端口和边映射闭合 | Graph/Contract/Binding 编译测试、引用闭包和 Schema 传播证据 | Feature Owner、画布、架构 `PASS` |
+| `S2-AC-02` | 选择超时场景后，画布可解释每个字段的来源、节点输入输出、边值、状态和首个差异；无 Payload 权限时只显示结构与 fingerprint | BLOGE RunTrace 投影、权限双态、lineage 与首差异断言 | 画布、Runtime、数据安全 `PASS` |
+| `S2-AC-03` | 1440 和 1024 视口 Auto Layout 后节点、端口、边标签和数据摘要均无遮挡；缩略图可判断整体拓扑 | DOM 几何断言、canvas pixel 检查、真实浏览器截图和人工视觉签署 | UX、画布、QA `PASS` |
+| `S2-AC-04` | timeout、retry、skip、fallback、partial 的 UI、Trace 和 Oracle 语义一致；证据绑定 exact Graph/Contract/Dataset/Binding | 五类运行证据、漂移失效和 Deep Link 回图测试 | Feature Owner、正确性 Owner `PASS` |
+
+#### Stage 3：工具契约化与整包验证
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S3-AC-01` | Tool 明确展示输入、输出、错误、禁止结果、副作用、SLA 和全部 API/Feature 依赖；默认界面不要求理解底层 Graph ID | Tool Contract Schema、投影、可访问 DOM 和引用闭包测试 | Tool Owner、产品、架构 `PASS` |
+| `S3-AC-02` | 不连接真实 API 运行完整工具，9 Case 连续 3 次全部通过，且 ERROR、TIMEOUT、顺序消费和 `MUST_NOT_CALL` 语义保真 | Batch Run、semantic fingerprint、source map、断言、network counter | 正确性 Owner、Runtime、QA `PASS` |
+| `S3-AC-03` | Tool export bundle 包含 exact 契约、依赖、Dataset、Binding Plan 和 Evidence refs；下游可独立复验，不能把本地 fixture 误报为现场认证 | Test Kit 离线 verifier、tamper/mixed-version/权限负向测试 | 集成 Owner、安全 `PASS` |
+| `S3-AC-04` | 依赖升级会产生可读影响和阻断，Evidence Deep Link 可返回 exact Graph、节点、Case 和 revision | breaking migration、stale gate、刷新保持和 Deep Link 浏览器测试 | Tool Owner、治理 Owner `PASS` |
+
+#### Stage 4：数据资产工业化
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S4-AC-01` | 任一 Active Case 都能追溯 Source、Owner、Oracle、审批、适用契约、复用方和保留策略；缺项不能激活 | 全量质量查询、随机抽样复验、激活门禁与 orphan 扫描 | 数据 Owner、正确性 Owner `PASS` |
+| `S4-AC-02` | Payload 的查看、导出、派生和运行权限独立；普通投影、日志、错误、指标和 Evidence 不泄露明文 | RBAC/ABAC、脱敏、审计、导出、日志扫描与攻击 fixture | 数据安全、合规 `PASS` |
+| `S4-AC-03` | 撤销、过期或 Scope 变化会阻断新运行并传播影响；历史证据保留状态与原因，不被静默改写 | revoke/retention/stale 事件、impact graph、race 与恢复测试 | 数据 Owner、平台 `PASS` |
+| `S4-AC-04` | 在 Stage 0 冻结的目标规模下，批量运行、索引、Vault 和事件满足批准的 SLO，超载时有配额、背压和降级 | 容量模型、压力/浸泡/故障注入结果、告警与 Runbook 演练 | SRE、平台、架构 `PASS` |
+
+#### Stage 5：企业集成与持续治理
+
+| ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
+|---|---|---|---|
+| `S5-AC-01` | Resource Gateway 与 ANEKE 可独立升级并通过 capability probe 协商版本；字段增加、弃用和不兼容均有确定结果 | N/N-1/N+1 兼容矩阵、固定 fixture、consumer contract 与降级测试 | 两端协议 Owner `PASS` |
+| `S5-AC-02` | Run Evidence 可导出、脱敏、按 runId 回放并由 Test Kit 独立验证；失败状态、retry/fallback 和 payload 权限语义一致 | Evidence bundle、payload replay、tamper、retention 和权限测试 | 正确性、治理、安全 `PASS` |
+| `S5-AC-03` | draft/operator/run/contract 的 Deep Link、治理反馈和 Owner action 均回到正确上下文；刷新和跨版本不丢失坐标 | 中文/英文真实浏览器、权限、过期链接和迁移测试 | 产品、治理 Owner、QA `PASS` |
+| `S5-AC-04` | change event/webhook 可重试、去重、补拉和审计；消费者停机或乱序不会造成静默漏治理 | outbox、cursor、幂等、乱序、重放、灾难恢复和观测证据 | 平台、集成、SRE `PASS` |
+
+### 13.2 所有阶段共用的验收纪律
 
 - 每个 Stage 只能以可运行的纵向增量结束，不能用「前端完成」「接口完成」或「代码已合并」作为阶段完成结论。
 - 每个 Stage 都要升级 Acceptance Baseline、Golden Demo Pack、追踪矩阵和 Manifest Schema；四者版本必须互相引用。
