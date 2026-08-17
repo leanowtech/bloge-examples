@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,13 +25,27 @@ import java.util.List;
 public final class CapabilityStudioDemoController {
     private final CapabilityStudioGoldenDemoPack pack;
     private final CapabilityStudioTutorialBranchAuthority tutorialBranch;
+    private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
 
-    /** Creates the projection controller from injected validated pack and durable authority. */
+    /** Creates the projection controller from injected validated authorities and projector. */
+    @Autowired
+    public CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            CapabilityStudioScenarioDatasetProjector scenarioDataset) {
+        this.pack = pack;
+        this.tutorialBranch = tutorialBranch;
+        this.scenarioDataset = scenarioDataset;
+    }
+
+    /**
+     * Retains the standalone browser fixture constructor while production composition injects the
+     * projector as a separate business projection layer.
+     */
     public CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch) {
-        this.pack = pack;
-        this.tutorialBranch = tutorialBranch;
+        this(pack, tutorialBranch, new CapabilityStudioScenarioDatasetProjector(pack));
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */
@@ -43,6 +58,12 @@ public final class CapabilityStudioDemoController {
     @GetMapping("/acceptance-baseline")
     public AcceptanceBaselineProjection acceptanceBaseline() {
         return AcceptanceBaselineProjection.from(pack);
+    }
+
+    /** Returns the immutable, payload-free Scenario Dataset projection derived from the golden pack. */
+    @GetMapping("/scenario-dataset")
+    public CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection scenarioDataset() {
+        return scenarioDataset.project();
     }
 
     /** Returns the current business-shaped dependency behavior for the fixed tutorial branch. */

@@ -2104,6 +2104,10 @@ capability_studio_acceptance_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/acceptance-baseline"
 }
 
+capability_studio_dataset_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/scenario-dataset"
+}
+
 capability_studio_tutorial_branch_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/tutorial-branch"
 }
@@ -2240,6 +2244,7 @@ EOF
   Capability probe: $(capabilities_url)
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Golden demo pack: %s\n' "$(capability_studio_demo_pack_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Acceptance base:  %s\n' "$(capability_studio_acceptance_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Scenario dataset: %s\n' "$(capability_studio_dataset_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial branch:  %s\n' "$(capability_studio_tutorial_branch_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial check:   POST %s\n' "$(capability_studio_tutorial_preflight_url)")
   Active profile:   ${SPRING_PROFILE}
@@ -2333,12 +2338,15 @@ wait_for_ready() {
             if truthy "${CAPABILITY_STUDIO_DEMO}"; then
                 local capability_studio_pack
                 local capability_studio_acceptance
+                local capability_studio_dataset
                 local capability_studio_branch
                 local capability_studio_preflight
                 if ! capability_studio_pack="$(curl -fsS \
                     "$(capability_studio_demo_pack_url)" 2>/dev/null)" ||
                     ! capability_studio_acceptance="$(curl -fsS \
                     "$(capability_studio_acceptance_url)" 2>/dev/null)" ||
+                    ! capability_studio_dataset="$(curl -fsS \
+                    "$(capability_studio_dataset_url)" 2>/dev/null)" ||
                     ! capability_studio_branch="$(curl -fsS \
                     "$(capability_studio_tutorial_branch_url)" 2>/dev/null)" ||
                     ! capability_studio_preflight="$(curl -fsS -X POST \
@@ -2357,6 +2365,20 @@ wait_for_ready() {
                         (.status == "NO_GO")
                         and ((.gates | length) == 10)
                         and ([.gates[].status] | all(. == "NOT_RUN"))
+                    ' >/dev/null 2>&1 ||
+                        ! printf '%s' "${capability_studio_dataset}" | jq -e '
+                        (.schemaVersion == "resource-gateway.capability-studio.scenario-dataset.v1")
+                        and (.datasetRef.kind == "DATASET")
+                        and (.datasetRef.fingerprint | test("^sha256:[0-9a-f]{64}$"))
+                        and (.lifecycle == "REVIEW_READY")
+                        and (.quality.status == "BLOCKED")
+                        and (.quality.totalCaseCount == 9)
+                        and ((.cases | length) == 9)
+                        and ([.cases[].caseRef.kind] | all(. == "DATA_CASE"))
+                        and ([.cases[].owner] | all(. != null))
+                        and ([.cases[].sourceRef] | all(. != null))
+                        and ([.cases[].oracleRef] | all(. != null))
+                        and ([.cases[].applicableContractRefs | length] | all(. > 0))
                     ' >/dev/null 2>&1 ||
                         ! jq -n -e \
                         --argjson branch "${capability_studio_branch}" \
@@ -2388,6 +2410,10 @@ wait_for_ready() {
                     grep -Eq '"scenarios"[[:space:]]*:[[:space:]]*9' ||
                     ! printf '%s' "${capability_studio_acceptance}" |
                     grep -Eq '"status"[[:space:]]*:[[:space:]]*"NO_GO"' ||
+                    ! printf '%s' "${capability_studio_dataset}" |
+                    grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*"resource-gateway.capability-studio.scenario-dataset.v1"' ||
+                    ! printf '%s' "${capability_studio_dataset}" |
+                    grep -Eq '"totalCaseCount"[[:space:]]*:[[:space:]]*9' ||
                     ! printf '%s' "${capability_studio_preflight}" |
                     grep -Eq '"mode"[[:space:]]*:[[:space:]]*"ISOLATED"' ||
                     ! printf '%s' "${capability_studio_preflight}" |
@@ -2570,7 +2596,7 @@ wait_for_ready() {
                 return 0
             fi
             if truthy "${CAPABILITY_STUDIO_DEMO}"; then
-                echo "Demo service ready; Capability Studio 4/1/1/9 baseline, isolated tutorial preflight, and visual probes passed${visual_readiness}: ${url}"
+                echo "Demo service ready; Capability Studio 4/1/1/9 baseline, Scenario Dataset, isolated tutorial preflight, and visual probes passed${visual_readiness}: ${url}"
                 return 0
             fi
             if truthy "${CORRECTNESS_DEMO}"; then

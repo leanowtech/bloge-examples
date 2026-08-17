@@ -88,6 +88,30 @@ class CapabilityStudioDemoControllerTest {
     }
 
     @Test
+    void exposesTheScenarioDatasetThroughTheInjectedPayloadFreeProjector() throws Exception {
+        String response = mvc.perform(get("/api/capability-studio/scenario-dataset"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(
+                        "resource-gateway.capability-studio.scenario-dataset.v1"))
+                .andExpect(jsonPath("$.datasetRef.kind").value("DATASET"))
+                .andExpect(jsonPath("$.datasetRef.scope.tenantId").value("demo-tenant"))
+                .andExpect(jsonPath("$.datasetRef.scope.organizationId").value("customer-service"))
+                .andExpect(jsonPath("$.datasetRef.scope.projectId").value("capability-studio"))
+                .andExpect(jsonPath("$.datasetRef.scope.environmentId").value("test"))
+                .andExpect(jsonPath("$.datasetRef.scope.region").value("local"))
+                .andExpect(jsonPath("$.targetRef.kind").value("TOOL"))
+                .andExpect(jsonPath("$.lifecycle").value("REVIEW_READY"))
+                .andExpect(jsonPath("$.quality.status").value("BLOCKED"))
+                .andExpect(jsonPath("$.cases.length()").value(9))
+                .andExpect(jsonPath("$.cases[0].qualityState").value("DESIGNED_NOT_RUN"))
+                .andExpect(jsonPath("$.cases[0].behaviorProfiles[0].behaviorRef.kind")
+                        .value("BEHAVIOR_PROFILE"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain("payload", "fixture", "mock", "replay", "material");
+    }
+
+    @Test
     void getsTheFrozenTutorialBranchProjection() throws Exception {
         mvc.perform(get("/api/capability-studio/tutorial-branch"))
                 .andExpect(status().isOk())

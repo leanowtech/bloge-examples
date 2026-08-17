@@ -32,6 +32,7 @@ class CapabilityStudioDemoConfigurationTest {
         runner.withPropertyValues("spring.profiles.active=test")
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
+                        .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -42,6 +43,7 @@ class CapabilityStudioDemoConfigurationTest {
         runner.withPropertyValues("gateway.capability-studio.demo.enabled=true")
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
+                        .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -54,6 +56,7 @@ class CapabilityStudioDemoConfigurationTest {
                         "gateway.capability-studio.demo.enabled=true")
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
+                        .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -67,6 +70,7 @@ class CapabilityStudioDemoConfigurationTest {
                 .run(context -> assertThat(context)
                         .hasNotFailed()
                         .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
+                        .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioDemoController.class));
@@ -78,6 +82,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasNotFailed()
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
-                        .hasSingleBean(CapabilityStudioGoldenDemoPack.class));
+                        .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
+                        .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class));
     }
 }

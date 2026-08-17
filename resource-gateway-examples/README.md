@@ -144,6 +144,7 @@ silently consuming work.
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `http://localhost:8080/api/capability-studio/demo-pack` | Read the test/staging-only payload-free golden demo projection when the Capability Studio sample is enabled |
 | `http://localhost:8080/api/capability-studio/acceptance-baseline` | Read the truthful Stage 0 `NO_GO`/`NOT_RUN` acceptance projection; this is not runtime evidence |
+| `GET http://localhost:8080/api/capability-studio/scenario-dataset` | Read the strict payload-free nine-Case Dataset projection with exact refs, business quality, source, Oracle, Contract, and behavior metadata |
 | `GET http://localhost:8080/api/capability-studio/tutorial-branch` | Read the durable tutorial head revision and content fingerprint |
 | `PUT http://localhost:8080/api/capability-studio/tutorial-branch/behaviors/compensation-history` | Save a strict business-shaped timeout behavior with optimistic revision control; test/staging only |
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |

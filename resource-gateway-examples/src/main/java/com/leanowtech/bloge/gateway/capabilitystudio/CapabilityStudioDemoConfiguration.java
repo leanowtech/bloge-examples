@@ -46,4 +46,11 @@ public class CapabilityStudioDemoConfiguration {
         return new CapabilityStudioTutorialBranchAuthority(
                 repository, pack, mapper, capabilityStudioTutorialBranchTransactions);
     }
+
+    @Bean
+    CapabilityStudioScenarioDatasetProjector capabilityStudioScenarioDatasetProjector(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper mapper) {
+        return new CapabilityStudioScenarioDatasetProjector(pack, mapper);
+    }
 }
