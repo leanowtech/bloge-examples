@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.testing.correctness.demo.LoanDecisionReferenceCandidateContributor;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessDefinition;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.AuditMetadata;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
@@ -86,6 +87,136 @@ class ResourceGatewayReferenceCandidateProviderTest {
         assertThat(resolution.candidate()).isEqualTo(target);
     }
 
+    @Test
+    void mergesExternalMetadataAndResolvesItsExactCoordinate() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(drafts.all()).thenReturn(List.of());
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        when(operators.builtInFunctions(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        ReferenceCandidate external = externalCandidate("BUSINESS_DOMAIN", "credit-decision", scope());
+        ResourceGatewayReferenceCandidateProvider provider = new ResourceGatewayReferenceCandidateProvider(
+                drafts, operators, new ObjectMapper().findAndRegisterModules(), null,
+                List.of(new FixedContributor("business-catalog", external)));
+
+        ReferenceCandidate resolved = provider.snapshot(new SearchRequest("", "", scope()))
+                .candidates().getFirst();
+
+        assertThat(resolved).isEqualTo(external);
+        assertThat(provider.resolve(ResolveRequest.from(resolved, scope(), "CORRECTNESS")))
+                .extracting(ReferenceCandidateProvider.ProviderResolution::status,
+                        ReferenceCandidateProvider.ProviderResolution::candidate)
+                .containsExactly(ResolveResult.Status.RESOLVED, external);
+    }
+
+    @Test
+    void coreAuthorityWinsWhenContributorEmitsTheSameExactCoordinate() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(drafts.all()).thenReturn(List.of());
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of(operator()));
+        when(operators.builtInFunctions(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        OperatorDefinition core = operator();
+        ReferenceCandidate duplicate = new ReferenceCandidate(
+                ReferenceCandidate.SCHEMA_VERSION, "OPERATOR", core.operatorRef(), "External override",
+                "Must never replace core metadata.", 1, core.fingerprint(),
+                "resource-gateway://external", scope(), ReferenceCandidate.Lifecycle.ACTIVE,
+                null, List.of("external"), ReferenceCandidate.Compatibility.COMPATIBLE, "");
+        ResourceGatewayReferenceCandidateProvider provider = new ResourceGatewayReferenceCandidateProvider(
+                drafts, operators, new ObjectMapper().findAndRegisterModules(), null,
+                List.of(new FixedContributor("external", duplicate)));
+
+        List<ReferenceCandidate> candidates = provider.snapshot(new SearchRequest("OPERATOR", "", scope()))
+                .candidates();
+
+        assertThat(candidates).hasSize(1);
+        assertThat(candidates.getFirst().authority())
+                .isEqualTo("resource-gateway://operator-libraries/risk-library");
+        assertThat(candidates.getFirst().displayName()).isEqualTo("Risk lookup");
+    }
+
+    @Test
+    void contributorOrderDoesNotChangeGeneration() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(drafts.all()).thenReturn(List.of());
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        when(operators.builtInFunctions(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        ReferenceCandidate first = externalCandidate("OWNER", "credit-service-design", scope());
+        ReferenceCandidate second = externalCandidate("SOLUTION", "loan-fallback", scope());
+
+        ResourceGatewayReferenceCandidateProvider left = new ResourceGatewayReferenceCandidateProvider(
+                drafts, operators, new ObjectMapper().findAndRegisterModules(), null,
+                List.of(new FixedContributor("zulu", second), new FixedContributor("alpha", first)));
+        ResourceGatewayReferenceCandidateProvider right = new ResourceGatewayReferenceCandidateProvider(
+                drafts, operators, new ObjectMapper().findAndRegisterModules(), null,
+                List.of(new FixedContributor("alpha", first), new FixedContributor("zulu", second)));
+
+        assertThat(left.snapshot(new SearchRequest("", "", scope())).generation())
+                .isEqualTo(right.snapshot(new SearchRequest("", "", scope())).generation());
+    }
+
+    @Test
+    void loanDecisionDemoContributorProvidesCompleteMetadataOnlyBusinessCatalog() {
+        List<ReferenceCandidate> candidates = new LoanDecisionReferenceCandidateContributor()
+                .contribute(scope());
+
+        assertThat(candidates).extracting(ReferenceCandidate::kind)
+                .containsExactlyInAnyOrder(
+                        "BUSINESS_DOMAIN", "PROBLEM_TAXONOMY", "OWNER", "PACKAGE_CONTRACT",
+                        "STATE_MODEL", "EFFECT_MODEL", "SOLUTION", "SERVICE_CARRIER", "CHANNEL",
+                        "SCENARIO_INVENTORY", "SCENARIO_PACK", "FIDELITY_INVENTORY", "OUTCOME_DEFINITION");
+        assertThat(candidates).allSatisfy(candidate -> {
+            assertThat(candidate.scope()).isEqualTo(scope());
+            assertThat(candidate.fingerprint()).matches("sha256:[0-9a-f]{64}");
+            assertThat(candidate.authority()).isEqualTo(
+                    "resource-gateway://demo/business-catalog/loan-decision");
+            assertThat(candidate.description()).doesNotContainIgnoringCase("payload", "credential", "secret");
+            assertThat(candidate.labels()).allMatch(label ->
+                    !label.toLowerCase().contains("password") && !label.toLowerCase().contains("token"));
+        });
+    }
+
+    @Test
+    void serviceStillRejectsContributorCandidateWithAnIncorrectScope() {
+        GraphDraftRepository drafts = mock(GraphDraftRepository.class);
+        VisualOperatorCatalog operators = mock(VisualOperatorCatalog.class);
+        when(drafts.all()).thenReturn(List.of());
+        when(operators.list(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        when(operators.builtInFunctions(any(OperatorCatalogQuery.class))).thenReturn(List.of());
+        ReferenceCandidate leaked = externalCandidate("BUSINESS_DOMAIN", "wrong-scope", otherScope());
+        ResourceGatewayReferenceCandidateProvider provider = new ResourceGatewayReferenceCandidateProvider(
+                drafts, operators, new ObjectMapper().findAndRegisterModules(), null,
+                List.of(new FixedContributor("malicious", leaked)));
+        ReferenceCandidateService service = new ReferenceCandidateService(provider);
+
+        assertThat(service.search(new SearchRequest("", "", scope())).items()).isEmpty();
+        assertThat(service.resolve(ResolveRequest.from(leaked, scope(), "CORRECTNESS")))
+                .extracting(ResolveResult::status, ResolveResult::errorCode)
+                .containsExactly(ResolveResult.Status.FORBIDDEN, "RG.REFERENCE.FORBIDDEN");
+    }
+
+    private static ReferenceCandidate externalCandidate(String kind, String id, ReferenceScope scope) {
+        return new ReferenceCandidate(
+                ReferenceCandidate.SCHEMA_VERSION, kind, id, id,
+                "External metadata candidate.", 1, fingerprint(kind + ":" + id),
+                "resource-gateway://external/business-catalog", scope,
+                ReferenceCandidate.Lifecycle.ACTIVE, null, List.of("external"),
+                ReferenceCandidate.Compatibility.COMPATIBLE, "");
+    }
+
+    private static String fingerprint(String value) {
+        return "sha256:" + String.valueOf(value.hashCode()).replace('-', '0').repeat(64).substring(0, 64);
+    }
+
+    private record FixedContributor(String contributorId, ReferenceCandidate candidate)
+            implements ReferenceCandidateContributor {
+        @Override
+        public List<ReferenceCandidate> contribute(ReferenceScope scope) {
+            return List.of(candidate);
+        }
+    }
+
     private static GraphDraft graph() {
         return new GraphDraft(
                 GraphDraft.SCHEMA_VERSION, "loan-draft", 7, "loanDecision", "tenant-a",
@@ -112,6 +243,10 @@ class ResourceGatewayReferenceCandidateProviderTest {
 
     private static ReferenceScope scope() {
         return new ReferenceScope("tenant-a", "org-a", "project-a", "test", "local");
+    }
+
+    private static ReferenceScope otherScope() {
+        return new ReferenceScope("tenant-b", "org-b", "project-b", "staging", "local");
     }
 
     private static EnterpriseScope enterpriseScope() {

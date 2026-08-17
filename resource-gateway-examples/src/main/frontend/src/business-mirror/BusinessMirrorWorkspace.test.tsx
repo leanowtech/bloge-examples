@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../i18n/I18nProvider';
+import type { ReferenceCandidate, ReferencePage } from '../shared/reference-picker/types';
 import BusinessMirrorWorkspace from './BusinessMirrorWorkspace';
 import type {
   BusinessMirrorDomainEvidencePortfolio,
@@ -28,6 +29,8 @@ const api = vi.hoisted(() => ({
   compileBusinessMirrorPackage: vi.fn(),
   refreshBusinessMirrorPackageEvidence: vi.fn(),
   acknowledgeBusinessMirrorEvidenceTask: vi.fn(),
+  fetchBusinessMirrorReferenceCandidates: vi.fn(),
+  resolveBusinessMirrorReferenceCandidate: vi.fn(),
 }));
 
 vi.mock('../api', () => api);
@@ -61,6 +64,14 @@ describe('Business Mirror Workspace', () => {
     api.fetchBusinessMirrorPackages.mockResolvedValue({
       schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1', items: [], nextCursor: '',
     });
+    api.fetchBusinessMirrorReferenceCandidates.mockImplementation(async (kind: string) =>
+      referencePage([demoReference(kind)]));
+    api.resolveBusinessMirrorReferenceCandidate.mockImplementation(async (candidate: ReferenceCandidate) => ({
+      schemaVersion: 'bloge.referenceResolveResult.v1',
+      status: 'RESOLVED',
+      candidate,
+      errorCode: '',
+    }));
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
@@ -90,7 +101,7 @@ describe('Business Mirror Workspace', () => {
     expect(document.body.textContent).toContain('Inputs for this step');
     expect(document.body.textContent).toContain('Next best action');
     expect(button('Continue this step')).toBeInstanceOf(HTMLButtonElement);
-    expect(input('Business domain').closest('fieldset')?.disabled).toBe(true);
+    expect(referenceInput('Business domain').disabled).toBe(true);
     expect(document.querySelectorAll('.business-mirror-task-rail button')).toHaveLength(7);
   });
 
@@ -107,7 +118,7 @@ describe('Business Mirror Workspace', () => {
     await click(button('Resolve first blocker'));
     await settleFrame();
 
-    const owner = input('Accountable owner');
+    const owner = referenceInput('Accountable owner');
     const target = owner.closest<HTMLElement>('[data-remediation-anchor]');
     expect(document.activeElement).toBe(owner);
     expect(target?.dataset.remediationAnchor).toBe('business-mirror.problem.owner');
@@ -136,7 +147,7 @@ describe('Business Mirror Workspace', () => {
     expect(document.querySelector('.business-mirror-task-rail button[aria-current="step"]')?.textContent)
       .toContain('4. Freeze scenarios');
     expect(document.body.textContent).toContain('Which business branches must always be covered');
-    expect(document.activeElement).toBe(target);
+    expect(document.activeElement).toBe(referenceInput('Executable Scenario packs'));
     expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
     const params = new URLSearchParams(window.location.search);
     expect(params.get('task')).toBe('scenarios');
@@ -171,22 +182,54 @@ describe('Business Mirror Workspace', () => {
 
     expect(api.importBusinessMirrorLegacyPackage)
       .toHaveBeenCalledWith('loanDecisionPolicy', 'business-mirror:import:loanDecisionPolicy:v1');
-    expect(input('Business domain').disabled).toBe(false);
-    await change(input('Business domain'), 'ride.customer-service');
+    expect(referenceInput('Business domain').disabled).toBe(false);
+    await chooseReference('Business domain', 'Ride customer service');
     await change(input('Problem code'), 'loan-decision');
     await change(control('Service goal'), 'Explain every decision.');
     await change(control('Expected customer outcome'), 'Correct decisions with safe abstention.');
-    await change(input('Accountable owner'), 'risk-service-owner');
+    await chooseReference('Accountable owner', 'Risk service owner');
 
-    expect(document.body.textContent).toContain('Unsaved business changes');
-    await click(button('Save business definition'));
+    expect(document.body.textContent).toContain('Unsaved Package changes');
+    await click(button('Save Package changes'));
     expect(api.saveBusinessMirrorPackage).toHaveBeenCalledOnce();
-    expect(document.body.textContent).toContain('Business definition saved as revision 2.');
+    expect(api.saveBusinessMirrorPackage).toHaveBeenCalledWith(expect.objectContaining({
+      businessDefinition: expect.objectContaining({
+        domainId: 'ride.customer-service',
+        accountableOwner: 'risk-service-owner',
+      }),
+    }), expect.any(String));
+    expect(document.body.textContent).toContain('Package changes saved as revision 2.');
 
     await click(button('Check readiness'));
     expect(api.compileBusinessMirrorPackage)
       .toHaveBeenCalledWith('legacy:loanDecisionPolicy', 2, expect.stringContaining('business-mirror:compile:r2:'));
     expect(document.body.textContent).toContain('PROBLEM_TAXONOMY_MISSING');
+  });
+
+  it('treats a governed binding on another Sheet as a Package change and saves its exact coordinate', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    api.saveBusinessMirrorPackage.mockImplementation(async (draft: BusinessMirrorPackageDraft) =>
+      saveReceipt(storedPackage(draft, 2)));
+    window.history.replaceState({}, '',
+      '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=scenarios');
+
+    await render();
+    await chooseReference('Executable Scenario packs', 'Loan policy regression pack');
+
+    expect(document.body.textContent).toContain('Unsaved Package changes');
+    await click(button('Save Package changes'));
+    expect(api.saveBusinessMirrorPackage).toHaveBeenCalledWith(expect.objectContaining({
+      scenarioPackRefs: [expect.objectContaining({
+        kind: 'SCENARIO_PACK',
+        id: 'loan-regression',
+        revision: 1,
+      })],
+    }), expect.any(String));
   });
 
   it('renders the same fixed task in Chinese and exposes keyboard-native controls', async () => {
@@ -440,6 +483,44 @@ function evidencePortfolio(
   };
 }
 
+function demoReference(kind: string): ReferenceCandidate {
+  const values: Record<string, [string, string]> = {
+    BUSINESS_DOMAIN: ['ride.customer-service', 'Ride customer service'],
+    OWNER: ['risk-service-owner', 'Risk service owner'],
+    PROBLEM_TAXONOMY: ['loan-decision-problems', 'Loan decision problems'],
+    PACKAGE_CONTRACT: ['loan-decision-contract-v1', 'Loan decision package contract'],
+    STATE_MODEL: ['loan-decision-state-v1', 'Loan decision state model'],
+    EFFECT_MODEL: ['loan-decision-effect-v1', 'Loan decision effect model'],
+    SOLUTION: ['loan-decision-solution', 'Loan decision solution'],
+    SERVICE_CARRIER: ['loan-policy-agent', 'Loan policy service carrier'],
+    CHANNEL: ['support-chat', 'Customer support chat'],
+    SCENARIO_INVENTORY: ['loan-obligations', 'Loan policy scenario inventory'],
+    SCENARIO_PACK: ['loan-regression', 'Loan policy regression pack'],
+    FIDELITY_INVENTORY: ['loan-fidelity', 'Loan policy fidelity inventory'],
+    OUTCOME_DEFINITION: ['loan-outcomes', 'Loan decision outcomes'],
+  };
+  const [id, displayName] = values[kind] ?? [`${kind.toLowerCase()}-id`, kind];
+  return {
+    schemaVersion: 'bloge.referenceCandidate.v1', kind, id, displayName,
+    description: `${displayName} description`, revision: 1,
+    fingerprint: fingerprint(`${kind}:${id}`), authority: 'test://business-catalog',
+    scope: {
+      tenantId: 'tenant-a', organizationId: 'knowledge-governance',
+      projectId: 'tool-studio', environmentId: 'test', region: 'local',
+    },
+    lifecycle: 'ACTIVE',
+    owner: { stableId: 'support-platform', displayName: 'Support platform' },
+    labels: ['demo'], compatibility: 'COMPATIBLE', disabledReasonCode: '',
+  };
+}
+
+function referencePage(items: readonly ReferenceCandidate[]): ReferencePage {
+  return {
+    schemaVersion: 'bloge.referencePage.v1', items, nextCursor: null,
+    queryFingerprint: fingerprint('query'), catalogGeneration: 1,
+  };
+}
+
 function ref(kind: string, id: string) {
   return { kind, id, revision: 1, fingerprint: fingerprint(`${kind}:${id}`) };
 }
@@ -474,6 +555,14 @@ function input(label: string): HTMLInputElement {
   return match;
 }
 
+function referenceInput(label: string): HTMLInputElement {
+  const match = document.querySelector<HTMLInputElement>(
+    `input[role="combobox"][aria-label="${label}"]`,
+  );
+  if (!match) throw new Error(`Missing reference input: ${label}`);
+  return match;
+}
+
 function control(label: string): HTMLInputElement | HTMLTextAreaElement {
   const match = [...document.querySelectorAll<HTMLLabelElement>('label')]
     .find((candidate) => candidate.textContent?.includes(label))
@@ -494,6 +583,20 @@ async function change(element: HTMLInputElement | HTMLTextAreaElement, value: st
     const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
     setter?.call(element, value);
     element.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+}
+
+async function chooseReference(label: string, optionName: string) {
+  const picker = referenceInput(label);
+  await act(async () => picker.focus());
+  await act(async () => new Promise((resolve) => window.setTimeout(resolve, 275)));
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+    .find((candidate) => candidate.textContent?.includes(optionName));
+  if (!option) throw new Error(`Missing reference option: ${optionName}`);
+  await act(async () => {
+    option.click();
+    await Promise.resolve();
+    await Promise.resolve();
   });
 }
 

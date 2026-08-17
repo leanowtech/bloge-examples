@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,6 +32,7 @@ public final class ResourceGatewayReferenceCandidateProvider implements Referenc
     private final VisualOperatorCatalog operators;
     private final ObjectMapper mapper;
     private final CorrectnessDefinitionRepository definitions;
+    private final List<ReferenceCandidateContributor> contributors;
 
     public ResourceGatewayReferenceCandidateProvider(GraphDraftRepository graphDrafts,
                                                      VisualOperatorCatalog operators,
@@ -42,10 +44,23 @@ public final class ResourceGatewayReferenceCandidateProvider implements Referenc
                                                      VisualOperatorCatalog operators,
                                                      ObjectMapper mapper,
                                                      CorrectnessDefinitionRepository definitions) {
+        this(graphDrafts, operators, mapper, definitions, List.of());
+    }
+
+    public ResourceGatewayReferenceCandidateProvider(GraphDraftRepository graphDrafts,
+                                                     VisualOperatorCatalog operators,
+                                                     ObjectMapper mapper,
+                                                     CorrectnessDefinitionRepository definitions,
+                                                     Collection<? extends ReferenceCandidateContributor> contributors) {
         this.graphDrafts = Objects.requireNonNull(graphDrafts, "graphDrafts");
         this.operators = Objects.requireNonNull(operators, "operators");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.definitions = definitions;
+        this.contributors = contributors == null ? List.of() : contributors.stream()
+                .filter(Objects::nonNull)
+                .map(ReferenceCandidateContributor.class::cast)
+                .sorted(Comparator.comparing(ReferenceCandidateContributor::contributorId))
+                .toList();
     }
 
     @Override
@@ -56,19 +71,25 @@ public final class ResourceGatewayReferenceCandidateProvider implements Referenc
 
     @Override
     public ProviderResolution resolve(ResolveRequest request) {
-        ReferenceCandidate current = candidates(request.scope()).stream()
+        List<ReferenceCandidate> visible = candidates(request.scope());
+        ReferenceCandidate exact = visible.stream()
+                .filter(candidate -> candidate.exactCoordinateEquals(
+                        request.kind(), request.id(), request.revision(), request.fingerprint()))
+                .findFirst()
+                .orElse(null);
+        if (exact != null) {
+            return new ProviderResolution(ResolveResult.Status.RESOLVED, exact);
+        }
+        ReferenceCandidate current = visible.stream()
                 .filter(candidate -> candidate.kind().equals(request.kind())
                         && candidate.id().equals(request.id()))
-                .max(Comparator.comparingLong(ReferenceCandidate::revision))
+                .max(Comparator.comparingLong(ReferenceCandidate::revision)
+                        .thenComparing(ResourceGatewayReferenceCandidateProvider::coordinate))
                 .orElse(null);
         if (current == null) {
             return new ProviderResolution(ResolveResult.Status.NOT_FOUND, null);
         }
-        if (!current.exactCoordinateEquals(
-                request.kind(), request.id(), request.revision(), request.fingerprint())) {
-            return new ProviderResolution(ResolveResult.Status.DRIFTED, current);
-        }
-        return new ProviderResolution(ResolveResult.Status.RESOLVED, current);
+        return new ProviderResolution(ResolveResult.Status.DRIFTED, current);
     }
 
     private List<ReferenceCandidate> candidates(ReferenceScope scope) {
@@ -78,15 +99,15 @@ public final class ResourceGatewayReferenceCandidateProvider implements Referenc
                 .filter(draft -> draft.environment().equals(scope.environmentId()))
                 .filter(draft -> draft.namespace().equals(scope.projectId()))
                 .map(draft -> graphCandidate(draft, scope))
-                .forEach(candidate -> candidates.put(coordinate(candidate), candidate));
+                .forEach(candidate -> candidates.putIfAbsent(coordinate(candidate), candidate));
 
         OperatorCatalogQuery query = new OperatorCatalogQuery(
                 "", List.of(), false, true, scope.tenantId(), scope.projectId(), scope.environmentId());
         List<OperatorDefinition> catalog = operators.list(query);
         catalog.stream().map(operator -> operatorCandidate(operator, scope))
-                .forEach(candidate -> candidates.put(coordinate(candidate), candidate));
+                .forEach(candidate -> candidates.putIfAbsent(coordinate(candidate), candidate));
         operators.builtInFunctions(query).stream().map(function -> functionCandidate(function, scope))
-                .forEach(candidate -> candidates.put(coordinate(candidate), candidate));
+                .forEach(candidate -> candidates.putIfAbsent(coordinate(candidate), candidate));
         if (definitions != null && definitions.supportsHeadListing()) {
             EnterpriseScope enterpriseScope = new EnterpriseScope(
                     scope.tenantId(), scope.organizationId(), scope.projectId(),
@@ -94,11 +115,15 @@ public final class ResourceGatewayReferenceCandidateProvider implements Referenc
             for (StoredCorrectnessDefinition stored : definitions.listHeads(
                     enterpriseScope, SearchRequest.MAX_LIMIT)) {
                 ReferenceCandidate target = correctnessTargetCandidate(stored, scope);
-                candidates.put(coordinate(target), target);
+                candidates.putIfAbsent(coordinate(target), target);
                 ReferenceCandidate definition = correctnessDefinitionCandidate(stored, scope);
-                candidates.put(coordinate(definition), definition);
+                candidates.putIfAbsent(coordinate(definition), definition);
             }
         }
+        contributors.forEach(contributor -> contributor.contribute(scope).stream()
+                .filter(Objects::nonNull)
+                .sorted(Comparator.comparing(ResourceGatewayReferenceCandidateProvider::coordinate))
+                .forEach(candidate -> candidates.putIfAbsent(coordinate(candidate), candidate)));
         return List.copyOf(candidates.values());
     }
 

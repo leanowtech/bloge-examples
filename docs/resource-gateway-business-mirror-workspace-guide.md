@@ -45,23 +45,28 @@ http://localhost:8080/business-mirror/
 1. 在 Portfolio 中打开「贷款决策策略 / Loan Decision Policy」。
 2. 确认页面显示「存量预览」，并显示首个阻断项。
 3. 选择「导入能力包」。系统创建持久 revision `1`；该动作不修改原 Graph。
-4. 在「1. 定义问题」填写以下演示值：
+4. 在「1. 定义问题」选择或填写以下演示值：
 
 | 字段 | 演示值 |
 |---|---|
-| 业务域 | `ride.customer-service` |
+| 业务域 | 在主动筛选器选择 `Credit decision` |
+| 问题分类 | 选择 `Loan decision problems` |
 | 问题编码 | `loan-decision` |
 | 服务目标 | `在不依赖真实业务接口时验证贷款决策服务流程` |
 | 预期客户结果 | `输出可解释且可重复验证的贷款决策` |
-| 责任负责人 | `risk-service-owner` |
+| 责任负责人 | 选择 `Credit Service Design` |
 | 风险等级 | `CRITICAL` |
 
-5. 选择「保存」。系统使用 optimistic revision 和 `Idempotency-Key` 保存 revision `2`。
-6. 选择「检查就绪度」。系统编译当前 exact revision，并记录一个 `BLOCKED` readiness report。
-7. 确认业务定义相关阻断已经消失，首个阻断移动到尚未补齐的 L1-L3 或治理要求。
-8. 打开「3. 组装能力」，检查 L0 的真实 Graph/Capability 与 L1-L3 缺失资产。
+5. 选择「保存能力包更改」。系统使用 optimistic revision 和 `Idempotency-Key` 保存 revision `2`。
+6. 在「2. 定义边界」分别选择 `Loan decision package contract`、`Loan decision state model` 和
+   `Loan decision effect model`；在「3. 组装能力」选择 L1 Solution、L2 Service Carrier 与 L3 Channel；
+   在「4. 冻结场景分母」选择 Scenario Inventory 与 Scenario Pack。
+7. 再次选择「保存能力包更改」，然后选择「检查就绪度」。系统编译当前 exact revision，并记录最新
+   readiness report。演示候选用于体验绑定协议，不会自动生成生产证据。
+8. 点击右侧任意 gap，确认页面切换到对应 Sheet、聚焦真实组合框并高亮，而不是只显示静态要求。
 
-本次体验的正确结果不是 READY。固定存量样例缺少业务分类体系、ScenarioPack、Fidelity、Outcome、State/Effect、L1-L3 资产和 Owner approval。系统必须保留这些阻断，不得用推断值把页面标绿。
+本次体验不应因为“选择了演示候选”就被理解为生产 READY。第五、六步的隔离演练和当前 Package 证据仍需
+由真实运行与权威投影形成；演示元数据不能替代客户事实、运行证据或 ANEKE 发布门禁。
 
 ### 1.3 停止服务
 
@@ -120,15 +125,17 @@ Package 页面固定包含四个区域：
 
 | 步骤 | 业务问题 | 主要对象 | 当前可执行能力 |
 |---|---|---|---|
-| 1. 定义问题 | 服务谁、解决什么、由谁负责、预期什么结果 | `BusinessDefinition`、Problem taxonomy、Owner、Risk、Outcome expectation | 图形化编辑业务字段并保存 exact revision |
-| 2. 定义边界 | 输入输出、状态、副作用和 Contract 是否明确 | Package Contract、StateModel、EffectModel | 查看 exact refs、缺失项和 Owner review 要求 |
-| 3. 组装能力 | L0 到 L3 是否形成可追踪服务链 | Graph、Capability、Solution、Carrier、Channel | 查看类型化能力地图与缺失资产，跳转精确 Graph |
-| 4. 冻结场景分母 | 哪些业务分支必须被验证 | ScenarioInventory、ScenarioPack | 区分发现的技术测试与受治理业务 Scenario |
+| 1. 定义问题 | 服务谁、解决什么、由谁负责、预期什么结果 | `BusinessDefinition`、Problem taxonomy、Owner、Risk、Outcome expectation | 搜索并精确绑定 Domain/Taxonomy/Owner，编辑自然语言字段 |
+| 2. 定义边界 | 输入输出、状态、副作用和 Contract 是否明确 | Package Contract、StateModel、EffectModel | 搜索、解析并绑定 exact refs，完成 Owner confirmation |
+| 3. 组装能力 | L0 到 L3 是否形成可追踪服务链 | Graph、Capability、Solution、Carrier、Channel | 查看能力地图，绑定 L1-L3，跳转精确 Graph |
+| 4. 冻结场景分母 | 哪些业务分支必须被验证 | ScenarioInventory、ScenarioPack | 选择冻结分母与可执行场景包，保留已发现测试来源 |
 | 5. 隔离演练 | 在不依赖真实接口时能否可控运行 | MirrorPlan、Fixture、Scenario run | 检查演练前置条件并进入 Rehearsals 工作区 |
 | 6. 检查证据 | L0-L3 与校准证据是否完整、保真度债务由谁负责 | PackageEvidenceIndex、七维 Fidelity、Domain Portfolio、Owner Task | 查看五层结论、分母、置信区间、弃权和任务；确认接手任务；可打开只读协议参考样例 |
-| 7. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 查看缺失权威事实；ANEKE 发布门禁仍在系统边界外 |
+| 7. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 搜索并绑定校准资产和审批主体；ANEKE 发布门禁仍在系统边界外 |
 
-只有步骤 1 的已导入字段可直接编辑。其余步骤展示 exact ref、缺失义务和跨工作区入口，避免在一个页面中制造第二套 Contract、Scenario 或 Graph 编辑器。
+七步中的协议身份字段使用同一主动筛选器，不再要求输入 ID。候选按业务名称展示 Owner、Scope 和 lifecycle；
+选中后还必须通过 authority exact resolve 才能写入 Draft。页面只负责绑定已有治理资产，并没有在工作区中
+制造第二套 Contract、Scenario 或 Graph 编辑器。任意 Sheet 的变化都按整个 Package Draft 保存。
 
 ![五层证据与七维 Fidelity](assets/resource-gateway-business-mirror-evidence-zh.png)
 
@@ -207,7 +214,7 @@ X-Purpose: BUSINESS_MIRROR_AUTHORING
 | `GET /api/business-mirror/legacy-graphs` | 加载 Portfolio preview | 有界、排序、同 Scope projection catalog |
 | `GET /api/business-mirror/packages?limit=200` | 合并已导入 Package | 当前 durable heads |
 | `POST /api/business-mirror/legacy-graphs/{graphName}/packages` | 导入能力包 | revision `1` 与 durable save receipt |
-| `PUT /api/business-mirror/packages/{packageId}?expectedRevision=N` | 保存业务定义 | revision `N+1` 或稳定 conflict |
+| `PUT /api/business-mirror/packages/{packageId}?expectedRevision=N` | 保存整个 Package Draft | revision `N+1` 或稳定 conflict |
 | `POST /api/business-mirror/packages/{packageId}/compile?sourceRevision=N` | 检查就绪度 | append-only compilation receipt 与 readiness report |
 
 `businessMirrorWorkspace=true` 只说明产品路由已打包。Package API、compiler API 和各 Authority readiness 仍需分别读取 capability probe。UI 显示「Resource Gateway connected」不等于任一 Package 已 READY。

@@ -33,6 +33,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.ReviewSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.RunSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateContributor;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -169,6 +170,12 @@ public class CorrectnessDemoRuntimeConfiguration {
         return new CorrectnessAuthoringRuntimeAvailability(
                 true, false, false, false, false, false,
                 false, false, false, false, false, false, false);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(name = "correctnessDemoReferenceCandidateContributor")
+    ReferenceCandidateContributor correctnessDemoReferenceCandidateContributor() {
+        return new LoanDecisionReferenceCandidateContributor();
     }
 
     private static List<CaseSummary> cases() {

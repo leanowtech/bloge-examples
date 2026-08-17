@@ -59,3 +59,19 @@ export type ReferenceCandidateSearch = (
   query: ReferenceQuery,
   signal: AbortSignal,
 ) => Promise<ReferencePage>;
+
+export interface ReferenceResolveCommand {
+  schemaVersion: 'bloge.referenceResolveCommand.v1';
+  kind: string;
+  id: string;
+  revision: number;
+  fingerprint: string;
+  intendedUse: string;
+}
+
+export interface ReferenceResolveResult {
+  schemaVersion: 'bloge.referenceResolveResult.v1';
+  status: 'RESOLVED' | 'NOT_FOUND' | 'DRIFTED' | 'FORBIDDEN';
+  candidate: ReferenceCandidate | null;
+  errorCode: string;
+}

@@ -18,9 +18,11 @@ public class ReferenceCandidateConfiguration {
     ReferenceCandidateProvider referenceCandidateProvider(GraphDraftRepository graphDrafts,
                                                           VisualOperatorCatalog operators,
                                                           ObjectMapper mapper,
-                                                          ObjectProvider<CorrectnessDefinitionRepository> definitions) {
+                                                          ObjectProvider<CorrectnessDefinitionRepository> definitions,
+                                                          ObjectProvider<ReferenceCandidateContributor> contributors) {
         return new ResourceGatewayReferenceCandidateProvider(
-                graphDrafts, operators, mapper, definitions.getIfAvailable());
+                graphDrafts, operators, mapper, definitions.getIfAvailable(),
+                contributors.orderedStream().toList());
     }
 
     @Bean

@@ -78,6 +78,12 @@ import type {
   StoredScenarioPublication,
 } from './contract-scenario/domain';
 import type {
+  ReferenceCandidate,
+  ReferencePage,
+  ReferenceQuery,
+  ReferenceResolveResult,
+} from './shared/reference-picker/types';
+import type {
   ScenarioImportExecutionRequest,
   ScenarioMaterializationResult,
 } from './contract-scenario/import/scenarioImportModel';
@@ -295,6 +301,48 @@ function businessMirrorHeaders(extra: Record<string, string> = {}): Record<strin
   };
 }
 
+/** Searches one authorized, metadata-only reference kind for Business Mirror authoring. */
+export async function fetchBusinessMirrorReferenceCandidates(
+  kind: string,
+  request: ReferenceQuery,
+  signal: AbortSignal,
+): Promise<ReferencePage> {
+  const query = new URLSearchParams({
+    kind,
+    query: request.query,
+    cursor: request.cursor ?? '',
+    limit: String(request.limit),
+    compatibleWith: 'COMPATIBLE',
+  });
+  try {
+    return await readTestingJson(await sendRequest(`/api/visual/reference-candidates?${query}`, {
+      headers: businessMirrorHeaders(),
+      signal,
+    }));
+  } catch (failure) {
+    throw mapReferenceCandidateFailure(failure);
+  }
+}
+
+/** Re-resolves an untrusted search result before binding it into a Package draft. */
+export async function resolveBusinessMirrorReferenceCandidate(
+  candidate: ReferenceCandidate,
+  intendedUse: string,
+): Promise<ReferenceResolveResult> {
+  return readTestingJson(await sendRequest('/api/visual/reference-candidates:resolve', {
+    method: 'POST',
+    headers: businessMirrorHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      schemaVersion: 'bloge.referenceResolveCommand.v1',
+      kind: candidate.kind,
+      id: candidate.id,
+      revision: candidate.revision,
+      fingerprint: candidate.fingerprint,
+      intendedUse,
+    }),
+  }));
+}
+
 /** Loads the complete bounded Legacy Graph migration catalog for the verified enterprise Scope. */
 export async function fetchBusinessMirrorLegacyCatalog(): Promise<LegacyGraphPackageProjectionCatalog> {
   return readTestingJson(await sendRequest('/api/business-mirror/legacy-graphs', {
@@ -411,6 +459,16 @@ export async function acknowledgeBusinessMirrorEvidenceTask(
       + `/acknowledge?expectedVersion=${expectedVersion}`,
     { method: 'POST', headers: businessMirrorHeaders() },
   ));
+}
+
+function mapReferenceCandidateFailure(failure: unknown): unknown {
+  if (failure instanceof BlogeApiRequestError && failure.status === 503) {
+    return Object.assign(new Error(failure.detail), {
+      status: 'unavailable' as const,
+      retryable: true,
+    });
+  }
+  return failure;
 }
 
 function fillTemplate(template: string, values: Record<string, unknown>): string {

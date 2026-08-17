@@ -130,21 +130,30 @@ resolve 状态：
 
 ## 5. Provider SPI
 
-默认 `ResourceGatewayReferenceCandidateProvider` 投影以下权威源：
+默认 `ResourceGatewayReferenceCandidateProvider` 投影以下核心权威源：
 
 - `GraphDraftRepository`；
 - `VisualOperatorCatalog`；
 - `VisualOperatorCatalog.builtInFunctions()`。
 
-企业部署可以提供自己的 `ReferenceCandidateProvider` Bean。`ReferenceCandidateConfiguration` 使用 `@ConditionalOnMissingBean`，因此不会把 ANEKE、组织 Owner 目录或 Taxonomy 目录复制为 Resource Gateway 的第二份真相。
+企业部署优先实现一个或多个 `ReferenceCandidateContributor` Bean，把 ANEKE、组织 Owner 目录、Taxonomy
+目录或业务资产注册表的 metadata 投影进统一目录。Provider 先加入核心候选，再按 `contributorId` 稳定排序聚合；
+exact coordinate 冲突时核心候选优先。Contributor 不复制外部系统的业务内容，也不成为新的权威库。
 
-自定义 Provider 必须满足：
+只有需要完全改变 Provider 行为的部署才整体提供自定义 `ReferenceCandidateProvider` Bean；默认配置仍使用
+`@ConditionalOnMissingBean` 允许该替换。
+
+Contributor 与自定义 Provider 都必须满足：
 
 - 查询前已完成 Scope 与 purpose 认证；
 - 返回内容严格限制为 metadata；
 - `snapshot.generation` 在目录变化时改变；
 - 结果顺序经统一服务确定性排序；
 - resolve 重新读取 authority，不复用搜索缓存作最终授权。
+
+内置贷款决策演示 Contributor 只在 `test` 或 `staging` profile 且
+`gateway.testing.correctness.demo.enabled=true` 时装配。它覆盖 Business Mirror 所需的 13 类元数据候选，
+不包含 Schema 正文、Fixture、Evidence payload、凭据或 Secret；生产 profile 永不装配。
 
 ## 6. 错误与恢复
 

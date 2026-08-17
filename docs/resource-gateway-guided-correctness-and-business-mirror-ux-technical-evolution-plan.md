@@ -260,7 +260,7 @@ fingerprint 只读，并通过“技术详情”展开查看完整值。
 
 | 步骤 | 本步回答的问题 | 主要输入与控件 | 主要动作 | 完成标准 | 推荐下一步 |
 |---|---|---|---|---|---|
-| 1. 定义问题 | 我们为哪个业务域、哪类客户问题负责，成功意味着什么 | 业务域 Picker、问题分类 Picker、问题编码、业务目标、期望结果、Owner Picker、风险等级 | 保存业务定义 | domain、taxonomy、problem code、goal、outcome、accountable owner 均有效 | 定义边界 |
+| 1. 定义问题 | 我们为哪个业务域、哪类客户问题负责，成功意味着什么 | 业务域 Picker、问题分类 Picker、问题编码、业务目标、期望结果、Owner Picker、风险等级 | 保存能力包更改 | domain、taxonomy、problem code、goal、outcome、accountable owner 均有效 | 定义边界 |
 | 2. 定义边界 | 能力接收什么、输出什么、可能改变什么状态、产生什么副作用 | Contract Picker/创建、State Model Picker、Effect Model Picker、Owner confirmation | 绑定或创建边界资产 | Package Contract exact ref 存在；高风险能力必须有 state/effect model；所需 Owner 已确认 | 组装能力 |
 | 3. 组装能力 | L0-L3 哪些资产共同解决这个问题，链路哪里断裂 | L0-L3 能力地图、资产搜索、复用/创建动作、依赖缺口 | 打开精确编排图或绑定缺失资产 | 可执行 Graph/Capability 存在；Solution、Carrier、Channel 按适用规则绑定 | 冻结场景分母 |
 | 4. 冻结场景分母 | 哪些条件分支必须被长期验证 | 已发现 TestSuite、Scenario Inventory、Scenario Pack、覆盖义务、导入预览 | 将已发现测试转换为受治理场景，或创建分母 | Scenario Inventory frozen；至少一个有效 Scenario Pack；发现资产的 disposition 明确 | 隔离演练 |

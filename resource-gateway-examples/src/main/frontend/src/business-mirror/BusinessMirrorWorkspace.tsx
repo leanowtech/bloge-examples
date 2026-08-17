@@ -59,6 +59,7 @@ import {
   type RemediationDescriptor,
 } from './guidance';
 import GuidedTaskShell, { type GuidedInputState } from './GuidedTaskShell';
+import BusinessMirrorReferenceBindingControl from './reference/BusinessMirrorReferenceBindingControl';
 import './businessMirror.css';
 
 type CommandState =
@@ -266,7 +267,7 @@ export default function BusinessMirrorWorkspace() {
   const blockerCount = gaps.filter((gap) => gap.severity === 'BLOCKING').length;
   const offline = catalog.scope.environmentId === 'offline';
   const dirty = selected.stored !== null
-    && JSON.stringify(editor.businessDefinition) !== JSON.stringify(selected.stored.draft.businessDefinition);
+    && JSON.stringify(editor) !== JSON.stringify(selected.stored.draft);
 
   const selectTask = (task: BusinessMirrorTaskId) => {
     setActiveTask(task);
@@ -672,17 +673,18 @@ function TaskSurface({
   if (task === 'problem') {
     content = <ProblemTask draft={draft} editable={editable} onDraft={onDraft} />;
   } else if (task === 'boundary') {
-    content = <BoundaryTask draft={draft} gaps={gaps} />;
+    content = <BoundaryTask draft={draft} gaps={gaps} editable={editable} onDraft={onDraft} />;
   } else if (task === 'capabilities') {
-    content = <CapabilityTask item={item} draft={draft} focus={assetFocus} />;
+    content = <CapabilityTask item={item} draft={draft} focus={assetFocus}
+      editable={editable} onDraft={onDraft} />;
   } else if (task === 'scenarios') {
-    content = <ScenarioTask item={item} draft={draft} />;
+    content = <ScenarioTask item={item} draft={draft} editable={editable} onDraft={onDraft} />;
   } else if (task === 'rehearsal') {
     content = <RehearsalTask draft={draft} />;
   } else if (task === 'evidence') {
     content = <EvidenceTask item={item} />;
   } else {
-    content = <CalibrateTask draft={draft} />;
+    content = <CalibrateTask draft={draft} editable={editable} onDraft={onDraft} />;
   }
   return (
     <GuidedTaskShell
@@ -751,12 +753,29 @@ function ProblemTask({
   });
   return (
     <>
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentStableId={definition.domainId}
+          draft={draft}
+          editable={editable}
+          field="domain"
+          help="businessMirror.reference.help.domain"
+          label="businessMirror.field.domain"
+          onDraft={onDraft}
+          remediationAnchor="business-mirror.problem.domain"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={definition.problemTaxonomyRef ? [definition.problemTaxonomyRef] : []}
+          draft={draft}
+          editable={editable}
+          field="taxonomy"
+          help="businessMirror.reference.help.taxonomy"
+          label="businessMirror.problem.taxonomy"
+          onDraft={onDraft}
+          remediationAnchor="business-mirror.problem.taxonomy"
+        />
+      </div>
       <fieldset className="business-mirror-form" disabled={!editable}>
-        <label data-remediation-anchor="business-mirror.problem.domain">
-          <span>{m('businessMirror.field.domain')}</span>
-          <input value={definition.domainId} placeholder={m('businessMirror.field.domainPlaceholder')}
-            onChange={(event) => update('domainId', event.target.value)} />
-        </label>
         <label data-remediation-anchor="business-mirror.problem.code">
           <span>{m('businessMirror.field.problemCode')}</span>
           <input value={definition.problemCode} placeholder={m('businessMirror.field.problemCodePlaceholder')}
@@ -772,11 +791,6 @@ function ProblemTask({
           <textarea value={definition.expectedOutcome} placeholder={m('businessMirror.field.outcomePlaceholder')}
             onChange={(event) => update('expectedOutcome', event.target.value)} />
         </label>
-        <label data-remediation-anchor="business-mirror.problem.owner">
-          <span>{m('businessMirror.field.owner')}</span>
-          <input value={definition.accountableOwner} placeholder={m('businessMirror.field.ownerPlaceholder')}
-            onChange={(event) => update('accountableOwner', event.target.value)} />
-        </label>
         <label>
           <span>{m('businessMirror.field.risk')}</span>
           <select value={definition.riskClass} onChange={(event) => update('riskClass', event.target.value)}>
@@ -785,50 +799,65 @@ function ProblemTask({
           </select>
         </label>
       </fieldset>
-      <div
-        className={`business-mirror-requirement ${definition.problemTaxonomyRef ? 'complete' : 'missing'}`}
-        data-remediation-anchor="business-mirror.problem.taxonomy"
-      >
-        <Network aria-hidden="true" size={18} />
-        <span>
-          <strong>{m('businessMirror.problem.taxonomy')}</strong>
-          <small>{definition.problemTaxonomyRef?.id ?? m('businessMirror.problem.taxonomyMissing')}</small>
-        </span>
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentStableId={definition.accountableOwner}
+          draft={draft}
+          editable={editable}
+          field="accountableOwner"
+          help="businessMirror.reference.help.owner"
+          label="businessMirror.field.owner"
+          onDraft={onDraft}
+          remediationAnchor="business-mirror.problem.owner"
+        />
       </div>
     </>
   );
 }
 
-function BoundaryTask({ draft, gaps }: { draft: BusinessMirrorPackageDraft; gaps: BusinessMirrorGap[] }) {
+function BoundaryTask({
+  draft,
+  gaps,
+  editable,
+  onDraft,
+}: {
+  draft: BusinessMirrorPackageDraft;
+  gaps: BusinessMirrorGap[];
+  editable: boolean;
+  onDraft(draft: BusinessMirrorPackageDraft): void;
+}) {
   const { m } = useI18n();
-  const rows = [
-    { label: 'businessMirror.boundary.contract' as MessageId, available: draft.packageContractRef !== null,
-      value: draft.packageContractRef?.id ?? '', anchor: 'business-mirror.boundary.contract' },
-    { label: 'businessMirror.boundary.state' as MessageId, available: draft.stateModelRefs.length > 0,
-      value: draft.stateModelRefs[0]?.id ?? '', anchor: 'business-mirror.boundary.state' },
-    { label: 'businessMirror.boundary.effect' as MessageId, available: draft.effectModelRefs.length > 0,
-      value: draft.effectModelRefs[0]?.id ?? '', anchor: 'business-mirror.boundary.effect' },
-  ];
   const ownerReview = gaps.some((gap) => gap.code === 'GRAPH_CONTRACT_OWNER_CONFIRMATION_MISSING');
   return (
     <>
-      <div className="business-mirror-requirement-list">
-        {rows.map((row) => (
-          <div
-            key={row.label}
-            className={`business-mirror-requirement ${row.available ? 'complete' : 'missing'}`}
-            data-remediation-anchor={row.anchor}
-          >
-            {row.available ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}
-            <span><strong>{m(row.label)}</strong><small>{row.value || m('businessMirror.boundary.missing')}</small></span>
-          </div>
-        ))}
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.packageContractRef ? [draft.packageContractRef] : []}
+          draft={draft} editable={editable} field="contract"
+          help="businessMirror.reference.help.contract" label="businessMirror.boundary.contract"
+          onDraft={onDraft} remediationAnchor="business-mirror.boundary.contract"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.stateModelRefs}
+          draft={draft} editable={editable} field="stateModel"
+          help="businessMirror.reference.help.state" label="businessMirror.boundary.state"
+          onDraft={onDraft} remediationAnchor="business-mirror.boundary.state"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.effectModelRefs}
+          draft={draft} editable={editable} field="effectModel"
+          help="businessMirror.reference.help.effect" label="businessMirror.boundary.effect"
+          onDraft={onDraft} remediationAnchor="business-mirror.boundary.effect"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentStableId={draft.provenance.approvedBy}
+          draft={draft} editable={editable} field="approvalOwner"
+          help="businessMirror.reference.help.approval" label="businessMirror.calibrate.approval"
+          onDraft={onDraft} remediationAnchor="business-mirror.boundary.owner-confirmation"
+        />
       </div>
       {ownerReview && (
-        <p
-          className="business-mirror-inline-warning"
-          data-remediation-anchor="business-mirror.boundary.owner-confirmation"
-        >
+        <p className="business-mirror-inline-warning">
           {m('businessMirror.boundary.ownerReview')}
         </p>
       )}
@@ -840,10 +869,14 @@ function CapabilityTask({
   item,
   draft,
   focus,
+  editable,
+  onDraft,
 }: {
   item: BusinessMirrorPortfolioItem;
   draft: BusinessMirrorPackageDraft;
   focus: BusinessAssetFocus | null;
+  editable: boolean;
+  onDraft(draft: BusinessMirrorPackageDraft): void;
 }) {
   const { m } = useI18n();
   const layers = businessMirrorCapabilityLayers(item.projection, draft).map((layer) => ({
@@ -884,7 +917,6 @@ function CapabilityTask({
           <div
             key={layer.id}
             className="capability-layer"
-            data-remediation-anchor={capabilityLayerAnchor(layer.id)}
           >
             <header><span>{layer.id}</span><strong>{m(labels[layer.id])}</strong></header>
             <div className="capability-layer-assets">
@@ -921,11 +953,41 @@ function CapabilityTask({
         <Layers3 aria-hidden="true" size={16} />
         {m('businessMirror.capability.openGraph')}
       </a>
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.solutionRefs}
+          draft={draft} editable={editable} field="solution"
+          help="businessMirror.reference.help.solution" label="businessMirror.capability.l1"
+          onDraft={onDraft} remediationAnchor="business-mirror.capabilities.solution"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.carrierRefs}
+          draft={draft} editable={editable} field="carrier"
+          help="businessMirror.reference.help.carrier" label="businessMirror.capability.l2"
+          onDraft={onDraft} remediationAnchor="business-mirror.capabilities.carrier"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.channelRefs}
+          draft={draft} editable={editable} field="channel"
+          help="businessMirror.reference.help.channel" label="businessMirror.capability.l3"
+          onDraft={onDraft} remediationAnchor="business-mirror.capabilities.channel"
+        />
+      </div>
     </>
   );
 }
 
-function ScenarioTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draft: BusinessMirrorPackageDraft }) {
+function ScenarioTask({
+  item,
+  draft,
+  editable,
+  onDraft,
+}: {
+  item: BusinessMirrorPortfolioItem;
+  draft: BusinessMirrorPackageDraft;
+  editable: boolean;
+  onDraft(draft: BusinessMirrorPackageDraft): void;
+}) {
   const { m } = useI18n();
   return (
     <>
@@ -940,11 +1002,19 @@ function ScenarioTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draf
         {item.projection.discoveredTestSuiteRefs.map((ref) => <code key={ref.id}>{ref.id}</code>)}
       </div>
       <p className="business-mirror-inline-warning">{m('businessMirror.scenario.warning')}</p>
-      <div className="business-mirror-requirement-list two-column">
-        <Requirement label="businessMirror.scenario.inventory" available={draft.scenarioInventoryRef !== null}
-          remediationAnchor="business-mirror.scenarios.inventory" />
-        <Requirement label="businessMirror.scenario.pack" available={draft.scenarioPackRefs.length > 0}
-          remediationAnchor="business-mirror.scenarios.pack" />
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.scenarioInventoryRef ? [draft.scenarioInventoryRef] : []}
+          draft={draft} editable={editable} field="scenarioInventory"
+          help="businessMirror.reference.help.inventory" label="businessMirror.scenario.inventory"
+          onDraft={onDraft} remediationAnchor="business-mirror.scenarios.inventory"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.scenarioPackRefs}
+          draft={draft} editable={editable} field="scenarioPack"
+          help="businessMirror.reference.help.pack" label="businessMirror.scenario.pack"
+          onDraft={onDraft} remediationAnchor="business-mirror.scenarios.pack"
+        />
       </div>
     </>
   );
@@ -1230,47 +1300,43 @@ function ratio(value: number | undefined): string {
   return value === undefined ? '-' : `${Math.round(value * 1000) / 10}%`;
 }
 
-function CalibrateTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
+function CalibrateTask({
+  draft,
+  editable,
+  onDraft,
+}: {
+  draft: BusinessMirrorPackageDraft;
+  editable: boolean;
+  onDraft(draft: BusinessMirrorPackageDraft): void;
+}) {
   const { m } = useI18n();
   return (
     <>
-      <div className="business-mirror-requirement-list">
-        <Requirement label="businessMirror.calibrate.fidelity" available={draft.fidelityInventoryRef !== null}
-          remediationAnchor="business-mirror.calibrate.fidelity" />
-        <Requirement label="businessMirror.calibrate.outcome" available={draft.outcomeDefinitionRefs.length > 0}
-          remediationAnchor="business-mirror.calibrate.outcome" />
-        <Requirement label="businessMirror.calibrate.approval" available={Boolean(draft.provenance.approvedBy)}
-          remediationAnchor="business-mirror.calibrate.approval" />
+      <div className="business-mirror-reference-grid">
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.fidelityInventoryRef ? [draft.fidelityInventoryRef] : []}
+          draft={draft} editable={editable} field="fidelityInventory"
+          help="businessMirror.reference.help.fidelity" label="businessMirror.calibrate.fidelity"
+          onDraft={onDraft} remediationAnchor="business-mirror.calibrate.fidelity"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentReferences={draft.outcomeDefinitionRefs}
+          draft={draft} editable={editable} field="outcomeDefinition"
+          help="businessMirror.reference.help.outcome" label="businessMirror.calibrate.outcome"
+          onDraft={onDraft} remediationAnchor="business-mirror.calibrate.outcome"
+        />
+        <BusinessMirrorReferenceBindingControl
+          currentStableId={draft.provenance.approvedBy}
+          draft={draft} editable={editable} field="approvalOwner"
+          help="businessMirror.reference.help.approval" label="businessMirror.calibrate.approval"
+          onDraft={onDraft} remediationAnchor="business-mirror.calibrate.approval"
+        />
       </div>
       <p className="business-mirror-governance-note">
         <ShieldCheck aria-hidden="true" size={20} />
         {m('businessMirror.calibrate.governance')}
       </p>
     </>
-  );
-}
-
-function Requirement({
-  label,
-  available,
-  remediationAnchor,
-}: {
-  label: MessageId;
-  available: boolean;
-  remediationAnchor?: string;
-}) {
-  const { m } = useI18n();
-  return (
-    <div
-      className={`business-mirror-requirement ${available ? 'complete' : 'missing'}`}
-      data-remediation-anchor={remediationAnchor}
-    >
-      {available ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}
-      <span>
-        <strong>{m(label)}</strong>
-        <small>{m(available ? 'businessMirror.boundary.exact' : 'businessMirror.calibrate.unavailable')}</small>
-      </span>
-    </div>
   );
 }
 
@@ -1337,13 +1403,6 @@ function layerForAssetKind(kind: string): 'L0' | 'L1' | 'L2' | 'L3' {
   if (['FEATURE', 'SCENARIO', 'SOLUTION'].includes(kind)) return 'L1';
   if (['SOP', 'AGENT', 'WORKFLOW'].includes(kind)) return 'L2';
   return 'L3';
-}
-
-function capabilityLayerAnchor(layer: string): string | undefined {
-  if (layer === 'L1') return 'business-mirror.capabilities.solution';
-  if (layer === 'L2') return 'business-mirror.capabilities.carrier';
-  if (layer === 'L3') return 'business-mirror.capabilities.channel';
-  return undefined;
 }
 
 function isExactAssetFocus(

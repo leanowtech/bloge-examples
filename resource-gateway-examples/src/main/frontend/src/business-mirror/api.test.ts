@@ -4,8 +4,10 @@ import {
   compileBusinessMirrorPackage,
   fetchBusinessMirrorLegacyCatalog,
   fetchBusinessMirrorPackages,
+  fetchBusinessMirrorReferenceCandidates,
   importBusinessMirrorLegacyPackage,
   resetBlogeApiTransport,
+  resolveBusinessMirrorReferenceCandidate,
   saveBusinessMirrorPackage,
   setBlogeApiTransport,
 } from '../api';
@@ -67,6 +69,38 @@ describe('Business Mirror API client', () => {
     await expect(saveBusinessMirrorPackage(minimalDraft(), 'save:conflict:r1'))
       .rejects.toThrow('Package draft changed after it was loaded.');
   });
+
+  it('searches metadata-only candidates and exact-resolves a selected binding', async () => {
+    const transport = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => (
+      String(input).endsWith(':resolve')
+        ? json({
+          schemaVersion: 'bloge.referenceResolveResult.v1', status: 'RESOLVED',
+          candidate: referenceCandidate(), errorCode: '',
+        })
+        : json({
+          schemaVersion: 'bloge.referencePage.v1', items: [referenceCandidate()],
+          nextCursor: null, queryFingerprint: 'sha256:query', catalogGeneration: 1,
+        })
+    ));
+    setBlogeApiTransport(transport);
+    const controller = new AbortController();
+
+    await fetchBusinessMirrorReferenceCandidates(
+      'PACKAGE_CONTRACT', { query: 'loan', cursor: null, limit: 20 }, controller.signal,
+    );
+    await resolveBusinessMirrorReferenceCandidate(referenceCandidate(), 'BIND_PACKAGE_CONTRACT');
+
+    expect(String(transport.mock.calls[0][0])).toContain(
+      '/api/visual/reference-candidates?kind=PACKAGE_CONTRACT&query=loan');
+    expect(transport.mock.calls[0][1]?.signal).toBe(controller.signal);
+    expect(header(transport.mock.calls[0][1], 'X-Purpose')).toBe('BUSINESS_MIRROR_AUTHORING');
+    expect(String(transport.mock.calls[1][0])).toBe('/api/visual/reference-candidates:resolve');
+    expect(JSON.parse(String(transport.mock.calls[1][1]?.body))).toMatchObject({
+      schemaVersion: 'bloge.referenceResolveCommand.v1',
+      kind: 'PACKAGE_CONTRACT', id: 'loan-contract', revision: 3,
+      intendedUse: 'BIND_PACKAGE_CONTRACT',
+    });
+  });
 });
 
 function json(body: unknown, status = 200, statusText = 'OK'): Response {
@@ -105,5 +139,21 @@ function minimalDraft(): BusinessMirrorPackageDraft {
       expiresAt: null, revocationRef: '',
     },
     lifecycle: 'DRAFT',
+  };
+}
+
+function referenceCandidate() {
+  return {
+    schemaVersion: 'bloge.referenceCandidate.v1' as const,
+    kind: 'PACKAGE_CONTRACT', id: 'loan-contract', displayName: 'Loan contract',
+    description: '', revision: 3, fingerprint: `sha256:${'a'.repeat(64)}`,
+    authority: 'resource-gateway://demo-business-directory',
+    scope: {
+      tenantId: 'ride-hailing', organizationId: 'customer-service', projectId: 'loan',
+      environmentId: 'test', region: 'sg',
+    },
+    lifecycle: 'ACTIVE' as const,
+    owner: { stableId: 'service-design', displayName: 'Service Design' },
+    labels: ['demo'], compatibility: 'COMPATIBLE' as const, disabledReasonCode: '',
   };
 }

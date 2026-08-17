@@ -13,8 +13,8 @@
 | P0：Author legacy Graph source validation | `IMPLEMENTED` | Author 反查 legacy projection，比较 id/revision/fingerprint，加载官方 scenario/diagram；漂移失败关闭 | 只读态视觉提示和显式“创建工作副本”命令 |
 | P0：Remediation 命令闭环 | `IMPLEMENTED` | 21 类已知 gap 有稳定 descriptor；同页/跨页均切换、滚动、聚焦、高亮、写入 URL 并播报 outcome；未知 gap 显式失败 | Picker 自动打开、跨工作区 `NAVIGATED`、权威重算后的 `RESOLVED` |
 | P0：任务指引骨架 | `IMPLEMENTED` | 七步均显示业务问题、Why、输入状态、权威完成状态、Next Best Action 和底部决策；中英文与响应式布局完整 | Picker 接入后把 `OPEN_PICKER` 动作从定位升级为自动展开 |
-| P1：候选资产与 Picker | `PARTIAL` | metadata-only Candidate/Page/Resolve 协议、Graph/Operator/Function 默认 Provider、Correctness Target/Definition 两级目录、认证 Scope、稳定错误、Capability Probe 和共享 Combobox 已实现 | Correctness Launcher 与业务镜像字段接入、5000 候选压测 |
-| P1：七步可操作化 | `PLANNED` | 目标控件与完成标准已在方案冻结 | Contract/Owner/Scenario/Fidelity 等目录适配与创建回跳 |
+| P1：候选资产与 Picker | `IMPLEMENTED` | metadata-only Candidate/Page/Resolve 协议、可组合 Contributor SPI、Graph/Operator/Function 默认 Provider、Correctness Target/Definition 两级 Launcher、Business Mirror 13 类字段、认证 Scope、稳定错误、Capability Probe 和共享 Combobox 已实现 | 5000 候选与真实企业目录压测 |
+| P1：七步可操作化 | `IMPLEMENTED` | 七步任务合同、精确阻断定位、Domain/Taxonomy/Owner/Contract/State/Effect/L1-L3/Scenario/Fidelity/Outcome/Approval 主动筛选与整包保存已接通 | “新建资产”回跳、跨工作区权威重算和 ANEKE gate feedback |
 
 ## Exact Author Link 行为
 
@@ -92,6 +92,23 @@ built-in function 筛选业务目标，再由系统主动查询绑定的 Correct
 Capability Probe 仅在 correctness Workspace 与 Target Catalog 真实装配时声明
 `guidedWorkspaceLauncher=true`。
 
+业务镜像的协议身份字段不再要求手填 ID。七个 Sheet 共用受治理引用控件，覆盖 13 类候选：
+
+```text
+BUSINESS_DOMAIN / PROBLEM_TAXONOMY / OWNER / PACKAGE_CONTRACT
+STATE_MODEL / EFFECT_MODEL / SOLUTION / SERVICE_CARRIER / CHANNEL
+SCENARIO_INVENTORY / SCENARIO_PACK / FIDELITY_INVENTORY / OUTCOME_DEFINITION
+```
+
+用户按业务名称、负责人、ID 或 Scope 搜索；候选首屏展示 Owner、Scope 和 lifecycle。选择只形成临时意图，
+前端随后调用 `reference-candidates:resolve`，只有 `RESOLVED` 才把稳定 ID 或 exact ref 写入 Package Draft。
+`DRIFTED/NOT_FOUND/FORBIDDEN` 均失败关闭。任意 Sheet 的绑定变化都会触发“能力包更改尚未保存”，统一通过
+optimistic revision 与幂等键保存整个 Package，而不是只比较第一页的 `businessDefinition`。
+
+默认 demo 在 `test/staging + gateway.testing.correctness.demo.enabled=true` 时贡献贷款决策业务目录；生产 profile
+以及未显式开启 demo 的部署均不会装配。企业可增加零到多个 `ReferenceCandidateContributor`，核心目录优先，
+外部 contributor 按稳定 ID 排序并以 exact coordinate 去重。
+
 ## 自动化证据
 
 聚焦测试覆盖：
@@ -103,6 +120,9 @@ Capability Probe 仅在 correctness Workspace 与 Target Catalog 真实装配时
 - 真实 AuthorCanvas 组件加载 Business Mirror Graph 并关闭首次对话框；
 - 21 个已知 gap descriptor 完整覆盖、未知 gap 安全降级；
 - 当前 Sheet 阻断仍会聚焦/高亮，跨 Sheet 阻断会定位到精确要求；
+- Business Mirror 候选经过 exact resolve 后才写入，漂移时草稿保持不变；
+- 非第一页的 Scenario Pack 绑定也会触发整包 dirty 状态并进入保存请求；
+- demo Contributor 仅在显式 test/staging 配置中出现，且提供 13 类 metadata-only 候选；
 - 原有 Business Mirror、Author workspace location 回归。
 
 验证命令：
