@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,6 +18,7 @@ class CapabilityStudioDemoConfigurationTest {
     private final JdbcDataSource dataSource = dataSource();
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
+            .withBean(OperatorRegistry.class, DefaultOperatorRegistry::new)
             .withBean(JdbcDataSource.class, () -> dataSource)
             .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
             .withBean(PlatformTransactionManager.class, () -> new DataSourceTransactionManager(dataSource))
@@ -35,6 +38,7 @@ class CapabilityStudioDemoConfigurationTest {
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -46,6 +50,7 @@ class CapabilityStudioDemoConfigurationTest {
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -60,6 +65,7 @@ class CapabilityStudioDemoConfigurationTest {
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -74,6 +80,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasNotFailed()
                         .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
                         .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalService.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioDemoController.class));
@@ -86,6 +93,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
-                        .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class));
+                        .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalService.class));
     }
 }

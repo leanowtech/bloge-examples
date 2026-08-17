@@ -112,6 +112,61 @@ class CapabilityStudioDemoControllerTest {
     }
 
     @Test
+    void exposesTimeoutFeatureRehearsalFromTheRealTraceWithoutPayloadByDefault() throws Exception {
+        String response = mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-compensation-history-timeout"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(
+                        "resource-gateway.capability-studio.feature-rehearsal.v1"))
+                .andExpect(jsonPath("$.scenario.id").value(
+                        "case-compensation-history-timeout"))
+                .andExpect(jsonPath("$.graph.id").value(
+                        "feature-cancellation-dispute-context"))
+                .andExpect(jsonPath("$.run.status").value("TIMED_OUT"))
+                .andExpect(jsonPath("$.run.realExternalCallCount").value(0))
+                .andExpect(jsonPath("$.run.bindingMode").value(
+                        "FIXTURE_CONTROLLED_NON_PRODUCTION"))
+                .andExpect(jsonPath("$.dataLens.permissionMode").value("STRUCTURE_ONLY"))
+                .andExpect(jsonPath("$.dataLens.nodes.length()").value(6))
+                .andExpect(jsonPath("$.dataLens.edges.length()").value(5))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].status")
+                        .value("TIMEOUT"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].errorCode")
+                        .value("COMPENSATION_HISTORY_TIMEOUT"))
+                .andExpect(jsonPath("$.dataLens.nodes[0].input").isEmpty())
+                .andExpect(jsonPath("$.dataLens.nodes[0].output").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response)
+                .doesNotContain("DEMO-ORDER-20260818-001", "fallbackToReal")
+                .contains("sha256:");
+    }
+
+    @Test
+    void revealsOnlyControlledDemoPayloadWhenTheExplicitPermissionIsRequested() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-standard-cancellation-fee")
+                        .queryParam("permission", "PAYLOAD_VISIBLE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.run.status").value("PASSED"))
+                .andExpect(jsonPath("$.run.realExternalCallCount").value(0))
+                .andExpect(jsonPath("$.dataLens.permissionMode").value("PAYLOAD_VISIBLE"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'orderLookup')].input.params.orderId")
+                        .value("DEMO-ORDER-20260818-001"));
+    }
+
+    @Test
+    void rejectsUnknownFeatureScenarioWithARecoverableBusiness404() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-does-not-exist"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_NOT_FOUND"))
+                .andExpect(jsonPath("$.field").value("caseId"))
+                .andExpect(jsonPath("$.recoveryAction").isNotEmpty());
+    }
+
+    @Test
     void getsTheFrozenTutorialBranchProjection() throws Exception {
         mvc.perform(get("/api/capability-studio/tutorial-branch"))
                 .andExpect(status().isOk())

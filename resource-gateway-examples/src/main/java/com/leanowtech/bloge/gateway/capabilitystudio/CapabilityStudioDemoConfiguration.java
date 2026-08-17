@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -52,5 +53,13 @@ public class CapabilityStudioDemoConfiguration {
             CapabilityStudioGoldenDemoPack pack,
             ObjectMapper mapper) {
         return new CapabilityStudioScenarioDatasetProjector(pack, mapper);
+    }
+
+    @Bean
+    CapabilityStudioFeatureRehearsalService capabilityStudioFeatureRehearsalService(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper mapper,
+            OperatorRegistry operatorRegistry) {
+        return new CapabilityStudioFeatureRehearsalService(pack, mapper, operatorRegistry);
     }
 }

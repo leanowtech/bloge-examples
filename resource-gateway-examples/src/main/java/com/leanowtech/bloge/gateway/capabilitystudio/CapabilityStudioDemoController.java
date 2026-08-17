@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
@@ -26,16 +27,19 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioGoldenDemoPack pack;
     private final CapabilityStudioTutorialBranchAuthority tutorialBranch;
     private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
+    private final CapabilityStudioFeatureRehearsalService featureRehearsal;
 
     /** Creates the projection controller from injected validated authorities and projector. */
     @Autowired
     public CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch,
-            CapabilityStudioScenarioDatasetProjector scenarioDataset) {
+            CapabilityStudioScenarioDatasetProjector scenarioDataset,
+            CapabilityStudioFeatureRehearsalService featureRehearsal) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = scenarioDataset;
+        this.featureRehearsal = featureRehearsal;
     }
 
     /**
@@ -45,7 +49,24 @@ public final class CapabilityStudioDemoController {
     public CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch) {
-        this(pack, tutorialBranch, new CapabilityStudioScenarioDatasetProjector(pack));
+        this(pack, tutorialBranch, new CapabilityStudioScenarioDatasetProjector(pack),
+                new CapabilityStudioFeatureRehearsalService(
+                        pack, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
+                        new com.leanowtech.bloge.core.spi.DefaultOperatorRegistry()));
+    }
+
+    /** Returns a real BLOGE test-run evidence rehearsal for one canonical feature scenario. */
+    @GetMapping("/feature-rehearsal")
+    public CapabilityStudioFeatureRehearsalProjection featureRehearsal(
+            @RequestParam String caseId,
+            @RequestParam(defaultValue = "STRUCTURE_ONLY") String permission) {
+        CapabilityStudioDataLensProjection.PermissionMode mode;
+        try {
+            mode = CapabilityStudioDataLensProjection.PermissionMode.valueOf(permission.trim());
+        } catch (RuntimeException failure) {
+            throw new IllegalArgumentException("permission must be STRUCTURE_ONLY or PAYLOAD_VISIBLE");
+        }
+        return featureRehearsal.rehearse(caseId, mode);
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */
@@ -110,6 +131,18 @@ public final class CapabilityStudioDemoController {
         return ResponseEntity.status(failure.status()).body(new CapabilityStudioError(
                 failure.code(), failure.whatHappened(), failure.impact(),
                 failure.recoveryAction(), failure.field()));
+    }
+
+    /** Maps unknown canonical rehearsal cases to the stable business error shape. */
+    @ExceptionHandler(CapabilityStudioFeatureRehearsalService.UnknownScenarioException.class)
+    public ResponseEntity<CapabilityStudioError> handleUnknownFeatureRehearsal(
+            CapabilityStudioFeatureRehearsalService.UnknownScenarioException failure) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(new CapabilityStudioError(
+                "RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_NOT_FOUND",
+                "未找到对应的 Feature Rehearsal 案例。",
+                "画布无法取得该案例的运行证据。",
+                "从 Canonical Demo Pack 选择有效 caseId 后重试。",
+                "caseId"));
     }
 
     /** Maps malformed JSON and strict unknown-field failures to the frozen business error shape. */
