@@ -169,7 +169,8 @@ State/Effect 模型和生产环境证据不能由演示 Fixture 自动推断。
 ### 3.3 检查 L0-L3 能力链
 
 打开「3. 组装能力」。L0 显示已有 Graph 和 built-in 能力；L1 服务设计、L2 服务载体和 L3 业务应用
-保持为明确缺失项。选择「打开精确编排图」可回到真实 Graph。
+保持为明确缺失项。选择「打开精确编排图」进入 Author Compose 画布。该链接携带 Business Mirror
+source id、revision、fingerprint 和返回坐标；Author 校验权威 projection 后才渲染拓扑，不会跳到「运行示例」或猜测同名最新版本。
 
 ![L0-L3 能力地图](assets/resource-gateway-business-mirror-layers-zh.png)
 

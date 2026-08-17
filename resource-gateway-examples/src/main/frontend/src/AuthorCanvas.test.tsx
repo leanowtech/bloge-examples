@@ -941,6 +941,60 @@ describe('AuthorCanvas operator-library intake', () => {
     await waitFor(() => expect(reactFlowMocks.fitView).toHaveBeenCalled());
   });
 
+  it('opens an exact Business Mirror source in Compose after validating its fingerprint', async () => {
+    const sourceFingerprint = `sha256:${'a'.repeat(64)}`;
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2&authorMode=compose'
+      + '&sourceKind=BUSINESS_MIRROR_LEGACY_GRAPH&sourceGraphName=loanDecisionPolicy'
+      + '&sourceId=built-in%3AloanDecisionPolicy&sourceRevision=1'
+      + `&sourceFingerprint=${encodeURIComponent(sourceFingerprint)}`
+      + '&returnRoute=business-mirror&returnPackageId=legacy%3AloanDecisionPolicy'
+      + '&returnTask=capabilities&returnAnchor=graph%3Abuilt-in%3AloanDecisionPolicy');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') return jsonResponse({ operators: [] });
+      if (url === '/api/business-mirror/legacy-graphs/loanDecisionPolicy') {
+        return jsonResponse({
+          graphName: 'loanDecisionPolicy',
+          scope: { tenantId: 'ride', projectId: 'loan', environmentId: 'test' },
+          sourceGraphRef: {
+            id: 'built-in:loanDecisionPolicy', revision: 1, fingerprint: sourceFingerprint,
+          },
+        });
+      }
+      if (url === '/api/gateway/examples/scenarios') {
+        return jsonResponse([{
+          graphName: 'loanDecisionPolicy', title: 'Loan decision',
+          diagramPath: '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram',
+          inputSchema: { format: 'json-schema', schema: { type: 'object' } },
+          outputSchema: { format: 'json-schema', schema: { type: 'object' } },
+        }]);
+      }
+      if (url === '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram') {
+        return jsonResponse({
+          rootId: 'loanDecisionPolicy',
+          nodes: [
+            { id: 'profile', operatorRef: 'resource:profile', label: 'Profile', position: { x: 40, y: 40 } },
+            { id: 'decision', kind: 'decision', label: 'Decision', position: { x: 360, y: 40 } },
+          ],
+          edges: [{ id: 'profile-decision', source: 'profile', target: 'decision' }],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() => expect(query('[data-testid="canvas-node:profile"]').textContent).toContain('Profile'));
+    expect(query('[data-testid="canvas-node:decision"]').textContent).toContain('Decision');
+    expect(query('[data-testid="author-deep-link-notice"]').textContent)
+      .toContain('Opened exact Business Mirror Graph built-in:loanDecisionPolicy@1');
+    expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');
+  });
+
   it('uses a larger overview and edge-label-safe fit padding for complex DSL projections', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

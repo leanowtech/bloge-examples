@@ -141,7 +141,7 @@ Readiness。真实索引出现后，可从页面刷新来源、查看五层结�
 - L2 服务载体层：知识、SOP、Workflow 和服务 Agent 等 Carrier。
 - L3 业务应用层：文本机器人、语音机器人及其他 Channel Application。
 
-地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。选择「打开精确编排图」进入 Graph 运行示例；返回 Package 后，业务上下文和 exact lineage 保持不变。
+地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。选择「打开精确编排图」会携带 source id、revision、fingerprint 和受控返回坐标进入 Author Compose 画布；Author 先反查 Business Mirror 权威 projection，再加载官方拓扑。来源漂移时会失败关闭，不会退回同名 Graph 或「运行示例」。
 
 ## 5. 语言、键盘和响应式行为
 

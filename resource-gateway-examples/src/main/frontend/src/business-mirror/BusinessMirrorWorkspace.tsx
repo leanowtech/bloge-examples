@@ -34,6 +34,7 @@ import {
 } from '../api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { MessageId } from '../i18n/messageCatalog';
+import { businessMirrorAuthorHref } from '../shared/workspace-routing/businessMirrorAuthorLink';
 import referenceEvidenceJson from '../../../../../../docs/schemas/resource-gateway-business-mirror/package-evidence-index-stage1-v1.fixture.json';
 import {
   businessMirrorCapabilityLayers,
@@ -737,7 +738,14 @@ function CapabilityTask({
           </div>
         ))}
       </div>
-      <a className="business-mirror-secondary-link" href={showcaseHref(item.graphName)}>
+      <a className="business-mirror-secondary-link" href={businessMirrorAuthorHref({
+        graphName: item.graphName,
+        graphRef: item.projection.sourceGraphRef,
+        packageId: item.packageId,
+      }, {
+        vscode: typeof globalThis.acquireVsCodeApi === 'function',
+        search: window.location.search,
+      })}>
         <Layers3 aria-hidden="true" size={16} />
         {m('businessMirror.capability.openGraph')}
       </a>
@@ -1176,11 +1184,6 @@ function workspaceHref(route: string): string {
   ['compilationRevision', 'assetKind', 'assetId', 'assetRevision', 'assetAuthority']
     .forEach((key) => params.delete(key));
   return `?${params.toString()}`;
-}
-
-function showcaseHref(graphName: string): string {
-  const base = workspaceHref('showcase');
-  return `${base}${base.includes('?') ? '&' : '?'}graph=${encodeURIComponent(graphName)}`;
 }
 
 function commandId(operation: string, revision: number): string {

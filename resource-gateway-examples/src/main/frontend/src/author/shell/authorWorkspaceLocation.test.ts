@@ -38,6 +38,12 @@ describe('authorWorkspaceLocation', () => {
       .toBe('operator:risk:score');
   });
 
+  it('treats an exact Business Mirror source as a deep-link target', () => {
+    expect(parseAuthorWorkspaceLocation(
+      '?authorMode=compose&sourceKind=BUSINESS_MIRROR_LEGACY_GRAPH&sourceId=built-in%3Aloan',
+    ).hasDeepLinkTarget).toBe(true);
+  });
+
   it('updates workspace coordinates without dropping draft, run, or hash coordinates', () => {
     expect(authorWorkspaceUrl(
       'http://localhost/author/?authorWorkspace=v2&draftId=draft-7&runId=run-9#evidence',

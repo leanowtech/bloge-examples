@@ -163,6 +163,23 @@ describe('Business Mirror Workspace', () => {
     expect(focused?.closest('.capability-layer')?.textContent).toContain('L0 Foundation');
   });
 
+  it('opens the exact source Graph in Author Compose instead of the run Showcase', async () => {
+    await render();
+    await click(button('Loan Decision Policy'));
+    await click(button('3. Assemble capabilities'));
+
+    const href = anchor('Open exact Graph').href;
+    const url = new URL(href);
+    expect(url.pathname).toBe('/author/');
+    expect(url.searchParams.get('authorMode')).toBe('compose');
+    expect(url.searchParams.get('sourceGraphName')).toBe('loanDecisionPolicy');
+    expect(url.searchParams.get('sourceId')).toBe(projection.sourceGraphRef.id);
+    expect(url.searchParams.get('sourceRevision')).toBe(String(projection.sourceGraphRef.revision));
+    expect(url.searchParams.get('sourceFingerprint')).toBe(projection.sourceGraphRef.fingerprint);
+    expect(url.searchParams.get('returnPackageId')).toBe(projection.packageDraft.packageId);
+    expect(href).not.toContain('showcase');
+  });
+
   it('keeps five evidence layers and seven Fidelity dimensions independently inspectable', async () => {
     const stored = storedPackage(projection.packageDraft, 3);
     const index = evidenceIndex(stored);
@@ -380,6 +397,13 @@ function button(text: string): HTMLButtonElement {
   const match = [...document.querySelectorAll<HTMLButtonElement>('button')]
     .find((candidate) => candidate.textContent?.includes(text));
   if (!match) throw new Error(`Missing button: ${text}`);
+  return match;
+}
+
+function anchor(text: string): HTMLAnchorElement {
+  const match = [...document.querySelectorAll<HTMLAnchorElement>('a')]
+    .find((candidate) => candidate.textContent?.includes(text));
+  if (!match) throw new Error(`Missing anchor: ${text}`);
   return match;
 }
 

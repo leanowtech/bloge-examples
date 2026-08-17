@@ -40,7 +40,10 @@ import {
   checkConnection,
   checkDslRewriteGate,
   commitDslImport,
+  fetchBusinessMirrorLegacyProjection,
   fetchConnectionCandidates,
+  fetchGatewayDiagram,
+  fetchGatewayScenarios,
   fetchGovernanceGateView,
   fetchGraphDraft,
   fetchOperatorCatalog,
@@ -147,6 +150,10 @@ import {
   type CanvasExampleTestCase,
   type CanvasExampleTemplate,
 } from './canvasExamples';
+import {
+  graphDraftFromBusinessMirrorSeed,
+  parseBusinessMirrorGraphSeed,
+} from './author/source/businessMirrorGraphSeed';
 import ContractRail from './contract-scenario/ContractRail';
 import {
   contractDraftFromGraphDraft,
@@ -5282,9 +5289,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [initialDslHandoff] = useState(() => (
     isTaskWorkspace ? peekDslAuthorHandoff() : null
   ));
+  const [initialBusinessMirrorSeed] = useState(() => (
+    isTaskWorkspace ? parseBusinessMirrorGraphSeed(window.location.search) : null
+  ));
   const [authorMode, setAuthorMode] = useState<AuthorMode>(initialWorkspaceLocation.mode);
   const [startOpen, setStartOpen] = useState(
-    isTaskWorkspace && !initialWorkspaceLocation.hasDeepLinkTarget && !initialDslHandoff,
+    isTaskWorkspace && !initialWorkspaceLocation.hasDeepLinkTarget
+      && !initialDslHandoff && !initialBusinessMirrorSeed,
   );
   const [startSection, setStartSection] = useState<StartImportSection>(
     initialDslHandoff ? 'dsl' : 'menu',
@@ -8474,6 +8485,53 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       })
       .finally(() => setDslImportBusy(false));
   }, [initialDslHandoff, isTaskWorkspace, librarySourceText, operators]);
+
+  useEffect(() => {
+    if (!isTaskWorkspace || !initialBusinessMirrorSeed) return undefined;
+    let active = true;
+    setDeepLinkNotice({ level: 'pending', message: 'Opening exact Business Mirror Graph...' });
+    setError('');
+    Promise.all([
+      fetchBusinessMirrorLegacyProjection(initialBusinessMirrorSeed.graphName),
+      fetchGatewayScenarios(),
+    ]).then(async ([projection, scenarios]) => {
+      const scenario = scenarios.find(
+        (candidate) => candidate.graphName === initialBusinessMirrorSeed.graphName,
+      );
+      if (!scenario) throw new Error('RG.AUTHORING.BUSINESS_MIRROR_SCENARIO_NOT_FOUND');
+      const diagram = await fetchGatewayDiagram(
+        scenario.diagramPath
+          || `/api/gateway/examples/scenarios/${encodeURIComponent(scenario.graphName)}/diagram`,
+      );
+      if (!active) return;
+      const draft = graphDraftFromBusinessMirrorSeed(
+        initialBusinessMirrorSeed,
+        projection,
+        scenario,
+        diagram,
+      );
+      applyDslProjectionRef.current({
+        schemaVersion: 'bloge.dslVisualProjection.v1',
+        sourceId: `business-mirror:${initialBusinessMirrorSeed.sourceId}`,
+        draft,
+        diagnostics: [],
+      }, `Business Mirror ${initialBusinessMirrorSeed.sourceId}@${initialBusinessMirrorSeed.sourceRevision}`);
+      setAuthorMode('compose');
+      setStartOpen(false);
+      setDeepLinkNotice({
+        level: 'ok',
+        message: `Opened exact Business Mirror Graph ${initialBusinessMirrorSeed.sourceId}`
+          + `@${initialBusinessMirrorSeed.sourceRevision}. Saving creates a durable authoring draft.`,
+      });
+    }).catch((cause: unknown) => {
+      if (!active) return;
+      setDeepLinkNotice({
+        level: 'warning',
+        message: cause instanceof Error ? cause.message : String(cause),
+      });
+    });
+    return () => { active = false; };
+  }, [initialBusinessMirrorSeed, isTaskWorkspace]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

@@ -7,6 +7,8 @@
 > 形成日期：2026-08-17
 >
 > 关联文档：[正确性创作 UX 审计与演进计划](resource-gateway-correctness-authoring-ux-audit-and-evolution-plan.md)、[正确性工作台技术实施方案](resource-gateway-correctness-studio-technical-implementation-plan.md)、[业务镜像工作区指南](resource-gateway-business-mirror-workspace-guide.md)
+>
+> 实施证据与差距：[引导式创作实施状态](resource-gateway-guided-authoring-implementation-status.md)
 
 ## 1. 结论先行
 
