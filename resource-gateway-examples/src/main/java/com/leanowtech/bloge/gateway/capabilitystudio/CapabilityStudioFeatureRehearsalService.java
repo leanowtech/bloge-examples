@@ -11,6 +11,7 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
 import com.leanowtech.bloge.gateway.operator.ResponseValidator;
 import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
@@ -80,7 +81,8 @@ public final class CapabilityStudioFeatureRehearsalService {
         CapabilityStudioGoldenDemoPack.TestScenario scenario = scenario(caseId);
         PermissionMode mode = Objects.requireNonNull(permissionMode, "permissionMode");
         FailFastHttpTransport transport = new FailFastHttpTransport();
-        Graph graph = graph(transport);
+        GraphAssembly assembly = graph(transport);
+        Graph graph = assembly.graph();
         String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
         FixtureBundle fixture = fixture(scenario, graphFingerprint);
         TestExecutionResult result = new TestRunService(operatorRegistry, objectMapper, null)
@@ -123,6 +125,16 @@ public final class CapabilityStudioFeatureRehearsalService {
                 dataLensProjector.project(result.evidence(), mode));
     }
 
+    /** Executes the same real graph with payload visibility for the development-only Oracle. */
+    CapabilityStudioFeatureRehearsalProjection rehearseForOracle(String caseId) {
+        return rehearse(caseId, PermissionMode.PAYLOAD_VISIBLE);
+    }
+
+    /** Internal-only graph facts for development evidence; never part of the v1 wire projection. */
+    List<OperatorFootprint> operatorFootprints() {
+        return graph(new FailFastHttpTransport()).operatorFootprints();
+    }
+
     private CapabilityStudioGoldenDemoPack.TestScenario scenario(String caseId) {
         String normalized = caseId == null ? "" : caseId.trim();
         return pack.scenarios().stream()
@@ -131,18 +143,19 @@ public final class CapabilityStudioFeatureRehearsalService {
                 .orElseThrow(() -> new UnknownScenarioException(normalized));
     }
 
-    private Graph graph(FailFastHttpTransport transport) {
+    private GraphAssembly graph(FailFastHttpTransport transport) {
         HttpResourceOperator resourceOperator = resourceOperator(transport);
         Operator<Map<String, Object>, Map<String, Object>> aggregate = new Operator<>() {
             @Override
             public Map<String, Object> execute(
                     Map<String, Object> input, OperatorContext context) {
-                return Map.of(
-                        "order", input.get("order"),
-                        "responsibility", input.get("responsibility"),
-                        "policy", input.get("policy"),
-                        "compensationHistory", input.get("compensationHistory"),
-                        "caseId", input.get("caseId"));
+                Map<String, Object> output = new LinkedHashMap<>();
+                output.put("order", payloadOf(input.get("order")));
+                output.put("responsibility", payloadOf(input.get("responsibility")));
+                output.put("policy", payloadOf(input.get("policy")));
+                output.put("compensationHistory", payloadOf(input.get("compensationHistory")));
+                output.put("caseId", input.get("caseId"));
+                return Map.copyOf(output);
             }
 
             @Override
@@ -154,13 +167,39 @@ public final class CapabilityStudioFeatureRehearsalService {
             @Override
             public Map<String, Object> execute(
                     Map<String, Object> input, OperatorContext context) {
-                Object policy = input.get("policy");
-                boolean policyMissing = policy instanceof Map<?, ?> values && values.isEmpty();
-                return Map.of(
-                        "action", policyMissing ? "MANUAL_REVIEW" : "AUTO_QUOTE",
-                        "reasonCode", policyMissing
-                                ? "CITY_POLICY_MISSING" : "CANCELLATION_CONTEXT_READY",
-                        "caseId", input.get("caseId"));
+                Map<?, ?> policy = asMap(input.get("policy"));
+                Map<?, ?> responsibility = asMap(input.get("responsibility"));
+                Map<?, ?> compensationHistory = asMap(input.get("compensationHistory"));
+                boolean policyMissing = policy.isEmpty();
+                String owner = text(responsibility.get("owner"));
+                boolean historyMissing = compensationHistory.isEmpty()
+                        || Boolean.FALSE.equals(compensationHistory.get("hasHistory"))
+                        || (compensationHistory.get("records") instanceof List<?> records
+                        && records.isEmpty());
+
+                Map<String, Object> output = new LinkedHashMap<>();
+                if (policyMissing) {
+                    output.put("action", "MANUAL_REVIEW");
+                    output.put("reasonCode", "CITY_POLICY_MISSING");
+                    output.put("responsibilityReason", "POLICY_NOT_AVAILABLE");
+                } else if ("RIDER".equals(owner)) {
+                    output.put("action", "WAIVE_CANCELLATION_FEE");
+                    output.put("reasonCode", "RIDER_NOT_AT_FAULT");
+                    output.put("responsibilityReason", "RIDER_NOT_RESPONSIBLE");
+                } else if ("DRIVER".equals(owner)) {
+                    output.put("action", "APPLY_DRIVER_RESPONSIBILITY_RULE");
+                    output.put("reasonCode", text(responsibility.get("reasonCode")));
+                    output.put("responsibilityReason", "DRIVER_RESPONSIBLE");
+                } else {
+                    output.put("action", "AUTO_QUOTE");
+                    output.put("reasonCode", "CANCELLATION_CONTEXT_READY");
+                    output.put("responsibilityReason", "PLATFORM_POLICY_CONTEXT");
+                }
+                output.put("informationGap", historyMissing
+                        ? "COMPENSATION_HISTORY_EMPTY" : "NONE");
+                output.put("policyVersion", text(policy.get("version")));
+                output.put("caseId", input.get("caseId"));
+                return Map.copyOf(output);
             }
 
             @Override
@@ -192,7 +231,14 @@ public final class CapabilityStudioFeatureRehearsalService {
                 .dependsOn("aggregateCancellationContext")
                 .input((results, context) -> results.get("aggregateCancellationContext", Object.class))
                 .build();
-        return withOperatorRefs(built);
+        Graph graph = withOperatorRefs(built);
+        List<OperatorFootprint> footprints =
+                graph.nodes().values().stream()
+                        .map(node -> new OperatorFootprint(
+                                node.id(), node.operatorRef(), sideEffect(node.id(), resourceOperator,
+                                aggregate, decision)))
+                        .toList();
+        return new GraphAssembly(graph, footprints);
     }
 
     private FixtureBundle fixture(
@@ -265,17 +311,24 @@ public final class CapabilityStudioFeatureRehearsalService {
     }
 
     private static String specialResource(CapabilityStudioGoldenDemoPack.TestScenario scenario) {
-        return scenario.dependencyBehaviors().stream()
-                .map(CapabilityStudioGoldenDemoPack.DependencyBehavior::dependencyRef)
-                .map(CapabilityStudioGoldenDemoPack.ExactRef::id)
-                .filter(id -> id.startsWith("api-"))
-                .findFirst().orElse("");
+        return switch (scenario.id()) {
+            case "case-rider-not-responsible", "case-driver-responsible" -> RESPONSIBILITY_RESOURCE;
+            case "case-city-policy-missing", "case-policy-revision-regression" -> POLICY_RESOURCE;
+            case "case-compensation-history-empty", "case-compensation-history-timeout" ->
+                    COMPENSATION_RESOURCE;
+            default -> "";
+        };
     }
 
     private static String specialBehavior(CapabilityStudioGoldenDemoPack.TestScenario scenario) {
-        return scenario.dependencyBehaviors().stream()
-                .map(CapabilityStudioGoldenDemoPack.DependencyBehavior::behavior)
-                .findFirst().orElse("RETURN");
+        return switch (scenario.id()) {
+            case "case-rider-not-responsible" -> "RETURN_RIDER";
+            case "case-driver-responsible" -> "RETURN_DRIVER";
+            case "case-city-policy-missing", "case-compensation-history-empty" -> "RETURN_EMPTY";
+            case "case-compensation-history-timeout" -> "TIMEOUT";
+            case "case-policy-revision-regression" -> "RETURN_VERSIONED";
+            default -> "RETURN";
+        };
     }
 
     private static FixtureRule.Behavior specialBehavior(String behavior, String resource) {
@@ -283,9 +336,46 @@ public final class CapabilityStudioFeatureRehearsalService {
             case "TIMEOUT" -> FixtureRule.Behavior.timeout(
                     Duration.ofMillis(10), "COMPENSATION_HISTORY_TIMEOUT", "历史补偿查询超时。");
             case "RETURN_EMPTY" -> FixtureRule.Behavior.returning(Map.of());
-            case "RETURN_VERSIONED" -> FixtureRule.Behavior.returning(payload(resource + ":v2"));
+            case "RETURN_RIDER" -> FixtureRule.Behavior.returning(Map.of(
+                    "owner", "RIDER",
+                    "reasonCode", "RIDER_NOT_AT_FAULT",
+                    "responsibilityReason", "RIDER_NOT_RESPONSIBLE"));
+            case "RETURN_DRIVER" -> FixtureRule.Behavior.returning(Map.of(
+                    "owner", "DRIVER",
+                    "reasonCode", "DRIVER_LATE",
+                    "responsibilityReason", "DRIVER_RESPONSIBLE"));
+            case "RETURN_VERSIONED" -> FixtureRule.Behavior.returning(Map.of(
+                    "version", "SZ-CANCEL-2026.08-R2",
+                    "feeRule", "CANCEL_FEE_AFTER_5_MIN",
+                    "effectiveFrom", "2026-08-01T00:00:00Z"));
             default -> FixtureRule.Behavior.returning(payload(resource));
         };
+    }
+
+    private static SideEffectType sideEffect(
+            String nodeId,
+            HttpResourceOperator resourceOperator,
+            Operator<Map<String, Object>, Map<String, Object>> aggregate,
+            Operator<Map<String, Object>, Map<String, Object>> decision) {
+        return switch (nodeId) {
+            case "orderLookup", "responsibilityLookup", "cityPolicyLookup", "compensationHistoryLookup" ->
+                    resourceOperator.sideEffectType();
+            case "aggregateCancellationContext" -> aggregate.sideEffectType();
+            case "cancellationDecision" -> decision.sideEffectType();
+            default -> SideEffectType.MIXED;
+        };
+    }
+
+    private static Map<?, ?> asMap(Object value) {
+        return value instanceof Map<?, ?> map ? map : Map.of();
+    }
+
+    private static Object payloadOf(Object value) {
+        return value instanceof HttpResourceOutput output ? output.payload() : value;
+    }
+
+    private static String text(Object value) {
+        return value == null ? "" : String.valueOf(value);
     }
 
     private static Map<String, Object> payload(String resource) {
@@ -303,8 +393,8 @@ public final class CapabilityStudioFeatureRehearsalService {
                     "feeRule", "CANCEL_FEE_AFTER_5_MIN",
                     "effectiveFrom", "2026-08-01T00:00:00Z");
             case COMPENSATION_RESOURCE -> Map.of(
-                    "hasHistory", false,
-                    "records", List.of());
+                    "hasHistory", true,
+                    "records", List.of(Map.of("recordType", "CANCELLATION_REVIEW")));
             default -> Map.of("resource", resource);
         };
     }
@@ -346,6 +436,14 @@ public final class CapabilityStudioFeatureRehearsalService {
             case "cancellationDecision" -> "capabilityStudio.decision";
             default -> nodeId;
         };
+    }
+
+    private record GraphAssembly(
+            Graph graph,
+            List<OperatorFootprint> operatorFootprints) {
+    }
+
+    record OperatorFootprint(String nodeId, String operatorRef, SideEffectType sideEffectType) {
     }
 
     /** Raised before execution when a caller asks for a case outside the frozen canonical pack. */

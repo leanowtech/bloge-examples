@@ -62,4 +62,18 @@ public class CapabilityStudioDemoConfiguration {
             OperatorRegistry operatorRegistry) {
         return new CapabilityStudioFeatureRehearsalService(pack, mapper, operatorRegistry);
     }
+
+    @Bean
+    CapabilityStudioFeatureRehearsalOracle capabilityStudioFeatureRehearsalOracle(
+            ObjectMapper mapper) {
+        return new CapabilityStudioFeatureRehearsalOracle(mapper);
+    }
+
+    @Bean
+    CapabilityStudioFeatureRehearsalBaselineService capabilityStudioFeatureRehearsalBaselineService(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioFeatureRehearsalService rehearsal,
+            CapabilityStudioFeatureRehearsalOracle oracle) {
+        return new CapabilityStudioFeatureRehearsalBaselineService(pack, rehearsal, oracle);
+    }
 }

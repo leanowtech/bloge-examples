@@ -19,6 +19,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasSize;
 
 class CapabilityStudioDemoControllerTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
@@ -122,6 +123,7 @@ class CapabilityStudioDemoControllerTest {
                         "case-compensation-history-timeout"))
                 .andExpect(jsonPath("$.graph.id").value(
                         "feature-cancellation-dispute-context"))
+                .andExpect(jsonPath("$.graph.operators").doesNotExist())
                 .andExpect(jsonPath("$.run.status").value("TIMED_OUT"))
                 .andExpect(jsonPath("$.run.realExternalCallCount").value(0))
                 .andExpect(jsonPath("$.run.bindingMode").value(
@@ -153,6 +155,28 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.dataLens.permissionMode").value("PAYLOAD_VISIBLE"))
                 .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'orderLookup')].input.params.orderId")
                         .value("DEMO-ORDER-20260818-001"));
+    }
+
+    @Test
+    void exposesPayloadFreeDevelopmentBaselineWithNineCasesAndThreeRounds() throws Exception {
+        String response = mvc.perform(get("/api/capability-studio/feature-rehearsal-baseline"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(
+                        "resource-gateway.capability-studio.feature-rehearsal-baseline.v1"))
+                .andExpect(jsonPath("$.evidenceKind").value("DEVELOPMENT_TEST_OWNED"))
+                .andExpect(jsonPath("$.status").value("PASSED"))
+                .andExpect(jsonPath("$.caseCount").value(9))
+                .andExpect(jsonPath("$.roundCount").value(3))
+                .andExpect(jsonPath("$.runCount").value(27))
+                .andExpect(jsonPath("$.realExternalCallCount").value(0))
+                .andExpect(jsonPath("$.cases.length()").value(9))
+                .andExpect(jsonPath("$.cases[0].rounds.length()").value(3))
+                .andExpect(jsonPath("$.cases[?(@.oracle.status == 'PASS')]").value(hasSize(9)))
+                .andExpect(jsonPath("$.diagnostics.length()").value(0))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain(
+                "\"input\"", "\"output\"", "payload", "fixture", "mock", "fallbackToReal");
     }
 
     @Test

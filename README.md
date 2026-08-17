@@ -110,11 +110,13 @@ payload-free cancellation-fee pack containing four API capabilities, one Feature
 Tool, and nine business scenarios. The page is deliberately honest about its boundary:
 contract and scenario discovery are available, and the test/staging-only tutorial branch
 can save a timeout behavior and prove an isolated, zero-real-call preflight. Feature/Tool
-release acceptance remains `NOT_RUN`. A test/staging-only Feature Rehearsal development slice
+release acceptance remains `NO_GO`. A test/staging-only Feature Rehearsal development slice
 executes the cancellation graph through BLOGE, projects one real Trace as a 6-node/5-edge Data
 Lens, and exposes structure-only or controlled-payload views with zero HTTP delegate calls. It
-still uses test-owned runtime material; governed same-closure execution, Tool execution, 9/9
-business Oracle evidence, and deployment network deny remain unfinished.
+also exposes a payload-free `DEVELOPMENT_TEST_OWNED` 9 Case × 3 round baseline with 27 unique Runs,
+per-Case business Oracles, duplicate idempotency, forbidden-write inspection, timeout causality,
+and zero in-process external calls. Governed same-closure execution, Tool execution, exact release
+bindings, deployment network deny, environment evidence, and Owner sign-off remain unfinished.
 Correctness Studio is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
 `--no-correctness` to disable either sample. Both opt-outs are required for `production`
 because neither demo authority is assembled there.

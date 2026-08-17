@@ -111,6 +111,7 @@ class VisualCanvasDemoScriptTest {
                 "$(capability_studio_tutorial_branch_url)",
                 "$(capability_studio_tutorial_preflight_url)",
                 "$(capability_studio_feature_rehearsal_url)",
+                "$(capability_studio_feature_baseline_url)",
                 ".cardinality.api == 4",
                 ".cardinality.feature == 1",
                 ".cardinality.tool == 1",
@@ -128,7 +129,14 @@ class VisualCanvasDemoScriptTest {
                 ".run.realExternalCallCount == 0",
                 ".dataLens.permissionMode == \"STRUCTURE_ONLY\"",
                 "(.dataLens.nodes | length) == 6",
-                "(.dataLens.edges | length) == 5");
+                "(.dataLens.edges | length) == 5",
+                ".schemaVersion == \"resource-gateway.capability-studio.feature-rehearsal-baseline.v1\"",
+                ".evidenceKind == \"DEVELOPMENT_TEST_OWNED\"",
+                ".caseCount == 9 and .roundCount == 3 and .runCount == 27",
+                "[.cases[].oracle.status] | all(. == \"PASS\")",
+                "[.cases[].rounds[].realExternalCallCount] | all(. == 0)",
+                "[.cases[].rounds[].runId] | unique | length",
+                "[.operators[].sideEffectType] | all(. != \"WRITE\" and . != \"MIXED\")");
     }
 
     @Test

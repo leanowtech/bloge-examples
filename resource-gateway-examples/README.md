@@ -166,6 +166,7 @@ silently consuming work.
 | `PUT http://localhost:8080/api/capability-studio/tutorial-branch/behaviors/compensation-history` | Save a strict business-shaped timeout behavior with optimistic revision control; test/staging only |
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY` | Run the non-production cancellation Feature through BLOGE and read the payload-free 6-node/5-edge Trace; use `PAYLOAD_VISIBLE` only for controlled demo values |
+| `GET http://localhost:8080/api/capability-studio/feature-rehearsal-baseline` | Run the fixed 9 Case × 3 round development baseline and read payload-free Oracle, semantic/business fingerprint, operator side-effect, unique Run ID, and zero in-process real-call evidence; `DEVELOPMENT_TEST_OWNED`, not release acceptance |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |

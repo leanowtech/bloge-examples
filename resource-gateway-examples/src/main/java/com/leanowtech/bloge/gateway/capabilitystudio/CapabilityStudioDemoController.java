@@ -28,6 +28,7 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioTutorialBranchAuthority tutorialBranch;
     private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
     private final CapabilityStudioFeatureRehearsalService featureRehearsal;
+    private final CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline;
 
     /** Creates the projection controller from injected validated authorities and projector. */
     @Autowired
@@ -35,11 +36,13 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch,
             CapabilityStudioScenarioDatasetProjector scenarioDataset,
-            CapabilityStudioFeatureRehearsalService featureRehearsal) {
+            CapabilityStudioFeatureRehearsalService featureRehearsal,
+            CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = scenarioDataset;
         this.featureRehearsal = featureRehearsal;
+        this.featureRehearsalBaseline = featureRehearsalBaseline;
     }
 
     /**
@@ -49,10 +52,15 @@ public final class CapabilityStudioDemoController {
     public CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch) {
-        this(pack, tutorialBranch, new CapabilityStudioScenarioDatasetProjector(pack),
-                new CapabilityStudioFeatureRehearsalService(
-                        pack, new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules(),
-                        new com.leanowtech.bloge.core.spi.DefaultOperatorRegistry()));
+        this.pack = pack;
+        this.tutorialBranch = tutorialBranch;
+        this.scenarioDataset = new CapabilityStudioScenarioDatasetProjector(pack);
+        com.fasterxml.jackson.databind.ObjectMapper mapper =
+                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
+        this.featureRehearsal = new CapabilityStudioFeatureRehearsalService(
+                pack, mapper, new com.leanowtech.bloge.core.spi.DefaultOperatorRegistry());
+        this.featureRehearsalBaseline = new CapabilityStudioFeatureRehearsalBaselineService(
+                pack, this.featureRehearsal, new CapabilityStudioFeatureRehearsalOracle(mapper));
     }
 
     /** Returns a real BLOGE test-run evidence rehearsal for one canonical feature scenario. */
@@ -67,6 +75,12 @@ public final class CapabilityStudioDemoController {
             throw new IllegalArgumentException("permission must be STRUCTURE_ONLY or PAYLOAD_VISIBLE");
         }
         return featureRehearsal.rehearse(caseId, mode);
+    }
+
+    /** Runs the development-owned 9 Case x 3 round baseline through the real test runtime. */
+    @GetMapping("/feature-rehearsal-baseline")
+    public CapabilityStudioFeatureRehearsalBaselineProjection featureRehearsalBaseline() {
+        return featureRehearsalBaseline.run();
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */

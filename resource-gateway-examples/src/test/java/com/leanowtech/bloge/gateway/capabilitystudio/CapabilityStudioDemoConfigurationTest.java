@@ -39,6 +39,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -51,6 +53,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -66,6 +70,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)
                         .doesNotHaveBean(CapabilityStudioScenarioDatasetProjector.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
+                        .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -81,6 +87,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
                         .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
                         .hasSingleBean(CapabilityStudioFeatureRehearsalService.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalOracle.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioDemoController.class));
@@ -94,6 +102,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioGoldenDemoPack.class)
                         .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
-                        .hasSingleBean(CapabilityStudioFeatureRehearsalService.class));
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalService.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalOracle.class)
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class));
     }
 }
