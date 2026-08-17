@@ -86,9 +86,14 @@ saved edits survive application restart and concurrent saves use optimistic revi
 The Stage 0 Dataset compiler deterministically adapts all nine Cases to the existing
 `ScenarioDraftSet` model, preserves RETURN, ERROR, TIMEOUT, ordered consumption, and
 `MUST_NOT_CALL`, and rejects real fallback, ambiguous selectors, incomplete exact references,
-or unsupported lowerings. It does not yet invoke `ScenarioGovernedCompiler`, produce
-FixtureBundle/TestSuite artifacts, or prove a 9/9 run. Feature/Tool execution and release
-acceptance therefore remain explicitly `NOT_RUN`. To disable the Capability Studio sample and
+or unsupported lowerings. The governed adapter now delegates to the existing
+`ScenarioGovernedCompiler` and deterministically produces FixtureBundle/TestSuite registration
+plans with a payload-free source map. A Data Lens read model also projects the existing
+`TestRunEvidence` in structure-only or payload-visible modes. A narrow in-process zero-egress
+spike proves that a fail-fast HTTP delegate is not called across the nine metadata Cases, but it
+uses test-owned material and is not deployment network-policy or 9/9 business-Oracle evidence.
+Registration, full Feature/Tool execution, browser Data Lens, and release acceptance therefore
+remain explicitly incomplete. To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
 ```bash

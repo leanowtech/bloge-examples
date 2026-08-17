@@ -2,7 +2,7 @@
 
 > 当前状态：`NO_GO`
 >
-> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-03 已形成只读纵向切片，GP-04 正在形成可编辑教程分支；任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
+> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-04 已形成 Stage 0 纵向切片，三项技术 Spike 均已有部分开发证据；GP-05 至 GP-10、发布候选运行和人工签署仍未闭合。任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
 
 ## 1. 制品清单
 
@@ -35,11 +35,13 @@
 - Scenario Dataset v1 的严格 payload-free 投影 Schema、由 Golden Demo Pack 确定性生成的服务端投影端点，以及独立 Test Kit 的指纹、Scope、引用闭包、质量计数和 Active readiness 验证器；
 - GP-03 已从静态九行表切换为真实 Dataset master-detail 视图，显示 Dataset 分母、生命周期、分类、Owner、五项质量覆盖、Case 业务目标、来源、Oracle、适用契约、依赖表现与精确引用；协议、网络或语义校验失败时拒绝展示并提供恢复动作；
 - GP-03 中文 1440×900 与 390×844 真实 Chrome 烟测，覆盖 Dataset 摘要、质量状态、九条 Case、超时案例详情、移动端筛选与无横向溢出。
-- Dataset 到既有 `ScenarioDraftSet` 的确定性编译适配器，覆盖 9 Case、RETURN/ERROR/TIMEOUT/顺序消费/`MUST_NOT_CALL`、rule source map、三次确定性和 fail-closed 负向语义；尚未生成 FixtureBundle/TestSuite 或运行证据；
+- Dataset 经确定性适配器进入既有 `ScenarioDraftSet`，再委托既有 `ScenarioGovernedCompiler` 生成 FixtureBundle/TestSuite 注册计划；Canonical 9 Case、RETURN/ERROR/TIMEOUT/顺序消费/`MUST_NOT_CALL`、rule source map、exact target/contract/Scope/Authority、三次确定性和 fail-closed 负向语义已有自动化证据；编译计划尚未注册或执行；
+- Data Lens 后端窄切片直接投影既有 `TestRunEvidence.nodeTrace/edgeTrace`，支持 structure-only 与 payload-visible 权限态、稳定执行坐标、值 fingerprint、重试/回退、首个运行时差异和高基数截断；尚未接入 Capability API、取消争议 DAG 和画布；
+- zero-egress 窄 Spike 已让 9 个 Canonical Case metadata 通过真实 `TestRunService` 与 `HttpResourceOperator` delegate 边界运行；任何真实 delegate 调用都会计数并 fail-fast，当前 connector counter 为 0，fallback-to-real 在执行前拒绝。该证据使用 test-owned runtime material，只证明进程内控制反转，不等同于部署级 network deny，也不构成 9/9 业务 Oracle 验收；
 - 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
 - GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，Dataset 的 Tab/Enter/Space 键盘路径，以及六种组件状态与真实浏览器完整 axe-core 检查；真实 axe 曾检出并推动修复选中场景辅助文字对比度问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、Dataset 到 `ScenarioGovernedCompiler`/FixtureBundle/TestSuite 的端到端 lowering、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、受治理编译产物的注册与同闭包执行、Feature DAG Data Lens 画布、业务 Oracle 驱动的 9/9 三轮批量证据、部署级 network deny/egress 观测、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 

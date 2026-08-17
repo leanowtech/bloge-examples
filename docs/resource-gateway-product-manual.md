@@ -165,7 +165,7 @@ Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` �
 4. 按黄金、反向、边界、故障、回归和安全分类筛选九条 Case。选择「补偿历史超时」，检查业务目标、预期/Oracle、来源、适用契约、超时表现和按需展开的精确引用。
 5. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
 6. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-7. 查看「验收状态」。正确结论仍是 `NO_GO`：当前只证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检；Dataset 写入 Authority、Feature/Tool 隔离执行、9/9 批量证据、完整 zero-egress 观测和业务签署仍未完成。
+7. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、Trace Data Lens 后端投影，以及 test-owned material 下进程内 connector 调用为 0；Dataset 写入 Authority、编译产物注册与同闭包执行、Feature/Tool 画布体验、业务 Oracle 驱动的 9/9 三轮批量证据、部署级 network deny 和业务签署仍未完成。
 
 需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 已覆盖英文 1440×900、1024×768 和 390×844，并用 Tab、Enter、Space 完成 Dataset 选择路径。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
 

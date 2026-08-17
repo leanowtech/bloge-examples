@@ -3,7 +3,7 @@
   "manifestId": "capability-studio-golden-path-initial-no-go",
   "revision": 1,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:2ec6d06c09843bc1898a7ee02b96c3d043794c55157513fb76037c4159490a1f",
+  "artifactFingerprint": "sha256:d2741347e396bd58ce21cfd7da89e8cad734c0d07cd07e9537a2dc6e204a8c7e",
   "candidateBuildRef": {
     "kind": "BUILD",
     "id": "working-tree-stage0",
@@ -80,13 +80,13 @@
     { "checkId": "A11Y-02", "status": "PASSED", "evidenceRefs": [{ "evidenceId": "a11y-component-six-states", "kind": "ACCESSIBILITY", "uri": "test://CapabilityStudioTest/hasNoSeriousOrCriticalAutomatedAccessibilityViolationsAcrossNfr02States", "fingerprint": "sha256:039a0c10bc0a0826950ba64f9db83b01e0c5a20a244443bf631832840db8d08c", "status": "AVAILABLE" }, { "evidenceId": "a11y-real-browser-and-keyboard", "kind": "ACCESSIBILITY", "uri": "test://CapabilityStudioBrowserAcceptanceTest/englishNfr02SupportsKeyboardNavigationIntoDatasetAndCaseDetails", "fingerprint": "sha256:1b1a68fd78ea8979af64af785b1ff2703d34204c2623130242fd2672d0e70847", "status": "AVAILABLE" }], "notes": "六种组件状态和真实 Chrome 的完整 axe-core serious/critical 为 0；Dataset 使用真实 Tab/Enter/Space；不替代人工读屏" }
   ],
   "protocolAndSecurityResults": [
-    { "checkId": "SPIKE-A", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "spike-a-scenario-draftset-adapter", "kind": "PROTOCOL", "uri": "test://CapabilityStudioScenarioDatasetCompilerTest", "fingerprint": "sha256:a46a2903852f621e776a3040c2023118c13b4e48e53b4afef609af3250579f3f", "status": "AVAILABLE" }], "notes": "ScenarioDraftSet 适配、确定性、顺序消费和失败关闭已有开发证据；governed compile、9/9 运行与零外呼未执行，完整 Spike 仍为 NOT_RUN" },
-    { "checkId": "SPIKE-B", "status": "NOT_RUN", "evidenceRefs": [], "notes": "Data Lens Spike 尚未执行" },
-    { "checkId": "SPIKE-C", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "spike-c-production-control-guard", "kind": "SECURITY", "uri": "test://ExecutionControlBoundaryGuardFilterTest", "fingerprint": "sha256:cd5ac75d3275270305c4fd25120c499b2c100021f0263088e45c11f812e077a6", "status": "AVAILABLE" }], "notes": "生产 profile 装配否定和 DTO 前控制字段拒绝已有开发证据；Capability Run 与 zero-egress 尚未执行，完整 Spike 仍为 NOT_RUN" },
+    { "checkId": "SPIKE-A", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "spike-a-scenario-draftset-adapter", "kind": "PROTOCOL", "uri": "test://CapabilityStudioScenarioDatasetCompilerTest", "fingerprint": "sha256:a46a2903852f621e776a3040c2023118c13b4e48e53b4afef609af3250579f3f", "status": "AVAILABLE" }, { "evidenceId": "spike-a-governed-compilation", "kind": "PROTOCOL", "uri": "test://CapabilityStudioGovernedCompilationServiceTest", "fingerprint": "sha256:5cbeb5abe9f584b69f6848aa326cc91ef8868a58f0df83f92ba78ff4d2ebff80", "status": "AVAILABLE" }], "notes": "ScenarioDraftSet 适配和既有 ScenarioGovernedCompiler 注册计划已有开发证据；同一编译产物的 9/9 执行与 UI source map 未闭合，完整 Spike 仍为 NOT_RUN" },
+    { "checkId": "SPIKE-B", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "spike-b-test-run-data-lens", "kind": "RUN_TRACE", "uri": "test://CapabilityStudioDataLensProjectorTest", "fingerprint": "sha256:a7aeaa14314af777aa7b361422d01a492ebb27f6eabfa30d10deb33cdd580b25", "status": "AVAILABLE" }], "notes": "既有 TestRunEvidence 的权限化 Data Lens 投影已有开发证据；Capability API、真实取消争议 DAG、画布交互与像素验收未执行，完整 Spike 仍为 NOT_RUN" },
+    { "checkId": "SPIKE-C", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "spike-c-production-control-guard", "kind": "SECURITY", "uri": "test://ExecutionControlBoundaryGuardFilterTest", "fingerprint": "sha256:cd5ac75d3275270305c4fd25120c499b2c100021f0263088e45c11f812e077a6", "status": "AVAILABLE" }, { "evidenceId": "spike-c-in-process-zero-egress", "kind": "RUN_TRACE", "uri": "test://CapabilityStudioZeroEgressRuntimeProofTest", "fingerprint": "sha256:af683cc470fa4cd090acf6bc02698ffea1e68481646d2407e229f87f3a1d9357", "status": "AVAILABLE" }], "notes": "生产装配/协议拒绝及 test-owned material 的进程内 connector counter=0 已有开发证据；缺同一受治理编译闭包、复杂 DAG 和部署级 network deny，完整 Spike 仍为 NOT_RUN" },
     { "checkId": "SEC-01", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "sec-01-production-control-guard", "kind": "SECURITY", "uri": "test://ExecutionControlBoundaryGuardFilterTest", "fingerprint": "sha256:cd5ac75d3275270305c4fd25120c499b2c100021f0263088e45c11f812e077a6", "status": "AVAILABLE" }], "notes": "五类入口、字段变体、审计失败关闭和 Payload 不泄漏已有开发证据；发布候选网络面与完整注入 Bean 清单尚未签署" }
   ],
   "knownLimitations": [
-    { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "Golden Pack 当前是只读元数据权威；ScenarioDraftSet 适配器已存在，但尚未接入 governed compile、FixtureBundle/TestSuite 和隔离运行", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
+    { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "Golden Pack 当前是只读元数据权威；governed compile 注册计划和进程内零 connector 窄证据已存在，但同一编译资产闭包尚未注册、完成业务 Oracle 9/9 三轮运行并接受部署级 network deny 观测", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
     { "limitationId": "capability-studio-browser-evidence-missing", "severity": "P1", "status": "OPEN", "description": "GP-01 至 GP-10 尚无完整真实浏览器证据", "ownerRole": "QA_OWNER", "blocksAcceptance": true }
   ],
   "signOffs": [

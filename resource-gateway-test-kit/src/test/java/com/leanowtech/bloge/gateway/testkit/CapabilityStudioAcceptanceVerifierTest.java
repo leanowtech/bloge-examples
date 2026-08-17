@@ -52,12 +52,19 @@ class CapabilityStudioAcceptanceVerifierTest {
                 verifier.verifyAcceptanceBaseline(pendingBaseline);
         CapabilityStudioAcceptanceVerifier.VerificationResult manifestResult =
                 verifier.verifyGoldenPathAcceptanceManifest(manifest);
+        ObjectNode manifestMaterial = ((ObjectNode) manifest).deepCopy();
+        manifestMaterial.putNull("artifactFingerprint");
+        String expectedManifestFingerprint = EvidenceVerificationSupport.sha256(manifestMaterial);
 
         assertThat(baselineResult.verified()).isTrue();
         assertThat(baselineResult.artifactStatus()).isEqualTo("NO_GO");
         assertThat(pendingResult.verified()).isTrue();
         assertThat(pendingResult.artifactStatus()).isEqualTo("PENDING");
-        assertThat(manifestResult.verified()).isTrue();
+        assertThat(manifestResult.verified())
+                .withFailMessage("Manifest verification failed: %s; declared=%s expected=%s",
+                        manifestResult, manifest.path("artifactFingerprint").asText(),
+                        expectedManifestFingerprint)
+                .isTrue();
         assertThat(manifestResult.artifactStatus()).isEqualTo("NO_GO");
         assertThat(baselineResult.errorCode()).isNull();
         assertThat(manifestResult.errorCode()).isNull();
