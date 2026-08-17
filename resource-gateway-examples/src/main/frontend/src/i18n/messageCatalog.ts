@@ -1027,6 +1027,18 @@ export const MESSAGE_CATALOG = {
   'businessMirror.command.compile': { en: 'Check readiness', 'zh-CN': '检查就绪度' },
   'businessMirror.command.compiling': { en: 'Checking...', 'zh-CN': '正在检查...' },
   'businessMirror.command.fixFirst': { en: 'Resolve first blocker', 'zh-CN': '处理首个阻断' },
+  'businessMirror.remediation.locating': {
+    en: 'Locating the exact control for {capability}...',
+    'zh-CN': '正在定位 {capability} 对应的操作控件...',
+  },
+  'businessMirror.remediation.targeted': {
+    en: 'The exact control is focused and highlighted. Complete it, then check readiness again.',
+    'zh-CN': '已聚焦并高亮精确控件。完成配置后，请再次检查就绪度。',
+  },
+  'businessMirror.remediation.unavailable': {
+    en: 'This deployment cannot open the required capability ({capability}). No data was changed.',
+    'zh-CN': '当前部署无法打开所需能力（{capability}），未修改任何数据。',
+  },
   'businessMirror.command.openRehearsals': { en: 'Open Rehearsals', 'zh-CN': '打开演练工作台' },
   'businessMirror.command.imported': {
     en: 'Package imported as durable revision {revision}.',

@@ -38,7 +38,6 @@ import { businessMirrorAuthorHref } from '../shared/workspace-routing/businessMi
 import referenceEvidenceJson from '../../../../../../docs/schemas/resource-gateway-business-mirror/package-evidence-index-stage1-v1.fixture.json';
 import {
   businessMirrorCapabilityLayers,
-  businessMirrorTaskForGap,
   businessMirrorTaskProgress,
   effectiveBusinessMirrorGaps,
   projectBusinessMirrorPortfolio,
@@ -54,6 +53,10 @@ import {
   type LegacyGraphPackageProjectionCatalog,
   type StoredBusinessMirrorPackage,
 } from './domain';
+import {
+  remediationDescriptorForGap,
+  type RemediationDescriptor,
+} from './guidance';
 import './businessMirror.css';
 
 type CommandState =
@@ -61,6 +64,12 @@ type CommandState =
   | { kind: 'running'; operation: 'import' | 'save' | 'compile' }
   | { kind: 'success'; messageId: MessageId; values: Record<string, string | number> }
   | { kind: 'error'; detail: string };
+
+type RemediationUiState = {
+  requestId: number;
+  descriptor: RemediationDescriptor;
+  outcome: 'LOCATING' | 'STILL_BLOCKED' | 'FAILED';
+};
 
 interface BusinessAssetFocus {
   kind: string;
@@ -113,7 +122,11 @@ export default function BusinessMirrorWorkspace() {
   const [editor, setEditor] = useState<BusinessMirrorPackageDraft | null>(null);
   const [compilation, setCompilation] = useState<BusinessMirrorCompilationReceipt | null>(null);
   const [command, setCommand] = useState<CommandState>({ kind: 'idle' });
+  const [remediation, setRemediation] = useState<RemediationUiState | null>(null);
   const activeTaskButton = useRef<HTMLButtonElement | null>(null);
+  const workspace = useRef<HTMLElement | null>(null);
+  const remediationTarget = useRef<HTMLElement | null>(null);
+  const remediationSequence = useRef(0);
 
   useEffect(() => {
     let active = true;
@@ -146,7 +159,47 @@ export default function BusinessMirrorWorkspace() {
   useEffect(() => {
     setCompilation(null);
     setCommand({ kind: 'idle' });
+    setRemediation(null);
   }, [selected?.packageId]);
+
+  useEffect(() => {
+    if (!remediation || !selected) return undefined;
+    const frame = window.requestAnimationFrame(() => {
+      remediationTarget.current?.classList.remove('business-mirror-remediation-target');
+      const target = [...(workspace.current?.querySelectorAll<HTMLElement>(
+        '[data-remediation-anchor]',
+      ) ?? [])].find((candidate) => (
+        candidate.dataset.remediationAnchor === remediation.descriptor.anchor
+      ));
+      if (!target) {
+        setRemediation((current) => current?.requestId === remediation.requestId
+          ? { ...current, outcome: 'FAILED' }
+          : current);
+        return;
+      }
+      remediationTarget.current = target;
+      target.classList.add('business-mirror-remediation-target');
+      target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+      const focusTarget = target.matches('a, button, input, select, textarea, [tabindex]')
+        && !target.matches('[disabled], [aria-disabled="true"]')
+        ? target
+        : target.querySelector<HTMLElement>(
+          'a:not([aria-disabled="true"]), button:not([disabled]), input:not([disabled]), '
+          + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([aria-disabled="true"])',
+        );
+      const resolvedFocus = focusTarget ?? target;
+      if (!focusTarget) resolvedFocus.tabIndex = -1;
+      resolvedFocus.focus({ preventScroll: true });
+      setRemediation((current) => current?.requestId === remediation.requestId
+        ? { ...current, outcome: 'STILL_BLOCKED' }
+        : current);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeTask, remediation?.requestId, selected?.packageId]);
+
+  useEffect(() => () => {
+    remediationTarget.current?.classList.remove('business-mirror-remediation-target');
+  }, []);
 
   useEffect(() => {
     const align = () => {
@@ -216,7 +269,23 @@ export default function BusinessMirrorWorkspace() {
   const selectTask = (task: BusinessMirrorTaskId) => {
     setActiveTask(task);
     setAssetFocus(null);
+    setRemediation(null);
     replaceWorkspaceQuery(selected.packageId, task);
+  };
+  const remediate = (gap: BusinessMirrorGap) => {
+    const descriptor = remediationDescriptorForGap(gap);
+    remediationSequence.current += 1;
+    setActiveTask(descriptor.taskId);
+    setAssetFocus(null);
+    setRemediation({
+      requestId: remediationSequence.current,
+      descriptor,
+      outcome: 'LOCATING',
+    });
+    replaceWorkspaceQuery(selected.packageId, descriptor.taskId, {
+      gapCode: gap.code,
+      remediationAnchor: descriptor.anchor,
+    });
   };
   const upsertStored = (stored: StoredBusinessMirrorPackage) => {
     setPackagePage((current) => current && ({
@@ -283,7 +352,7 @@ export default function BusinessMirrorWorkspace() {
   };
 
   return (
-    <main className="business-mirror-workspace">
+    <main className="business-mirror-workspace" ref={workspace}>
       <header className="business-mirror-context">
         <button
           type="button"
@@ -331,8 +400,31 @@ export default function BusinessMirrorWorkspace() {
         onImport={runImport}
         onSave={runSave}
         onCompile={runCompile}
-        onFix={() => firstBlocker && selectTask(businessMirrorTaskForGap(firstBlocker))}
+        onFix={() => firstBlocker && remediate(firstBlocker)}
       />
+
+      {remediation && (
+        <div
+          className={`business-mirror-remediation-notice ${remediation.outcome.toLowerCase()}`}
+          role={remediation.outcome === 'FAILED' ? 'alert' : 'status'}
+          aria-live="polite"
+          data-testid="business-mirror-remediation-outcome"
+        >
+          {remediation.outcome === 'LOCATING'
+            ? <LoaderCircle aria-hidden="true" className="spin" size={16} />
+            : <SlidersHorizontal aria-hidden="true" size={16} />}
+          <span>
+            <strong>{remediation.descriptor.gapCode}</strong>
+            <small>{m(remediation.outcome === 'FAILED'
+              ? 'businessMirror.remediation.unavailable'
+              : remediation.outcome === 'LOCATING'
+                ? 'businessMirror.remediation.locating'
+                : 'businessMirror.remediation.targeted', {
+              capability: remediation.descriptor.capabilityRequired,
+            })}</small>
+          </span>
+        </div>
+      )}
 
       <div className="business-mirror-task-layout">
         <nav className="business-mirror-task-rail" aria-label={m('businessMirror.readiness.all')}>
@@ -375,7 +467,7 @@ export default function BusinessMirrorWorkspace() {
         </section>
 
         <aside className="business-mirror-evidence-rail">
-          <GapInventory gaps={gaps} onSelect={(gap) => selectTask(businessMirrorTaskForGap(gap))} />
+          <GapInventory gaps={gaps} onSelect={remediate} />
           <Lineage item={selected} />
         </aside>
       </div>
@@ -599,27 +691,27 @@ function ProblemTask({
     <>
       <TaskHeading heading="businessMirror.problem.title" detail="businessMirror.problem.detail" />
       <fieldset className="business-mirror-form" disabled={!editable}>
-        <label>
+        <label data-remediation-anchor="business-mirror.problem.domain">
           <span>{m('businessMirror.field.domain')}</span>
           <input value={definition.domainId} placeholder={m('businessMirror.field.domainPlaceholder')}
             onChange={(event) => update('domainId', event.target.value)} />
         </label>
-        <label>
+        <label data-remediation-anchor="business-mirror.problem.code">
           <span>{m('businessMirror.field.problemCode')}</span>
           <input value={definition.problemCode} placeholder={m('businessMirror.field.problemCodePlaceholder')}
             onChange={(event) => update('problemCode', event.target.value)} />
         </label>
-        <label className="wide">
+        <label className="wide" data-remediation-anchor="business-mirror.problem.goal">
           <span>{m('businessMirror.field.goal')}</span>
           <textarea value={definition.businessGoal} placeholder={m('businessMirror.field.goalPlaceholder')}
             onChange={(event) => update('businessGoal', event.target.value)} />
         </label>
-        <label className="wide">
+        <label className="wide" data-remediation-anchor="business-mirror.problem.outcome">
           <span>{m('businessMirror.field.outcome')}</span>
           <textarea value={definition.expectedOutcome} placeholder={m('businessMirror.field.outcomePlaceholder')}
             onChange={(event) => update('expectedOutcome', event.target.value)} />
         </label>
-        <label>
+        <label data-remediation-anchor="business-mirror.problem.owner">
           <span>{m('businessMirror.field.owner')}</span>
           <input value={definition.accountableOwner} placeholder={m('businessMirror.field.ownerPlaceholder')}
             onChange={(event) => update('accountableOwner', event.target.value)} />
@@ -632,7 +724,10 @@ function ProblemTask({
           </select>
         </label>
       </fieldset>
-      <div className={`business-mirror-requirement ${definition.problemTaxonomyRef ? 'complete' : 'missing'}`}>
+      <div
+        className={`business-mirror-requirement ${definition.problemTaxonomyRef ? 'complete' : 'missing'}`}
+        data-remediation-anchor="business-mirror.problem.taxonomy"
+      >
         <Network aria-hidden="true" size={18} />
         <span>
           <strong>{m('businessMirror.problem.taxonomy')}</strong>
@@ -647,11 +742,11 @@ function BoundaryTask({ draft, gaps }: { draft: BusinessMirrorPackageDraft; gaps
   const { m } = useI18n();
   const rows = [
     { label: 'businessMirror.boundary.contract' as MessageId, available: draft.packageContractRef !== null,
-      value: draft.packageContractRef?.id ?? '' },
+      value: draft.packageContractRef?.id ?? '', anchor: 'business-mirror.boundary.contract' },
     { label: 'businessMirror.boundary.state' as MessageId, available: draft.stateModelRefs.length > 0,
-      value: draft.stateModelRefs[0]?.id ?? '' },
+      value: draft.stateModelRefs[0]?.id ?? '', anchor: 'business-mirror.boundary.state' },
     { label: 'businessMirror.boundary.effect' as MessageId, available: draft.effectModelRefs.length > 0,
-      value: draft.effectModelRefs[0]?.id ?? '' },
+      value: draft.effectModelRefs[0]?.id ?? '', anchor: 'business-mirror.boundary.effect' },
   ];
   const ownerReview = gaps.some((gap) => gap.code === 'GRAPH_CONTRACT_OWNER_CONFIRMATION_MISSING');
   return (
@@ -659,13 +754,24 @@ function BoundaryTask({ draft, gaps }: { draft: BusinessMirrorPackageDraft; gaps
       <TaskHeading heading="businessMirror.boundary.title" detail="businessMirror.task.boundaryDetail" />
       <div className="business-mirror-requirement-list">
         {rows.map((row) => (
-          <div key={row.label} className={`business-mirror-requirement ${row.available ? 'complete' : 'missing'}`}>
+          <div
+            key={row.label}
+            className={`business-mirror-requirement ${row.available ? 'complete' : 'missing'}`}
+            data-remediation-anchor={row.anchor}
+          >
             {row.available ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}
             <span><strong>{m(row.label)}</strong><small>{row.value || m('businessMirror.boundary.missing')}</small></span>
           </div>
         ))}
       </div>
-      {ownerReview && <p className="business-mirror-inline-warning">{m('businessMirror.boundary.ownerReview')}</p>}
+      {ownerReview && (
+        <p
+          className="business-mirror-inline-warning"
+          data-remediation-anchor="business-mirror.boundary.owner-confirmation"
+        >
+          {m('businessMirror.boundary.ownerReview')}
+        </p>
+      )}
     </>
   );
 }
@@ -716,7 +822,11 @@ function CapabilityTask({
       )}
       <div className="business-mirror-capability-map">
         {layers.map((layer, index) => (
-          <div key={layer.id} className="capability-layer">
+          <div
+            key={layer.id}
+            className="capability-layer"
+            data-remediation-anchor={capabilityLayerAnchor(layer.id)}
+          >
             <header><span>{layer.id}</span><strong>{m(labels[layer.id])}</strong></header>
             <div className="capability-layer-assets">
               {layer.refs.map((ref, refIndex) => (
@@ -738,7 +848,10 @@ function CapabilityTask({
           </div>
         ))}
       </div>
-      <a className="business-mirror-secondary-link" href={businessMirrorAuthorHref({
+      <a
+        className="business-mirror-secondary-link"
+        data-remediation-anchor="business-mirror.capabilities.executable"
+        href={businessMirrorAuthorHref({
         graphName: item.graphName,
         graphRef: item.projection.sourceGraphRef,
         packageId: item.packageId,
@@ -758,7 +871,10 @@ function ScenarioTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draf
   return (
     <>
       <TaskHeading heading="businessMirror.scenario.title" detail="businessMirror.task.scenariosDetail" />
-      <div className="business-mirror-scenario-discovery">
+      <div
+        className="business-mirror-scenario-discovery"
+        data-remediation-anchor="business-mirror.scenarios.discovered-suite"
+      >
         <FileCheck2 aria-hidden="true" size={22} />
         <strong>{m('businessMirror.scenario.discovered', {
           count: item.projection.discoveredTestSuiteRefs.length,
@@ -767,8 +883,10 @@ function ScenarioTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draf
       </div>
       <p className="business-mirror-inline-warning">{m('businessMirror.scenario.warning')}</p>
       <div className="business-mirror-requirement-list two-column">
-        <Requirement label="businessMirror.scenario.inventory" available={draft.scenarioInventoryRef !== null} />
-        <Requirement label="businessMirror.scenario.pack" available={draft.scenarioPackRefs.length > 0} />
+        <Requirement label="businessMirror.scenario.inventory" available={draft.scenarioInventoryRef !== null}
+          remediationAnchor="business-mirror.scenarios.inventory" />
+        <Requirement label="businessMirror.scenario.pack" available={draft.scenarioPackRefs.length > 0}
+          remediationAnchor="business-mirror.scenarios.pack" />
       </div>
     </>
   );
@@ -780,7 +898,10 @@ function RehearsalTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
   return (
     <>
       <TaskHeading heading="businessMirror.rehearsal.title" detail="businessMirror.task.rehearsalDetail" />
-      <div className={`business-mirror-stage-message ${ready ? 'ready' : 'blocked'}`}>
+      <div
+        className={`business-mirror-stage-message ${ready ? 'ready' : 'blocked'}`}
+        data-remediation-anchor="business-mirror.rehearsal.mirror-plan"
+      >
         {ready ? <Play aria-hidden="true" size={24} /> : <CircleAlert aria-hidden="true" size={24} />}
         <p>{m(ready ? 'businessMirror.rehearsal.ready' : 'businessMirror.rehearsal.blocked')}</p>
       </div>
@@ -876,6 +997,7 @@ function EvidenceTask({ item }: { item: BusinessMirrorPortfolioItem }) {
   return (
     <>
       <TaskHeading heading="businessMirror.evidence.title" detail="businessMirror.evidence.detail" />
+      <div data-remediation-anchor="business-mirror.evidence.portfolio">
       {state === 'loading' && (
         <div className="business-mirror-evidence-state" aria-busy="true">
           <LoaderCircle aria-hidden="true" className="spin" size={21} />
@@ -1042,6 +1164,7 @@ function EvidenceTask({ item }: { item: BusinessMirrorPortfolioItem }) {
           </section>
         </>
       )}
+      </div>
       {detail && state === 'available' && <p className="business-mirror-inline-warning" role="alert">{detail}</p>}
     </>
   );
@@ -1057,9 +1180,12 @@ function CalibrateTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
     <>
       <TaskHeading heading="businessMirror.calibrate.title" detail="businessMirror.task.calibrateDetail" />
       <div className="business-mirror-requirement-list">
-        <Requirement label="businessMirror.calibrate.fidelity" available={draft.fidelityInventoryRef !== null} />
-        <Requirement label="businessMirror.calibrate.outcome" available={draft.outcomeDefinitionRefs.length > 0} />
-        <Requirement label="businessMirror.calibrate.approval" available={Boolean(draft.provenance.approvedBy)} />
+        <Requirement label="businessMirror.calibrate.fidelity" available={draft.fidelityInventoryRef !== null}
+          remediationAnchor="business-mirror.calibrate.fidelity" />
+        <Requirement label="businessMirror.calibrate.outcome" available={draft.outcomeDefinitionRefs.length > 0}
+          remediationAnchor="business-mirror.calibrate.outcome" />
+        <Requirement label="businessMirror.calibrate.approval" available={Boolean(draft.provenance.approvedBy)}
+          remediationAnchor="business-mirror.calibrate.approval" />
       </div>
       <p className="business-mirror-governance-note">
         <ShieldCheck aria-hidden="true" size={20} />
@@ -1069,10 +1195,21 @@ function CalibrateTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
   );
 }
 
-function Requirement({ label, available }: { label: MessageId; available: boolean }) {
+function Requirement({
+  label,
+  available,
+  remediationAnchor,
+}: {
+  label: MessageId;
+  available: boolean;
+  remediationAnchor?: string;
+}) {
   const { m } = useI18n();
   return (
-    <div className={`business-mirror-requirement ${available ? 'complete' : 'missing'}`}>
+    <div
+      className={`business-mirror-requirement ${available ? 'complete' : 'missing'}`}
+      data-remediation-anchor={remediationAnchor}
+    >
       {available ? <Check aria-hidden="true" size={18} /> : <CircleAlert aria-hidden="true" size={18} />}
       <span>
         <strong>{m(label)}</strong>
@@ -1152,6 +1289,13 @@ function layerForAssetKind(kind: string): 'L0' | 'L1' | 'L2' | 'L3' {
   return 'L3';
 }
 
+function capabilityLayerAnchor(layer: string): string | undefined {
+  if (layer === 'L1') return 'business-mirror.capabilities.solution';
+  if (layer === 'L2') return 'business-mirror.capabilities.carrier';
+  if (layer === 'L3') return 'business-mirror.capabilities.channel';
+  return undefined;
+}
+
 function isExactAssetFocus(
   ref: { kind: string; id: string; revision?: number; authority?: string },
   focus: BusinessAssetFocus,
@@ -1160,7 +1304,11 @@ function isExactAssetFocus(
     && ref.revision === focus.revision && ref.authority === focus.authority;
 }
 
-function replaceWorkspaceQuery(packageId: string, task: BusinessMirrorTaskId): void {
+function replaceWorkspaceQuery(
+  packageId: string,
+  task: BusinessMirrorTaskId,
+  remediation?: { gapCode: string; remediationAnchor: string },
+): void {
   const params = new URLSearchParams(window.location.search);
   if (packageId) {
     params.set('packageId', packageId);
@@ -1168,6 +1316,13 @@ function replaceWorkspaceQuery(packageId: string, task: BusinessMirrorTaskId): v
   } else {
     params.delete('packageId');
     params.delete('task');
+  }
+  if (packageId && remediation) {
+    params.set('gapCode', remediation.gapCode);
+    params.set('remediationAnchor', remediation.remediationAnchor);
+  } else {
+    params.delete('gapCode');
+    params.delete('remediationAnchor');
   }
   ['compilationRevision', 'assetKind', 'assetId', 'assetRevision', 'assetAuthority']
     .forEach((key) => params.delete(key));

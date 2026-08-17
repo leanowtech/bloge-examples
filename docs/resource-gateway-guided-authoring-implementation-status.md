@@ -11,7 +11,7 @@
 | 方案与 Draw.io 基线 | `DONE` | 目标任务流、Remediation 闭环、Stage 0-4 计划已版本化 | 用真实用户数据校准指标 |
 | P0：Business Mirror -> Author exact link | `IMPLEMENTED` | `businessMirrorAuthorHref` 生成 allowlisted exact source/return coordinate；Business Mirror 不再引用 Showcase | 服务端 Link Resolver 与 durable fork receipt |
 | P0：Author legacy Graph source validation | `IMPLEMENTED` | Author 反查 legacy projection，比较 id/revision/fingerprint，加载官方 scenario/diagram；漂移失败关闭 | 只读态视觉提示和显式“创建工作副本”命令 |
-| P0：Remediation 命令闭环 | `IN_PROGRESS` | 领域合同与 UI Router 正在实施 | 同页聚焦、跨页定位、outcome 与浏览器回归 |
+| P0：Remediation 命令闭环 | `IMPLEMENTED` | 21 类已知 gap 有稳定 descriptor；同页/跨页均切换、滚动、聚焦、高亮、写入 URL 并播报 outcome；未知 gap 显式失败 | Picker 自动打开、跨工作区 `NAVIGATED`、权威重算后的 `RESOLVED` |
 | P0：任务指引骨架 | `IN_PROGRESS` | 七步 Step Contract 正在实施 | 页面投影、Next Best Action、i18n |
 | P1：候选资产与 Picker | `IN_PROGRESS` | Provider SPI、候选协议和共享 Combobox 正在实施 | Controller/Capability、Correctness Launcher 和各字段接入 |
 | P1：七步可操作化 | `PLANNED` | 目标控件与完成标准已在方案冻结 | Contract/Owner/Scenario/Fidelity 等目录适配与创建回跳 |
@@ -45,6 +45,19 @@ Author 收到坐标后：
 5. 投影为 `SOURCE_PREVIEW` GraphDraft 并进入 Compose；
 6. 任一身份或拓扑不一致时返回稳定错误，不猜测 latest。
 
+## 阻断处理行为
+
+「处理首个阻断」和右侧 gap 项不再只是切换 Sheet。当前实现根据 `RemediationDescriptor` 执行以下动作：
+
+1. 用稳定 gap code 解析目标 Sheet、字段路径、语义锚点和所需 capability；
+2. 同 Sheet 也会滚动到精确控件并移动键盘焦点，避免视觉 no-op；
+3. 跨 Sheet 先切换步骤，再聚焦并高亮对应字段、要求或行动入口；
+4. URL 保留 `gapCode` 和 `remediationAnchor`，便于诊断与回归；
+5. `aria-live` 播报定位结果；部署无法处理未知 gap 时显式返回失败且不修改数据。
+
+当前 outcome 为 `STILL_BLOCKED` 或 `FAILED`。选择器接入后再增加 `CANCELLED`，跨工作区动作增加
+`NAVIGATED`，保存并读取权威 readiness 后才允许显示 `RESOLVED`。
+
 ## 自动化证据
 
 聚焦测试覆盖：
@@ -54,6 +67,8 @@ Author 收到坐标后：
 - Business Mirror 页面不再生成 Showcase URL；
 - Author seed 解析、source drift、dangling topology；
 - 真实 AuthorCanvas 组件加载 Business Mirror Graph 并关闭首次对话框；
+- 21 个已知 gap descriptor 完整覆盖、未知 gap 安全降级；
+- 当前 Sheet 阻断仍会聚焦/高亮，跨 Sheet 阻断会定位到精确要求；
 - 原有 Business Mirror、Author workspace location 回归。
 
 验证命令：
@@ -64,10 +79,10 @@ npm test -- --run \
   src/shared/workspace-routing/businessMirrorAuthorLink.test.ts \
   src/author/source/businessMirrorGraphSeed.test.ts \
   src/author/shell/authorWorkspaceLocation.test.ts \
+  src/business-mirror/guidance.test.ts \
   src/business-mirror/BusinessMirrorWorkspace.test.tsx
 npx vitest run src/AuthorCanvas.test.tsx -t "opens an exact Business Mirror source"
 npx tsc --noEmit
 ```
 
 全量 `npm test`、`npm run build`、Maven `clean verify` 和真实浏览器 Golden Path 在每轮集成完成后执行；单个切片不能据此宣称整体目标完成。
-

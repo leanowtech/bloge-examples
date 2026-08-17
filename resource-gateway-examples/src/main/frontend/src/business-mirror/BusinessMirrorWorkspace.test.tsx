@@ -90,6 +90,54 @@ describe('Business Mirror Workspace', () => {
     expect(document.querySelectorAll('.business-mirror-task-rail button')).toHaveLength(7);
   });
 
+  it('focuses and highlights a blocker in the current Sheet instead of becoming a visual no-op', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
+
+    await render();
+    await click(button('Resolve first blocker'));
+    await settleFrame();
+
+    const owner = input('Accountable owner');
+    const target = owner.closest<HTMLElement>('[data-remediation-anchor]');
+    expect(document.activeElement).toBe(owner);
+    expect(target?.dataset.remediationAnchor).toBe('business-mirror.problem.owner');
+    expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
+    expect(document.querySelector('[data-testid="business-mirror-remediation-outcome"]')?.textContent)
+      .toContain('exact control is focused and highlighted');
+    expect(new URLSearchParams(window.location.search).get('gapCode')).toBe('ACCOUNTABLE_OWNER_MISSING');
+  });
+
+  it('moves a cross-Sheet blocker to its exact actionable requirement and preserves the coordinate', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
+
+    await render();
+    await click(button('SCENARIO_PACK_MISSING'));
+    await settleFrame();
+
+    const target = document.querySelector<HTMLElement>(
+      '[data-remediation-anchor="business-mirror.scenarios.pack"]',
+    );
+    expect(document.querySelector('.business-mirror-task-rail button[aria-current="step"]')?.textContent)
+      .toContain('4. Freeze scenarios');
+    expect(document.activeElement).toBe(target);
+    expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
+    const params = new URLSearchParams(window.location.search);
+    expect(params.get('task')).toBe('scenarios');
+    expect(params.get('remediationAnchor')).toBe('business-mirror.scenarios.pack');
+  });
+
   it('imports durably, edits business fields, and asks the server for readiness', async () => {
     const stored = storedPackage(projection.packageDraft, 1);
     api.importBusinessMirrorLegacyPackage.mockResolvedValue(saveReceipt(stored));
@@ -436,4 +484,8 @@ async function change(element: HTMLInputElement | HTMLTextAreaElement, value: st
     setter?.call(element, value);
     element.dispatchEvent(new Event('input', { bubbles: true }));
   });
+}
+
+async function settleFrame() {
+  await act(async () => new Promise((resolve) => window.requestAnimationFrame(() => resolve(undefined))));
 }

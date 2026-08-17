@@ -278,7 +278,8 @@ migration、企业身份与 purpose、review authority、测试资产 registry�
 | 6. 检查证据 | 结论、分母和责任债务是否完整 | EvidenceIndex、Fidelity、OwnerTask | 查看五层证据、七维保真度和漂移 |
 | 7. 校准并提交 | 模拟是否拟合真实业务，能否交接治理 | Outcome、ANEKE projection、Pilot manifest | 检查外部事实和不可豁免门禁 |
 
-「处理首个阻断」只定位任务，不会替用户补值或隐藏其他缺口。右侧任务清单保留稳定 gap code，便于
+「处理首个阻断」会定位目标 Sheet 和精确控件，移动焦点、高亮目标并显示结果；它不会替用户补值或
+隐藏其他缺口。右侧任务清单保留稳定 gap code，便于
 跨系统工单、Deep Link 和自动化治理消费。
 
 ## 5. 编排工作区
