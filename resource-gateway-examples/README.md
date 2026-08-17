@@ -94,14 +94,19 @@ plans with a payload-free source map. A Data Lens read model also projects the e
 `TestRunEvidence` in structure-only or payload-visible modes. The test/staging-only Feature
 Rehearsal endpoint now executes an actual BLOGE graph with four `HttpResourceOperator` nodes,
 one pure aggregator, and one pure decision; Capability Studio renders the same Trace as a stable
-6-node/5-edge DAG and Data Lens. The default timeout Case cancels downstream work, exposes zero
-real calls, and never invokes its fail-fast HTTP delegates. The same Feature graph can now be
+6-node/5-edge DAG and Data Lens. In the default timeout Case, the compensation-history attempt is
+retained as `TIMEOUT`, BLOGE applies the declared fallback, and the Feature finishes `PASSED` with
+`MANUAL_REVIEW` and `COMPENSATION_HISTORY_TIMEOUT`; the run still exposes zero real calls and never
+invokes its fail-fast HTTP delegates. The same Feature graph can now be
 wrapped as the canonical Tool binding and executed through the existing
 `OperatorMicroGraphRunner -> TestRunService -> BLOGE nested graph` path; nested fixture selectors
-remain occurrence-addressable and the fail-fast HTTP delegates still observe zero calls. The
+require both `graphPath` and `nodeId`, remain occurrence-addressable, and the fail-fast HTTP delegates
+still observe zero calls. Its composability manifest declares the four exact Resource dependencies,
+so execution target snapshots can distinguish a declared closure from an opaque or empty registry.
+The
 fixed 9 Case x 3 development baseline also runs nine independent business Oracles. These are
 truthfully marked development evidence: SPIKE-A registry publication and same-closure suite
-execution, field-level source maps, certifiable nested dependency closure, deployment network
+execution, field-level source maps, independently certified nested dependency closure, deployment network
 policy, and release Owner sign-off remain incomplete. To disable the Capability Studio sample and
 open the legacy Business Mirror:
 

@@ -134,7 +134,7 @@ Owner 冻结的正确性分母和预期。
 
 脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
 黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线、严格
-Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针固定检查默认超时场景为 6 个节点、5 条边、`TIMED_OUT`、结构权限且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针固定检查默认超时场景为 6 个节点、5 条边：补偿历史节点保留原始 `TIMEOUT` 尝试，BLOGE fallback 后运行终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`，结构权限下不返回 payload 且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
 较长；已有完整 JAR 时可使用 `--no-build`。
 
 需要省略 Capability Studio 样板并直接打开业务镜像时使用：
