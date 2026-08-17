@@ -28,11 +28,12 @@
 - GP-01 至 GP-03 的中文真实 Chrome 烟测，覆盖 1440×900、1024×768 和 390×844；
 - Capability Studio 的 Baseline/Manifest Schema、初始 `NO_GO` fixture 和追踪矩阵。
 - GP-04 的教程分支业务句式编辑器，用户通过条件、表现和持续时间配置超时，无需编辑 Mock JSON；
-- GP-04 的进程内 immutable revision、严格保存协议和隔离预检，以及 409 冲突保留输入、结构化恢复动作和断网分类测试；
+- GP-04 的数据库 head、immutable revision、严格保存协议和隔离预检，以及 409 冲突保留输入、结构化恢复动作和断网分类测试；
+- GP-04 的 SQL 原子 optimistic CAS、同版本并发单赢家、stale 同内容重试幂等、Authority 重建恢复和 Canonical Baseline 漂移失败关闭测试；
 - GP-04 的四份严格 JSON Schema、独立 Test Kit 内容指纹重算和真实 HTTP before/after/preflight 互验；
 - GP-04 中文 1440×900 真实 Chrome 保存与预检烟测。
 
-仍未完成的是持久化 Dataset/Branch Authority 与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、GP-04 英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。
+仍未完成的是持久化 Dataset Authority 与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、GP-04 英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
@@ -78,7 +79,7 @@
 
 所有制品都使用 UTF-8 JSON 或 UTF-8 Markdown。JSON 的 fingerprint 计算使用项目统一的 RFC 8785 JCS canonical bytes，并将自身 `artifactFingerprint` 字段归一化为 `null` 后计算 `sha256:<64 位小写十六进制>`。签署信息仍然参与指纹；只有自身 fingerprint 字段被排除，避免循环引用。
 
-Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-04 Tutorial Branch 已向真实内容寻址迈出第一步：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；Test Kit 会从 before/after 投影重算并校验 digest。当前 Authority 仍是 test/staging 进程内实现，其他 Dataset、Graph、Binding 和运行 material 尚未全部替换为 Authority 内容 fingerprint，因此 Manifest 继续保持 `NO_GO`。
+Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-04 Tutorial Branch 已使用 test/staging 数据库 Authority：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；head 只做 SQL 原子 CAS，revision 只追加，Test Kit 会从 before/after 投影重算并校验 digest。Dataset、Graph、Binding 和运行 material 尚未全部替换为 Authority 内容 fingerprint，因此 Manifest 继续保持 `NO_GO`。
 
 `resource-gateway-test-kit` 已提供 `CapabilityStudioAcceptanceVerifier`。它使用随 JAR 打包的两份权威 Schema 校验结构，并检查 GP/Case 精确集合、Case 类型映射、证据闭包、零真实外呼和签署绑定。运行回归：
 

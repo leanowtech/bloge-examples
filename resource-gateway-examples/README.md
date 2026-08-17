@@ -81,8 +81,9 @@ golden pack exposes four API capabilities, one Feature, one Tool, and nine busin
 scenarios without requiring technical identifiers. Contract and scenario discovery are
 implemented. The tutorial branch also supports a business-sentence timeout edit followed by
 an isolated preflight with zero unresolved dependencies, zero real calls, and no fallback to
-real services. This branch is process-local demo state and resets on restart; Feature/Tool
-execution and release acceptance remain explicitly `NOT_RUN`. To disable the Capability
+real services. The tutorial branch uses a database-backed head plus immutable revisions, so
+saved edits survive application restart and concurrent saves use optimistic revision control.
+Feature/Tool execution and release acceptance remain explicitly `NOT_RUN`. To disable the Capability
 Studio sample and open the legacy Business Mirror:
 
 ```bash
@@ -143,7 +144,7 @@ silently consuming work.
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
 | `http://localhost:8080/api/capability-studio/demo-pack` | Read the test/staging-only payload-free golden demo projection when the Capability Studio sample is enabled |
 | `http://localhost:8080/api/capability-studio/acceptance-baseline` | Read the truthful Stage 0 `NO_GO`/`NOT_RUN` acceptance projection; this is not runtime evidence |
-| `GET http://localhost:8080/api/capability-studio/tutorial-branch` | Read the current process-local tutorial revision and content fingerprint |
+| `GET http://localhost:8080/api/capability-studio/tutorial-branch` | Read the durable tutorial head revision and content fingerprint |
 | `PUT http://localhost:8080/api/capability-studio/tutorial-branch/behaviors/compensation-history` | Save a strict business-shaped timeout behavior with optimistic revision control; test/staging only |
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |

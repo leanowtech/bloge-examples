@@ -1,10 +1,17 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import javax.sql.DataSource;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -16,9 +23,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CapabilityStudioDemoControllerTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final CapabilityStudioGoldenDemoPack pack = new CapabilityStudioGoldenDemoPackLoader().load(mapper);
-    private final MockMvc mvc = MockMvcBuilders
-            .standaloneSetup(new CapabilityStudioDemoController(pack))
-            .build();
+    private MockMvc mvc;
+
+    @BeforeEach
+    void setUp() {
+        JdbcDataSource dataSource = new JdbcDataSource();
+        dataSource.setURL("jdbc:h2:mem:capability-studio-controller-" + System.nanoTime()
+                + ";DB_CLOSE_DELAY=-1;MODE=PostgreSQL");
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        CapabilityStudioTutorialBranchRepository repository =
+                new CapabilityStudioTutorialBranchRepository(jdbc);
+        repository.init();
+        CapabilityStudioTutorialBranchAuthority authority =
+                new CapabilityStudioTutorialBranchAuthority(
+                        repository, pack, mapper,
+                        new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
+        mvc = MockMvcBuilders
+                .standaloneSetup(new CapabilityStudioDemoController(pack, authority))
+                .build();
+    }
 
     @Test
     void projectsBusinessContractSummariesAndScenarioMetadataWithoutMaterialPayload() throws Exception {

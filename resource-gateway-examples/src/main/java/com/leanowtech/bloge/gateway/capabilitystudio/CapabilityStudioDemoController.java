@@ -23,12 +23,14 @@ import java.util.List;
 @ConditionalOnProperty(prefix = "gateway.capability-studio.demo", name = "enabled", havingValue = "true")
 public final class CapabilityStudioDemoController {
     private final CapabilityStudioGoldenDemoPack pack;
-    private final CapabilityStudioTutorialBranchStore tutorialBranch;
+    private final CapabilityStudioTutorialBranchAuthority tutorialBranch;
 
-    /** Creates the projection controller from one already validated pack. */
-    public CapabilityStudioDemoController(CapabilityStudioGoldenDemoPack pack) {
+    /** Creates the projection controller from injected validated pack and durable authority. */
+    public CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch) {
         this.pack = pack;
-        this.tutorialBranch = new CapabilityStudioTutorialBranchStore(pack);
+        this.tutorialBranch = tutorialBranch;
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */
@@ -60,22 +62,23 @@ public final class CapabilityStudioDemoController {
     @PostMapping("/tutorial-branch/preflight")
     public TutorialBranchPreflightProjection preflightTutorialBranch() {
         tutorialBranch.preflight();
-        CapabilityStudioTutorialBranchStore.State current = tutorialBranch.current();
+        CapabilityStudioTutorialBranchAuthority.State current = tutorialBranch.current();
         return new TutorialBranchPreflightProjection(
-                "ISOLATED", 0, 0, false, CapabilityStudioTutorialBranchStore.BRANCH_ID,
+                "ISOLATED", 0, 0, false, CapabilityStudioTutorialBranchAuthority.BRANCH_ID,
                 current.revision(), current.fingerprint());
     }
 
-    private TutorialBranchProjection tutorialBranchProjection(CapabilityStudioTutorialBranchStore.State state) {
-        CapabilityStudioTutorialBranchStore.Behavior value = state.behavior();
+    private TutorialBranchProjection tutorialBranchProjection(
+            CapabilityStudioTutorialBranchAuthority.State state) {
+        CapabilityStudioTutorialBranchAuthority.Behavior value = state.behavior();
         return new TutorialBranchProjection(
-                CapabilityStudioTutorialBranchStore.BRANCH_ID,
+                CapabilityStudioTutorialBranchAuthority.BRANCH_ID,
                 state.revision(),
                 state.fingerprint(),
                 tutorialBranch.canonicalBaselineFingerprint(),
                 new TutorialBranchBehaviorProjection(
-                        CapabilityStudioTutorialBranchStore.DEPENDENCY_ID,
-                        CapabilityStudioTutorialBranchStore.DEPENDENCY_NAME,
+                        CapabilityStudioTutorialBranchAuthority.DEPENDENCY_ID,
+                        CapabilityStudioTutorialBranchAuthority.DEPENDENCY_NAME,
                         value.condition(), value.behavior(), value.durationMs()));
     }
 

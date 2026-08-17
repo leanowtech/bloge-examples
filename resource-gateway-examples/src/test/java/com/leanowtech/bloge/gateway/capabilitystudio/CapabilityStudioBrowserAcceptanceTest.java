@@ -69,9 +69,27 @@ class CapabilityStudioBrowserAcceptanceTest {
         }
 
         @Bean
+        CapabilityStudioTutorialBranchRepository browserTutorialBranchRepository(
+                org.springframework.jdbc.core.JdbcTemplate jdbc) {
+            return new CapabilityStudioTutorialBranchRepository(jdbc);
+        }
+
+        @Bean
+        CapabilityStudioTutorialBranchAuthority browserTutorialBranchAuthority(
+                CapabilityStudioTutorialBranchRepository repository,
+                CapabilityStudioGoldenDemoPack pack,
+                ObjectMapper mapper,
+                org.springframework.transaction.PlatformTransactionManager transactionManager) {
+            return new CapabilityStudioTutorialBranchAuthority(
+                    repository, pack, mapper,
+                    new org.springframework.transaction.support.TransactionTemplate(transactionManager));
+        }
+
+        @Bean
         CapabilityStudioDemoController browserCapabilityStudioDemoController(
-                CapabilityStudioGoldenDemoPack pack) {
-            return new CapabilityStudioDemoController(pack);
+                CapabilityStudioGoldenDemoPack pack,
+                CapabilityStudioTutorialBranchAuthority authority) {
+            return new CapabilityStudioDemoController(pack, authority);
         }
     }
 
