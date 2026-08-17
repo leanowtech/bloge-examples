@@ -69,7 +69,8 @@ valid when its schema and semantic checks both pass; `NO_GO` and `PENDING` are
 truthful, valid artifact states and are not converted into acceptance. The
 verifier enforces exact `GP-01` through `GP-10` coverage, exact `CASE-01` through
 `CASE-09` coverage with the committed canonical case-type mapping, truthful
-aggregate acceptance, and observed `realExternalCallCount == 0` before any
+aggregate acceptance, a recursively key-sorted content fingerprint with the artifact's
+own fingerprint normalized to `null`, and observed `realExternalCallCount == 0` before any
 `APPROVED`/`ACCEPTED` result is accepted. Aggregate acceptance also requires
 non-empty evidence references for every GP/scenario and quality result, an
 observed egress timestamp, and bound sign-off identity/time/signature fields.

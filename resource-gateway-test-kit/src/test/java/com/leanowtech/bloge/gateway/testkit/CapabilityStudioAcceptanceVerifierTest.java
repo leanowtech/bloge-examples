@@ -44,6 +44,7 @@ class CapabilityStudioAcceptanceVerifierTest {
         JsonNode manifest = rootFixture(MANIFEST);
         ObjectNode pendingBaseline = ((ObjectNode) baseline).deepCopy();
         pendingBaseline.put("status", "PENDING");
+        refreshArtifactFingerprint(pendingBaseline);
 
         CapabilityStudioAcceptanceVerifier.VerificationResult baselineResult =
                 verifier.verifyAcceptanceBaseline(baseline);
@@ -60,6 +61,26 @@ class CapabilityStudioAcceptanceVerifierTest {
         assertThat(manifestResult.artifactStatus()).isEqualTo("NO_GO");
         assertThat(baselineResult.errorCode()).isNull();
         assertThat(manifestResult.errorCode()).isNull();
+        assertThat(baselineResult.checks()).contains("ARTIFACT_FINGERPRINT");
+        assertThat(manifestResult.checks()).contains("ARTIFACT_FINGERPRINT");
+    }
+
+    @Test
+    void rejectsTamperedPayloadFreeArtifactsWithSafeFingerprintErrors() throws IOException {
+        ObjectNode baseline = rootFixture(BASELINE).deepCopy();
+        baseline.put("planRef", "docs/tampered-plan.md");
+        ObjectNode manifest = rootFixture(MANIFEST).deepCopy();
+        manifest.put("generatedAt", "2026-08-17T12:00:01Z");
+
+        CapabilityStudioAcceptanceVerifier.VerificationResult baselineResult =
+                verifier.verifyAcceptanceBaseline(baseline);
+        CapabilityStudioAcceptanceVerifier.VerificationResult manifestResult =
+                verifier.verifyGoldenPathAcceptanceManifest(manifest);
+
+        assertThat(baselineResult.errorCode()).isEqualTo(
+                "RG.CAPABILITY_STUDIO.BASELINE_ARTIFACT_FINGERPRINT_MISMATCH");
+        assertThat(manifestResult.errorCode()).isEqualTo(
+                "RG.CAPABILITY_STUDIO.MANIFEST_ARTIFACT_FINGERPRINT_MISMATCH");
     }
 
     @Test
@@ -270,6 +291,11 @@ class CapabilityStudioAcceptanceVerifierTest {
             value.put("signedAt", "2026-08-17T12:00:00Z");
             value.put("signatureRef", "sig-test");
         }
+    }
+
+    private static void refreshArtifactFingerprint(ObjectNode artifact) {
+        artifact.putNull("artifactFingerprint");
+        artifact.put("artifactFingerprint", EvidenceVerificationSupport.sha256(artifact));
     }
 
     private static JsonNode rootFixture(String relativePath) throws IOException {

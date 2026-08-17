@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -19,6 +20,7 @@ import java.util.regex.Pattern;
  * result, so it is suitable for CI and governance logs.</p>
  */
 public final class CapabilityStudioAcceptanceVerifier {
+    private static final int MAXIMUM_ARTIFACT_BYTES = 4 * 1024 * 1024;
     /** The two artifact kinds accepted by this verifier. */
     public enum ArtifactType {
         /** Acceptance baseline v1. */
@@ -102,8 +104,12 @@ public final class CapabilityStudioAcceptanceVerifier {
         if (semanticError != null) {
             return invalid(type, status(value), true, false, semanticError);
         }
+        if (!artifactFingerprintMatches(value)) {
+            return invalid(type, status(value), true, false,
+                    "RG.CAPABILITY_STUDIO.BASELINE_ARTIFACT_FINGERPRINT_MISMATCH");
+        }
         return valid(type, status(value), "BASELINE_SCHEMA", "BASELINE_GATE_COVERAGE",
-                "BASELINE_STATUS_POLICY");
+                "BASELINE_STATUS_POLICY", "ARTIFACT_FINGERPRINT");
     }
 
     /**
@@ -129,8 +135,13 @@ public final class CapabilityStudioAcceptanceVerifier {
         if (semanticError != null) {
             return invalid(type, status(value), true, false, semanticError);
         }
+        if (!artifactFingerprintMatches(value)) {
+            return invalid(type, status(value), true, false,
+                    "RG.CAPABILITY_STUDIO.MANIFEST_ARTIFACT_FINGERPRINT_MISMATCH");
+        }
         return valid(type, status(value), "MANIFEST_SCHEMA", "MANIFEST_GATE_COVERAGE",
-                "MANIFEST_SCENARIO_COVERAGE", "MANIFEST_STATUS_POLICY");
+                "MANIFEST_SCENARIO_COVERAGE", "MANIFEST_STATUS_POLICY",
+                "ARTIFACT_FINGERPRINT");
     }
 
     private static String baselineSemanticError(JsonNode value) {
@@ -382,6 +393,22 @@ public final class CapabilityStudioAcceptanceVerifier {
         } catch (IllegalStateException unavailable) {
             throw unavailable;
         } catch (RuntimeException invalid) {
+            return false;
+        }
+    }
+
+    private static boolean artifactFingerprintMatches(JsonNode value) {
+        if (!(value instanceof ObjectNode source)
+                || !source.path("artifactFingerprint").isTextual()) {
+            return false;
+        }
+        ObjectNode material = source.deepCopy();
+        String declared = material.path("artifactFingerprint").textValue();
+        material.putNull("artifactFingerprint");
+        try {
+            return declared.equals(EvidenceVerificationSupport.sha256Bounded(
+                    material, MAXIMUM_ARTIFACT_BYTES));
+        } catch (IllegalArgumentException invalid) {
             return false;
         }
     }

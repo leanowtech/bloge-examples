@@ -3,7 +3,7 @@
   "baselineId": "capability-studio-baseline-cancellation-fee-v1",
   "revision": 1,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:7da3e1279808a855911be62d4f9ed94135083811f6283e77a595ee815561f833",
+  "artifactFingerprint": "sha256:a7948bb245b61c0ead3dc12822c803eded5c10a008883bcea7d9e76c960f2e44",
   "planRef": "docs/resource-gateway-capability-studio-product-and-technical-evolution-plan.md",
   "scope": {
     "tenantId": "demo-tenant",

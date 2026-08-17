@@ -3,7 +3,7 @@
   "manifestId": "capability-studio-golden-path-initial-no-go",
   "revision": 1,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:a031eae988c26e8ca47e69244c05f59730260661b3b92e041af15168ef5ac160",
+  "artifactFingerprint": "sha256:f5611bdaa5b6afdcfeae53b09eb5e300a9c5f4ea318544a5c8933d9826efee7c",
   "candidateBuildRef": {
     "kind": "BUILD",
     "id": "working-tree-stage0",
