@@ -194,6 +194,7 @@ export interface ScenarioOracle {
 export interface ScenarioBehaviorProfile {
   behaviorRef: ScenarioExactRef;
   dependencyRef: ScenarioExactRef;
+  purpose: 'RUNTIME_CONTROL' | 'BUSINESS_EXPECTATION';
   behavior: ScenarioBehavior;
   summary: string;
 }
@@ -625,10 +626,11 @@ function parseScenarioOracle(value: unknown, path: string): ScenarioOracle {
 }
 
 function parseScenarioBehaviorProfile(value: unknown, path: string): ScenarioBehaviorProfile {
-  const source = strictObject(value, path, ['behaviorRef', 'dependencyRef', 'behavior', 'summary']);
+  const source = strictObject(value, path, ['behaviorRef', 'dependencyRef', 'purpose', 'behavior', 'summary']);
   return {
     behaviorRef: parseScenarioExactRef(source.behaviorRef, `${path}.behaviorRef`, 'BEHAVIOR_PROFILE'),
     dependencyRef: parseScenarioExactRef(source.dependencyRef, `${path}.dependencyRef`),
+    purpose: strictEnum(source.purpose, ['RUNTIME_CONTROL', 'BUSINESS_EXPECTATION'], `${path}.purpose`),
     behavior: strictEnum(source.behavior, scenarioBehaviors, `${path}.behavior`),
     summary: strictString(source.summary, `${path}.summary`, 2000),
   };
@@ -762,6 +764,7 @@ function validateScenarioDatasetSemantics(dataset: ScenarioDataset): void {
       || !scenario.sourceRef
       || !scenario.oracleRef
       || scenario.applicableContractRefs.length === 0
+      || !scenario.behaviorProfiles.some((profile) => profile.purpose === 'RUNTIME_CONTROL')
       || scenario.qualityState !== 'READY'
     )) {
       throw invalidScenarioDataset('Scenario Dataset contains an incomplete active case.');
@@ -782,7 +785,9 @@ function validateScenarioDatasetSemantics(dataset: ScenarioDataset): void {
     && dataset.quality.sourceCoveragePercent === covered((scenario) => Boolean(scenario.sourceRef))
     && dataset.quality.oracleCoveragePercent === covered((scenario) => Boolean(scenario.oracleRef))
     && dataset.quality.contractCoveragePercent === covered((scenario) => scenario.applicableContractRefs.length > 0)
-    && dataset.quality.behaviorClosurePercent === covered((scenario) => scenario.behaviorProfiles.length > 0);
+    && dataset.quality.behaviorClosurePercent === covered((scenario) => (
+      scenario.behaviorProfiles.some((profile) => profile.purpose === 'RUNTIME_CONTROL')
+    ));
   if (!qualityMatches) {
     throw invalidScenarioDataset('Scenario Dataset quality metrics do not match its cases.');
   }

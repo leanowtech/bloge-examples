@@ -48,23 +48,33 @@ class CapabilityStudioScenarioDatasetCompilerTest {
         assertThat(result.draftSet().scenarios())
                 .allSatisfy(scenario -> {
                     assertThat(scenario.given().input()).isInstanceOf(Map.class);
-                    assertThat(scenario.dependencies()).hasSize(1);
+                    assertThat(scenario.dependencies()).hasSize(4);
                     assertThat(scenario.then().assertions()).hasSize(1);
                 });
         assertThat(result.draftSet().scenarios().stream()
-                .map(scenario -> scenario.dependencies().getFirst().behavior().kind()))
+                .flatMap(scenario -> scenario.dependencies().stream())
+                .map(dependency -> dependency.behavior().kind()))
                 .contains(
                         ScenarioDraftSet.BehaviorKind.RETURN,
-                        ScenarioDraftSet.BehaviorKind.TIMEOUT,
-                        ScenarioDraftSet.BehaviorKind.MUST_NOT_CALL);
+                        ScenarioDraftSet.BehaviorKind.TIMEOUT);
         assertThat(result.sourceMap().cases()).hasSize(9);
         assertThat(result.sourceMap().cases()).allSatisfy(source -> {
             assertThat(source.originalCategory()).isNotBlank();
             assertThat(source.caseRef().fingerprint()).startsWith("sha256:");
             assertThat(source.sourceRef().fingerprint()).startsWith("sha256:");
             assertThat(source.oracleRef().fingerprint()).startsWith("sha256:");
-            assertThat(source.behaviors()).hasSize(1);
+            assertThat(source.behaviors()).hasSize(4);
         });
+        assertThat(result.sourceMap().cases().stream()
+                .filter(source -> !source.expectations().isEmpty()).toList())
+                .extracting(CapabilityStudioScenarioDatasetSourceMap.CaseSource::scenarioId)
+                .containsExactly(
+                        "case-duplicate-cancellation",
+                        "case-forbidden-write-effect");
+        assertThat(result.sourceMap().cases().stream()
+                .flatMap(source -> source.expectations().stream())
+                .map(CapabilityStudioScenarioDatasetSourceMap.ExpectationSource::behavior))
+                .containsExactly("RETURN", "MUST_NOT_CALL");
         assertThat(JSON.writeValueAsString(result.sourceMap()))
                 .doesNotContain("given", "expected", "payload", "fixture", "mock");
     }
@@ -180,7 +190,7 @@ class CapabilityStudioScenarioDatasetCompilerTest {
                     null, null, "", 500, Map.of(), "MISMATCH", "ERROR", "", null, "");
             return new CapabilityStudioScenarioDatasetMaterial.CaseMaterial(
                     original.caseRef(), original.sourceRef(), original.oracleRef(), original.given(),
-                    List.of(new CapabilityStudioScenarioDatasetMaterial.DependencyMaterial(
+                    withFirstDependency(original, new CapabilityStudioScenarioDatasetMaterial.DependencyMaterial(
                             dependency.behaviorRef(), dependency.dependencyRef(), dependency.selector(),
                             mismatch, dependency.consumption(), dependency.schemaCheck())),
                     original.assertions());
@@ -389,28 +399,31 @@ class CapabilityStudioScenarioDatasetCompilerTest {
             CapabilityStudioScenarioDatasetMaterial.DependencyMaterial dependency) {
         return new CapabilityStudioScenarioDatasetMaterial.CaseMaterial(
                 original.caseRef(), original.sourceRef(), original.oracleRef(), original.given(),
-                List.of(dependency), original.assertions());
+                withFirstDependency(original, dependency), original.assertions());
+    }
+
+    private List<CapabilityStudioScenarioDatasetMaterial.DependencyMaterial> withFirstDependency(
+            CapabilityStudioScenarioDatasetMaterial.CaseMaterial original,
+            CapabilityStudioScenarioDatasetMaterial.DependencyMaterial dependency) {
+        List<CapabilityStudioScenarioDatasetMaterial.DependencyMaterial> dependencies =
+                new ArrayList<>(original.dependencies());
+        dependencies.set(0, dependency);
+        return dependencies;
     }
 
     private CapabilityStudioScenarioDatasetMaterialResolver resolver() {
         return (ignoredDataset, dataCase) -> {
-            CapabilityStudioScenarioDatasetProjector.BehaviorProfile profile =
-                    dataCase.behaviorProfiles().getFirst();
-            ScenarioDraftSet.DependencyBehavior behavior = switch (profile.behavior()) {
-                case "RETURN", "RETURN_EMPTY", "RETURN_VERSIONED", "IDEMPOTENT" ->
-                        ScenarioDraftSet.DependencyBehavior.returning(Map.of("result", dataCase.caseRef().id()));
-                case "ERROR" -> new ScenarioDraftSet.DependencyBehavior(
-                        ScenarioDraftSet.BehaviorKind.ERROR, ScenarioDraftSet.BehaviorBoundary.NODE,
-                        null, null, "", 422, Map.of(), "CASE_ERROR", "BUSINESS", "", null, "");
-                case "TIMEOUT" -> new ScenarioDraftSet.DependencyBehavior(
-                        ScenarioDraftSet.BehaviorKind.TIMEOUT, ScenarioDraftSet.BehaviorBoundary.NODE,
-                        null, null, "", null, Map.of(), "CASE_TIMEOUT", "TIMEOUT",
-                        "Deterministic test timeout", Duration.ofSeconds(1), "");
-                case "MUST_NOT_CALL", "MUST_NOT_CALL_WRITE" -> new ScenarioDraftSet.DependencyBehavior(
-                        ScenarioDraftSet.BehaviorKind.MUST_NOT_CALL, ScenarioDraftSet.BehaviorBoundary.NODE,
-                        null, null, "", null, Map.of(), "FORBIDDEN_CALL", "DENIED", "", null, "");
-                default -> throw new IllegalArgumentException("unsupported");
-            };
+            List<CapabilityStudioScenarioDatasetMaterial.DependencyMaterial> dependencies =
+                    dataCase.behaviorProfiles().stream()
+                            .filter(profile -> "RUNTIME_CONTROL".equals(profile.purpose()))
+                            .map(profile -> new CapabilityStudioScenarioDatasetMaterial.DependencyMaterial(
+                                    profile.behaviorRef(), profile.dependencyRef(),
+                                    ScenarioDraftSet.DependencySelector.node(
+                                            "node-" + profile.dependencyRef().id()),
+                                    testBehavior(profile.behavior(), dataCase.caseRef().id()),
+                                    ScenarioDraftSet.Consumption.once(),
+                                    ScenarioDraftSet.SchemaCheck.strict()))
+                            .toList();
             ScenarioDraftSet.AssertionDraft assertion = new ScenarioDraftSet.AssertionDraft(
                     "assert-" + dataCase.caseRef().id(), ScenarioDraftSet.AssertionScope.OUTPUT_PATH,
                     "", "", "", "/result", ScenarioDraftSet.AssertionOperator.EXISTS, true, null);
@@ -418,12 +431,29 @@ class CapabilityStudioScenarioDatasetCompilerTest {
                     dataCase.caseRef(), dataCase.sourceRef(), dataCase.oracleRef(),
                     new ScenarioDraftSet.Given(Map.of("caseId", dataCase.caseRef().id()),
                             ScenarioDraftSet.ValueProvenance.IMPORTED),
-                    List.of(new CapabilityStudioScenarioDatasetMaterial.DependencyMaterial(
-                            profile.behaviorRef(), profile.dependencyRef(),
-                            ScenarioDraftSet.DependencySelector.node("node-" + profile.dependencyRef().id()),
-                            behavior, ScenarioDraftSet.Consumption.once(),
-                            ScenarioDraftSet.SchemaCheck.strict())),
+                    dependencies,
                     List.of(assertion));
+        };
+    }
+
+    private static ScenarioDraftSet.DependencyBehavior testBehavior(
+            String behavior,
+            String caseId) {
+        return switch (behavior) {
+            case "RETURN" -> ScenarioDraftSet.DependencyBehavior.returning(
+                    Map.of("result", caseId));
+            case "ERROR" -> new ScenarioDraftSet.DependencyBehavior(
+                    ScenarioDraftSet.BehaviorKind.ERROR, ScenarioDraftSet.BehaviorBoundary.NODE,
+                    null, null, "", 422, Map.of(), "CASE_ERROR", "BUSINESS", "", null, "");
+            case "TIMEOUT" -> new ScenarioDraftSet.DependencyBehavior(
+                    ScenarioDraftSet.BehaviorKind.TIMEOUT, ScenarioDraftSet.BehaviorBoundary.NODE,
+                    null, null, "", null, Map.of(), "CASE_TIMEOUT", "TIMEOUT",
+                    "Deterministic test timeout", Duration.ofSeconds(1), "");
+            case "MUST_NOT_CALL" -> new ScenarioDraftSet.DependencyBehavior(
+                    ScenarioDraftSet.BehaviorKind.MUST_NOT_CALL,
+                    ScenarioDraftSet.BehaviorBoundary.NODE,
+                    null, null, "", null, Map.of(), "FORBIDDEN_CALL", "DENIED", "", null, "");
+            default -> throw new IllegalArgumentException("unsupported");
         };
     }
 
@@ -451,7 +481,8 @@ class CapabilityStudioScenarioDatasetCompilerTest {
                 original.lifecycle(), original.qualityState(), original.owner(), original.sourceRef(),
                 original.source(), original.oracleRef(), original.oracle(), original.applicableContractRefs(),
                 List.of(new CapabilityStudioScenarioDatasetProjector.BehaviorProfile(
-                        profile.behaviorRef(), profile.dependencyRef(), behavior, profile.summary()))));
+                        profile.behaviorRef(), profile.dependencyRef(), profile.purpose(), behavior,
+                        profile.summary()))));
         return projectionWithCases(cases);
     }
 
@@ -476,7 +507,8 @@ class CapabilityStudioScenarioDatasetCompilerTest {
                                 "BEHAVIOR_PROFILE", "sequence-return-profile", 1,
                                 "sha256:0000000000000000000000000000000000000000000000000000000000000000",
                                 first.behaviorRef().authority(), first.behaviorRef().scope()),
-                        first.dependencyRef(), "RETURN", "Second deterministic return");
+                        first.dependencyRef(), first.purpose(), "RETURN",
+                        "Second deterministic return");
         return projectionWithFirstProfiles(List.of(first, second));
     }
 
@@ -522,7 +554,11 @@ class CapabilityStudioScenarioDatasetCompilerTest {
         CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection sequence = sequenceDataset();
         List<CapabilityStudioScenarioDatasetProjector.BehaviorProfile> profiles = new ArrayList<>(
                 sequence.cases().getFirst().behaviorProfiles());
-        profiles.add(dataset.cases().get(1).behaviorProfiles().getFirst());
+        String sequencedDependency = profiles.getFirst().dependencyRef().id();
+        profiles.add(dataset.cases().get(1).behaviorProfiles().stream()
+                .filter(profile -> !sequencedDependency.equals(profile.dependencyRef().id()))
+                .findFirst()
+                .orElseThrow());
         return projectionWithFirstProfiles(profiles);
     }
 

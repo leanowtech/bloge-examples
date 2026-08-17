@@ -210,7 +210,7 @@
     "behaviorProfile": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["behaviorRef", "dependencyRef", "behavior", "summary"],
+      "required": ["behaviorRef", "dependencyRef", "purpose", "behavior", "summary"],
       "properties": {
         "behaviorRef": {
           "allOf": [
@@ -219,6 +219,7 @@
           ]
         },
         "dependencyRef": { "$ref": "#/$defs/exactRef" },
+        "purpose": { "enum": ["RUNTIME_CONTROL", "BUSINESS_EXPECTATION"] },
         "behavior": { "enum": ["RETURN", "ERROR", "DELAY", "TIMEOUT", "REPLAY", "OBSERVE", "MUST_NOT_CALL"] },
         "summary": { "type": "string", "minLength": 1, "maxLength": 2000 }
       }

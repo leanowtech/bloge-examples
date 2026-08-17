@@ -47,8 +47,28 @@ class CapabilityStudioScenarioDatasetProjectorTest {
         assertThat(projection.cases()).allSatisfy(value -> {
             assertThat(value.lifecycle()).isEqualTo("DRAFT");
             assertThat(value.qualityState()).isEqualTo("DESIGNED_NOT_RUN");
-            assertThat(value.behaviorProfiles()).hasSize(1);
+            assertThat(value.behaviorProfiles().stream()
+                    .filter(profile -> "RUNTIME_CONTROL".equals(profile.purpose())))
+                    .hasSize(4)
+                    .extracting(profile -> profile.dependencyRef().id())
+                    .containsExactlyInAnyOrder(
+                            "api-order-lookup",
+                            "api-cancellation-responsibility",
+                            "api-city-pricing-policy",
+                            "api-compensation-history");
         });
+        assertThat(caseById(projection, "case-duplicate-cancellation").behaviorProfiles())
+                .filteredOn(profile -> "BUSINESS_EXPECTATION".equals(profile.purpose()))
+                .singleElement()
+                .satisfies(profile -> {
+                    assertThat(profile.dependencyRef().id())
+                            .isEqualTo("tool-cancellation-fee-dispute-handling");
+                    assertThat(profile.behavior()).isEqualTo("RETURN");
+                });
+        assertThat(caseById(projection, "case-forbidden-write-effect").behaviorProfiles())
+                .filteredOn(profile -> "BUSINESS_EXPECTATION".equals(profile.purpose()))
+                .singleElement()
+                .satisfies(profile -> assertThat(profile.behavior()).isEqualTo("MUST_NOT_CALL"));
         assertThat(projection.quality().totalCaseCount()).isEqualTo(9);
         assertThat(projection.quality().activeCaseCount()).isZero();
         assertThat(projection.quality().staleCaseCount()).isZero();
@@ -151,6 +171,15 @@ class CapabilityStudioScenarioDatasetProjectorTest {
     private CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection projection(
             CapabilityStudioGoldenDemoPack value) {
         return new CapabilityStudioScenarioDatasetProjector(value, JSON).project();
+    }
+
+    private static CapabilityStudioScenarioDatasetProjector.DataCase caseById(
+            CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection projection,
+            String caseId) {
+        return projection.cases().stream()
+                .filter(dataCase -> caseId.equals(dataCase.caseRef().id()))
+                .findFirst()
+                .orElseThrow();
     }
 
     private static List<JsonNode> references(JsonNode tree) {

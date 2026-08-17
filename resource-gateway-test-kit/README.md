@@ -124,6 +124,10 @@ Scenario Dataset projection used by GP-03 and GP-09. It applies the packaged str
 Draft 2020-12 Schema, a 4 MiB wire/canonical limit, recomputes the Dataset content
 fingerprint, and checks full enterprise-scope closure, unique Case/Contract/Behavior
 references, applicable-contract closure, declared quality counts, and `ACTIVE` readiness.
+Each Behavior Profile has an explicit purpose: `RUNTIME_CONTROL` closes an isolated execution
+dependency, while `BUSINESS_EXPECTATION` records an Oracle obligation such as idempotency or
+forbidden writes. Expectations do not increase `behaviorClosurePercent`; a Dataset cannot claim
+runtime closure merely because it describes the expected business result.
 
 ```java
 CapabilityStudioScenarioDatasetVerifier verifier =

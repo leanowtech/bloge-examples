@@ -76,6 +76,13 @@ const scenarioDatasetCaseDefinitions = [
   ['Payment credential appears in dependency response', 'Prevent sensitive payment credential fields from reaching the feature or tool result.', 'SECURITY', 'ACTIVE', 'READY', 'Security review', 'Redact sensitive fields and continue with a safe business explanation.', 'MUST_NOT_CALL'],
 ] as const;
 
+const scenarioRuntimeDependencies = [
+  ['order-lookup', 'Order lookup'],
+  ['responsibility-lookup', 'Responsibility lookup'],
+  ['city-policy-lookup', 'City policy lookup'],
+  ['compensation-history-lookup', 'Compensation history lookup'],
+] as const;
+
 export const scenarioDatasetProjectionFixture = {
   schemaVersion: 'resource-gateway.capability-studio.scenario-dataset.v1',
   datasetRef: scenarioDatasetRef('DATASET', 'cancellation-fee-scenarios', 'd'),
@@ -99,12 +106,30 @@ export const scenarioDatasetProjectionFixture = {
     oracleRef: scenarioDatasetRef('ORACLE', `cancellation-oracle-${index + 1}`, 'b'),
     oracle: { displayName: 'Cancellation dispute business oracle', summary: oracleSummary },
     applicableContractRefs: Array.from({ length: 4 }, (_, contractIndex) => scenarioDatasetRef('CONTRACT', `cancellation-contract-${contractIndex + 1}`, String(contractIndex + 1))),
-    behaviorProfiles: [{
-      behaviorRef: scenarioDatasetRef('BEHAVIOR_PROFILE', `cancellation-behavior-${index + 1}`, 'c'),
-      dependencyRef: scenarioDatasetRef('API', 'cancellation-dependency', 'f'),
-      behavior,
-      summary: behavior === 'TIMEOUT' ? 'The compensation history dependency times out; the case must be reviewed by a person.' : 'The dependency returns the governed behavior for this business case.',
-    }],
+    behaviorProfiles: [
+      ...scenarioRuntimeDependencies.map(([dependencyId, dependencyName], dependencyIndex) => {
+        const isSpecialDependency = (behavior === 'TIMEOUT' && dependencyId === 'compensation-history-lookup')
+          || (behavior === 'ERROR' && dependencyId === 'city-policy-lookup')
+          || (behavior === 'MUST_NOT_CALL' && dependencyId === 'order-lookup');
+        const effectiveBehavior = isSpecialDependency ? behavior : 'RETURN';
+        return {
+          behaviorRef: scenarioDatasetRef('BEHAVIOR_PROFILE', `cancellation-behavior-${index + 1}-${dependencyId}`, String(dependencyIndex + 1)),
+          dependencyRef: scenarioDatasetRef('API', dependencyId, String(dependencyIndex + 5)),
+          purpose: 'RUNTIME_CONTROL' as const,
+          behavior: effectiveBehavior,
+          summary: effectiveBehavior === 'RETURN'
+            ? `${dependencyName} returns its canonical baseline response.`
+            : `${dependencyName} uses the governed ${effectiveBehavior.toLowerCase()} behavior for this case.`,
+        };
+      }),
+      ...(index === 7 ? [{
+        behaviorRef: scenarioDatasetRef('BEHAVIOR_PROFILE', 'cancellation-expectation-idempotent-tool', '9'),
+        dependencyRef: scenarioDatasetRef('TOOL', 'cancellation-resolution', 'e'),
+        purpose: 'BUSINESS_EXPECTATION' as const,
+        behavior: 'RETURN',
+        summary: 'Repeated requests must return the same governed explanation and action.',
+      }] : []),
+    ],
   })),
   quality: {
     status: 'READY',

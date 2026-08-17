@@ -127,6 +127,11 @@ public final class CapabilityStudioScenarioDatasetCompiler {
                     dataCase.oracleRef(),
                     dataCase.applicableContractRefs(),
                     behaviorSources,
+                    dataCase.behaviorProfiles().stream()
+                            .filter(profile -> "BUSINESS_EXPECTATION".equals(profile.purpose()))
+                            .map(profile -> new CapabilityStudioScenarioDatasetSourceMap.ExpectationSource(
+                                    profile.behaviorRef(), profile.dependencyRef(), profile.behavior()))
+                            .toList(),
                     material.assertions().stream()
                             .map(ScenarioDraftSet.AssertionDraft::assertionId)
                             .toList()));
@@ -228,6 +233,10 @@ public final class CapabilityStudioScenarioDatasetCompiler {
                         || !behaviorRefs.add(identity(profile.behaviorRef()))) {
                     fail("DUPLICATE_BEHAVIOR", profilePath + "/behaviorRef");
                 }
+                if (!Set.of("RUNTIME_CONTROL", "BUSINESS_EXPECTATION")
+                        .contains(profile.purpose())) {
+                    fail("BEHAVIOR_PURPOSE_INVALID", profilePath + "/purpose");
+                }
             }
         }
     }
@@ -280,7 +289,9 @@ public final class CapabilityStudioScenarioDatasetCompiler {
         }
         Map<String, CapabilityStudioScenarioDatasetProjector.BehaviorProfile> profiles = new LinkedHashMap<>();
         for (CapabilityStudioScenarioDatasetProjector.BehaviorProfile profile : dataCase.behaviorProfiles()) {
-            profiles.put(identity(profile.behaviorRef()), profile);
+            if ("RUNTIME_CONTROL".equals(profile.purpose())) {
+                profiles.put(identity(profile.behaviorRef()), profile);
+            }
         }
         if (profiles.size() != material.dependencies().size()
                 || material.dependencies().isEmpty()) {
@@ -380,6 +391,7 @@ public final class CapabilityStudioScenarioDatasetCompiler {
             CapabilityStudioScenarioDatasetProjector.DataCase dataCase,
             CapabilityStudioScenarioDatasetProjector.ExactRef behaviorRef) {
         return dataCase.behaviorProfiles().stream()
+                .filter(profile -> "RUNTIME_CONTROL".equals(profile.purpose()))
                 .filter(profile -> same(profile.behaviorRef(), behaviorRef))
                 .findFirst()
                 .orElseThrow(() -> new CapabilityStudioScenarioDatasetCompilationException(

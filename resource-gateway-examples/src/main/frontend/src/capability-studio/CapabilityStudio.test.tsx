@@ -80,11 +80,17 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('Cancellation fee dispute scenario dataset');
     expect(document.body.textContent).toContain('Owner coverage');
     expect(document.body.textContent).toContain('Business goal');
+    expect(document.body.textContent).toContain('Isolated runtime controls');
+    expect(document.body.textContent).toContain('Business correctness expectations');
+    expect(document.body.textContent).toContain('Business result is checked by the Oracle');
+    expect(query('[data-testid="capability-scenario-details"]').textContent).toContain('Order lookup');
     expect(document.body.textContent).not.toContain('payload');
     await act(async () => buttonWithText('Compensation history times out').click());
     expect(document.body.textContent).toContain('Stop automatic decisioning and route the case to human review.');
     expect(document.body.textContent).toContain('Exact technical references');
     expect(document.querySelectorAll('details[open]')).toHaveLength(0);
+    await act(async () => buttonWithText('Duplicate fee incident regression').click());
+    expect(document.body.textContent).toContain('Repeated requests must return the same governed explanation and action.');
     const search = query<HTMLInputElement>('input[placeholder="Search business scenario, owner, or expected result"]');
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;

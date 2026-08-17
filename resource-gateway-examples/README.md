@@ -84,9 +84,11 @@ an isolated preflight with zero unresolved dependencies, zero real calls, and no
 real services. The tutorial branch uses a database-backed head plus immutable revisions, so
 saved edits survive application restart and concurrent saves use optimistic revision control.
 The Stage 0 Dataset compiler deterministically adapts all nine Cases to the existing
-`ScenarioDraftSet` model, preserves RETURN, ERROR, TIMEOUT, ordered consumption, and
-`MUST_NOT_CALL`, and rejects real fallback, ambiguous selectors, incomplete exact references,
-or unsupported lowerings. The governed adapter now delegates to the existing
+`ScenarioDraftSet` model. Every Case carries a complete four-API `RUNTIME_CONTROL` set; idempotency
+and forbidden-write obligations remain separate `BUSINESS_EXPECTATION` metadata and are not
+miscompiled as fixtures over the Tool itself. The compiler preserves RETURN, ERROR, TIMEOUT,
+ordered consumption, and `MUST_NOT_CALL`, and rejects real fallback, ambiguous selectors,
+incomplete exact references, or unsupported lowerings. The governed adapter delegates to the existing
 `ScenarioGovernedCompiler` and deterministically produces FixtureBundle/TestSuite registration
 plans with a payload-free source map. A Data Lens read model also projects the existing
 `TestRunEvidence` in structure-only or payload-visible modes. The test/staging-only Feature
@@ -150,6 +152,15 @@ attestation store, and immutable payload-free equality policy.
 managed signer, enterprise root-policy trust, and online egress authority
 unavailable, so worker and end-to-end serving readiness remain false instead of
 silently consuming work.
+
+For frontend-only development, `npm run dev` proxies `/api` and `/admin` to
+`http://localhost:8080` by default. Point it at an existing demo instance or another
+worktree without starting a second database-backed server:
+
+```bash
+cd resource-gateway-examples/src/main/frontend
+VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
+```
 
 | Open | Best first move |
 | --- | --- |

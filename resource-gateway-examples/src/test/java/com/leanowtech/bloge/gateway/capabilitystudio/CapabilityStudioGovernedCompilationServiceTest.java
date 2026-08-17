@@ -155,7 +155,8 @@ class CapabilityStudioGovernedCompilationServiceTest {
                         source.kind(), source.id(), source.revision(), source.fingerprint(), "", source.scope());
         CapabilityStudioScenarioDatasetSourceMap.CaseSource replaced = new CapabilityStudioScenarioDatasetSourceMap.CaseSource(
                 first.scenarioId(), first.originalCategory(), first.compiledCaseType(), first.caseRef(),
-                unauthorized, first.oracleRef(), first.contractRefs(), first.behaviors(), first.assertionIds());
+                unauthorized, first.oracleRef(), first.contractRefs(), first.behaviors(),
+                first.expectations(), first.assertionIds());
         List<CapabilityStudioScenarioDatasetSourceMap.CaseSource> cases =
                 new ArrayList<>(adapterCompilation().sourceMap().cases());
         cases.set(0, replaced);
@@ -219,6 +220,7 @@ class CapabilityStudioGovernedCompilationServiceTest {
             CapabilityStudioScenarioDatasetProjector.DataCase dataCase) {
         List<CapabilityStudioScenarioDatasetMaterial.DependencyMaterial> dependencies = dataCase.behaviorProfiles()
                 .stream()
+                .filter(profile -> "RUNTIME_CONTROL".equals(profile.purpose()))
                 .map(profile -> new CapabilityStudioScenarioDatasetMaterial.DependencyMaterial(
                         profile.behaviorRef(), profile.dependencyRef(),
                         new ScenarioDraftSet.DependencySelector(

@@ -39,7 +39,19 @@ describe('Capability Studio backend projection adapter', () => {
     expect(result.cases).toHaveLength(9);
     expect(result.datasetRef.scope).toMatchObject({ tenantId: 'tenant-demo', environmentId: 'demo' });
     expect(result.cases.every((scenario) => scenario.caseRef.scope.region === 'ap-southeast-1')).toBe(true);
-    expect(result.cases[4].behaviorProfiles[0].behavior).toBe('TIMEOUT');
+    expect(result.cases[4].behaviorProfiles).toEqual(expect.arrayContaining([
+      expect.objectContaining({ behavior: 'TIMEOUT', purpose: 'RUNTIME_CONTROL' }),
+    ]));
+  });
+
+  it('does not accept a business expectation as runtime-control quality closure', () => {
+    const expectationOnly = structuredClone(scenarioDatasetProjectionFixture);
+    expectationOnly.cases[0].behaviorProfiles.forEach((profile) => {
+      (profile as { purpose: string }).purpose = 'BUSINESS_EXPECTATION';
+    });
+    expect(() => parseScenarioDatasetProjection(expectationOnly)).toThrow(
+      'incomplete active case',
+    );
   });
 
   it('rejects unknown fields and incomplete exact-ref scope instead of accepting a partial projection', () => {

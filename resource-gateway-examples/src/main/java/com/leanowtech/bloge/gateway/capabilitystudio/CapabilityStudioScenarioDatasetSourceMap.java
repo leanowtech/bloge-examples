@@ -26,6 +26,7 @@ public record CapabilityStudioScenarioDatasetSourceMap(
             CapabilityStudioScenarioDatasetProjector.ExactRef oracleRef,
             List<CapabilityStudioScenarioDatasetProjector.ExactRef> contractRefs,
             List<BehaviorSource> behaviors,
+            List<ExpectationSource> expectations,
             List<String> assertionIds) {
 
         public CaseSource {
@@ -33,6 +34,7 @@ public record CapabilityStudioScenarioDatasetSourceMap(
             originalCategory = originalCategory == null ? "" : originalCategory.trim();
             contractRefs = contractRefs == null ? List.of() : List.copyOf(contractRefs);
             behaviors = behaviors == null ? List.of() : List.copyOf(behaviors);
+            expectations = expectations == null ? List.of() : List.copyOf(expectations);
             assertionIds = assertionIds == null ? List.of() : List.copyOf(assertionIds);
         }
     }
@@ -45,6 +47,16 @@ public record CapabilityStudioScenarioDatasetSourceMap(
             String behavior) {
         public BehaviorSource {
             ruleId = ruleId == null ? "" : ruleId.trim();
+            behavior = behavior == null ? "" : behavior.trim();
+        }
+    }
+
+    /** Payload-free business obligation retained without lowering it into a fixture rule. */
+    public record ExpectationSource(
+            CapabilityStudioScenarioDatasetProjector.ExactRef behaviorRef,
+            CapabilityStudioScenarioDatasetProjector.ExactRef dependencyRef,
+            String behavior) {
+        public ExpectationSource {
             behavior = behavior == null ? "" : behavior.trim();
         }
     }

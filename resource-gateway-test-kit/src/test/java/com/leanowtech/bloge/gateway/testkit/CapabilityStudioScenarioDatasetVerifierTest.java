@@ -125,6 +125,18 @@ class CapabilityStudioScenarioDatasetVerifierTest {
     }
 
     @Test
+    void doesNotCountABusinessExpectationAsRuntimeControlClosure() {
+        ObjectNode dataset = activeDataset();
+        ObjectNode profile = (ObjectNode) dataset.path("cases").get(0)
+                .path("behaviorProfiles").get(0);
+        profile.put("purpose", "BUSINESS_EXPECTATION");
+        refreshFingerprint(dataset);
+
+        assertSemanticFailure(dataset, "QUALITY_COUNTS",
+                "RG.CAPABILITY_STUDIO.SCENARIO_DATASET_QUALITY_COVERAGE_MISMATCH");
+    }
+
+    @Test
     void rejectsAnApplicableContractOutsideTheDatasetContractClosure() {
         ObjectNode dataset = activeDataset();
         ObjectNode foreign = exactRef("CONTRACT", "contract-foreign");
@@ -322,6 +334,7 @@ class CapabilityStudioScenarioDatasetVerifierTest {
             ObjectNode behavior = JSON.createObjectNode();
             behavior.set("behaviorRef", exactRef("BEHAVIOR_PROFILE", "behavior-" + id));
             behavior.set("dependencyRef", exactRef("API", "api-order-query"));
+            behavior.put("purpose", "RUNTIME_CONTROL");
             behavior.put("behavior", "RETURN");
             behavior.put("summary", "返回脱敏的订单查询结果");
             behaviors.add(behavior);

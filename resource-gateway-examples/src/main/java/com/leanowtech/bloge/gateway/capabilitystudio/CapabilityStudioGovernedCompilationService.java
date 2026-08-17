@@ -152,6 +152,14 @@ public final class CapabilityStudioGovernedCompilationService {
                 requireExactRef(behavior.dependencyRef(), draftSet.scope(),
                         "/sourceMap/cases/behaviors/dependencyRef");
             });
+            source.expectations().forEach(expectation -> {
+                require(expectation != null && !expectation.behavior().isBlank(),
+                        "SOURCE_EXPECTATION_CLOSURE", "/sourceMap/cases/expectations");
+                requireExactRef(expectation.behaviorRef(), draftSet.scope(),
+                        "/sourceMap/cases/expectations/behaviorRef");
+                requireExactRef(expectation.dependencyRef(), draftSet.scope(),
+                        "/sourceMap/cases/expectations/dependencyRef");
+            });
         }
         require(scenarioIds.equals(draftSet.scenarios().stream()
                         .map(ScenarioDraftSet.ScenarioDraft::scenarioId).collect(java.util.stream.Collectors.toSet())),

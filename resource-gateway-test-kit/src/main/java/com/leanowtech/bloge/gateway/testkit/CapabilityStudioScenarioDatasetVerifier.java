@@ -276,7 +276,7 @@ public final class CapabilityStudioScenarioDatasetVerifier {
             if (!dataCase.path("applicableContractRefs").isEmpty()) {
                 contracts++;
             }
-            if (dataCase.path("behaviorProfiles").size() > 0) {
+            if (hasRuntimeControl(dataCase.path("behaviorProfiles"))) {
                 behaviors++;
             }
         }
@@ -320,6 +320,15 @@ public final class CapabilityStudioScenarioDatasetVerifier {
             int total) {
         int expected = total == 0 ? 0 : (int) Math.round(covered * 100.0 / total);
         return quality.path(field).asInt(Integer.MIN_VALUE) == expected;
+    }
+
+    private static boolean hasRuntimeControl(JsonNode behaviorProfiles) {
+        for (JsonNode profile : behaviorProfiles) {
+            if ("RUNTIME_CONTROL".equals(profile.path("purpose").asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static List<JsonNode> allReferences(JsonNode projection) {

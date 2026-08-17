@@ -63,7 +63,7 @@ public final class CapabilityStudioScenarioDatasetProjector {
 
         List<DataCase> cases = pack.scenarios().stream()
                 .sorted(Comparator.comparing(CapabilityStudioGoldenDemoPack.TestScenario::id))
-                .map(this::dataCase)
+                .map(scenario -> dataCase(pack, scenario))
                 .toList();
         List<ExactRef> contractRefs = contractRefs(pack);
         Quality quality = quality(cases);
@@ -93,8 +93,10 @@ public final class CapabilityStudioScenarioDatasetProjector {
                 material.quality());
     }
 
-    private DataCase dataCase(CapabilityStudioGoldenDemoPack.TestScenario scenario) {
-        List<BehaviorProfile> profiles = behaviorProfiles(scenario);
+    private DataCase dataCase(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioGoldenDemoPack.TestScenario scenario) {
+        List<BehaviorProfile> profiles = behaviorProfiles(pack, scenario);
         DataCase material = new DataCase(
                 caseRef(scenario, null),
                 scenario.name(),
@@ -129,33 +131,70 @@ public final class CapabilityStudioScenarioDatasetProjector {
     }
 
     private List<BehaviorProfile> behaviorProfiles(
+            CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioGoldenDemoPack.TestScenario scenario) {
         Map<String, Integer> occurrences = new HashMap<>();
-        return scenario.dependencyBehaviors().stream()
+        List<BehaviorProfile> controls = pack.apiCapabilities().stream()
+                .sorted(Comparator.comparing(CapabilityStudioGoldenDemoPack.Capability::id))
+                .map(capability -> {
+                    List<CapabilityStudioGoldenDemoPack.DependencyBehavior> overrides =
+                            scenario.dependencyBehaviors().stream()
+                                    .filter(behavior -> capability.ref().equals(
+                                            behavior.dependencyRef()))
+                                    .toList();
+                    if (overrides.size() > 1) {
+                        throw new IllegalStateException(
+                                "Scenario declares multiple controls for API: " + capability.id());
+                    }
+                    CapabilityStudioGoldenDemoPack.DependencyBehavior behavior = overrides.isEmpty()
+                            ? new CapabilityStudioGoldenDemoPack.DependencyBehavior(
+                            capability.ref(), "RETURN",
+                            "使用 Canonical Baseline 的正常返回表现。")
+                            : overrides.getFirst();
+                    return behaviorProfile(
+                            scenario, behavior, "RUNTIME_CONTROL", occurrences);
+                })
+                .toList();
+        List<BehaviorProfile> expectations = scenario.dependencyBehaviors().stream()
+                .filter(behavior -> !"API".equals(behavior.dependencyRef().kind()))
                 .sorted(Comparator.comparing((CapabilityStudioGoldenDemoPack.DependencyBehavior value)
                                 -> value.dependencyRef().kind())
                         .thenComparing(value -> value.dependencyRef().id())
                         .thenComparing(CapabilityStudioGoldenDemoPack.DependencyBehavior::behavior)
                         .thenComparing(CapabilityStudioGoldenDemoPack.DependencyBehavior::summary))
-                .map(behavior -> {
-                    CapabilityStudioGoldenDemoPack.ExactRef dependency = behavior.dependencyRef();
-                    String baseId = "behavior-profile-" + scenario.id() + "-"
-                            + dependency.kind().toLowerCase() + "-" + dependency.id();
-                    int occurrence = occurrences.merge(baseId, 1, Integer::sum);
-                    String id = occurrence == 1 ? baseId : baseId + "-" + occurrence;
-                    BehaviorProfile material = new BehaviorProfile(
-                            new ExactRef("BEHAVIOR_PROFILE", id, scenario.ref().revision(), null,
-                                    PACK_AUTHORITY, SCOPE),
-                            exactRef(dependency),
-                            behaviorKind(behavior.behavior()),
-                            behavior.summary());
-                    return new BehaviorProfile(
-                            withFingerprint(material.behaviorRef(), fingerprint(material, "behaviorRef")),
-                            material.dependencyRef(),
-                            material.behavior(),
-                            material.summary());
-                })
+                .map(behavior -> behaviorProfile(
+                        scenario, behavior, "BUSINESS_EXPECTATION", occurrences))
                 .toList();
+        List<BehaviorProfile> profiles = new ArrayList<>(controls.size() + expectations.size());
+        profiles.addAll(controls);
+        profiles.addAll(expectations);
+        return List.copyOf(profiles);
+    }
+
+    private BehaviorProfile behaviorProfile(
+            CapabilityStudioGoldenDemoPack.TestScenario scenario,
+            CapabilityStudioGoldenDemoPack.DependencyBehavior behavior,
+            String purpose,
+            Map<String, Integer> occurrences) {
+        CapabilityStudioGoldenDemoPack.ExactRef dependency = behavior.dependencyRef();
+        String baseId = "behavior-profile-" + scenario.id() + "-"
+                + purpose.toLowerCase() + "-"
+                + dependency.kind().toLowerCase() + "-" + dependency.id();
+        int occurrence = occurrences.merge(baseId, 1, Integer::sum);
+        String id = occurrence == 1 ? baseId : baseId + "-" + occurrence;
+        BehaviorProfile material = new BehaviorProfile(
+                new ExactRef("BEHAVIOR_PROFILE", id, scenario.ref().revision(), null,
+                        PACK_AUTHORITY, SCOPE),
+                exactRef(dependency),
+                purpose,
+                behaviorKind(behavior.behavior()),
+                behavior.summary());
+        return new BehaviorProfile(
+                withFingerprint(material.behaviorRef(), fingerprint(material, "behaviorRef")),
+                material.dependencyRef(),
+                material.purpose(),
+                material.behavior(),
+                material.summary());
     }
 
     private List<ExactRef> contractRefs(CapabilityStudioGoldenDemoPack pack) {
@@ -190,7 +229,9 @@ public final class CapabilityStudioScenarioDatasetProjector {
                 coverage(cases, DataCase::sourceRef),
                 coverage(cases, DataCase::oracleRef),
                 coverage(cases, value -> value.applicableContractRefs().isEmpty() ? null : value),
-                coverage(cases, value -> value.behaviorProfiles().isEmpty() ? null : value));
+                coverage(cases, value -> value.behaviorProfiles().stream()
+                        .anyMatch(profile -> "RUNTIME_CONTROL".equals(profile.purpose()))
+                        ? value : null));
     }
 
     private static int coverage(List<DataCase> cases, java.util.function.Function<DataCase, Object> value) {
@@ -360,6 +401,7 @@ public final class CapabilityStudioScenarioDatasetProjector {
     public record BehaviorProfile(
             ExactRef behaviorRef,
             ExactRef dependencyRef,
+            String purpose,
             String behavior,
             String summary) {
     }
