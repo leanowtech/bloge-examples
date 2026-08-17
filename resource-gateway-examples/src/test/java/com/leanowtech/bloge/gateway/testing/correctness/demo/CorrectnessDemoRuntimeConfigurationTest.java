@@ -51,7 +51,7 @@ class CorrectnessDemoRuntimeConfigurationTest {
                             new ReferenceScope(
                                     "tenant-a", "knowledge-governance", "tool-studio", "test", "local")))
                             .extracting(candidate -> candidate.kind())
-                            .contains("BUSINESS_DOMAIN", "PACKAGE_CONTRACT", "SCENARIO_PACK");
+                            .contains("BUSINESS_DOMAIN", "CONTRACT", "SCENARIO_PACK");
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                                     true, false, false, false, false, false,

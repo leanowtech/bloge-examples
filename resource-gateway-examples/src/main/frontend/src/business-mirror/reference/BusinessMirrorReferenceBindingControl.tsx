@@ -135,8 +135,7 @@ export default function BusinessMirrorReferenceBindingControl({
         </div>
       )}
       <BusinessMirrorReferenceField
-        acceptedKinds={field === 'carrier' || field === 'channel'
-          ? businessMirrorBindableCandidateKinds(field) : undefined}
+        acceptedKinds={businessMirrorBindableCandidateKinds(field)}
         capabilityAvailable={capabilityAvailable}
         clearable
         disabled={!editable || state === 'resolving'}

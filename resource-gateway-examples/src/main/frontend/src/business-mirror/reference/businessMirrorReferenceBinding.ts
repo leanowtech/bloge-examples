@@ -42,8 +42,11 @@ export const BUSINESS_MIRROR_REFERENCE_KINDS: Record<BusinessMirrorReferenceFiel
 };
 
 const BINDABLE_CANDIDATE_KINDS: Partial<Record<BusinessMirrorReferenceField, readonly string[]>> = {
+  contract: ['CONTRACT'],
+  effectModel: ['EFFECT_CONTRACT', 'WRITE_EFFECT'],
   carrier: ['SOP', 'AGENT', 'WORKFLOW'],
   channel: ['CHANNEL_APPLICATION'],
+  fidelityInventory: ['DOMAIN_FIDELITY_INVENTORY'],
 };
 
 export function businessMirrorBindableCandidateKinds(

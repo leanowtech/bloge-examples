@@ -38,6 +38,23 @@ describe('businessMirrorReferenceBinding', () => {
     expect(referenceBindingIntent('scenarioPack')).toBe('BIND_SCENARIO_PACK');
   });
 
+  it('persists concrete package artifact kinds returned by catalog-family searches', () => {
+    const contract = applyResolvedBusinessMirrorReference(
+      minimalDraft(), 'contract', resolved(candidate('CONTRACT', 'loan-contract', 'Loan contract')),
+    );
+    const effects = applyResolvedBusinessMirrorReference(
+      contract, 'effectModel', resolved(candidate('EFFECT_CONTRACT', 'loan-effects', 'Loan effects')),
+    );
+    const fidelity = applyResolvedBusinessMirrorReference(
+      effects, 'fidelityInventory',
+      resolved(candidate('DOMAIN_FIDELITY_INVENTORY', 'loan-fidelity', 'Loan fidelity')),
+    );
+
+    expect(fidelity.packageContractRef?.kind).toBe('CONTRACT');
+    expect(fidelity.effectModelRefs[0]?.kind).toBe('EFFECT_CONTRACT');
+    expect(fidelity.fidelityInventoryRef?.kind).toBe('DOMAIN_FIDELITY_INVENTORY');
+  });
+
   it('keeps drift, forbidden, not-found, and kind mismatch fail closed', () => {
     const draft = minimalDraft();
     for (const status of ['DRIFTED', 'FORBIDDEN', 'NOT_FOUND'] as const) {

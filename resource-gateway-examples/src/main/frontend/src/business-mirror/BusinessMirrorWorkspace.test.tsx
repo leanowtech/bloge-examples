@@ -704,8 +704,11 @@ function demoReference(kind: string): ReferenceCandidate {
     OUTCOME_DEFINITION: ['loan-outcomes', 'Loan decision outcomes'],
   };
   const [id, displayName] = values[kind] ?? [`${kind.toLowerCase()}-id`, kind];
-  const candidateKind = kind === 'SERVICE_CARRIER' ? 'AGENT'
-    : kind === 'CHANNEL' ? 'CHANNEL_APPLICATION' : kind;
+  const candidateKind = kind === 'PACKAGE_CONTRACT' ? 'CONTRACT'
+    : kind === 'EFFECT_MODEL' ? 'EFFECT_CONTRACT'
+      : kind === 'FIDELITY_INVENTORY' ? 'DOMAIN_FIDELITY_INVENTORY'
+        : kind === 'SERVICE_CARRIER' ? 'AGENT'
+          : kind === 'CHANNEL' ? 'CHANNEL_APPLICATION' : kind;
   return {
     schemaVersion: 'bloge.referenceCandidate.v1', kind: candidateKind, id, displayName,
     description: `${displayName} description`, revision: 1,

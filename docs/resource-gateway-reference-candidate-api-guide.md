@@ -74,10 +74,18 @@ X-Purpose: CORRECTNESS_READ
 
 `owner.stableId` 是可持久化身份。`owner.displayName` 只用于展示。
 
-`kind` 查询条件与候选 `kind` 有意区分“目录族”和“可持久化领域类型”。`SERVICE_CARRIER` 查询返回
-`SOP / AGENT / WORKFLOW`，`CHANNEL` 查询返回 `CHANNEL_APPLICATION`。调用方必须保存候选返回的具体 `kind`，
-不能把查询族名写入 `BusinessAssetRef`。这样同一个筛选器可以搜索一组业务资产，同时 Package 仍保持严格的
-L0-L3 kind/layer 契约。
+`kind` 查询条件与候选 `kind` 有意区分“目录族”和“可持久化领域类型”。目录族与具体类型的映射为：
+
+| 查询目录族 | 返回的可持久化类型 |
+|---|---|
+| `PACKAGE_CONTRACT` | `CONTRACT` |
+| `EFFECT_MODEL` | `EFFECT_CONTRACT / WRITE_EFFECT` |
+| `FIDELITY_INVENTORY` | `DOMAIN_FIDELITY_INVENTORY` |
+| `SERVICE_CARRIER` | `SOP / AGENT / WORKFLOW` |
+| `CHANNEL` | `CHANNEL_APPLICATION` |
+
+调用方必须保存候选返回的具体 `kind`，不能把查询族名写入 `MirrorArtifactRef` 或 `BusinessAssetRef`。这样同一个
+筛选器可以搜索一组业务资产，同时 Package 仍保持严格的 artifact kind 与 L0-L3 kind/layer 契约。
 
 ## 3. 正确性 Target 与 Definition
 

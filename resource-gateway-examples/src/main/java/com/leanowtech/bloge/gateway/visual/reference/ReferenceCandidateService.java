@@ -145,6 +145,10 @@ public final class ReferenceCandidateService {
             return true;
         }
         return switch (requestedKind) {
+            case "PACKAGE_CONTRACT" -> "CONTRACT".equals(candidateKind);
+            case "EFFECT_MODEL" -> "EFFECT_CONTRACT".equals(candidateKind)
+                    || "WRITE_EFFECT".equals(candidateKind);
+            case "FIDELITY_INVENTORY" -> "DOMAIN_FIDELITY_INVENTORY".equals(candidateKind);
             case "SERVICE_CARRIER" -> SERVICE_CARRIER_KINDS.contains(candidateKind);
             case "CHANNEL" -> "CHANNEL_APPLICATION".equals(candidateKind);
             default -> false;

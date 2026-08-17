@@ -57,7 +57,7 @@ describe('BusinessMirrorReferenceBindingControl', () => {
       .toHaveBeenCalledWith(selected, 'BIND_CONTRACT');
     expect(onDraft).toHaveBeenCalledWith(expect.objectContaining({
       packageContractRef: {
-        kind: 'PACKAGE_CONTRACT', id: 'loan-contract', revision: 3,
+        kind: 'CONTRACT', id: 'loan-contract', revision: 3,
         fingerprint: selected.fingerprint,
       },
     }));
@@ -122,7 +122,7 @@ describe('BusinessMirrorReferenceBindingControl', () => {
 
 function candidate(): ReferenceCandidate {
   return {
-    schemaVersion: 'bloge.referenceCandidate.v1', kind: 'PACKAGE_CONTRACT',
+    schemaVersion: 'bloge.referenceCandidate.v1', kind: 'CONTRACT',
     id: 'loan-contract', displayName: 'Loan contract', description: 'Metadata only.',
     revision: 3, fingerprint: fingerprint('loan-contract'), authority: 'test://business-catalog',
     scope: {

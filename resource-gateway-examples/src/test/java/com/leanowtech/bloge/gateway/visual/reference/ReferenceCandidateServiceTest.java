@@ -58,6 +58,28 @@ class ReferenceCandidateServiceTest {
     }
 
     @Test
+    void catalogFamiliesReturnOnlyConcretePersistablePackageArtifactKinds() {
+        provider.add(candidate("CONTRACT", "loan-contract", "Loan contract",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("EFFECT_CONTRACT", "loan-effects", "Loan effects",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("WRITE_EFFECT", "manual-review", "Manual review",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("DOMAIN_FIDELITY_INVENTORY", "loan-fidelity", "Loan fidelity",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC));
+
+        assertThat(service.search(new SearchRequest("PACKAGE_CONTRACT", "", APAC)).items())
+                .extracting(ReferenceCandidate::kind)
+                .containsExactly("CONTRACT");
+        assertThat(service.search(new SearchRequest("EFFECT_MODEL", "", APAC)).items())
+                .extracting(ReferenceCandidate::kind)
+                .containsExactly("EFFECT_CONTRACT", "WRITE_EFFECT");
+        assertThat(service.search(new SearchRequest("FIDELITY_INVENTORY", "", APAC)).items())
+                .extracting(ReferenceCandidate::kind)
+                .containsExactly("DOMAIN_FIDELITY_INVENTORY");
+    }
+
+    @Test
     void pagesHaveNoDuplicatesAndCoverTheStableResultSet() {
         for (int index = 5; index >= 1; index--) {
             provider.add(candidate("graph", "graph-" + index, "Graph " + index,

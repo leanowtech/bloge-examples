@@ -165,9 +165,10 @@ class ResourceGatewayReferenceCandidateProviderTest {
 
         assertThat(candidates).extracting(ReferenceCandidate::kind)
                 .containsExactlyInAnyOrder(
-                        "BUSINESS_DOMAIN", "PROBLEM_TAXONOMY", "OWNER", "PACKAGE_CONTRACT",
-                        "STATE_MODEL", "EFFECT_MODEL", "SOLUTION", "AGENT", "CHANNEL_APPLICATION",
-                        "SCENARIO_INVENTORY", "SCENARIO_PACK", "FIDELITY_INVENTORY", "OUTCOME_DEFINITION");
+                        "BUSINESS_DOMAIN", "PROBLEM_TAXONOMY", "OWNER", "CONTRACT",
+                        "STATE_MODEL", "EFFECT_CONTRACT", "SOLUTION", "AGENT", "CHANNEL_APPLICATION",
+                        "SCENARIO_INVENTORY", "SCENARIO_PACK", "DOMAIN_FIDELITY_INVENTORY",
+                        "OUTCOME_DEFINITION");
         assertThat(candidates).allSatisfy(candidate -> {
             assertThat(candidate.scope()).isEqualTo(scope());
             assertThat(candidate.fingerprint()).matches("sha256:[0-9a-f]{64}");
