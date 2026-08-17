@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片
+> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片（含 Scenario Dataset v1）
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -133,8 +133,8 @@ Owner 冻结的正确性分母和预期。
 ```
 
 脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
-黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线和全部页面
-就绪。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线、严格
+Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
 较长；已有完整 JAR 时可使用 `--no-build`。
 
 需要省略 Capability Studio 样板并直接打开业务镜像时使用：
@@ -160,15 +160,22 @@ Owner 冻结的正确性分母和预期。
 默认页面以「取消费用争议处理」为贯穿案例。首屏应直接显示 `4 个业务接口 / 1 个业务特征 / 1 个业务工具 / 9 个场景`，不要求输入 draft、contract 或 scenario ID。
 
 1. 在左侧选择「订单信息查询」，查看业务输入、成功结果、错误、副作用、SLA 和 Owner。
-2. 选择「场景数据」，按黄金、异常、边界、故障和回归筛选九条场景。
-3. 检查每条场景的业务名称、来源、Owner、Oracle、适用契约和期望结果。
-4. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
-5. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-6. 查看「验收状态」。正确结论仍是 `NO_GO`：GP-04 只证明 test/staging 进程内教程分支的保存与预检；Feature/Tool 隔离执行、9/9 批量证据、完整 zero-egress 观测和业务签署仍为 `NOT_RUN`。
+2. 选择「场景数据」，先检查 Dataset 的业务验证分母、生命周期、版本、分类和 Owner。当前黄金包投影为「待评审」，不是已发布生产数据集。
+3. 检查五项质量摘要：Owner、来源、Oracle、契约与依赖行为均为 100% 闭合；总体仍显示「已阻断」，因为九条 Case 尚未运行并形成证据。100% 元数据覆盖不等于业务验收通过。
+4. 按黄金、反向、边界、故障、回归和安全分类筛选九条 Case。选择「补偿历史超时」，检查业务目标、预期/Oracle、来源、适用契约、超时表现和按需展开的精确引用。
+5. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
+6. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
+7. 查看「验收状态」。正确结论仍是 `NO_GO`：当前只证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检；Dataset 写入 Authority、Feature/Tool 隔离执行、9/9 批量证据、完整 zero-egress 观测和业务签署仍未完成。
+
+![Scenario Dataset 分母、质量与 Case 详情](assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png)
+
+移动端先显示 Dataset 摘要；继续向下可查看五项质量、搜索、筛选和有界 Case 列表。列表使用独立滚动区域，避免九条 Case 把当前详情推到页面末尾。
+
+![移动端 Scenario Dataset 质量与场景列表](assets/capability-studio/capability-studio-gp03-quality-zh-390.png)
 
 ![隔离教程分支的业务句式编辑与预检](assets/capability-studio/capability-studio-gp04-zh-1440.png)
 
-保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，状态保存在当前进程内，重启后复位；production profile 不装配这些端点。当前页面不提供 Dataset 持久化写入或 Feature/Tool Run 按钮，这不是权限错误，而是当前开发切片的明确边界。
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包或 Scenario Dataset 未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Feature/Tool Run 按钮；这不是权限错误，而是当前开发切片的明确边界。
 
 ### 3.3 从业务能力资产组合开始
 
