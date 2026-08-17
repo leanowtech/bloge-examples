@@ -13,7 +13,7 @@ public final class AuthoringFunctionWorkerProtocol {
 
     public static final String EXECUTION_PROFILE = "bloge-core-isolated-process.v1";
     public static final int INVOCATION_TIMEOUT_MILLIS = 250;
-    public static final int SUPERVISOR_TIMEOUT_MILLIS = 2_000;
+    public static final int SUPERVISOR_TIMEOUT_MILLIS = 5_000;
     public static final int SUITE_TIMEOUT_MILLIS = 15_000;
     public static final int MAXIMUM_REQUEST_BYTES = 256 * 1024;
     public static final int MAXIMUM_RESPONSE_BYTES = 512 * 1024;

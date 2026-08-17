@@ -155,8 +155,9 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     void preparesAuthorizesAndAtomicallyAcceptsRunningState() throws Exception {
         AttemptContext context = retainedStart('a', true);
         TestSuiteStabilityPhysicalAttemptObservationCommand command = command(context, 'a');
+        var stableDescriptor = descriptor(Duration.ofSeconds(4));
 
-        var prepared = journal.prepare(command, descriptor);
+        var prepared = journal.prepare(command, stableDescriptor);
         journal.authorizeInvocation(command.commandId());
         var accepted = journal.accept(command.commandId(), observation(
                 command, 101, 1,
@@ -627,8 +628,9 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
     void repeatedProofOfExactSameStateDoesNotInventAnotherStateTransition()
             throws Exception {
         AttemptContext context = retainedStart('a', true);
+        var stableDescriptor = descriptor(Duration.ofSeconds(4));
         TestSuiteStabilityPhysicalAttemptObservationCommand first = command(context, 'a');
-        journal.prepare(first, descriptor);
+        journal.prepare(first, stableDescriptor);
         var initial = observation(
                 first, 101, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING);
@@ -637,7 +639,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                 "tenant-a", "test", context.identity().attemptId()).orElseThrow();
 
         TestSuiteStabilityPhysicalAttemptObservationCommand repeated = command(context, 'b');
-        journal.prepare(repeated, descriptor);
+        journal.prepare(repeated, stableDescriptor);
         var sameState = observation(
                 repeated, 102, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING,
@@ -725,7 +727,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
-        journal.prepare(recovery, descriptor);
+        journal.prepare(recovery, descriptor(Duration.ofSeconds(4)));
         journal.accept(recovery.commandId(), observation(
                 recovery, 102, 2,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.START_PENDING));
@@ -755,7 +757,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
-        journal.prepare(recovery, descriptor);
+        journal.prepare(recovery, descriptor(Duration.ofSeconds(4)));
         journal.accept(recovery.commandId(), observation(
                 recovery, 102, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
@@ -782,7 +784,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
         Thread.sleep(250L);
 
         TestSuiteStabilityPhysicalAttemptObservationCommand recovery = command(context, 'b');
-        journal.prepare(recovery, descriptor);
+        journal.prepare(recovery, descriptor(Duration.ofSeconds(4)));
         journal.accept(recovery.commandId(), observation(
                 recovery, 102, 1,
                 TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
@@ -1404,7 +1406,7 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
                         command, 101, 1,
                         TestSuiteStabilityPhysicalAttemptObservationReceipt.State.RUNNING));
 
-        try (var supervisor = supervisor(Duration.ofMillis(500))) {
+        try (var supervisor = supervisor(Duration.ofSeconds(2))) {
             var result = reconciler(supervisor, (provider, deployment) -> authority,
                             Duration.ofMillis(800))
                     .reconcileNext("reconciler-a");
@@ -1425,14 +1427,18 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
 
     @Test
     void reconcilerRetainsSignedNonConfirmationAsUncertainty() {
+        reconciliations = reconciliationJournal(
+                10, terminalProjectionWork, Duration.ofSeconds(10));
         retainedStart('a', false);
-        var authority = authority(new AtomicInteger(), new AtomicInteger(),
+        var authority = authority(descriptor(Duration.ofSeconds(4)),
+                new AtomicInteger(), new AtomicInteger(),
                 command -> uncheckedObservation(
                         command, 101, 0,
                         TestSuiteStabilityPhysicalAttemptObservationReceipt.State.NOT_OBSERVED));
 
-        try (var supervisor = supervisor(Duration.ofMillis(500))) {
-            var result = reconciler(supervisor, (provider, deployment) -> authority)
+        try (var supervisor = supervisor(Duration.ofSeconds(5))) {
+            var result = reconciler(supervisor, (provider, deployment) -> authority,
+                            Duration.ofSeconds(5))
                     .reconcileNext("reconciler-a");
 
             assertThat(result.stage()).isEqualTo(
@@ -2034,12 +2040,21 @@ class DatabaseTestSuiteStabilityPhysicalAttemptObservationJournalTest {
             reconciliationJournal(
                     int discoveryPageSize,
                     TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal work) {
+        return reconciliationJournal(
+                discoveryPageSize, work, Duration.ofSeconds(1));
+    }
+
+    private DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
+            reconciliationJournal(
+                    int discoveryPageSize,
+                    TestSuiteStabilityPhysicalAttemptTerminalProjectionWorkJournal work,
+                    Duration leaseDuration) {
         var value =
                 new DatabaseTestSuiteStabilityPhysicalAttemptObservationReconciliationJournal(
                         jdbc, mapper, starts,
                         new TestSuiteStabilityPhysicalAttemptObservationReconciliationJournal
                                 .Policy(
-                                Duration.ofSeconds(1), Duration.ofMillis(100),
+                                leaseDuration, Duration.ofMillis(100),
                                 Duration.ofMillis(100), Duration.ofMillis(400), 2,
                                 Duration.ofMinutes(1), discoveryPageSize),
                         transactions, work);
