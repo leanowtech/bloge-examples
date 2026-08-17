@@ -19,6 +19,7 @@ GET /api/integration/capabilities
 | `referenceCandidateApi` | 已提供统一候选搜索和 exact resolve |
 | `correctnessTargetCatalogApi` | 已提供正确性 Target 与 Definition 两级目录 |
 | `guidedWorkspaceLauncher` | UI 已启用引导式工作区入口 |
+| `authoringLinkResolverApi` | 已提供 exact Graph 到 Author Compose 的受控链接解析 |
 
 部署未广告目录能力时，界面应显示「当前部署未提供资产目录」，并保留高级精确坐标模式。客户端不得通过请求 404 推断能力。
 
@@ -34,7 +35,7 @@ X-Purpose: CORRECTNESS_READ
 
 | 参数 | 必填 | 默认值 | 限制 | 说明 |
 |---|---:|---:|---:|---|
-| `kind` | 否 | 空 | 稳定 kind | 例如 `GRAPH`、`OPERATOR`、`FUNCTION` |
+| `kind` | 否 | 空 | 稳定 kind 或目录族 | 例如 `GRAPH`、`OPERATOR`、`FUNCTION`；业务镜像可用 `SERVICE_CARRIER`、`CHANNEL` 目录族 |
 | `query` | 否 | 空 | 最长 200 字符 | 匹配 ID、名称、说明和标签 |
 | `cursor` | 否 | 空 | 最长 4096 字符 | 只用于同一查询的下一页 |
 | `limit` | 否 | `20` | `1..100` | 单页最大候选数 |
@@ -72,6 +73,11 @@ X-Purpose: CORRECTNESS_READ
 ```
 
 `owner.stableId` 是可持久化身份。`owner.displayName` 只用于展示。
+
+`kind` 查询条件与候选 `kind` 有意区分“目录族”和“可持久化领域类型”。`SERVICE_CARRIER` 查询返回
+`SOP / AGENT / WORKFLOW`，`CHANNEL` 查询返回 `CHANNEL_APPLICATION`。调用方必须保存候选返回的具体 `kind`，
+不能把查询族名写入 `BusinessAssetRef`。这样同一个筛选器可以搜索一组业务资产，同时 Package 仍保持严格的
+L0-L3 kind/layer 契约。
 
 ## 3. 正确性 Target 与 Definition
 
@@ -128,7 +134,51 @@ resolve 状态：
 
 `DRIFTED` 响应携带当前权威候选，便于比较 revision 和 fingerprint。`NOT_FOUND` 与 `FORBIDDEN` 不携带候选，避免泄漏未授权资产。
 
-## 5. Provider SPI
+## 5. Authoring Link Resolver
+
+跨工作区打开 Graph 不复用候选 resolve，也不由业务组件拼 URL。调用：
+
+```http
+POST /api/visual/authoring-links:resolve
+Authorization: Bearer <workload-token>
+X-Purpose: BUSINESS_MIRROR_AUTHORING
+Content-Type: application/json
+
+{
+  "schemaVersion": "bloge.authoringLinkResolveRequest.v1",
+  "subjectRef": {
+    "kind": "BUSINESS_MIRROR_LEGACY_GRAPH",
+    "id": "built-in:loanDecisionPolicy",
+    "revision": 1,
+    "fingerprint": "sha256:..."
+  },
+  "intent": "EDIT_TOPOLOGY",
+  "returnCoordinate": {
+    "route": "business-mirror",
+    "packageId": "legacy:loanDecisionPolicy",
+    "task": "capabilities",
+    "anchor": "graph:built-in:loanDecisionPolicy"
+  }
+}
+```
+
+服务端从认证身份重建 Scope，重新读取源 authority，并校验完整 exact ref。`returnCoordinate` 是枚举与安全 token
+组成的结构，不接受 URL。成功响应为 `bloge.authoringLinkDescriptor.v1`，只允许 `/author/`、`workspace=v2`、
+`authorMode=compose` 和受控 query；descriptor 或 query 中出现 Showcase、`returnUrl` 或未知路由时，客户端再次失败关闭。
+
+稳定失败语义：
+
+| 错误码 | HTTP | 含义 |
+|---|---:|---|
+| `RG.AUTHORING_LINK.REQUEST_INVALID` | `400` | schema、intent、fingerprint 或返回坐标非法 |
+| `RG.AUTHORING_LINK.FORBIDDEN` | `403` | 当前 purpose 或 Scope 无权打开源资产 |
+| `RG.AUTHORING_LINK.SOURCE_NOT_FOUND` | `404` | 当前授权 Scope 中不存在 exact source |
+| `RG.AUTHORING_LINK.SOURCE_DRIFTED` | `409` | authority 的 revision/fingerprint 已变化 |
+
+UI 在解析完成前不提供可点击链接；失败时保留当前业务镜像草稿并允许重试。成功导航仍受全局未保存改动保护。
+Author 以只读 `SOURCE_PREVIEW` 打开源图；用户显式创建 working copy 后，URL 才切换到 durable `draftId`。
+
+## 6. Provider SPI
 
 默认 `ResourceGatewayReferenceCandidateProvider` 投影以下核心权威源：
 
@@ -155,7 +205,10 @@ Contributor 与自定义 Provider 都必须满足：
 `gateway.testing.correctness.demo.enabled=true` 时装配。它覆盖 Business Mirror 所需的 13 类元数据候选，
 不包含 Schema 正文、Fixture、Evidence payload、凭据或 Secret；生产 profile 永不装配。
 
-## 6. 错误与恢复
+参考 VS Code 扩展在无远端服务时实现同一 Search/Page/Resolve 协议、目录族展开、稳定游标和 exact
+coordinate 校验。离线 Scope 固定为扩展宿主拥有的 `offline-demo` 命名空间；请求正文不能扩大 Scope。
+
+## 7. 错误与恢复
 
 | 错误码 | HTTP | 是否可重试 | 恢复方式 |
 |---|---:|---:|---|

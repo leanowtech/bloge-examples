@@ -65,6 +65,12 @@ http://localhost:8080/business-mirror/
    readiness report。演示候选用于体验绑定协议，不会自动生成生产证据。
 8. 点击右侧任意 gap，确认页面切换到对应 Sheet、聚焦真实组合框并高亮，而不是只显示静态要求。
 
+![阻断处理后自动打开责任负责人筛选器](assets/resource-gateway-guided-business-mirror-picker-zh.png)
+
+图中 `ACCOUNTABLE_OWNER_MISSING` 已把焦点移动到责任负责人筛选器，并展开唯一匹配的稳定 Owner 身份。
+同一交互也用于 L2/L3 资产：`SERVICE_CARRIER` 和 `CHANNEL` 只负责查询目录族，保存到能力包的必须是
+`SOP / AGENT / WORKFLOW` 或 `CHANNEL_APPLICATION` 等具体领域类型。
+
 本次体验不应因为“选择了演示候选”就被理解为生产 READY。第五、六步的隔离演练和当前 Package 证据仍需
 由真实运行与权威投影形成；演示元数据不能替代客户事实、运行证据或 ANEKE 发布门禁。
 
@@ -137,6 +143,16 @@ Package 页面固定包含四个区域：
 选中后还必须通过 authority exact resolve 才能写入 Draft。页面只负责绑定已有治理资产，并没有在工作区中
 制造第二套 Contract、Scenario 或 Graph 编辑器。任意 Sheet 的变化都按整个 Package Draft 保存。
 
+点击「处理首个阻断」或右侧任务后，系统会切换到目标 Sheet、滚动到精确字段、打开对应筛选器并移动键盘
+焦点。目录不可用与无匹配结果是两种不同状态：前者保留当前输入并提供重试和受控降级说明，后者只表示当前
+查询没有候选。L2/L3 Picker 使用目录族搜索，但写入 Package 的始终是 `SOP / AGENT / WORKFLOW` 或
+`CHANNEL_APPLICATION` 等具体领域 kind。
+
+定位和打开 Picker 后，如果配置尚未保存，动作状态为“仍需处理”；保存后系统重新读取权威 readiness，只有目标
+gap 已经消失才显示“该阻断现已解决”。需要进入 Author、Rehearsal、Correctness 或 Governance 的动作会真实导航，
+并携带受控的 `returnRoute / returnPackageId / returnTask / returnAnchor`。它们不会仅切换标签，也不会把前端本地
+状态伪装成已解决。
+
 ![五层证据与七维 Fidelity](assets/resource-gateway-business-mirror-evidence-zh.png)
 
 第 6 步在没有 current index 时显示正式空态。选择“打开参考证据”会加载 server-produced、
@@ -154,7 +170,17 @@ Readiness。真实索引出现后，可从页面刷新来源、查看五层结�
 - L2 服务载体层：知识、SOP、Workflow 和服务 Agent 等 Carrier。
 - L3 业务应用层：文本机器人、语音机器人及其他 Channel Application。
 
-地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。选择「打开精确编排图」会携带 source id、revision、fingerprint 和受控返回坐标进入 Author Compose 画布；Author 先反查 Business Mirror 权威 projection，再加载官方拓扑。来源漂移时会失败关闭，不会退回同名 Graph 或「运行示例」。
+地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。
+选择「打开精确编排图」时，页面先调用认证的 Authoring Link Resolver；服务端按当前 Scope 重新读取 authority，
+校验 source id、revision、fingerprint 和受控返回坐标，再返回结构化 `/author/` Compose descriptor。解析期间入口显示
+进行中状态；漂移、无权限、未找到或服务不可用时停留在当前 Package 并提供重试，不会猜测同名 Graph，也不会进入「运行示例」。
+
+![业务镜像精确来源在 Author 中打开](assets/resource-gateway-guided-author-exact-graph-zh.png)
+
+浏览器验收中的 `loanDecisionPolicy` 精确来源加载为 3 个节点、2 条边；来源坐标保留在 URL 和 Draft
+`visualLayout.source` 中。此时顶部显示「只读源图」，允许检查、缩放和选择，但锁定拖动、连线、拖入算子和双击编辑。
+点击「创建工作副本」并收到 durable revision 后，URL 会删除 source 参数并切换到 `draftId + revision`，此后才进入可编辑状态，
+且 lineage 继续保留。页面初次短暂加载不算成功，必须等 Graph 名、节点数和边数均与权威投影一致。
 
 ## 5. 语言、键盘和响应式行为
 
@@ -169,7 +195,7 @@ Readiness。真实索引出现后，可从页面刷新来源、查看五层结�
 
 工作区在 `1440`、`820` 和 `390` CSS px 下使用不同布局。平板和手机把七步导航变为有界横向 task rail，主页面不得产生横向滚动；Gap 侧栏移动到任务内容之后。
 
-![390px mobile task workspace](assets/resource-gateway-business-mirror-mobile-zh.jpg)
+![390px mobile task workspace](assets/resource-gateway-guided-business-mirror-mobile-zh.png)
 
 ## 6. 在 VS Code 中离线体验
 
@@ -187,7 +213,10 @@ code --new-window --extensionDevelopmentPath="$PWD"
 - `resourceDispatch`
 - `enrichOrderList`
 
-离线适配器支持完整固定任务：catalog、preview、import、edit/save 和 compile。保存使用 session-local durable head、optimistic revision 和材料绑定的精确幂等回放。同一 key 与相同请求材料返回原始响应；同一 key 与不同材料返回 `RG.BUSINESS_MIRROR.IDEMPOTENCY_MATERIAL_CONFLICT`。
+离线适配器支持完整固定任务：catalog、preview、import、13 类引用候选 Search/Resolve、edit/save 和 compile。
+所有 Picker 都可按业务名称、Owner、ID 或 Scope 搜索，无需服务端。保存使用 session-local durable head、
+optimistic revision 和材料绑定的精确幂等回放。同一 key 与相同请求材料返回原始响应；同一 key 与不同材料
+返回 `RG.BUSINESS_MIRROR.IDEMPOTENCY_MATERIAL_CONFLICT`。
 
 离线模式有明确限制：
 
@@ -218,6 +247,10 @@ X-Purpose: BUSINESS_MIRROR_AUTHORING
 | `POST /api/business-mirror/packages/{packageId}/compile?sourceRevision=N` | 检查就绪度 | append-only compilation receipt 与 readiness report |
 
 `businessMirrorWorkspace=true` 只说明产品路由已打包。Package API、compiler API 和各 Authority readiness 仍需分别读取 capability probe。UI 显示「Resource Gateway connected」不等于任一 Package 已 READY。
+
+候选目录的响应模型可以包含 `fullySpecified` 等服务端派生展示字段，但能力包保存模型只能白名单复制
+`tenantId / organizationId / projectId / environmentId / region`。前端不得把整个候选对象或查询投影原样写回，
+否则 Jackson 严格反序列化会拒绝未知字段。该边界已有组件测试和真实浏览器保存回归共同守护。
 
 ## 8. 故障排查
 

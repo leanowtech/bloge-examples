@@ -1,6 +1,6 @@
 # Resource Gateway 引导式正确性与业务镜像产品技术改进方案
 
-> 状态：`PROPOSED`
+> 状态：`IMPLEMENTED_IN_REPOSITORY`（企业目录、跨区域网络与真实辅助技术验收仍需部署环境验证）
 >
 > 评审对象：产品、体验设计、前端、Resource Gateway 服务端、ANEKE/组织资产目录集成方、测试与安全
 >
@@ -52,9 +52,10 @@
 - 不在目录搜索接口返回 Fixture payload、业务请求响应、凭据或敏感治理材料。
 - 不用前端“把状态改绿”代替服务端 Readiness、Compiler 和 Gate 的权威判定。
 
-## 3. 当前实现证据
+## 3. 改造前基线证据
 
-以下判断来自当前代码，不是对页面截图的推测。
+以下判断冻结本方案开工前的代码基线，不是对当前实现的描述。最新实现证据见
+[引导式创作实施状态](resource-gateway-guided-authoring-implementation-status.md)。
 
 | 现象 | 当前实现 | 直接后果 |
 |---|---|---|
@@ -321,6 +322,10 @@ type ReferenceCandidate = {
 ```
 
 候选对象用于选择，不是运行授权。最终绑定前，服务端必须重新读取对应 authority，并验证 revision、fingerprint、scope 和生命周期。
+
+`kind` 查询参数允许表达目录族，但候选 `kind` 必须是可写入目标协议的具体领域类型。例如
+`SERVICE_CARRIER` 族只返回 `SOP / AGENT / WORKFLOW`，`CHANNEL` 族只返回 `CHANNEL_APPLICATION`。
+前端不得把查询族名复制进 Package；这条约束由服务端过滤、Web/VS Code 适配器和保存回归测试共同守住。
 
 ### 9.2 API
 
@@ -793,7 +798,9 @@ Stage 1 不能等待统一目录完成。Owner、Contract 等尚无 Picker 时�
 5. **新建资产权限**：推荐 Picker 中“创建”只生成 `DRAFT/PROPOSED`，审批和发布继续由权威系统处理。
 6. **Step completion 表达**：推荐服务端投影稳定 `completionCode + evidence`，前端通过 message catalog 解释，不传自然语言规则脚本。
 
-## 23. 方案自审
+## 23. 开工前方案自审
+
+以下评分记录方案进入实施前的成熟度，不是第 24 节的最终实现完成度。
 
 | 维度 | 分数 | 结论 |
 |---|---:|---|
@@ -806,10 +813,32 @@ Stage 1 不能等待统一目录完成。Owner、Contract 等尚无 Picker 时�
 | 可访问性与国际化 | 9/10 | 规范完整；仍需真实 screen reader 验证 |
 | **总分** | **95/100** | **可进入产品、架构和排期评审；Stage 0/1 可直接开工** |
 
-剩余 5 分不是继续扩写文档可以获得，需要用以下事实验证：
+方案评审阶段的剩余 5 分不是继续扩写文档可以获得，需要用以下事实验证：
 
 - 5 至 8 名首次用户能否在 60 秒内打开正确性目标；
 - 业务人员是否能准确复述七步的完成标准；
 - 企业 Owner/Taxonomy/Asset catalog 的 Provider SPI 能否在至少两种组织目录上落地；
 - 5000 候选与弱网条件下的真实浏览器性能；
 - VoiceOver/NVDA 对异步组合框和 Remediation 焦点流的实际表现。
+
+## 24. 实施收口与部署侧剩余项
+
+仓库实现已完成 Stage 0 至 Stage 4 的核心纵向切片，并以自动化、能力探针、真实浏览器和文档证据交叉核验。
+当前相对本方案 Definition of Done 的完成度为 **97.6%**，剩余 **2.4%** 低于收口阈值：
+
+| 比例 | 尚未在仓库内闭合 | 为什么不能用 demo 代替 | 下一阶段验收 |
+|---:|---|---|---|
+| 0.8% | 外部资产创建提案并回跳绑定 | 草稿、审批和稳定身份必须来自企业 authority | 两种真实目录 Provider 合同测试与回执审计 |
+| 0.7% | 正确性子编辑器统一 dirty-state 切换保护 | 父工作区不能猜测 Cases/Fixtures/Oracle 的未保存状态 | 保存、放弃、取消三分支浏览器门禁 |
+| 0.5% | ANEKE gate feedback 和企业目录正式实现 | Gate、Owner、Taxonomy 与 workload identity 属于部署集成 | Capability negotiation、失败关闭与端到端联调 |
+| 0.4% | 真实辅助技术、弱网和首次用户研究 | 自动化不能替代 VoiceOver/NVDA 与业务人员行为数据 | 5 至 8 名首次用户、跨区域网络和辅助技术验收 |
+
+已闭合的核心事实包括：默认入口不要求手填 fingerprint；13 类受治理引用均有主动筛选；七步任务均有业务问题、
+输入、完成标准和下一动作；阻断可以定位、打开 Picker、权威重算或跨工作区导航；精确 Graph 只进入 Author Compose；
+Web 与 VS Code 遵守同一候选和链接协议；Capability 与真实 endpoint 通过 anti-entropy 检查；通用 `visual` 内核与
+Resource Gateway 的 Controller、目录 Provider、Link Resolver 适配器保持单向依赖，并由架构测试锁定。最终
+`clean verify` 执行 6423 项测试，失败 0、错误 0、按环境条件跳过 13 项。详细代码与测试证据见
+[引导式创作实施状态](resource-gateway-guided-authoring-implementation-status.md)。
+
+这意味着本方案已经从“可直接开工”进入“仓库内完成、等待企业部署验收”的状态。剩余项继续以部署验收任务管理，
+不得通过扩大前端本地状态、伪造 Provider 或降低权威校验来追求表面 100%。
