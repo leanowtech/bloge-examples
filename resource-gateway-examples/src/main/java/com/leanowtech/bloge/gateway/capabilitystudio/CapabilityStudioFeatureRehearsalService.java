@@ -52,6 +52,7 @@ import static com.leanowtech.bloge.gateway.capabilitystudio.CapabilityStudioData
  */
 public final class CapabilityStudioFeatureRehearsalService {
     public static final String BINDING_MODE = "FIXTURE_CONTROLLED_NON_PRODUCTION";
+    static final String TOOL_REF = "tool-cancellation-fee-dispute-handling";
     private static final String PURPOSE = "CAPABILITY_STUDIO_FEATURE_REHEARSAL";
     private static final String GRAPH_ID = "feature-cancellation-dispute-context";
     private static final Instant LOGICAL_CLOCK = Instant.parse("2026-08-18T00:00:00Z");
@@ -84,7 +85,7 @@ public final class CapabilityStudioFeatureRehearsalService {
         GraphAssembly assembly = graph(transport);
         Graph graph = assembly.graph();
         String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
-        FixtureBundle fixture = fixture(scenario, graphFingerprint);
+        FixtureBundle fixture = fixture(scenario, graphFingerprint, "/root");
         TestExecutionResult result = new TestRunService(operatorRegistry, objectMapper, null)
                 .execute(new TestExecutionRequest(
                 graph,
@@ -133,6 +134,25 @@ public final class CapabilityStudioFeatureRehearsalService {
     /** Internal-only graph facts for development evidence; never part of the v1 wire projection. */
     List<OperatorFootprint> operatorFootprints() {
         return graph(new FailFastHttpTransport()).operatorFootprints();
+    }
+
+    /** Returns the exact nested Tool binding used by the governed-compilation integration spike. */
+    RuntimeAsset runtimeAsset() {
+        FailFastHttpTransport transport = new FailFastHttpTransport();
+        Graph graph = graph(transport).graph();
+        String graphFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
+        return new RuntimeAsset(
+                new CapabilityStudioFeatureToolOperator(graph, operatorRegistry, graphFingerprint),
+                graphFingerprint,
+                transport.calls());
+    }
+
+    /** Builds a Tool-target fixture over the same canonical material used by Feature rehearsal. */
+    FixtureBundle toolFixture(String caseId, String targetFingerprint) {
+        return fixture(
+                scenario(caseId),
+                targetFingerprint,
+                "/root/subject/" + GRAPH_ID);
     }
 
     private CapabilityStudioGoldenDemoPack.TestScenario scenario(String caseId) {
@@ -243,26 +263,28 @@ public final class CapabilityStudioFeatureRehearsalService {
 
     private FixtureBundle fixture(
             CapabilityStudioGoldenDemoPack.TestScenario scenario,
-            String graphFingerprint) {
+            String targetFingerprint,
+            String graphPath) {
         String specialResource = specialResource(scenario);
         String specialBehavior = specialBehavior(scenario);
         List<FixtureRule> rules = List.of(
-                resourceRule("order", "orderLookup", ORDER_RESOURCE, specialResource, specialBehavior),
-                resourceRule("responsibility", "responsibilityLookup", RESPONSIBILITY_RESOURCE,
+                resourceRule(graphPath, "order", "orderLookup", ORDER_RESOURCE,
                         specialResource, specialBehavior),
-                resourceRule("policy", "cityPolicyLookup", POLICY_RESOURCE, specialResource,
+                resourceRule(graphPath, "responsibility", "responsibilityLookup", RESPONSIBILITY_RESOURCE,
+                        specialResource, specialBehavior),
+                resourceRule(graphPath, "policy", "cityPolicyLookup", POLICY_RESOURCE, specialResource,
                         specialBehavior),
-                resourceRule("compensation", "compensationHistoryLookup", COMPENSATION_RESOURCE,
+                resourceRule(graphPath, "compensation", "compensationHistoryLookup", COMPENSATION_RESOURCE,
                         specialResource, specialBehavior),
-                observedComputationRule("aggregate", "aggregateCancellationContext",
+                observedComputationRule(graphPath, "aggregate", "aggregateCancellationContext",
                         "capabilityStudio.aggregate"),
-                observedComputationRule("decision", "cancellationDecision",
+                observedComputationRule(graphPath, "decision", "cancellationDecision",
                         "capabilityStudio.decision"));
         return new FixtureBundle(
                 FixtureBundle.SCHEMA_VERSION,
                 "capability-studio-feature-rehearsal-" + scenario.id(),
                 1,
-                graphFingerprint,
+                targetFingerprint,
                 "INTERNAL",
                 LOGICAL_CLOCK,
                 null,
@@ -279,7 +301,7 @@ public final class CapabilityStudioFeatureRehearsalService {
     }
 
     private FixtureRule resourceRule(
-            String id, String nodeId, String resource, String specialResource,
+            String graphPath, String id, String nodeId, String resource, String specialResource,
             String specialBehavior) {
         FixtureRule.Behavior behavior = resource.equals(specialResource)
                 ? specialBehavior(specialBehavior, resource)
@@ -288,7 +310,7 @@ public final class CapabilityStudioFeatureRehearsalService {
                 FixtureRule.SCHEMA_VERSION,
                 "feature-rehearsal-" + id,
                 new FixtureRule.Selector(
-                        "/root", nodeId, "httpResource", resource, "", List.of(), List.of(),
+                        graphPath, nodeId, "httpResource", resource, "", List.of(), List.of(),
                         InvocationSite.InvocationKind.RESOURCE,
                         List.of(), List.of(), "", FixtureRule.Match.none()),
                 behavior,
@@ -297,12 +319,12 @@ public final class CapabilityStudioFeatureRehearsalService {
     }
 
     private static FixtureRule observedComputationRule(
-            String id, String nodeId, String operatorRef) {
+            String graphPath, String id, String nodeId, String operatorRef) {
         return new FixtureRule(
                 FixtureRule.SCHEMA_VERSION,
                 "feature-rehearsal-" + id,
                 new FixtureRule.Selector(
-                        "/root", nodeId, operatorRef, "", "", List.of(), List.of(),
+                        graphPath, nodeId, operatorRef, "", "", List.of(), List.of(),
                         InvocationSite.InvocationKind.PRIMARY,
                         List.of(), List.of(), "", FixtureRule.Match.none()),
                 FixtureRule.Behavior.spy(),
@@ -444,6 +466,13 @@ public final class CapabilityStudioFeatureRehearsalService {
     }
 
     record OperatorFootprint(String nodeId, String operatorRef, SideEffectType sideEffectType) {
+    }
+
+    /** Internal runtime closure; fixture material and transport counters never enter public DTOs. */
+    record RuntimeAsset(
+            CapabilityStudioFeatureToolOperator operator,
+            String graphFingerprint,
+            AtomicInteger realExternalCalls) {
     }
 
     /** Raised before execution when a caller asks for a case outside the frozen canonical pack. */

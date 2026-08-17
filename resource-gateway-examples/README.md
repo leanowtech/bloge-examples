@@ -93,10 +93,14 @@ plans with a payload-free source map. A Data Lens read model also projects the e
 Rehearsal endpoint now executes an actual BLOGE graph with four `HttpResourceOperator` nodes,
 one pure aggregator, and one pure decision; Capability Studio renders the same Trace as a stable
 6-node/5-edge DAG and Data Lens. The default timeout Case cancels downstream work, exposes zero
-real calls, and never invokes its fail-fast HTTP delegates. All nine Cases are selectable, but
-the service still uses test-owned material: SPIKE-A registration, same-closure governed
-execution, field-level source maps, Tool execution, 9/9 business Oracle evidence, and deployment
-network policy remain explicitly incomplete. To disable the Capability Studio sample and
+real calls, and never invokes its fail-fast HTTP delegates. The same Feature graph can now be
+wrapped as the canonical Tool binding and executed through the existing
+`OperatorMicroGraphRunner -> TestRunService -> BLOGE nested graph` path; nested fixture selectors
+remain occurrence-addressable and the fail-fast HTTP delegates still observe zero calls. The
+fixed 9 Case x 3 development baseline also runs nine independent business Oracles. These are
+truthfully marked development evidence: SPIKE-A registry publication and same-closure suite
+execution, field-level source maps, certifiable nested dependency closure, deployment network
+policy, and release Owner sign-off remain incomplete. To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
 ```bash
