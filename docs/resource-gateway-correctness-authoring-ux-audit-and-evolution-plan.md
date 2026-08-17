@@ -4,7 +4,7 @@
 > 审查日期：2026-08-15  
 > 审查范围：`/author/` 的 Graph/Operator Contract、Scenario Matrix、Case、Coverage、Run Evidence，以及与 `/business-mirror/`、`/rehearsals/` 的任务连续性  
 > 目标读者：产品负责人、体验设计师、业务正确性 Owner、测试架构师、前后端负责人、治理负责人  
-> 相关文档：[详细技术实施方案](resource-gateway-correctness-studio-technical-implementation-plan.md)、[产品手册](resource-gateway-product-manual.md)、[表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)、[Contract/Scenario 演进方案](resource-gateway-contract-scenario-authoring-evolution-plan.md)、[工业级可测试性方案](resource-gateway-industrial-testability-evolution-plan.md)
+> 相关文档：[详细技术实施方案](resource-gateway-correctness-studio-technical-implementation-plan.md)、[引导式入口与业务镜像专项改进](resource-gateway-guided-correctness-and-business-mirror-ux-technical-evolution-plan.md)、[产品手册](resource-gateway-product-manual.md)、[表格驱动测试产品设计](resource-gateway-table-driven-testing-product-design.md)、[Contract/Scenario 演进方案](resource-gateway-contract-scenario-authoring-evolution-plan.md)、[工业级可测试性方案](resource-gateway-industrial-testability-evolution-plan.md)
 
 ## 0. 核心判断
 

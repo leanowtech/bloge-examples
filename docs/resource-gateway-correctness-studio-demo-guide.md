@@ -17,7 +17,20 @@ Correctness Studio 样板已是默认启动能力。脚本会构建前后端、�
 - `correctnessWorkspaceApi=true`；
 - `correctnessRunApi=false`。
 
-浏览器未自动打开时，访问以下地址：
+浏览器未自动打开时，访问引导式入口：
+
+```text
+http://localhost:8080/correctness/?lang=zh-CN
+```
+
+首次进入不需要准备任何 ID 或 fingerprint：保持「编排图」，展开「业务目标」下拉框，选择
+`Loan decision correctness`；
+样板只有一个匹配的正确性定义，页面会显示「已自动选择」。点击「打开正确性工作区」即可进入下文的总览。
+当一个目标存在多个定义时必须主动选择；没有定义时页面会说明阻断原因，不会发起必然失败的请求。
+
+![按业务目标打开正确性工作区](assets/resource-gateway-guided-correctness-launcher-zh.png)
+
+旧系统 deep link 和故障恢复仍可展开「高级精确坐标」输入。演示样板的直达链接为：
 
 ```text
 http://localhost:8080/correctness/?targetKind=GRAPH&targetId=loan-decision-with-fallback&targetFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&definitionId=loan-correctness-demo&correctnessView=overview&lang=zh-CN
@@ -38,7 +51,17 @@ tail -f target/example-logs/visual-canvas-demo.log
 
 ### 2.1 总览：先判断证明是否可信
 
-总览展示 `loan-decision-with-fallback` Graph 的精确 revision 和 fingerprint，以及四条必须满足的业务结果。先观察顶部五轴裁决：
+从引导式入口打开后，总览展示 `loan-decision-with-fallback` Graph 的精确 revision 和 fingerprint，以及四条必须满足的业务结果。先观察顶部五轴裁决：
+
+专业 Tab 上方的三阶段任务带是首次操作的主路径：
+
+1. 「先看结论」回答当前是否已证明、首要缺口是什么；
+2. 「定义正确性」引导到 Coverage、Cases、Fixtures、Oracle，闭合业务分母、数据和预期；
+3. 「运行并留证」进入 Runs，通过预检、隔离运行并检查当前证据。
+
+每个阶段都显示当前状态、完成还差什么、完成标准和一个主动作。它不是强制 Wizard；熟悉系统的用户仍可直接进入六个专业 Tab。
+点击「收起指引」后，页面只保留紧凑摘要；该个人偏好保存在浏览器本地，刷新后继续生效，但不会写入 Workspace、
+URL、fingerprint 或治理证据。再次点击「展开指引」即可恢复三阶段任务带。
 
 | 轴 | 样板状态 | 含义 |
 |---|---|---|
@@ -48,7 +71,11 @@ tail -f target/example-logs/visual-canvas-demo.log
 | 证据 | 当前证据 | 证据与当前精确资产闭包一致 |
 | 门禁 | 已阻断 | 覆盖不完整时不得把运行成功冒充可发布 |
 
-页面底部的「需要处理」给出唯一下一步：从覆盖缺口创建用例。演示投影只展示动作语义，不执行写入。
+页面底部的「需要处理」不再展示原始 command。每张动作卡都解释原因、影响和完成标准；点击「查看未覆盖义务」
+进入 Coverage，点击「打开断言编辑器」进入 Oracle，门禁类动作进入 Runs，刷新类动作重新读取当前精确 Workspace。
+专业页中的编辑器继续使用各自的权限、revision 和审核规则，导航动作本身不会伪造写入结果。
+
+![正确性总览与五轴证明](assets/resource-gateway-guided-correctness-overview-zh.png)
 
 ### 2.2 覆盖率：检查业务分母
 

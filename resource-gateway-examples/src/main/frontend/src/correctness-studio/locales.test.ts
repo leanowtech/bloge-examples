@@ -7,6 +7,7 @@ import { CORRECTNESS_TRANSLATIONS } from './locales';
 
 const SURFACES = [
   './CorrectnessStudio.tsx',
+  './launcher/CorrectnessWorkspaceLauncher.tsx',
   './authoring/CoverageStudio.tsx',
   './authoring/CaseStudio.tsx',
   './authoring/OracleStudio.tsx',

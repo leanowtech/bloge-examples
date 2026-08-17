@@ -57,7 +57,10 @@ export function parseAuthorWorkspaceLocation(search: string): AuthorWorkspaceLoc
     workspaceView,
     scenarioId: params.get('scenarioId')?.trim() ?? '',
     runId: params.get('runId')?.trim() ?? '',
-    hasDeepLinkTarget: ['draftId', 'runId', 'operatorRef', 'gateIssueId', 'nodeId', 'scenarioId']
+    hasDeepLinkTarget: [
+      'draftId', 'runId', 'operatorRef', 'gateIssueId', 'nodeId', 'scenarioId',
+      'sourceKind', 'sourceId',
+    ]
       .some((key) => Boolean(params.get(key)?.trim())),
   };
 }

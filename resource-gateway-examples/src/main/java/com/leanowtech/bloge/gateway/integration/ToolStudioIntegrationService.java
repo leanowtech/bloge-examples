@@ -3,6 +3,10 @@ package com.leanowtech.bloge.gateway.integration;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.UnavailablePackageCompilationAuthority;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkDescriptor;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolveRequest;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolution;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
@@ -195,6 +199,7 @@ public class ToolStudioIntegrationService {
     private PackageCompilationAuthority packageCompilationAuthority =
             new UnavailablePackageCompilationAuthority();
     private boolean legacyGraphPackageProjectorReady;
+    private boolean authoringLinkResolverApi;
     private CorrectnessAuthoringRuntimeAvailability correctnessAuthoringRuntime =
             CorrectnessAuthoringRuntimeAvailability.unavailable();
 
@@ -263,6 +268,12 @@ public class ToolStudioIntegrationService {
     @Autowired(required = false)
     void configureLegacyGraphPackageProjector(LegacyGraphPackageProjector projector) {
         this.legacyGraphPackageProjectorReady = projector != null && projector.ready();
+    }
+
+    /** Advertises the Authoring Link API only when its service is assembled. */
+    @Autowired(required = false)
+    void configureAuthoringLinkResolver(AuthoringLinkResolverService resolver) {
+        this.authoringLinkResolverApi = resolver != null;
     }
 
     /** Advertises Proposal simulation only when the protected application service is assembled. */
@@ -708,6 +719,11 @@ public class ToolStudioIntegrationService {
         features.put("businessMirrorPackageGovernanceProjectionIngestReady",
                 businessMirrorPackageGovernanceIngestReady);
         features.put("correctnessWorkspaceApi", correctnessAuthoringRuntime.workspaceApi());
+        features.put("referenceCandidateApi", true);
+        features.put("correctnessTargetCatalogApi", correctnessAuthoringRuntime.workspaceApi());
+        features.put("guidedWorkspaceLauncher", correctnessAuthoringRuntime.workspaceApi());
+        features.put("businessMirrorGuidedRemediation", true);
+        features.put("authoringLinkResolverApi", authoringLinkResolverApi);
         features.put("correctnessCoverageApi", correctnessAuthoringRuntime.coverageApi());
         features.put("correctnessOracleAssertionApi",
                 correctnessAuthoringRuntime.oracleAssertionApi());
@@ -2069,6 +2085,36 @@ public class ToolStudioIntegrationService {
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
+        supportedObjects.put("referenceCandidate", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidate.SCHEMA_VERSION));
+        supportedObjects.put("referencePage", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.Page.SCHEMA_VERSION));
+        supportedObjects.put("referenceResolveCommand", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ReferenceResolveCommand.SCHEMA_VERSION));
+        supportedObjects.put("referenceResolveResult", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ResolveResult.SCHEMA_VERSION));
+        if (authoringLinkResolverApi) {
+            supportedObjects.put("authoringLinkResolveRequest", List.of(
+                    AuthoringLinkResolveRequest.SCHEMA_VERSION));
+            supportedObjects.put("authoringLinkDescriptor", List.of(
+                    AuthoringLinkDescriptor.SCHEMA_VERSION));
+            supportedObjects.put("authoringLinkResolution", List.of(
+                    AuthoringLinkResolution.SCHEMA_VERSION));
+        }
+        endpoints.add(new IntegrationCapabilities.Endpoint(
+                "GET", "/api/visual/reference-candidates"));
+        endpoints.add(new IntegrationCapabilities.Endpoint(
+                "POST", "/api/visual/reference-candidates:resolve"));
+        if (authoringLinkResolverApi) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "POST", "/api/visual/authoring-links:resolve"));
+        }
+        if (correctnessAuthoringRuntime.workspaceApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-targets"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-targets/{kind}/{id}/definitions"));
+        }
         addCorrectnessAuthoringEndpoints(endpoints);
         if (domainFidelityRuntimeAvailability.inventoryApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

@@ -2061,7 +2061,7 @@ business_mirror_url() {
 }
 
 correctness_url() {
-    echo "http://localhost:$(configured_port)/correctness/?targetKind=GRAPH&targetId=loan-decision-with-fallback&targetFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&definitionId=loan-correctness-demo&correctnessView=overview&lang=zh-CN"
+    echo "http://localhost:$(configured_port)/correctness/?lang=zh-CN"
 }
 
 correctness_workspace_api_url() {

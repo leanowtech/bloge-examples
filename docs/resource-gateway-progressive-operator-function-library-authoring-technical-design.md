@@ -1113,7 +1113,7 @@ Stage 2.6 已把受信 core function 调用移出 Resource Gateway 进程：
    fail closed；
 3. 子 JVM 固定 64 MiB heap、96 MiB metaspace、16 MiB direct memory、512 KiB stack 和
    单 active processor；调用开始后由 worker 内 250 ms watchdog 直接 halt，gateway 另有
-   2 秒 supervisor deadline 并强杀整个 descendant tree；
+   5 秒 supervisor deadline 并强杀整个 descendant tree；
 4. suite 仍最多 50 行，但增加 15 秒总 deadline；全局最多并发 2 个 worker，饱和不排队，
    固定返回 `WORKER_UNAVAILABLE`；
 5. worker 清空继承环境，只保留无 secret 的 locale/timezone 与调用级临时 HOME/TMPDIR；

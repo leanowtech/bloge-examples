@@ -76,8 +76,10 @@ From the repository root:
 ```
 
 The default `test`-profile startup enables the read-only Correctness Studio sample,
-prints its exact deep link, verifies the Workspace capability, and makes `--open`
-open that deep link. To start without the sample and open Business Mirror instead:
+verifies the Workspace and target-catalog capabilities, and makes `--open` open the guided
+target picker. Select the loan-decision Graph; its sole Correctness Definition is bound
+automatically. Exact deep links remain compatible under the advanced coordinate panel. To start
+without the sample and open Business Mirror instead:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --no-correctness --open
@@ -90,6 +92,9 @@ advertises `correctnessWorkspaceApi=true` and `correctnessRunApi=false`: the Run
 must remain unavailable until a deployment assembles the real governed runtime. See the
 [Correctness Studio demo guide](../docs/resource-gateway-correctness-studio-demo-guide.md)
 for the walkthrough, exact URL, API probe, stop command, and capability boundary. The
+[reference candidate API guide](../docs/resource-gateway-reference-candidate-api-guide.md)
+documents metadata-only Graph/Operator/Function discovery, Correctness Target/Definition lookup,
+authenticated scope, bounded cursor pagination, exact re-resolution, and enterprise Provider SPI. The
 [product manual](../docs/resource-gateway-product-manual.md#37-使用-correctness-studio-定义运行与校准业务正确性)
 continues with the full authoring, publication, run, evidence, calibration, and ANEKE workflow.
 

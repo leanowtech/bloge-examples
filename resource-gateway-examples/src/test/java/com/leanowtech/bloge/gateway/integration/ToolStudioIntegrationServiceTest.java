@@ -371,6 +371,8 @@ class ToolStudioIntegrationServiceTest {
                         "POST /admin/visual-operator-library-authoring/discovery/asyncapi",
                         "POST /admin/visual-operator-library-authoring/discovery/openapi",
                         "POST /admin/visual-operator-library-authoring/discovery/dsl",
+                        "GET /api/visual/reference-candidates",
+                        "POST /api/visual/reference-candidates:resolve",
                         "GET /api/visual/run-controls/{requestId}",
                         "POST /api/visual/run-controls/{requestId}/cancel"
                 );

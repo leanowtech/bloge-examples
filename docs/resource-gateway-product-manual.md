@@ -158,18 +158,23 @@ exact deep link；业务镜像仍可从全局导航进入。首次构建耗时�
 
 1. 打开「贷款决策策略」。
 2. 选择「导入能力包」，等待状态变为「能力包草稿 r1」。导入不会修改原 Graph。
-3. 在「1. 定义问题」填写业务域、问题编码、服务目标、预期客户结果、责任负责人和风险等级。
-4. 选择「检查就绪度」，观察首个阻断如何移动到尚未补齐的业务或治理义务。
+3. 在「1. 定义问题」用主动筛选器选择 `Credit decision`、`Loan decision problems` 和
+   `Credit Service Design`；再填写问题编码、服务目标、预期客户结果和风险等级。界面按业务名称展示，
+   Package 只保存稳定 ID 或 exact ref。
+4. 选择「保存能力包更改」，再选择「检查就绪度」，观察首个阻断如何移动到尚未补齐的业务或治理义务。
 
 ![七步能力包工作区](assets/resource-gateway-business-mirror-package-zh.png)
 
 固定样例的正确结果是 `BLOCKED`，不是全部变绿。客户分类体系、真实 Outcome、Owner approval、
-State/Effect 模型和生产环境证据不能由演示 Fixture 自动推断。
+生产环境证据不能由演示 Fixture 自动推断。演示目录提供的 State/Effect、Scenario、Fidelity 等候选只用于
+练习受治理绑定，不会伪装成客户权威事实。
 
 ### 3.3 检查 L0-L3 能力链
 
 打开「3. 组装能力」。L0 显示已有 Graph 和 built-in 能力；L1 服务设计、L2 服务载体和 L3 业务应用
-保持为明确缺失项。选择「打开精确编排图」可回到真实 Graph。
+先显示当前精确引用或明确缺失项。可以分别搜索并绑定 Solution、Service Carrier 与 Channel。选择
+「打开精确编排图」进入 Author Compose 画布。该链接携带 Business Mirror
+source id、revision、fingerprint 和返回坐标；Author 校验权威 projection 后才渲染拓扑，不会跳到「运行示例」或猜测同名最新版本。
 
 ![L0-L3 能力地图](assets/resource-gateway-business-mirror-layers-zh.png)
 
@@ -229,7 +234,12 @@ Correctness Studio 是面向业务正确性资产的一级入口，不是 Author
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-默认启动命令会打开一份贷款决策 exact Graph 样板。只读演示只声明 `correctnessWorkspaceApi=true`，因此可以查看定义、
+默认启动命令会先打开引导式业务目标选择器。保持「编排图」，在「业务目标」中选择贷款决策样板；系统会自动绑定唯一的
+Correctness Definition，再选择「打开正确性工作区」。普通用户不需要输入 target ID、fingerprint 或 Definition ID；
+多个定义时必须主动选择，零定义时页面会阻断并解释原因。旧 deep link 与目录故障恢复入口位于「高级精确坐标」。
+
+只读演示声明 `correctnessWorkspaceApi=true`、`correctnessTargetCatalogApi=true` 和
+`guidedWorkspaceLauncher=true`，因此可以查看定义、
 冻结分母、Case、Fixture descriptor、Oracle/Assertion、Publication 摘要和五轴状态，但不能保存、发布或运行。
 这是 capability 失败关闭，不是页面故障。完整操作说明见
 [Correctness Studio 演示指南](resource-gateway-correctness-studio-demo-guide.md)。
@@ -269,16 +279,26 @@ migration、企业身份与 purpose、review authority、测试资产 registry�
 
 | 步骤 | 要回答的业务问题 | 主要资产 | 页面行为 |
 |---|---|---|---|
-| 1. 定义问题 | 服务谁、解决什么、谁负责、期望什么结果 | Business Definition、Problem taxonomy、Owner、Risk | 编辑并保存 exact revision |
-| 2. 定义边界 | 输入输出、状态、副作用和错误是否明确 | Graph Contract、StateModel、EffectModel | 查看 exact ref 与缺失义务 |
-| 3. 组装能力 | L0-L3 是否形成完整服务链 | Graph、Capability、Solution、Carrier、Channel | 查看类型化能力地图与反向影响 |
-| 4. 冻结场景分母 | 哪些分支必须验证，哪些不能删除 | ScenarioInventory、ScenarioPack | 区分技术测试和受治理业务场景 |
+| 1. 定义问题 | 服务谁、解决什么、谁负责、期望什么结果 | Business Definition、Problem taxonomy、Owner、Risk | 主动筛选业务域、分类与 Owner，编辑文本字段 |
+| 2. 定义边界 | 输入输出、状态、副作用和错误是否明确 | Graph Contract、StateModel、EffectModel | 搜索并绑定 exact Contract、State 与 Effect ref |
+| 3. 组装能力 | L0-L3 是否形成完整服务链 | Graph、Capability、Solution、Carrier、Channel | 查看能力地图，绑定 L1-L3，并打开精确 DAG |
+| 4. 冻结场景分母 | 哪些分支必须验证，哪些不能删除 | ScenarioInventory、ScenarioPack | 主动选择冻结分母与可执行场景包 |
 | 5. 隔离演练 | 不调用真实接口时能否受控运行 | MirrorPlan、Fixture、Scenario run | 进入 Rehearsals 并生成分层结果 |
 | 6. 检查证据 | 结论、分母和责任债务是否完整 | EvidenceIndex、Fidelity、OwnerTask | 查看五层证据、七维保真度和漂移 |
-| 7. 校准并提交 | 模拟是否拟合真实业务，能否交接治理 | Outcome、ANEKE projection、Pilot manifest | 检查外部事实和不可豁免门禁 |
+| 7. 校准并提交 | 模拟是否拟合真实业务，能否交接治理 | Fidelity、Outcome、Owner approval | 绑定校准资产和审批主体，检查外部门禁 |
 
-「处理首个阻断」只定位任务，不会替用户补值或隐藏其他缺口。右侧任务清单保留稳定 gap code，便于
+「处理首个阻断」会定位目标 Sheet 和精确控件，移动焦点、高亮目标并显示结果；它不会替用户补值或
+隐藏其他缺口。右侧任务清单保留稳定 gap code，便于
 跨系统工单、Deep Link 和自动化治理消费。
+
+首次进入任一 Sheet 时，按从上到下的顺序阅读：本步业务问题 -> Why -> 所需输入 -> 下一最佳动作 ->
+业务内容 -> 完成条件。输入“未绑定”表示当前快照没有该引用；只有明确标注“需要处理”才表示最新
+readiness 把它判定为本步阻断。完成配置后使用底部动作继续，不需要从右侧 code 清单猜测下一步。
+
+受治理字段的操作一致：聚焦下拉框即可加载当前 Scope 的候选，也可按业务名称、负责人、ID 或 Scope
+继续搜索；候选卡展示 Owner、Scope 和生命周期。选中后系统向权威目录重新解析 revision 与 fingerprint，
+只有解析成功才写入草稿。出现“候选已变化”时必须重新选择，系统不会静默升级。任意 Sheet 的变更都会
+出现「能力包更改尚未保存」，统一选择「保存能力包更改」后再检查就绪度。
 
 ## 5. 编排工作区
 

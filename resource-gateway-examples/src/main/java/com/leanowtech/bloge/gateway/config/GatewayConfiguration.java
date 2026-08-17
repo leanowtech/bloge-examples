@@ -51,6 +51,7 @@ import com.leanowtech.bloge.gateway.businessmirror.governance.PackageGovernanceP
 import com.leanowtech.bloge.gateway.businessmirror.governance.PackageRegistryIngestBundleIntegrity;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRepository;
@@ -791,6 +792,14 @@ public class GatewayConfiguration {
             DomainCapabilityPackageAuthoringService authoring,
             ObjectMapper objectMapper) {
         return new LegacyGraphPackageProjector(authority, authoring, objectMapper);
+    }
+
+    /** Exact, fail-closed Author route resolver backed by the legacy projection authority. */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthoringLinkResolverService authoringLinkResolverService(
+            BuiltInGraphAssetAuthority authority) {
+        return new AuthoringLinkResolverService(authority);
     }
 
     /** Deterministic Package compiler kernel. */

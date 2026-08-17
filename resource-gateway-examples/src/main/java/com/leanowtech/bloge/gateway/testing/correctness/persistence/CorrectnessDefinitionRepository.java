@@ -11,6 +11,16 @@ import java.util.Optional;
 /** Scope-exact CAS store for mutable Definition heads and immutable retained revisions. */
 public interface CorrectnessDefinitionRepository {
 
+    /** Whether this repository can enumerate a bounded current-head catalog. */
+    default boolean supportsHeadListing() {
+        return false;
+    }
+
+    /** Lists a bounded window of current Definition heads in one exact enterprise scope. */
+    default List<StoredCorrectnessDefinition> listHeads(EnterpriseScope scope, int limit) {
+        return List.of();
+    }
+
     Optional<StoredCorrectnessDefinition> findHead(EnterpriseScope scope, String definitionId);
 
     /**

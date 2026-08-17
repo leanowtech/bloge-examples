@@ -107,6 +107,124 @@ test('supports the fixed Business Mirror task offline without a server', async (
     finding.code === 'ACCOUNTABLE_OWNER_MISSING'), false);
 });
 
+test('searches and resolves the complete offline Business Mirror reference catalog', async () => {
+  const handler = createGatewayFetchHandler();
+  const catalog = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?query=&limit=100',
+  )));
+  assert.equal(catalog.items.length, 13);
+  assert.deepEqual(catalog.items.map((item) => item.kind), [
+    'AGENT', 'BUSINESS_DOMAIN', 'CHANNEL_APPLICATION', 'EFFECT_MODEL', 'FIDELITY_INVENTORY',
+    'OUTCOME_DEFINITION', 'OWNER', 'PACKAGE_CONTRACT', 'PROBLEM_TAXONOMY', 'SCENARIO_INVENTORY',
+    'SCENARIO_PACK', 'SOLUTION', 'STATE_MODEL',
+  ]);
+  assertMetadataOnly(catalog.items);
+  const repeatedCatalog = body(await createGatewayFetchHandler()(
+    fetchRequest('/api/visual/reference-candidates?query=&limit=100'),
+  ));
+  assert.deepEqual(repeatedCatalog.items.map((item) => item.kind), catalog.items.map((item) => item.kind));
+  assert.equal(repeatedCatalog.queryFingerprint, catalog.queryFingerprint);
+  assert.equal(repeatedCatalog.catalogGeneration, catalog.catalogGeneration);
+
+  const page = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?kind=PACKAGE_CONTRACT&query=loan&limit=20',
+  )));
+  assert.equal(page.schemaVersion, 'bloge.referencePage.v1');
+  assert.equal(page.items.length, 1);
+  assert.equal(page.items[0].id, 'loan-decision-contract-v1');
+  assert.equal(page.items[0].scope.environmentId, 'offline');
+  assert.equal(page.items[0].compatibility, 'COMPATIBLE');
+  assert.match(page.items[0].fingerprint, /^sha256:[0-9a-f]{64}$/);
+  assertMetadataOnly(page.items);
+
+  const carriers = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?kind=SERVICE_CARRIER&limit=20',
+  )));
+  assert.deepEqual(carriers.items.map((item) => item.kind), ['AGENT']);
+  const channels = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?kind=CHANNEL&limit=20',
+  )));
+  assert.deepEqual(channels.items.map((item) => item.kind), ['CHANNEL_APPLICATION']);
+
+  const candidate = page.items[0];
+  const resolved = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates:resolve',
+    'POST',
+    { 'content-type': 'application/json' },
+    JSON.stringify({
+      schemaVersion: 'bloge.referenceResolveCommand.v1',
+      kind: candidate.kind,
+      id: candidate.id,
+      revision: candidate.revision,
+      fingerprint: candidate.fingerprint,
+      intendedUse: 'BIND_PACKAGE_CONTRACT',
+      scope: { tenantId: 'attempted-privilege-expansion' },
+    }),
+  )));
+  assert.equal(resolved.status, 'RESOLVED');
+  assert.deepEqual(resolved.candidate.scope, page.items[0].scope);
+});
+
+test('paginates deterministically and rejects a cursor used with another query', async () => {
+  const handler = createGatewayFetchHandler();
+  const first = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?query=loan&limit=2',
+  )));
+  assert.equal(first.items.length, 2);
+  assert.ok(first.nextCursor);
+  const second = body(await handler(fetchRequest(
+    `/api/visual/reference-candidates?query=loan&limit=2&cursor=${encodeURIComponent(first.nextCursor)}`,
+  )));
+  assert.equal(second.items.length, 2);
+  assert.notEqual(second.items[0].id, first.items[0].id);
+  assert.equal(second.queryFingerprint, first.queryFingerprint);
+
+  const mismatch = await handler(fetchRequest(
+    `/api/visual/reference-candidates?query=domain&limit=2&cursor=${encodeURIComponent(first.nextCursor)}`,
+  ));
+  assert.equal(mismatch.status, 409);
+  assert.equal(body(mismatch).code, 'RG.REFERENCE.QUERY_FINGERPRINT_MISMATCH');
+});
+
+test('returns drifted and not-found results without exposing payloads', async () => {
+  const handler = createGatewayFetchHandler();
+  const candidate = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates?kind=OWNER&limit=1',
+  ))).items[0];
+  const drifted = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates:resolve',
+    'POST',
+    {},
+    JSON.stringify({
+      schemaVersion: 'bloge.referenceResolveCommand.v1',
+      kind: candidate.kind,
+      id: candidate.id,
+      revision: candidate.revision + 1,
+      fingerprint: candidate.fingerprint,
+      intendedUse: 'BIND_ACCOUNTABLE_OWNER',
+    }),
+  )));
+  assert.equal(drifted.status, 'DRIFTED');
+  assert.equal(drifted.errorCode, 'RG.REFERENCE.DRIFTED');
+
+  const notFound = body(await handler(fetchRequest(
+    '/api/visual/reference-candidates:resolve',
+    'POST',
+    {},
+    JSON.stringify({
+      schemaVersion: 'bloge.referenceResolveCommand.v1',
+      kind: candidate.kind,
+      id: 'missing-owner',
+      revision: 1,
+      fingerprint: candidate.fingerprint,
+      intendedUse: 'BIND_ACCOUNTABLE_OWNER',
+    }),
+  )));
+  assert.equal(notFound.status, 'NOT_FOUND');
+  assert.equal(notFound.candidate, null);
+  assert.equal(JSON.stringify(notFound).includes('payload'), false);
+});
+
 test('round-trips encrypted-store operations through correlated responses', async () => {
   const responses = [];
   const recoveryStore = memoryRecoveryStore();
@@ -201,6 +319,22 @@ function fetchRequest(url, method = 'GET', headers = {}, requestBody = null) {
 
 function body(responseValue) {
   return JSON.parse(responseValue.body);
+}
+
+function assertMetadataOnly(value) {
+  const forbidden = new Set(['payload', 'secret', 'fixture', 'fixtures', 'credential', 'credentials']);
+  const visit = (current) => {
+    if (Array.isArray(current)) {
+      current.forEach(visit);
+      return;
+    }
+    if (!current || typeof current !== 'object') return;
+    Object.keys(current).forEach((key) => {
+      assert.equal(forbidden.has(key.toLowerCase()), false, `forbidden field: ${key}`);
+      visit(current[key]);
+    });
+  };
+  visit(value);
 }
 
 function memoryRecoveryStore() {

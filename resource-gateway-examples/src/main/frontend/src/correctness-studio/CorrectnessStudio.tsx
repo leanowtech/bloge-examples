@@ -1,25 +1,30 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
   BarChart3,
   BookCheck,
+  CheckCircle2,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   CircleGauge,
   Database,
   FileCheck2,
   LoaderCircle,
   PlayCircle,
   RefreshCw,
-  Search,
   ShieldCheck,
 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import {
   fetchCorrectnessCapabilities,
+  fetchCorrectnessDefinitions,
+  fetchCorrectnessTargets,
   fetchCorrectnessWorkspace,
 } from './api/correctnessApi';
+import type { ReferenceCandidate, ReferenceQuery } from '../shared/reference-picker/types';
 import type {
   CorrectnessApiEnvelope,
   CorrectnessDeploymentCapabilities,
@@ -35,20 +40,34 @@ import OracleStudio from './authoring/OracleStudio';
 import FixtureStudio from './authoring/FixtureStudio';
 import PublicationStudio from './authoring/PublicationStudio';
 import CorrectnessI18nProvider from './CorrectnessI18nProvider';
+import CorrectnessWorkspaceLauncher from './launcher/CorrectnessWorkspaceLauncher';
+import {
+  noopGuidedAuthoringTelemetry,
+  type GuidedAuthoringTelemetry,
+} from '../shared/guided-telemetry/guidedTelemetry';
 import './styles.css';
 
 type CorrectnessView = 'overview' | 'coverage' | 'cases' | 'fixtures' | 'oracle' | 'runs';
+type CorrectnessStage = 'verdict' | 'definition' | 'evidence';
 type LoadState = 'CAPABILITIES' | 'CONNECT' | 'WORKSPACE' | 'READY' | 'UNAVAILABLE' | 'ERROR';
+
+const CORRECTNESS_GUIDANCE_COLLAPSED_KEY = 'bloge.correctness.guidance.collapsed.v1';
 
 export interface CorrectnessStudioApi {
   capabilities(): Promise<CorrectnessDeploymentCapabilities>;
   workspace(coordinate: CorrectnessWorkspaceCoordinate):
   Promise<CorrectnessApiEnvelope<CorrectnessWorkspaceProjection>>;
+  targets(kind: CorrectnessTargetKind, request: ReferenceQuery, signal: AbortSignal):
+  ReturnType<typeof fetchCorrectnessTargets>;
+  definitions(target: ReferenceCandidate, request: ReferenceQuery, signal: AbortSignal):
+  ReturnType<typeof fetchCorrectnessDefinitions>;
 }
 
 const DEFAULT_API: CorrectnessStudioApi = {
   capabilities: fetchCorrectnessCapabilities,
   workspace: fetchCorrectnessWorkspace,
+  targets: fetchCorrectnessTargets,
+  definitions: fetchCorrectnessDefinitions,
 };
 
 const VIEWS: Array<{
@@ -64,7 +83,12 @@ const VIEWS: Array<{
   { id: 'runs', label: 'Runs', icon: PlayCircle },
 ];
 
-export default function CorrectnessStudio(props: { api?: CorrectnessStudioApi }) {
+export interface CorrectnessStudioProps {
+  api?: CorrectnessStudioApi;
+  telemetry?: GuidedAuthoringTelemetry;
+}
+
+export default function CorrectnessStudio(props: CorrectnessStudioProps) {
   return (
     <CorrectnessI18nProvider>
       <CorrectnessStudioSurface {...props} />
@@ -72,7 +96,10 @@ export default function CorrectnessStudio(props: { api?: CorrectnessStudioApi })
   );
 }
 
-function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStudioApi }) {
+function CorrectnessStudioSurface({
+  api = DEFAULT_API,
+  telemetry = noopGuidedAuthoringTelemetry,
+}: CorrectnessStudioProps) {
   const { t } = useI18n();
   const initial = useMemo(() => parseRoute(window.location.search), []);
   const [coordinate, setCoordinate] = useState<CorrectnessWorkspaceCoordinate | null>(initial.coordinate);
@@ -142,6 +169,17 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
     setView(next);
   };
 
+  const activeStage = correctnessStageForView(view);
+
+  useEffect(() => {
+    if (!workspace) return;
+    telemetry.record('GUIDED_STEP_VIEWED', {
+      workspace: 'CORRECTNESS',
+      step: correctnessStageTelemetryStep(activeStage),
+      status: correctnessStageStatus(activeStage, workspace),
+    });
+  }, [activeStage, telemetry, workspace?.queryFingerprint]);
+
   if (state === 'CAPABILITIES') {
     return <WorkspaceState icon={<LoaderCircle className="spin" size={22} />} title={t('Checking deployment capabilities')} />;
   }
@@ -157,7 +195,15 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
   }
 
   if ((state === 'CONNECT' || (!workspace && !coordinate)) && deployment) {
-    return <CoordinateConnector onOpen={openCoordinate} />;
+    return (
+      <CorrectnessWorkspaceLauncher
+        deployment={deployment}
+        onOpen={openCoordinate}
+        searchDefinitions={api.definitions}
+        searchTargets={api.targets}
+        telemetry={telemetry}
+      />
+    );
   }
 
   if (state === 'ERROR' && !workspace) {
@@ -210,6 +256,12 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
         </button>
       </div>
 
+      <GuidedCorrectnessTaskBand
+        activeStage={activeStage}
+        workspace={workspace}
+        onOpen={changeView}
+      />
+
       <nav className="correctness-view-tabs" aria-label={t('Correctness workspace views')}>
         {VIEWS.map((item) => {
           const Icon = item.icon;
@@ -259,6 +311,13 @@ function Overview({
 }) {
   const { t } = useI18n();
   const coveragePercent = percent(workspace.coverage.fulfilled, workspace.coverage.total);
+  const runAttentionAction = (command: string) => {
+    if (command === 'REFRESH_STALE_ASSETS') {
+      onRefresh();
+      return;
+    }
+    onOpen(correctnessViewForCommand(command));
+  };
   return (
     <div className="correctness-overview">
       <FiveAxisVerdict verdict={workspace.verdict} />
@@ -313,16 +372,37 @@ function Overview({
       {(workspace.staleReasons.length > 0 || workspace.verdict.nextActions.length > 0) && (
         <section className="correctness-attention">
           <header><ShieldCheck aria-hidden="true" size={19} /><strong>{t('Required attention')}</strong></header>
-          {workspace.staleReasons.map((reason) => (
-            <p key={`${reason.code}:${reason.assetKind}`}>
-              {t(correctnessReasonLabel(reason.code))} · {t(correctnessAssetLabel(reason.assetKind))}
-            </p>
-          ))}
-          {workspace.verdict.nextActions.map((action) => (
-            <p key={`${action.command}:${action.reasonCode}`}>
-              {t(correctnessCommandLabel(action.command))} · {t(correctnessReasonLabel(action.reasonCode))}
-            </p>
-          ))}
+          <div className="correctness-attention-list">
+            {workspace.verdict.nextActions.map((action) => (
+              <article key={`${action.command}:${action.reasonCode}`}>
+                <div>
+                  <strong>{t(correctnessCommandLabel(action.command))}</strong>
+                  <p><b>{t('Why')}</b>{t(correctnessReasonLabel(action.reasonCode))}</p>
+                  <p><b>{t('Impact')}</b>{t(correctnessActionImpact(action.command))}</p>
+                  <p><b>{t('Done when')}</b>{t(correctnessActionCompletion(action.command))}</p>
+                </div>
+                <button type="button" onClick={() => runAttentionAction(action.command)}>
+                  {t(correctnessCommandActionLabel(action.command))}
+                  <ChevronRight aria-hidden="true" size={16} />
+                </button>
+              </article>
+            ))}
+            {workspace.staleReasons
+              .filter((reason) => !workspace.verdict.nextActions.some((action) => action.reasonCode === reason.code))
+              .map((reason) => (
+                <article key={`${reason.code}:${reason.assetKind}`}>
+                  <div>
+                    <strong>{t(correctnessReasonLabel(reason.code))}</strong>
+                    <p><b>{t('Affected asset')}</b>{t(correctnessAssetLabel(reason.assetKind))}</p>
+                    <p><b>{t('Done when')}</b>{t('The exact asset is refreshed and the workspace verdict is recalculated.')}</p>
+                  </div>
+                  <button type="button" onClick={onRefresh}>
+                    {t('Refresh workspace')}
+                    <RefreshCw aria-hidden="true" size={16} />
+                  </button>
+                </article>
+              ))}
+          </div>
         </section>
       )}
       <PublicationStudio
@@ -333,6 +413,84 @@ function Overview({
       />
     </div>
   );
+}
+
+function GuidedCorrectnessTaskBand({
+  activeStage,
+  workspace,
+  onOpen,
+}: {
+  activeStage: CorrectnessStage;
+  workspace: CorrectnessWorkspaceProjection;
+  onOpen(view: CorrectnessView): void;
+}) {
+  const { t } = useI18n();
+  const [collapsed, setCollapsed] = useState(() => readGuidanceCollapsedPreference());
+  const stages = correctnessStages(workspace);
+  const active = stages.find((stage) => stage.id === activeStage) ?? stages[0];
+  const toggleGuidance = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      window.localStorage.setItem(CORRECTNESS_GUIDANCE_COLLAPSED_KEY, String(next));
+    } catch {
+      // Private browser profiles may deny preference storage; the in-memory state still works.
+    }
+  };
+  return (
+    <section
+      className="correctness-guided-band"
+      aria-label={t('Guided correctness workflow')}
+      data-collapsed={collapsed}
+    >
+      <div className="correctness-guided-heading">
+        <strong>{t('Guided correctness workflow')}</strong>
+        <button type="button" aria-expanded={!collapsed} onClick={toggleGuidance}>
+          {collapsed ? <ChevronDown aria-hidden="true" size={16} /> : <ChevronUp aria-hidden="true" size={16} />}
+          {t(collapsed ? 'Show guidance' : 'Hide guidance')}
+        </button>
+      </div>
+      <div className="correctness-guided-stages">
+        {stages.map((stage, index) => (
+          <button
+            type="button"
+            key={stage.id}
+            aria-current={stage.id === activeStage ? 'step' : undefined}
+            data-status={stage.status}
+            onClick={() => onOpen(stage.view)}
+          >
+            <span>{index + 1}</span>
+            <span><strong>{t(stage.title)}</strong>{!collapsed && <small>{t(stage.question)}</small>}</span>
+            <CorrectnessStageStatus status={stage.status} />
+          </button>
+        ))}
+      </div>
+      {!collapsed && (
+        <div className="correctness-guided-detail" role="status">
+          <span><strong>{t('Current status')}</strong>{t(correctnessStageStatusLabel(active.status))}</span>
+          <span><strong>{t('Still needed')}</strong>{t(active.remaining)}</span>
+          <span><strong>{t('Done when')}</strong>{t(active.completion)}</span>
+          <button type="button" onClick={() => onOpen(active.actionView)}>
+            {t(active.action)}<ChevronRight aria-hidden="true" size={16} />
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function readGuidanceCollapsedPreference(): boolean {
+  try {
+    return window.localStorage.getItem(CORRECTNESS_GUIDANCE_COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function CorrectnessStageStatus({ status }: { status: 'READY' | 'BLOCKED' | 'REVIEW' }) {
+  if (status === 'READY') return <CheckCircle2 aria-label="Ready" size={17} />;
+  if (status === 'BLOCKED') return <AlertTriangle aria-label="Blocked" size={17} />;
+  return <CircleGauge aria-label="Review" size={17} />;
 }
 
 function Coverage({ workspace, deployment }: {
@@ -494,47 +652,6 @@ function Oracle({ workspace, deployment }: {
   );
 }
 
-function CoordinateConnector({ onOpen }: { onOpen(value: CorrectnessWorkspaceCoordinate): void }) {
-  const { t } = useI18n();
-  const [targetKind, setTargetKind] = useState<CorrectnessTargetKind>('GRAPH');
-  const [targetId, setTargetId] = useState('');
-  const [targetFingerprint, setTargetFingerprint] = useState('');
-  const [definitionId, setDefinitionId] = useState('');
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!targetId.trim() || !targetFingerprint.trim()) return;
-    onOpen({
-      targetKind,
-      targetId: targetId.trim(),
-      targetFingerprint: targetFingerprint.trim(),
-      definitionId: definitionId.trim() || undefined,
-      caseLimit: 100,
-    });
-  };
-  return (
-    <main className="correctness-connect">
-      <div className="correctness-connect-heading">
-        <span><Search aria-hidden="true" size={22} /></span>
-        <div><p className="eyebrow">{t('EXACT TARGET')}</p><h2>{t('Open a correctness workspace')}</h2></div>
-      </div>
-      <p>{t('Connect to one exact Graph, Operator, or Function revision. The server will project its authoritative correctness assets and evidence.')}</p>
-      <form onSubmit={submit}>
-        <label>{t('Target kind')}
-          <select value={targetKind} onChange={(event) => setTargetKind(event.target.value as CorrectnessTargetKind)}>
-            <option value="GRAPH">{t('Graph')}</option><option value="OPERATOR">{t('Operator')}</option><option value="FUNCTION">{t('Function')}</option>
-          </select>
-        </label>
-        <label>{t('Target ID')}<input required value={targetId} onChange={(event) => setTargetId(event.target.value)} placeholder="loan-decision" /></label>
-        <label>{t('Target fingerprint')}<input required value={targetFingerprint} onChange={(event) => setTargetFingerprint(event.target.value)} placeholder="sha256:..." /></label>
-        <label>{t('Definition ID')} <span>{t('optional')}</span><input value={definitionId} onChange={(event) => setDefinitionId(event.target.value)} placeholder="correctness-loan-decision" /></label>
-        <button type="submit" className="correctness-primary-command" disabled={!targetId.trim() || !targetFingerprint.trim()}>
-          <Search aria-hidden="true" size={18} />{t('Open exact target')}
-        </button>
-      </form>
-    </main>
-  );
-}
-
 function WorkspaceState({
   icon,
   title,
@@ -641,6 +758,121 @@ function shortFingerprint(value: string): string {
   return `${value.slice(0, 12)}...${value.slice(-7)}`;
 }
 
+interface CorrectnessStageDefinition {
+  id: CorrectnessStage;
+  title: string;
+  question: string;
+  status: 'READY' | 'BLOCKED' | 'REVIEW';
+  remaining: string;
+  completion: string;
+  action: string;
+  view: CorrectnessView;
+  actionView: CorrectnessView;
+}
+
+function correctnessStages(workspace: CorrectnessWorkspaceProjection): CorrectnessStageDefinition[] {
+  const definitionBlocked = workspace.coverage.availability !== 'AVAILABLE'
+    || workspace.coverage.uncovered > 0
+    || workspace.cases.total === 0
+    || workspace.fixtures.active === 0
+    || workspace.oracleAssertions.validAssertionSets === 0;
+  const definitionAction = workspace.coverage.availability !== 'AVAILABLE' || workspace.coverage.uncovered > 0
+    ? 'coverage'
+    : workspace.cases.total === 0
+      ? 'cases'
+      : workspace.fixtures.active === 0
+        ? 'fixtures'
+        : 'oracle';
+  const evidenceReady = workspace.lastRun?.evidenceRef != null
+    && workspace.verdict.evidence === 'CURRENT';
+  return [{
+    id: 'verdict',
+    title: '1. Review the verdict',
+    question: 'Is business correctness proven, and what blocks it first?',
+    status: correctnessStageStatus('verdict', workspace),
+    remaining: workspace.verdict.nextActions.length > 0
+      ? 'Resolve the first required attention item below.'
+      : 'Review the five-axis verdict and confirm the business conclusion.',
+    completion: 'You can explain the five-axis verdict and its first blocker.',
+    action: workspace.verdict.nextActions.length > 0 ? 'Handle first required action' : 'Review the verdict',
+    view: 'overview',
+    actionView: workspace.verdict.nextActions.length > 0
+      ? correctnessViewForCommand(workspace.verdict.nextActions[0].command)
+      : 'overview',
+  }, {
+    id: 'definition',
+    title: '2. Define correctness',
+    question: 'What must be covered, with which data and expected result?',
+    status: definitionBlocked ? 'BLOCKED' : 'READY',
+    remaining: definitionBlocked
+      ? 'Close the missing denominator, Case, Fixture, or executable Assertion asset.'
+      : 'The correctness definition has an executable proof closure.',
+    completion: 'The frozen denominator, canonical Cases, active Fixtures, and executable Assertions form a closure.',
+    action: definitionBlocked ? 'Continue defining correctness' : 'Review proof assets',
+    view: 'cases',
+    actionView: definitionAction,
+  }, {
+    id: 'evidence',
+    title: '3. Run and retain evidence',
+    question: 'Can this revision run in isolation and retain current evidence?',
+    status: evidenceReady ? 'READY' : workspace.lastRun ? 'REVIEW' : 'BLOCKED',
+    remaining: evidenceReady
+      ? 'Current evidence is retained for this exact revision.'
+      : 'Pass preflight, run the selected Cases, and retain exact current evidence.',
+    completion: 'Preflight passes and the exact target revision has current retained evidence.',
+    action: evidenceReady ? 'Inspect retained evidence' : 'Open run center',
+    view: 'runs',
+    actionView: 'runs',
+  }];
+}
+
+function correctnessStageForView(view: CorrectnessView): CorrectnessStage {
+  if (view === 'overview') return 'verdict';
+  if (view === 'runs') return 'evidence';
+  return 'definition';
+}
+
+function correctnessStageTelemetryStep(stage: CorrectnessStage) {
+  if (stage === 'verdict') return 'VERDICT' as const;
+  if (stage === 'definition') return 'DEFINE_CORRECTNESS' as const;
+  return 'RUN_AND_EVIDENCE' as const;
+}
+
+function correctnessStageStatus(
+  stage: CorrectnessStage,
+  workspace: CorrectnessWorkspaceProjection,
+): 'READY' | 'BLOCKED' | 'REVIEW' {
+  if (stage === 'verdict') return workspace.verdict.nextActions.length > 0 ? 'BLOCKED' : 'READY';
+  if (stage === 'evidence') {
+    if (workspace.lastRun?.evidenceRef != null && workspace.verdict.evidence === 'CURRENT') return 'READY';
+    return workspace.lastRun ? 'REVIEW' : 'BLOCKED';
+  }
+  return workspace.coverage.availability === 'AVAILABLE'
+    && workspace.coverage.uncovered === 0
+    && workspace.cases.total > 0
+    && workspace.fixtures.active > 0
+    && workspace.oracleAssertions.validAssertionSets > 0
+    ? 'READY'
+    : 'BLOCKED';
+}
+
+function correctnessStageStatusLabel(status: 'READY' | 'BLOCKED' | 'REVIEW'): string {
+  if (status === 'READY') return 'Ready';
+  if (status === 'BLOCKED') return 'Blocked';
+  return 'Needs review';
+}
+
+function correctnessViewForCommand(command: string): CorrectnessView {
+  const views: Record<string, CorrectnessView> = {
+    CREATE_CASE_FROM_GAP: 'coverage',
+    OPEN_ASSERTION_BUILDER: 'oracle',
+    OPEN_COVERAGE_INVENTORY: 'coverage',
+    REVIEW_GOVERNANCE_GATE: 'runs',
+    REFRESH_STALE_ASSETS: 'overview',
+  };
+  return views[command] ?? 'overview';
+}
+
 export function correctnessCommandLabel(command: string): string {
   const labels: Record<string, string> = {
     CREATE_CASE_FROM_GAP: 'Create Case from coverage gap',
@@ -650,6 +882,39 @@ export function correctnessCommandLabel(command: string): string {
     REFRESH_STALE_ASSETS: 'Refresh stale assets',
   };
   return labels[command] ?? humanizeProtocolCode(command);
+}
+
+function correctnessCommandActionLabel(command: string): string {
+  const labels: Record<string, string> = {
+    CREATE_CASE_FROM_GAP: 'View uncovered obligations',
+    OPEN_ASSERTION_BUILDER: 'Open Assertion Builder',
+    OPEN_COVERAGE_INVENTORY: 'Open Coverage Inventory',
+    REVIEW_GOVERNANCE_GATE: 'Open run and gate evidence',
+    REFRESH_STALE_ASSETS: 'Refresh exact assets',
+  };
+  return labels[command] ?? 'Open recommended workspace';
+}
+
+function correctnessActionImpact(command: string): string {
+  const labels: Record<string, string> = {
+    CREATE_CASE_FROM_GAP: 'Coverage remains blocked and the governed TestSuite cannot be published.',
+    OPEN_ASSERTION_BUILDER: 'A successful execution still cannot prove the expected business outcome.',
+    OPEN_COVERAGE_INVENTORY: 'The system cannot show which frozen business obligations remain unproven.',
+    REVIEW_GOVERNANCE_GATE: 'Publication cannot proceed until the gate decision and evidence are understood.',
+    REFRESH_STALE_ASSETS: 'Evidence for an older revision cannot prove the current business asset.',
+  };
+  return labels[command] ?? 'The current verdict remains blocked until this condition is resolved.';
+}
+
+function correctnessActionCompletion(command: string): string {
+  const labels: Record<string, string> = {
+    CREATE_CASE_FROM_GAP: 'Every uncovered obligation is bound to a canonical Case or an approved waiver.',
+    OPEN_ASSERTION_BUILDER: 'The Case has an approved Business Oracle and a validated executable Assertion Set.',
+    OPEN_COVERAGE_INVENTORY: 'The exact frozen inventory is available and its uncovered obligations are explained.',
+    REVIEW_GOVERNANCE_GATE: 'The gate decision has current evidence and every blocking finding has an owner.',
+    REFRESH_STALE_ASSETS: 'Every referenced asset is current and the workspace verdict has been recalculated.',
+  };
+  return labels[command] ?? 'The server-recalculated verdict no longer reports this action.';
 }
 
 export function correctnessReasonLabel(reasonCode: string): string {

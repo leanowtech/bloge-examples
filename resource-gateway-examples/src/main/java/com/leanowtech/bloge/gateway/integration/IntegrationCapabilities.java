@@ -1360,6 +1360,11 @@ public record IntegrationCapabilities(
         features.put("correctnessAuthoringProtocol", true);
         features.put("correctnessWorkspaceProtocol", true);
         features.put("correctnessWorkspaceApi", false);
+        features.put("referenceCandidateApi", false);
+        features.put("authoringLinkResolverApi", false);
+        features.put("correctnessTargetCatalogApi", false);
+        features.put("guidedWorkspaceLauncher", false);
+        features.put("businessMirrorGuidedRemediation", true);
         features.put("correctnessCoverageProtocol", true);
         features.put("correctnessCoverageApi", false);
         features.put("correctnessOracleAssertionProtocol", true);

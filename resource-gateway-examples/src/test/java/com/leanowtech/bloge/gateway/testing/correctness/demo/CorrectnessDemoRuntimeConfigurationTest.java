@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.TargetKind;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateContributor;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceScope;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -23,14 +25,17 @@ class CorrectnessDemoRuntimeConfigurationTest {
     @Test
     void remainsAbsentUnlessExplicitlyEnabledInANonProductionProfile() {
         runner.withPropertyValues("spring.profiles.active=test")
-                .run(context -> assertThat(context)
-                        .doesNotHaveBean(CorrectnessWorkspaceQuery.class));
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(CorrectnessWorkspaceQuery.class);
+                    assertThat(context).doesNotHaveBean(ReferenceCandidateContributor.class);
+                });
 
         runner.withPropertyValues(
                         "spring.profiles.active=production",
                         "gateway.testing.correctness.demo.enabled=true")
                 .run(context -> assertThat(context)
-                        .doesNotHaveBean(CorrectnessWorkspaceQuery.class));
+                        .doesNotHaveBean(CorrectnessWorkspaceQuery.class)
+                        .doesNotHaveBean(ReferenceCandidateContributor.class));
     }
 
     @Test
@@ -41,6 +46,12 @@ class CorrectnessDemoRuntimeConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasNotFailed();
                     assertThat(context).hasSingleBean(CorrectnessWorkspaceQuery.class);
+                    assertThat(context).hasSingleBean(ReferenceCandidateContributor.class);
+                    assertThat(context.getBean(ReferenceCandidateContributor.class).contribute(
+                            new ReferenceScope(
+                                    "tenant-a", "knowledge-governance", "tool-studio", "test", "local")))
+                            .extracting(candidate -> candidate.kind())
+                            .contains("BUSINESS_DOMAIN", "PACKAGE_CONTRACT", "SCENARIO_PACK");
                     assertThat(context.getBean(CorrectnessAuthoringRuntimeAvailability.class))
                             .isEqualTo(new CorrectnessAuthoringRuntimeAvailability(
                                     true, false, false, false, false, false,

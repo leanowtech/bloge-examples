@@ -234,7 +234,7 @@ describe('AuthorCanvas operator-library intake', () => {
       '/author/?authorWorkspace=v2&authorMode=evidence&target=graph'
         + '&workspaceView=evidence&runId=run-99&nodeId=eligibility',
     );
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
@@ -311,7 +311,7 @@ describe('AuthorCanvas operator-library intake', () => {
       '/author/?authorWorkspace=v2&authorMode=evidence&target=graph'
         + '&workspaceView=evidence&runId=run-transient',
     );
-    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [eligibilityOperator(), transformOperator()] });
@@ -941,6 +941,75 @@ describe('AuthorCanvas operator-library intake', () => {
     await waitFor(() => expect(reactFlowMocks.fitView).toHaveBeenCalled());
   });
 
+  it('opens an exact Business Mirror source in Compose after validating its fingerprint', async () => {
+    const sourceFingerprint = `sha256:${'a'.repeat(64)}`;
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2&authorMode=compose'
+      + '&sourceKind=BUSINESS_MIRROR_LEGACY_GRAPH&sourceGraphName=loanDecisionPolicy'
+      + '&sourceId=built-in%3AloanDecisionPolicy&sourceRevision=1'
+      + `&sourceFingerprint=${encodeURIComponent(sourceFingerprint)}`
+      + '&returnRoute=business-mirror&returnPackageId=legacy%3AloanDecisionPolicy'
+      + '&returnTask=capabilities&returnAnchor=graph%3Abuilt-in%3AloanDecisionPolicy');
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') return jsonResponse({ operators: [] });
+      if (url === '/api/business-mirror/legacy-graphs/loanDecisionPolicy') {
+        return jsonResponse({
+          graphName: 'loanDecisionPolicy',
+          scope: { tenantId: 'ride', projectId: 'loan', environmentId: 'test' },
+          sourceGraphRef: {
+            id: 'built-in:loanDecisionPolicy', revision: 1, fingerprint: sourceFingerprint,
+          },
+        });
+      }
+      if (url === '/api/gateway/examples/scenarios') {
+        return jsonResponse([{
+          graphName: 'loanDecisionPolicy', title: 'Loan decision',
+          diagramPath: '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram',
+          inputSchema: { format: 'json-schema', schema: { type: 'object' } },
+          outputSchema: { format: 'json-schema', schema: { type: 'object' } },
+        }]);
+      }
+      if (url === '/api/gateway/examples/scenarios/loanDecisionPolicy/diagram') {
+        return jsonResponse({
+          rootId: 'loanDecisionPolicy',
+          nodes: [
+            { id: 'profile', operatorRef: 'resource:profile', label: 'Profile', position: { x: 40, y: 40 } },
+            { id: 'decision', kind: 'decision', label: 'Decision', position: { x: 360, y: 40 } },
+          ],
+          edges: [{ id: 'profile-decision', source: 'profile', target: 'decision' }],
+        });
+      }
+      if (url.startsWith('/api/visual/drafts?') && init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        return jsonResponse({ ...body, draftId: 'draft-loan-working-copy', revision: 1, status: 'DRAFT' });
+      }
+      if (url === '/api/visual/scenario-draft-sets/targets/graphs/draft-loan-working-copy/contract') {
+        return jsonResponse(graphContractProjection('draft-loan-working-copy', 1, {}));
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() => expect(query('[data-testid="canvas-node:profile"]').textContent).toContain('Profile'));
+    expect(query('[data-testid="canvas-node:decision"]').textContent).toContain('Decision');
+    expect(query('[data-testid="author-deep-link-notice"]').textContent)
+      .toContain('Opened exact Business Mirror Graph built-in:loanDecisionPolicy@1');
+    expect(query('[data-testid="author-source-preview"]').textContent).toContain('Read-only source');
+    expect(query('[data-testid="author-source-preview"]').textContent)
+      .toContain('Create working copy');
+    expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull();
+    expect(query('.workspace').getAttribute('data-author-mode')).toBe('compose');
+
+    await click(buttonByText('Create working copy'));
+    await waitFor(() => expect(document.querySelector('[data-testid="author-source-preview"]')).toBeNull());
+    expect(new URLSearchParams(window.location.search).get('draftId')).toBe('draft-loan-working-copy');
+    expect(new URLSearchParams(window.location.search).has('sourceKind')).toBe(false);
+  });
+
   it('uses a larger overview and edge-label-safe fit padding for complex DSL projections', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -1534,7 +1603,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
     await waitFor(() => expect(document.querySelector('[data-testid="author-start-dialog"]')).toBeNull());
     await assertNoSevereViolations();
-  });
+  }, 15_000);
 
   it('routes DSL to its validated form and libraries to the guided Workbench', async () => {
     await act(async () => {

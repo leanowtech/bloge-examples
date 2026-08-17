@@ -110,7 +110,7 @@ class VisualLibraryAuthoringAdminControllerTest {
                 .andExpect(jsonPath("$.limits.maximumAuthoringTestCases").value(50))
                 .andExpect(jsonPath("$.limits.maximumFunctionTestArguments").value(32))
                 .andExpect(jsonPath("$.limits.functionTestTimeoutMillis").value(250))
-                .andExpect(jsonPath("$.limits.functionTestSupervisorTimeoutMillis").value(2000))
+                .andExpect(jsonPath("$.limits.functionTestSupervisorTimeoutMillis").value(5000))
                 .andExpect(jsonPath("$.limits.functionTestSuiteTimeoutMillis").value(15000))
                 .andExpect(jsonPath("$.limits.functionTestWorkerHeapMib").value(64))
                 .andExpect(jsonPath("$.limits.maximumConcurrentFunctionTestWorkers").value(2))

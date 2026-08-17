@@ -2,6 +2,8 @@
 
 > 最新的跨页面体验、启动方式、角色工作流和生产边界请先阅读
 > [Resource Gateway 产品手册](resource-gateway-product-manual.md)。本文保留为 Business Mirror Workspace 专项说明。
+> 首次操作指引、主动筛选 Picker、七步任务合同、阻断处理与 Author 精确跳转的专项改进，见
+> [引导式正确性与业务镜像产品技术改进方案](resource-gateway-guided-correctness-and-business-mirror-ux-technical-evolution-plan.md)。
 
 > 适用实现：RG-BM-005
 >
@@ -43,23 +45,34 @@ http://localhost:8080/business-mirror/
 1. 在 Portfolio 中打开「贷款决策策略 / Loan Decision Policy」。
 2. 确认页面显示「存量预览」，并显示首个阻断项。
 3. 选择「导入能力包」。系统创建持久 revision `1`；该动作不修改原 Graph。
-4. 在「1. 定义问题」填写以下演示值：
+4. 在「1. 定义问题」选择或填写以下演示值：
 
 | 字段 | 演示值 |
 |---|---|
-| 业务域 | `ride.customer-service` |
+| 业务域 | 在主动筛选器选择 `Credit decision` |
+| 问题分类 | 选择 `Loan decision problems` |
 | 问题编码 | `loan-decision` |
 | 服务目标 | `在不依赖真实业务接口时验证贷款决策服务流程` |
 | 预期客户结果 | `输出可解释且可重复验证的贷款决策` |
-| 责任负责人 | `risk-service-owner` |
+| 责任负责人 | 选择 `Credit Service Design` |
 | 风险等级 | `CRITICAL` |
 
-5. 选择「保存」。系统使用 optimistic revision 和 `Idempotency-Key` 保存 revision `2`。
-6. 选择「检查就绪度」。系统编译当前 exact revision，并记录一个 `BLOCKED` readiness report。
-7. 确认业务定义相关阻断已经消失，首个阻断移动到尚未补齐的 L1-L3 或治理要求。
-8. 打开「3. 组装能力」，检查 L0 的真实 Graph/Capability 与 L1-L3 缺失资产。
+5. 选择「保存能力包更改」。系统使用 optimistic revision 和 `Idempotency-Key` 保存 revision `2`。
+6. 在「2. 定义边界」分别选择 `Loan decision package contract`、`Loan decision state model` 和
+   `Loan decision effect model`；在「3. 组装能力」选择 L1 Solution、L2 Service Carrier 与 L3 Channel；
+   在「4. 冻结场景分母」选择 Scenario Inventory 与 Scenario Pack。
+7. 再次选择「保存能力包更改」，然后选择「检查就绪度」。系统编译当前 exact revision，并记录最新
+   readiness report。演示候选用于体验绑定协议，不会自动生成生产证据。
+8. 点击右侧任意 gap，确认页面切换到对应 Sheet、聚焦真实组合框并高亮，而不是只显示静态要求。
 
-本次体验的正确结果不是 READY。固定存量样例缺少业务分类体系、ScenarioPack、Fidelity、Outcome、State/Effect、L1-L3 资产和 Owner approval。系统必须保留这些阻断，不得用推断值把页面标绿。
+![阻断处理后自动打开责任负责人筛选器](assets/resource-gateway-guided-business-mirror-picker-zh.png)
+
+图中 `ACCOUNTABLE_OWNER_MISSING` 已把焦点移动到责任负责人筛选器，并展开唯一匹配的稳定 Owner 身份。
+同一交互也用于 L2/L3 资产：`SERVICE_CARRIER` 和 `CHANNEL` 只负责查询目录族，保存到能力包的必须是
+`SOP / AGENT / WORKFLOW` 或 `CHANNEL_APPLICATION` 等具体领域类型。
+
+本次体验不应因为“选择了演示候选”就被理解为生产 READY。第五、六步的隔离演练和当前 Package 证据仍需
+由真实运行与权威投影形成；演示元数据不能替代客户事实、运行证据或 ANEKE 发布门禁。
 
 ### 1.3 停止服务
 
@@ -106,21 +119,39 @@ Package 页面固定包含四个区域：
 3. **七步任务导航**：把领域对象和治理义务投影为可执行任务。
 4. **Gap 与来源侧栏**：保留全部缺失项和 exact Graph、Contract、Capability、Closure、Test Suite 来源。
 
-「处理首个阻断」按稳定 gap code 定位任务。它不修改数据，也不隐藏其他阻断。
+「处理首个阻断」按稳定 gap code 切换到目标 Sheet，滚动并聚焦、高亮精确控件，页面顶部会显示本次
+定位结果。同一个 Sheet 内也会产生可见反馈，不再只是无变化地重复选中当前步骤。命令本身不替用户
+补值，也不隐藏其他阻断；完成配置后仍需保存并重新检查就绪度。
+
+每个 Sheet 顶部先展示本步业务问题、设计原因和输入清单。输入状态区分权威阻断与“当前快照未绑定”，
+不会因为 readiness 没返回某个 gap 就把缺失引用误报为已具备。存在阻断时，「下一最佳动作」说明影响并
+打开精确控件；没有本步阻断时，底部动作进入下一步。协议 code 和 field path 默认收在「技术详情」中。
 
 ### 3.1 七步任务
 
 | 步骤 | 业务问题 | 主要对象 | 当前可执行能力 |
 |---|---|---|---|
-| 1. 定义问题 | 服务谁、解决什么、由谁负责、预期什么结果 | `BusinessDefinition`、Problem taxonomy、Owner、Risk、Outcome expectation | 图形化编辑业务字段并保存 exact revision |
-| 2. 定义边界 | 输入输出、状态、副作用和 Contract 是否明确 | Package Contract、StateModel、EffectModel | 查看 exact refs、缺失项和 Owner review 要求 |
-| 3. 组装能力 | L0 到 L3 是否形成可追踪服务链 | Graph、Capability、Solution、Carrier、Channel | 查看类型化能力地图与缺失资产，跳转精确 Graph |
-| 4. 冻结场景分母 | 哪些业务分支必须被验证 | ScenarioInventory、ScenarioPack | 区分发现的技术测试与受治理业务 Scenario |
+| 1. 定义问题 | 服务谁、解决什么、由谁负责、预期什么结果 | `BusinessDefinition`、Problem taxonomy、Owner、Risk、Outcome expectation | 搜索并精确绑定 Domain/Taxonomy/Owner，编辑自然语言字段 |
+| 2. 定义边界 | 输入输出、状态、副作用和 Contract 是否明确 | Package Contract、StateModel、EffectModel | 搜索、解析并绑定 exact refs，完成 Owner confirmation |
+| 3. 组装能力 | L0 到 L3 是否形成可追踪服务链 | Graph、Capability、Solution、Carrier、Channel | 查看能力地图，绑定 L1-L3，跳转精确 Graph |
+| 4. 冻结场景分母 | 哪些业务分支必须被验证 | ScenarioInventory、ScenarioPack | 选择冻结分母与可执行场景包，保留已发现测试来源 |
 | 5. 隔离演练 | 在不依赖真实接口时能否可控运行 | MirrorPlan、Fixture、Scenario run | 检查演练前置条件并进入 Rehearsals 工作区 |
 | 6. 检查证据 | L0-L3 与校准证据是否完整、保真度债务由谁负责 | PackageEvidenceIndex、七维 Fidelity、Domain Portfolio、Owner Task | 查看五层结论、分母、置信区间、弃权和任务；确认接手任务；可打开只读协议参考样例 |
-| 7. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 查看缺失权威事实；ANEKE 发布门禁仍在系统边界外 |
+| 7. 校准并提交 | 模拟是否拟合客户真实业务，能否交给治理 | FidelityInventory、OutcomeDefinition、Owner approval | 搜索并绑定校准资产和审批主体；ANEKE 发布门禁仍在系统边界外 |
 
-只有步骤 1 的已导入字段可直接编辑。其余步骤展示 exact ref、缺失义务和跨工作区入口，避免在一个页面中制造第二套 Contract、Scenario 或 Graph 编辑器。
+七步中的协议身份字段使用同一主动筛选器，不再要求输入 ID。候选按业务名称展示 Owner、Scope 和 lifecycle；
+选中后还必须通过 authority exact resolve 才能写入 Draft。页面只负责绑定已有治理资产，并没有在工作区中
+制造第二套 Contract、Scenario 或 Graph 编辑器。任意 Sheet 的变化都按整个 Package Draft 保存。
+
+点击「处理首个阻断」或右侧任务后，系统会切换到目标 Sheet、滚动到精确字段、打开对应筛选器并移动键盘
+焦点。目录不可用与无匹配结果是两种不同状态：前者保留当前输入并提供重试和受控降级说明，后者只表示当前
+查询没有候选。L2/L3 Picker 使用目录族搜索，但写入 Package 的始终是 `SOP / AGENT / WORKFLOW` 或
+`CHANNEL_APPLICATION` 等具体领域 kind。
+
+定位和打开 Picker 后，如果配置尚未保存，动作状态为“仍需处理”；保存后系统重新读取权威 readiness，只有目标
+gap 已经消失才显示“该阻断现已解决”。需要进入 Author、Rehearsal、Correctness 或 Governance 的动作会真实导航，
+并携带受控的 `returnRoute / returnPackageId / returnTask / returnAnchor`。它们不会仅切换标签，也不会把前端本地
+状态伪装成已解决。
 
 ![五层证据与七维 Fidelity](assets/resource-gateway-business-mirror-evidence-zh.png)
 
@@ -139,7 +170,17 @@ Readiness。真实索引出现后，可从页面刷新来源、查看五层结�
 - L2 服务载体层：知识、SOP、Workflow 和服务 Agent 等 Carrier。
 - L3 业务应用层：文本机器人、语音机器人及其他 Channel Application。
 
-地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。选择「打开精确编排图」进入 Graph 运行示例；返回 Package 后，业务上下文和 exact lineage 保持不变。
+地图不会把 L0 Graph 自动改名为 L1 Solution，也不会从已有测试数量推断 Scenario 已治理。黄色缺失项是正式 readiness obligation。
+选择「打开精确编排图」时，页面先调用认证的 Authoring Link Resolver；服务端按当前 Scope 重新读取 authority，
+校验 source id、revision、fingerprint 和受控返回坐标，再返回结构化 `/author/` Compose descriptor。解析期间入口显示
+进行中状态；漂移、无权限、未找到或服务不可用时停留在当前 Package 并提供重试，不会猜测同名 Graph，也不会进入「运行示例」。
+
+![业务镜像精确来源在 Author 中打开](assets/resource-gateway-guided-author-exact-graph-zh.png)
+
+浏览器验收中的 `loanDecisionPolicy` 精确来源加载为 3 个节点、2 条边；来源坐标保留在 URL 和 Draft
+`visualLayout.source` 中。此时顶部显示「只读源图」，允许检查、缩放和选择，但锁定拖动、连线、拖入算子和双击编辑。
+点击「创建工作副本」并收到 durable revision 后，URL 会删除 source 参数并切换到 `draftId + revision`，此后才进入可编辑状态，
+且 lineage 继续保留。页面初次短暂加载不算成功，必须等 Graph 名、节点数和边数均与权威投影一致。
 
 ## 5. 语言、键盘和响应式行为
 
@@ -154,7 +195,7 @@ Readiness。真实索引出现后，可从页面刷新来源、查看五层结�
 
 工作区在 `1440`、`820` 和 `390` CSS px 下使用不同布局。平板和手机把七步导航变为有界横向 task rail，主页面不得产生横向滚动；Gap 侧栏移动到任务内容之后。
 
-![390px mobile task workspace](assets/resource-gateway-business-mirror-mobile-zh.jpg)
+![390px mobile task workspace](assets/resource-gateway-guided-business-mirror-mobile-zh.png)
 
 ## 6. 在 VS Code 中离线体验
 
@@ -172,7 +213,10 @@ code --new-window --extensionDevelopmentPath="$PWD"
 - `resourceDispatch`
 - `enrichOrderList`
 
-离线适配器支持完整固定任务：catalog、preview、import、edit/save 和 compile。保存使用 session-local durable head、optimistic revision 和材料绑定的精确幂等回放。同一 key 与相同请求材料返回原始响应；同一 key 与不同材料返回 `RG.BUSINESS_MIRROR.IDEMPOTENCY_MATERIAL_CONFLICT`。
+离线适配器支持完整固定任务：catalog、preview、import、13 类引用候选 Search/Resolve、edit/save 和 compile。
+所有 Picker 都可按业务名称、Owner、ID 或 Scope 搜索，无需服务端。保存使用 session-local durable head、
+optimistic revision 和材料绑定的精确幂等回放。同一 key 与相同请求材料返回原始响应；同一 key 与不同材料
+返回 `RG.BUSINESS_MIRROR.IDEMPOTENCY_MATERIAL_CONFLICT`。
 
 离线模式有明确限制：
 
@@ -199,10 +243,14 @@ X-Purpose: BUSINESS_MIRROR_AUTHORING
 | `GET /api/business-mirror/legacy-graphs` | 加载 Portfolio preview | 有界、排序、同 Scope projection catalog |
 | `GET /api/business-mirror/packages?limit=200` | 合并已导入 Package | 当前 durable heads |
 | `POST /api/business-mirror/legacy-graphs/{graphName}/packages` | 导入能力包 | revision `1` 与 durable save receipt |
-| `PUT /api/business-mirror/packages/{packageId}?expectedRevision=N` | 保存业务定义 | revision `N+1` 或稳定 conflict |
+| `PUT /api/business-mirror/packages/{packageId}?expectedRevision=N` | 保存整个 Package Draft | revision `N+1` 或稳定 conflict |
 | `POST /api/business-mirror/packages/{packageId}/compile?sourceRevision=N` | 检查就绪度 | append-only compilation receipt 与 readiness report |
 
 `businessMirrorWorkspace=true` 只说明产品路由已打包。Package API、compiler API 和各 Authority readiness 仍需分别读取 capability probe。UI 显示「Resource Gateway connected」不等于任一 Package 已 READY。
+
+候选目录的响应模型可以包含 `fullySpecified` 等服务端派生展示字段，但能力包保存模型只能白名单复制
+`tenantId / organizationId / projectId / environmentId / region`。前端不得把整个候选对象或查询投影原样写回，
+否则 Jackson 严格反序列化会拒绝未知字段。该边界已有组件测试和真实浏览器保存回归共同守护。
 
 ## 8. 故障排查
 

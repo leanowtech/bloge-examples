@@ -5,8 +5,10 @@ import {
   createOutcomeCalibrationProposal,
   executeCorrectnessRun,
   fetchCorrectnessCapabilities,
+  fetchCorrectnessDefinitions,
   fetchCorrectnessEvidence,
   fetchCorrectnessGovernanceFeedback,
+  fetchCorrectnessTargets,
   fetchCorrectnessWorkspace,
   preflightCorrectnessRun,
   publicationRef,
@@ -55,6 +57,68 @@ describe('correctnessApi', () => {
     expect(requests[0]?.input).toContain('definitionId=definition-1');
     expect(requests[0]?.input).toContain('caseLimit=50');
     expect(headers(requests[0]?.init).get('X-Purpose')).toBe('CORRECTNESS_READ');
+  });
+
+  it('discovers correctness targets with bounded query parameters and cancellation', async () => {
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      requests.push({ input: String(input), init });
+      return json(referencePage([]));
+    });
+    const controller = new AbortController();
+
+    await fetchCorrectnessTargets(
+      'OPERATOR',
+      { query: 'risk score', cursor: 'cursor-2', limit: 12 },
+      controller.signal,
+    );
+
+    expect(requests[0]?.input).toContain('/api/visual/correctness-targets?');
+    expect(requests[0]?.input).toContain('targetKind=OPERATOR');
+    expect(requests[0]?.input).toContain('query=risk+score');
+    expect(requests[0]?.input).toContain('cursor=cursor-2');
+    expect(requests[0]?.input).toContain('limit=12');
+    expect(requests[0]?.init?.signal).toBe(controller.signal);
+    expect(headers(requests[0]?.init).get('X-Purpose')).toBe('CORRECTNESS_READ');
+  });
+
+  it('loads definitions for one exact target and filters their bounded local catalog', async () => {
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      requests.push({ input: String(input), init });
+      return json(referencePage([
+        referenceCandidate('definition-risk', 'Risk approval truth'),
+        referenceCandidate('definition-loan', 'Loan approval truth'),
+      ]));
+    });
+    const controller = new AbortController();
+
+    const page = await fetchCorrectnessDefinitions(
+      referenceCandidate('loan/operator', 'Loan operator', 'OPERATOR'),
+      { query: 'loan', cursor: null, limit: 20 },
+      controller.signal,
+    );
+
+    expect(requests[0]?.input).toContain(
+      '/api/visual/correctness-targets/OPERATOR/loan%2Foperator/definitions?');
+    expect(requests[0]?.input).toContain(`targetFingerprint=${encodeURIComponent(fp('r'))}`);
+    expect(requests[0]?.init?.signal).toBe(controller.signal);
+    expect(page.items.map((candidate) => candidate.id)).toEqual(['definition-loan']);
+    expect(page.nextCursor).toBeNull();
+  });
+
+  it('maps a catalog service outage to the picker unavailable state', async () => {
+    setBlogeApiTransport(async () => new Response(JSON.stringify({
+      code: 'RG.REFERENCE.CATALOG_UNAVAILABLE',
+      detail: 'Candidate directory is unavailable.',
+    }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+
+    await expect(fetchCorrectnessTargets(
+      'GRAPH', { query: '', cursor: null, limit: 20 }, new AbortController().signal,
+    )).rejects.toMatchObject({ status: 'unavailable', retryable: true });
   });
 
   it('submits an unresolved intent, then executes only the returned canonical selection', async () => {
@@ -157,4 +221,36 @@ function headers(init?: RequestInit): Headers {
 
 function fp(value: string): string {
   return `sha256:${value.repeat(64)}`;
+}
+
+function referencePage(items: ReturnType<typeof referenceCandidate>[]) {
+  return {
+    schemaVersion: 'bloge.referencePage.v1',
+    items,
+    nextCursor: null,
+    queryFingerprint: fp('q'),
+    catalogGeneration: 1,
+  };
+}
+
+function referenceCandidate(id: string, displayName: string, kind = 'CORRECTNESS_DEFINITION') {
+  return {
+    schemaVersion: 'bloge.referenceCandidate.v1' as const,
+    kind,
+    id,
+    displayName,
+    description: '',
+    revision: 1,
+    fingerprint: fp('r'),
+    authority: 'resource-gateway://correctness-definitions',
+    scope: {
+      tenantId: 'tenant-a', organizationId: 'org-a', projectId: 'project-a',
+      environmentId: 'test', region: 'local',
+    },
+    lifecycle: 'ACTIVE' as const,
+    owner: { stableId: 'owner-a', displayName: 'Risk team' },
+    labels: [],
+    compatibility: 'COMPATIBLE' as const,
+    disabledReasonCode: '',
+  };
 }

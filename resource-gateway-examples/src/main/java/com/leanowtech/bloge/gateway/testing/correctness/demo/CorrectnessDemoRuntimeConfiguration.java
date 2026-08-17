@@ -33,6 +33,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWor
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.ReviewSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceProjection.RunSummary;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceQuery;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateContributor;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -171,6 +172,12 @@ public class CorrectnessDemoRuntimeConfiguration {
                 false, false, false, false, false, false, false);
     }
 
+    @Bean
+    @ConditionalOnMissingBean(name = "correctnessDemoReferenceCandidateContributor")
+    ReferenceCandidateContributor correctnessDemoReferenceCandidateContributor() {
+        return new LoanDecisionReferenceCandidateContributor();
+    }
+
     private static List<CaseSummary> cases() {
         return List.of(
                 testCase("prime-auto-approve", '1', "Prime applicant auto approval",
@@ -303,6 +310,16 @@ public class CorrectnessDemoRuntimeConfiguration {
 
         private ReadOnlyDefinitionRepository(StoredCorrectnessDefinition stored) {
             this.stored = stored;
+        }
+
+        @Override
+        public boolean supportsHeadListing() {
+            return true;
+        }
+
+        @Override
+        public List<StoredCorrectnessDefinition> listHeads(EnterpriseScope scope, int limit) {
+            return matchesScope(scope) && limit > 0 ? List.of(stored) : List.of();
         }
 
         @Override
