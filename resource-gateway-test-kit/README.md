@@ -186,6 +186,34 @@ Verification confirms internal consistency of the development projection. It int
 not upgrade `DEVELOPMENT_TEST_OWNED` to release acceptance and does not prove governed same-closure
 execution, deployment egress denial, environment binding, or Owner sign-off.
 
+## Verify a Stage Acceptance Result
+
+`CapabilityStudioStageAcceptanceResultVerifier` verifies the strict, payload-free Stage Acceptance
+Result v1 used by section 13.1 of the Capability Studio evolution plan. The result must contain
+exactly one `AC-PRE-01` through `AC-PRE-05`, exact baseline/demo references, environment and
+execution identity, matrix, commands, observations, evidence, issues, owner, and sign-offs.
+Every precondition carries an exact evidence reference and fingerprint. The verifier enforces the
+only valid status meanings: `NOT_RUN`, `BLOCKED`, `FAIL`, `PARTIAL`, and `PASS`; `PARTIAL` is
+accepted only for `DEVELOPMENT_LEDGER`, never for `STAGE_EXIT`.
+
+```java
+CapabilityStudioStageAcceptanceResultVerifier verifier =
+        new CapabilityStudioStageAcceptanceResultVerifier();
+CapabilityStudioStageAcceptanceResultVerifier.VerificationResult result =
+        verifier.verify(resultJsonBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+`PASS` is fail-closed: all five preconditions must be `PASS`; the matrix must be non-empty and
+fully executed; commands, observations, and evidence must be present; every linked evidence
+reference must be `AVAILABLE`; no open P0/P1 or blocker issue may remain; and an `OWNER` sign-off
+must match the declared owner with an approval, signature, and timestamp. `NOT_RUN` cannot contain
+a completed matrix; `BLOCKED` requires a blocked/not-run precondition; `FAIL` requires a failed
+precondition or observation. Verification results contain only stable check names and error codes,
+never payloads, paths, or sensitive field values.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:

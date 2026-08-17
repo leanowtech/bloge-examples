@@ -1,0 +1,234 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v1.schema.json",
+  "title": "Capability Studio Stage Acceptance Result v1",
+  "description": "Strict, payload-free stage acceptance result. Business payloads and sensitive transport fields are intentionally outside this protocol.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "resultId",
+    "revision",
+    "resultKind",
+    "contractId",
+    "candidateBuildRef",
+    "acceptanceBaselineRef",
+    "goldenDemoPackRef",
+    "environmentFingerprint",
+    "executionIdentity",
+    "startedAt",
+    "completedAt",
+    "executedMatrix",
+    "automationCommands",
+    "observations",
+    "evidenceRefs",
+    "openIssues",
+    "status",
+    "owner",
+    "signOffs",
+    "preconditions"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.capabilityStudioStageAcceptanceResult.v1" },
+    "resultId": { "type": "string", "pattern": "^SAR-[A-Za-z0-9._-]{1,120}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "resultKind": { "enum": ["STAGE_EXIT", "DEVELOPMENT_LEDGER"] },
+    "contractId": { "type": "string", "pattern": "^S[0-5]-AC-[0-9]{2}$" },
+    "candidateBuildRef": { "$ref": "#/$defs/buildRef" },
+    "acceptanceBaselineRef": { "$ref": "#/$defs/exactRef" },
+    "goldenDemoPackRef": { "$ref": "#/$defs/exactRef" },
+    "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "executionIdentity": { "$ref": "#/$defs/executionIdentity" },
+    "startedAt": { "$ref": "#/$defs/nullableDateTime" },
+    "completedAt": { "$ref": "#/$defs/nullableDateTime" },
+    "executedMatrix": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/matrixEntry" }
+    },
+    "automationCommands": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    },
+    "observations": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/observation" }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/evidenceRef" }
+    },
+    "openIssues": {
+      "type": "array",
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "status": { "enum": ["NOT_RUN", "BLOCKED", "FAIL", "PARTIAL", "PASS"] },
+    "owner": { "$ref": "#/$defs/owner" },
+    "signOffs": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/signOff" }
+    },
+    "preconditions": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/precondition" }
+    }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^(sha256:)?[A-Fa-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "nullableDateTime": {
+      "anyOf": [
+        { "$ref": "#/$defs/dateTime" },
+        { "type": "null" }
+      ]
+    },
+    "buildRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["buildRef", "revision", "artifactFingerprint", "sourceCommit"],
+      "properties": {
+        "buildRef": { "$ref": "#/$defs/safeRef" },
+        "revision": { "$ref": "#/$defs/safeRef" },
+        "artifactFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "sourceCommit": {
+          "type": "string",
+          "pattern": "^[A-Fa-f0-9]{7,64}$"
+        }
+      }
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "executionIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "runId", "mode"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/safeRef" },
+        "runId": { "$ref": "#/$defs/safeRef" },
+        "mode": { "enum": ["AUTOMATED", "MANUAL", "CI"] }
+      }
+    },
+    "matrixEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matrixId", "caseId", "executionStatus", "startedAt", "completedAt", "evidenceRefs"],
+      "properties": {
+        "matrixId": { "$ref": "#/$defs/safeRef" },
+        "caseId": { "$ref": "#/$defs/safeRef" },
+        "executionStatus": { "enum": ["EXECUTED", "NOT_RUN", "BLOCKED", "FAILED"] },
+        "startedAt": { "$ref": "#/$defs/nullableDateTime" },
+        "completedAt": { "$ref": "#/$defs/nullableDateTime" },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observationId", "status", "summary", "evidenceRefs"],
+      "properties": {
+        "observationId": { "$ref": "#/$defs/safeRef" },
+        "status": { "enum": ["PASS", "FAIL", "NOT_RUN", "BLOCKED"] },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "exactRef", "fingerprint", "status"],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/safeRef" },
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "status": { "enum": ["AVAILABLE", "MISSING", "INVALID", "EXPIRED"] }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issueId", "severity", "status", "blocker", "summary"],
+      "properties": {
+        "issueId": { "$ref": "#/$defs/safeRef" },
+        "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+        "status": { "enum": ["OPEN", "CLOSED"] },
+        "blocker": { "type": "boolean" },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "ownerRef": { "$ref": "#/$defs/safeRef" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "team"],
+      "properties": {
+        "actor": { "$ref": "#/$defs/safeRef" },
+        "team": { "$ref": "#/$defs/safeRef" }
+      }
+    },
+    "signOff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "actor", "decision", "signature", "timestamp"],
+      "properties": {
+        "role": { "type": "string", "pattern": "^[A-Z][A-Z0-9_.-]{1,63}$" },
+        "actor": { "$ref": "#/$defs/safeRef" },
+        "decision": { "enum": ["APPROVED", "REJECTED"] },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "timestamp": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preconditionId", "status", "evidenceRefs"],
+      "properties": {
+        "preconditionId": {
+          "enum": ["AC-PRE-01", "AC-PRE-02", "AC-PRE-03", "AC-PRE-04", "AC-PRE-05"]
+        },
+        "status": { "enum": ["PASS", "NOT_RUN", "BLOCKED", "FAIL"] },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      }
+    }
+  }
+}

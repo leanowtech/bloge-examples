@@ -43,6 +43,9 @@ final class CapabilityStudioSchemaSupport {
     static final String FEATURE_REHEARSAL_BASELINE_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-feature-rehearsal-baseline-v1.schema.json";
+    static final String STAGE_ACCEPTANCE_RESULT_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-stage-acceptance-result-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =
