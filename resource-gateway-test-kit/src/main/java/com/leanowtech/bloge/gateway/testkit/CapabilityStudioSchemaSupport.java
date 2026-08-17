@@ -34,6 +34,9 @@ final class CapabilityStudioSchemaSupport {
     static final String ERROR_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-error-v1.schema.json";
+    static final String SCENARIO_DATASET_PROJECTION_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-scenario-dataset-projection-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

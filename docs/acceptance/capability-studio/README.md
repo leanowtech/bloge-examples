@@ -15,7 +15,7 @@
 | Screen State Inventory v1 | [`screen-state-inventory-v1.md`](screen-state-inventory-v1.md) | 逐个 GP 固化页面状态和恢复动作 | 实现大多 `MISSING`/`PARTIAL` |
 | Requirement Traceability v1 | [`requirement-to-evidence-traceability-matrix-v1.md`](requirement-to-evidence-traceability-matrix-v1.md) | 把 GP、Spike、安全和 NFR 绑定到证据与责任人 | 缺口已显式列出 |
 
-两套 JSON Schema 位于 [`docs/schemas/resource-gateway-capability-studio/`](../../schemas/resource-gateway-capability-studio/)，因为它们是跨工具可消费的协议，而不是某一个验收运行的私有 fixture。
+跨工具 JSON Schema 位于 [`docs/schemas/resource-gateway-capability-studio/`](../../schemas/resource-gateway-capability-studio/)，因为它们是稳定协议，而不是某一个验收运行的私有 fixture。
 
 ## 2. 当前事实
 
@@ -32,6 +32,7 @@
 - GP-04 的 SQL 原子 optimistic CAS、同版本并发单赢家、stale 同内容重试幂等、Authority 重建恢复和 Canonical Baseline 漂移失败关闭测试；
 - GP-04 的四份严格 JSON Schema、独立 Test Kit 内容指纹重算和真实 HTTP before/after/preflight 互验；
 - GP-04 中文 1440×900 真实 Chrome 保存与预检烟测。
+- Scenario Dataset v1 的严格 payload-free 投影 Schema，以及独立 Test Kit 的指纹、Scope、引用闭包、质量计数和 Active readiness 验证器；服务端 Authority 与 UI 接入尚未完成。
 
 仍未完成的是持久化 Dataset Authority 与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、GP-04 英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。
 

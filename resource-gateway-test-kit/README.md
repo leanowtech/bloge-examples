@@ -116,6 +116,28 @@ phase-level checks. `FailureKind.SCHEMA` identifies strict-contract failures;
 `FailureKind.SEMANTIC` identifies cross-document invariant failures. Results
 contain only stable checks and error codes, never payloads or secrets.
 
+## Verify Capability Studio Scenario Dataset
+
+`CapabilityStudioScenarioDatasetVerifier` independently verifies the payload-free
+Scenario Dataset projection used by GP-03 and GP-09. It applies the packaged strict
+Draft 2020-12 Schema, a 4 MiB wire/canonical limit, recomputes the Dataset content
+fingerprint, and checks full enterprise-scope closure, unique Case/Contract/Behavior
+references, applicable-contract closure, declared quality counts, and `ACTIVE` readiness.
+
+```java
+CapabilityStudioScenarioDatasetVerifier verifier =
+        new CapabilityStudioScenarioDatasetVerifier();
+CapabilityStudioScenarioDatasetVerifier.VerificationResult result =
+        verifier.verify(datasetBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+The projection carries metadata references and business summaries only. Fixture, Mock,
+Replay, and protected payload material remain in their existing authorities and cannot be
+embedded in the Dataset document. Errors expose only stable codes and check names.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:
