@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,10 +51,11 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
     }
 
-    @Test
-    void isAbsentInProductionEvenWhenExplicitlyEnabled() {
+    @ParameterizedTest(name = "production vetoes Capability Studio for profiles {0}")
+    @ValueSource(strings = {"production", "production,test", "production,staging"})
+    void productionVetoesAllCapabilityStudioDemoBeansEvenWhenExplicitlyEnabled(String profiles) {
         runner.withPropertyValues(
-                        "spring.profiles.active=production",
+                        "spring.profiles.active=" + profiles,
                         "gateway.capability-studio.demo.enabled=true")
                 .run(context -> assertThat(context)
                         .doesNotHaveBean(CapabilityStudioGoldenDemoPack.class)

@@ -38,7 +38,13 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
     private static final int MAX_INSPECTABLE_BODY_BYTES = 2 * 1024 * 1024;
     private static final Set<String> CONTROL_FIELDS = Set.of(
             "controlplan", "requestedcontrols", "fixturebundle", "fixturebundleref",
+            "fixture", "fixtures", "fixtureref", "fixturerefs",
             "executionpurpose", "testmode", "behavioroverrides", "mocks", "mockrules",
+            "stub", "stubs", "stubref", "stubrefs",
+            "bindingoverride", "bindingoverrides", "bindingoverrideref", "bindingoverriderefs",
+            "dependencybehavior", "dependencybehaviors", "dependencybehaviorref",
+            "dependencybehaviorrefs", "scenariodataset", "scenariodatasetref",
+            "scenariodatasetrefs",
             "mirror", "mirrorplan", "mirrorplanid", "mirrorrequest",
             "replay", "replaypayload", "replaypayloads",
             "replacementrule", "replacementrules", "resolveroverrides",
@@ -112,7 +118,8 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
         }
         writeProblem(response, IntegrationProblem.badRequest(
                 "RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN",
-                "Fixture, mirror, replay, and replacement-control fields are forbidden on "
+                "Fixture, stub, binding override, dependency behavior, scenario dataset, mirror, "
+                        + "replay, and replacement-control fields are forbidden on "
                         + "production run protocols.",
                 correlationId, Map.of("field", field, "testingEndpoint", "/api/testing/executions")));
     }
