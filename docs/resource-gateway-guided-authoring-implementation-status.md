@@ -85,6 +85,13 @@ Author 收到坐标后：
 去重、键盘、禁用候选、空结果、目录不可用和重试。使用方式与错误恢复见
 [引用候选 API 指南](resource-gateway-reference-candidate-api-guide.md)。
 
+正确性工作台入口已从原始坐标表单升级为 `CorrectnessWorkspaceLauncher`：用户先按 Graph、Operator 或
+built-in function 筛选业务目标，再由系统主动查询绑定的 Correctness Definition。唯一 Definition 自动选择，
+多个 Definition 必须显式选择，零结果会阻断无效打开；`targetId + fingerprint + definitionId` 只在选中后作为
+精确坐标提交。旧 deep link 不变，原始坐标表单收进「高级精确坐标」，目录能力未声明时也能明确降级。
+Capability Probe 仅在 correctness Workspace 与 Target Catalog 真实装配时声明
+`guidedWorkspaceLauncher=true`。
+
 ## 自动化证据
 
 聚焦测试覆盖：

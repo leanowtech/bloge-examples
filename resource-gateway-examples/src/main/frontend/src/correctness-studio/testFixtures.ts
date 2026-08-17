@@ -23,6 +23,8 @@ export function deploymentCapabilities(
     schemaVersion: 'resourceGateway.integrationCapabilities.v1',
     features: {
       correctnessWorkspaceApi: true,
+      correctnessTargetCatalogApi: true,
+      guidedWorkspaceLauncher: true,
       correctnessPreflightApi: true,
       correctnessRunApi: true,
       correctnessEvidenceCompanionApi: true,

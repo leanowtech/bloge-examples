@@ -49,6 +49,7 @@ class CorrectnessAuthoringCapabilityTest {
         assertThat(capabilities.features())
                 .containsEntry("correctnessWorkspaceApi", true)
                 .containsEntry("correctnessTargetCatalogApi", true)
+                .containsEntry("guidedWorkspaceLauncher", true)
                 .containsEntry("correctnessCoverageApi", true)
                 .containsEntry("correctnessOracleAssertionApi", false)
                 .containsEntry("correctnessScenarioV2Api", true)

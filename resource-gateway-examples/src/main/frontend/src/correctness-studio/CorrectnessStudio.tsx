@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
@@ -11,15 +11,17 @@ import {
   LoaderCircle,
   PlayCircle,
   RefreshCw,
-  Search,
   ShieldCheck,
 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import {
   fetchCorrectnessCapabilities,
+  fetchCorrectnessDefinitions,
+  fetchCorrectnessTargets,
   fetchCorrectnessWorkspace,
 } from './api/correctnessApi';
+import type { ReferenceCandidate, ReferenceQuery } from '../shared/reference-picker/types';
 import type {
   CorrectnessApiEnvelope,
   CorrectnessDeploymentCapabilities,
@@ -35,6 +37,7 @@ import OracleStudio from './authoring/OracleStudio';
 import FixtureStudio from './authoring/FixtureStudio';
 import PublicationStudio from './authoring/PublicationStudio';
 import CorrectnessI18nProvider from './CorrectnessI18nProvider';
+import CorrectnessWorkspaceLauncher from './launcher/CorrectnessWorkspaceLauncher';
 import './styles.css';
 
 type CorrectnessView = 'overview' | 'coverage' | 'cases' | 'fixtures' | 'oracle' | 'runs';
@@ -44,11 +47,17 @@ export interface CorrectnessStudioApi {
   capabilities(): Promise<CorrectnessDeploymentCapabilities>;
   workspace(coordinate: CorrectnessWorkspaceCoordinate):
   Promise<CorrectnessApiEnvelope<CorrectnessWorkspaceProjection>>;
+  targets(kind: CorrectnessTargetKind, request: ReferenceQuery, signal: AbortSignal):
+  ReturnType<typeof fetchCorrectnessTargets>;
+  definitions(target: ReferenceCandidate, request: ReferenceQuery, signal: AbortSignal):
+  ReturnType<typeof fetchCorrectnessDefinitions>;
 }
 
 const DEFAULT_API: CorrectnessStudioApi = {
   capabilities: fetchCorrectnessCapabilities,
   workspace: fetchCorrectnessWorkspace,
+  targets: fetchCorrectnessTargets,
+  definitions: fetchCorrectnessDefinitions,
 };
 
 const VIEWS: Array<{
@@ -157,7 +166,14 @@ function CorrectnessStudioSurface({ api = DEFAULT_API }: { api?: CorrectnessStud
   }
 
   if ((state === 'CONNECT' || (!workspace && !coordinate)) && deployment) {
-    return <CoordinateConnector onOpen={openCoordinate} />;
+    return (
+      <CorrectnessWorkspaceLauncher
+        deployment={deployment}
+        onOpen={openCoordinate}
+        searchDefinitions={api.definitions}
+        searchTargets={api.targets}
+      />
+    );
   }
 
   if (state === 'ERROR' && !workspace) {
@@ -491,47 +507,6 @@ function Oracle({ workspace, deployment }: {
           && deployment.features.correctnessScenarioV2Api === true}
       />
     </div>
-  );
-}
-
-function CoordinateConnector({ onOpen }: { onOpen(value: CorrectnessWorkspaceCoordinate): void }) {
-  const { t } = useI18n();
-  const [targetKind, setTargetKind] = useState<CorrectnessTargetKind>('GRAPH');
-  const [targetId, setTargetId] = useState('');
-  const [targetFingerprint, setTargetFingerprint] = useState('');
-  const [definitionId, setDefinitionId] = useState('');
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (!targetId.trim() || !targetFingerprint.trim()) return;
-    onOpen({
-      targetKind,
-      targetId: targetId.trim(),
-      targetFingerprint: targetFingerprint.trim(),
-      definitionId: definitionId.trim() || undefined,
-      caseLimit: 100,
-    });
-  };
-  return (
-    <main className="correctness-connect">
-      <div className="correctness-connect-heading">
-        <span><Search aria-hidden="true" size={22} /></span>
-        <div><p className="eyebrow">{t('EXACT TARGET')}</p><h2>{t('Open a correctness workspace')}</h2></div>
-      </div>
-      <p>{t('Connect to one exact Graph, Operator, or Function revision. The server will project its authoritative correctness assets and evidence.')}</p>
-      <form onSubmit={submit}>
-        <label>{t('Target kind')}
-          <select value={targetKind} onChange={(event) => setTargetKind(event.target.value as CorrectnessTargetKind)}>
-            <option value="GRAPH">{t('Graph')}</option><option value="OPERATOR">{t('Operator')}</option><option value="FUNCTION">{t('Function')}</option>
-          </select>
-        </label>
-        <label>{t('Target ID')}<input required value={targetId} onChange={(event) => setTargetId(event.target.value)} placeholder="loan-decision" /></label>
-        <label>{t('Target fingerprint')}<input required value={targetFingerprint} onChange={(event) => setTargetFingerprint(event.target.value)} placeholder="sha256:..." /></label>
-        <label>{t('Definition ID')} <span>{t('optional')}</span><input value={definitionId} onChange={(event) => setDefinitionId(event.target.value)} placeholder="correctness-loan-decision" /></label>
-        <button type="submit" className="correctness-primary-command" disabled={!targetId.trim() || !targetFingerprint.trim()}>
-          <Search aria-hidden="true" size={18} />{t('Open exact target')}
-        </button>
-      </form>
-    </main>
   );
 }
 

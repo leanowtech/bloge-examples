@@ -230,7 +230,12 @@ Correctness Studio 是面向业务正确性资产的一级入口，不是 Author
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-默认启动命令会打开一份贷款决策 exact Graph 样板。只读演示只声明 `correctnessWorkspaceApi=true`，因此可以查看定义、
+默认启动命令会先打开引导式业务目标选择器。保持「编排图」，在「业务目标」中选择贷款决策样板；系统会自动绑定唯一的
+Correctness Definition，再选择「打开正确性工作区」。普通用户不需要输入 target ID、fingerprint 或 Definition ID；
+多个定义时必须主动选择，零定义时页面会阻断并解释原因。旧 deep link 与目录故障恢复入口位于「高级精确坐标」。
+
+只读演示声明 `correctnessWorkspaceApi=true`、`correctnessTargetCatalogApi=true` 和
+`guidedWorkspaceLauncher=true`，因此可以查看定义、
 冻结分母、Case、Fixture descriptor、Oracle/Assertion、Publication 摘要和五轴状态，但不能保存、发布或运行。
 这是 capability 失败关闭，不是页面故障。完整操作说明见
 [Correctness Studio 演示指南](resource-gateway-correctness-studio-demo-guide.md)。

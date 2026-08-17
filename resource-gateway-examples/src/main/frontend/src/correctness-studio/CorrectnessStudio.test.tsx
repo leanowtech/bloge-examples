@@ -17,6 +17,8 @@ describe('CorrectnessStudio', () => {
   let api: CorrectnessStudioApi;
   const capabilities = vi.fn();
   const workspace = vi.fn();
+  const targets = vi.fn();
+  const definitions = vi.fn();
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -26,7 +28,9 @@ describe('CorrectnessStudio', () => {
     root = null;
     capabilities.mockReset();
     workspace.mockReset();
-    api = { capabilities, workspace };
+    targets.mockReset();
+    definitions.mockReset();
+    api = { capabilities, workspace, targets, definitions };
   });
 
   afterEach(async () => {
@@ -73,14 +77,14 @@ describe('CorrectnessStudio', () => {
     expect(workspace).toHaveBeenCalledTimes(2);
   });
 
-  it('opens an exact target from the coordinate connector without guessing a demo asset', async () => {
+  it('preserves advanced exact-coordinate recovery without guessing a demo asset', async () => {
     capabilities.mockResolvedValue(deploymentCapabilities());
     workspace.mockResolvedValue(envelope(workspaceProjection()));
     await render();
 
     await change(input('Target ID'), 'loan-decision');
     await change(input('Target fingerprint'), 'sha256:graph');
-    await click(button('Open exact target'));
+    await click(button('Open with exact coordinates'));
 
     expect(workspace).toHaveBeenCalledWith(expect.objectContaining({
       targetKind: 'GRAPH', targetId: 'loan-decision', targetFingerprint: 'sha256:graph',

@@ -76,8 +76,10 @@ From the repository root:
 ```
 
 The default `test`-profile startup enables the read-only Correctness Studio sample,
-prints its exact deep link, verifies the Workspace capability, and makes `--open`
-open that deep link. To start without the sample and open Business Mirror instead:
+verifies the Workspace and target-catalog capabilities, and makes `--open` open the guided
+target picker. Select the loan-decision Graph; its sole Correctness Definition is bound
+automatically. Exact deep links remain compatible under the advanced coordinate panel. To start
+without the sample and open Business Mirror instead:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --no-correctness --open

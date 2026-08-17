@@ -710,7 +710,7 @@ public class ToolStudioIntegrationService {
         features.put("correctnessWorkspaceApi", correctnessAuthoringRuntime.workspaceApi());
         features.put("referenceCandidateApi", true);
         features.put("correctnessTargetCatalogApi", correctnessAuthoringRuntime.workspaceApi());
-        features.put("guidedWorkspaceLauncher", false);
+        features.put("guidedWorkspaceLauncher", correctnessAuthoringRuntime.workspaceApi());
         features.put("businessMirrorGuidedRemediation", true);
         features.put("correctnessCoverageApi", correctnessAuthoringRuntime.coverageApi());
         features.put("correctnessOracleAssertionApi",

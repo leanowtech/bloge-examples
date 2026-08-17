@@ -1205,6 +1205,7 @@ export interface CorrectnessApiExchangeOptions {
   body?: unknown;
   ifMatch?: number;
   idempotencyKey?: string;
+  signal?: AbortSignal;
 }
 
 /** Uses the host-aware transport and workload identity for the isolated Correctness API family. */
@@ -1227,6 +1228,7 @@ export async function exchangeCorrectnessApi<T>(
       ...(options.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : {}),
     },
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
   }));
 }
 

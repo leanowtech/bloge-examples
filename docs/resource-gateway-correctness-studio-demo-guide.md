@@ -17,7 +17,18 @@ Correctness Studio 样板已是默认启动能力。脚本会构建前后端、�
 - `correctnessWorkspaceApi=true`；
 - `correctnessRunApi=false`。
 
-浏览器未自动打开时，访问以下地址：
+浏览器未自动打开时，访问引导式入口：
+
+```text
+http://localhost:8080/correctness/?lang=zh-CN
+```
+
+首次进入不需要准备任何 ID 或 fingerprint：保持「编排图」，展开「业务目标」下拉框，选择
+`Loan decision correctness`；
+样板只有一个匹配的正确性定义，页面会显示「已自动选择」。点击「打开正确性工作区」即可进入下文的总览。
+当一个目标存在多个定义时必须主动选择；没有定义时页面会说明阻断原因，不会发起必然失败的请求。
+
+旧系统 deep link 和故障恢复仍可展开「高级精确坐标」输入。演示样板的直达链接为：
 
 ```text
 http://localhost:8080/correctness/?targetKind=GRAPH&targetId=loan-decision-with-fallback&targetFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&definitionId=loan-correctness-demo&correctnessView=overview&lang=zh-CN
@@ -38,7 +49,7 @@ tail -f target/example-logs/visual-canvas-demo.log
 
 ### 2.1 总览：先判断证明是否可信
 
-总览展示 `loan-decision-with-fallback` Graph 的精确 revision 和 fingerprint，以及四条必须满足的业务结果。先观察顶部五轴裁决：
+从引导式入口打开后，总览展示 `loan-decision-with-fallback` Graph 的精确 revision 和 fingerprint，以及四条必须满足的业务结果。先观察顶部五轴裁决：
 
 | 轴 | 样板状态 | 含义 |
 |---|---|---|
