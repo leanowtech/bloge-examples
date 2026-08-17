@@ -1212,6 +1212,18 @@ Stage 1 开工后，新反馈必须先归类：
 
 每条 Acceptance Contract 继承 `AC-PRE-01` 至 `AC-PRE-05`，并在本条结果中补充自己的用户动作、业务结果和系统不变量。只有前置条件与本条证据都闭合，Owner 才能签署 `PASS`。
 
+每次验收必须生成一条不可变 Acceptance Result。Result 至少包含：`contractId`、候选 build/ref/fingerprint、Baseline 与 Demo Pack exact ref、环境 fingerprint、执行身份、开始与结束时间、实际执行矩阵、自动化命令、观察值、Evidence URI 与 fingerprint、未关闭问题、状态、Owner 和签署。缺失任一必填字段时，状态只能是 `NOT_RUN` 或 `BLOCKED`。后续代码、配置、Schema、Dataset、Graph、Binding、Case、Oracle 或环境策略发生变化时，旧 Result 仍可用于审计，但不能继续证明新候选通过。
+
+| Result 状态 | 唯一含义 |
+|---|---|
+| `NOT_RUN` | 尚未在满足 `AC-PRE-*` 的候选与环境上执行，或只有开发测试、截图、口头演示 |
+| `BLOCKED` | 前置条件、依赖、权限或证据基础设施不满足，验收不能产生有效结论 |
+| `FAIL` | 已有效执行，至少一个必需业务结果、系统不变量或阈值不满足 |
+| `PARTIAL` | 仅用于开发进度台账；部分子矩阵有证据，但不能作为阶段退出结果 |
+| `PASS` | 全量矩阵有效执行，所有必需结果与不变量满足，证据可解析并由指定 Owner 完成签署 |
+
+禁止以失败比例平均、后续补解释、人工忽略异常、重跑后只保留成功结果或降低矩阵覆盖来得到 `PASS`。重跑必须生成新 Result，并保留失败 Result 与修复关联。
+
 #### Stage 0：Acceptance Baseline
 
 | ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
@@ -1219,7 +1231,7 @@ Stage 1 开工后，新反馈必须先归类：
 | `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录 | 产品、UX、QA 全部签署后 `PASS` |
 | `S0-AC-02` | Golden Demo Pack 固定为 4 API、1 Feature、1 Tool、9 Case；Case 均有 Owner、Source、Oracle、适用契约和精确引用闭包 | Demo Pack Schema 校验、Test Kit verifier、内容 fingerprint、篡改与跨 Scope 负向用例 | 业务 Owner、正确性 Owner `PASS` |
 | `S0-AC-03` | Spike A 无损下沉到既有测试 Runtime；Spike B 来自真实 BLOGE Trace；Spike C 从生产装配和协议移除注入能力 | 三份 Spike 报告与仓库测试；确定性、source map、Data Lens、生产 profile、network deny 和 counter 证据 | 架构、Runtime、画布、安全分别签署，三项均 `PASS` |
-| `S0-AC-04` | Canonical Baseline 连续运行 3 次均为 9/9；semantic fingerprint 一致；真实外部调用数始终为 0 | 三次独立 Run Evidence、断言结果、egress counter、运行环境 fingerprint | 正确性 Owner、Runtime、QA `PASS` |
+| `S0-AC-04` | 固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 按预期超时且下游未调用；进程内与部署级真实外部调用观测均为 0 | 27 份独立 Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包复算 | 任一 Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写/下游未调用不成立、counter 非 0 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
 | `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
 | `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
 
