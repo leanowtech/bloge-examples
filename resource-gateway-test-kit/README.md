@@ -165,6 +165,27 @@ result proves that the bounded projection is internally consistent and declares
 authorization, or that the graph and semantic fingerprints came from a trusted production
 Authority. Those remain separate release gates.
 
+`CapabilityStudioFeatureRehearsalBaselineVerifier` verifies the separate payload-free
+`DEVELOPMENT_TEST_OWNED` 9 Case × 3 round projection. Its strict Schema fixes the Baseline and
+Graph identities, Case order, counts, and wire shape. The semantic verifier then requires 27
+unique Run IDs, three stable semantic fingerprints per Case, the expected timeout status only for
+the timeout Case, exact Case-to-Oracle assertion binding, all Oracles passing, zero declared real
+calls, the exact six operator footprints, and no `WRITE` or `MIXED` side effects.
+
+```java
+CapabilityStudioFeatureRehearsalBaselineVerifier verifier =
+        new CapabilityStudioFeatureRehearsalBaselineVerifier();
+CapabilityStudioFeatureRehearsalBaselineVerifier.VerificationResult result =
+        verifier.verify(baselineResponseBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+Verification confirms internal consistency of the development projection. It intentionally does
+not upgrade `DEVELOPMENT_TEST_OWNED` to release acceptance and does not prove governed same-closure
+execution, deployment egress denial, environment binding, or Owner sign-off.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:

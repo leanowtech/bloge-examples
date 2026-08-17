@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-feature-rehearsal-baseline-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Feature Rehearsal Baseline v1",
+  "description": "Strict payload-free DEVELOPMENT_TEST_OWNED projection for the canonical 9 Case x 3 round feature rehearsal. Cross-field business invariants are checked by the independent TestKit verifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "baselineId",
+    "status",
+    "graphId",
+    "graphFingerprint",
+    "caseCount",
+    "roundCount",
+    "runCount",
+    "realExternalCallCount",
+    "cases",
+    "operators",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.feature-rehearsal-baseline.v1" },
+    "evidenceKind": { "const": "DEVELOPMENT_TEST_OWNED" },
+    "baselineId": { "const": "cancellation-fee-canonical-baseline" },
+    "status": { "enum": ["PASSED", "FAILED_CLOSED"] },
+    "graphId": { "const": "feature-cancellation-dispute-context" },
+    "graphFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "caseCount": { "const": 9 },
+    "roundCount": { "const": 3 },
+    "runCount": { "const": 27 },
+    "realExternalCallCount": { "const": 0 },
+    "cases": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "prefixItems": [
+        { "$ref": "#/$defs/standardCase" },
+        { "$ref": "#/$defs/riderNotResponsibleCase" },
+        { "$ref": "#/$defs/driverResponsibleCase" },
+        { "$ref": "#/$defs/cityPolicyMissingCase" },
+        { "$ref": "#/$defs/compensationHistoryEmptyCase" },
+        { "$ref": "#/$defs/timeoutCase" },
+        { "$ref": "#/$defs/duplicateCancellationCase" },
+        { "$ref": "#/$defs/forbiddenWriteCase" },
+        { "$ref": "#/$defs/policyRevisionCase" }
+      ],
+      "items": false
+    },
+    "operators": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/operator" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/code" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "caseId": {
+      "type": "string",
+      "enum": [
+        "case-standard-cancellation-fee",
+        "case-rider-not-responsible",
+        "case-driver-responsible",
+        "case-city-policy-missing",
+        "case-compensation-history-empty",
+        "case-compensation-history-timeout",
+        "case-duplicate-cancellation",
+        "case-forbidden-write-effect",
+        "case-policy-revision-regression"
+      ]
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]*$"
+    },
+    "runStatus": {
+      "enum": ["PASSED", "TIMED_OUT"]
+    },
+    "round": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "runId", "status", "semanticFingerprint", "realExternalCallCount"],
+      "properties": {
+        "round": { "enum": [1, 2, 3] },
+        "runId": { "$ref": "#/$defs/identifier" },
+        "status": { "$ref": "#/$defs/runStatus" },
+        "semanticFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "realExternalCallCount": { "const": 0 }
+      }
+    },
+    "passFail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assertionId", "status", "expectedSummary", "actualSummary", "actualFingerprint"],
+      "properties": {
+        "assertionId": { "$ref": "#/$defs/identifier" },
+        "status": { "enum": ["PASS", "FAIL"] },
+        "expectedSummary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "actualSummary": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "actualFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseName", "rounds", "oracle", "businessFingerprint"],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/caseId" },
+        "caseName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "rounds": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "$ref": "#/$defs/round" },
+            { "$ref": "#/$defs/round" },
+            { "$ref": "#/$defs/round" }
+          ],
+          "items": false
+        },
+        "oracle": { "$ref": "#/$defs/passFail" },
+        "businessFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "standardCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-standard-cancellation-fee" } } }
+      ]
+    },
+    "riderNotResponsibleCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-rider-not-responsible" } } }
+      ]
+    },
+    "driverResponsibleCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-driver-responsible" } } }
+      ]
+    },
+    "cityPolicyMissingCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-city-policy-missing" } } }
+      ]
+    },
+    "compensationHistoryEmptyCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-compensation-history-empty" } } }
+      ]
+    },
+    "timeoutCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-compensation-history-timeout" } } }
+      ]
+    },
+    "duplicateCancellationCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-duplicate-cancellation" } } }
+      ]
+    },
+    "forbiddenWriteCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-forbidden-write-effect" } } }
+      ]
+    },
+    "policyRevisionCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-policy-revision-regression" } } }
+      ]
+    },
+    "operator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "operatorRef", "sideEffectType"],
+      "properties": {
+        "nodeId": { "$ref": "#/$defs/identifier" },
+        "operatorRef": { "$ref": "#/$defs/identifier" },
+        "sideEffectType": { "enum": ["EXTERNAL_CALL", "READ_ONLY", "WRITE", "MIXED"] }
+      }
+    }
+  }
+}
