@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
@@ -53,11 +54,15 @@ class TestOperatorExecutionApiServiceTest {
     @BeforeEach
     void setUp() {
         operators.register("customer.greeting", new GreetingOperator());
+        operators.register("http.resource", new HttpResourceOperator(null, resources, null, null, null, null));
         operators.register("legacy.external", new OpaqueExternalOperator());
         operators.register("configured.read", new ConfiguredReadOperator("tenant-a:"));
         operators.register("configured.snapshot", new SnapshotConfiguredReadOperator("tenant-a:"));
         operators.register("configured.oversized", new OversizedSnapshotOperator());
         operators.register("undeclared.read", new UndeclaredReadOperator());
+        operators.register("declared.read", new DeclaredResourceReadOperator(
+                OperatorComposabilityManifest.ControlBoundary.RESOURCE_BINDING));
+        operators.register("unmanaged.declared", new UnmanagedDeclaredReadOperator());
         operators.register("clock.read", new ClockDependentReadOperator());
         operators.register("ambient.read", new AmbientDependentReadOperator(List.of(
                 OperatorComposabilityManifest.ExecutionService.IDENTITY,
@@ -95,6 +100,22 @@ class TestOperatorExecutionApiServiceTest {
         assertThat(target.executionSupported()).isTrue();
         assertThat(target.certificationEligible()).isTrue();
         assertThat(target.certificationGaps()).isEmpty();
+    }
+
+    @Test
+    void emptyResourceRegistryKeepsHttpDiscoverySafeButNotRunnableOrCertifiable() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget("http.resource", identity());
+
+        assertThat(target.testabilityClass())
+                .isEqualTo(OperatorExecutionTargetSnapshot.CONDITIONAL_TRANSPORT);
+        assertThat(target.executionSupported()).isFalse();
+        assertThat(target.certificationEligible()).isFalse();
+        assertThat(target.composabilityManifest()).containsEntry("dependencyMode", "OPAQUE");
+        assertThat(target.composabilityManifest()).containsEntry("dependencies", List.of());
+        assertThat(target.certificationRequirements())
+                .anyMatch(requirement -> requirement.contains("resource descriptor"));
+        assertThat(target.certificationGaps())
+                .anyMatch(gap -> gap.contains("resource descriptor"));
     }
 
     @Test
@@ -255,6 +276,59 @@ class TestOperatorExecutionApiServiceTest {
         assertThat(target.certificationEligible()).isFalse();
         assertThat(target.certificationGaps())
                 .contains("Binding has no formal operator composability manifest; hidden dependencies cannot be excluded.");
+    }
+
+    @Test
+    void declaredRuntimeControllableDependenciesAreConditionallyCertifiable() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget("declared.read", identity());
+
+        assertThat(target.dependencyPolicy()).isEqualTo("DECLARED");
+        assertThat(target.composabilityManifest()).containsEntry("dependencyMode", "DECLARED");
+        List<String> dependencies = ((List<?>) target.composabilityManifest().get("dependencies"))
+                .stream()
+                .map(dependency -> String.valueOf(((Map<?, ?>) dependency).get("ref")))
+                .toList();
+        assertThat(dependencies).containsExactly("resource:customer-profile");
+        assertThat(target.certificationEligible()).isTrue();
+        assertThat(target.certificationGaps()).isEmpty();
+        assertThat(target.certificationRequirements())
+                .contains(
+                        "Fixture bundle must define a strict controlled fixture for declared dependency ref '"
+                                + "resource:customer-profile'.",
+                        "Runtime binding must route declared dependency ref 'resource:customer-profile' through "
+                                + "RESOURCE_BINDING.");
+    }
+
+    @Test
+    void unmanagedDeclaredDependencyRemainsIneligibleWithAnExplicitGap() {
+        TestOperatorTargetDescriptor target = service.describeOperatorTarget("unmanaged.declared", identity());
+
+        assertThat(target.dependencyPolicy()).isEqualTo("DECLARED");
+        assertThat(target.composabilityFingerprint()).startsWith("sha256:");
+        assertThat(target.certificationEligible()).isFalse();
+        assertThat(target.certificationGaps())
+                .anyMatch(gap -> gap.contains("resource:customer-profile") && gap.contains("unmanaged"));
+        assertThat(target.certificationRequirements())
+                .contains("Fixture bundle must define a strict controlled fixture for declared dependency ref '"
+                        + "resource:customer-profile'.");
+    }
+
+    @Test
+    void targetFingerprintIncludesTheFormalManifestFingerprint() {
+        ManifestSwitchingReadOperator operator = new ManifestSwitchingReadOperator();
+        operators.register("manifest.switch", operator);
+
+        OperatorExecutionTargetSnapshot baseline = OperatorExecutionTargetSnapshot.capture(
+                mapper, "manifest.switch", operators, resources);
+        operator.switchDependency("resource:other-profile");
+        OperatorExecutionTargetSnapshot changed = OperatorExecutionTargetSnapshot.capture(
+                mapper, "manifest.switch", operators, resources);
+
+        assertThat(changed.implementationFingerprint()).isEqualTo(baseline.implementationFingerprint());
+        assertThat(changed.runtimeBindingStateFingerprint())
+                .isEqualTo(baseline.runtimeBindingStateFingerprint());
+        assertThat(changed.composabilityFingerprint()).isNotEqualTo(baseline.composabilityFingerprint());
+        assertThat(changed.fingerprint()).isNotEqualTo(baseline.fingerprint());
     }
 
     @Test
@@ -516,6 +590,90 @@ class TestOperatorExecutionApiServiceTest {
         @Override
         public SideEffectType sideEffectType() {
             return SideEffectType.READ_ONLY;
+        }
+    }
+
+    private static class DeclaredResourceReadOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider, OperatorRuntimeBindingSnapshotProvider {
+        private final OperatorComposabilityManifest.ControlBoundary boundary;
+
+        private DeclaredResourceReadOperator(OperatorComposabilityManifest.ControlBoundary boundary) {
+            this.boundary = boundary;
+        }
+
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public Map<String, ?> runtimeBindingSnapshot() {
+            return Map.of("binding", "declared-resource-reader-v1");
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return new OperatorComposabilityManifest(
+                    OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.DECLARED,
+                    List.of(new OperatorComposabilityManifest.Dependency(
+                            "resource:customer-profile",
+                            OperatorComposabilityManifest.DependencyKind.RESOURCE,
+                            boundary)),
+                    List.of(),
+                    true,
+                    "test:declared-resource-reader",
+                    CONFORMANCE_FINGERPRINT);
+        }
+    }
+
+    private static final class UnmanagedDeclaredReadOperator extends DeclaredResourceReadOperator {
+        private UnmanagedDeclaredReadOperator() {
+            super(OperatorComposabilityManifest.ControlBoundary.UNMANAGED);
+        }
+    }
+
+    private static final class ManifestSwitchingReadOperator implements Operator<Object, Object>,
+            OperatorComposabilityManifestProvider, OperatorRuntimeBindingSnapshotProvider {
+        private String dependencyRef = "resource:customer-profile";
+
+        @Override
+        public Object execute(Object input, OperatorContext context) {
+            return input;
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.READ_ONLY;
+        }
+
+        @Override
+        public Map<String, ?> runtimeBindingSnapshot() {
+            return Map.of("binding", "manifest-switch-reader-v1");
+        }
+
+        @Override
+        public OperatorComposabilityManifest operatorComposabilityManifest() {
+            return new OperatorComposabilityManifest(
+                    OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.DECLARED,
+                    List.of(new OperatorComposabilityManifest.Dependency(
+                            dependencyRef,
+                            OperatorComposabilityManifest.DependencyKind.RESOURCE,
+                            OperatorComposabilityManifest.ControlBoundary.RESOURCE_BINDING)),
+                    List.of(),
+                    true,
+                    "test:manifest-switch-reader",
+                    CONFORMANCE_FINGERPRINT);
+        }
+
+        private void switchDependency(String ref) {
+            dependencyRef = ref;
         }
     }
 

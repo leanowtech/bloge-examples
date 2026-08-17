@@ -804,6 +804,84 @@ class TestRunServiceTest {
     }
 
     @Test
+    void nestedNodeFallbackConvergesTimeoutAttemptIntoRecoveredEvidence() {
+        DefaultOperatorRegistry nestedRegistry = new DefaultOperatorRegistry();
+        Graph child = new GraphBuilder("nested-fallback-body")
+                .node("lookup", new PureOperator())
+                .input((results, context) -> context.get("input"))
+                .fallback(() -> "nested-safe")
+                .node("after", new PureOperator())
+                .dependsOn("lookup")
+                .build();
+        Graph root = new GraphBuilder("nested-fallback-root")
+                .node("sub", new SubGraphOperator(child, nestedRegistry))
+                .input((results, context) -> Map.of("input", context.get("input")))
+                .build();
+        FixtureRule timeout = new FixtureRule(FixtureRule.SCHEMA_VERSION, "nested-timeout",
+                dynamicSelector("/root/sub/nested-fallback-body", "lookup", List.of(), List.of()),
+                FixtureRule.Behavior.timeout(Duration.ofSeconds(1),
+                        "NESTED_LOOKUP_TIMEOUT", "nested lookup timed out"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+
+        TestExecutionResult result = service.execute(request(root,
+                logicalBundle(Instant.parse("2026-07-15T09:00:00Z"), timeout)));
+
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+        assertThat(result.evidence().nodeTrace())
+                .filteredOn(trace -> "/root/sub/nested-fallback-body".equals(trace.graphPath())
+                        && "lookup".equals(trace.nodeId()))
+                .singleElement()
+                .satisfies(trace -> {
+                    assertThat(trace.status()).isEqualTo("MOCKED");
+                    assertThat(trace.output()).isEqualTo("nested-safe");
+                    assertThat(trace.errorCode()).isEmpty();
+                    assertThat(trace.durationMs()).isEqualTo(1000L);
+                    assertThat(trace.attempts()).singleElement().satisfies(attempt -> {
+                        assertThat(attempt.status()).isEqualTo("TIMEOUT");
+                        assertThat(attempt.errorCode()).isEqualTo("NESTED_LOOKUP_TIMEOUT");
+                    });
+                });
+        assertThat(result.evidence().nodeTrace())
+                .filteredOn(trace -> "/root/sub/nested-fallback-body".equals(trace.graphPath())
+                        && "after".equals(trace.nodeId()))
+                .singleElement()
+                .satisfies(trace -> assertThat(trace.status()).isEqualTo("SUCCESS"));
+    }
+
+    @Test
+    void retryThatSucceedsOnItsLastAttemptRemainsSuccess() {
+        AtomicInteger calls = new AtomicInteger();
+        Operator<Object, Object> flaky = new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                if (calls.getAndIncrement() == 0) {
+                    throw new IllegalStateException("first attempt failed");
+                }
+                return "recovered-by-retry";
+            }
+        };
+        Graph graph = new GraphBuilder("retry-success-terminal")
+                .node("subject", flaky)
+                .input((results, context) -> context.get("input"))
+                .retry(1, Duration.ZERO)
+                .build();
+
+        TestExecutionResult result = service.execute(request(graph, bundle()));
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("SUCCESS");
+            assertThat(trace.output()).isEqualTo("recovered-by-retry");
+            assertThat(trace.attempts()).extracting(TestRunEvidence.AttemptTrace::status)
+                    .containsExactly("FAILED", "SUCCESS");
+        });
+    }
+
+    @Test
     void attemptSelectorsScriptTimeoutThenRecoveryAcrossTheRealRetryChain() {
         AtomicInteger realCalls = new AtomicInteger();
         Graph graph = new GraphBuilder("attempt-controlled-retry")

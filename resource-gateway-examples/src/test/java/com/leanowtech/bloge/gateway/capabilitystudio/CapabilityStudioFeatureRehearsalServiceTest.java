@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
@@ -53,12 +54,9 @@ class CapabilityStudioFeatureRehearsalServiceTest {
                     });
             assertThat(projection.dataLens().fingerprint()).startsWith("sha256:");
 
-            String expectedStatus = scenario.dependencyBehaviors().stream()
-                    .anyMatch(behavior -> "TIMEOUT".equals(behavior.behavior()))
-                    ? "TIMED_OUT" : "PASSED";
             assertThat(projection.run().status())
                     .as("terminal status for %s", scenario.id())
-                    .isEqualTo(expectedStatus);
+                    .isEqualTo("PASSED");
         }
     }
 
@@ -89,22 +87,40 @@ class CapabilityStudioFeatureRehearsalServiceTest {
     }
 
     @Test
-    void timeoutCasePreservesTimeoutAndDownstreamSkipInTheDataLens() {
+    void timeoutCaseRecordsAttemptTimeoutAndCompleteFallbackRecovery() {
         CapabilityStudioFeatureRehearsalProjection projection = service.rehearse(
-                "case-compensation-history-timeout", PermissionMode.STRUCTURE_ONLY);
+                "case-compensation-history-timeout", PermissionMode.PAYLOAD_VISIBLE);
 
-        assertThat(projection.run().status()).isEqualTo("TIMED_OUT");
-        assertThat(projection.dataLens().nodes())
-                .filteredOn(node -> node.nodeId().equals("compensationHistoryLookup"))
-                .singleElement()
-                .satisfies(node -> {
-                    assertThat(node.status()).isEqualTo("TIMEOUT");
-                    assertThat(node.errorCode()).isEqualTo("COMPENSATION_HISTORY_TIMEOUT");
+        assertThat(projection.run().status()).isEqualTo("PASSED");
+        assertThat(projection.run().realExternalCallCount()).isZero();
+
+        CapabilityStudioDataLensProjection.Node compensation = projection.dataLens().nodes()
+                .stream()
+                .filter(node -> node.nodeId().equals("compensationHistoryLookup"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(compensation.status()).isEqualTo("MOCKED");
+        assertThat(compensation.fallbackStatus()).isEqualTo("FALLBACK");
+        assertThat(compensation.attempts()).anySatisfy(attempt -> {
+                    assertThat(attempt.status()).isEqualTo("TIMEOUT");
+                    assertThat(attempt.errorCode()).isEqualTo("COMPENSATION_HISTORY_TIMEOUT");
                 });
         assertThat(projection.dataLens().nodes())
                 .filteredOn(node -> node.nodeId().equals("aggregateCancellationContext")
                         || node.nodeId().equals("cancellationDecision"))
-                .allSatisfy(node -> assertThat(node.status()).isIn("CANCELLED", "SKIPPED", "NOT_RUN"));
+                .extracting(CapabilityStudioDataLensProjection.Node::status)
+                .containsOnly("SUCCESS");
+
+        Map<?, ?> decision = projection.dataLens().nodes().stream()
+                .filter(node -> node.nodeId().equals("cancellationDecision"))
+                .findFirst()
+                .map(CapabilityStudioDataLensProjection.Node::output)
+                .filter(Map.class::isInstance)
+                .map(Map.class::cast)
+                .orElseThrow();
+        assertThat(decision.get("action")).isEqualTo("MANUAL_REVIEW");
+        assertThat(decision.get("informationGap"))
+                .isEqualTo("COMPENSATION_HISTORY_TIMEOUT");
     }
 
     @Test

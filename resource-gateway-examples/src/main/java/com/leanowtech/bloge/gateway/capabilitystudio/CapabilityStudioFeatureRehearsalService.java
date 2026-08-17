@@ -192,13 +192,18 @@ public final class CapabilityStudioFeatureRehearsalService {
                 Map<?, ?> compensationHistory = asMap(input.get("compensationHistory"));
                 boolean policyMissing = policy.isEmpty();
                 String owner = text(responsibility.get("owner"));
+                boolean historyTimedOut = "TIMEOUT".equals(compensationHistory.get("availability"));
                 boolean historyMissing = compensationHistory.isEmpty()
                         || Boolean.FALSE.equals(compensationHistory.get("hasHistory"))
                         || (compensationHistory.get("records") instanceof List<?> records
                         && records.isEmpty());
 
                 Map<String, Object> output = new LinkedHashMap<>();
-                if (policyMissing) {
+                if (historyTimedOut) {
+                    output.put("action", "MANUAL_REVIEW");
+                    output.put("reasonCode", "COMPENSATION_HISTORY_TIMEOUT");
+                    output.put("responsibilityReason", "DEPENDENCY_NOT_AVAILABLE");
+                } else if (policyMissing) {
                     output.put("action", "MANUAL_REVIEW");
                     output.put("reasonCode", "CITY_POLICY_MISSING");
                     output.put("responsibilityReason", "POLICY_NOT_AVAILABLE");
@@ -215,8 +220,9 @@ public final class CapabilityStudioFeatureRehearsalService {
                     output.put("reasonCode", "CANCELLATION_CONTEXT_READY");
                     output.put("responsibilityReason", "PLATFORM_POLICY_CONTEXT");
                 }
-                output.put("informationGap", historyMissing
-                        ? "COMPENSATION_HISTORY_EMPTY" : "NONE");
+                output.put("informationGap", historyTimedOut
+                        ? "COMPENSATION_HISTORY_TIMEOUT"
+                        : historyMissing ? "COMPENSATION_HISTORY_EMPTY" : "NONE");
                 output.put("policyVersion", text(policy.get("version")));
                 output.put("caseId", input.get("caseId"));
                 return Map.copyOf(output);
@@ -236,6 +242,15 @@ public final class CapabilityStudioFeatureRehearsalService {
                 .input((results, context) -> resourceInput(POLICY_RESOURCE, context))
                 .node("compensationHistoryLookup", resourceOperator)
                 .input((results, context) -> resourceInput(COMPENSATION_RESOURCE, context))
+                .fallback(() -> new HttpResourceOutput(
+                        COMPENSATION_RESOURCE,
+                        504,
+                        Map.of(
+                                "availability", "TIMEOUT",
+                                "errorCode", "COMPENSATION_HISTORY_TIMEOUT"),
+                        "",
+                        Duration.ZERO,
+                        false))
                 .node("aggregateCancellationContext", aggregate)
                 .dependsOn("orderLookup")
                 .dependsOn("responsibilityLookup")

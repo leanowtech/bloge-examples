@@ -124,7 +124,7 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.graph.id").value(
                         "feature-cancellation-dispute-context"))
                 .andExpect(jsonPath("$.graph.operators").doesNotExist())
-                .andExpect(jsonPath("$.run.status").value("TIMED_OUT"))
+                .andExpect(jsonPath("$.run.status").value("PASSED"))
                 .andExpect(jsonPath("$.run.realExternalCallCount").value(0))
                 .andExpect(jsonPath("$.run.bindingMode").value(
                         "FIXTURE_CONTROLLED_NON_PRODUCTION"))
@@ -132,8 +132,10 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.dataLens.nodes.length()").value(6))
                 .andExpect(jsonPath("$.dataLens.edges.length()").value(5))
                 .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].status")
-                        .value("TIMEOUT"))
-                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].errorCode")
+                        .value("MOCKED"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].fallbackStatus")
+                        .value("FALLBACK"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'compensationHistoryLookup')].attempts[?(@.status == 'TIMEOUT')].errorCode")
                         .value("COMPENSATION_HISTORY_TIMEOUT"))
                 .andExpect(jsonPath("$.dataLens.nodes[0].input").isEmpty())
                 .andExpect(jsonPath("$.dataLens.nodes[0].output").isEmpty())
@@ -142,6 +144,16 @@ class CapabilityStudioDemoControllerTest {
         assertThat(response)
                 .doesNotContain("DEMO-ORDER-20260818-001", "fallbackToReal")
                 .contains("sha256:");
+
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-compensation-history-timeout")
+                        .queryParam("permission", "PAYLOAD_VISIBLE"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.run.status").value("PASSED"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'cancellationDecision')].output.action")
+                        .value("MANUAL_REVIEW"))
+                .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'cancellationDecision')].output.informationGap")
+                        .value("COMPENSATION_HISTORY_TIMEOUT"));
     }
 
     @Test

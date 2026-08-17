@@ -42,7 +42,9 @@ class CapabilityStudioGovernedCompilationServiceTest {
         CapabilityStudioGovernedCompilation result = service.compile(
                 null, operator, contract, runtimeTarget(), adapterCompilation());
 
-        assertThat(result.compiled()).isTrue();
+        assertThat(result.compiled())
+                .as("governed diagnostics: %s", result.plan().diagnostics())
+                .isTrue();
         assertThat(result.plan().fixtures()).hasSize(9);
         assertThat(result.plan().suite()).isNotNull();
         assertThat(result.plan().suite().testSuite().cases()).hasSize(9);
@@ -72,7 +74,9 @@ class CapabilityStudioGovernedCompilationServiceTest {
         CapabilityStudioGovernedCompilation result = service.compile(
                 null, operator, contract, runtimeTarget(), oneCaseAdapter);
 
-        assertThat(result.compiled()).isTrue();
+        assertThat(result.compiled())
+                .as("governed diagnostics: %s", result.plan().diagnostics())
+                .isTrue();
         assertThat(result.plan().fixtures()).hasSize(1);
         assertThat(result.plan().suite().testSuite().cases()).hasSize(1);
     }
@@ -179,7 +183,7 @@ class CapabilityStudioGovernedCompilationServiceTest {
                 exactDataset,
                 new CapabilityStudioScenarioDatasetCompiler.ExactCompilationTarget(
                         contract.target(), contract.fingerprint(JSON)),
-                this::material);
+                new CapabilityStudioGoldenScenarioMaterialResolver(pack));
     }
 
     private CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection retarget(
@@ -267,9 +271,13 @@ class CapabilityStudioGovernedCompilationServiceTest {
                 new OperatorDefinition.Display("Cancellation dispute handling", "Controlled demo tool", List.of("demo")),
                 OperatorDefinition.Source.builtIn("java"),
                 new OperatorDefinition.Ports(
-                        List.of(new OperatorDefinition.Port("caseId", new SchemaEnvelope(
-                                SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of("type", "string")),
-                                true, "Demo case id")),
+                        List.of(
+                                new OperatorDefinition.Port("orderId", new SchemaEnvelope(
+                                        SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of("type", "string")),
+                                        true, "Demo order id"),
+                                new OperatorDefinition.Port("caseId", new SchemaEnvelope(
+                                        SchemaEnvelope.JSON_SCHEMA, "2020-12", Map.of("type", "string")),
+                                        true, "Demo case id")),
                         List.of(new OperatorDefinition.Port("result", SchemaEnvelope.opaque(), true, "Demo result"))),
                 SchemaEnvelope.object(Map.of(), List.of()),
                 new OperatorDefinition.Capabilities("READ", "IDEMPOTENT", false, true, false),

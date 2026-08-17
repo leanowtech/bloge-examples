@@ -134,7 +134,7 @@ class ScenarioValidationServiceTest {
     }
 
     @Test
-    void validatesOperatorTargetAndRejectsGraphOnlySelectorsAndAssertions() {
+    void validatesOperatorTargetAndAllowsNestedGraphNodeSelectors() {
         ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
         ScenarioDraftSet.ScenarioDraft validScenario = new ScenarioDraftSet.ScenarioDraft(
                 "operator-happy-path",
@@ -156,17 +156,123 @@ class ScenarioValidationServiceTest {
 
         assertThat(validator.validate(valid, contract, null).valid()).isTrue();
 
-        ScenarioDraftSet.ScenarioDraft graphScoped = new ScenarioDraftSet.ScenarioDraft(
-                validScenario.scenarioId(),
-                validScenario.name(),
-                validScenario.description(),
-                validScenario.caseType(),
-                validScenario.tags(),
+        ScenarioDraftSet.ScenarioDraft nestedGraphScenario = new ScenarioDraftSet.ScenarioDraft(
+                "operator-nested-graph",
+                "Operator uses a nested Graph dependency",
+                "",
+                ScenarioDraftSet.CaseType.GOLDEN,
+                List.of("operator", "nested-graph"),
                 validScenario.given(),
+                List.of(dependency(
+                        "nested-node-dependency",
+                        new ScenarioDraftSet.DependencySelector(
+                                "/root/featureGraph", "nested-node", "", "", "",
+                                List.of(), List.of(), "", Map.of()),
+                        ScenarioDraftSet.DependencyBehavior.real())),
+                validScenario.then());
+
+        assertThat(validator.validate(operatorDraftSet(contract, nestedGraphScenario), contract, null).valid())
+                .isTrue();
+    }
+
+    @Test
+    void rejectsTopLevelOperatorNodeSelectorWithoutNestedGraphPath() {
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet.ScenarioDraft topLevelNodeSelector = new ScenarioDraftSet.ScenarioDraft(
+                "operator-top-level-node",
+                "Operator attempts to select a top-level node",
+                "",
+                ScenarioDraftSet.CaseType.GOLDEN,
+                List.of("operator"),
+                new ScenarioDraftSet.Given(
+                        Map.of("applicantId", "A-1"),
+                        ScenarioDraftSet.ValueProvenance.AUTHORED),
+                List.of(dependency(
+                        "top-level-node-dependency",
+                        new ScenarioDraftSet.DependencySelector(
+                                "", "graph-node", "", "", "",
+                                List.of(), List.of(), "", Map.of()),
+                        ScenarioDraftSet.DependencyBehavior.real())),
+                new ScenarioDraftSet.Then(List.of()));
+
+        ScenarioValidationReport report = validator.validate(
+                operatorDraftSet(contract, topLevelNodeSelector), contract, null);
+
+        assertThat(report.valid()).isFalse();
+        assertThat(report.diagnostics())
+                .filteredOn(diagnostic -> diagnostic.code()
+                        .equals("visual.scenario.dependency.nodeSelectorUnsupported"))
+                .singleElement()
+                .extracting("message")
+                .asString()
+                .contains("Top-level operator-target", "non-empty graphPath", "nested Graph node");
+    }
+
+    @Test
+    void rejectsNestedGraphPathWithoutNodeIdForOperatorTarget() {
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet.ScenarioDraft graphPathOnly = new ScenarioDraftSet.ScenarioDraft(
+                "operator-graph-path-only",
+                "Operator omits the nested node id",
+                "",
+                ScenarioDraftSet.CaseType.GOLDEN,
+                List.of("operator"),
+                new ScenarioDraftSet.Given(
+                        Map.of("applicantId", "A-1"),
+                        ScenarioDraftSet.ValueProvenance.AUTHORED),
+                List.of(dependency(
+                        "graph-path-only",
+                        new ScenarioDraftSet.DependencySelector(
+                                "/root/featureGraph", "", "", "", "",
+                                List.of(), List.of(), "", Map.of()),
+                        ScenarioDraftSet.DependencyBehavior.real())),
+                new ScenarioDraftSet.Then(List.of()));
+
+        ScenarioValidationReport report = validator.validate(
+                operatorDraftSet(contract, graphPathOnly), contract, null);
+
+        assertThat(report.valid()).isFalse();
+        assertThat(report.diagnostics()).extracting("code")
+                .containsExactly("visual.scenario.dependency.nestedNodeIdMissing");
+    }
+
+    @Test
+    void keepsGraphTargetNodeExistenceValidation() {
+        GraphDraft graph = graphDraft();
+        ContractDraft contract = projector.project(graph, fingerprint('a'));
+
+        ScenarioDraftSet.ScenarioDraft graphScoped = new ScenarioDraftSet.ScenarioDraft(
+                "graph-unknown-node",
+                "Graph target uses an unknown node",
+                "",
+                ScenarioDraftSet.CaseType.GOLDEN,
+                List.of("graph"),
+                new ScenarioDraftSet.Given(
+                        Map.of("applicantId", "A-1"),
+                        ScenarioDraftSet.ValueProvenance.AUTHORED),
                 List.of(dependency(
                         "node-dependency",
                         ScenarioDraftSet.DependencySelector.node("graph-node"),
                         ScenarioDraftSet.DependencyBehavior.real())),
+                new ScenarioDraftSet.Then(List.of()));
+
+        ScenarioValidationReport report = validator.validate(
+                draftSet(graph, contract, List.of(graphScoped)), contract, graph);
+
+        assertThat(report.valid()).isFalse();
+        assertThat(report.diagnostics()).extracting("code")
+                .contains("visual.scenario.dependency.nodeUnknown");
+
+        ScenarioDraftSet.ScenarioDraft operatorGraphScoped = new ScenarioDraftSet.ScenarioDraft(
+                "operator-graph-scope",
+                "Operator cannot assert a graph node",
+                "",
+                ScenarioDraftSet.CaseType.GOLDEN,
+                List.of("operator"),
+                new ScenarioDraftSet.Given(
+                        Map.of("applicantId", "A-1"),
+                        ScenarioDraftSet.ValueProvenance.AUTHORED),
+                List.of(),
                 new ScenarioDraftSet.Then(List.of(new ScenarioDraftSet.AssertionDraft(
                         "node-status",
                         ScenarioDraftSet.AssertionScope.NODE_STATUS,
@@ -174,14 +280,12 @@ class ScenarioValidationServiceTest {
                         ScenarioDraftSet.AssertionOperator.STATUS,
                         "SUCCESS", null))));
 
-        ScenarioValidationReport report = validator.validate(
-                operatorDraftSet(contract, graphScoped), contract, null);
+        ContractDraft operatorContract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioValidationReport operatorReport = validator.validate(
+                operatorDraftSet(operatorContract, operatorGraphScoped), operatorContract, null);
 
-        assertThat(report.valid()).isFalse();
-        assertThat(report.diagnostics()).extracting("code")
-                .contains(
-                        "visual.scenario.dependency.nodeSelectorUnsupported",
-                        "visual.scenario.assertion.graphScopeUnsupported");
+        assertThat(operatorReport.diagnostics()).extracting("code")
+                .contains("visual.scenario.assertion.graphScopeUnsupported");
     }
 
     private ScenarioDraftSet operatorDraftSet(

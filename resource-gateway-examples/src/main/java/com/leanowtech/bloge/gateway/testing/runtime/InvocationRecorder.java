@@ -59,6 +59,13 @@ public class InvocationRecorder implements ExecutionListener {
     private final Map<String, AtomicInteger> graphOccurrences = new ConcurrentHashMap<>();
     private final IdentityHashMap<GraphContext, Map<String, Integer>> graphOccurrencesByContext =
             new IdentityHashMap<>();
+    /**
+     * Completion correlation is identity based because GraphContext is the engine's execution
+     * boundary. A node id alone is not unique once nested graphs or repeated invocations exist.
+     */
+    private final Object invocationCorrelationLock = new Object();
+    private final IdentityHashMap<GraphContext, Map<String, List<InvocationBinding>>>
+            invocationBindingsByContext = new IdentityHashMap<>();
 
     /**
      * Creates one run-scoped ledger using the application mapper as the canonical protocol baseline.
@@ -102,6 +109,12 @@ public class InvocationRecorder implements ExecutionListener {
             int graphOccurrence = bindGraphOccurrence(site, graphContext);
             InvocationBinding binding = new InvocationBinding(site, occurrence, graphOccurrence);
             invocationFacts.put(binding, new InvocationFact(binding));
+            synchronized (invocationCorrelationLock) {
+                invocationBindingsByContext.computeIfAbsent(graphContext,
+                                ignored -> new LinkedHashMap<>())
+                        .computeIfAbsent(site.nodeId(), ignored -> new ArrayList<>())
+                        .add(binding);
+            }
             pendingInvocations.add(binding);
             return binding;
         } finally {
@@ -313,6 +326,8 @@ public class InvocationRecorder implements ExecutionListener {
         var lock = fixtureStateLock.readLock();
         lock.lock();
         try {
+            completeInvocationFact(event.ctx(), event.nodeId(), event.nodeSpec(), event.output(),
+                    millis(event.nodeDuration()));
             StartFact start = starts.getOrDefault(event.nodeId(),
                     new StartFact(event.nodeSpec().operatorRef(), null));
             String fidelity = "REAL";
@@ -321,6 +336,35 @@ public class InvocationRecorder implements ExecutionListener {
                     fidelity, start.input(), event.output(), "", millis(event.nodeDuration())));
         } finally {
             lock.unlock();
+        }
+    }
+
+    /**
+     * Reconciles engine completion with the invocation wrapper that recorded the attempts. The
+     * engine owns fallback execution, so the wrapper cannot record the fallback as a normal
+     * delegate success. Correlation is serialized only for the identity-map lookup and claim;
+     * payload construction remains confined to the invocation fact.
+     */
+    private void completeInvocationFact(GraphContext graphContext, String nodeId, NodeSpec node,
+                                        Object output, long durationMs) {
+        if (graphContext == null || nodeId == null) {
+            return;
+        }
+        synchronized (invocationCorrelationLock) {
+            Map<String, List<InvocationBinding>> byNode = invocationBindingsByContext.get(graphContext);
+            if (byNode == null) {
+                return;
+            }
+            List<InvocationBinding> bindings = byNode.get(nodeId);
+            if (bindings == null) {
+                return;
+            }
+            for (InvocationBinding binding : bindings) {
+                InvocationFact fact = invocationFacts.get(binding);
+                if (fact != null && fact.completeFromEngine(node, output, durationMs)) {
+                    return;
+                }
+            }
         }
     }
 
@@ -756,6 +800,7 @@ public class InvocationRecorder implements ExecutionListener {
         private final ConcurrentLinkedQueue<TestRunEvidence.AttemptTrace> attempts =
                 new ConcurrentLinkedQueue<>();
         private volatile String operatorRef;
+        private volatile Completion completion;
 
         private InvocationFact(InvocationBinding binding) {
             this.binding = binding;
@@ -765,6 +810,17 @@ public class InvocationRecorder implements ExecutionListener {
         private void record(TestRunEvidence.AttemptTrace attempt, NodeSpec node) {
             operatorRef = node.operatorRef();
             attempts.add(attempt);
+        }
+
+        /** Claims the single terminal engine completion for this invocation occurrence. */
+        private synchronized boolean completeFromEngine(NodeSpec node, Object output,
+                                                         long durationMs) {
+            if (completion != null) {
+                return false;
+            }
+            operatorRef = node == null ? operatorRef : node.operatorRef();
+            completion = new Completion(output, durationMs);
+            return true;
         }
 
         private TestRunEvidence.NodeTrace toTrace(GraphResult rootResult) {
@@ -779,19 +835,39 @@ public class InvocationRecorder implements ExecutionListener {
             Object input = first == null ? null : first.input();
             Object output = last == null ? null : last.output();
             String errorCode = last == null ? "" : last.errorCode();
+            Completion terminal = completion;
+            if (terminal != null) {
+                status = last != null && isMockedTerminal(last.status()) ? "MOCKED"
+                        : "SUCCESS";
+                output = terminal.output();
+                errorCode = "";
+            }
             if (rootResult != null
                     && rootResult.statusMap().get(binding.site().nodeId()) == NodeStatus.COMPLETED) {
                 status = "REAL".equals(fidelity) ? "SUCCESS" : "MOCKED";
                 output = rootResult.findOutput(binding.site().nodeId(), Object.class).orElse(null);
                 errorCode = "";
             }
-            long duration = orderedAttempts.stream().mapToLong(TestRunEvidence.AttemptTrace::durationMs)
-                    .sum();
+            long duration = terminal == null
+                    ? orderedAttempts.stream()
+                    .mapToLong(TestRunEvidence.AttemptTrace::durationMs).sum()
+                    : terminal.durationMs();
             InvocationSite site = binding.site();
             return new TestRunEvidence.NodeTrace(site.nodeId(), operatorRef, status, fidelity,
                     input, output, errorCode, duration, site.invocationSiteId(), site.graphPath(),
                     site.correlationKey(), binding.occurrence(), binding.graphOccurrence(),
                     orderedAttempts);
+        }
+
+        private static boolean isTerminalFailure(String status) {
+            return "FAILED".equals(status) || "TIMEOUT".equals(status);
+        }
+
+        private static boolean isMockedTerminal(String status) {
+            return isTerminalFailure(status) || "MOCKED".equals(status);
+        }
+
+        private record Completion(Object output, long durationMs) {
         }
     }
 }

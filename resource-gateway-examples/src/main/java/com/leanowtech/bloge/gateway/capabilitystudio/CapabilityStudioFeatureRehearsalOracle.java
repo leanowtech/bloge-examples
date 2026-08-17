@@ -156,19 +156,35 @@ public final class CapabilityStudioFeatureRehearsalOracle {
     }
 
     private Evaluation timeout(CapabilityStudioFeatureRehearsalProjection projection) {
-        String compensationStatus = nodeStatus(projection, "compensationHistoryLookup");
-        boolean downstreamCancelled = List.of("aggregateCancellationContext", "cancellationDecision")
+        CapabilityStudioDataLensProjection.Node compensation = node(
+                projection, "compensationHistoryLookup");
+        Map<?, ?> compensationOutput = nodeOutput(projection, "compensationHistoryLookup");
+        Map<?, ?> decision = nodeOutput(projection, "cancellationDecision");
+        boolean timeoutAttempt = compensation.attempts().stream().anyMatch(attempt ->
+                "TIMEOUT".equals(attempt.status())
+                        && "COMPENSATION_HISTORY_TIMEOUT".equals(attempt.errorCode()));
+        boolean fallbackOutput = "MOCKED".equals(compensation.status())
+                && "TIMEOUT".equals(text(compensationOutput.get("availability")))
+                && "COMPENSATION_HISTORY_TIMEOUT".equals(text(compensationOutput.get("errorCode")));
+        boolean downstreamExecuted = List.of("aggregateCancellationContext", "cancellationDecision")
                 .stream().map(node -> nodeStatus(projection, node))
-                .allMatch(status -> List.of("CANCELLED", "SKIPPED", "NOT_RUN", "NOT_INVOKED")
-                        .contains(status));
-        if (!"TIMED_OUT".equals(projection.run().status())
-                || !"TIMEOUT".equals(compensationStatus) || !downstreamCancelled) {
-            return failure(projection, "timeout did not cancel downstream feature nodes",
-                    "历史查询超时必须保留因果链并取消下游。",
-                    projection.run().status() + "/" + compensationStatus);
+                .allMatch(status -> List.of("SUCCESS", "MOCKED").contains(status));
+        boolean businessFallback = "PASSED".equals(projection.run().status())
+                && "MANUAL_REVIEW".equals(text(decision.get("action")))
+                && "COMPENSATION_HISTORY_TIMEOUT".equals(text(decision.get("informationGap")))
+                && projection.run().realExternalCallCount() == 0;
+        if (!timeoutAttempt || !fallbackOutput || !downstreamExecuted || !businessFallback) {
+            return failure(projection, "timeout fallback did not preserve recovery and business outcome",
+                    "依赖尝试必须 TIMEOUT，由 BLOGE fallback 恢复；Feature 最终 PASSED，业务输出转人工且信息缺口明确，真实调用为 0。",
+                    projection.run().status() + "/" + compensation.status()
+                            + "/timeoutAttempt=" + timeoutAttempt
+                            + "/fallbackOutput=" + fallbackOutput
+                            + "/downstreamExecuted=" + downstreamExecuted
+                            + "/decision=" + decisionSummary(decision));
         }
         return pass(projection, "oracle-compensation-history-timeout",
-                "历史查询超时必须保留因果链并取消下游。", "TIMEOUT -> downstream cancelled");
+                "依赖尝试 TIMEOUT 后由 BLOGE fallback 恢复，业务安全降级为人工复核。",
+                "TIMEOUT -> BLOGE fallback -> PASSED/MANUAL_REVIEW");
     }
 
     private Evaluation forbiddenWrite(
@@ -243,7 +259,7 @@ public final class CapabilityStudioFeatureRehearsalOracle {
     }
 
     private static String expectedTerminalStatus(String caseId) {
-        return "case-compensation-history-timeout".equals(caseId) ? "TIMED_OUT" : "PASSED";
+        return "PASSED";
     }
 
     private Evaluation expectDecision(
@@ -286,6 +302,14 @@ public final class CapabilityStudioFeatureRehearsalOracle {
                 .filter(Map.class::isInstance)
                 .map(value -> (Map<?, ?>) value)
                 .orElse(Map.of());
+    }
+
+    private static CapabilityStudioDataLensProjection.Node node(
+            CapabilityStudioFeatureRehearsalProjection projection, String nodeId) {
+        return projection.dataLens().nodes().stream()
+                .filter(value -> nodeId.equals(value.nodeId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Missing data-lens node: " + nodeId));
     }
 
     private static String nodeStatus(

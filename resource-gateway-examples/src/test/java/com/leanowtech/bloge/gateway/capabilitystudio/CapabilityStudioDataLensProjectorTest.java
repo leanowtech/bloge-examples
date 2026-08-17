@@ -68,6 +68,34 @@ class CapabilityStudioDataLensProjectorTest {
     }
 
     @Test
+    void infersFallbackOnlyWhenEngineCompletedAfterTerminalFailedAttempt() {
+        TestRunEvidence.AttemptTrace timeout = new TestRunEvidence.AttemptTrace(
+                1, "TIMEOUT", "OUTPUT_LEVEL", Map.of("request", "x"), null,
+                "UPSTREAM_TIMEOUT", 12);
+        TestRunEvidence.NodeTrace recoveredFallback = new TestRunEvidence.NodeTrace(
+                "fallback", "lookup", "MOCKED", "OUTPUT_LEVEL", Map.of("request", "x"),
+                Map.of("availability", "TIMEOUT"), "", 37, "fallback-site", "/root/child", "",
+                1, 1, List.of(timeout));
+        TestRunEvidence.AttemptTrace failed = new TestRunEvidence.AttemptTrace(
+                1, "FAILED", "REAL", "input", null, "TRANSIENT", 4);
+        TestRunEvidence.AttemptTrace success = new TestRunEvidence.AttemptTrace(
+                2, "SUCCESS", "REAL", "input", "recovered", "", 8);
+        TestRunEvidence.NodeTrace retrySuccess = new TestRunEvidence.NodeTrace(
+                "retry", "lookup", "SUCCESS", "REAL", "input", "recovered", "", 12,
+                "retry-site", "/root", "", 1, 1, List.of(failed, success));
+
+        CapabilityStudioDataLensProjection result = projector.project(
+                evidenceWith(List.of(recoveredFallback, retrySuccess), List.of()), STRUCTURE_ONLY);
+
+        assertThat(result.nodes()).filteredOn(node -> "fallback".equals(node.nodeId()))
+                .singleElement().satisfies(node ->
+                        assertThat(node.fallbackStatus()).isEqualTo("FALLBACK"));
+        assertThat(result.nodes()).filteredOn(node -> "retry".equals(node.nodeId()))
+                .singleElement().satisfies(node ->
+                        assertThat(node.fallbackStatus()).isNull());
+    }
+
+    @Test
     void sortsInputDeterministicallyAndCapsHighCardinalityWithSignal() {
         List<TestRunEvidence.NodeTrace> nodes = new ArrayList<>();
         for (int index = 0; index < CapabilityStudioDataLensProjector.MAX_NODES + 3; index++) {

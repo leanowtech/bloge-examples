@@ -166,11 +166,24 @@ public final class CapabilityStudioDataLensProjector {
         if ("FALLBACK".equalsIgnoreCase(source.status())) {
             return "FALLBACK";
         }
-        return source.attempts().stream()
+        String explicit = source.attempts().stream()
                 .filter(java.util.Objects::nonNull)
                 .map(TestRunEvidence.AttemptTrace::status)
                 .filter(value -> "FALLBACK".equalsIgnoreCase(value))
                 .findFirst().map(value -> "FALLBACK").orElse("");
+        if (!explicit.isBlank()) {
+            return explicit;
+        }
+        if (!("SUCCESS".equalsIgnoreCase(source.status())
+                || "MOCKED".equalsIgnoreCase(source.status()))) {
+            return "";
+        }
+        TestRunEvidence.AttemptTrace last = source.attempts().stream()
+                .filter(java.util.Objects::nonNull)
+                .max(Comparator.comparingInt(TestRunEvidence.AttemptTrace::attempt))
+                .orElse(null);
+        return last != null && ("FAILED".equalsIgnoreCase(last.status())
+                || "TIMEOUT".equalsIgnoreCase(last.status())) ? "FALLBACK" : "";
     }
 
     private static String safeErrorCode(String value) {

@@ -213,7 +213,9 @@ public class ScenarioValidationService {
             }
             ScenarioDraftSet.DependencySelector selector = dependency.selector();
             if (selector.nodeId().isBlank() && selector.operatorRef().isBlank()
-                    && selector.resourceRef().isBlank() && selector.functionRef().isBlank()) {
+                    && selector.resourceRef().isBlank() && selector.functionRef().isBlank()
+                    && !(targetKind == ContractDraft.TargetKind.OPERATOR
+                    && !selector.graphPath().isBlank())) {
                 diagnostics.add(error("visual.scenario.dependency.selectorMissing",
                         "Dependency behavior requires a node, operator, resource, or function selector.",
                         path + "/selector"));
@@ -225,9 +227,18 @@ public class ScenarioValidationService {
                         path + "/selector/nodeId"));
             }
             if (!selector.nodeId().isBlank()
-                    && targetKind == ContractDraft.TargetKind.OPERATOR) {
+                    && targetKind == ContractDraft.TargetKind.OPERATOR
+                    && selector.graphPath().isBlank()) {
                 diagnostics.add(error("visual.scenario.dependency.nodeSelectorUnsupported",
-                        "Operator-target Scenarios cannot select graph node dependencies.",
+                        "Top-level operator-target Scenarios cannot select a node directly; "
+                                + "a non-empty graphPath is required to select a nested Graph node.",
+                        path + "/selector/nodeId"));
+            }
+            if (targetKind == ContractDraft.TargetKind.OPERATOR
+                    && !selector.graphPath().isBlank()
+                    && selector.nodeId().isBlank()) {
+                diagnostics.add(error("visual.scenario.dependency.nestedNodeIdMissing",
+                        "A nested graphPath selector must include a non-empty nodeId.",
                         path + "/selector/nodeId"));
             }
             validateSelector(selector, path, diagnostics);

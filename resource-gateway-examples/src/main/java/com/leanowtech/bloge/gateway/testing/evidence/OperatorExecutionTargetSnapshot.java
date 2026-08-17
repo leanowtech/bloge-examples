@@ -36,8 +36,11 @@ import java.util.Objects;
  *
  * <p>The snapshot fingerprints executable bytecode, declared schemas and behavioral contracts.
  * {@link HttpResourceOperator} additionally freezes every resource descriptor because its
- * {@code resourceId} may be selected from input at runtime. Non-synchronous bindings remain
- * discoverable, but cannot be submitted to the v1 micro-graph runner.</p>
+ * {@code resourceId} may be selected from input at runtime. Generic operators may declare
+ * dependencies when the manifest names a supported runtime-control boundary and the binding
+ * attests to frozen state; this never turns the binding into a self-contained operator. The
+ * resulting fixture and runtime requirements remain part of the target contract. Non-synchronous
+ * bindings remain discoverable, but cannot be submitted to the v1 micro-graph runner.</p>
  *
  * @param operatorRef stable registry reference
  * @param binding exact binding selected for this request
@@ -127,14 +130,14 @@ public record OperatorExecutionTargetSnapshot(
         BindingState bindingState = bindingState(mapper, binding, dependencies);
         ComposabilitySnapshot composability = composabilitySnapshot(
                 mapper, binding, dependencies, implementation);
-        String dependencyPolicy = binding instanceof HttpResourceOperator
-                ? "CONSERVATIVE_ALL_REGISTERED" : "NONE_DECLARED";
+        String dependencyPolicy = dependencyPolicy(binding, composability);
         List<String> requirements = new ArrayList<>(composability.requirements());
         List<String> gaps = new ArrayList<>(composability.gaps());
         if (!behavior.gap().isBlank()) {
             gaps.add(behavior.gap());
         }
         boolean synchronous = binding instanceof Operator<?, ?>;
+        boolean executionSupported = synchronous;
         String classification;
         if (!synchronous) {
             classification = UNSUPPORTED_EXECUTION_MODEL;
@@ -143,6 +146,9 @@ public record OperatorExecutionTargetSnapshot(
         } else if (binding instanceof HttpResourceOperator) {
             classification = CONDITIONAL_TRANSPORT;
             requirements.add("Every selected resource invocation requires a strict TRANSPORT raw-response fixture.");
+            if (dependencies.isEmpty()) {
+                executionSupported = false;
+            }
         } else if (effect == SideEffectType.READ_ONLY && composability.certificationSupported()) {
             classification = EXECUTABLE_UNIT;
         } else {
@@ -158,11 +164,12 @@ public record OperatorExecutionTargetSnapshot(
         if (!bindingState.gap().isBlank()) {
             gaps.add(bindingState.gap());
         }
-        boolean eligible = synchronous && implementation.length() > 0
+        boolean eligible = executionSupported && implementation.length() > 0
                 && !bindingState.fingerprint().isBlank()
                 && behavior.gap().isBlank()
                 && composability.certificationSupported()
-                && (binding instanceof HttpResourceOperator || effect == SideEffectType.READ_ONLY);
+                && (binding instanceof HttpResourceOperator || effect == SideEffectType.READ_ONLY)
+                && bindingState.gap().isBlank();
         String targetFingerprint = ProtocolFingerprint.of(mapper, Map.ofEntries(
                 Map.entry("operatorRef", ref),
                 Map.entry("implementationFingerprint", implementation),
@@ -183,7 +190,7 @@ public record OperatorExecutionTargetSnapshot(
                 composability.fingerprint(), composability.manifest(),
                 Map.copyOf(dependencies), dependencyPolicy,
                 model, effect.name(), idempotency.name(), protocolMap(protocol), classification,
-                synchronous, eligible, List.copyOf(requirements), List.copyOf(gaps));
+                executionSupported, eligible, List.copyOf(requirements), List.copyOf(gaps));
     }
 
     /** @return the exact synchronous binding selected by the snapshot */
@@ -301,22 +308,33 @@ public record OperatorExecutionTargetSnapshot(
                                                                 Map<String, String> resourceDependencies,
                                                                 String implementationFingerprint) {
         if (binding instanceof HttpResourceOperator) {
-            List<Map<String, Object>> dependencies = resourceDependencies.keySet().stream()
-                    .sorted()
-                    .map(resourceId -> Map.<String, Object>of(
-                            "ref", resourceId,
-                            "kind", "RESOURCE",
-                            "controlBoundary", "TRANSPORT_PORT"))
-                    .toList();
-            Map<String, Object> manifest = Map.of(
-                    "schemaVersion", OperatorComposabilityManifest.SCHEMA_VERSION,
-                    "dependencyMode", "DECLARED",
-                    "dependencies", dependencies,
-                    "executionServices", List.of(),
-                    "globalStateFree", true,
-                    "conformanceSuiteRef", "builtin:http-resource-transport-conformance",
-                    "conformanceFingerprint", implementationFingerprint);
-            return boundedComposability(mapper, manifest, true, List.of(), List.of());
+            if (resourceDependencies.isEmpty()) {
+                OperatorComposabilityManifest manifest = new OperatorComposabilityManifest(
+                        OperatorComposabilityManifest.SCHEMA_VERSION,
+                        OperatorComposabilityManifest.DependencyMode.OPAQUE,
+                        List.of(), List.of(), false,
+                        "builtin:http-resource-transport-conformance", implementationFingerprint);
+                return boundedComposability(mapper, manifest.toProtocolMap(), false,
+                        List.of("Resource registry must provide at least one frozen resource descriptor before "
+                                + "HttpResourceOperator can run or be certified."),
+                        List.of("HttpResourceOperator has no captured resource descriptor; runtime resource "
+                                + "selection cannot be controlled or certified."));
+            }
+            OperatorComposabilityManifest manifest = new OperatorComposabilityManifest(
+                    OperatorComposabilityManifest.SCHEMA_VERSION,
+                    OperatorComposabilityManifest.DependencyMode.DECLARED,
+                    resourceDependencies.keySet().stream().sorted()
+                            .map(resourceId -> new OperatorComposabilityManifest.Dependency(
+                                    resourceId,
+                                    OperatorComposabilityManifest.DependencyKind.RESOURCE,
+                                    OperatorComposabilityManifest.ControlBoundary.TRANSPORT_PORT))
+                            .toList(),
+                    List.of(),
+                    true,
+                    "builtin:http-resource-transport-conformance",
+                    implementationFingerprint);
+            return boundedComposability(mapper, manifest.toProtocolMap(), true,
+                    composabilityRequirements(manifest), List.of());
         }
         if (!(binding instanceof OperatorComposabilityManifestProvider provider)) {
             return new ComposabilitySnapshot("", Map.of(), false, List.of(), List.of(
@@ -335,6 +353,14 @@ public record OperatorExecutionTargetSnapshot(
             return invalidComposability("Operator composability provider failed: "
                     + failure.getClass().getSimpleName() + ".");
         }
+    }
+
+    private static String dependencyPolicy(Object binding, ComposabilitySnapshot composability) {
+        if (binding instanceof HttpResourceOperator) {
+            return "CONSERVATIVE_ALL_REGISTERED";
+        }
+        String mode = String.valueOf(composability.manifest().getOrDefault("dependencyMode", "NONE"));
+        return "NONE".equals(mode) ? "NONE_DECLARED" : mode;
     }
 
     private static ComposabilitySnapshot boundedComposability(ObjectMapper mapper,
@@ -359,10 +385,17 @@ public record OperatorExecutionTargetSnapshot(
         if (!OperatorComposabilityManifest.SCHEMA_VERSION.equals(manifest.schemaVersion())) {
             gaps.add("Operator composability manifest schemaVersion is unsupported.");
         }
-        if (manifest.dependencyMode() != OperatorComposabilityManifest.DependencyMode.NONE
-                || !manifest.dependencies().isEmpty()) {
-            gaps.add("testing-control-plane v1 cannot certify generic declared dependency ports; "
-                    + "only self-contained bindings or the built-in HTTP transport boundary are supported.");
+        if (manifest.dependencyMode() == OperatorComposabilityManifest.DependencyMode.OPAQUE) {
+            gaps.add("Opaque dependencies cannot be certified because their runtime boundary is not controllable.");
+        } else if (manifest.dependencyMode() == OperatorComposabilityManifest.DependencyMode.DECLARED) {
+            for (OperatorComposabilityManifest.Dependency dependency : manifest.dependencies()) {
+                if (!supportedDeclaredDependency(dependency)) {
+                    gaps.add("Declared dependency '" + dependency.ref() + "' is unmanaged for certification: "
+                            + dependency.kind() + "/" + dependency.controlBoundary()
+                            + "; only RESOURCE/RESOURCE_BINDING, RESOURCE/TRANSPORT_PORT, or "
+                            + "HTTP/TRANSPORT_PORT is supported.");
+                }
+            }
         }
         List<String> unsupportedServices = manifest.executionServices().stream()
                 .filter(service -> service != OperatorComposabilityManifest.ExecutionService.TIME)
@@ -379,8 +412,8 @@ public record OperatorExecutionTargetSnapshot(
         if (!manifest.globalStateFree()) {
             gaps.add("Operator does not attest that undeclared mutable global state is absent.");
         }
-        if (manifest.conformanceSuiteRef().isBlank()) {
-            gaps.add("Operator composability manifest has no conformance suite reference.");
+        if (!manifest.conformanceSuiteRef().matches("[A-Za-z0-9][A-Za-z0-9._:/-]*")) {
+            gaps.add("Operator composability manifest has no exact conformance suite reference.");
         }
         if (!manifest.conformanceFingerprint().matches("sha256:[0-9a-f]{64}")) {
             gaps.add("Operator composability manifest has no valid conformance suite fingerprint.");
@@ -390,6 +423,12 @@ public record OperatorExecutionTargetSnapshot(
 
     private static List<String> composabilityRequirements(OperatorComposabilityManifest manifest) {
         List<String> requirements = new ArrayList<>();
+        for (OperatorComposabilityManifest.Dependency dependency : manifest.dependencies()) {
+            requirements.add("Fixture bundle must define a strict controlled fixture for declared dependency ref '"
+                    + dependency.ref() + "'.");
+            requirements.add("Runtime binding must route declared dependency ref '" + dependency.ref()
+                    + "' through " + dependency.controlBoundary() + ".");
+        }
         if (manifest.executionServices().contains(
                 OperatorComposabilityManifest.ExecutionService.TIME)) {
             requirements.add("Fixture bundle must define logicalClock when the operator uses TIME.");
@@ -410,6 +449,19 @@ public record OperatorExecutionTargetSnapshot(
                     + "feature flag used by the operator.");
         }
         return List.copyOf(requirements);
+    }
+
+    private static boolean supportedDeclaredDependency(
+            OperatorComposabilityManifest.Dependency dependency) {
+        return switch (dependency.kind()) {
+            case RESOURCE -> dependency.controlBoundary()
+                    == OperatorComposabilityManifest.ControlBoundary.RESOURCE_BINDING
+                    || dependency.controlBoundary()
+                    == OperatorComposabilityManifest.ControlBoundary.TRANSPORT_PORT;
+            case HTTP -> dependency.controlBoundary()
+                    == OperatorComposabilityManifest.ControlBoundary.TRANSPORT_PORT;
+            default -> false;
+        };
     }
 
     private static ComposabilitySnapshot invalidComposability(String gap) {

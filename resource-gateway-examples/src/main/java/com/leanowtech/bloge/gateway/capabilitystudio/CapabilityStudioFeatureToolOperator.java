@@ -8,6 +8,8 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.NestedGraphProvider;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifest;
+import com.leanowtech.bloge.gateway.testing.runtime.OperatorComposabilityManifestProvider;
 import com.leanowtech.bloge.gateway.testing.runtime.OperatorRuntimeBindingSnapshotProvider;
 
 import java.util.List;
@@ -18,13 +20,22 @@ import java.util.Objects;
  * Exact Tool binding over the canonical cancellation-dispute Feature graph.
  *
  * <p>The binding delegates nested execution to BLOGE and exposes the child graph to the existing
- * test-control inventory. It deliberately does not claim a certifiable composability manifest:
- * Stage 0 must first prove that every nested resource dependency is closed by registered fixture
- * controls.</p>
+ * test-control inventory. Its composability manifest declares the four resource-control ports of
+ * the canonical Feature graph. This is deliberately a dependency declaration, not a claim that
+ * the Tool is self-contained; certification still requires a fixture for every declared resource
+ * and the exact graph fingerprint as the conformance artifact.</p>
  */
 final class CapabilityStudioFeatureToolOperator
         implements Operator<Map<String, Object>, Map<String, Object>>, NestedGraphProvider,
-        OperatorRuntimeBindingSnapshotProvider {
+        OperatorRuntimeBindingSnapshotProvider, OperatorComposabilityManifestProvider {
+
+    private static final String CONFORMANCE_SUITE_REF =
+            "capability-studio:feature-cancellation-dispute-context";
+    private static final List<String> CANONICAL_RESOURCE_REFS = List.of(
+            "api-order-lookup",
+            "api-cancellation-responsibility",
+            "api-city-pricing-policy",
+            "api-compensation-history");
 
     private final Graph featureGraph;
     private final OperatorRegistry registry;
@@ -70,5 +81,22 @@ final class CapabilityStudioFeatureToolOperator
                 "featureGraph", featureGraph.name(),
                 "featureGraphFingerprint", graphFingerprint,
                 "nestedPathSegment", featureGraph.name());
+    }
+
+    @Override
+    public OperatorComposabilityManifest operatorComposabilityManifest() {
+        return new OperatorComposabilityManifest(
+                OperatorComposabilityManifest.SCHEMA_VERSION,
+                OperatorComposabilityManifest.DependencyMode.DECLARED,
+                CANONICAL_RESOURCE_REFS.stream()
+                        .map(ref -> new OperatorComposabilityManifest.Dependency(
+                                ref,
+                                OperatorComposabilityManifest.DependencyKind.RESOURCE,
+                                OperatorComposabilityManifest.ControlBoundary.RESOURCE_BINDING))
+                        .toList(),
+                List.of(),
+                true,
+                CONFORMANCE_SUITE_REF,
+                graphFingerprint);
     }
 }

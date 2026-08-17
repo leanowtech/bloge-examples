@@ -95,7 +95,7 @@ class CapabilityStudioFeatureRehearsalBaselineServiceTest {
     }
 
     @Test
-    void timeoutCasePassesThreeRoundStabilityWithItsExpectedTimedOutTerminalStatus() {
+    void timeoutCasePassesThreeRoundStabilityAfterBlogeFallbackRecovery() {
         List<CapabilityStudioFeatureRehearsalProjection> observations = List.of(
                 rehearsal.rehearseForOracle("case-compensation-history-timeout"),
                 rehearsal.rehearseForOracle("case-compensation-history-timeout"),
@@ -103,7 +103,27 @@ class CapabilityStudioFeatureRehearsalBaselineServiceTest {
 
         assertThat(oracle.evaluate(observations).status())
                 .isEqualTo(CapabilityStudioFeatureRehearsalOracle.PASS);
-        assertThat(observations).extracting(value -> value.run().status()).containsOnly("TIMED_OUT");
+        assertThat(observations).extracting(value -> value.run().status()).containsOnly("PASSED");
+        assertThat(observations).allSatisfy(observation -> {
+            Map<?, ?> decision = decision(observation);
+            assertThat(decision.get("action")).isEqualTo("MANUAL_REVIEW");
+            assertThat(decision.get("informationGap"))
+                    .isEqualTo("COMPENSATION_HISTORY_TIMEOUT");
+            CapabilityStudioDataLensProjection.Node compensation = observation.dataLens().nodes().stream()
+                    .filter(node -> node.nodeId().equals("compensationHistoryLookup"))
+                    .findFirst().orElseThrow();
+            assertThat(compensation.status()).isEqualTo("MOCKED");
+            assertThat(compensation.attempts()).anySatisfy(attempt -> {
+                assertThat(attempt.status()).isEqualTo("TIMEOUT");
+                assertThat(attempt.errorCode()).isEqualTo("COMPENSATION_HISTORY_TIMEOUT");
+            });
+            assertThat(observation.dataLens().nodes())
+                    .filteredOn(node -> node.nodeId().equals("aggregateCancellationContext")
+                            || node.nodeId().equals("cancellationDecision"))
+                    .extracting(CapabilityStudioDataLensProjection.Node::status)
+                    .containsOnly("SUCCESS");
+            assertThat(observation.run().realExternalCallCount()).isZero();
+        });
     }
 
     @Test
