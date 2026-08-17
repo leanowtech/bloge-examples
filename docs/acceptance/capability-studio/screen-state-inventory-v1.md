@@ -1,6 +1,6 @@
 # Capability Studio Screen State Inventory v1
 
-> 状态：Stage 0 工作基线，未签署。`BROWSER_SMOKE_VERIFIED_ZH` 只表示中文 `READY` 状态通过指定视口的真实 Chrome 烟测，不表示完整浏览器矩阵或产品验收通过。
+> 状态：工作基线，未签署。`BROWSER_SMOKE_VERIFIED_ZH` 只表示中文 `READY` 状态通过指定视口的真实 Chrome 烟测，不表示完整浏览器矩阵、持久化 Authority 或产品验收通过。
 
 ## 通用状态合同
 
@@ -23,7 +23,7 @@
 | `GP-01` | `/capabilities/` 能力总览 | 4 API、1 Feature、1 Tool、9 Case；主要动作是查看订单查询契约 | Demo Pack 不可用时显示错误码、影响和重试 | `data-testid=capability-overview`；中文 1440/1024/390 Chrome | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-02` | 订单信息查询契约 | 输入、成功结果、错误、副作用、Owner、SLA、敏感度 | 契约不完整时拒绝猜测，返回总览 | `data-testid=capability-contract`；中文 1440 Chrome API 选择 | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-03` | 场景数据 | 九行及分类、来源、Owner、Oracle、契约数、预期、质量 | 空筛选可清除；协议缺九条时 fail closed | `data-testid=capability-scenarios`；中文 1440/390 Chrome | `BROWSER_SMOKE_VERIFIED_ZH` |
-| `GP-04` | Tutorial Branch 行为编辑器 | 条件、TIMEOUT 行为和持续方式可读，保存不修改 Baseline | revision 冲突可比较和另存 | 编辑 Side Sheet、预检 DOM | `MISSING` |
+| `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成新教程 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；中文 1440 Chrome 实际保存/预检；Test Kit 实际 HTTP 互验 | `BROWSER_SMOKE_VERIFIED_ZH_IN_MEMORY_AUTHORITY` |
 | `GP-05` | Feature DAG + Data Lens | 四 API、转换、规则、Feature 输出和边值血缘无遮挡 | 无 Payload 权限时仍显示结构与差异类型 | Canvas DOM、像素检查、截图 | `MISSING` |
 | `GP-06` | Feature 隔离运行 | 补偿历史为 `TIMEOUT`，Oracle 要求人工复核，真实调用为 0 | 缺 Binding 时预检阻断并定位调用点 | RunTrace、网络 deny、差异定位 | `MISSING` |
 | `GP-07` | Tool 契约 | 输入、输出、错误、禁止结果、副作用和 exact dependency | 依赖 stale 时显示影响和迁移动作 | 契约 DOM、协议闭包 | `PARTIAL_READ_ONLY_SUMMARY` |
@@ -47,3 +47,4 @@
 | [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) | 中文桌面布局、九行场景、验收阻断可见、主界面无内部状态码 | 英文、键盘全路径、读屏、运行结果 |
 | [`capability-studio-gp01-zh-1024.png`](../../assets/capability-studio/capability-studio-gp01-zh-1024.png) | 中文紧凑桌面布局、无页面级横向溢出 | 全部任务视图与异常状态 |
 | [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) | 移动端任务选择器、场景筛选入口、无页面级横向溢出 | 表格横向阅读效率、移动端全流程 |
+| [`capability-studio-gp04-zh-1440.png`](../../assets/capability-studio/capability-studio-gp04-zh-1440.png) | 中文桌面业务句式编辑、分支安全边界、实际保存后的隔离预检反馈、无页面级溢出 | 英文/移动端、409/断网视觉、持久化 Authority、业务签署 |

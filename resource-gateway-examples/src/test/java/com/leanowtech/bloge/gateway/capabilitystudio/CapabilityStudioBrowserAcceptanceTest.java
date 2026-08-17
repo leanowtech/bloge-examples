@@ -35,7 +35,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Real-browser acceptance skeleton for Capability Studio GP-01 through GP-03. */
+/** Real-browser acceptance skeleton for Capability Studio GP-01 through GP-04. */
 @SpringBootTest(
         classes = {
                 ResourceGatewayApplication.class,
@@ -116,8 +116,7 @@ class CapabilityStudioBrowserAcceptanceTest {
                 By.cssSelector("[data-testid='capability-contract'] h3"), "取消责任判定"));
         assertThat(taskButtons.get(2).getAttribute("class")).contains("active");
 
-        driver.findElements(By.cssSelector(".capability-sidebar .capability-task-button"))
-                .getLast().click();
+        driver.findElement(By.cssSelector("[data-testid='capability-task-scenarios']")).click();
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector(".capability-scenario-table tbody tr"), 9));
         assertNoPageOverflow();
@@ -146,6 +145,34 @@ class CapabilityStudioBrowserAcceptanceTest {
                 .isFalse();
         assertNoPageOverflow();
         capture("capability-studio-gp03-zh-390.png");
+    }
+
+    @Test
+    void gp04SavesOnlyTheTutorialBranchAndPassesIsolatedPreflight() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 900);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=zh-CN"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.findElement(By.cssSelector("[data-testid='capability-task-tutorial']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tutorial-branch']")));
+
+        WebElement duration = driver.findElement(By.cssSelector(
+                "input[aria-label='超时持续毫秒数']"));
+        duration.clear();
+        duration.sendKeys("1200");
+        driver.findElement(By.cssSelector(".capability-editor-actions button")).click();
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-preflight-success']")));
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("隔离预检通过", "标准基线未改变", "未解析依赖", "真实接口调用", "已禁止")
+                .doesNotContain("NO_GO", "NOT_RUN", "METADATA_READY_RUNTIME_EVIDENCE_PENDING");
+        assertNoPageOverflow();
+        capture("capability-studio-gp04-zh-1440.png");
     }
 
     private String url(String path) {

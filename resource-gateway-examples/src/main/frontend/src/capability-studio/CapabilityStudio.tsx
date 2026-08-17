@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
+  Beaker,
   BriefcaseBusiness,
+  CheckCircle2,
   ChevronDown,
   Clock3,
   Database,
@@ -12,6 +14,7 @@ import {
   LayoutDashboard,
   ListFilter,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   Sparkles,
@@ -19,7 +22,16 @@ import {
 } from 'lucide-react';
 
 import { useI18n } from '../i18n/I18nProvider';
-import { fetchCapabilityStudioDemoPack, type CapabilityStudioFetcher } from './api';
+import {
+  CapabilityStudioRequestError,
+  fetchCapabilityStudioDemoPack,
+  fetchTutorialBranch,
+  preflightTutorialBranch,
+  saveTutorialBehavior,
+  type CapabilityStudioFetcher,
+  type TutorialBranchPreflight,
+  type TutorialBranchProjection,
+} from './api';
 import {
   isCapabilityStudioProtocolError,
   localized,
@@ -30,7 +42,7 @@ import {
 } from './domain';
 import './capabilityStudio.css';
 
-type Task = 'overview' | 'contract' | 'scenarios' | 'feature' | 'tool';
+type Task = 'overview' | 'contract' | 'scenarios' | 'tutorial' | 'feature' | 'tool';
 
 export interface CapabilityStudioProps {
   fetcher?: CapabilityStudioFetcher;
@@ -82,7 +94,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
     <main className="capability-studio" data-testid="capability-studio">
       <header className="capability-studio-heading">
         <div>
-          <p className="capability-eyebrow"><Sparkles size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '阶段 0 · 只读能力资产' : 'Stage 0 · Read-only capability assets'}</p>
+          <p className="capability-eyebrow"><Sparkles size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '阶段 1 · 可编辑教程分支' : 'Stage 1 · Editable tutorial branch'}</p>
           <h2>{text(model.capability.name)}</h2>
           <p className="capability-summary">{text(model.capability.summary)}</p>
         </div>
@@ -98,6 +110,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           <option value="overview">{locale === 'zh-CN' ? '能力总览' : 'Capability overview'}</option>
           <option value="contract">{locale === 'zh-CN' ? '订单查询契约' : 'Order lookup contract'}</option>
           <option value="scenarios">{locale === 'zh-CN' ? '场景数据' : 'Scenario data'}</option>
+          <option value="tutorial">{locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'}</option>
           <option value="feature">{locale === 'zh-CN' ? '特征编排' : 'Feature orchestration'}</option>
           <option value="tool">{locale === 'zh-CN' ? '工具契约' : 'Tool contract'}</option>
         </select>
@@ -112,13 +125,15 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '业务能力' : 'Business assets'} <span>2</span></div>
           {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => setTask('feature')} />)}
           {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => setTask('tool')} />)}
-          <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => setTask('scenarios')} badge={model.scenarios.length} />
+          <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => setTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
+          <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => setTask('tutorial')} testId="capability-task-tutorial" />
         </aside>
 
         <section className="capability-main" aria-live="polite">
-          {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => setTask('scenarios')} />}
+          {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => setTask('scenarios')} onOpenTutorial={() => setTask('tutorial')} />}
           {task === 'contract' && currentAsset && <ContractView asset={currentAsset} text={text} locale={locale} />}
           {task === 'scenarios' && <ScenarioView scenarios={model.scenarios} text={text} locale={locale} />}
+          {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
           {task === 'feature' && selectedFeature && <StageOneView asset={selectedFeature} text={text} locale={locale} kind="feature" />}
           {task === 'tool' && selectedTool && <StageOneView asset={selectedTool} text={text} locale={locale} kind="tool" />}
         </section>
@@ -129,13 +144,13 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   );
 }
 
-function TaskButton({ active, icon, label, onClick, badge }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void; badge?: number }) {
-  return <button type="button" className={`capability-task-button${active ? ' active' : ''}`} aria-current={active ? 'step' : undefined} onClick={onClick}>
+function TaskButton({ active, icon, label, onClick, badge, testId }: { active: boolean; icon: React.ReactNode; label: string; onClick: () => void; badge?: number; testId?: string }) {
+  return <button type="button" className={`capability-task-button${active ? ' active' : ''}`} aria-current={active ? 'step' : undefined} data-testid={testId} onClick={onClick}>
     {icon}<span>{label}</span>{badge !== undefined && <strong>{badge}</strong>}
   </button>;
 }
 
-function OverviewView({ model, text, locale, onOpenContract, onOpenScenarios }: { model: CapabilityStudioModel; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; onOpenContract: (index: number) => void; onOpenScenarios: () => void }) {
+function OverviewView({ model, text, locale, onOpenContract, onOpenScenarios, onOpenTutorial }: { model: CapabilityStudioModel; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; onOpenContract: (index: number) => void; onOpenScenarios: () => void; onOpenTutorial: () => void }) {
   return <div className="capability-view" data-testid="capability-overview">
     <div className="capability-view-heading"><div><p className="capability-kicker">GP-01</p><h3>{text(model.capability.name)}</h3><p>{text(model.capability.summary)}</p></div><span className="capability-readonly">{locale === 'zh-CN' ? '只读' : 'READ-ONLY'}</span></div>
     <div className="capability-count-strip" aria-label={locale === 'zh-CN' ? '能力资产数量' : 'Capability inventory counts'}>
@@ -148,7 +163,7 @@ function OverviewView({ model, text, locale, onOpenContract, onOpenScenarios }: 
       <section className="capability-section capability-asset-list"><SectionTitle icon={<FileText size={17} />} title={locale === 'zh-CN' ? '业务接口契约' : 'API contracts'} subtitle={locale === 'zh-CN' ? '先看业务输入、结果和失败边界' : 'Business-facing inputs and outcomes'} />{model.assets.apis.map((asset, index) => <AssetRow key={asset.technicalRef ?? index} asset={asset} text={text} locale={locale} onClick={() => onOpenContract(index)} />)}</section>
       <section className="capability-section"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '业务特征与工具' : 'Feature and Tool'} subtitle={locale === 'zh-CN' ? '设计事实与运行证据分开呈现' : 'Runtime evidence is deliberately separate'} />{model.assets.features.map((asset, index) => <AssetRow key={asset.technicalRef ?? index} asset={asset} text={text} locale={locale} />)}{model.assets.tools.map((asset, index) => <AssetRow key={asset.technicalRef ?? index} asset={asset} text={text} locale={locale} />)}</section>
     </div>
-    <section className="capability-section capability-branch-section"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '两条安全工作线' : 'Two safe working lines'} subtitle={locale === 'zh-CN' ? '标准基线用于对照，教程分支用于受控探索。' : 'The baseline is the reference; the tutorial branch is exploratory.'} /><div className="capability-branch-grid"><BranchRow branch={model.baseline} text={text} locale={locale} /><BranchRow branch={model.tutorialBranch} text={text} locale={locale} /></div></section>
+    <section className="capability-section capability-branch-section"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '两条安全工作线' : 'Two safe working lines'} subtitle={locale === 'zh-CN' ? '标准基线用于对照，教程分支用于受控探索。' : 'The baseline is the reference; the tutorial branch is exploratory.'} /><div className="capability-branch-grid"><BranchRow branch={model.baseline} text={text} locale={locale} /><BranchRow branch={model.tutorialBranch} text={text} locale={locale} onClick={onOpenTutorial} /></div></section>
     <div className="capability-next-action"><div><strong>{locale === 'zh-CN' ? '建议下一步' : 'Next action'}</strong><span>{locale === 'zh-CN' ? '先确认业务契约，让每条场景都有稳定边界。' : 'Start with the business contract so every scenario has a stable boundary.'}</span></div><button className="capability-primary-action" type="button" onClick={() => onOpenContract(0)}>{locale === 'zh-CN' ? '查看订单查询契约' : 'Review order lookup contract'} <ArrowRight size={16} aria-hidden="true" /></button><button type="button" className="capability-secondary-action" onClick={onOpenScenarios}><ListFilter size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '浏览场景' : 'Browse scenarios'}</button></div>
   </div>;
 }
@@ -166,9 +181,12 @@ function AssetRow({ asset, text, locale, onClick }: { asset: CapabilityAssetSumm
   return onClick ? <button type="button" className="capability-asset-row" onClick={onClick}>{content}</button> : <div className="capability-asset-row">{content}</div>;
 }
 
-function BranchRow({ branch, text, locale }: { branch: CapabilityStudioModel['baseline']; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
+function BranchRow({ branch, text, locale, onClick }: { branch: CapabilityStudioModel['baseline']; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; onClick?: () => void }) {
   const projection = displayBranch(branch, text, locale);
-  return <div className="capability-branch-row"><div><strong>{projection.name}</strong><p>{projection.purpose}</p></div><span>{displayProtocolStatus(text(branch.status), locale)}</span></div>;
+  const content = <><div><strong>{projection.name}</strong><p>{projection.purpose}</p></div><span>{displayProtocolStatus(text(branch.status), locale)}</span>{onClick && <ArrowRight size={16} aria-hidden="true" />}</>;
+  return onClick
+    ? <button type="button" className="capability-branch-row capability-branch-action" onClick={onClick}>{content}</button>
+    : <div className="capability-branch-row">{content}</div>;
 }
 
 function ContractView({ asset, text, locale }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
@@ -223,6 +241,131 @@ function ScenarioView({ scenarios, text, locale }: { scenarios: ScenarioRow[]; t
 
 function ScenarioTableRow({ scenario, text, locale }: { scenario: ScenarioRow; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
   return <tr><th scope="row">{text(scenario.name)}</th><td>{displayScenarioValue(text(scenario.category), locale)}</td><td>{text(scenario.source)}</td><td>{text(scenario.owner)}</td><td>{text(scenario.oracle)}</td><td>{scenario.contractCount}</td><td>{text(scenario.expectedResult)}</td><td><span>{displayScenarioValue(text(scenario.quality), locale)}</span><small>{displayScenarioValue(text(scenario.lifecycle), locale)}</small></td></tr>;
+}
+
+function TutorialBranchView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
+  const [branch, setBranch] = useState<TutorialBranchProjection | null>(null);
+  const [condition, setCondition] = useState('');
+  const [durationMs, setDurationMs] = useState(3000);
+  const [preflight, setPreflight] = useState<TutorialBranchPreflight | null>(null);
+  const [error, setError] = useState<CapabilityStudioRequestError | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const current = await fetchTutorialBranch(fetcher);
+      setBranch(current);
+      setCondition(current.behavior.condition);
+      setDurationMs(current.behavior.durationMs);
+      setPreflight(null);
+    } catch (nextError) {
+      setError(asRequestError(nextError));
+    } finally {
+      setLoading(false);
+    }
+  }, [fetcher]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const saveAndPreflight = async () => {
+    if (!branch) return;
+    setSaving(true);
+    setError(null);
+    setPreflight(null);
+    try {
+      const saved = await saveTutorialBehavior({
+        condition,
+        behavior: 'TIMEOUT',
+        durationMs,
+        expectedRevision: branch.revision,
+      }, fetcher);
+      if (saved.canonicalBaselineFingerprint !== branch.canonicalBaselineFingerprint) {
+        throw new CapabilityStudioRequestError(
+          'RG.CAPABILITY_STUDIO.BASELINE_CHANGED',
+          locale === 'zh-CN' ? '保存后标准基线指纹发生了变化。' : 'The canonical baseline fingerprint changed after saving.',
+          locale === 'zh-CN' ? '无法证明本次编辑只影响教程分支。' : 'The edit cannot be proven to be isolated to the tutorial branch.',
+          locale === 'zh-CN' ? '停止演练并重新加载标准基线。' : 'Stop the rehearsal and reload the canonical baseline.',
+          409,
+        );
+      }
+      const checked = await preflightTutorialBranch(fetcher);
+      if (checked.branchId !== saved.branchId || checked.revision !== saved.revision || checked.fingerprint !== saved.fingerprint) {
+        throw new CapabilityStudioRequestError(
+          'RG.CAPABILITY_STUDIO.PREFLIGHT_BINDING_MISMATCH',
+          locale === 'zh-CN' ? '预检没有绑定到刚保存的教程版本。' : 'Preflight did not bind the version that was just saved.',
+          locale === 'zh-CN' ? '当前预检结论不能用于后续运行。' : 'The current preflight result cannot be used for a run.',
+          locale === 'zh-CN' ? '重新加载教程分支并再次预检。' : 'Reload the tutorial branch and run preflight again.',
+          409,
+        );
+      }
+      setBranch(saved);
+      setPreflight(checked);
+    } catch (nextError) {
+      setError(asRequestError(nextError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="capability-view capability-inline-state" aria-busy="true">{locale === 'zh-CN' ? '正在准备隔离教程分支...' : 'Preparing the isolated tutorial branch...'}</div>;
+  }
+  if (!branch) {
+    return <div className="capability-view"><ViewHeading kicker="GP-04" title={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} description={locale === 'zh-CN' ? '教程分支当前不可用，标准基线未受影响。' : 'The tutorial branch is unavailable; the canonical baseline is unaffected.'} status={locale === 'zh-CN' ? '未加载' : 'Not loaded'} />{error && <TutorialError error={error} locale={locale} onReload={() => void load()} />}</div>;
+  }
+
+  return <div className="capability-view" data-testid="capability-tutorial-branch">
+    <ViewHeading kicker="GP-04" title={locale === 'zh-CN' ? '演练“历史补偿查询超时”' : 'Rehearse a compensation-history timeout'} description={locale === 'zh-CN' ? '在隔离分支中描述依赖表现，不接触真实业务接口。' : 'Describe dependency behavior on an isolated branch without reaching a real business API.'} status={locale === 'zh-CN' ? `教程分支 · 第 ${branch.revision} 版` : `Tutorial branch · revision ${branch.revision}`} />
+    <div className="capability-branch-safety" aria-label={locale === 'zh-CN' ? '分支安全边界' : 'Branch safety boundary'}>
+      <div><ShieldCheck size={18} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? '标准基线' : 'Canonical baseline'}</small><strong>{locale === 'zh-CN' ? '只读，不会被本次操作修改' : 'Read-only and unchanged by this task'}</strong></span></div>
+      <ArrowRight size={18} aria-hidden="true" />
+      <div><Beaker size={18} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? '当前工作区' : 'Current workspace'}</small><strong>{locale === 'zh-CN' ? '教程分支，可安全编辑' : 'Tutorial branch, safe to edit'}</strong></span></div>
+    </div>
+    <section className="capability-section capability-behavior-editor">
+      <SectionTitle icon={<Clock3 size={17} />} title={locale === 'zh-CN' ? '用业务句式描述依赖表现' : 'Describe dependency behavior as a business sentence'} subtitle={locale === 'zh-CN' ? '选择条件、表现和持续时间；无需编写 Mock JSON。' : 'Choose the condition, behavior, and duration without authoring mock JSON.'} />
+      <div className="capability-sentence-editor">
+        <label><span>1</span><small>{locale === 'zh-CN' ? '当什么条件' : 'When'}</small><select aria-label={locale === 'zh-CN' ? '发生条件' : 'Behavior condition'} value={condition} onChange={(event) => setCondition(event.target.value)}><option value={branch.behavior.condition}>{displayBehaviorCondition(branch.behavior.condition, locale)}</option></select></label>
+        <label><span>2</span><small>{locale === 'zh-CN' ? '依赖如何表现' : 'Dependency behavior'}</small><select aria-label={locale === 'zh-CN' ? '依赖表现' : 'Dependency behavior'} value="TIMEOUT" disabled><option value="TIMEOUT">{locale === 'zh-CN' ? '等待后超时' : 'Times out after waiting'}</option></select></label>
+        <label><span>3</span><small>{locale === 'zh-CN' ? '持续多久' : 'Duration'}</small><div className="capability-duration-input"><input aria-label={locale === 'zh-CN' ? '超时持续毫秒数' : 'Timeout duration in milliseconds'} type="number" min="100" max="30000" step="100" value={durationMs} onChange={(event) => setDurationMs(Number(event.target.value))} /><b>ms</b></div></label>
+      </div>
+      <p className="capability-behavior-sentence"><Clock3 size={17} aria-hidden="true" /> {locale === 'zh-CN' ? `当“${displayBehaviorCondition(condition, locale)}”时，“${branch.behavior.dependencyName}”等待 ${formatDuration(durationMs, locale)} 后超时。` : `When “${displayBehaviorCondition(condition, locale)}”, “${branch.behavior.dependencyName}” times out after ${formatDuration(durationMs, locale)}.`}</p>
+      <div className="capability-editor-actions"><div><small>{locale === 'zh-CN' ? '保存会创建新的不可变教程版本' : 'Saving creates a new immutable tutorial revision'}</small><span>{locale === 'zh-CN' ? '标准基线始终保持原值' : 'The canonical baseline remains unchanged'}</span></div><button type="button" className="capability-primary-action" disabled={saving || !condition || durationMs < 100 || durationMs > 30000} onClick={() => void saveAndPreflight()}>{saving ? <RefreshCw className="capability-spin" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />} {saving ? (locale === 'zh-CN' ? '正在保存并预检...' : 'Saving and checking...') : (locale === 'zh-CN' ? '保存并隔离预检' : 'Save and run isolated preflight')}</button></div>
+    </section>
+    {preflight && <section className="capability-preflight-success" role="status" data-testid="capability-preflight-success"><CheckCircle2 size={21} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '隔离预检通过，可以进入试跑' : 'Isolated preflight passed; ready to run'}</strong><p>{locale === 'zh-CN' ? `教程分支已保存为第 ${preflight.revision} 版，标准基线未改变。` : `Tutorial branch revision ${preflight.revision} is saved and the canonical baseline is unchanged.`}</p><dl><div><dt>{locale === 'zh-CN' ? '未解析依赖' : 'Unresolved dependencies'}</dt><dd>{preflight.unresolvedDependencies}</dd></div><div><dt>{locale === 'zh-CN' ? '真实接口调用' : 'Real external calls'}</dt><dd>{preflight.realExternalCallCount}</dd></div><div><dt>{locale === 'zh-CN' ? '失败时转真实接口' : 'Fallback to real APIs'}</dt><dd>{preflight.fallbackToReal ? (locale === 'zh-CN' ? '是' : 'Yes') : (locale === 'zh-CN' ? '已禁止' : 'Blocked')}</dd></div></dl></div></section>}
+    {error && <TutorialError error={error} locale={locale} onReload={() => void load()} />}
+    <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '版本技术引用' : 'Revision technical references'}</summary><dl><div><dt>Branch</dt><dd>{branch.branchId}@{branch.revision}</dd></div><div><dt>Fingerprint</dt><dd>{branch.fingerprint}</dd></div><div><dt>Baseline</dt><dd>{branch.canonicalBaselineFingerprint}</dd></div></dl></details>
+  </div>;
+}
+
+function TutorialError({ error, locale, onReload }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void }) {
+  return <section className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{error.code}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{error.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{error.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{error.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
+}
+
+function asRequestError(error: unknown): CapabilityStudioRequestError {
+  if (error instanceof CapabilityStudioRequestError) return error;
+  return new CapabilityStudioRequestError(
+    'RG.CAPABILITY_STUDIO.OPERATION_FAILED',
+    error instanceof Error ? error.message : 'The operation did not complete.',
+    'The tutorial branch was not changed.',
+    'Reload the tutorial branch and retry.',
+    0,
+  );
+}
+
+function displayBehaviorCondition(condition: string, locale: 'en' | 'zh-CN'): string {
+  const known: Record<string, { en: string; 'zh-CN': string }> = {
+    WHEN_COMPENSATION_HISTORY_IS_REQUESTED: { en: 'compensation history is requested', 'zh-CN': '查询历史补偿记录' },
+    COMPENSATION_HISTORY_LOOKUP: { en: 'compensation history is requested', 'zh-CN': '查询历史补偿记录' },
+  };
+  return known[condition]?.[locale] ?? condition;
+}
+
+function formatDuration(durationMs: number, locale: 'en' | 'zh-CN'): string {
+  if (durationMs % 1000 === 0) return locale === 'zh-CN' ? `${durationMs / 1000} 秒` : `${durationMs / 1000} seconds`;
+  return locale === 'zh-CN' ? `${durationMs} 毫秒` : `${durationMs} milliseconds`;
 }
 
 function StageOneView({ asset, text, locale, kind }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; kind: 'feature' | 'tool' }) {

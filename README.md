@@ -108,9 +108,10 @@ Common demo options:
 The default `test`-profile startup opens Capability Studio at `/capabilities/` with a
 payload-free cancellation-fee pack containing four API capabilities, one Feature, one
 Tool, and nine business scenarios. The page is deliberately honest about its boundary:
-contract and scenario discovery are available, while isolated execution and acceptance
-evidence remain `NOT_RUN` until their governed runtime is connected. Correctness Studio
-is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
+contract and scenario discovery are available, and the test/staging-only tutorial branch
+can save a timeout behavior and prove an isolated, zero-real-call preflight. Feature/Tool
+execution and release acceptance remain `NOT_RUN` until their governed runtime is connected.
+Correctness Studio is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
 `--no-correctness` to disable either sample. Both opt-outs are required for `production`
 because neither demo authority is assembled there.
 

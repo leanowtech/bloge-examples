@@ -2104,6 +2104,14 @@ capability_studio_acceptance_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/acceptance-baseline"
 }
 
+capability_studio_tutorial_branch_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/tutorial-branch"
+}
+
+capability_studio_tutorial_preflight_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/tutorial-branch/preflight"
+}
+
 jar_path() {
     echo "${PROJECT_DIR}/target/${JAR_NAME}"
 }
@@ -2232,6 +2240,8 @@ EOF
   Capability probe: $(capabilities_url)
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Golden demo pack: %s\n' "$(capability_studio_demo_pack_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Acceptance base:  %s\n' "$(capability_studio_acceptance_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial branch:  %s\n' "$(capability_studio_tutorial_branch_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial check:   POST %s\n' "$(capability_studio_tutorial_preflight_url)")
   Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
@@ -2323,10 +2333,16 @@ wait_for_ready() {
             if truthy "${CAPABILITY_STUDIO_DEMO}"; then
                 local capability_studio_pack
                 local capability_studio_acceptance
+                local capability_studio_branch
+                local capability_studio_preflight
                 if ! capability_studio_pack="$(curl -fsS \
                     "$(capability_studio_demo_pack_url)" 2>/dev/null)" ||
                     ! capability_studio_acceptance="$(curl -fsS \
-                    "$(capability_studio_acceptance_url)" 2>/dev/null)"; then
+                    "$(capability_studio_acceptance_url)" 2>/dev/null)" ||
+                    ! capability_studio_branch="$(curl -fsS \
+                    "$(capability_studio_tutorial_branch_url)" 2>/dev/null)" ||
+                    ! capability_studio_preflight="$(curl -fsS -X POST \
+                    "$(capability_studio_tutorial_preflight_url)" 2>/dev/null)"; then
                     sleep 2
                     continue
                 fi
@@ -2341,6 +2357,23 @@ wait_for_ready() {
                         (.status == "NO_GO")
                         and ((.gates | length) == 10)
                         and ([.gates[].status] | all(. == "NOT_RUN"))
+                    ' >/dev/null 2>&1 ||
+                        ! jq -n -e \
+                        --argjson branch "${capability_studio_branch}" \
+                        --argjson preflight "${capability_studio_preflight}" '
+                        ($branch.revision >= 1)
+                        and ($branch.fingerprint | test("^sha256:[0-9a-f]{64}$"))
+                        and ($branch.canonicalBaselineFingerprint | test("^sha256:[0-9a-f]{64}$"))
+                        and ($branch.behavior.dependencyId == "api-compensation-history")
+                        and ($branch.behavior.behavior == "TIMEOUT")
+                        and ($branch.behavior.durationMs >= 100 and $branch.behavior.durationMs <= 30000)
+                        and ($preflight.mode == "ISOLATED")
+                        and ($preflight.unresolvedDependencies == 0)
+                        and ($preflight.realExternalCallCount == 0)
+                        and ($preflight.fallbackToReal == false)
+                        and ($preflight.branchId == $branch.branchId)
+                        and ($preflight.revision == $branch.revision)
+                        and ($preflight.fingerprint == $branch.fingerprint)
                     ' >/dev/null 2>&1; then
                         sleep 2
                         continue
@@ -2354,7 +2387,13 @@ wait_for_ready() {
                     ! printf '%s' "${capability_studio_pack}" |
                     grep -Eq '"scenarios"[[:space:]]*:[[:space:]]*9' ||
                     ! printf '%s' "${capability_studio_acceptance}" |
-                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"NO_GO"'; then
+                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"NO_GO"' ||
+                    ! printf '%s' "${capability_studio_preflight}" |
+                    grep -Eq '"mode"[[:space:]]*:[[:space:]]*"ISOLATED"' ||
+                    ! printf '%s' "${capability_studio_preflight}" |
+                    grep -Eq '"realExternalCallCount"[[:space:]]*:[[:space:]]*0' ||
+                    ! printf '%s' "${capability_studio_preflight}" |
+                    grep -Eq '"fallbackToReal"[[:space:]]*:[[:space:]]*false'; then
                     sleep 2
                     continue
                 fi
@@ -2531,7 +2570,7 @@ wait_for_ready() {
                 return 0
             fi
             if truthy "${CAPABILITY_STUDIO_DEMO}"; then
-                echo "Demo service ready; Capability Studio 4/1/1/9 baseline and visual probes passed${visual_readiness}: ${url}"
+                echo "Demo service ready; Capability Studio 4/1/1/9 baseline, isolated tutorial preflight, and visual probes passed${visual_readiness}: ${url}"
                 return 0
             fi
             if truthy "${CORRECTNESS_DEMO}"; then

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-error-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Error v1",
+  "description": "Safe, actionable, payload-free error response for the cross-system protocol.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "whatHappened", "impact", "recoveryAction"],
+  "properties": {
+    "code": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Z][A-Z0-9_.-]*$" },
+    "whatHappened": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "impact": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "recoveryAction": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "field": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

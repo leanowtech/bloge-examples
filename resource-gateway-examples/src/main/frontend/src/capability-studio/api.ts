@@ -8,6 +8,53 @@ export type CapabilityStudioFetcher = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+export interface TutorialBehavior {
+  dependencyId: string;
+  dependencyName: string;
+  condition: string;
+  behavior: 'TIMEOUT';
+  durationMs: number;
+}
+
+export interface TutorialBranchProjection {
+  branchId: string;
+  revision: number;
+  fingerprint: string;
+  canonicalBaselineFingerprint: string;
+  behavior: TutorialBehavior;
+}
+
+export interface TutorialBranchPreflight {
+  mode: 'ISOLATED';
+  unresolvedDependencies: number;
+  realExternalCallCount: number;
+  fallbackToReal: false;
+  branchId: string;
+  revision: number;
+  fingerprint: string;
+}
+
+export interface SaveTutorialBehaviorRequest {
+  condition: string;
+  behavior: 'TIMEOUT';
+  durationMs: number;
+  expectedRevision: number;
+}
+
+export class CapabilityStudioRequestError extends Error {
+  constructor(
+    readonly code: string,
+    readonly whatHappened: string,
+    readonly impact: string,
+    readonly recoveryAction: string,
+    readonly status: number,
+    readonly field?: string,
+  ) {
+    super(whatHappened);
+    this.name = 'CapabilityStudioRequestError';
+  }
+}
+
 export async function fetchCapabilityStudioDemoPack(
   fetcher: CapabilityStudioFetcher = fetch,
 ): Promise<CapabilityStudioModel> {
@@ -29,4 +76,169 @@ export async function fetchCapabilityStudioDemoPack(
     throw new Error(error instanceof Error ? error.message : 'The response was not valid JSON.');
   }
   return parseCapabilityStudioDemoPack(payload);
+}
+
+export async function fetchTutorialBranch(
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<TutorialBranchProjection> {
+  return parseTutorialBranchProjection(
+    await requestJson<unknown>(fetcher, '/api/capability-studio/tutorial-branch'),
+  );
+}
+
+export async function saveTutorialBehavior(
+  request: SaveTutorialBehaviorRequest,
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<TutorialBranchProjection> {
+  return parseTutorialBranchProjection(await requestJson<unknown>(fetcher, '/api/capability-studio/tutorial-branch/behaviors/compensation-history', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  }));
+}
+
+export async function preflightTutorialBranch(
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<TutorialBranchPreflight> {
+  return parseTutorialBranchPreflight(await requestJson<unknown>(fetcher, '/api/capability-studio/tutorial-branch/preflight', {
+    method: 'POST',
+  }));
+}
+
+async function requestJson<T>(
+  fetcher: CapabilityStudioFetcher,
+  input: string,
+  init?: RequestInit,
+): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetcher(input, {
+      ...init,
+      headers: { Accept: 'application/json', ...init?.headers },
+    });
+  } catch (error) {
+    throw new CapabilityStudioRequestError(
+      'RG.CAPABILITY_STUDIO.NETWORK_UNAVAILABLE',
+      error instanceof Error ? error.message : 'The request could not reach Capability Studio.',
+      'The tutorial branch was not changed.',
+      'Check that the local demo service is running, then retry.',
+      0,
+    );
+  }
+  const payload = await parseResponseBody(response);
+  if (!response.ok) {
+    const error = isObject(payload) ? payload : {};
+    throw new CapabilityStudioRequestError(
+      stringField(error.code) ?? `RG.CAPABILITY_STUDIO.HTTP_${response.status}`,
+      stringField(error.whatHappened) ?? `Capability Studio rejected the request with HTTP ${response.status}.`,
+      stringField(error.impact) ?? 'The tutorial branch was not changed.',
+      stringField(error.recoveryAction) ?? 'Review the highlighted value and retry.',
+      response.status,
+      stringField(error.field),
+    );
+  }
+  if (!isObject(payload)) {
+    throw new CapabilityStudioRequestError(
+      'RG.CAPABILITY_STUDIO.INVALID_RESPONSE',
+      'Capability Studio returned an invalid response.',
+      'The result cannot be trusted or displayed.',
+      'Reload the tutorial branch before continuing.',
+      response.status,
+    );
+  }
+  return payload as T;
+}
+
+async function parseResponseBody(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringField(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value : undefined;
+}
+
+function parseTutorialBranchProjection(value: unknown): TutorialBranchProjection {
+  const source = responseObject(value);
+  const behavior = responseObject(source.behavior);
+  const parsed: TutorialBranchProjection = {
+    branchId: requiredString(source.branchId, 'branchId'),
+    revision: requiredPositiveInteger(source.revision, 'revision'),
+    fingerprint: requiredFingerprint(source.fingerprint, 'fingerprint'),
+    canonicalBaselineFingerprint: requiredFingerprint(
+      source.canonicalBaselineFingerprint,
+      'canonicalBaselineFingerprint',
+    ),
+    behavior: {
+      dependencyId: requiredString(behavior.dependencyId, 'behavior.dependencyId'),
+      dependencyName: requiredString(behavior.dependencyName, 'behavior.dependencyName'),
+      condition: requiredString(behavior.condition, 'behavior.condition'),
+      behavior: requiredLiteral(behavior.behavior, 'TIMEOUT', 'behavior.behavior'),
+      durationMs: requiredIntegerInRange(behavior.durationMs, 100, 30_000, 'behavior.durationMs'),
+    },
+  };
+  return parsed;
+}
+
+function parseTutorialBranchPreflight(value: unknown): TutorialBranchPreflight {
+  const source = responseObject(value);
+  return {
+    mode: requiredLiteral(source.mode, 'ISOLATED', 'mode'),
+    unresolvedDependencies: requiredIntegerInRange(source.unresolvedDependencies, 0, 0, 'unresolvedDependencies'),
+    realExternalCallCount: requiredIntegerInRange(source.realExternalCallCount, 0, 0, 'realExternalCallCount'),
+    fallbackToReal: requiredLiteral(source.fallbackToReal, false, 'fallbackToReal'),
+    branchId: requiredString(source.branchId, 'branchId'),
+    revision: requiredPositiveInteger(source.revision, 'revision'),
+    fingerprint: requiredFingerprint(source.fingerprint, 'fingerprint'),
+  };
+}
+
+function responseObject(value: unknown): Record<string, unknown> {
+  if (!isObject(value)) throw invalidResponse('Expected an object response.');
+  return value;
+}
+
+function requiredString(value: unknown, field: string): string {
+  const parsed = stringField(value);
+  if (!parsed) throw invalidResponse(`Missing ${field}.`);
+  return parsed;
+}
+
+function requiredFingerprint(value: unknown, field: string): string {
+  const parsed = requiredString(value, field);
+  if (!/^sha256:[0-9a-f]{64}$/.test(parsed)) throw invalidResponse(`Invalid ${field}.`);
+  return parsed;
+}
+
+function requiredPositiveInteger(value: unknown, field: string): number {
+  return requiredIntegerInRange(value, 1, Number.MAX_SAFE_INTEGER, field);
+}
+
+function requiredIntegerInRange(value: unknown, minimum: number, maximum: number, field: string): number {
+  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+    throw invalidResponse(`Invalid ${field}.`);
+  }
+  return value as number;
+}
+
+function requiredLiteral<T extends string | boolean>(value: unknown, expected: T, field: string): T {
+  if (value !== expected) throw invalidResponse(`Invalid ${field}.`);
+  return expected;
+}
+
+function invalidResponse(detail: string): CapabilityStudioRequestError {
+  return new CapabilityStudioRequestError(
+    'RG.CAPABILITY_STUDIO.INVALID_RESPONSE',
+    `Capability Studio returned an invalid response. ${detail}`,
+    'The result cannot be trusted or displayed.',
+    'Reload the tutorial branch before continuing.',
+    200,
+  );
 }

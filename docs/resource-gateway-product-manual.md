@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio Stage 0 实现
+> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -21,7 +21,7 @@ ANEKE 仍分别负责真实业务事实、资产治理与发布门禁。
 
 | 页面 | 地址 | 主要用户 | 解决的问题 |
 |---|---|---|---|
-| 能力设计工作台 | `/capabilities/` | 业务设计人员、正确性负责人 | 从业务能力出发查看接口契约、Feature/Tool 依赖和场景数据；当前 Stage 0 支持只读发现 |
+| 能力设计工作台 | `/capabilities/` | 业务设计人员、正确性负责人 | 查看接口契约和场景数据，并在隔离教程分支中用业务句式配置超时表现、保存和预检 |
 | 业务镜像 | `/business-mirror/` | 业务负责人、服务设计人员 | 把客户问题经营为有负责人、有正确性定义、有场景分母、有证据的能力包 |
 | 编排 | `/author/` | 流程作者、算子开发者 | 在 Schema 约束下编排 Graph，定义输入输出、上下文绑定和测试场景 |
 | 算子库 | `/libraries/` | 平台开发者、领域专家 | 用向导、发现和推断方式定义 Operator 与 built-in function 库 |
@@ -162,10 +162,13 @@ Owner 冻结的正确性分母和预期。
 1. 在左侧选择「订单信息查询」，查看业务输入、成功结果、错误、副作用、SLA 和 Owner。
 2. 选择「场景数据」，按黄金、异常、边界、故障和回归筛选九条场景。
 3. 检查每条场景的业务名称、来源、Owner、Oracle、适用契约和期望结果。
-4. 查看 Canonical Baseline 与 Tutorial Branch。两者必须显示为独立 revision；教程分支不能改写基线。
-5. 查看「验收状态」。Stage 0 的正确结论是 `NO_GO`：当前只完成契约与场景发现，Feature/Tool 隔离运行、9/9 批量证据和零真实外呼证明仍为 `NOT_RUN`。
+4. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
+5. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
+6. 查看「验收状态」。正确结论仍是 `NO_GO`：GP-04 只证明 test/staging 进程内教程分支的保存与预检；Feature/Tool 隔离执行、9/9 批量证据、完整 zero-egress 观测和业务签署仍为 `NOT_RUN`。
 
-页面加载失败时选择「重试」。若启动脚本提示黄金数据包未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。当前页面不提供 Dataset 写入或真实 Run 按钮；这不是权限错误，而是 Stage 0 的能力边界。
+![隔离教程分支的业务句式编辑与预检](assets/capability-studio/capability-studio-gp04-zh-1440.png)
+
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，状态保存在当前进程内，重启后复位；production profile 不装配这些端点。当前页面不提供 Dataset 持久化写入或 Feature/Tool Run 按钮，这不是权限错误，而是当前开发切片的明确边界。
 
 ### 3.3 从业务能力资产组合开始
 
@@ -450,7 +453,7 @@ ANEKE 已允许发布。
 
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
-| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包与默认 Correctness exact Workspace；Capability 写入与 Run 保持关闭 |
+| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包、进程内教程分支保存/预检与默认 Correctness exact Workspace；Feature/Tool Run 保持关闭 |
 | 不装配 Capability Studio 样板 | `./scripts/start-visual-canvas-demo.sh --no-capability-studio --open` | 默认打开 legacy 业务镜像；Capability Studio 演示 API 不装配 |
 | 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并打开 Capability Studio；`correctnessWorkspaceApi=false` |
 | 验证生产装配隔离 | `./scripts/start-visual-canvas-demo.sh --profile production --no-capability-studio --no-correctness` | 两类演示 Authority 均不装配；不能用于演示黄金数据 |

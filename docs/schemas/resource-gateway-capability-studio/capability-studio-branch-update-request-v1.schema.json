@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-branch-update-request-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Branch Update Request v1",
+  "description": "Strict, payload-free request for saving an isolated behavior branch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["condition", "behavior", "durationMs", "expectedRevision"],
+  "properties": {
+    "condition": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "behavior": { "const": "TIMEOUT" },
+    "durationMs": { "type": "integer", "minimum": 100, "maximum": 30000 },
+    "expectedRevision": { "type": "integer", "minimum": 1 }
+  }
+}

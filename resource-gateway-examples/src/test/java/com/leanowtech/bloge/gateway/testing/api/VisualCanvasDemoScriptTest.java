@@ -108,12 +108,19 @@ class VisualCanvasDemoScriptTest {
                 "--gateway.capability-studio.demo.enabled=true",
                 "$(capability_studio_demo_pack_url)",
                 "$(capability_studio_acceptance_url)",
+                "$(capability_studio_tutorial_branch_url)",
+                "$(capability_studio_tutorial_preflight_url)",
                 ".cardinality.api == 4",
                 ".cardinality.feature == 1",
                 ".cardinality.tool == 1",
                 ".cardinality.scenarios == 9",
                 ".status == \"NO_GO\"",
-                "all(. == \"NOT_RUN\")");
+                "all(. == \"NOT_RUN\")",
+                "$preflight.mode == \"ISOLATED\"",
+                "$preflight.unresolvedDependencies == 0",
+                "$preflight.realExternalCallCount == 0",
+                "$preflight.fallbackToReal == false",
+                "$preflight.fingerprint == $branch.fingerprint");
     }
 
     @Test

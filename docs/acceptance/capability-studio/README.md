@@ -1,8 +1,8 @@
-# Capability Studio Stage 0 验收制品
+# Capability Studio 验收制品
 
 > 当前状态：`NO_GO`
 >
-> 本目录记录 Capability Studio 在 Stage 0 的治理边界、验收合同、证据追踪和初始未通过实例。GP-01 至 GP-03 已形成只读纵向切片，但不表示整体产品验收通过，也不替代产品与架构签署。
+> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-03 已形成只读纵向切片，GP-04 正在形成可编辑教程分支；任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
 
 ## 1. 制品清单
 
@@ -19,7 +19,7 @@
 
 ## 2. 当前事实
 
-审计确认现有仓库拥有可复用底座，包括 Graph/Canvas、Correctness Studio、Scenario/Fixture 编译、Mirror 隔离和 Run Evidence。Stage 0 当前新增了：
+审计确认现有仓库拥有可复用底座，包括 Graph/Canvas、Correctness Studio、Scenario/Fixture 编译、Mirror 隔离和 Run Evidence。当前已经新增：
 
 - 默认 `/capabilities/` 入口和只读 `CapabilityAsset` 产品投影；
 - 4 API、1 Feature、1 Tool、9 Case 的 payload-free Canonical Golden Demo Pack；
@@ -27,18 +27,23 @@
 - GP-01 至 GP-03 的组件、协议、路由和启动脚本测试；
 - GP-01 至 GP-03 的中文真实 Chrome 烟测，覆盖 1440×900、1024×768 和 390×844；
 - Capability Studio 的 Baseline/Manifest Schema、初始 `NO_GO` fixture 和追踪矩阵。
+- GP-04 的教程分支业务句式编辑器，用户通过条件、表现和持续时间配置超时，无需编辑 Mock JSON；
+- GP-04 的进程内 immutable revision、严格保存协议和隔离预检，以及 409 冲突保留输入、结构化恢复动作和断网分类测试；
+- GP-04 的四份严格 JSON Schema、独立 Test Kit 内容指纹重算和真实 HTTP before/after/preflight 互验；
+- GP-04 中文 1440×900 真实 Chrome 保存与预检烟测。
 
-仍未完成的是 Dataset 编辑与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、zero-egress 运行证明、GP-04 至 GP-10 的完整自动化、中英文完整浏览器状态矩阵和六人可用性签署。
+仍未完成的是持久化 Dataset/Branch Authority 与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、GP-04 英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。
 
-因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、单元测试通过和启动探针成功，只能证明 Stage 0 纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
+因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
 ### 2.1 当前浏览器证据
 
-以下截图由 `CapabilityStudioBrowserAcceptanceTest` 启动真实 Spring Boot 服务，并通过 headless Chrome 执行 GP-01 至 GP-03 后生成。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏，以及页面级无横向溢出。
+以下截图由 `CapabilityStudioBrowserAcceptanceTest` 启动真实 Spring Boot 服务，并通过 headless Chrome 执行 GP-01 至 GP-04 后生成。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏、GP-04 实际保存与隔离预检，以及页面级无横向溢出。
 
 | 视口 | 覆盖内容 | 证据 |
 |---|---|---|
 | 1440×900 | GP-01 总览、GP-02 API 选择、GP-03 九行场景 | [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) |
+| 1440×900 | GP-04 业务句式编辑、分支边界、保存后的隔离预检 | [`capability-studio-gp04-zh-1440.png`](../../assets/capability-studio/capability-studio-gp04-zh-1440.png) |
 | 1024×768 | GP-01 紧凑桌面布局 | [`capability-studio-gp01-zh-1024.png`](../../assets/capability-studio/capability-studio-gp01-zh-1024.png) |
 | 390×844 | GP-03 移动端任务选择与筛选入口 | [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) |
 
@@ -73,7 +78,7 @@
 
 所有制品都使用 UTF-8 JSON 或 UTF-8 Markdown。JSON 的 fingerprint 计算使用项目统一的 RFC 8785 JCS canonical bytes，并将自身 `artifactFingerprint` 字段归一化为 `null` 后计算 `sha256:<64 位小写十六进制>`。签署信息仍然参与指纹；只有自身 fingerprint 字段被排除，避免循环引用。
 
-Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内子引用尚未对应独立运行制品，因此使用可复算的坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`，加载器会拒绝格式正确但与坐标不匹配的占位值。坐标摘要只能证明引用身份稳定，不能证明 Dataset、Graph、Binding 或运行 material 已物化；这也是当前 Manifest 保持 `NO_GO` 的原因之一。Stage 1 必须把这些坐标替换为各 Authority 返回的真实内容 fingerprint，并验证完整引用闭包。
+Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-04 Tutorial Branch 已向真实内容寻址迈出第一步：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；Test Kit 会从 before/after 投影重算并校验 digest。当前 Authority 仍是 test/staging 进程内实现，其他 Dataset、Graph、Binding 和运行 material 尚未全部替换为 Authority 内容 fingerprint，因此 Manifest 继续保持 `NO_GO`。
 
 `resource-gateway-test-kit` 已提供 `CapabilityStudioAcceptanceVerifier`。它使用随 JAR 打包的两份权威 Schema 校验结构，并检查 GP/Case 精确集合、Case 类型映射、证据闭包、零真实外呼和签署绑定。运行回归：
 

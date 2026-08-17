@@ -78,6 +78,44 @@ rejection returns `schemaValid=true, semanticValid=false`. Payload-like fields
 and secrets are rejected, and error codes never include instance values or
 validator paths.
 
+## Verify Capability Studio GP-04 Branch Protocol
+
+`CapabilityStudioBranchProtocolVerifier` verifies the cross-system branch save
+contract without starting the Gateway. The JAR packages these strict Draft
+2020-12 schemas:
+
+- `capability-studio-branch-projection-v1.schema.json`
+- `capability-studio-branch-update-request-v1.schema.json`
+- `capability-studio-preflight-v1.schema.json`
+- `capability-studio-error-v1.schema.json`
+
+The complete save/preflight check is deliberately small:
+
+```java
+CapabilityStudioBranchProtocolVerifier verifier =
+        new CapabilityStudioBranchProtocolVerifier();
+CapabilityStudioBranchProtocolVerifier.VerificationResult result = verifier.verify(
+        beforeProjectionJson,
+        afterProjectionJson,
+        preflightJson);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+The verifier requires exactly the next revision when branch behavior changes and
+the same revision for an idempotent save. It recomputes the content fingerprint
+from the branch, canonical baseline, dependency, condition, behavior, and duration,
+keeps `canonicalBaselineFingerprint` stable, and binds preflight exactly to the
+after projection's `branchId`, `revision`, and `fingerprint`. Preflight must be
+`ISOLATED` with zero unresolved dependencies, zero real external calls, and
+`fallbackToReal=false`. Same-content idempotent saves must retain the same revision
+and fingerprint. Use `verifyBeforeProjection`, `verifyAfterProjection`,
+`verifyPreflight`, `verifyUpdateRequest`, or `verifyError` when a pipeline needs
+phase-level checks. `FailureKind.SCHEMA` identifies strict-contract failures;
+`FailureKind.SEMANTIC` identifies cross-document invariant failures. Results
+contain only stable checks and error codes, never payloads or secrets.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:

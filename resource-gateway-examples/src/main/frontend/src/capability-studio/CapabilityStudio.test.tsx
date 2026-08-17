@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../i18n/I18nProvider';
 import CapabilityStudio from './CapabilityStudio';
+import type { CapabilityStudioFetcher } from './api';
 import { parseCapabilityStudioDemoPack } from './domain';
 import { capabilityStudioDemoPackFixture } from './testFixtures';
 
@@ -66,7 +67,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
 
   it('renders all nine GP-03 rows and supports search and category filtering', async () => {
     await render();
-    await act(async () => query<HTMLButtonElement>('[data-testid="capability-studio"] .capability-task-button:last-child').click());
+    await act(async () => buttonWithText('Scenario data').click());
 
     expect(document.querySelectorAll('.capability-scenario-table tbody tr')).toHaveLength(9);
     const search = query<HTMLInputElement>('input[placeholder="Search business scenario, owner, or expected result"]');
@@ -76,6 +77,65 @@ describe('Capability Studio Stage 0 read-only slice', () => {
       search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '应停止' }));
     });
     expect(document.querySelectorAll('.capability-scenario-table tbody tr')).toHaveLength(1);
+  });
+
+  it('edits GP-04 as a business sentence and proves branch isolation in preflight', async () => {
+    const fetcher = tutorialFetcher();
+    await render(fetcher);
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+
+    expect(query('[data-testid="capability-tutorial-branch"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Canonical baseline');
+    expect(document.body.textContent).toContain('Read-only and unchanged by this task');
+    expect(document.body.textContent).toContain('without authoring mock JSON');
+
+    const duration = query<HTMLInputElement>('input[aria-label="Timeout duration in milliseconds"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(duration, '4200');
+      duration.dispatchEvent(new Event('input', { bubbles: true }));
+      duration.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => buttonWithText('Save and run isolated preflight').click());
+    await settle();
+
+    expect(query('[data-testid="capability-preflight-success"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('revision 2');
+    expect(document.body.textContent).toContain('Unresolved dependencies');
+    expect(document.body.textContent).toContain('Real external calls');
+    expect(document.body.textContent).toContain('Blocked');
+    const putCall = fetcher.mock.calls.find(([input, init]) => String(input).endsWith('/behaviors/compensation-history') && init?.method === 'PUT');
+    expect(putCall).toBeTruthy();
+    expect(JSON.parse(String(putCall?.[1]?.body))).toEqual({
+      condition: 'WHEN_COMPENSATION_HISTORY_IS_REQUESTED',
+      behavior: 'TIMEOUT',
+      durationMs: 4200,
+      expectedRevision: 1,
+    });
+  });
+
+  it('keeps GP-04 edits and gives a recovery action on optimistic revision conflict', async () => {
+    const fetcher = tutorialFetcher({ conflict: true });
+    await render(fetcher);
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+    const duration = query<HTMLInputElement>('input[aria-label="Timeout duration in milliseconds"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(duration, '5100');
+      duration.dispatchEvent(new Event('input', { bubbles: true }));
+      duration.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => buttonWithText('Save and run isolated preflight').click());
+    await settle();
+
+    expect(query('[data-testid="capability-tutorial-error"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('The tutorial branch changed in another session.');
+    expect(document.body.textContent).toContain('Your unsaved values are still present.');
+    expect(document.body.textContent).toContain('Reload latest revision');
+    expect(duration.value).toBe('5100');
+    expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
   });
 
   it('shows a visible what happened / impact / retry error state', async () => {
@@ -110,13 +170,72 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(parsed.scenarios).toHaveLength(9);
   });
 
-  async function render(fetcher = async () => new Response(JSON.stringify(capabilityStudioDemoPackFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })) {
+  async function render(fetcher: CapabilityStudioFetcher = async () => new Response(JSON.stringify(capabilityStudioDemoPackFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })) {
     await act(async () => {
       root = createRoot(host);
       root.render(<I18nProvider><CapabilityStudio fetcher={fetcher} /></I18nProvider>);
     });
   }
 });
+
+const tutorialBranch = {
+  branchId: 'tutorial-compensation-history-timeout',
+  revision: 1,
+  fingerprint: `sha256:${'1'.repeat(64)}`,
+  canonicalBaselineFingerprint: `sha256:${'a'.repeat(64)}`,
+  behavior: {
+    dependencyId: 'api-compensation-history',
+    dependencyName: 'Compensation history lookup',
+    condition: 'WHEN_COMPENSATION_HISTORY_IS_REQUESTED',
+    behavior: 'TIMEOUT',
+    durationMs: 3000,
+  },
+};
+
+function tutorialFetcher(options: { conflict?: boolean } = {}) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+    if (url.endsWith('/behaviors/compensation-history') && init?.method === 'PUT') {
+      if (options.conflict) return json({
+        code: 'RG.CAPABILITY_STUDIO.REVISION_CONFLICT',
+        whatHappened: 'The tutorial branch changed in another session.',
+        impact: 'Your unsaved values are still present.',
+        recoveryAction: 'Reload the latest revision before saving again.',
+        field: 'expectedRevision',
+      }, 409);
+      const body = JSON.parse(String(init.body));
+      return json({ ...tutorialBranch, revision: 2, fingerprint: `sha256:${'2'.repeat(64)}`, behavior: { ...tutorialBranch.behavior, durationMs: body.durationMs } });
+    }
+    if (url.endsWith('/preflight') && init?.method === 'POST') return json({
+      mode: 'ISOLATED',
+      unresolvedDependencies: 0,
+      realExternalCallCount: 0,
+      fallbackToReal: false,
+      branchId: tutorialBranch.branchId,
+      revision: 2,
+      fingerprint: `sha256:${'2'.repeat(64)}`,
+    });
+    if (url.endsWith('/tutorial-branch')) return json(tutorialBranch);
+    return json({ code: 'NOT_FOUND' }, 404);
+  });
+}
+
+function json(payload: unknown, status = 200): Response {
+  return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+function buttonWithText(text: string): HTMLButtonElement {
+  const button = [...document.querySelectorAll<HTMLButtonElement>('button')].find((candidate) => candidate.textContent?.includes(text));
+  if (!button) throw new Error(`Missing button with text: ${text}`);
+  return button;
+}
 
 function query<T extends Element = Element>(selector: string): T {
   const element = document.querySelector<T>(selector);

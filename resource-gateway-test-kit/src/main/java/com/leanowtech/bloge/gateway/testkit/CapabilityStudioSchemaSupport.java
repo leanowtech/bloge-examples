@@ -22,6 +22,18 @@ final class CapabilityStudioSchemaSupport {
     static final String MANIFEST_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-golden-path-acceptance-manifest-v1.schema.json";
+    static final String BRANCH_PROJECTION_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-branch-projection-v1.schema.json";
+    static final String BRANCH_UPDATE_REQUEST_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-branch-update-request-v1.schema.json";
+    static final String PREFLIGHT_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-preflight-v1.schema.json";
+    static final String ERROR_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-error-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

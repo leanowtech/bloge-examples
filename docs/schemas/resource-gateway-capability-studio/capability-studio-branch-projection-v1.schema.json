@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-branch-projection-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Branch Projection v1",
+  "description": "Payload-free cross-system projection of one isolated behavior branch.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["branchId", "revision", "fingerprint", "canonicalBaselineFingerprint", "behavior"],
+  "properties": {
+    "branchId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" },
+    "canonicalBaselineFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "behavior": { "$ref": "#/$defs/behavior" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dependencyId", "dependencyName", "condition", "behavior", "durationMs"],
+      "properties": {
+        "dependencyId": { "$ref": "#/$defs/identifier" },
+        "dependencyName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "condition": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "behavior": { "const": "TIMEOUT" },
+        "durationMs": { "type": "integer", "minimum": 100, "maximum": 30000 }
+      }
+    }
+  }
+}

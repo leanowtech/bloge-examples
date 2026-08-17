@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-preflight-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Preflight v1",
+  "description": "Payload-free proof that a branch will execute in the isolated control plane.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "unresolvedDependencies", "realExternalCallCount", "fallbackToReal", "branchId", "revision", "fingerprint"],
+  "properties": {
+    "mode": { "const": "ISOLATED" },
+    "unresolvedDependencies": { "type": "integer", "minimum": 0 },
+    "realExternalCallCount": { "type": "integer", "minimum": 0 },
+    "fallbackToReal": { "const": false },
+    "branchId": { "$ref": "#/$defs/identifier" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

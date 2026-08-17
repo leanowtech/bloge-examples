@@ -2,10 +2,13 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,5 +62,167 @@ class CapabilityStudioDemoControllerTest {
                 .getContentAsString();
 
         assertThat(response).doesNotContain("payload", "fixture", "secret");
+    }
+
+    @Test
+    void getsTheFrozenTutorialBranchProjection() throws Exception {
+        mvc.perform(get("/api/capability-studio/tutorial-branch"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.branchId").value("tutorial-compensation-history-timeout"))
+                .andExpect(jsonPath("$.revision").value(1))
+                .andExpect(jsonPath("$.fingerprint").value(
+                        "sha256:cb87bd2157694f2a827acae1b107eff5d9bba48aef296c1be53a394aa934a070"))
+                .andExpect(jsonPath("$.canonicalBaselineFingerprint").value(
+                        "sha256:8abed67545bd784929162a5639bc91f587a50d195e0fcca9cab5f47b1cda9544"))
+                .andExpect(jsonPath("$.behavior.dependencyId").value("api-compensation-history"))
+                .andExpect(jsonPath("$.behavior.dependencyName").value("补偿历史查询"))
+                .andExpect(jsonPath("$.behavior.condition").value("历史补偿查询超过超时阈值"))
+                .andExpect(jsonPath("$.behavior.behavior").value("TIMEOUT"))
+                .andExpect(jsonPath("$.behavior.durationMs").value(700));
+    }
+
+    @Test
+    void updatesTheBranchWithARealContentFingerprintAndKeepsCanonicalBaseline() throws Exception {
+        String response = mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "condition": "历史补偿查询超过 700ms 未返回",
+                                  "behavior": "TIMEOUT",
+                                  "durationMs": 1200,
+                                  "expectedRevision": 1
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.branchId").value("tutorial-compensation-history-timeout"))
+                .andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.fingerprint").value(org.hamcrest.Matchers.matchesPattern(
+                        "sha256:[0-9a-f]{64}")))
+                .andExpect(jsonPath("$.canonicalBaselineFingerprint").value(
+                        "sha256:8abed67545bd784929162a5639bc91f587a50d195e0fcca9cab5f47b1cda9544"))
+                .andExpect(jsonPath("$.behavior.condition").value("历史补偿查询超过 700ms 未返回"))
+                .andExpect(jsonPath("$.behavior.behavior").value("TIMEOUT"))
+                .andExpect(jsonPath("$.behavior.durationMs").value(1200))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain("payload", "mock", "fixture");
+    }
+
+    @Test
+    void repeatedIdenticalContentIsIdempotent() throws Exception {
+        String request = """
+                {"condition":"历史补偿查询超过 700ms 未返回","behavior":"TIMEOUT","durationMs":1200,"expectedRevision":1}
+                """;
+        String first = mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON).content(request))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String fingerprint = mapper.readTree(first).path("fingerprint").asText();
+
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(request.replace("\"expectedRevision\":1", "\"expectedRevision\":2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.fingerprint").value(fingerprint));
+    }
+
+    @Test
+    void rejectsStaleRevisionWithoutLastWriteWins() throws Exception {
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"新条件\",\"behavior\":\"TIMEOUT\","
+                                        + "\"durationMs\":900,\"expectedRevision\":1}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"过期条件\",\"behavior\":\"TIMEOUT\","
+                                        + "\"durationMs\":901,\"expectedRevision\":1}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.REVISION_CONFLICT"))
+                .andExpect(jsonPath("$.whatHappened").isNotEmpty())
+                .andExpect(jsonPath("$.impact").isNotEmpty())
+                .andExpect(jsonPath("$.recoveryAction").isNotEmpty())
+                .andExpect(jsonPath("$.field").value("expectedRevision"));
+
+        mvc.perform(get("/api/capability-studio/tutorial-branch"))
+                .andExpect(jsonPath("$.behavior.condition").value("新条件"))
+                .andExpect(jsonPath("$.behavior.durationMs").value(900));
+    }
+
+    @Test
+    void rejectsIllegalAndUnknownBusinessFields() throws Exception {
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"条件\",\"behavior\":\"RETURN\","
+                                        + "\"durationMs\":900,\"expectedRevision\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.REQUEST_INVALID"))
+                .andExpect(jsonPath("$.field").value("behavior"));
+
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"条件\",\"behavior\":\"TIMEOUT\","
+                                        + "\"durationMs\":900,\"expectedRevision\":1,"
+                                        + "\"mock\":{\"raw\":true}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.REQUEST_INVALID"))
+                .andExpect(jsonPath("$.field").value("mock"));
+    }
+
+    @Test
+    void rejectsOutOfRangeDurationAndOmitsAbsentErrorField() throws Exception {
+        mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"条件\",\"behavior\":\"TIMEOUT\","
+                                        + "\"durationMs\":99,\"expectedRevision\":1}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.REQUEST_INVALID"))
+                .andExpect(jsonPath("$.field").value("durationMs"));
+
+        String malformed = mvc.perform(put(
+                        "/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.whatHappened").isNotEmpty())
+                .andExpect(jsonPath("$.impact").isNotEmpty())
+                .andExpect(jsonPath("$.recoveryAction").isNotEmpty())
+                .andExpect(jsonPath("$.field").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(malformed).doesNotContain("\"field\":null", "payload", "fixture");
+    }
+
+    @Test
+    void preflightIsIsolatedAndBindsCurrentRevisionAndFingerprint() throws Exception {
+        String update = mvc.perform(put("/api/capability-studio/tutorial-branch/behaviors/compensation-history")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{" +
+                                "\"condition\":\"达到业务超时阈值\",\"behavior\":\"TIMEOUT\","
+                                        + "\"durationMs\":1000,\"expectedRevision\":1}"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String fingerprint = mapper.readTree(update).path("fingerprint").asText();
+
+        mvc.perform(post("/api/capability-studio/tutorial-branch/preflight"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.mode").value("ISOLATED"))
+                .andExpect(jsonPath("$.unresolvedDependencies").value(0))
+                .andExpect(jsonPath("$.realExternalCallCount").value(0))
+                .andExpect(jsonPath("$.fallbackToReal").value(false))
+                .andExpect(jsonPath("$.branchId").value("tutorial-compensation-history-timeout"))
+                .andExpect(jsonPath("$.revision").value(2))
+                .andExpect(jsonPath("$.fingerprint").value(fingerprint));
     }
 }
