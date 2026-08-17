@@ -25,7 +25,7 @@ SHADOW_JOBS="${BLOGE_VISUAL_CANVAS_SHADOW_JOBS:-0}"
 SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB_SCHEDULER_ENABLED:-0}}"
 SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}"
 OUTCOME_CONTINUOUS_ASSESSMENT="${BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT:-${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-0}}"
-CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-0}"
+CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-1}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -57,8 +57,9 @@ Options:
   --shadow-scheduler  Also enable bounded Shadow polling; the default data plane remains unavailable.
   --shadow-detached-data-plane  Install exact detached source connectors and verifier; authorities still fail closed.
   --outcome-continuous-assessment  Enable selected-population freshness workers; customer authorities are still required.
-  --correctness     Enable the read-only Correctness Studio sample in test/staging.
-  --open            Open Correctness Studio when --correctness is set; otherwise Business Mirror.
+  --correctness     Explicitly enable the read-only Correctness Studio sample (enabled by default).
+  --no-correctness  Disable the Correctness Studio sample; required for production-profile demos.
+  --open            Open Correctness Studio when enabled; otherwise open Business Mirror.
   -h, --help        Show this help.
 
 Environment:
@@ -76,7 +77,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER default: 0; same effect as --shadow-scheduler
   BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE default: 0; same effect as --shadow-detached-data-plane
   BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT default: 0; same effect as --outcome-continuous-assessment
-  BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 0; same effect as --correctness
+  BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 1; set to 0 or use --no-correctness to disable
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
@@ -276,7 +277,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh --shadow-scheduler
   scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
   scripts/start-visual-canvas-demo.sh --outcome-continuous-assessment
-  scripts/start-visual-canvas-demo.sh --correctness --open
+  scripts/start-visual-canvas-demo.sh --no-correctness --open
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -2217,7 +2218,7 @@ Integration API templates:
   Draft workbook:    GET  /api/integration/drafts/{draftId}/correctness-workbook?revision={revision}
   Semantic workbook: GET  /api/integration/test-suites/{suiteId}/revisions/{revision}/semantic-correctness-workbook
   Gate feedback:     POST /api/integration/gate-results
-  Correctness sample: GET  /api/visual/correctness-workspaces/GRAPH/loan-decision-with-fallback (--correctness; X-Purpose: CORRECTNESS_READ)
+  Correctness sample: GET  /api/visual/correctness-workspaces/GRAPH/loan-decision-with-fallback (enabled by default; X-Purpose: CORRECTNESS_READ)
   Test execution:    POST /api/testing/executions  (Bearer token + X-Purpose: TEST_EXECUTION)
   Fixture registry: PUT /api/testing/fixture-bundles/{id} (X-Purpose: TEST_FIXTURE_WRITE)
   Stateful session: POST /api/mirror/sessions (--stateful; Bearer token + X-Purpose: MIRROR_REHEARSAL)
@@ -2681,6 +2682,10 @@ parse_options() {
                 ;;
             --correctness)
                 CORRECTNESS_DEMO=1
+                shift
+                ;;
+            --no-correctness)
+                CORRECTNESS_DEMO=0
                 shift
                 ;;
             --open)

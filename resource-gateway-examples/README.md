@@ -75,10 +75,12 @@ From the repository root:
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-To open the read-only Correctness Studio sample with its exact deep link:
+The default `test`-profile startup enables the read-only Correctness Studio sample,
+prints its exact deep link, verifies the Workspace capability, and makes `--open`
+open that deep link. To start without the sample and open Business Mirror instead:
 
 ```bash
-./scripts/start-visual-canvas-demo.sh --correctness --open
+./scripts/start-visual-canvas-demo.sh --no-correctness --open
 ```
 
 The sample contains one loan-decision correctness definition, a frozen `9 / 7 / 2`
@@ -93,7 +95,7 @@ continues with the full authoring, publication, run, evidence, calibration, and 
 
 This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
-profile by default so `/api/testing/**` is available; use `--profile production`
+profile by default so `/api/testing/**` is available; use `--profile production --no-correctness`
 to demonstrate that the testing beans and endpoints are structurally absent.
 Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
 dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
@@ -114,7 +116,7 @@ silently consuming work.
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
-| `http://localhost:8080/correctness/` | Inspect the exact, payload-free Correctness Workspace started with `--correctness`; use the printed deep link rather than omitting its target coordinate |
+| `http://localhost:8080/correctness/` | Inspect the exact, payload-free Correctness Workspace enabled by default; use the printed deep link rather than omitting its target coordinate |
 | `http://localhost:8080/showcase/` | Run real Gateway examples and inspect sample outputs; diagram JSON and the legacy runner stay under Advanced |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
@@ -2467,7 +2469,7 @@ Useful variants:
 ./scripts/start-visual-canvas-demo.sh --api-only
 ./scripts/start-visual-canvas-demo.sh --run-tests
 ./scripts/start-visual-canvas-demo.sh --stateful
-./scripts/start-visual-canvas-demo.sh --profile production
+./scripts/start-visual-canvas-demo.sh --profile production --no-correctness
 ./scripts/visual-canvas-demo.sh status
 ./scripts/visual-canvas-demo.sh restart
 ./scripts/stop-visual-canvas-demo.sh

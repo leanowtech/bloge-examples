@@ -9,10 +9,10 @@
 在仓库根目录执行：
 
 ```bash
-./scripts/start-visual-canvas-demo.sh --correctness --open
+./scripts/start-visual-canvas-demo.sh --open
 ```
 
-脚本会构建前后端、启用 `test` profile、装配只读样板并校验两项条件：
+Correctness Studio 样板已是默认启动能力。脚本会构建前后端、启用 `test` profile、装配只读样板并校验两项条件：
 
 - `correctnessWorkspaceApi=true`；
 - `correctnessRunApi=false`。
@@ -31,7 +31,8 @@ tail -f target/example-logs/visual-canvas-demo.log
 ./scripts/stop-visual-canvas-demo.sh
 ```
 
-`--correctness` 只能用于 `test` 或 `staging`。脚本会拒绝在 `production` profile 装配该样板。
+样板只能用于 `test` 或 `staging`。脚本会拒绝在 `production` profile 装配它；生产 profile 演示必须显式使用
+`--no-correctness`。如需在本地省略样板并让 `--open` 打开业务镜像，也使用该参数。
 
 ## 2. 建议体验路径
 
@@ -117,7 +118,7 @@ curl -fsS \
 
 ### 页面没有样板数据
 
-确认启动命令包含 `--correctness`，再执行：
+确认启动时未设置 `BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO=0`，也未传入 `--no-correctness`，再执行：
 
 ```bash
 ./scripts/visual-canvas-demo.sh status

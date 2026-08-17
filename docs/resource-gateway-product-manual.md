@@ -131,8 +131,15 @@ Owner 冻结的正确性分母和预期。
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-脚本会构建五个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，并等待 capability probe
-和全部页面就绪。首次构建耗时较长；已有完整 JAR 时可使用 `--no-build`。
+脚本会构建六个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配只读 Correctness
+Studio 样板，并等待 capability probe、exact Workspace 和全部页面就绪。`--open` 默认打开正确性工作台的
+exact deep link；业务镜像仍可从全局导航进入。首次构建耗时较长；已有完整 JAR 时可使用 `--no-build`。
+
+需要省略正确性样板并直接打开业务镜像时使用：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --no-correctness --open
+```
 
 使用其他端口：
 
@@ -219,10 +226,10 @@ Correctness Studio 是面向业务正确性资产的一级入口，不是 Author
 信息架构：
 
 ```bash
-./scripts/start-visual-canvas-demo.sh --correctness --open
+./scripts/start-visual-canvas-demo.sh --open
 ```
 
-该命令会打开一份贷款决策 exact Graph 样板。只读演示只声明 `correctnessWorkspaceApi=true`，因此可以查看定义、
+默认启动命令会打开一份贷款决策 exact Graph 样板。只读演示只声明 `correctnessWorkspaceApi=true`，因此可以查看定义、
 冻结分母、Case、Fixture descriptor、Oracle/Assertion、Publication 摘要和五轴状态，但不能保存、发布或运行。
 这是 capability 失败关闭，不是页面故障。完整操作说明见
 [Correctness Studio 演示指南](resource-gateway-correctness-studio-demo-guide.md)。
@@ -403,8 +410,8 @@ ANEKE 已允许发布。
 
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
-| 常规产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 五个页面、固定示例、test profile |
-| 正确性只读样板 | `./scripts/start-visual-canvas-demo.sh --correctness --open` | exact Workspace、8 Cases、5 Fixture descriptors；写入与 Run capability 保持关闭 |
+| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 六个页面、业务镜像与默认 Correctness exact Workspace；写入与 Run capability 保持关闭 |
+| 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并直接打开业务镜像；`correctnessWorkspaceApi=false` |
 | 批量 Scenario worker | `./scripts/start-visual-canvas-demo.sh --scenario-batch --open` | 区域队列和隔离 evidence finalizer |
 | 有状态模拟 | `./scripts/start-visual-canvas-demo.sh --stateful --open` | 加密 Session、checkpoint 和恢复协议 |
 | Shadow API | `./scripts/start-visual-canvas-demo.sh --shadow-jobs` | 只读 submit/read/lifecycle；默认不启动 poller |

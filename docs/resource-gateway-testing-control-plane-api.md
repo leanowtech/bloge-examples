@@ -79,7 +79,7 @@ Choose a profile explicitly when needed:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --profile test
-./scripts/start-visual-canvas-demo.sh --profile production
+./scripts/start-visual-canvas-demo.sh --profile production --no-correctness
 ```
 
 `staging` has no committed claim-token or request-index key. Inject two independent 32-byte roots

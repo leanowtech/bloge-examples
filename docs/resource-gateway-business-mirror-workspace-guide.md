@@ -21,7 +21,7 @@ Business Mirror Workspace 把已有 Graph、Contract 和测试资产组织成业
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-脚本使用 `test` profile，构建包含五个 React 工作区的可执行 JAR，并等待能力探针和所有可视化路由通过。启动成功后，输出中第一条产品地址应为：
+脚本使用 `test` profile，构建包含六个 React 工作区的可执行 JAR，默认装配 Correctness Studio 样板，并等待能力探针、exact Workspace 和所有可视化路由通过。`--open` 会打开正确性工作台；从全局导航选择「业务镜像」即可进入本指南的起点。启动成功后，输出中第一条产品地址应为：
 
 ```text
 Business Mirror: http://localhost:8080/business-mirror/
@@ -35,6 +35,8 @@ http://localhost:8080/business-mirror/
 ```
 
 根路径会重定向到带尾斜杠的规范地址。不要把 `/business-mirror/index.html` 作为产品链接。
+若演示只需要业务镜像并希望浏览器直接打开它，可使用
+`./scripts/start-visual-canvas-demo.sh --no-correctness --open`。
 
 ### 1.2 完成固定任务
 

@@ -48,7 +48,7 @@ class VisualCanvasDemoScriptTest {
         }
 
         Process process = new ProcessBuilder(
-                "bash", script.toString(), "start", "--no-build")
+                "bash", script.toString(), "start", "--port", "65534", "--no-build")
                 .redirectErrorStream(true)
                 .start();
 
@@ -80,6 +80,19 @@ class VisualCanvasDemoScriptTest {
                 "curl -fsS \"$(libraries_url)\"",
                 "curl -fsS \"$(rehearsals_url)\"",
                 "curl -fsS \"$(showcase_url)\"");
+    }
+
+    @Test
+    void correctnessWorkspaceIsEnabledByDefaultAndCanBeDisabledExplicitly()
+            throws Exception {
+        String source = Files.readString(SCRIPT, StandardCharsets.UTF_8);
+
+        assertThat(source).contains(
+                "CORRECTNESS_DEMO=\"${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-1}\"",
+                "--no-correctness  Disable the Correctness Studio sample",
+                "--no-correctness)",
+                "CORRECTNESS_DEMO=0",
+                "BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 1");
     }
 
     @Test

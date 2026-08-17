@@ -1268,7 +1268,7 @@ exact deep link、刷新、中文渲染、Selection Intent、旧预检失效、b
 ANEKE feedback 和 Run Center WCAG 2 A/AA serious/critical axe 门禁；最终通过数以本次构建报告为准，不在设计文档固化易漂移计数。
 
 Correctness Studio 已进入正式 Spring Boot 产物：Maven 前端 profile 会将同一 Vite bundle 复制到 `static/correctness`，服务端只为
-`/correctness` 与 `/correctness/` 提供 SPA forward，不创建第二套前端。`scripts/start-visual-canvas-demo.sh --correctness --open`
+`/correctness` 与 `/correctness/` 提供 SPA forward，不创建第二套前端。`scripts/start-visual-canvas-demo.sh --open`
 会在 `test/staging` 显式装配一个只读贷款策略样板，使用正式 Workspace Query、认证作用域和 exact coordinate；它只声明 Workspace API，
 不声明命令、发布、预检或 Run API。启动 readiness 同时验证 Capability Probe 和实际 Workspace 请求，防止“路由能打开但能力未装配”。
 

@@ -98,12 +98,19 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --api-only
 ./scripts/start-visual-canvas-demo.sh --profile staging
-./scripts/start-visual-canvas-demo.sh --profile production
+./scripts/start-visual-canvas-demo.sh --profile production --no-correctness
+./scripts/start-visual-canvas-demo.sh --no-correctness --open
 ./scripts/start-visual-canvas-demo.sh --shadow-jobs
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
-`--no-build` first verifies that the reused jar contains all five visual entry
+The default `test`-profile startup assembles the read-only Correctness Studio sample,
+prints its exact deep link, and verifies its Workspace capability. `--open` opens that
+deep link. Use `--no-correctness` to omit the sample and open Business Mirror instead;
+the opt-out is required for `production` because demo correctness data is physically
+unavailable there.
+
+`--no-build` first verifies that the reused jar contains all six visual entries
 points; an API-only jar fails before Java starts and explains how to rebuild or
 use `--api-only`. Startup becomes ready only after both
 `GET /api/integration/capabilities` and the Business Mirror, Author, Library,
