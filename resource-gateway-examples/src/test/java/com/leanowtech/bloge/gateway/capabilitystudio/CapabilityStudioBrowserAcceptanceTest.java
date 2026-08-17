@@ -37,7 +37,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Real-browser acceptance skeleton for Capability Studio GP-01 through GP-04. */
+/** Real-browser acceptance skeleton for Capability Studio GP-01 through GP-06. */
 @SpringBootTest(
         classes = {
                 ResourceGatewayApplication.class,
@@ -210,6 +210,112 @@ class CapabilityStudioBrowserAcceptanceTest {
                 .doesNotContain("NO_GO", "NOT_RUN", "METADATA_READY_RUNTIME_EVIDENCE_PENDING");
         assertNoPageOverflow();
         capture("capability-studio-gp04-zh-1440.png");
+    }
+
+    @Test
+    void gp05AndGp06RenderTheSameTraceAcrossPermissionsAndResponsiveViewports()
+            throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 900);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=zh-CN"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.findElement(By.cssSelector("[data-testid='capability-task-feature']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']")));
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".feature-dag-node"), 6));
+
+        Select cases = new Select(driver.findElement(By.id("feature-rehearsal-case")));
+        assertThat(cases.getOptions()).hasSize(9);
+        assertThat(cases.getFirstSelectedOption().getAttribute("value"))
+                .isEqualTo("case-compensation-history-timeout");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("运行超时", "真实调用", "隔离 Fixture 控制", "历史补偿查询", "超时")
+                .doesNotContain("DEMO-ORDER-20260818-001");
+        assertThat(driver.findElements(By.cssSelector(".feature-dag-edge-label"))).hasSize(5);
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-node-id='compensationHistoryLookup']")).getText())
+                .contains("历史补偿查询", "超时");
+        assertThat(driver.findElement(By.cssSelector(
+                ".capability-segmented-control button:first-child")).getAttribute("aria-pressed"))
+                .isEqualTo("true");
+        assertDesktopDagFitsAndEdgesAlign();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp05-gp06-structure-zh-1440.png");
+
+        driver.findElement(By.xpath(
+                "//div[contains(@class,'capability-segmented-control')]//button[contains(.,'受控数据')]"))
+                .click();
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.tagName("body"), "DEMO-ORDER-20260818-001"));
+        assertThat(driver.findElement(By.cssSelector(
+                ".capability-segmented-control button:last-child")).getAttribute("aria-pressed"))
+                .isEqualTo("true");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("DEMO-ORDER-20260818-001", "真实调用", "0");
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp06-payload-zh-1440.png");
+        driver.manage().window().setSize(new Dimension(1440, 1100));
+        ((JavascriptExecutor) driver).executeScript("""
+                document.querySelector('.capability-feature-dag-section')
+                  .scrollIntoView({block: 'start'});
+                """);
+        capture("capability-studio-gp05-gp06-dag-payload-zh-1440.png");
+        ((JavascriptExecutor) driver).executeScript("window.scrollTo(0, 0)");
+
+        driver.manage().window().setSize(new Dimension(1024, 768));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']")));
+        assertDesktopDagFitsAndEdgesAlign();
+        assertNoPageOverflow();
+        capture("capability-studio-gp05-gp06-payload-zh-1024.png");
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
+        assertThat(new Select(driver.findElement(By.id("feature-rehearsal-case"))).getOptions())
+                .hasSize(9);
+        Number internalOverflow = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const dag = document.querySelector('.capability-feature-dag');
+                return Math.max(0, dag.scrollWidth - dag.clientWidth);
+                """);
+        assertThat(internalOverflow.doubleValue()).isGreaterThan(0);
+        assertNoPageOverflow();
+        capture("capability-studio-gp05-gp06-payload-zh-390.png");
+    }
+
+    @Test
+    void gp05AndGp06EnglishPermissionSwitchIsKeyboardReachable() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1024, 768);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.findElement(By.cssSelector("[data-testid='capability-task-feature']")).click();
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".feature-dag-node"), 6));
+        WebElement payload = tabUntilActive(By.cssSelector(
+                ".capability-segmented-control button:last-child"));
+        payload.sendKeys(Keys.ENTER);
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.tagName("body"), "DEMO-ORDER-20260818-001"));
+
+        assertThat(driver.findElement(By.tagName("html")).getAttribute("lang")).isEqualTo("en");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("Feature processing DAG", "Data flow inspection",
+                        "Isolated fixture control", "Real calls")
+                .doesNotContain("NO_GO", "METADATA_READY_RUNTIME_EVIDENCE_PENDING");
+        assertThat(payload.getAttribute("aria-pressed")).isEqualTo("true");
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp05-gp06-payload-en-1024.png");
     }
 
     @Test
@@ -433,6 +539,33 @@ class CapabilityStudioBrowserAcceptanceTest {
             active.sendKeys(Keys.TAB);
         }
         throw new AssertionError("TAB did not reach " + locator);
+    }
+
+    private void assertDesktopDagFitsAndEdgesAlign() {
+        Number overflow = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const dag = document.querySelector('.capability-feature-dag');
+                return Math.max(0, dag.scrollWidth - dag.clientWidth);
+                """);
+        assertThat(overflow.doubleValue())
+                .as("desktop DAG horizontal overflow")
+                .isLessThanOrEqualTo(1.0d);
+
+        Number maximumCenterDelta = (Number) ((JavascriptExecutor) driver).executeScript("""
+                const nodes = [...document.querySelectorAll(
+                  '.feature-dag-inputs .feature-dag-node')];
+                const edges = [...document.querySelectorAll(
+                  '.feature-dag-inputs + .feature-dag-edge-column .feature-dag-edge-label')];
+                return Math.max(...nodes.map((node, index) => {
+                  const nodeBox = node.getBoundingClientRect();
+                  const edgeBox = edges[index].getBoundingClientRect();
+                  return Math.abs(
+                    (nodeBox.top + nodeBox.height / 2) -
+                    (edgeBox.top + edgeBox.height / 2));
+                }));
+                """);
+        assertThat(maximumCenterDelta.doubleValue())
+                .as("source node and edge center alignment")
+                .isLessThanOrEqualTo(1.0d);
     }
 
     private void capture(String fileName) throws IOException {

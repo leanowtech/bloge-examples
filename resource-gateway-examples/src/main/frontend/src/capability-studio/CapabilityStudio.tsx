@@ -11,6 +11,8 @@ import {
   FileText,
   Filter,
   GitBranch,
+  Eye,
+  EyeOff,
   LayoutDashboard,
   ListFilter,
   RefreshCw,
@@ -25,6 +27,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import {
   CapabilityStudioRequestError,
   fetchCapabilityStudioDemoPack,
+  fetchFeatureRehearsal,
   fetchScenarioDataset,
   fetchTutorialBranch,
   preflightTutorialBranch,
@@ -42,6 +45,10 @@ import {
   type ScenarioCase,
   type ScenarioDataset,
   type ScenarioRow,
+  type FeatureRehearsalEdge,
+  type FeatureRehearsalNode,
+  type FeatureRehearsalPermission,
+  type FeatureRehearsalProjection,
 } from './domain';
 import './capabilityStudio.css';
 
@@ -97,7 +104,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
     <main className="capability-studio" data-testid="capability-studio">
       <header className="capability-studio-heading">
         <div>
-          <p className="capability-eyebrow"><Sparkles size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '阶段 1 · 可编辑教程分支' : 'Stage 1 · Editable tutorial branch'}</p>
+          <p className="capability-eyebrow"><Sparkles size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '能力资产演示 · 隔离分支' : 'Capability asset demo · Isolated branch'}</p>
           <h2>{text(model.capability.name)}</h2>
           <p className="capability-summary">{text(model.capability.summary)}</p>
         </div>
@@ -126,7 +133,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '可复用接口' : 'Reusable APIs'} <span>{model.assets.apis.length}</span></div>
           {model.assets.apis.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'contract' && index === selectedApiIndex} icon={<FileText size={16} />} label={text(asset.name)} onClick={() => openApi(index)} />)}
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '业务能力' : 'Business assets'} <span>2</span></div>
-          {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => setTask('feature')} />)}
+          {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => setTask('feature')} testId="capability-task-feature" />)}
           {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => setTask('tool')} />)}
           <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => setTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
           <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => setTask('tutorial')} testId="capability-task-tutorial" />
@@ -137,7 +144,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           {task === 'contract' && currentAsset && <ContractView asset={currentAsset} text={text} locale={locale} />}
           {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} />}
           {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
-          {task === 'feature' && selectedFeature && <StageOneView asset={selectedFeature} text={text} locale={locale} kind="feature" />}
+          {task === 'feature' && selectedFeature && <FeatureRehearsalView asset={selectedFeature} fetcher={fetcher} text={text} locale={locale} />}
           {task === 'tool' && selectedTool && <StageOneView asset={selectedTool} text={text} locale={locale} kind="tool" />}
         </section>
 
@@ -442,6 +449,148 @@ function formatDuration(durationMs: number, locale: 'en' | 'zh-CN'): string {
   if (durationMs % 1000 === 0) return locale === 'zh-CN' ? `${durationMs / 1000} 秒` : `${durationMs / 1000} seconds`;
   return locale === 'zh-CN' ? `${durationMs} 毫秒` : `${durationMs} milliseconds`;
 }
+
+const featureRehearsalCases = [
+  { id: 'case-standard-cancellation-fee', name: { en: 'Standard cancellation fee', 'zh-CN': '标准取消费处理' } },
+  { id: 'case-rider-not-responsible', name: { en: 'Rider is not responsible', 'zh-CN': '乘客无责' } },
+  { id: 'case-driver-responsible', name: { en: 'Driver is responsible', 'zh-CN': '司机有责' } },
+  { id: 'case-city-policy-missing', name: { en: 'City policy is missing', 'zh-CN': '城市政策缺失' } },
+  { id: 'case-compensation-history-empty', name: { en: 'Compensation history is empty', 'zh-CN': '历史补偿记录为空' } },
+  { id: 'case-compensation-history-timeout', name: { en: 'Compensation history times out', 'zh-CN': '历史补偿记录查询超时' } },
+  { id: 'case-duplicate-cancellation', name: { en: 'Duplicate cancellation request', 'zh-CN': '重复取消请求' } },
+  { id: 'case-forbidden-write-effect', name: { en: 'Forbidden write effect', 'zh-CN': '禁止写副作用' } },
+  { id: 'case-policy-revision-regression', name: { en: 'Policy revision regression', 'zh-CN': '政策版本回归' } },
+] as const;
+
+function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: CapabilityAssetSummary; fetcher?: CapabilityStudioFetcher; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
+  const [caseId, setCaseId] = useState('case-compensation-history-timeout');
+  const [permission, setPermission] = useState<FeatureRehearsalPermission>('STRUCTURE_ONLY');
+  const [projection, setProjection] = useState<FeatureRehearsalProjection | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
+  const load = useCallback(async (nextCaseId = caseId, nextPermission = permission) => {
+    setLoading(true);
+    setError(null);
+    try {
+      setProjection(await fetchFeatureRehearsal(nextCaseId, nextPermission, fetcher));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError : new Error('The Feature rehearsal could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [caseId, fetcher, permission]);
+
+  useEffect(() => { void load(); }, []);
+
+  const changeCase = (nextCaseId: string) => {
+    setCaseId(nextCaseId);
+    void load(nextCaseId, permission);
+  };
+  const changePermission = (nextPermission: FeatureRehearsalPermission) => {
+    setPermission(nextPermission);
+    void load(caseId, nextPermission);
+  };
+  const selectedCase = featureRehearsalCases.find((entry) => entry.id === caseId) ?? featureRehearsalCases[5];
+
+  return <div className="capability-view" data-testid="capability-feature-rehearsal">
+    <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY'} />
+    <section className="capability-feature-context capability-section">
+      <div className="capability-feature-context-main"><label htmlFor="feature-rehearsal-case">{locale === 'zh-CN' ? '演示场景' : 'Rehearsal scenario'}</label><select id="feature-rehearsal-case" value={caseId} onChange={(event) => changeCase(event.target.value)}>{featureRehearsalCases.map((entry) => <option key={entry.id} value={entry.id}>{text(entry.name)}</option>)}</select><p>{locale === 'zh-CN' ? '选择业务问题，系统会加载对应的脱离真实接口的特征演练结果。' : 'Choose a business problem to load its isolated feature rehearsal result.'}</p></div>
+      <div className="capability-feature-permission" role="group" aria-label={locale === 'zh-CN' ? '数据可见权限' : 'Data visibility permission'}><span>{locale === 'zh-CN' ? '数据查看' : 'Data view'}</span><div className="capability-segmented-control"><button type="button" aria-pressed={permission === 'STRUCTURE_ONLY'} className={permission === 'STRUCTURE_ONLY' ? 'active' : ''} onClick={() => changePermission('STRUCTURE_ONLY')}><EyeOff size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '结构' : 'Structure'}</button><button type="button" aria-pressed={permission === 'PAYLOAD_VISIBLE'} className={permission === 'PAYLOAD_VISIBLE' ? 'active' : ''} onClick={() => changePermission('PAYLOAD_VISIBLE')}><Eye size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '受控数据' : 'Payload'}</button></div><small>{permission === 'STRUCTURE_ONLY' ? (locale === 'zh-CN' ? '仅显示摘要与指纹，不显示值。' : 'Summaries and fingerprints only; values stay hidden.') : (locale === 'zh-CN' ? '仅展示演示数据，不代表真实业务载荷。' : 'Controlled demo values only; never real business payloads.')}</small></div>
+    </section>
+    {loading && <div className="capability-feature-state" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={18} aria-hidden="true" /> {locale === 'zh-CN' ? '正在加载特征运行和数据视图...' : 'Loading feature run and data lens...'}</div>}
+    {!loading && error && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load'}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{error.message}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{locale === 'zh-CN' ? '当前场景的 DAG 和 Data Lens 保持不变。' : 'The current scenario DAG and Data Lens remain unchanged.'}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{locale === 'zh-CN' ? '保持场景选择不变，重试加载。' : 'Keep the scenario selected and retry the load.'}</p></div></div><button type="button" className="capability-secondary-action" onClick={() => void load()}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario'}</button></div></section>}
+    {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} />}
+  </div>;
+}
+
+function FeatureRehearsalContent({ projection, selectedCase, locale, text }: { projection: FeatureRehearsalProjection; selectedCase: typeof featureRehearsalCases[number]; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string }) {
+  const { run, dataLens } = projection;
+  return <>
+    <section className="capability-feature-run-strip" aria-label={locale === 'zh-CN' ? '运行摘要' : 'Run summary'}>
+      <div><span>{locale === 'zh-CN' ? '场景' : 'Scenario'}</span><strong>{text(selectedCase.name)}</strong></div>
+      <div><span>{locale === 'zh-CN' ? '运行状态' : 'Run status'}</span><strong className={`feature-status feature-status-${run.status.toLowerCase()}`}>{displayFeatureStatus(run.status, locale)}</strong></div>
+      <div><span>{locale === 'zh-CN' ? '绑定方式' : 'Binding'}</span><strong>{locale === 'zh-CN' ? '隔离 Fixture 控制' : 'Isolated fixture control'}</strong></div>
+      <div><span>{locale === 'zh-CN' ? '真实调用' : 'Real calls'}</span><strong>{run.realExternalCallCount}</strong></div>
+    </section>
+    <section className="capability-section capability-feature-dag-section" aria-labelledby="feature-dag-heading"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '特征加工 DAG' : 'Feature processing DAG'} subtitle={locale === 'zh-CN' ? '4 个业务接口并行取数，汇聚为取消费事实，再进入决策。节点和边均来自同一次运行 Trace。' : 'Four business APIs feed cancellation facts and then a decision. Every node and edge comes from the same run trace.'} /><div className="capability-feature-dag" data-testid="feature-dag" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '特征加工 DAG 图，可横向滚动' : 'Feature processing DAG diagram, horizontally scrollable'}><div className="feature-dag-column feature-dag-inputs">{featureNodesOfKind(dataLens.nodes, 'API').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dataLens.edges, 'API')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dataLens.nodes, 'AGGREGATOR').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dataLens.edges, 'AGGREGATOR')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dataLens.nodes, 'DECISION').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div></div></section>
+    <section className="capability-section capability-data-lens" aria-labelledby="feature-lens-heading"><SectionTitle icon={<Database size={17} />} title={locale === 'zh-CN' ? 'Data Lens · 数据流检查' : 'Data Lens · Data flow inspection'} subtitle={locale === 'zh-CN' ? '按节点和数据边查看同一运行中的输入、输出和稳定指纹。' : 'Inspect inputs, outputs, and stable fingerprints from the same run by node and edge.'} /><div className="capability-lens-grid"><div><h4>{locale === 'zh-CN' ? '节点数据' : 'Node data'}</h4><div className="capability-lens-node-list">{dataLens.nodes.map((node) => <FeatureLensNode key={node.invocationSite} node={node} permission={dataLens.permissionMode} locale={locale} text={text} />)}</div></div><div><h4>{locale === 'zh-CN' ? '运行数据边' : 'Runtime data edges'}</h4><div className="capability-lens-edge-list">{dataLens.edges.map((edge) => <FeatureLensEdge key={edge.edgeId} edge={edge} permission={dataLens.permissionMode} locale={locale} />)}</div></div></div>{dataLens.firstDifference && <div className="capability-first-difference" role="status"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '首个断言差异已定位' : 'First assertion difference located'}</strong><p>{dataLens.firstDifference.scope || dataLens.firstDifference.source}</p><dl><div><dt>{locale === 'zh-CN' ? '位置' : 'Location'}</dt><dd>{dataLens.firstDifference.locator} · {dataLens.firstDifference.path || '/'}</dd></div><div><dt>{locale === 'zh-CN' ? '期望' : 'Expected'}</dt><dd>{dataLens.permissionMode === 'PAYLOAD_VISIBLE' ? formatPayload(dataLens.firstDifference.expected) : shortFingerprint(dataLens.firstDifference.expectedFingerprint)}</dd></div><div><dt>{locale === 'zh-CN' ? '实际' : 'Actual'}</dt><dd>{dataLens.permissionMode === 'PAYLOAD_VISIBLE' ? formatPayload(dataLens.firstDifference.actual) : shortFingerprint(dataLens.firstDifference.actualFingerprint)}</dd></div></dl></div></div>}{isFeatureLensTruncated(dataLens.truncation) && <div className="capability-feature-truncation" role="status"><Filter size={16} aria-hidden="true" /><span>{locale === 'zh-CN' ? `数据视图已截断：省略 ${dataLens.truncation.omittedNodes} 个节点、${dataLens.truncation.omittedEdges} 条边和 ${dataLens.truncation.omittedAttempts} 次尝试。` : `Data Lens truncated: ${dataLens.truncation.omittedNodes} nodes, ${dataLens.truncation.omittedEdges} edges, and ${dataLens.truncation.omittedAttempts} attempts omitted.`}</span></div>}</section>
+    <p className="capability-feature-integrity"><ShieldCheck size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '本页展示的是一次隔离演练结果，不代表业务验收通过。运行状态、真实调用次数和绑定方式均为证据字段。' : 'This is an isolated rehearsal result, not an acceptance decision. Run status, real-call count, and binding mode are evidence fields.'}</p>
+  </>;
+}
+
+function FeatureNodeCard({ node, locale, text }: { node: FeatureRehearsalNode; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string }) {
+  const presentation = featureNodePresentation(node.nodeId);
+  return <article className={`feature-dag-node feature-node-${presentation.kind.toLowerCase()}`} data-node-id={node.nodeId}><div className="feature-dag-node-heading"><span className="feature-node-kind">{displayFeatureNodeKind(presentation.kind, locale)}</span><span className={`feature-status feature-status-${node.status.toLowerCase()}`}>{displayFeatureStatus(node.status, locale)}</span></div><h4>{text(presentation.name)}</h4><p>{text(presentation.summary)}</p><div className="feature-node-fingerprints"><span><small>IN</small>{shortFingerprint(node.inputFingerprint)}</span><span><small>OUT</small>{shortFingerprint(node.outputFingerprint)}</span></div></article>;
+}
+
+function FeatureEdgeColumn({ edges, locale, text }: { edges: FeatureRehearsalEdge[]; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string }) {
+  return <div className="feature-dag-edge-column" aria-label={locale === 'zh-CN' ? '数据边' : 'Data edges'}>{edges.map((edge) => <div className="feature-dag-edge-label" key={edge.edgeId}><ArrowRight size={16} aria-hidden="true" /><span><strong>{text(featureNodePresentation(invocationNodeId(edge.fromInvocationSite)).name)} → {text(featureNodePresentation(invocationNodeId(edge.toInvocationSite)).name)}</strong><small>{shortFingerprint(edge.valueFingerprint)} · {displayFeatureStatus(edge.status, locale)}</small></span></div>)}</div>;
+}
+
+function featureNodesOfKind(nodes: FeatureRehearsalNode[], kind: FeatureNodeKind): FeatureRehearsalNode[] {
+  return nodes.filter((node) => featureNodePresentation(node.nodeId).kind === kind)
+    .sort((left, right) => featureNodeRank(left.nodeId) - featureNodeRank(right.nodeId));
+}
+
+function featureEdgesFromKind(edges: FeatureRehearsalEdge[], kind: FeatureNodeKind): FeatureRehearsalEdge[] {
+  return edges.filter((edge) => featureNodePresentation(invocationNodeId(edge.fromInvocationSite)).kind === kind)
+    .sort((left, right) => featureNodeRank(invocationNodeId(left.fromInvocationSite)) - featureNodeRank(invocationNodeId(right.fromInvocationSite)));
+}
+
+function featureNodeRank(nodeId: string): number {
+  const rank = ['orderLookup', 'responsibilityLookup', 'cityPolicyLookup', 'compensationHistoryLookup', 'aggregateCancellationContext', 'cancellationDecision'].indexOf(nodeId);
+  return rank === -1 ? Number.MAX_SAFE_INTEGER : rank;
+}
+
+function FeatureLensNode({ node, permission, locale, text }: { node: FeatureRehearsalNode; permission: FeatureRehearsalPermission; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string }) {
+  const presentation = featureNodePresentation(node.nodeId);
+  return <article className="feature-lens-row"><div className="feature-lens-row-heading"><strong>{text(presentation.name)}</strong><span className={`feature-status feature-status-${node.status.toLowerCase()}`}>{displayFeatureStatus(node.status, locale)}</span></div><p>{node.operatorRef} · {node.fidelity || (locale === 'zh-CN' ? '未声明保真度' : 'Fidelity not declared')} · {node.durationMs} ms</p><div className="feature-lens-values"><span><small>{locale === 'zh-CN' ? '输入' : 'Input'}</small>{permission === 'PAYLOAD_VISIBLE' && node.input !== null ? <code>{formatPayload(node.input)}</code> : <code>{shortFingerprint(node.inputFingerprint)}</code>}</span><span><small>{locale === 'zh-CN' ? '输出' : 'Output'}</small>{permission === 'PAYLOAD_VISIBLE' && node.output !== null ? <code>{formatPayload(node.output)}</code> : <code>{shortFingerprint(node.outputFingerprint)}</code>}</span></div>{node.errorCode && <p className="feature-lens-error-code">{locale === 'zh-CN' ? '错误码' : 'Error code'}: <code>{node.errorCode}</code></p>}</article>;
+}
+
+function FeatureLensEdge({ edge, permission, locale }: { edge: FeatureRehearsalEdge; permission: FeatureRehearsalPermission; locale: 'en' | 'zh-CN' }) {
+  return <article className="feature-lens-row feature-lens-edge"><div className="feature-lens-row-heading"><strong>{invocationNodeId(edge.fromInvocationSite)} <ArrowRight size={13} aria-hidden="true" /> {invocationNodeId(edge.toInvocationSite)}</strong><span className={`feature-status feature-status-${edge.status.toLowerCase()}`}>{displayFeatureStatus(edge.status, locale)}</span></div><p>{edge.edgeId}</p><code>{permission === 'PAYLOAD_VISIBLE' && edge.value !== null ? formatPayload(edge.value) : shortFingerprint(edge.valueFingerprint)}</code></article>;
+}
+
+type FeatureNodeKind = 'API' | 'AGGREGATOR' | 'DECISION';
+
+function featureNodePresentation(nodeId: string): { kind: FeatureNodeKind; name: Parameters<typeof localized>[0]; summary: Parameters<typeof localized>[0] } {
+  const values: Record<string, { kind: FeatureNodeKind; name: Parameters<typeof localized>[0]; summary: Parameters<typeof localized>[0] }> = {
+    orderLookup: { kind: 'API', name: { en: 'Order lookup', 'zh-CN': '订单查询' }, summary: { en: 'Reads order facts.', 'zh-CN': '读取订单事实。' } },
+    responsibilityLookup: { kind: 'API', name: { en: 'Responsibility lookup', 'zh-CN': '取消责任判定' }, summary: { en: 'Reads responsibility facts.', 'zh-CN': '读取责任归因事实。' } },
+    cityPolicyLookup: { kind: 'API', name: { en: 'City policy lookup', 'zh-CN': '城市政策查询' }, summary: { en: 'Reads the governed policy revision.', 'zh-CN': '读取受治理的政策版本。' } },
+    compensationHistoryLookup: { kind: 'API', name: { en: 'Compensation history lookup', 'zh-CN': '历史补偿查询' }, summary: { en: 'Reads prior compensation decisions.', 'zh-CN': '读取历史补偿决策。' } },
+    aggregateCancellationContext: { kind: 'AGGREGATOR', name: { en: 'Cancellation facts', 'zh-CN': '取消费事实聚合' }, summary: { en: 'Combines the four governed dependency results.', 'zh-CN': '汇聚四个受治理的依赖结果。' } },
+    cancellationDecision: { kind: 'DECISION', name: { en: 'Cancellation decision', 'zh-CN': '取消费决策' }, summary: { en: 'Produces the explainable service action.', 'zh-CN': '生成可解释的服务动作。' } },
+  };
+  return values[nodeId] ?? { kind: 'DECISION', name: nodeId, summary: { en: 'Runtime trace node.', 'zh-CN': '运行轨迹节点。' } };
+}
+
+function displayFeatureNodeKind(kind: FeatureNodeKind, locale: 'en' | 'zh-CN'): string {
+  if (locale === 'en') return kind === 'AGGREGATOR' ? 'AGGREGATION' : kind;
+  return kind === 'API' ? '接口' : kind === 'AGGREGATOR' ? '聚合' : '决策';
+}
+
+function displayFeatureStatus(status: string, locale: 'en' | 'zh-CN'): string {
+  if (locale === 'en') return status.split('_').map((word) =>
+    word.charAt(0) + word.slice(1).toLowerCase()).join(' ');
+  const translations: Record<string, string> = { SUCCESS: '成功', FAILED: '失败', TIMEOUT: '超时', TIMED_OUT: '运行超时', SKIPPED: '已跳过', PARTIAL: '部分完成', MOCKED: '替身运行', CANCELLED: '已取消', FALLBACK: '已降级', NOT_INVOKED: '未调用', TRANSFERRED: '已传递', NOT_TRANSFERRED: '未传递', PASSED: '通过', ASSERTION_FAILED: '断言失败', EXECUTION_FAILED: '执行失败', CONTROL_PLAN_REJECTED: '控制计划被拒绝', FIXTURE_UNMATCHED: '替身未匹配', FIXTURE_UNUSED: '替身未消费', CONTROL_PLAN_UNAVAILABLE: '控制计划不可用', EVIDENCE_INCOMPLETE: '证据不完整' };
+  return translations[status] ?? status;
+}
+
+function invocationNodeId(value: string): string {
+  const segments = value.split('/').filter(Boolean);
+  const segment = segments.length > 0 ? segments[segments.length - 1] : value;
+  return segment.split('#')[0];
+}
+
+function isFeatureLensTruncated(value: FeatureRehearsalProjection['dataLens']['truncation']): boolean {
+  return value.nodesTruncated || value.edgesTruncated || value.attemptsTruncated;
+}
+
+function shortFingerprint(value: string): string { return !value ? '—' : value.length > 18 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value; }
+function formatPayload(value: unknown): string { return typeof value === 'string' ? value : JSON.stringify(value) ?? 'null'; }
 
 function StageOneView({ asset, text, locale, kind }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; kind: 'feature' | 'tool' }) {
   return <div className="capability-view" data-testid={`capability-${kind}`}><ViewHeading kicker={displayAssetKind(kind === 'feature' ? 'FEATURE' : 'TOOL', locale)} title={text(asset.name)} description={text(asset.summary)} status={displayProtocolStatus(text(asset.readiness), locale)} /><section className="capability-section"><SectionTitle icon={kind === 'feature' ? <GitBranch size={17} /> : <Wrench size={17} />} title={locale === 'zh-CN' ? '业务摘要' : 'Business summary'} subtitle={locale === 'zh-CN' ? '这里只展示服务端已经提供的事实。' : 'Only server-provided facts are shown here.'} /><p className="capability-large-copy">{text(asset.summary)}</p></section><section className="capability-stage-one-notice"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '阶段 1：运行证据尚未接入' : 'Stage 1: runtime evidence is not connected'}</strong><p>{locale === 'zh-CN' ? '运行证据和结果尚未生成；本页面不会把设计摘要误报为验证通过。' : 'Runtime evidence and results have not been generated; design summaries are not reported as verified.'}</p></div><span>{locale === 'zh-CN' ? '未运行' : 'NOT RUN'}</span></section><TechnicalDetails asset={asset} locale={locale} /></div>;

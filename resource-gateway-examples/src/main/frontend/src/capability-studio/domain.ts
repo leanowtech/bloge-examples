@@ -6,6 +6,103 @@ export type LocalizedValue = string | {
 
 export type CapabilityAssetKind = 'API' | 'FEATURE' | 'TOOL';
 
+export type FeatureRehearsalPermission = 'STRUCTURE_ONLY' | 'PAYLOAD_VISIBLE';
+export type FeatureRehearsalRunStatus = 'PASSED' | 'ASSERTION_FAILED' | 'EXECUTION_FAILED'
+  | 'CONTROL_PLAN_REJECTED' | 'FIXTURE_UNMATCHED' | 'FIXTURE_UNUSED'
+  | 'CONTROL_PLAN_UNAVAILABLE' | 'EVIDENCE_INCOMPLETE' | 'CANCELLED' | 'TIMED_OUT';
+export type FeatureRehearsalNodeStatus = 'SUCCESS' | 'FAILED' | 'TIMEOUT' | 'SKIPPED'
+  | 'PARTIAL' | 'MOCKED' | 'CANCELLED' | 'FALLBACK' | 'NOT_INVOKED';
+export type FeatureRehearsalEdgeStatus = 'TRANSFERRED' | 'SKIPPED' | 'NOT_TRANSFERRED';
+
+export interface FeatureRehearsalAttempt {
+  attempt: number;
+  status: FeatureRehearsalNodeStatus;
+  fidelity: string;
+  input: unknown | null;
+  inputFingerprint: string;
+  output: unknown | null;
+  outputFingerprint: string;
+  errorCode: string;
+  durationMs: number;
+}
+
+export interface FeatureRehearsalNode {
+  nodeId: string;
+  operatorRef: string;
+  status: FeatureRehearsalNodeStatus;
+  fidelity: string;
+  graphPath: string;
+  invocationSite: string;
+  correlation: string;
+  occurrence: number;
+  graphOccurrence: number;
+  input: unknown | null;
+  inputFingerprint: string;
+  output: unknown | null;
+  outputFingerprint: string;
+  errorCode: string;
+  durationMs: number;
+  attempts: FeatureRehearsalAttempt[];
+  retryCount: number;
+  fallbackStatus: string | null;
+}
+
+export interface FeatureRehearsalEdge {
+  edgeId: string;
+  status: FeatureRehearsalEdgeStatus;
+  graphPath: string;
+  correlation: string;
+  graphOccurrence: number;
+  fromInvocationSite: string;
+  toInvocationSite: string;
+  value: unknown | null;
+  valueFingerprint: string;
+}
+
+export interface FeatureRehearsalFirstDifference {
+  source: string;
+  locator: string;
+  scope: string;
+  path: string;
+  expected: unknown | null;
+  expectedFingerprint: string;
+  actual: unknown | null;
+  actualFingerprint: string;
+}
+
+export interface FeatureRehearsalTruncation {
+  nodesTruncated: boolean;
+  omittedNodes: number;
+  edgesTruncated: boolean;
+  omittedEdges: number;
+  attemptsTruncated: boolean;
+  omittedAttempts: number;
+}
+
+export interface FeatureRehearsalProjection {
+  schemaVersion: 'resource-gateway.capability-studio.feature-rehearsal.v1';
+  scenario: { id: string; name: LocalizedValue; expectedResult: LocalizedValue };
+  graph: { id: string; fingerprint: string };
+  run: {
+    runId: string;
+    status: FeatureRehearsalRunStatus;
+    semanticFingerprint: string;
+    realExternalCallCount: number;
+    bindingMode: 'FIXTURE_CONTROLLED_NON_PRODUCTION';
+  };
+  dataLens: {
+    schemaVersion: 'resource-gateway.capability-studio.data-lens.v1';
+    runId: string;
+    runStatus: FeatureRehearsalRunStatus;
+    permissionMode: FeatureRehearsalPermission;
+    nodes: FeatureRehearsalNode[];
+    edges: FeatureRehearsalEdge[];
+    firstDifference: FeatureRehearsalFirstDifference | null;
+    truncation: FeatureRehearsalTruncation;
+    fingerprint: string;
+  };
+}
+
 export interface CapabilityAssetSummary {
   kind: CapabilityAssetKind;
   name: LocalizedValue;
@@ -270,6 +367,14 @@ function invalidScenarioDataset(message: string): CapabilityStudioProtocolError 
     'RG.CAPABILITY_STUDIO.INVALID_SCENARIO_DATASET',
     `[RG.CAPABILITY_STUDIO.INVALID_SCENARIO_DATASET] ${message}`,
     'The scenario dataset cannot be trusted or displayed, so GP-03 remains unavailable.',
+  );
+}
+
+function invalidFeatureRehearsal(message: string): CapabilityStudioProtocolError {
+  return new CapabilityStudioProtocolError(
+    'RG.CAPABILITY_STUDIO.INVALID_FEATURE_REHEARSAL',
+    `[RG.CAPABILITY_STUDIO.INVALID_FEATURE_REHEARSAL] ${message}`,
+    'The Feature rehearsal response cannot be trusted or displayed.',
   );
 }
 
@@ -703,4 +808,236 @@ function scenarioRefIdentity(ref: ScenarioExactRef): string {
 
 function percentage(covered: number, total: number): number {
   return total === 0 ? 0 : Math.round((covered * 100) / total);
+}
+
+const featureNodeStatuses: FeatureRehearsalNodeStatus[] = [
+  'SUCCESS', 'FAILED', 'TIMEOUT', 'SKIPPED', 'PARTIAL', 'MOCKED', 'CANCELLED',
+  'FALLBACK', 'NOT_INVOKED',
+];
+const featureEdgeStatuses: FeatureRehearsalEdgeStatus[] = [
+  'TRANSFERRED', 'SKIPPED', 'NOT_TRANSFERRED',
+];
+const featureRunStatuses: FeatureRehearsalRunStatus[] = [
+  'PASSED', 'ASSERTION_FAILED', 'EXECUTION_FAILED', 'CONTROL_PLAN_REJECTED',
+  'FIXTURE_UNMATCHED', 'FIXTURE_UNUSED', 'CONTROL_PLAN_UNAVAILABLE',
+  'EVIDENCE_INCOMPLETE', 'CANCELLED', 'TIMED_OUT',
+];
+
+function featureObject(value: unknown, path: string, fields: string[]): JsonObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalidFeatureRehearsal(`Expected an object at ${path}.`);
+  const source = value as JsonObject;
+  const allowed = new Set(fields);
+  const unknown = Object.keys(source).find((key) => !allowed.has(key));
+  if (unknown) throw invalidFeatureRehearsal(`Unknown field ${path}.${unknown}.`);
+  return source;
+}
+
+function featureArray(value: unknown, path: string, minimum = 0): unknown[] {
+  if (!Array.isArray(value) || value.length < minimum) throw invalidFeatureRehearsal(`Expected at least ${minimum} entries at ${path}.`);
+  return value;
+}
+
+function featureString(value: unknown, path: string, maximum = 4000): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > maximum) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return value;
+}
+
+function featureOptionalString(value: unknown, path: string, maximum = 4000): string {
+  if (typeof value !== 'string' || value.length > maximum) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return value;
+}
+
+function featureIdentifier(value: unknown, path: string): string {
+  const parsed = featureString(value, path, 256);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$/.test(parsed)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return parsed;
+}
+
+function featureCoordinate(value: unknown, path: string): string {
+  const parsed = featureString(value, path, 256);
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$/.test(parsed)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return parsed;
+}
+
+function featureFingerprint(value: unknown, path: string): string {
+  const parsed = featureString(value, path, 80);
+  if (!/^sha256:[a-f0-9]{64}$/.test(parsed)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return parsed;
+}
+
+function featureOptionalFingerprint(value: unknown, path: string): string {
+  if (value === '') return '';
+  return featureFingerprint(value, path);
+}
+
+function featureLocalized(value: unknown, path: string): LocalizedValue {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const candidate = value as JsonObject;
+    if (['en', 'zh-CN', 'zh'].some((key) => typeof candidate[key] === 'string' && (candidate[key] as string).trim())) return value as LocalizedValue;
+  }
+  throw invalidFeatureRehearsal(`Invalid ${path}.`);
+}
+
+function featureEnum<T extends string>(value: unknown, values: readonly T[], path: string): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return value as T;
+}
+
+function featureInteger(value: unknown, path: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return value as number;
+}
+
+function featureBoolean(value: unknown, path: string): boolean {
+  if (typeof value !== 'boolean') throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  return value;
+}
+
+function featureNullableJson(value: unknown, path: string): unknown | null {
+  if (value === undefined) throw invalidFeatureRehearsal(`Missing ${path}.`);
+  return value;
+}
+
+function parseFeatureRehearsalAttempt(value: unknown, path: string): FeatureRehearsalAttempt {
+  const source = featureObject(value, path, [
+    'attempt', 'status', 'fidelity', 'input', 'inputFingerprint', 'output',
+    'outputFingerprint', 'errorCode', 'durationMs',
+  ]);
+  return {
+    attempt: featureInteger(source.attempt, `${path}.attempt`, 0, 100),
+    status: featureEnum(source.status, featureNodeStatuses, `${path}.status`),
+    fidelity: featureOptionalString(source.fidelity, `${path}.fidelity`, 128),
+    input: featureNullableJson(source.input, `${path}.input`),
+    inputFingerprint: featureOptionalFingerprint(source.inputFingerprint, `${path}.inputFingerprint`),
+    output: featureNullableJson(source.output, `${path}.output`),
+    outputFingerprint: featureOptionalFingerprint(source.outputFingerprint, `${path}.outputFingerprint`),
+    errorCode: featureOptionalString(source.errorCode, `${path}.errorCode`, 128),
+    durationMs: featureInteger(source.durationMs, `${path}.durationMs`, 0, 86_400_000),
+  };
+}
+
+function parseFeatureRehearsalNode(value: unknown, path: string): FeatureRehearsalNode {
+  const source = featureObject(value, path, [
+    'nodeId', 'operatorRef', 'status', 'fidelity', 'graphPath', 'invocationSite',
+    'correlation', 'occurrence', 'graphOccurrence', 'input', 'inputFingerprint',
+    'output', 'outputFingerprint', 'errorCode', 'durationMs', 'attempts', 'retryCount',
+    'fallbackStatus',
+  ]);
+  return {
+    nodeId: featureIdentifier(source.nodeId, `${path}.nodeId`),
+    operatorRef: featureIdentifier(source.operatorRef, `${path}.operatorRef`),
+    status: featureEnum(source.status, featureNodeStatuses, `${path}.status`),
+    fidelity: featureOptionalString(source.fidelity, `${path}.fidelity`, 128),
+    graphPath: featureCoordinate(source.graphPath, `${path}.graphPath`),
+    invocationSite: featureCoordinate(source.invocationSite, `${path}.invocationSite`),
+    correlation: featureOptionalString(source.correlation, `${path}.correlation`, 256),
+    occurrence: featureInteger(source.occurrence, `${path}.occurrence`, 0, 1_000_000),
+    graphOccurrence: featureInteger(source.graphOccurrence, `${path}.graphOccurrence`, 0, 1_000_000),
+    input: featureNullableJson(source.input, `${path}.input`),
+    inputFingerprint: featureOptionalFingerprint(source.inputFingerprint, `${path}.inputFingerprint`),
+    output: featureNullableJson(source.output, `${path}.output`),
+    outputFingerprint: featureOptionalFingerprint(source.outputFingerprint, `${path}.outputFingerprint`),
+    errorCode: featureOptionalString(source.errorCode, `${path}.errorCode`, 128),
+    durationMs: featureInteger(source.durationMs, `${path}.durationMs`, 0, 86_400_000),
+    attempts: featureArray(source.attempts, `${path}.attempts`).map((entry, index) =>
+      parseFeatureRehearsalAttempt(entry, `${path}.attempts[${index}]`)),
+    retryCount: featureInteger(source.retryCount, `${path}.retryCount`, 0, 100),
+    fallbackStatus: source.fallbackStatus === null
+      ? null : featureOptionalString(source.fallbackStatus, `${path}.fallbackStatus`, 128),
+  };
+}
+
+function parseFeatureRehearsalEdge(value: unknown, path: string): FeatureRehearsalEdge {
+  const source = featureObject(value, path, [
+    'edgeId', 'status', 'graphPath', 'correlation', 'graphOccurrence',
+    'fromInvocationSite', 'toInvocationSite', 'value', 'valueFingerprint',
+  ]);
+  return {
+    edgeId: featureIdentifier(source.edgeId, `${path}.edgeId`),
+    status: featureEnum(source.status, featureEdgeStatuses, `${path}.status`),
+    graphPath: featureCoordinate(source.graphPath, `${path}.graphPath`),
+    correlation: featureOptionalString(source.correlation, `${path}.correlation`, 256),
+    graphOccurrence: featureInteger(source.graphOccurrence, `${path}.graphOccurrence`, 0, 1_000_000),
+    fromInvocationSite: featureCoordinate(source.fromInvocationSite, `${path}.fromInvocationSite`),
+    toInvocationSite: featureCoordinate(source.toInvocationSite, `${path}.toInvocationSite`),
+    value: featureNullableJson(source.value, `${path}.value`),
+    valueFingerprint: featureOptionalFingerprint(source.valueFingerprint, `${path}.valueFingerprint`),
+  };
+}
+
+function parseFeatureFirstDifference(value: unknown, path: string): FeatureRehearsalFirstDifference | null {
+  if (value === null) return null;
+  const source = featureObject(value, path, [
+    'source', 'locator', 'scope', 'path', 'expected', 'expectedFingerprint',
+    'actual', 'actualFingerprint',
+  ]);
+  return {
+    source: featureIdentifier(source.source, `${path}.source`),
+    locator: featureCoordinate(source.locator, `${path}.locator`),
+    scope: featureOptionalString(source.scope, `${path}.scope`, 256),
+    path: featureOptionalString(source.path, `${path}.path`, 512),
+    expected: featureNullableJson(source.expected, `${path}.expected`),
+    expectedFingerprint: featureOptionalFingerprint(source.expectedFingerprint, `${path}.expectedFingerprint`),
+    actual: featureNullableJson(source.actual, `${path}.actual`),
+    actualFingerprint: featureOptionalFingerprint(source.actualFingerprint, `${path}.actualFingerprint`),
+  };
+}
+
+export function parseFeatureRehearsalProjection(payload: unknown): FeatureRehearsalProjection {
+  const root = featureObject(payload, 'featureRehearsal', ['schemaVersion', 'scenario', 'graph', 'run', 'dataLens']);
+  if (root.schemaVersion !== 'resource-gateway.capability-studio.feature-rehearsal.v1') throw invalidFeatureRehearsal('Invalid schemaVersion.');
+  const scenario = featureObject(root.scenario, 'featureRehearsal.scenario', ['id', 'name', 'expectedResult']);
+  const graph = featureObject(root.graph, 'featureRehearsal.graph', ['id', 'fingerprint']);
+  const run = featureObject(root.run, 'featureRehearsal.run', ['runId', 'status', 'semanticFingerprint', 'realExternalCallCount', 'bindingMode']);
+  const lens = featureObject(root.dataLens, 'featureRehearsal.dataLens', ['schemaVersion', 'runId', 'runStatus', 'permissionMode', 'nodes', 'edges', 'firstDifference', 'truncation', 'fingerprint']);
+  const nodes = featureArray(lens.nodes, 'featureRehearsal.dataLens.nodes', 1).map((entry, index) => parseFeatureRehearsalNode(entry, `featureRehearsal.dataLens.nodes[${index}]`));
+  const edges = featureArray(lens.edges, 'featureRehearsal.dataLens.edges').map((entry, index) => parseFeatureRehearsalEdge(entry, `featureRehearsal.dataLens.edges[${index}]`));
+  const nodeIds = new Set<string>();
+  nodes.forEach((node) => { if (nodeIds.has(node.nodeId)) throw invalidFeatureRehearsal(`Duplicate nodeId ${node.nodeId}.`); nodeIds.add(node.nodeId); });
+  const invocationSites = new Set(nodes.map((node) => node.invocationSite));
+  const edgeIds = new Set<string>();
+  edges.forEach((edge) => {
+    if (edgeIds.has(edge.edgeId)) throw invalidFeatureRehearsal(`Duplicate edgeId ${edge.edgeId}.`);
+    if (!invocationSites.has(edge.fromInvocationSite) || !invocationSites.has(edge.toInvocationSite)) throw invalidFeatureRehearsal(`Edge ${edge.edgeId} references an unknown invocation site.`);
+    edgeIds.add(edge.edgeId);
+  });
+  const truncation = featureObject(lens.truncation, 'featureRehearsal.dataLens.truncation', [
+    'nodesTruncated', 'omittedNodes', 'edgesTruncated', 'omittedEdges',
+    'attemptsTruncated', 'omittedAttempts',
+  ]);
+  const parsed: FeatureRehearsalProjection = {
+    schemaVersion: root.schemaVersion,
+    scenario: { id: featureIdentifier(scenario.id, 'featureRehearsal.scenario.id'), name: featureLocalized(scenario.name, 'featureRehearsal.scenario.name'), expectedResult: featureLocalized(scenario.expectedResult, 'featureRehearsal.scenario.expectedResult') },
+    graph: { id: featureIdentifier(graph.id, 'featureRehearsal.graph.id'), fingerprint: featureFingerprint(graph.fingerprint, 'featureRehearsal.graph.fingerprint') },
+    run: { runId: featureIdentifier(run.runId, 'featureRehearsal.run.runId'), status: featureEnum(run.status, featureRunStatuses, 'featureRehearsal.run.status'), semanticFingerprint: featureFingerprint(run.semanticFingerprint, 'featureRehearsal.run.semanticFingerprint'), realExternalCallCount: featureInteger(run.realExternalCallCount, 'featureRehearsal.run.realExternalCallCount', 0, 0), bindingMode: featureEnum(run.bindingMode, ['FIXTURE_CONTROLLED_NON_PRODUCTION'], 'featureRehearsal.run.bindingMode') },
+    dataLens: {
+      schemaVersion: lens.schemaVersion === 'resource-gateway.capability-studio.data-lens.v1' ? lens.schemaVersion : (() => { throw invalidFeatureRehearsal('Invalid dataLens.schemaVersion.'); })(),
+      runId: featureIdentifier(lens.runId, 'featureRehearsal.dataLens.runId'),
+      runStatus: featureEnum(lens.runStatus, featureRunStatuses, 'featureRehearsal.dataLens.runStatus'),
+      permissionMode: featureEnum(lens.permissionMode, ['STRUCTURE_ONLY', 'PAYLOAD_VISIBLE'], 'featureRehearsal.dataLens.permissionMode'),
+      nodes,
+      edges,
+      firstDifference: parseFeatureFirstDifference(lens.firstDifference, 'featureRehearsal.dataLens.firstDifference'),
+      truncation: {
+        nodesTruncated: featureBoolean(truncation.nodesTruncated, 'featureRehearsal.dataLens.truncation.nodesTruncated'),
+        omittedNodes: featureInteger(truncation.omittedNodes, 'featureRehearsal.dataLens.truncation.omittedNodes'),
+        edgesTruncated: featureBoolean(truncation.edgesTruncated, 'featureRehearsal.dataLens.truncation.edgesTruncated'),
+        omittedEdges: featureInteger(truncation.omittedEdges, 'featureRehearsal.dataLens.truncation.omittedEdges'),
+        attemptsTruncated: featureBoolean(truncation.attemptsTruncated, 'featureRehearsal.dataLens.truncation.attemptsTruncated'),
+        omittedAttempts: featureInteger(truncation.omittedAttempts, 'featureRehearsal.dataLens.truncation.omittedAttempts'),
+      },
+      fingerprint: featureFingerprint(lens.fingerprint, 'featureRehearsal.dataLens.fingerprint'),
+    },
+  };
+  if (parsed.run.runId !== parsed.dataLens.runId || parsed.run.status !== parsed.dataLens.runStatus) throw invalidFeatureRehearsal('Run and Data Lens identity do not match.');
+  if (parsed.dataLens.permissionMode === 'STRUCTURE_ONLY') {
+    const nodePayloadVisible = nodes.some((node) => node.input !== null || node.output !== null
+      || node.attempts.some((attempt) => attempt.input !== null || attempt.output !== null));
+    const edgePayloadVisible = edges.some((edge) => edge.value !== null);
+    const differencePayloadVisible = parsed.dataLens.firstDifference !== null
+      && (parsed.dataLens.firstDifference.expected !== null || parsed.dataLens.firstDifference.actual !== null);
+    if (nodePayloadVisible || edgePayloadVisible || differencePayloadVisible) throw invalidFeatureRehearsal('STRUCTURE_ONLY cannot contain payload values.');
+  }
+  return parsed;
 }

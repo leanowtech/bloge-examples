@@ -3,6 +3,9 @@ import {
   parseScenarioDatasetProjection,
   isCapabilityStudioProtocolError,
   type CapabilityStudioModel,
+  parseFeatureRehearsalProjection,
+  type FeatureRehearsalPermission,
+  type FeatureRehearsalProjection,
   type ScenarioDataset,
 } from './domain';
 
@@ -10,6 +13,42 @@ export type CapabilityStudioFetcher = (
   input: RequestInfo | URL,
   init?: RequestInit,
 ) => Promise<Response>;
+
+export async function fetchFeatureRehearsal(
+  caseId: string,
+  permission: FeatureRehearsalPermission,
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<FeatureRehearsalProjection> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$/.test(caseId)) {
+    throw new CapabilityStudioRequestError(
+      'RG.CAPABILITY_STUDIO.INVALID_CASE_ID',
+      'The selected scenario is not valid.',
+      'The Feature rehearsal was not changed.',
+      'Choose a scenario from the list and retry.',
+      0,
+      'caseId',
+    );
+  }
+  const query = new URLSearchParams({ caseId, permission });
+  const payload = await requestJson<unknown>(
+    fetcher,
+    `/api/capability-studio/feature-rehearsal?${query.toString()}`,
+    undefined,
+    {
+      unchangedImpact: 'The Feature rehearsal was not changed.',
+      invalidImpact: 'The Feature rehearsal response cannot be trusted or displayed.',
+      invalidRecovery: 'Choose the scenario again and retry the rehearsal.',
+    },
+  );
+  try {
+    return parseFeatureRehearsalProjection(payload);
+  } catch (error) {
+    if (isCapabilityStudioProtocolError(error)) {
+      throw new CapabilityStudioRequestError(error.code, error.message, error.impact, 'Choose the scenario again and retry the rehearsal.', 200);
+    }
+    throw error;
+  }
+}
 
 export interface TutorialBehavior {
   dependencyId: string;

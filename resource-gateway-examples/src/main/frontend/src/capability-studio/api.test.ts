@@ -2,12 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CapabilityStudioRequestError,
+  fetchFeatureRehearsal,
   fetchScenarioDataset,
   preflightTutorialBranch,
   saveTutorialBehavior,
   type CapabilityStudioFetcher,
 } from './api';
-import { scenarioDatasetProjectionFixture } from './testFixtures';
+import { featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio tutorial branch API', () => {
   it('sends only the business behavior fields required by GP-04', async () => {
@@ -130,6 +131,50 @@ describe('Capability Studio Scenario Dataset API', () => {
       impact: 'The scenario dataset cannot be trusted or displayed.',
       recoveryAction: 'Reload the scenario dataset before continuing.',
     });
+  });
+});
+
+describe('Capability Studio Feature rehearsal API', () => {
+  it('loads one exact canonical case and permission projection', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
+      expect(String(input)).toBe('/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY');
+      expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+      return json(featureRehearsalProjectionFixture());
+    });
+
+    const result = await fetchFeatureRehearsal(
+      'case-compensation-history-timeout', 'STRUCTURE_ONLY', fetcher,
+    );
+
+    expect(result.run.status).toBe('TIMED_OUT');
+    expect(result.run.realExternalCallCount).toBe(0);
+    expect(result.dataLens.permissionMode).toBe('STRUCTURE_ONLY');
+  });
+
+  it('preserves a stable server recovery response for an unknown canonical case', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json({
+      code: 'RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_NOT_FOUND',
+      whatHappened: 'The selected canonical case does not exist.',
+      impact: 'The current DAG evidence cannot be loaded.',
+      recoveryAction: 'Choose one of the published scenarios.',
+      field: 'caseId',
+    }, 404));
+
+    await expect(fetchFeatureRehearsal('case-does-not-exist', 'STRUCTURE_ONLY', fetcher))
+      .rejects.toMatchObject({
+        code: 'RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_NOT_FOUND',
+        status: 404,
+        field: 'caseId',
+        recoveryAction: 'Choose one of the published scenarios.',
+      });
+  });
+
+  it('rejects a non-picker case id before issuing a request', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>();
+
+    await expect(fetchFeatureRehearsal('../unsafe case', 'STRUCTURE_ONLY', fetcher))
+      .rejects.toMatchObject({ code: 'RG.CAPABILITY_STUDIO.INVALID_CASE_ID', field: 'caseId' });
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });
 

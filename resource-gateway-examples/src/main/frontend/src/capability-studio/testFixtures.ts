@@ -118,3 +118,79 @@ export const scenarioDatasetProjectionFixture = {
     behaviorClosurePercent: 100,
   },
 };
+
+const featureFp = (digit: string) => `sha256:${digit.repeat(64)}`;
+
+export function featureRehearsalProjectionFixture(permission: 'STRUCTURE_ONLY' | 'PAYLOAD_VISIBLE' = 'STRUCTURE_ONLY', caseId = 'case-compensation-history-timeout') {
+  const timeout = caseId === 'case-compensation-history-timeout';
+  const payload = (value: unknown) => permission === 'PAYLOAD_VISIBLE' ? value : null;
+  const node = (nodeId: string, operatorRef: string, status: string, seed: string, input: unknown, output: unknown, errorCode = '') => ({
+    nodeId,
+    operatorRef,
+    status,
+    fidelity: operatorRef === 'httpResource' ? 'OUTPUT_LEVEL' : 'REAL',
+    graphPath: '/root',
+    invocationSite: `/root/${nodeId}#PRIMARY`,
+    correlation: '',
+    occurrence: 1,
+    graphOccurrence: 1,
+    input: payload(input),
+    inputFingerprint: input === null ? '' : featureFp(seed),
+    output: payload(output),
+    outputFingerprint: output === null ? '' : featureFp('f'),
+    errorCode,
+    durationMs: status === 'TIMEOUT' ? 10 : status === 'CANCELLED' ? 0 : 42,
+    attempts: [],
+    retryCount: 0,
+    fallbackStatus: null,
+  });
+  const parsedNodes = [
+    node('orderLookup', 'httpResource', 'MOCKED', '1', { resourceId: 'api-order-lookup', params: { orderId: 'DEMO-ORDER-20260818-001' } }, { status: 'CANCELLED', cityCode: 'SZ' }),
+    node('responsibilityLookup', 'httpResource', 'MOCKED', '2', { resourceId: 'api-cancellation-responsibility' }, { owner: 'PLATFORM', reasonCode: 'DRIVER_LATE' }),
+    node('cityPolicyLookup', 'httpResource', 'MOCKED', '3', { resourceId: 'api-city-pricing-policy' }, { version: 'SZ-CANCEL-2026.08' }),
+    node('compensationHistoryLookup', 'httpResource', timeout ? 'TIMEOUT' : 'MOCKED', '4', { resourceId: 'api-compensation-history' }, timeout ? null : { hasHistory: false, records: [] }, timeout ? 'COMPENSATION_HISTORY_TIMEOUT' : ''),
+    node('aggregateCancellationContext', 'capabilityStudio.aggregate', timeout ? 'CANCELLED' : 'SUCCESS', '5', timeout ? null : { orderId: 'DEMO-ORDER-20260818-001' }, timeout ? null : { complete: true }),
+    node('cancellationDecision', 'capabilityStudio.decision', timeout ? 'CANCELLED' : 'SUCCESS', '6', timeout ? null : { complete: true }, timeout ? null : { action: 'AUTO_QUOTE' }),
+  ];
+  const edge = (edgeId: string, from: string, to: string, status: string, seed: string, value: unknown) => ({
+    edgeId,
+    status,
+    graphPath: '/root',
+    correlation: '',
+    graphOccurrence: 1,
+    fromInvocationSite: `/root/${from}#PRIMARY`,
+    toInvocationSite: `/root/${to}#PRIMARY`,
+    value: payload(value),
+    valueFingerprint: value === null ? '' : featureFp(seed),
+  });
+  const parsedEdges = [
+    edge('orderLookup->aggregateCancellationContext', 'orderLookup', 'aggregateCancellationContext', timeout ? 'NOT_TRANSFERRED' : 'TRANSFERRED', '7', { status: 'CANCELLED' }),
+    edge('responsibilityLookup->aggregateCancellationContext', 'responsibilityLookup', 'aggregateCancellationContext', timeout ? 'NOT_TRANSFERRED' : 'TRANSFERRED', '8', { owner: 'PLATFORM' }),
+    edge('cityPolicyLookup->aggregateCancellationContext', 'cityPolicyLookup', 'aggregateCancellationContext', timeout ? 'NOT_TRANSFERRED' : 'TRANSFERRED', '9', { version: 'SZ-CANCEL-2026.08' }),
+    edge('compensationHistoryLookup->aggregateCancellationContext', 'compensationHistoryLookup', 'aggregateCancellationContext', timeout ? 'NOT_TRANSFERRED' : 'TRANSFERRED', 'a', timeout ? null : { hasHistory: false }),
+    edge('aggregateCancellationContext->cancellationDecision', 'aggregateCancellationContext', 'cancellationDecision', timeout ? 'NOT_TRANSFERRED' : 'TRANSFERRED', 'b', timeout ? null : { complete: true }),
+  ];
+  const status = timeout ? 'TIMED_OUT' : 'PASSED';
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.feature-rehearsal.v1',
+    scenario: { id: caseId, name: featureRehearsalCasesFixtureName(caseId), expectedResult: timeout ? '不因历史查询超时产生未经核验的费用结论' : '返回可解释的取消费处理结论' },
+    graph: { id: 'feature-cancellation-dispute-context', fingerprint: featureFp('c') },
+    run: { runId: `test-run-${caseId}`, status, semanticFingerprint: featureFp('d'), realExternalCallCount: 0, bindingMode: 'FIXTURE_CONTROLLED_NON_PRODUCTION' },
+    dataLens: { schemaVersion: 'resource-gateway.capability-studio.data-lens.v1', runId: `test-run-${caseId}`, runStatus: status, permissionMode: permission, nodes: parsedNodes, edges: parsedEdges, firstDifference: null, truncation: { nodesTruncated: false, omittedNodes: 0, edgesTruncated: false, omittedEdges: 0, attemptsTruncated: false, omittedAttempts: 0 }, fingerprint: featureFp('e') },
+  };
+}
+
+function featureRehearsalCasesFixtureName(caseId: string): string {
+  const names: Record<string, string> = {
+    'case-standard-cancellation-fee': 'Standard cancellation fee',
+    'case-rider-not-responsible': 'Rider is not responsible',
+    'case-driver-responsible': 'Driver is responsible',
+    'case-city-policy-missing': 'City policy is missing',
+    'case-compensation-history-empty': 'Compensation history is empty',
+    'case-compensation-history-timeout': 'Compensation history times out',
+    'case-duplicate-cancellation': 'Duplicate cancellation request',
+    'case-forbidden-write-effect': 'Forbidden write effect',
+    'case-policy-revision-regression': 'Policy revision regression',
+  };
+  return names[caseId] ?? names['case-compensation-history-timeout'];
+}

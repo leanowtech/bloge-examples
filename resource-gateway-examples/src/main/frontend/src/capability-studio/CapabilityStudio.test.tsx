@@ -8,7 +8,7 @@ import I18nProvider from '../i18n/I18nProvider';
 import CapabilityStudio from './CapabilityStudio';
 import type { CapabilityStudioFetcher } from './api';
 import { parseCapabilityStudioDemoPack } from './domain';
-import { capabilityStudioDemoPackFixture, scenarioDatasetProjectionFixture } from './testFixtures';
+import { capabilityStudioDemoPackFixture, featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio Stage 0 read-only slice', () => {
   let host: HTMLDivElement;
@@ -188,6 +188,34 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
   });
 
+  it('renders GP-05/06 from one real Trace projection and reveals payload only after permission changes', async () => {
+    await render();
+    await act(async () => buttonWithText('Cancellation dispute feature').click());
+    await settle();
+
+    expect(query('[data-testid="capability-feature-rehearsal"]')).toBeTruthy();
+    expect(query<HTMLSelectElement>('#feature-rehearsal-case').options).toHaveLength(9);
+    expect(query<HTMLSelectElement>('#feature-rehearsal-case').value).toBe('case-compensation-history-timeout');
+    expect(document.querySelectorAll('.feature-dag-node')).toHaveLength(6);
+    expect([...document.querySelectorAll('.feature-dag-inputs .feature-dag-node h4')]
+      .map((heading) => heading.textContent)).toEqual([
+        'Order lookup',
+        'Responsibility lookup',
+        'City policy lookup',
+        'Compensation history lookup',
+      ]);
+    expect(document.body.textContent).toContain('Timed Out');
+    expect(document.body.textContent).toContain('Real calls');
+    expect(document.body.textContent).toContain('0');
+    expect(document.body.textContent).toContain('COMPENSATION_HISTORY_TIMEOUT');
+    expect(document.body.textContent).not.toContain('DEMO-ORDER-20260818-001');
+
+    await act(async () => buttonWithText('Payload').click());
+    await settle();
+    expect(document.body.textContent).toContain('DEMO-ORDER-20260818-001');
+    expect(buttonWithText('Payload').getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('has no serious or critical automated accessibility violations across NFR-02 states', async () => {
     await render();
     await expectNoSevereAccessibilityViolations('overview');
@@ -231,6 +259,11 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     await settle();
     expect(query('[data-testid="capability-tutorial-error"]')).toBeTruthy();
     await expectNoSevereAccessibilityViolations('tutorial conflict');
+
+    await render();
+    await act(async () => buttonWithText('Cancellation dispute feature').click());
+    await settle();
+    await expectNoSevereAccessibilityViolations('feature rehearsal structure');
   });
 
   it('shows a visible what happened / impact / retry error state', async () => {
@@ -284,9 +317,18 @@ describe('Capability Studio Stage 0 read-only slice', () => {
 });
 
 function defaultFetcher(): CapabilityStudioFetcher {
-  return async (input) => String(input).endsWith('/scenario-dataset')
-    ? json(scenarioDatasetProjectionFixture)
-    : json(capabilityStudioDemoPackFixture);
+  return async (input) => {
+    const url = String(input);
+    if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
+    if (url.includes('/feature-rehearsal?')) {
+      const query = new URL(url, 'http://capability-studio.local').searchParams;
+      return json(featureRehearsalProjectionFixture(
+        query.get('permission') === 'PAYLOAD_VISIBLE' ? 'PAYLOAD_VISIBLE' : 'STRUCTURE_ONLY',
+        query.get('caseId') ?? 'case-compensation-history-timeout',
+      ));
+    }
+    return json(capabilityStudioDemoPackFixture);
+  };
 }
 
 const tutorialBranch = {

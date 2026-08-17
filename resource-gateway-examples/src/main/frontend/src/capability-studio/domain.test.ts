@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCapabilityStudioDemoPack, parseScenarioDatasetProjection } from './domain';
-import { scenarioDatasetProjectionFixture } from './testFixtures';
+import { parseCapabilityStudioDemoPack, parseFeatureRehearsalProjection, parseScenarioDatasetProjection } from './domain';
+import { featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio backend projection adapter', () => {
   it('adapts exact refs, business contract summaries, and governed scenario metadata', () => {
@@ -80,6 +80,38 @@ describe('Capability Studio backend projection adapter', () => {
     const blockedDataset = structuredClone(scenarioDatasetProjectionFixture);
     blockedDataset.quality.status = 'BLOCKED';
     expect(() => parseScenarioDatasetProjection(blockedDataset)).toThrow('Active Scenario Dataset is not ready');
+  });
+
+  it('strictly parses the real Trace-shaped Feature rehearsal in both permission modes', () => {
+    const structure = parseFeatureRehearsalProjection(featureRehearsalProjectionFixture());
+    const payload = parseFeatureRehearsalProjection(featureRehearsalProjectionFixture('PAYLOAD_VISIBLE'));
+
+    expect(structure.run).toMatchObject({ status: 'TIMED_OUT', realExternalCallCount: 0 });
+    expect(structure.dataLens.nodes).toHaveLength(6);
+    expect(structure.dataLens.edges).toHaveLength(5);
+    expect(structure.dataLens.nodes.every((node) => node.input === null && node.output === null)).toBe(true);
+    expect(payload.dataLens.nodes.find((node) => node.nodeId === 'orderLookup')?.input)
+      .toMatchObject({ resourceId: 'api-order-lookup' });
+    expect(payload.dataLens.nodes.find((node) => node.nodeId === 'compensationHistoryLookup'))
+      .toMatchObject({ status: 'TIMEOUT', errorCode: 'COMPENSATION_HISTORY_TIMEOUT' });
+  });
+
+  it('rejects Feature rehearsal schema drift, payload leakage, and broken Trace identity', () => {
+    const unknown = structuredClone(featureRehearsalProjectionFixture());
+    (unknown.dataLens.nodes[0] as Record<string, unknown>).inventedSummary = 'not in v1';
+    expect(() => parseFeatureRehearsalProjection(unknown)).toThrow('Unknown field');
+
+    const leaked = structuredClone(featureRehearsalProjectionFixture());
+    leaked.dataLens.nodes[0].input = { orderId: 'leaked' };
+    expect(() => parseFeatureRehearsalProjection(leaked)).toThrow('STRUCTURE_ONLY cannot contain payload');
+
+    const drift = structuredClone(featureRehearsalProjectionFixture());
+    drift.dataLens.runId = 'test-run-another-case';
+    expect(() => parseFeatureRehearsalProjection(drift)).toThrow('Run and Data Lens identity do not match');
+
+    const brokenEdge = structuredClone(featureRehearsalProjectionFixture());
+    brokenEdge.dataLens.edges[0].toInvocationSite = '/root/unknown#PRIMARY';
+    expect(() => parseFeatureRehearsalProjection(brokenEdge)).toThrow('unknown invocation site');
   });
 });
 
