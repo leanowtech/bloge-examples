@@ -2116,6 +2116,10 @@ capability_studio_tutorial_preflight_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/tutorial-branch/preflight"
 }
 
+capability_studio_feature_rehearsal_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY"
+}
+
 jar_path() {
     echo "${PROJECT_DIR}/target/${JAR_NAME}"
 }
@@ -2247,6 +2251,7 @@ $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Acceptance base:  %s\n' "$(cap
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Scenario dataset: %s\n' "$(capability_studio_dataset_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial branch:  %s\n' "$(capability_studio_tutorial_branch_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial check:   POST %s\n' "$(capability_studio_tutorial_preflight_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Feature trace:    GET  %s\n' "$(capability_studio_feature_rehearsal_url)")
   Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
@@ -2341,6 +2346,7 @@ wait_for_ready() {
                 local capability_studio_dataset
                 local capability_studio_branch
                 local capability_studio_preflight
+                local capability_studio_feature_rehearsal
                 if ! capability_studio_pack="$(curl -fsS \
                     "$(capability_studio_demo_pack_url)" 2>/dev/null)" ||
                     ! capability_studio_acceptance="$(curl -fsS \
@@ -2350,7 +2356,9 @@ wait_for_ready() {
                     ! capability_studio_branch="$(curl -fsS \
                     "$(capability_studio_tutorial_branch_url)" 2>/dev/null)" ||
                     ! capability_studio_preflight="$(curl -fsS -X POST \
-                    "$(capability_studio_tutorial_preflight_url)" 2>/dev/null)"; then
+                    "$(capability_studio_tutorial_preflight_url)" 2>/dev/null)" ||
+                    ! capability_studio_feature_rehearsal="$(curl -fsS \
+                    "$(capability_studio_feature_rehearsal_url)" 2>/dev/null)"; then
                     sleep 2
                     continue
                 fi
@@ -2396,6 +2404,18 @@ wait_for_ready() {
                         and ($preflight.branchId == $branch.branchId)
                         and ($preflight.revision == $branch.revision)
                         and ($preflight.fingerprint == $branch.fingerprint)
+                    ' >/dev/null 2>&1 ||
+                        ! printf '%s' "${capability_studio_feature_rehearsal}" | jq -e '
+                        (.schemaVersion == "resource-gateway.capability-studio.feature-rehearsal.v1")
+                        and (.scenario.id == "case-compensation-history-timeout")
+                        and (.run.status == "TIMED_OUT")
+                        and (.run.bindingMode == "FIXTURE_CONTROLLED_NON_PRODUCTION")
+                        and (.run.realExternalCallCount == 0)
+                        and (.dataLens.permissionMode == "STRUCTURE_ONLY")
+                        and ((.dataLens.nodes | length) == 6)
+                        and ((.dataLens.edges | length) == 5)
+                        and ([.dataLens.nodes[] | select(.input != null or .output != null)] | length == 0)
+                        and ([.dataLens.edges[] | select(.value != null)] | length == 0)
                     ' >/dev/null 2>&1; then
                         sleep 2
                         continue
@@ -2419,7 +2439,15 @@ wait_for_ready() {
                     ! printf '%s' "${capability_studio_preflight}" |
                     grep -Eq '"realExternalCallCount"[[:space:]]*:[[:space:]]*0' ||
                     ! printf '%s' "${capability_studio_preflight}" |
-                    grep -Eq '"fallbackToReal"[[:space:]]*:[[:space:]]*false'; then
+                    grep -Eq '"fallbackToReal"[[:space:]]*:[[:space:]]*false' ||
+                    ! printf '%s' "${capability_studio_feature_rehearsal}" |
+                    grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*"resource-gateway.capability-studio.feature-rehearsal.v1"' ||
+                    ! printf '%s' "${capability_studio_feature_rehearsal}" |
+                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"TIMED_OUT"' ||
+                    ! printf '%s' "${capability_studio_feature_rehearsal}" |
+                    grep -Eq '"permissionMode"[[:space:]]*:[[:space:]]*"STRUCTURE_ONLY"' ||
+                    ! printf '%s' "${capability_studio_feature_rehearsal}" |
+                    grep -Eq '"realExternalCallCount"[[:space:]]*:[[:space:]]*0'; then
                     sleep 2
                     continue
                 fi

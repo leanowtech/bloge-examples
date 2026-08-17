@@ -110,6 +110,7 @@ class VisualCanvasDemoScriptTest {
                 "$(capability_studio_acceptance_url)",
                 "$(capability_studio_tutorial_branch_url)",
                 "$(capability_studio_tutorial_preflight_url)",
+                "$(capability_studio_feature_rehearsal_url)",
                 ".cardinality.api == 4",
                 ".cardinality.feature == 1",
                 ".cardinality.tool == 1",
@@ -120,7 +121,14 @@ class VisualCanvasDemoScriptTest {
                 "$preflight.unresolvedDependencies == 0",
                 "$preflight.realExternalCallCount == 0",
                 "$preflight.fallbackToReal == false",
-                "$preflight.fingerprint == $branch.fingerprint");
+                "$preflight.fingerprint == $branch.fingerprint",
+                ".schemaVersion == \"resource-gateway.capability-studio.feature-rehearsal.v1\"",
+                ".scenario.id == \"case-compensation-history-timeout\"",
+                ".run.status == \"TIMED_OUT\"",
+                ".run.realExternalCallCount == 0",
+                ".dataLens.permissionMode == \"STRUCTURE_ONLY\"",
+                "(.dataLens.nodes | length) == 6",
+                "(.dataLens.edges | length) == 5");
     }
 
     @Test
