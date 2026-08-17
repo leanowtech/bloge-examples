@@ -1,0 +1,78 @@
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 720" role="img" aria-labelledby="dsl-production-title dsl-production-desc">
+  <title id="dsl-production-title">DSL 业务资产生产架构</title>
+  <desc id="dsl-production-desc">运营人员定义业务意图与正确答案，编码智能体生成工程化变更，确定性编译与隔离验证形成可发布业务资产。</desc>
+  <defs>
+    <marker id="dsl-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="dsl-red-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B14D3C"/></marker>
+    <marker id="dsl-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8C5B16"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.zone{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#dsl-blue-arrow)}.feedback{fill:none;stroke:#B14D3C;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#dsl-red-arrow)}.gate{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#dsl-amber-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="720" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2C7A6B">BUSINESS ASSET COMPILER</text>
+  <text x="38" y="72" class="title">运营表达意图，编码智能体完成变更，平台确定性地证明结果</text>
+
+  <rect x="38" y="98" width="260" height="486" rx="16" class="zone"/>
+  <text x="58" y="130" class="eyebrow" style="fill:#8C5B16">01 · 业务输入</text>
+  <rect x="58" y="154" width="220" height="92" rx="12" class="node amber"/>
+  <text x="78" y="183" class="label">IntentSpec</text><text x="78" y="207" class="sub">目标 · 约束 · 例外</text><text x="78" y="228" class="micro">由业务 Owner 定义</text>
+  <rect x="58" y="270" width="220" height="92" rx="12" class="node"/>
+  <text x="78" y="299" class="label">AssetContext</text><text x="78" y="323" class="sub">Catalog · Schema · Policy</text><text x="78" y="344" class="micro">机器可检索的上下文</text>
+  <rect x="58" y="386" width="220" height="92" rx="12" class="node"/>
+  <text x="78" y="415" class="label">Reference Corpus</text><text x="78" y="439" class="sub">API · 示例 · 历史 DSL</text><text x="78" y="460" class="micro">复用现有行业知识</text>
+  <rect x="58" y="502" width="220" height="58" rx="12" class="node amber"/>
+  <text x="78" y="527" class="label">业务 Oracle</text><text x="78" y="548" class="sub">什么才算正确</text>
+
+  <rect x="326" y="98" width="292" height="486" rx="16" class="zone"/>
+  <text x="346" y="130" class="eyebrow" style="fill:#2C7A6B">02 · CODING AGENT</text>
+  <rect x="346" y="154" width="252" height="286" rx="14" class="node purple"/>
+  <circle cx="379" cy="190" r="13" fill="#2C7A6B"/><text x="374" y="195" font-size="13" font-weight="800" style="fill:#FFF">A</text>
+  <text x="404" y="196" class="label">受控工程工作台</text>
+  <rect x="366" y="222" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="244" class="label">上下文解析</text><text x="384" y="263" class="micro">定位资产与依赖</text>
+  <rect x="366" y="290" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="312" class="label">变更规划与生成</text><text x="384" y="331" class="micro">DSL · Scenario · Fixture</text>
+  <rect x="366" y="358" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="380" class="label">测试补齐与修订</text><text x="384" y="399" class="micro">基于诊断自动迭代</text>
+  <rect x="346" y="466" width="252" height="94" rx="12" class="node"/>
+  <text x="366" y="494" class="label">可审查 ChangeSet</text>
+  <text x="366" y="518" class="sub">Diff · 说明 · 测试资产</text>
+  <text x="366" y="540" class="micro">不直接绕过治理写入运行时</text>
+
+  <rect x="646" y="98" width="300" height="486" rx="16" class="zone"/>
+  <text x="666" y="130" class="eyebrow" style="fill:#2F6F9F">03 · 确定性编译</text>
+  <rect x="666" y="154" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="181" class="label">Parse / Schema</text><text x="686" y="204" class="sub">语法、类型、契约一致性</text>
+  <rect x="666" y="250" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="277" class="label">Dependency / Impact</text><text x="686" y="300" class="sub">依赖闭包与受影响资产</text>
+  <rect x="666" y="346" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="373" class="label">Canonical Contract</text><text x="686" y="396" class="sub">规范化输出 · Fingerprint</text>
+  <rect x="666" y="466" width="260" height="94" rx="12" class="node green"/>
+  <text x="686" y="494" class="label">隔离验证</text><text x="686" y="518" class="sub">Scenario · Coverage · Evidence</text><text x="686" y="540" class="micro">同输入得到可重复证明</text>
+
+  <rect x="974" y="98" width="308" height="486" rx="16" class="zone"/>
+  <text x="994" y="130" class="eyebrow" style="fill:#2F7D59">04 · 治理输出</text>
+  <rect x="994" y="154" width="268" height="112" rx="12" class="node green"/>
+  <text x="1014" y="183" class="label">可发布业务资产包</text>
+  <text x="1014" y="208" class="sub">Contract + DSL + Test Assets</text>
+  <text x="1014" y="232" class="sub">Revision + Signed Evidence</text>
+  <rect x="994" y="294" width="268" height="92" rx="12" class="node amber"/>
+  <text x="1014" y="323" class="label">人工确认门</text><text x="1014" y="347" class="sub">语义不确定 · 高风险例外</text><text x="1014" y="368" class="micro">业务 Owner / 双人复核</text>
+  <rect x="994" y="414" width="268" height="146" rx="12" class="node"/>
+  <text x="1014" y="443" class="label">Publication</text>
+  <text x="1014" y="468" class="sub">Eligible → Approved → Active</text>
+  <line x1="1014" y1="490" x2="1242" y2="490" stroke="#DCE4EC"/>
+  <text x="1014" y="516" class="micro">完整保存：意图、变更、评审、</text><text x="1014" y="537" class="micro">测试、覆盖与发布决策</text>
+
+  <path d="M298 316 H316" class="flow"/><path d="M618 513 H636" class="flow"/><path d="M946 513 H964" class="flow"/>
+  <path d="M946 383 H964 V210 H984" class="flow"/>
+  <path d="M1128 386 V404" class="gate"/>
+  <path d="M796 466 V446 H628 V386 H608" class="feedback"/>
+  <text x="650" y="448" class="micro" style="fill:#B14D3C">诊断到具体 DSL / Fixture / Binding</text>
+  <path d="M278 531 H314 V200 H336" class="gate"/>
+
+  <rect x="38" y="612" width="1244" height="70" rx="14" fill="#1F2A3D"/>
+  <text x="64" y="640" font-size="14" font-weight="750" style="fill:#9EC5DE">责任边界</text>
+  <text x="64" y="663" font-size="14" style="fill:#DCE4EC">运营定义意图与正确答案　·　编码智能体承担检索、修改和测试劳动　·　确定性平台给出可重复证明　·　授权人员批准风险</text>
+</svg>

@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="drawio" modified="2026-08-13T04:10:00.000Z" agent="Codex" version="31.1.8">
+  <diagram id="resource-gateway-architecture" name="Page-1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="920" math="0" shadow="0" background="#FFFFFF">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="2" value="RESOURCE GATEWAY · 业务资产运行架构" style="text;html=1;align=left;verticalAlign=middle;fontSize=20;fontStyle=1;fontColor=#1A1D23;" vertex="1" parent="1">
+          <mxGeometry x="40" y="10" width="620" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="3" value="业务 Owner / 运营&#xa;定义意图 · Oracle · 风险" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="60" width="280" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="4" value="编码智能体 / IDE / CLI&#xa;检索 · 生成 · 修改 · 验证" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#7C3AED;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="390" y="60" width="320" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="5" value="蓝色实线：业务执行　·　琥珀色虚线：管理控制&#xa;灰色虚线：Trace / Coverage / Evidence 回流" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F4F6F9;strokeColor=#E5E8ED;fontColor=#4A5160;fontSize=12;align=center;" vertex="1" parent="1">
+          <mxGeometry x="750" y="60" width="340" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="6" value="业务消费者&#xa;API / Event / Scheduled Job" style="rounded=1;arcSize=14;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#2563EB;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="60" width="270" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="7" value="资产控制面 · AUTHORING &amp; ASSET CONTROL PLANE" style="swimlane;startSize=34;rounded=1;arcSize=10;html=1;whiteSpace=wrap;container=1;pointerEvents=0;fillColor=#FAFAFA;swimlaneFillColor=#FFFFFF;strokeColor=#E5E8ED;strokeWidth=2;fontColor=#8993A4;fontSize=13;fontStyle=1;horizontal=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="150" width="1420" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="8" value="Resource Registry&#xa;Descriptor · Schema · Protocol" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="7">
+          <mxGeometry x="30" y="55" width="315" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="9" value="Graph / BLOGE DSL&#xa;Operator · Function Library" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#2563EB;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="7">
+          <mxGeometry x="375" y="55" width="315" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="10" value="Contract / Scenario / FixtureBundle&#xa;Oracle · Coverage · Promotion Rule" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#7C3AED;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="7">
+          <mxGeometry x="720" y="55" width="315" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="11" value="Revision / Publication / Impact&#xa;Fingerprint · Owner · Governance" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="7">
+          <mxGeometry x="1065" y="55" width="315" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="12" value="业务执行面 · EXECUTION PLANE" style="swimlane;startSize=34;rounded=1;arcSize=10;html=1;whiteSpace=wrap;container=1;pointerEvents=0;fillColor=#FAFAFA;swimlaneFillColor=#FFFFFF;strokeColor=#E5E8ED;strokeWidth=2;fontColor=#8993A4;fontSize=13;fontStyle=1;horizontal=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="350" width="1420" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="13" value="Serving APIs&#xa;Request · Tenant Context · SSE" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#8993A4;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="12">
+          <mxGeometry x="100" y="55" width="310" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="14" value="BLOGE Graph Engine / Execution Controls&#xa;Schedule · Branch · Retry · Quota · Breaker" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#2563EB;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="12">
+          <mxGeometry x="545" y="55" width="360" height="65" as="geometry" />
+        </mxCell>
+        <mxCell id="15" value="HttpResourceOperator&#xa;一个机制 · 多种 API" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#F3EEFF;strokeColor=#7C3AED;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="12">
+          <mxGeometry x="1040" y="55" width="300" height="65" as="geometry" />
+        </mxCell>
+
+        <mxCell id="16" value="资源适配边界 · PROVIDER BOUNDARY" style="swimlane;startSize=34;rounded=1;arcSize=10;html=1;whiteSpace=wrap;container=1;pointerEvents=0;fillColor=#FAFAFA;swimlaneFillColor=#FFFFFF;strokeColor=#E5E8ED;strokeWidth=2;fontColor=#8993A4;fontSize=13;fontStyle=1;horizontal=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="530" width="1420" height="125" as="geometry" />
+        </mxCell>
+        <mxCell id="17" value="Resolution / Mapping / Auth / Transport&#xa;Validate · Extract · ResponseProtocol" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="16">
+          <mxGeometry x="180" y="50" width="480" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="18" value="外部系统 / API / 事件源&#xa;Provider 差异停留在资源边界" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;dashed=1;dashPattern=8 5;" vertex="1" parent="16">
+          <mxGeometry x="810" y="50" width="480" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="19" value="隔离测试与证据面 · TESTING &amp; EVIDENCE PLANE（test / staging only）" style="swimlane;startSize=34;rounded=1;arcSize=10;html=1;whiteSpace=wrap;container=1;pointerEvents=0;fillColor=#FAFAFA;swimlaneFillColor=#FFFFFF;strokeColor=#E5E8ED;strokeWidth=2;fontColor=#8993A4;fontSize=13;fontStyle=1;horizontal=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="690" width="1420" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="20" value="Testing Control Plane&#xa;Purpose · Policy · EffectiveExecutionPlan" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#FFFBEB;strokeColor=#D97706;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="19">
+          <mxGeometry x="60" y="55" width="370" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="21" value="Isolated Test Runtime&#xa;Fixture Consumption · Trace · Coverage" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#EEF4FF;strokeColor=#2563EB;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="19">
+          <mxGeometry x="525" y="55" width="370" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="22" value="Test Kit / Governance&#xa;Evidence Verify · CI · Promotion" style="rounded=1;arcSize=12;whiteSpace=wrap;html=1;fillColor=#ECFDF5;strokeColor=#059669;strokeWidth=2;fontColor=#1A1D23;fontSize=14;fontStyle=1;" vertex="1" parent="19">
+          <mxGeometry x="990" y="55" width="370" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="23" value="业务请求" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;fontColor=#2563EB;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0;entryY=0.5;" edge="1" parent="1" source="6" target="13">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="205" y="140" /><mxPoint x="20" y="140" /><mxPoint x="20" y="438" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="24" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="13" target="14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="25" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="14" target="15">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="26" value="资源调用" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;fontColor=#2563EB;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=1;entryY=0.5;" edge="1" parent="1" source="15" target="17">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1230" y="555" /><mxPoint x="720" y="555" /><mxPoint x="720" y="605" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="27" value="HTTP / Event" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=4;endArrow=block;endFill=1;fontColor=#2563EB;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="17" target="18">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="28" value="业务规则与 Oracle" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="3" target="10">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="29" value="资产变更" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="4" target="9">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="30" value="已批准 DSL" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="9" target="14">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="31" value="Descriptor / Policy" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="8" target="15">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="228" y="335" /><mxPoint x="1230" y="335" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="32" value="Revision / Gate" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0.5;exitY=1;entryX=0.75;entryY=0;" edge="1" parent="1" source="11" target="14">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1223" y="335" /><mxPoint x="815" y="335" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="33" value="计划与替身策略" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#D97706;strokeWidth=2.5;dashed=1;dashPattern=8 5;endArrow=block;endFill=1;fontColor=#D97706;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=0;exitY=0.5;entryX=0.25;entryY=1;" edge="1" parent="1" source="20" target="14">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="20" y="785" /><mxPoint x="20" y="515" /><mxPoint x="675" y="515" /></Array></mxGeometry>
+        </mxCell>
+
+        <mxCell id="34" value="隔离执行" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#2563EB;strokeWidth=3;endArrow=block;endFill=1;fontColor=#2563EB;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="20" target="21">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="35" value="可验证 Evidence" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8993A4;strokeWidth=2.5;dashed=1;dashPattern=5 5;endArrow=block;endFill=1;fontColor=#4A5160;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="21" target="22">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="36" value="Trace / Coverage" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8993A4;strokeWidth=2.5;dashed=1;dashPattern=5 5;endArrow=block;endFill=1;fontColor=#4A5160;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="15" target="21">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1470" y="438" /><mxPoint x="1470" y="675" /><mxPoint x="750" y="675" /></Array></mxGeometry>
+        </mxCell>
+        <mxCell id="37" value="Evidence / Impact" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#8993A4;strokeWidth=2.5;dashed=1;dashPattern=5 5;endArrow=block;endFill=1;fontColor=#4A5160;fontSize=11;fontStyle=1;labelBackgroundColor=#FFFFFF;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="22" target="11">
+          <mxGeometry relative="1" as="geometry"><Array as="points"><mxPoint x="1480" y="785" /><mxPoint x="1480" y="245" /></Array></mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

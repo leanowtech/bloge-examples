@@ -5,7 +5,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="title" value="Resource Gateway 渐进式算子与 Built-in Function 库创作架构" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=18;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+        <mxCell id="title" value="Resource Gateway 渐进式算子与内置函数库创作架构" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=18;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="1080" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="subtitle" value="一个权威标准合同，四种人类友好的创作入口；易用性层不接管运行时真相" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=11;fontColor=#546e7a;" vertex="1" parent="1">

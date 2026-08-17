@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Resource Gateway 业务价值、商业机会、产品策略与集团决策行动计划">
+<title>Resource Gateway 商业机会与行动计划</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f8fb;
+  --bg-soft: #f0f4f8;
+  --bg-tint: #eaf0f5;
+  --surface: #ffffff;
+  --surface-soft: #fbfcfe;
+  --ink: #1f2a3d;
+  --ink-2: #4f6073;
+  --ink-3: #66768a;
+  --line: #dce4ec;
+  --line-strong: #c6d2de;
+  --brand: #2f6f9f;
+  --brand-strong: #235778;
+  --brand-soft: #eaf3f8;
+  --accent: #2c7a6b;
+  --accent-soft: #eaf6f3;
+  --green: #2f7d59;
+  --green-soft: #eaf6ef;
+  --amber: #8c5b16;
+  --amber-soft: #fff6e6;
+  --red: #b14d3c;
+  --red-soft: #fff0ed;
+  --nav-bg: rgba(255, 255, 255, 0.96);
+  --shadow: 0 1px 2px rgba(31, 42, 61, 0.04), 0 8px 24px rgba(31, 42, 61, 0.06);
+  --shadow-lg: 0 16px 42px rgba(31, 42, 61, 0.09);
+  --radius-sm: 8px;
+  --radius: 12px;
+  --radius-lg: 16px;
+  --focus-ring: rgba(47, 111, 159, 0.3);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111820;
+  --bg-soft: #1c2834;
+  --bg-tint: #23313d;
+  --surface: #17212b;
+  --surface-soft: #1a2530;
+  --ink: #edf3f8;
+  --ink-2: #b8c5d1;
+  --ink-3: #8798a8;
+  --line: #2b3a47;
+  --line-strong: #3a4b59;
+  --brand: #73acd0;
+  --brand-strong: #95c3df;
+  --brand-soft: rgba(115, 172, 208, 0.13);
+  --accent: #65b7a6;
+  --accent-soft: rgba(101, 183, 166, 0.13);
+  --green: #70c39a;
+  --green-soft: rgba(112, 195, 154, 0.13);
+  --amber: #ddb261;
+  --amber-soft: rgba(221, 178, 97, 0.13);
+  --red: #e58d7f;
+  --red-soft: rgba(229, 141, 127, 0.13);
+  --nav-bg: rgba(17, 24, 32, 0.96);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 8px 24px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 16px 42px rgba(0, 0, 0, 0.28);
+  --focus-ring: rgba(115, 172, 208, 0.38);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+button, summary { color: inherit; font: inherit; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex="0"]:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+button:disabled { cursor: not-allowed; opacity: 0.42; }
+
+.progress-line {
+  position: fixed;
+  z-index: 1001;
+  top: 63px;
+  left: 0;
+  width: 0;
+  height: 3px;
+  background: var(--brand);
+}
+
+.report-nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 1000;
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--nav-bg);
+  backdrop-filter: blur(14px);
+}
+
+.nav-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.94rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.nav-mark {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--brand);
+}
+
+.nav-mark::before, .nav-mark::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  height: 2px;
+  border-radius: 2px;
+  background: #fff;
+}
+.nav-mark::before { top: 8px; width: 12px; }
+.nav-mark::after { top: 14px; width: 8px; }
+
+.nav-links {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a {
+  padding: 7px 11px;
+  border-radius: 8px;
+  color: var(--ink-2);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 0.16s ease, background-color 0.16s ease;
+}
+.nav-links a:hover { color: var(--ink); background: var(--bg-soft); }
+.nav-links a.active { color: var(--brand-strong); background: var(--brand-soft); }
+
+.theme-toggle {
+  flex: 0 0 auto;
+  min-width: 68px;
+  min-height: 40px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, background-color 0.16s ease;
+}
+.theme-toggle:hover { border-color: var(--brand); color: var(--brand); background: var(--brand-soft); }
+.theme-icon { font-size: 0.95rem; }
+
+.report-section {
+  position: relative;
+  padding: 96px 32px;
+  scroll-margin-top: 62px;
+  overflow: clip;
+  background: var(--surface);
+}
+.report-section.tinted { background: var(--bg); }
+.container { max-width: 1160px; margin: 0 auto; }
+.container-wide { max-width: 1360px; margin: 0 auto; }
+.container-narrow { max-width: 840px; margin: 0 auto; }
+
+h1, h2, h3 { overflow-wrap: anywhere; line-height: 1.18; letter-spacing: -0.025em; }
+h1 { max-width: 780px; font-size: clamp(2.5rem, 4.5vw, 4rem); line-height: 1.1; }
+h2 { max-width: 900px; font-size: clamp(1.85rem, 3vw, 2.65rem); }
+h3 { font-size: 1.1rem; }
+.lead {
+  max-width: 820px;
+  color: var(--ink-2);
+  font-size: 1.04rem;
+  line-height: 1.78;
+}
+.section-header { margin-bottom: 44px; }
+.section-header .lead { margin-top: 15px; }
+.section-header.centered { text-align: center; }
+.section-header.centered h2, .section-header.centered .lead { margin-inline: auto; }
+.question-label {
+  display: inline-flex;
+  margin-bottom: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-soft);
+  color: var(--brand-strong);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+}
+
+.fade-in { opacity: 0; transform: translateY(10px); transition: opacity 0.38s ease, transform 0.38s ease; }
+.fade-in.visible { opacity: 1; transform: none; }
+
+.hero {
+  min-height: 92vh;
+  padding-top: 134px;
+  display: grid;
+  align-items: center;
+  background: linear-gradient(180deg, #f4f8fb 0%, var(--surface) 74%);
+}
+:root[data-theme="dark"] .hero { background: linear-gradient(180deg, #15212b 0%, var(--surface) 74%); }
+.hero-layout { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(420px, 0.92fr); gap: 58px; align-items: center; }
+.hero-copy, .hero-visual { min-width: 0; }
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 24px;
+  color: var(--brand-strong);
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+.hero-badge::before { content: ""; width: 18px; height: 2px; background: var(--brand); }
+.hero-copy .lead { margin-top: 24px; }
+
+.hero-brief {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-block: 1px solid var(--line);
+}
+.brief-item { min-width: 0; padding: 18px 18px 18px 0; }
+.brief-item + .brief-item { padding-left: 18px; border-left: 1px solid var(--line); }
+.brief-item small, .visual-caption, .case-head small, .diagram-head small, .mapping-column small, .roadmap-step small {
+  display: block;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.brief-item strong { display: block; margin-top: 5px; font-size: 0.9rem; line-height: 1.5; }
+
+.hero-visual {
+  padding: 28px;
+  border: 1px solid var(--line-strong);
+  border-top: 4px solid var(--brand);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.visual-caption { margin-bottom: 18px; color: var(--brand-strong); }
+.story-map { display: grid; grid-template-columns: 1fr; gap: 7px; }
+.story-node {
+  min-height: 96px;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.story-node small { color: var(--ink-3); font-size: 0.72rem; font-weight: 750; }
+.story-node strong { display: block; margin-top: 3px; font-size: 0.94rem; }
+.story-node span { display: block; margin-top: 5px; color: var(--ink-3); font-size: 0.78rem; line-height: 1.5; }
+.story-node.active { border-color: var(--brand); background: var(--brand-soft); }
+.story-node.result { border-color: var(--green); background: var(--green-soft); }
+.story-arrow { height: 10px; color: var(--brand); font-size: 1.1rem; font-weight: 800; line-height: 10px; text-align: center; transform: rotate(90deg); }
+.visual-note { margin-top: 18px; color: var(--ink-3); font-size: 0.78rem; }
+
+.logic-chain {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 28px;
+}
+.logic-step {
+  position: relative;
+  min-height: 136px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.logic-step::after {
+  content: "→";
+  position: absolute;
+  top: 47px;
+  right: -21px;
+  color: var(--brand);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.logic-step:last-child::after { display: none; }
+.logic-step small { color: var(--brand-strong); font-size: 0.74rem; font-weight: 740; }
+.logic-step strong { display: block; margin-top: 8px; }
+.logic-step span { display: block; margin-top: 7px; color: var(--ink-3); font-size: 0.8rem; }
+.logic-step.result { border-color: var(--green); background: var(--green-soft); }
+.decision-strip {
+  margin-top: 24px;
+  padding: 16px 18px;
+  display: flex;
+  gap: 8px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  color: var(--ink-2);
+  font-size: 0.9rem;
+}
+.decision-strip strong { color: var(--ink); }
+
+.case-board {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.case-head {
+  padding: 20px 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.case-head h3 { margin-top: 3px; }
+.case-badge {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border-radius: 7px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.case-context { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--line); background: var(--surface-soft); }
+.case-context > div { padding: 16px 20px; }
+.case-context > div + div { border-left: 1px solid var(--line); }
+.case-context small { display: block; color: var(--ink-3); font-size: 0.74rem; font-weight: 700; }
+.case-context strong { display: block; margin-top: 4px; font-size: 0.84rem; }
+.case-flow {
+  padding: 30px 22px 22px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(126px, 1fr) auto) minmax(126px, 1fr);
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+}
+.case-step {
+  min-height: 124px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+.case-step.gate { border-color: var(--amber); background: var(--amber-soft); }
+.case-step.done { border-color: var(--green); background: var(--green-soft); }
+.actor {
+  display: inline-flex;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: 0.7rem;
+  font-weight: 720;
+}
+.actor.digital { background: var(--brand-soft); color: var(--brand-strong); }
+.actor.human { background: var(--amber-soft); color: var(--amber); }
+.actor.system { background: var(--accent-soft); color: var(--accent); }
+.actor.evidence { background: var(--green-soft); color: var(--green); }
+.case-step strong { display: block; margin-top: 10px; font-size: 0.88rem; }
+.case-step small { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.75rem; line-height: 1.5; }
+.case-arrow { color: var(--brand); font-size: 1.05rem; font-weight: 800; }
+.case-branch {
+  margin: 0 22px 22px;
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  border: 1px dashed var(--amber);
+  border-radius: 9px;
+  color: var(--ink-2);
+  font-size: 0.78rem;
+}
+.case-branch span::before { content: "•"; margin-right: 7px; color: var(--amber); }
+.case-mapping { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); background: var(--brand-soft); }
+.case-mapping > div { padding: 16px 20px; }
+.case-mapping > div + div { border-left: 1px solid rgba(47, 111, 159, 0.18); }
+.case-mapping small { display: block; color: var(--brand-strong); font-size: 0.72rem; font-weight: 700; }
+.case-mapping strong { display: block; margin-top: 3px; font-size: 0.84rem; }
+
+.principle-system { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; align-items: stretch; }
+.principle-core {
+  min-height: 260px;
+  padding: 30px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-lg);
+  background: var(--brand-soft);
+}
+.principle-core small { color: var(--brand-strong); font-size: 0.76rem; font-weight: 720; }
+.principle-core strong { margin-top: 10px; font-size: 1.35rem; line-height: 1.45; }
+.principle-core span { margin-top: 15px; color: var(--ink-2); font-size: 0.86rem; }
+.principle-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.principle-item {
+  padding: 18px;
+  display: flex;
+  gap: 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.principle-item > span { color: var(--brand); font-size: 0.75rem; font-weight: 760; }
+.principle-item strong { font-size: 0.92rem; }
+.principle-item p { margin-top: 5px; color: var(--ink-2); font-size: 0.8rem; }
+
+.view-tabs {
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 18px;
+  padding: 4px;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+.tab-button {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+.tab-button:hover { color: var(--ink); background: var(--surface-soft); }
+.tab-button.active, .tab-button[aria-selected="true"] { color: var(--brand-strong); background: var(--surface); box-shadow: 0 1px 3px rgba(31, 42, 61, 0.08); }
+.tab-panel[hidden] { display: none; }
+
+.diagram-shell {
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.diagram-head {
+  min-height: 62px;
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.diagram-head strong { display: block; margin-top: 2px; }
+.diagram-hint { color: var(--ink-3); font-size: 0.76rem; }
+.diagram-actions { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface-soft); }
+.diagram-actions button {
+  min-width: 40px;
+  height: 38px;
+  padding: 0 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.diagram-actions button:last-child { border-right: 0; }
+.diagram-actions button:hover:not(:disabled) { color: var(--brand); background: var(--brand-soft); }
+.diagram-legend {
+  padding: 10px 18px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink-2);
+  font-size: 0.76rem;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 8px; }
+.legend-line { width: 32px; border-top: 4px solid var(--brand); }
+.legend-line.control { border-top: 2px dashed var(--amber); }
+.legend-line.evidence { border-top: 2px dashed var(--ink-3); }
+.diagram-viewport {
+  min-height: 480px;
+  padding: 26px;
+  overflow: auto;
+  background: var(--surface-soft);
+}
+.diagram-canvas { min-width: 980px; transform-origin: top left; }
+.diagram-canvas > svg { display: block; width: 100%; height: auto; }
+
+.info-flow-view { padding: 36px 24px 28px; display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr) auto) minmax(150px, 1fr); gap: 10px; align-items: center; overflow-x: auto; }
+.flow-lane { min-height: 120px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.flow-lane.primary { border-color: var(--brand); background: var(--brand-soft); }
+.flow-lane.accent { border-color: var(--accent); background: var(--accent-soft); }
+.flow-lane.result { border-color: var(--green); background: var(--green-soft); }
+.flow-lane small { display: block; color: var(--ink-3); font-size: 0.74rem; font-weight: 700; }
+.flow-lane strong { display: block; margin-top: 8px; font-size: 0.88rem; line-height: 1.55; }
+.flow-connector { color: var(--brand); font-size: 1.1rem; font-weight: 800; }
+.feedback-rail { margin: 0 24px 24px; padding: 13px 16px; border: 1px dashed var(--ink-3); border-radius: 8px; color: var(--ink-2); font-size: 0.82rem; }
+
+.mapping-board { padding: 28px; display: grid; grid-template-columns: repeat(3, minmax(170px, 1fr) auto) minmax(170px, 1fr); gap: 10px; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); overflow-x: auto; }
+.mapping-column { min-height: 126px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.mapping-column.active { border-color: var(--brand); background: var(--brand-soft); }
+.mapping-column.result { border-color: var(--green); background: var(--green-soft); }
+.mapping-column strong { display: block; margin-top: 7px; }
+.mapping-column span { display: block; margin-top: 7px; color: var(--ink-3); font-size: 0.78rem; }
+.mapping-arrow { color: var(--brand); font-size: 1.1rem; font-weight: 800; }
+
+.detail-panel { margin-top: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.detail-panel summary { min-height: 48px; padding: 13px 18px; display: flex; align-items: center; color: var(--ink-2); font-size: 0.84rem; font-weight: 700; cursor: pointer; }
+.detail-panel summary:hover { color: var(--brand-strong); background: var(--brand-soft); }
+.detail-panel[open] summary { border-bottom: 1px solid var(--line); }
+.detail-grid { padding: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.detail-grid > div { padding: 15px; border-left: 2px solid var(--line-strong); background: var(--surface-soft); }
+.detail-grid strong { display: block; font-size: 0.86rem; }
+.detail-grid span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.78rem; }
+
+.workflow { padding: 22px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); }
+.workflow-io { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+.workflow-io > div { padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.workflow-io .output { border-color: var(--green); background: var(--green-soft); }
+.workflow-io small { color: var(--ink-3); font-size: 0.74rem; font-weight: 700; }
+.workflow-io strong { display: block; margin-top: 4px; font-size: 0.86rem; }
+.workflow-states { display: grid; grid-template-columns: repeat(5, 1fr); gap: 24px; }
+.workflow-state { position: relative; min-height: 112px; padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.workflow-state::after { content: "→"; position: absolute; top: 39px; right: -19px; color: var(--brand); font-size: 1.12rem; font-weight: 800; }
+.workflow-state:last-child::after { display: none; }
+.workflow-state.gate { border-color: var(--amber); background: var(--amber-soft); }
+.workflow-state.done { border-color: var(--green); background: var(--green-soft); }
+.workflow-state small { color: var(--ink-3); font-size: 0.72rem; font-weight: 720; }
+.workflow-state strong { display: block; margin-top: 7px; font-size: 0.84rem; }
+.workflow-state span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.76rem; }
+.feedback-return { margin-top: 18px; padding: 12px 15px; border: 1px dashed var(--amber); border-radius: 8px; color: var(--ink-2); font-size: 0.8rem; }
+
+.roadmap-track { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.roadmap-track::before { content: ""; position: absolute; top: 22px; left: 8%; right: 8%; height: 2px; background: var(--line-strong); }
+.roadmap-step { position: relative; min-height: 220px; padding: 38px 20px 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.roadmap-step::before { content: ""; position: absolute; top: 16px; left: 20px; width: 13px; height: 13px; border: 3px solid var(--surface); border-radius: 50%; background: var(--line-strong); box-shadow: 0 0 0 1px var(--line-strong); }
+.roadmap-step.current { border-color: var(--brand); background: var(--brand-soft); }
+.roadmap-step.current::before { background: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.roadmap-step.result { border-color: var(--green); background: var(--green-soft); }
+.roadmap-step.result::before { background: var(--green); box-shadow: 0 0 0 1px var(--green); }
+.roadmap-step h3 { margin-top: 6px; }
+.roadmap-step p { margin-top: 9px; color: var(--ink-2); font-size: 0.84rem; }
+.roadmap-step > strong { display: block; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 0.76rem; line-height: 1.55; }
+
+.card { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.card.interactive { cursor: pointer; transition: border-color 0.16s ease, background-color 0.16s ease; }
+.card.interactive:hover { border-color: var(--brand); background: var(--brand-soft); }
+.card-kicker { color: var(--brand-strong); font-size: 0.74rem; font-weight: 720; }
+.card h3 { margin-top: 8px; }
+.card p { margin-top: 7px; color: var(--ink-2); font-size: 0.84rem; }
+.card.result { border-left: 3px solid var(--green); }
+.card.attention { border-left: 3px solid var(--amber); }
+.card.risk { border-left: 3px solid var(--red); }
+.grid-2, .grid-3, .grid-4 { display: grid; gap: 14px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+
+.verdict {
+  margin-top: 28px;
+  padding: 17px 19px;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent-soft);
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+.verdict strong { color: var(--ink); }
+.source-note { margin-top: 16px; color: var(--ink-3); font-size: 0.76rem; }
+.source-note a { color: var(--brand-strong); text-underline-offset: 3px; }
+
+.signal-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 18px; align-items: stretch; }
+.signal-column { padding: 24px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
+.signal-column.confirmed { border-top: 4px solid var(--green); }
+.signal-column.unproven { border-top: 4px solid var(--amber); }
+.signal-column h3 { margin-bottom: 14px; }
+.signal-list { display: grid; gap: 10px; }
+.signal-item { padding: 12px 14px; display: grid; grid-template-columns: 86px 1fr; gap: 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.signal-item small { color: var(--ink-3); font-size: 0.72rem; font-weight: 760; }
+.signal-item strong { font-size: 0.84rem; line-height: 1.55; }
+
+.value-outcomes { margin-top: 18px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+.value-outcome { min-height: 132px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.value-outcome small { color: var(--brand-strong); font-size: 0.72rem; font-weight: 760; }
+.value-outcome strong { display: block; margin-top: 7px; font-size: 0.88rem; }
+.value-outcome span { display: block; margin-top: 7px; color: var(--ink-3); font-size: 0.76rem; line-height: 1.5; }
+
+.buyer-map { display: grid; grid-template-columns: 1.08fr 0.92fr; gap: 18px; }
+.buyer-board, .wedge-board { padding: 24px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); }
+.buyer-row { padding: 13px 0; display: grid; grid-template-columns: 118px 1fr; gap: 16px; border-bottom: 1px solid var(--line); }
+.buyer-row:last-child { border-bottom: 0; }
+.buyer-row small { color: var(--ink-3); font-size: 0.73rem; font-weight: 740; }
+.buyer-row strong { font-size: 0.84rem; line-height: 1.55; }
+.wedge-board { border-color: var(--brand); background: var(--brand-soft); }
+.wedge-board > small { color: var(--brand-strong); font-size: 0.74rem; font-weight: 760; }
+.wedge-board h3 { margin-top: 7px; font-size: 1.3rem; }
+.wedge-board p { margin-top: 10px; color: var(--ink-2); font-size: 0.86rem; }
+.wedge-checks { margin-top: 17px; display: grid; gap: 8px; }
+.wedge-checks span { padding-left: 18px; position: relative; color: var(--ink-2); font-size: 0.8rem; }
+.wedge-checks span::before { content: ""; position: absolute; top: 0.58em; left: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+
+.package-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.package-card { min-height: 206px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.package-card.recommended { border-color: var(--brand); background: var(--brand-soft); }
+.package-card small { color: var(--brand-strong); font-size: 0.72rem; font-weight: 760; }
+.package-card h3 { margin-top: 8px; }
+.package-card p { margin-top: 9px; color: var(--ink-2); font-size: 0.8rem; }
+.package-card strong { display: block; margin-top: 15px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--ink-2); font-size: 0.76rem; }
+
+.model-grid { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 18px; align-items: start; }
+.revenue-stack { display: grid; gap: 10px; }
+.revenue-line { padding: 15px 16px; display: grid; grid-template-columns: 104px 1fr; gap: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); }
+.revenue-line small { color: var(--brand-strong); font-size: 0.72rem; font-weight: 760; }
+.revenue-line strong { font-size: 0.82rem; line-height: 1.55; }
+.calculator { padding: 22px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow); }
+.calculator h3 { margin-bottom: 5px; }
+.calculator > p { color: var(--ink-3); font-size: 0.78rem; }
+.form-grid { margin-top: 18px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.field { display: grid; gap: 5px; }
+.field label { color: var(--ink-2); font-size: 0.74rem; font-weight: 700; }
+.field input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-soft); color: var(--ink); font: inherit; font-size: 0.84rem; }
+.field input:focus { border-color: var(--brand); outline: 3px solid var(--focus-ring); }
+.calc-result { margin-top: 16px; padding: 15px 16px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; border-radius: 10px; background: var(--brand-soft); }
+.calc-result small { display: block; color: var(--ink-3); font-size: 0.7rem; font-weight: 720; }
+.calc-result strong { display: block; margin-top: 4px; color: var(--brand-strong); font-size: 1rem; }
+.calc-warning { margin-top: 10px; color: var(--ink-3); font-size: 0.72rem; }
+
+.risk-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.risk-card { min-height: 188px; padding: 18px; border: 1px solid var(--line); border-left: 3px solid var(--amber); border-radius: var(--radius); background: var(--surface); }
+.risk-card.high { border-left-color: var(--red); }
+.risk-card small { color: var(--ink-3); font-size: 0.72rem; font-weight: 760; }
+.risk-card h3 { margin-top: 7px; }
+.risk-card p { margin-top: 8px; color: var(--ink-2); font-size: 0.8rem; }
+.risk-card strong { display: block; margin-top: 13px; color: var(--ink-2); font-size: 0.76rem; }
+
+.decision-board { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; align-items: stretch; }
+.decision-asks, .stop-rules { padding: 24px; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface); }
+.decision-asks { border-top: 4px solid var(--brand); }
+.stop-rules { border-top: 4px solid var(--red); }
+.decision-list { margin-top: 16px; display: grid; gap: 10px; counter-reset: decision; }
+.decision-list li { list-style: none; position: relative; padding: 12px 14px 12px 46px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); color: var(--ink-2); font-size: 0.82rem; }
+.decision-list li::before { counter-increment: decision; content: counter(decision, decimal-leading-zero); position: absolute; left: 14px; top: 11px; color: var(--brand-strong); font-size: 0.72rem; font-weight: 800; }
+.stop-rules ul { margin-top: 16px; display: grid; gap: 10px; }
+.stop-rules li { list-style: none; padding-left: 18px; position: relative; color: var(--ink-2); font-size: 0.82rem; }
+.stop-rules li::before { content: ""; position: absolute; left: 0; top: 0.58em; width: 8px; height: 8px; border-radius: 2px; background: var(--red); }
+
+.report-footer { padding: 38px 32px; border-top: 1px solid var(--line); background: var(--surface); color: var(--ink-3); text-align: center; font-size: 0.78rem; }
+
+@media (max-width: 1100px) {
+  .hero { min-height: auto; }
+  .hero-layout { grid-template-columns: 1fr; }
+  .hero-visual { max-width: 760px; }
+  .logic-chain { grid-template-columns: repeat(2, 1fr); }
+  .logic-step:nth-child(2)::after { display: none; }
+  .principle-system { grid-template-columns: 1fr; }
+  .detail-grid, .roadmap-track, .grid-4 { grid-template-columns: repeat(2, 1fr); }
+  .roadmap-track::before { display: none; }
+  .workflow-states { grid-template-columns: repeat(3, 1fr); }
+  .workflow-state:nth-child(3)::after { display: none; }
+  .value-outcomes { grid-template-columns: repeat(3, 1fr); }
+  .package-grid, .risk-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .report-nav { padding: 0 14px; gap: 10px; }
+  .nav-logo { font-size: 0; gap: 0; }
+  .theme-toggle { min-width: 40px; width: 40px; padding: 0; }
+  .theme-label { display: none; }
+  .report-section { padding: 72px 18px; }
+  .hero { padding-top: 110px; }
+  h1 { font-size: 2.35rem; }
+  .hero-brief, .case-context, .case-mapping, .logic-chain, .principle-grid, .detail-grid, .workflow-io, .workflow-states, .roadmap-track, .grid-2, .grid-3, .grid-4, .signal-grid, .value-outcomes, .buyer-map, .package-grid, .model-grid, .risk-grid, .decision-board, .form-grid, .calc-result { grid-template-columns: 1fr; }
+  .brief-item { padding: 14px 0; }
+  .brief-item + .brief-item { padding-left: 0; border-top: 1px solid var(--line); border-left: 0; }
+  .logic-step::after, .logic-step:nth-child(2)::after, .workflow-state::after, .workflow-state:nth-child(3)::after {
+    display: block;
+    top: auto;
+    right: 50%;
+    bottom: -20px;
+    transform: translateX(50%) rotate(90deg);
+  }
+  .logic-step:last-child::after, .workflow-state:last-child::after { display: none; }
+  .decision-strip { flex-direction: column; }
+  .case-head { align-items: flex-start; flex-direction: column; }
+  .case-context > div + div, .case-mapping > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .diagram-head { align-items: flex-start; flex-direction: column; }
+  .diagram-viewport { min-height: 360px; padding: 16px; }
+  .diagram-actions { align-self: stretch; }
+  .diagram-actions button { flex: 1; }
+  .workflow { padding: 16px; }
+  .view-tabs { width: 100%; }
+  .tab-button { flex: 1 0 auto; }
+  .signal-item, .buyer-row, .revenue-line { grid-template-columns: 1fr; gap: 4px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  :root, :root[data-theme="dark"] {
+    color-scheme: light;
+    --bg: #f6f8fb;
+    --bg-soft: #f0f4f8;
+    --bg-tint: #eaf0f5;
+    --surface: #ffffff;
+    --surface-soft: #fbfcfe;
+    --ink: #1f2a3d;
+    --ink-2: #4f6073;
+    --ink-3: #66768a;
+    --line: #dce4ec;
+    --line-strong: #c6d2de;
+    --brand: #2f6f9f;
+    --brand-strong: #235778;
+    --brand-soft: #eaf3f8;
+    --accent: #2c7a6b;
+    --accent-soft: #eaf6f3;
+    --green: #2f7d59;
+    --green-soft: #eaf6ef;
+    --amber: #8c5b16;
+    --amber-soft: #fff6e6;
+    --red: #b14d3c;
+    --red-soft: #fff0ed;
+  }
+  .report-nav, .progress-line, .theme-toggle, .diagram-actions { display: none !important; }
+  .report-section { padding: 46px 24px; background: #fff !important; }
+  .fade-in { opacity: 1; transform: none; }
+  .diagram-shell, .case-board, .workflow { box-shadow: none; }
+  .tab-panel[hidden] { display: block !important; margin-top: 22px; }
+}
+</style>
+</head>
+<body>
+<div class="progress-line" id="progressLine" aria-hidden="true"></div>
+<nav class="report-nav" aria-label="汇报章节导航">
+  <a class="nav-logo" href="#hero" aria-label="返回汇报首页"><span class="nav-mark" aria-hidden="true"></span>Resource Gateway</a>
+  <div class="nav-links">
+    <a href="#hero">判断</a>
+    <a href="#opportunity">机会</a>
+    <a href="#value">价值</a>
+    <a href="#case">楔子</a>
+    <a href="#product">产品</a>
+    <a href="#model">模式</a>
+    <a href="#roadmap">路线</a>
+    <a href="#decision">决策</a>
+  </div>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换到低光模式" aria-pressed="false">
+    <span class="theme-icon" aria-hidden="true">◐</span><span class="theme-label">低光</span>
+  </button>
+</nav>
+
+<main>
+  <section class="report-section hero" id="hero">
+    <div class="container hero-layout">
+      <div class="hero-copy fade-in">
+        <div class="hero-badge">集团决策汇报 · 商业机会评估</div>
+        <h1>有条件推进商业验证，以客户证据决定是否规模化</h1>
+        <p class="lead">市面上尚未发现完整同类产品，说明 Resource Gateway 可能处于有价值的产品空白；只有客户问题、经济买方、可复制交付和单位经济性同时成立，空白才会转化为商业机会。</p>
+        <div class="verdict"><strong>当前判断：</strong>具备值得投资验证的商业化选择权；尚未被证明为可规模化业务。</div>
+        <div class="hero-brief" aria-label="汇报核心摘要">
+          <div class="brief-item"><small>机会基础</small><strong>业务资产 DSL、编码智能体和正确性验证开始汇合</strong></div>
+          <div class="brief-item"><small>第一楔子</small><strong>可验证业务资产交付，不参与连接器数量竞赛</strong></div>
+          <div class="brief-item"><small>建议动作</small><strong>90 天机会验证，随后用灯塔场景决定扩围</strong></div>
+        </div>
+        <p class="source-note">证据基础：<a href="research/resource-gateway-solution-landscape.md">26 个外部产品或组合、190 个去重一手来源的市场研究</a>。</p>
+      </div>
+      <div class="hero-visual fade-in" aria-label="商业机会成立条件">
+        <div class="visual-caption">商业机会成立的证据链</div>
+        <svg role="img" aria-labelledby="heroOpportunityTitle heroOpportunityDesc" viewBox="0 0 520 390" xmlns="http://www.w3.org/2000/svg">
+          <title id="heroOpportunityTitle">Resource Gateway 商业机会成立条件</title>
+          <desc id="heroOpportunityDesc">市场空白已经得到研究支持，问题强度、经济买方和复制性交付仍需要验证，四项汇合后才能形成可规模化机会。</desc>
+          <defs><marker id="heroArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--brand)"/></marker></defs>
+          <g font-family="Arial, PingFang SC, sans-serif">
+            <rect x="24" y="30" width="242" height="62" rx="11" fill="var(--green-soft)" stroke="var(--green)" stroke-width="2"/><text x="44" y="57" fill="var(--green)" font-size="12" font-weight="700">已确认</text><text x="44" y="78" fill="var(--ink)" font-size="16" font-weight="700">完整能力组合仍有市场空白</text>
+            <rect x="24" y="112" width="242" height="62" rx="11" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="1.6"/><text x="44" y="139" fill="var(--amber)" font-size="12" font-weight="700">待验证</text><text x="44" y="160" fill="var(--ink)" font-size="16" font-weight="700">客户问题足够紧迫且可量化</text>
+            <rect x="24" y="194" width="242" height="62" rx="11" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="1.6"/><text x="44" y="221" fill="var(--amber)" font-size="12" font-weight="700">待验证</text><text x="44" y="242" fill="var(--ink)" font-size="16" font-weight="700">经济买方与预算归属明确</text>
+            <rect x="24" y="276" width="242" height="62" rx="11" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="1.6"/><text x="44" y="303" fill="var(--amber)" font-size="12" font-weight="700">待验证</text><text x="44" y="324" fill="var(--ink)" font-size="16" font-weight="700">交付可复制且价值高于成本</text>
+            <path d="M266 61H304V184H326" fill="none" stroke="var(--brand)" stroke-width="3" marker-end="url(#heroArrow)"/><path d="M266 143H304" fill="none" stroke="var(--brand)" stroke-width="3"/><path d="M266 225H304" fill="none" stroke="var(--brand)" stroke-width="3"/><path d="M266 307H304V214H326" fill="none" stroke="var(--brand)" stroke-width="3"/>
+            <rect x="326" y="132" width="170" height="126" rx="14" fill="var(--brand-soft)" stroke="var(--brand)" stroke-width="2.5"/><text x="411" y="171" text-anchor="middle" fill="var(--brand-strong)" font-size="12" font-weight="700">当前决策</text><text x="411" y="201" text-anchor="middle" fill="var(--ink)" font-size="19" font-weight="700">有条件推进</text><text x="411" y="226" text-anchor="middle" fill="var(--ink-2)" font-size="13">先验证 · 再扩围</text>
+          </g>
+        </svg>
+        <p class="visual-note">没有同类成熟产品是机会信号，也可能是需求、预算或交付成本尚未成立的信号。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="opportunity">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="question-label">机会问题 · 为什么值得验证，但不应直接扩张</div>
+        <h2>市场空白提供窗口，客户证据决定窗口能否变成业务</h2>
+        <p class="lead">当前已经确认产品组合存在差异；问题强度、买方、价格和复制性交付仍需要集团内部试点与外部设计伙伴共同验证。</p>
+      </header>
+      <div class="logic-chain fade-in" aria-label="商业机会追溯链">
+        <article class="logic-step"><small>01 · 市场信号</small><strong>能力分散，完整正确性链尚未形成</strong><span>Camel、MuleSoft、Temporal、Tray 等分别证明局部能力</span></article>
+        <article class="logic-step"><small>02 · 技术窗口</small><strong>DSL、编码智能体和验证工具开始汇合</strong><span>运营工作可以转向意图、Diff 与验收</span></article>
+        <article class="logic-step"><small>03 · 集团权利</small><strong>已有实现、协议和真实复杂度积累</strong><span>Descriptor、Graph、Test Kit 与 Evidence 形成基础</span></article>
+        <article class="logic-step result"><small>04 · 决策方式</small><strong>用灯塔价值和付费证据换取下一阶段投入</strong><span>阶段门槛控制继续、调整或停止</span></article>
+      </div>
+      <div class="signal-grid fade-in" style="margin-top:24px">
+        <article class="signal-column confirmed"><h3>已经支持机会判断的事实</h3><div class="signal-list">
+          <div class="signal-item"><small>产品差异</small><strong>公开资料未发现单一产品同时提供资源描述、业务 DSL、隔离测试、语义覆盖和独立证据。</strong></div>
+          <div class="signal-item"><small>市场方向</small><strong>多个产品已经把机器可读资产、智能体工具和验证入口连接起来。</strong></div>
+          <div class="signal-item"><small>技术资产</small><strong>Resource Gateway 已有通用 Operator、测试控制面、签名证据和独立 Test Kit。</strong></div>
+        </div></article>
+        <article class="signal-column unproven"><h3>尚未被证明的商业条件</h3><div class="signal-list">
+          <div class="signal-item"><small>客户问题</small><strong>客户是否持续为配置、回归、事故和审计付出足够成本。</strong></div>
+          <div class="signal-item"><small>经济买方</small><strong>平台、业务、质量和风险之间由谁承担预算与结果责任。</strong></div>
+          <div class="signal-item"><small>单位经济</small><strong>标准产品是否能覆盖企业 IAM、网络、KMS 和行业差异，而不退化为项目制。</strong></div>
+        </div></article>
+      </div>
+      <div class="decision-strip fade-in"><strong>阶段结论：</strong><span>批准商业验证，不批准基于市场空白直接建设大规模销售、连接器和交付体系。</span></div>
+    </div>
+  </section>
+
+  <section class="report-section" id="value">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="question-label">价值问题 · Resource Gateway 改变什么业务工作</div>
+        <h2>把配置工作转为可验证业务资产交付</h2>
+        <p class="lead">运营人员表达意图并确认业务预期；编码智能体生成最小资产差异；确定性工具完成 Schema、隔离测试、覆盖与证据验证；人和策略决定是否发布。</p>
+      </header>
+      <div class="diagram-shell fade-in">
+        <div class="diagram-head"><div><small>业务价值形成机制</small><strong>意图、资产、验证、发布和复用形成一条证据链</strong></div><span class="diagram-hint">蓝色为生产主线，虚线为证据反馈</span></div>
+        <div class="diagram-legend" aria-label="图例"><span class="legend-item"><i class="legend-line"></i>资产生产主线</span><span class="legend-item"><i class="legend-line control"></i>人工与策略门禁</span><span class="legend-item"><i class="legend-line evidence"></i>证据与失败反馈</span></div>
+        <div class="diagram-viewport" style="min-height:310px" tabindex="0" aria-label="可滚动的业务价值图"><div class="diagram-canvas">
+          <svg role="img" aria-labelledby="valueEngineTitle valueEngineDesc" viewBox="0 0 1220 270" xmlns="http://www.w3.org/2000/svg">
+            <title id="valueEngineTitle">Resource Gateway 业务价值形成机制</title>
+            <desc id="valueEngineDesc">业务意图经过业务资产 DSL、编码智能体变更、隔离验证、证据门禁和发布复用，形成效率、质量、风险、复用和经营结果；失败证据返回资产改进。</desc>
+            <defs><marker id="valueArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--brand)"/></marker><marker id="valueEvidenceArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--ink-3)"/></marker></defs>
+            <g font-family="Arial, PingFang SC, sans-serif">
+              <g fill="var(--surface)" stroke="var(--line-strong)" stroke-width="2"><rect x="24" y="70" width="166" height="112" rx="12"/><rect x="224" y="70" width="166" height="112" rx="12" fill="var(--brand-soft)" stroke="var(--brand)"/><rect x="424" y="70" width="166" height="112" rx="12" fill="var(--brand-soft)" stroke="var(--brand)"/><rect x="624" y="70" width="166" height="112" rx="12" fill="var(--accent-soft)" stroke="var(--accent)"/><rect x="824" y="70" width="166" height="112" rx="12" fill="var(--amber-soft)" stroke="var(--amber)"/><rect x="1024" y="70" width="172" height="112" rx="12" fill="var(--green-soft)" stroke="var(--green)"/></g>
+              <g fill="var(--ink)" font-size="16" font-weight="700" text-anchor="middle"><text x="107" y="116">业务意图</text><text x="307" y="116">业务资产 DSL</text><text x="507" y="116">编码智能体</text><text x="707" y="116">隔离验证</text><text x="907" y="116">证据门禁</text><text x="1110" y="116">发布与复用</text></g>
+              <g fill="var(--ink-3)" font-size="12" text-anchor="middle"><text x="107" y="143">目标 · 约束 · Oracle</text><text x="307" y="143">Descriptor · Graph · Scenario</text><text x="507" y="143">检索 · Diff · 修复</text><text x="707" y="143">Schema · Fixture · Coverage</text><text x="907" y="143">人工批准 · 风险策略</text><text x="1110" y="143">版本 · 运行 · 资产目录</text></g>
+              <g fill="none" stroke="var(--brand)" stroke-width="4" marker-end="url(#valueArrow)"><path d="M190 126H214"/><path d="M390 126H414"/><path d="M590 126H614"/><path d="M790 126H814"/><path d="M990 126H1014"/></g>
+              <path d="M1110 182V236H507V192" fill="none" stroke="var(--ink-3)" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#valueEvidenceArrow)"/><text x="808" y="228" fill="var(--ink-3)" font-size="12" text-anchor="middle">运行证据、失败轨迹和人工修正返回下一版本</text>
+            </g>
+          </svg>
+        </div></div>
+      </div>
+      <div class="value-outcomes fade-in">
+        <article class="value-outcome"><small>运营人员</small><strong>从配置执行者转为意图与验收负责人</strong><span>关注业务预期、差异、风险和结果。</span></article>
+        <article class="value-outcome"><small>平台工程</small><strong>用通用 Operator 承载更多资源</strong><span>降低专用代码和重复集成。</span></article>
+        <article class="value-outcome"><small>质量与风险</small><strong>看到覆盖分母和证据边界</strong><span>区分日志、试跑与发布级证明。</span></article>
+        <article class="value-outcome"><small>集团资产</small><strong>复用完整业务资产包</strong><span>合同、图、场景、Fixture 和 Evidence。</span></article>
+        <article class="value-outcome"><small>经营管理</small><strong>用过程指标持续改善交付</strong><span>周期、返工、首次通过和边际成本。</span></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="case">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="question-label">市场问题 · 从哪里进入，谁愿意为结果负责</div>
+        <h2>以高风险、高变更、多资源编排场景切入</h2>
+        <p class="lead">第一客户不是简单自动化团队，而是同时承担交付速度、外部依赖和正确性风险的企业业务域。第一产品楔子是「可验证业务资产交付」。</p>
+      </header>
+      <div class="buyer-map fade-in">
+        <article class="buyer-board">
+          <h3>购买与使用角色</h3>
+          <div class="buyer-row"><small>经济买方</small><strong>集团 CIO、CTO 或业务平台负责人：承担复用、风险和投资回报。</strong></div>
+          <div class="buyer-row"><small>业务赞助人</small><strong>业务运营、产品或风险负责人：定义意图、Oracle 和发布边界。</strong></div>
+          <div class="buyer-row"><small>核心用户</small><strong>平台工程、质量与运营：生产资产、验证变化和处置缺口。</strong></div>
+          <div class="buyer-row"><small>关键守门人</small><strong>安全、基础设施、法律与采购：确认身份、网络、数据和责任边界。</strong></div>
+        </article>
+        <article class="wedge-board">
+          <small>第一产品楔子</small><h3>可验证业务资产交付</h3>
+          <p>把外部资源、业务规则和测试场景转成可版本、可复用、可由编码智能体维护，并能用独立证据审查的业务资产。</p>
+          <div class="wedge-checks"><span>多个内部系统或外部供应商</span><span>业务规则和接口经常变化</span><span>失败涉及资金、权益、合规或重大运营成本</span><span>现有平台缺少统一正确性证据</span></div>
+        </article>
+      </div>
+      <article class="case-board fade-in" style="margin-top:22px">
+        <div class="case-head"><div><small>贯穿灯塔案例</small><h3>主信用服务失败后，按受控策略切换备用服务</h3></div><span class="case-badge">技术基准 · 需映射集团真实场景</span></div>
+        <div class="case-context"><div><small>业务意图</small><strong>调整重试与主备降级规则</strong></div><div><small>关键约束</small><strong>不得误调用、不隐藏未覆盖路径</strong></div><div><small>完成证据</small><strong>准确版本、调用次数、分支和输出断言</strong></div></div>
+        <div class="case-flow" aria-label="灯塔案例主路径">
+          <div class="case-step"><span class="actor human">业务 Owner</span><strong>表达变更意图</strong><small>给出降级条件与业务预期</small></div><div class="case-arrow" aria-hidden="true">→</div>
+          <div class="case-step"><span class="actor digital">编码智能体</span><strong>生成最小 Diff</strong><small>检索 Descriptor、Graph 和 Scenario</small></div><div class="case-arrow" aria-hidden="true">→</div>
+          <div class="case-step"><span class="actor system">测试控制面</span><strong>隔离执行</strong><small>错误、超时、重试与 must-not-call</small></div><div class="case-arrow" aria-hidden="true">→</div>
+          <div class="case-step gate"><span class="actor human">发布门禁</span><strong>审阅覆盖与证据</strong><small>缺口、Waiver、版本和副作用</small></div><div class="case-arrow" aria-hidden="true">→</div>
+          <div class="case-step done"><span class="actor evidence">业务资产</span><strong>发布并复用</strong><small>Graph、Scenario 与 Evidence 同步晋级</small></div><div class="case-arrow" aria-hidden="true">→</div>
+          <div class="case-step done"><span class="actor evidence">经营证据</span><strong>计量价值</strong><small>周期、返工、复用与风险结果</small></div>
+        </div>
+        <div class="case-branch"><span>Oracle 不明确：返回业务 Owner</span><span>测试触达未授权边界：立即阻断</span><span>Coverage 分母不完整：不得晋级</span><span>证据与目标版本漂移：重新验证</span></div>
+      </article>
+    </div>
+  </section>
+
+  <section class="report-section" id="product">
+    <div class="container-wide">
+      <header class="section-header fade-in"><div class="question-label">产品问题 · 商业化产品具体交付什么</div><h2>开放资产协议，商业化企业控制面与规模治理</h2><p class="lead">Resource Gateway 聚焦业务资产正确性层，与 Camel、OpenAPI、MCP、现有 API Gateway、iPaaS 和工作流平台组合，不重建所有连接器和基础设施。</p></header>
+      <div class="view-tabs fade-in" role="tablist" aria-label="产品视图" data-tablist>
+        <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="productOverview" id="productOverviewTab">产品全景</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="productPackaging" id="productPackagingTab">商业包装</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="productBoundary" id="productBoundaryTab">竞争边界</button>
+      </div>
+      <div class="tab-panel" id="productOverview" role="tabpanel" aria-labelledby="productOverviewTab">
+        <div class="diagram-shell fade-in">
+          <div class="diagram-head"><div><small>商业产品能力图</small><strong>资产生产、确定性验证、稳定运行和企业治理</strong></div><div class="diagram-actions" data-zoom-controls aria-label="图形缩放"><button type="button" data-zoom-action="out" aria-label="缩小图形">−</button><button type="button" data-zoom-action="reset" aria-label="重置图形比例"><span data-zoom-value>100%</span></button><button type="button" data-zoom-action="in" aria-label="放大图形">＋</button></div></div>
+          <div class="diagram-legend" aria-label="图例"><span class="legend-item"><i class="legend-line"></i>资产与运行主线</span><span class="legend-item"><i class="legend-line control"></i>企业控制</span><span class="legend-item"><i class="legend-line evidence"></i>证据与改进</span></div>
+          <div class="diagram-viewport" tabindex="0" aria-label="可滚动的产品架构图"><div class="diagram-canvas">
+            <svg role="img" aria-labelledby="productArchitectureTitle productArchitectureDesc" viewBox="0 0 1180 560" xmlns="http://www.w3.org/2000/svg">
+              <title id="productArchitectureTitle">Resource Gateway 商业产品全景</title><desc id="productArchitectureDesc">运营人员、工程师、质量风险和编码智能体通过资产生产入口，使用注册表、测试控制面、稳定运行时和证据治理，并由企业身份网络与密钥体系控制。</desc>
+              <defs><marker id="productArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--brand)"/></marker><marker id="productEvidenceArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--ink-3)"/></marker></defs>
+              <g font-family="Arial, PingFang SC, sans-serif">
+                <rect x="28" y="24" width="1124" height="80" rx="13" fill="var(--surface)" stroke="var(--line-strong)" stroke-width="2"/><text x="52" y="51" fill="var(--ink-3)" font-size="12" font-weight="700">使用与决策角色</text>
+                <g fill="var(--brand-soft)" stroke="var(--line)" stroke-width="1.4"><rect x="206" y="43" width="190" height="40" rx="8"/><rect x="414" y="43" width="190" height="40" rx="8"/><rect x="622" y="43" width="190" height="40" rx="8"/><rect x="830" y="43" width="256" height="40" rx="8"/></g>
+                <g fill="var(--ink)" font-size="14" font-weight="700" text-anchor="middle"><text x="301" y="68">业务运营与 Owner</text><text x="509" y="68">平台与集成工程</text><text x="717" y="68">质量、风险与安全</text><text x="958" y="68">Codex 等编码智能体</text></g>
+                <g fill="var(--surface)" stroke="var(--line-strong)" stroke-width="2"><rect x="28" y="154" width="192" height="118" rx="12" fill="var(--brand-soft)" stroke="var(--brand)"/><rect x="252" y="154" width="192" height="118" rx="12"/><rect x="476" y="154" width="204" height="118" rx="12" fill="var(--accent-soft)" stroke="var(--accent)"/><rect x="712" y="154" width="192" height="118" rx="12"/><rect x="936" y="154" width="216" height="118" rx="12" fill="var(--green-soft)" stroke="var(--green)"/></g>
+                <g text-anchor="middle"><g fill="var(--ink)" font-size="16" font-weight="700"><text x="124" y="197">资产生产入口</text><text x="348" y="197">业务资产注册表</text><text x="578" y="197">测试控制面</text><text x="808" y="197">稳定运行时</text><text x="1044" y="197">证据与独立验证</text></g><g fill="var(--ink-3)" font-size="11"><text x="124" y="224">Author · CLI · MCP</text><text x="348" y="224">Resource · Graph · Scenario</text><text x="578" y="224">Fixture · Fault · Coverage</text><text x="808" y="224">Budget · Retry · Side Effect</text><text x="1044" y="224">Fingerprint · Sign · Verify</text></g></g>
+                <g fill="none" stroke="var(--brand)" stroke-width="4" marker-end="url(#productArrow)"><path d="M220 213H242"/><path d="M444 213H466"/><path d="M680 213H702"/><path d="M904 213H926"/></g>
+                <rect x="28" y="332" width="1124" height="92" rx="13" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="2"/><text x="52" y="364" fill="var(--amber)" font-size="12" font-weight="700">企业控制与可信集成</text><g fill="var(--ink)" font-size="14" font-weight="700" text-anchor="middle"><text x="282" y="394">IAM · Purpose · 审批</text><text x="582" y="394">网络 · Secret · KMS/HSM</text><text x="882" y="394">审计 · 驻留 · 舰队管理</text></g>
+                <rect x="28" y="474" width="1124" height="62" rx="12" fill="var(--surface-soft)" stroke="var(--line-strong)" stroke-width="2"/><text x="52" y="501" fill="var(--ink-3)" font-size="12" font-weight="700">合作生态</text><text x="590" y="513" text-anchor="middle" fill="var(--ink)" font-size="14" font-weight="700">OpenAPI · Arazzo · Camel/Kamelet · MCP · Backstage · 现有 Gateway / iPaaS / Workflow</text>
+                <path d="M1044 272V305H578V282" fill="none" stroke="var(--ink-3)" stroke-width="2.5" stroke-dasharray="8 7" marker-end="url(#productEvidenceArrow)"/><path d="M590 332V286" fill="none" stroke="var(--amber)" stroke-width="2.3" stroke-dasharray="8 7"/>
+              </g>
+            </svg>
+          </div></div>
+        </div>
+      </div>
+      <div class="tab-panel" id="productPackaging" role="tabpanel" aria-labelledby="productPackagingTab" hidden>
+        <div class="package-grid"><article class="package-card"><small>开放开发者入口</small><h3>协议与本地能力</h3><p>Schema、基础 Runtime、CLI、Test Kit、示例与互操作接口。</p><strong>作用：降低采用门槛并建立生态信任</strong></article><article class="package-card recommended"><small>年度平台订阅</small><h3>企业治理控制面</h3><p>多租户 Registry、资产生命周期、策略门禁、跨环境晋级和舰队管理。</p><strong>作用：承担主要软件收入</strong></article><article class="package-card"><small>企业能力包</small><h3>可信运行与证据</h3><p>IAM、网络、KMS/HSM、数据驻留、审计、独立 test-runtime 和 Evidence。</p><strong>作用：进入高价值与监管场景</strong></article><article class="package-card"><small>专业服务与生态</small><h3>灯塔与行业资产包</h3><p>资产迁移、平台集成、场景方法、伙伴认证与行业模板。</p><strong>边界：长期控制服务占比，避免项目制</strong></article></div>
+      </div>
+      <div class="tab-panel" id="productBoundary" role="tabpanel" aria-labelledby="productBoundaryTab" hidden>
+        <div class="mapping-board"><div class="mapping-column"><small>市场已有优势</small><strong>连接器、流量与长流程</strong><span>iPaaS、API Gateway、Workflow 已成熟</span></div><div class="mapping-arrow">→</div><div class="mapping-column active"><small>Resource Gateway 聚焦</small><strong>可验证业务资产</strong><span>Descriptor、Graph、Scenario 与 Evidence</span></div><div class="mapping-arrow">→</div><div class="mapping-column"><small>组合方式</small><strong>开放标准与投影</strong><span>OpenAPI、Camel、MCP、Backstage</span></div><div class="mapping-arrow">→</div><div class="mapping-column result"><small>客户结果</small><strong>更快且可证明的变化</strong><span>避免替换客户全部基础设施</span></div></div>
+      </div>
+      <details class="detail-panel fade-in"><summary>核查产品边界：哪些能力开放，哪些能力收费，哪些能力合作</summary><div class="detail-grid"><div><strong>核心自建</strong><span>业务资产语义、测试隔离、覆盖、证据和智能体治理。</span></div><div><strong>公开验证</strong><span>Schema、兼容协议、Test Kit 和 Evidence 验证边界。</span></div><div><strong>商业能力</strong><span>企业 Registry、运行治理、IAM/KMS、审计和支持。</span></div><div><strong>优先合作</strong><span>连接生态、Gateway、Workflow、云基础设施和渠道。</span></div></div></details>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="model">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="question-label">经营问题 · 如何收费，如何证明客户获得净价值</div>
+        <h2>平台订阅承担收入，价值测算约束价格与交付成本</h2>
+        <p class="lead">不建议按 Connector 数量收费。价格应与受治理业务变化的规模和风险相关；每个商业案例需要由业务、财务和平台共同确认输入。</p>
+      </header>
+      <div class="view-tabs fade-in" role="tablist" aria-label="商业模式视图" data-tablist>
+        <button class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="revenueModel" id="revenueTab">收入结构</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="valueCalculator" id="calculatorTab">价值测算</button>
+        <button class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="scaleConditions" id="scaleTab">规模化条件</button>
+      </div>
+      <div class="tab-panel" id="revenueModel" role="tabpanel" aria-labelledby="revenueTab">
+        <div class="model-grid">
+          <div class="revenue-stack"><div class="revenue-line"><small>平台订阅</small><strong>按企业环境、业务域和治理等级形成年度合同。</strong></div><div class="revenue-line"><small>规模用量</small><strong>按受治理资产、测试执行或运行规模设置阶梯。</strong></div><div class="revenue-line"><small>能力包</small><strong>IAM/KMS、数据驻留、审计、舰队和高级 Evidence。</strong></div><div class="revenue-line"><small>资产与服务</small><strong>行业包、灯塔实施、迁移、培训和伙伴认证。</strong></div></div>
+          <article class="card result"><div class="card-kicker">推荐商业原则</div><h3>开放可验证，商业化规模治理</h3><p>公开协议、Schema、基础工具和独立验证边界；企业控制面、跨环境治理、可信集成和支持承担主要收入。</p><p>服务收入用于加速灯塔，不应长期依赖核心团队驻场。三家以上设计伙伴验证预算归属前，不锁定正式价格体系。</p></article>
+        </div>
+      </div>
+      <div class="tab-panel" id="valueCalculator" role="tabpanel" aria-labelledby="calculatorTab" hidden>
+        <div class="calculator"><h3>年度价值测算器</h3><p>填写经业务和财务确认的基线。空值按 0 处理；结果仅用于形成验证假设。</p>
+          <div class="form-grid"><div class="field"><label for="changesPerYear">年度业务资产变更次数</label><input id="changesPerYear" type="number" min="0" step="1" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="hoursBefore">当前单次变更工时</label><input id="hoursBefore" type="number" min="0" step="0.1" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="hoursAfter">目标单次变更工时</label><input id="hoursAfter" type="number" min="0" step="0.1" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="hourlyCost">综合人力成本／小时</label><input id="hourlyCost" type="number" min="0" step="0.01" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="defectsAvoided">年度预计避免的生产缺陷</label><input id="defectsAvoided" type="number" min="0" step="1" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="lossPerDefect">单次缺陷期望损失</label><input id="lossPerDefect" type="number" min="0" step="0.01" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="reuseValue">年度复用与提前上线价值</label><input id="reuseValue" type="number" min="0" step="0.01" inputmode="decimal" placeholder="待填写"></div><div class="field"><label for="annualTco">软件、实施、基础设施和运营 TCO</label><input id="annualTco" type="number" min="0" step="0.01" inputmode="decimal" placeholder="待填写"></div></div>
+          <div class="calc-result" aria-live="polite"><div><small>年度效率价值</small><strong id="efficiencyValue">0</strong></div><div><small>年度质量与复用价值</small><strong id="qualityValue">0</strong></div><div><small>年度净价值／ROI</small><strong id="netValue">0 / —</strong></div></div><p class="calc-warning">币种由输入口径决定。经营收益、事故损失和人力成本需由业务、财务与平台共同确认。</p>
+        </div>
+      </div>
+      <div class="tab-panel" id="scaleConditions" role="tabpanel" aria-labelledby="scaleTab" hidden>
+        <div class="mapping-board"><div class="mapping-column"><small>问题成立</small><strong>有量化基线</strong><span>周期、工时、缺陷、事故或审计成本</span></div><div class="mapping-arrow">→</div><div class="mapping-column active"><small>购买成立</small><strong>有经济买方</strong><span>责任、预算和采购类别明确</span></div><div class="mapping-arrow">→</div><div class="mapping-column"><small>产品成立</small><strong>第二场景可复用</strong><span>无需客户专属运行分支</span></div><div class="mapping-arrow">→</div><div class="mapping-column result"><small>业务成立</small><strong>价值高于完整 TCO</strong><span>愿意付费、毛利与支持成本可接受</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="roadmap">
+    <div class="container">
+      <header class="section-header centered fade-in">
+        <div class="question-label">行动问题 · 如何以最小风险换取最大信息</div>
+        <h2>先证明问题和买方，再证明复用与单位经济</h2>
+        <p class="lead">每个阶段都设置退出条件。功能完成、技术领先和已投入成本不能替代客户、价值和付费证据。</p>
+      </header>
+      <div class="roadmap-track fade-in" aria-label="演进路线">
+        <article class="roadmap-step current"><small>0—90 天</small><h3>机会验证</h3><p>确认经济买方、灯塔场景、当前基线、产品差距和设计伙伴。</p><strong>退出：问题、Owner、基线和场景同时成立</strong></article>
+        <article class="roadmap-step"><small>3—6 个月</small><h3>灯塔验证</h3><p>在真实变更中测量周期、人工步骤、覆盖、证据和生产隔离。</p><strong>退出：至少一项价值显著改善且无高风险绕过</strong></article>
+        <article class="roadmap-step"><small>6—12 个月</small><h3>产品化验证</h3><p>完成独立产品包和企业集成，验证第二场景与外部设计伙伴。</p><strong>退出：复用、付费和支持成本得到证明</strong></article>
+        <article class="roadmap-step result"><small>12—18 个月</small><h3>规模化选择</h3><p>在集团平台、企业软件、生态联合或停止扩张之间作出选择。</p><strong>退出：依据客户与经济证据，不依据模块数量</strong></article>
+      </div>
+      <div class="grid-3 fade-in" style="margin-top:18px">
+        <article class="card"><div class="card-kicker">北极星指标</div><h3>可验证业务资产交付周期</h3><p>从意图被接受，到形成带准确版本、Oracle、覆盖和 Evidence 的发布候选所需时间。</p></article>
+        <article class="card attention"><div class="card-kicker">质量底线</div><h3>未覆盖分母与 Waiver 可见</h3><p>不使用综合分数隐藏未验证事实、过期证据和风险接受。</p></article>
+        <article class="card result"><div class="card-kicker">产品化底线</div><h3>第二场景无需专属分支</h3><p>新场景可以通过资产、适配和配置交付，核心团队不逐客户维护运行分支。</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="decision">
+    <div class="container">
+      <header class="section-header fade-in"><div class="question-label">风险问题 · 哪些信号会推翻商业假设</div><h2>最大的风险不是技术做不出来，而是业务无法独立成立</h2><p class="lead">商业验证需要主动寻找反证。以下风险一旦持续出现，应缩小定位、改为生态联合或停止独立商业化。</p></header>
+      <div class="risk-grid fade-in">
+        <article class="risk-card high"><small>需求风险</small><h3>市场空白来自需求不足</h3><p>受访者认可理念，但无人提供场景、基线、Owner 或预算。</p><strong>应对：停止扩大平台，保留集团内部技术资产。</strong></article>
+        <article class="risk-card high"><small>买方风险</small><h3>责任跨部门，预算无人承担</h3><p>平台、业务、质量和风险相互转交采购责任。</p><strong>应对：以灯塔业务结果建立联合预算与单一赞助人。</strong></article>
+        <article class="risk-card"><small>产品风险</small><h3>边界过宽，进入连接器竞赛</h3><p>同时追逐 Gateway、iPaaS、Workflow、画布和 AI 平台。</p><strong>应对：固定「可验证业务资产交付」楔子。</strong></article>
+        <article class="risk-card"><small>交付风险</small><h3>企业集成吞噬产品价值</h3><p>IAM、网络、KMS、数据驻留和行业差异长期依赖驻场。</p><strong>应对：标准适配层、认证清单和伙伴交付。</strong></article>
+        <article class="risk-card"><small>采用风险</small><h3>正确性治理过重</h3><p>低风险变化绕开平台，或验证成本反而延长交付周期。</p><strong>应对：按风险分层，保留快速草案与渐进门禁。</strong></article>
+        <article class="risk-card"><small>竞争风险</small><h3>DSL 与智能体功能被快速复制</h3><p>成熟厂商补齐生成、Mock 或测试功能，语法优势消失。</p><strong>应对：积累业务资产、验证协议、部署证据和生态兼容。</strong></article>
+      </div>
+      <header class="section-header centered fade-in" style="margin-top:76px"><div class="question-label">决策请求 · 集团现在批准什么</div><h2>批准一项有退出条件的商业验证计划</h2><p class="lead">本次不申请规模化销售和连接器建设。申请赞助人、灯塔场景、基线权限与 90 天验证窗口。</p></header>
+      <div class="decision-board fade-in">
+        <article class="decision-asks"><h3>建议批准的六项事项</h3><ol class="decision-list"><li>将 Resource Gateway 定义为集团级「可验证业务资产」能力方向。</li><li>指定一位集团业务或平台高层作为经济赞助人。</li><li>选择一个真实灯塔场景，并授权获取周期、工时、缺陷和事故基线。</li><li>批准 90 天机会验证；阶段评审前不启动大规模销售和连接器建设。</li><li>允许接触少量外部设计伙伴，验证采购问题与付费意愿。</li><li>以证据决定继续、调整定位、生态联合或停止。</li></ol></article>
+        <article class="stop-rules"><h3>继续投入的停止规则</h3><ul><li>无法找到同时承担结果与预算的经济买方。</li><li>灯塔问题没有可测量基线或可回滚边界。</li><li>第二场景仍需要核心团队维护专属运行分支。</li><li>客户价值不能覆盖软件、实施、基础设施和运营 TCO。</li><li>测试隔离、Evidence 或业务权威验证存在不可接受风险。</li></ul><div class="verdict"><strong>决策原则：</strong>以客户和运行证据换取下一阶段资源。</div></article>
+      </div>
+      <p class="source-note" style="text-align:center;margin-top:24px">详细计划、价值公式和执行清单见 <a href="resource-gateway-business-value-and-commercial-plan.md">《Resource Gateway 业务价值、商业价值与商业计划书》</a>。</p>
+    </div>
+  </section>
+</main>
+
+<footer class="report-footer">Resource Gateway · 业务价值与商业机会决策汇报 · 2026-08-16</footer>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem('briefing-theme');
+  root.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light';
+
+  const themeToggle = document.getElementById('themeToggle');
+  const updateThemeControl = () => {
+    const dark = root.dataset.theme === 'dark';
+    themeToggle.setAttribute('aria-pressed', String(dark));
+    themeToggle.setAttribute('aria-label', dark ? '切换到明亮模式' : '切换到低光模式');
+    themeToggle.querySelector('.theme-label').textContent = dark ? '明亮' : '低光';
+  };
+  updateThemeControl();
+  themeToggle.addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('briefing-theme', root.dataset.theme);
+    updateThemeControl();
+  });
+
+  const progress = document.getElementById('progressLine');
+  let progressQueued = false;
+  const updateProgress = () => {
+    const available = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = `${available > 0 ? (scrollY / available) * 100 : 0}%`;
+    progressQueued = false;
+  };
+  addEventListener('scroll', () => {
+    if (!progressQueued) requestAnimationFrame(updateProgress);
+    progressQueued = true;
+  }, { passive: true });
+  updateProgress();
+
+  const links = [...document.querySelectorAll('.nav-links a')];
+  const sections = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+  const sectionObserver = new IntersectionObserver(entries => {
+    const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (!visible) return;
+    links.forEach(link => {
+      const active = link.getAttribute('href') === `#${visible.target.id}`;
+      link.classList.toggle('active', active);
+      if (active) link.setAttribute('aria-current', 'location');
+      else link.removeAttribute('aria-current');
+    });
+  }, { rootMargin: '-28% 0px -58%', threshold: [0.05, 0.35, 0.65] });
+  sections.forEach(section => sectionObserver.observe(section));
+
+  const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reducedMotion) {
+    document.querySelectorAll('.fade-in').forEach(element => element.classList.add('visible'));
+  } else {
+    const revealObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          revealObserver.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1 });
+    document.querySelectorAll('.fade-in').forEach(element => revealObserver.observe(element));
+  }
+
+  document.querySelectorAll('[data-tablist]').forEach(tablist => {
+    const tabs = [...tablist.querySelectorAll('[role="tab"]')];
+    const activate = (tab, moveFocus = false) => {
+      tabs.forEach(item => {
+        const selected = item === tab;
+        item.classList.toggle('active', selected);
+        item.setAttribute('aria-selected', String(selected));
+        item.tabIndex = selected ? 0 : -1;
+        const panel = document.getElementById(item.getAttribute('aria-controls'));
+        if (panel) panel.hidden = !selected;
+      });
+      if (moveFocus) tab.focus();
+    };
+    tabs.forEach((tab, index) => {
+      tab.addEventListener('click', () => activate(tab));
+      tab.addEventListener('keydown', event => {
+        let nextIndex = null;
+        if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+        if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+        if (event.key === 'Home') nextIndex = 0;
+        if (event.key === 'End') nextIndex = tabs.length - 1;
+        if (nextIndex === null) return;
+        event.preventDefault();
+        activate(tabs[nextIndex], true);
+      });
+    });
+    activate(tabs.find(tab => tab.getAttribute('aria-selected') === 'true') || tabs[0]);
+  });
+
+  document.querySelectorAll('[data-zoom-controls]').forEach(controls => {
+    const shell = controls.closest('.diagram-shell');
+    const canvas = shell?.querySelector('.diagram-canvas');
+    const value = controls.querySelector('[data-zoom-value]');
+    if (!canvas || !value) return;
+    let scale = 1;
+    const render = () => {
+      canvas.style.zoom = String(scale);
+      value.textContent = `${Math.round(scale * 100)}%`;
+      controls.querySelector('[data-zoom-action="out"]').disabled = scale <= 0.75;
+      controls.querySelector('[data-zoom-action="in"]').disabled = scale >= 1.5;
+    };
+    controls.addEventListener('click', event => {
+      const button = event.target.closest('[data-zoom-action]');
+      if (!button) return;
+      const action = button.dataset.zoomAction;
+      if (action === 'out') scale = Math.max(0.75, scale - 0.25);
+      if (action === 'in') scale = Math.min(1.5, scale + 0.25);
+      if (action === 'reset') scale = 1;
+      render();
+    });
+    render();
+  });
+
+  const valueInputs = [...document.querySelectorAll('.calculator input[type="number"]')];
+  if (valueInputs.length) {
+    const read = id => Math.max(0, Number.parseFloat(document.getElementById(id)?.value || '0') || 0);
+    const format = value => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 }).format(value);
+    const calculateValue = () => {
+      const changes = read('changesPerYear');
+      const savedHours = Math.max(0, read('hoursBefore') - read('hoursAfter'));
+      const efficiency = changes * savedHours * read('hourlyCost');
+      const qualityAndReuse = read('defectsAvoided') * read('lossPerDefect') + read('reuseValue');
+      const tco = read('annualTco');
+      const net = efficiency + qualityAndReuse - tco;
+      const roi = tco > 0 ? `${format((net / tco) * 100)}%` : '—';
+      document.getElementById('efficiencyValue').textContent = format(efficiency);
+      document.getElementById('qualityValue').textContent = format(qualityAndReuse);
+      document.getElementById('netValue').textContent = `${format(net)} / ${roi}`;
+    };
+    valueInputs.forEach(input => input.addEventListener('input', calculateValue));
+    calculateValue();
+  }
+})();
+</script>
+</body>
+</html>

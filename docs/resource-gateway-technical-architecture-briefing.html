@@ -1,0 +1,1628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="Resource Gateway 业务能力资产化、DSL 化与工业级可测试性技术架构汇报">
+<title>Resource Gateway 技术架构汇报</title>
+<style>
+:root {
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --bg-soft: #f0f4f8;
+  --bg-tint: #eaf0f5;
+  --ink: #1f2a3d;
+  --ink-2: #4f6073;
+  --ink-3: #66768a;
+  --line: #dce4ec;
+  --line-strong: #c4d0db;
+  --line-soft: #e8eef3;
+  --brand: #2f6f9f;
+  --brand-2: #4f87ae;
+  --brand-soft: #edf5fa;
+  --accent: #2c7a6b;
+  --accent-soft: #edf5f3;
+  --green: #2f7d59;
+  --green-soft: #eef7f2;
+  --amber: #8c5b16;
+  --amber-soft: #fbf6ea;
+  --red: #b14d3c;
+  --red-soft: #fbf1ef;
+  --focus-ring: rgba(47, 111, 159, 0.28);
+  --nav-bg: rgba(255, 255, 255, 0.92);
+  --shadow: 0 1px 2px rgba(31, 42, 61, 0.04), 0 8px 24px rgba(31, 42, 61, 0.05);
+  --shadow-lg: 0 18px 48px rgba(31, 42, 61, 0.08);
+}
+
+:root[data-theme="dark"] {
+  --bg: #111820;
+  --surface: #17212b;
+  --bg-soft: #1c2834;
+  --bg-tint: #22313d;
+  --ink: #edf3f8;
+  --ink-2: #b8c5d1;
+  --ink-3: #8798a8;
+  --line: #2b3a47;
+  --line-strong: #405261;
+  --line-soft: #253440;
+  --brand: #73acd0;
+  --brand-2: #8fc0dc;
+  --brand-soft: rgba(115, 172, 208, 0.12);
+  --accent: #65b7a6;
+  --accent-soft: rgba(101, 183, 166, 0.12);
+  --green: #70c39a;
+  --green-soft: rgba(112, 195, 154, 0.12);
+  --amber: #ddb261;
+  --amber-soft: rgba(221, 178, 97, 0.12);
+  --red: #e58d7f;
+  --red-soft: rgba(229, 141, 127, 0.12);
+  --focus-ring: rgba(115, 172, 208, 0.34);
+  --nav-bg: rgba(17, 24, 32, 0.92);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 6px 20px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 18px 60px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  overflow-x: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  transition: background 0.2s, color 0.2s;
+}
+button { color: inherit; font: inherit; }
+a { color: inherit; }
+button:focus-visible, a:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 3px;
+}
+
+.progress-line {
+  position: fixed;
+  z-index: 1001;
+  top: 63px;
+  left: 0;
+  width: 0;
+  height: 2px;
+  background: var(--brand);
+}
+
+.report-nav {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 1000;
+  height: 64px;
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  border-bottom: 1px solid var(--line);
+  background: var(--nav-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+}
+.nav-logo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  white-space: nowrap;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+}
+.nav-logo::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--brand);
+}
+.nav-links {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-links a {
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 0.8rem;
+  font-weight: 550;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: 0.16s ease;
+}
+.nav-links a:hover { color: var(--ink); background: var(--bg-tint); }
+.nav-links a.active { color: var(--brand); background: var(--brand-soft); }
+.theme-toggle {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-tint);
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: 0.16s ease;
+}
+.theme-toggle:hover { border-color: var(--brand); color: var(--brand); }
+.theme-light { display: none; }
+:root[data-theme="dark"] .theme-dark { display: none; }
+:root[data-theme="dark"] .theme-light { display: inline; }
+
+.report-section {
+  position: relative;
+  padding: 96px 32px;
+  scroll-margin-top: 64px;
+  overflow: clip;
+}
+.report-section.tinted { background: var(--bg-soft); }
+.container { max-width: 1180px; margin: 0 auto; }
+.container-wide { max-width: 1380px; margin: 0 auto; }
+.container-narrow { max-width: 900px; margin: 0 auto; }
+
+.eyebrow {
+  margin-bottom: 14px;
+  color: var(--brand);
+  font-size: 0.76rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+}
+h1, h2, h3 { overflow-wrap: anywhere; line-height: 1.18; letter-spacing: -0.035em; }
+h1 { font-size: clamp(2.55rem, 4.5vw, 4.1rem); line-height: 1.1; }
+h2 { font-size: clamp(2rem, 3.2vw, 3rem); }
+h3 { font-size: 1.12rem; }
+.lead {
+  max-width: 820px;
+  color: var(--ink-2);
+  font-size: 1.04rem;
+  line-height: 1.85;
+}
+.section-header { margin-bottom: 48px; }
+.section-header.centered { text-align: center; }
+.section-header.centered .lead { margin: 18px auto 0; }
+.section-index {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+}
+.section-index::after { content: ""; width: 44px; height: 1px; background: var(--line); }
+
+.fade-in { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.fade-in.visible { opacity: 1; transform: none; }
+
+.hero {
+  min-height: 100vh;
+  padding-top: 132px;
+  display: grid;
+  align-items: center;
+}
+.hero-layout { display: grid; grid-template-columns: 1.25fr 0.75fr; gap: 44px; align-items: center; }
+.hero-copy, .hero-visual { min-width: 0; }
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 12px;
+  margin-bottom: 26px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  color: var(--brand);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+.hero-badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+.hero-copy .lead { margin-top: 26px; overflow-wrap: anywhere; }
+.hero-visual {
+  min-height: 390px;
+  padding: 28px;
+  display: grid;
+  align-content: center;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+.hero-summary {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.hero-summary > div { padding: 18px; }
+.hero-summary > div + div { border-left: 1px solid var(--line); }
+.hero-summary small { display: block; color: var(--brand); font-size: 0.72rem; font-weight: 780; letter-spacing: 0.06em; }
+.hero-summary strong { display: block; margin-top: 7px; font-size: 0.82rem; line-height: 1.5; }
+.hero-case { display: grid; gap: 12px; }
+.hero-case-head { padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+.hero-case-head small { color: var(--accent); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em; }
+.hero-case-head strong { display: block; margin-top: 7px; font-size: 1.16rem; line-height: 1.45; }
+.hero-case-step {
+  position: relative;
+  padding: 14px 16px 14px 48px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+.hero-case-step::before {
+  content: attr(data-step);
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+.hero-case-step + .hero-case-step::after {
+  content: "↓";
+  position: absolute;
+  top: -17px;
+  left: 22px;
+  color: var(--brand);
+  font-weight: 850;
+}
+.hero-case-step strong { display: block; font-size: 0.82rem; }
+.hero-case-step span { display: block; margin-top: 3px; color: var(--ink-3); font-size: 0.7rem; }
+.hero-case-step.result { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); background: var(--green-soft); }
+.chapter-block { margin-top: 34px; }
+.chapter-label { margin-bottom: 14px; color: var(--brand); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.07em; }
+.case-context {
+  margin-bottom: 20px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink-2);
+}
+.case-context strong { color: var(--ink); }
+.decision-request { margin-top: 28px; padding-top: 24px; border-top: 1px solid var(--line); }
+
+.metrics {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.metric { min-width: 0; padding: 22px 18px; }
+.metric + .metric { border-left: 1px solid var(--line); }
+.metric-value { color: var(--brand); font-size: 1.55rem; font-weight: 780; line-height: 1; }
+.metric-label { margin-top: 8px; color: var(--ink-3); font-size: 0.72rem; }
+
+.grid-2, .grid-3, .grid-4 { display: grid; gap: 14px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.item-kicker { color: var(--brand); font-size: 0.72rem; font-weight: 750; letter-spacing: 0.08em; }
+.card h3 { margin-top: 10px; }
+.card p { margin-top: 8px; color: var(--ink-2); font-size: 0.82rem; }
+.card.result { border-left: 3px solid var(--green); }
+.card.attention { border-left: 3px solid var(--amber); }
+.card.risk { border-left: 3px solid var(--red); }
+
+.logic-chain {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 22px;
+  align-items: stretch;
+}
+.logic-step {
+  position: relative;
+  min-height: 118px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface);
+}
+.logic-step::after {
+  content: "→";
+  position: absolute;
+  top: 42%;
+  right: -17px;
+  color: var(--brand);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.logic-step:last-child::after { display: none; }
+.logic-step small { color: var(--brand); font-size: 0.72rem; font-weight: 780; }
+.logic-step strong { display: block; margin-top: 7px; }
+.logic-step span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+
+.callout {
+  padding: 16px 18px;
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+  color: var(--ink-2);
+}
+.callout strong { color: var(--ink); }
+.callout.evidence { border-color: var(--green); background: var(--green-soft); }
+.callout.attention { border-color: var(--amber); background: var(--amber-soft); }
+.callout.risk { border-color: var(--red); background: var(--red-soft); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+.tab-button {
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+.tab-button:hover { border-color: var(--brand); color: var(--brand); }
+.tab-button.active, .tab-button[aria-selected="true"] { border-color: var(--brand); background: var(--brand); color: #fff; }
+.tab-panel[hidden] { display: none; }
+
+.diagram-shell {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.diagram-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.diagram-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-tint);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 7px; }
+.legend-line { width: 30px; border-top: 4px solid var(--brand); }
+.legend-line.control { border-top: 3px dashed var(--amber); }
+.legend-line.evidence { border-top: 2px dashed var(--ink-3); }
+.diagram-viewport {
+  min-height: 440px;
+  padding: 24px;
+  overflow: auto;
+  background: var(--surface);
+}
+.diagram-viewport > svg { display: block; min-width: 980px; width: 100%; height: auto; }
+.diagram-hint { color: var(--ink-3); font-size: 0.7rem; }
+.native-report-diagram { margin-top: 22px; }
+.diagram-viewport.native-svg-viewport {
+  min-height: 0;
+  padding: 0;
+  background: #fff;
+  color-scheme: light;
+}
+.native-report-svg {
+  display: block;
+  width: 100%;
+  min-width: 1120px;
+  height: auto;
+  background: #fff;
+  color-scheme: only light !important;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.architecture-gallery { margin-top: 24px; }
+.architecture-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.architecture-tab {
+  flex: 0 0 auto;
+  padding: 10px 15px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.76rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+.architecture-tab:hover { border-color: var(--brand); color: var(--brand); }
+.architecture-tab[aria-selected="true"] { border-color: var(--brand); background: var(--brand); color: #fff; }
+.architecture-panel[hidden] { display: none; }
+.architecture-brief {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  gap: 1px;
+  border-bottom: 1px solid var(--line);
+  background: var(--line);
+}
+.architecture-brief > div { padding: 15px 18px; background: var(--surface); }
+.architecture-brief small { display: block; color: var(--brand); font-size: 0.72rem; font-weight: 820; letter-spacing: 0.08em; }
+.architecture-brief strong, .architecture-brief span { display: block; margin-top: 6px; }
+.architecture-brief strong { font-size: 0.86rem; }
+.architecture-brief span { color: var(--ink-2); font-size: 0.74rem; }
+.diagram-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+.diagram-toolbar span { color: var(--ink-3); font-size: 0.72rem; }
+.diagram-scale-group { display: flex; gap: 6px; }
+.diagram-scale {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.diagram-scale:hover { border-color: var(--brand); color: var(--brand); }
+.diagram-scale[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+.architecture-viewport {
+  min-height: 420px;
+  padding: 18px;
+  overflow: auto;
+  background: #fff;
+  color-scheme: only light;
+}
+.architecture-viewport > svg {
+  display: block;
+  height: auto;
+  max-width: none;
+  background: #fff;
+  color-scheme: only light !important;
+}
+.architecture-viewport[data-scale="actual"] > svg { width: auto; min-width: 1180px; }
+.architecture-viewport[data-scale="fit"] > svg { width: 100%; min-width: 0; }
+
+.workflow {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.workflow-io { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.workflow-io > div { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); }
+.workflow-io .output { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); background: var(--green-soft); }
+.workflow-io small { color: var(--ink-3); font-size: 0.72rem; font-weight: 760; }
+.workflow-io strong { display: block; margin-top: 5px; font-size: 0.82rem; }
+.workflow-states { display: grid; grid-template-columns: repeat(5, 1fr); gap: 22px; }
+.workflow-state {
+  position: relative;
+  min-height: 100px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-soft);
+}
+.workflow-state::after {
+  content: "→";
+  position: absolute;
+  top: 36px;
+  right: -17px;
+  color: var(--brand);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+.workflow-state:last-child::after { display: none; }
+.workflow-state.gate { border-color: color-mix(in srgb, var(--amber) 55%, var(--line)); background: var(--amber-soft); }
+.workflow-state.done { border-color: color-mix(in srgb, var(--green) 55%, var(--line)); background: var(--green-soft); }
+.workflow-state small { color: var(--ink-3); font-size: 0.72rem; font-weight: 780; }
+.workflow-state strong { display: block; margin-top: 6px; font-size: 0.78rem; }
+.workflow-state span { display: block; margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+.feedback-return { margin-top: 16px; padding: 10px 14px; border: 1px dashed var(--amber); color: var(--amber); font-size: 0.72rem; font-weight: 700; }
+
+.fact-note {
+  margin-top: 18px;
+  color: var(--ink-3);
+  font-size: 0.72rem;
+}
+.hero-cycle {
+  width: min(420px, 88vw);
+  margin: auto;
+}
+.hero-cycle svg { display: block; width: 100%; height: auto; }
+.hero-cycle .cycle-orbit { fill: none; stroke: var(--line); stroke-width: 20; }
+.hero-cycle .cycle-flow { fill: none; stroke: var(--brand); stroke-width: 4; stroke-linecap: round; }
+.hero-cycle .cycle-node { fill: var(--bg); stroke: var(--line); stroke-width: 2; }
+.hero-cycle .cycle-node.primary { fill: var(--brand-soft); stroke: var(--brand); }
+.hero-cycle .cycle-node.evidence { fill: var(--green-soft); stroke: var(--green); }
+.hero-cycle .cycle-label { fill: var(--ink); font-size: 13px; font-weight: 750; text-anchor: middle; }
+.hero-cycle .cycle-sub { fill: var(--ink-3); font-size: 10px; text-anchor: middle; }
+.hero-cycle .cycle-core { fill: var(--bg); stroke: var(--brand); stroke-width: 2; }
+.hero-cycle .cycle-core-title { fill: var(--brand); font-size: 18px; font-weight: 800; text-anchor: middle; }
+.hero-cycle .cycle-core-sub { fill: var(--ink-2); font-size: 11px; text-anchor: middle; }
+
+.statement {
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+}
+.statement strong {
+  display: block;
+  max-width: 900px;
+  font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+  line-height: 1.45;
+  letter-spacing: -0.025em;
+}
+.statement p { margin-top: 10px; color: var(--ink-2); }
+.pressure-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+.pressure-item {
+  padding: 20px;
+  border-top: 3px solid var(--red);
+  border-radius: 10px;
+  background: var(--red-soft);
+}
+.pressure-item span { color: var(--red); font-size: 0.72rem; font-weight: 780; letter-spacing: 0.06em; }
+.pressure-item strong { display: block; margin-top: 8px; font-size: 0.98rem; }
+.pressure-item p { margin-top: 7px; color: var(--ink-2); font-size: 0.78rem; }
+
+.outcome-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+.outcome-item {
+  min-height: 190px;
+  padding: 18px 4px 0;
+  border-top: 2px solid var(--brand);
+}
+.outcome-item .outcome-number { color: var(--brand); font-size: 0.72rem; font-weight: 800; }
+.outcome-item h3 { margin-top: 12px; }
+.outcome-item p { margin-top: 9px; color: var(--ink-2); font-size: 0.8rem; }
+.outcome-item.operating {
+  grid-column: 1 / -1;
+  min-height: 0;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: var(--accent-soft);
+}
+.outcome-item.operating p { max-width: 900px; }
+.kpi-line { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--green); font-size: 0.7rem; font-weight: 720; }
+.baseline-note { margin-top: 18px; padding: 12px 16px; border: 1px dashed var(--amber); border-radius: 9px; color: var(--ink-2); font-size: 0.76rem; }
+
+.principle-card { position: relative; padding-top: 28px; }
+.principle-card::before {
+  content: attr(data-index);
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  color: var(--line);
+  font-size: 2rem;
+  font-weight: 850;
+  line-height: 1;
+}
+.principle-mechanism { margin-top: 12px; color: var(--brand); font-size: 0.7rem; font-weight: 740; }
+
+.asset-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 24px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+.asset-formula b { padding: 8px 12px; border-radius: 8px; background: var(--brand-soft); color: var(--brand); }
+.asset-formula i { color: var(--ink-3); font-style: normal; }
+.asset-map { display: grid; grid-template-columns: 1fr 0.9fr; gap: 18px; align-items: stretch; }
+.asset-stack, .asset-support { padding: 22px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.asset-stack h3, .asset-support h3 { margin-bottom: 14px; }
+.asset-layer {
+  position: relative;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--brand);
+  border-radius: 9px;
+  background: var(--bg-soft);
+}
+.asset-layer + .asset-layer { margin-top: 12px; }
+.asset-layer + .asset-layer::before {
+  content: "↓";
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  color: var(--brand);
+  font-weight: 800;
+}
+.asset-layer.purple { border-left-color: var(--accent); }
+.asset-layer.green { border-left-color: var(--green); }
+.asset-layer.amber { border-left-color: var(--amber); }
+.asset-layer strong { display: block; font-size: 0.86rem; }
+.asset-layer span { display: block; margin-top: 4px; color: var(--ink-3); font-size: 0.7rem; }
+.support-list { display: grid; gap: 10px; }
+.support-item { padding: 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); }
+.support-item strong { display: block; font-size: 0.8rem; }
+.support-item span { display: block; margin-top: 4px; color: var(--ink-3); font-size: 0.72rem; }
+.asset-lifecycle { display: grid; grid-template-columns: repeat(7, 1fr); gap: 18px; margin-top: 18px; }
+.lifecycle-step { position: relative; padding: 15px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); text-align: center; }
+.lifecycle-step::after { content: "→"; position: absolute; right: -15px; top: 26px; color: var(--brand); font-weight: 850; }
+.lifecycle-step:last-child::after { display: none; }
+.lifecycle-step strong { display: block; font-size: 0.76rem; }
+.lifecycle-step span { display: block; margin-top: 4px; color: var(--ink-3); font-size: 0.72rem; }
+
+.operations-thesis {
+  display: grid;
+  grid-template-columns: 0.86fr 1.14fr;
+  gap: 18px;
+  align-items: stretch;
+}
+.role-shift {
+  padding: 26px;
+  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line));
+  border-radius: 15px;
+  background: var(--accent-soft);
+}
+.role-shift small { color: var(--accent); font-size: 0.72rem; font-weight: 800; letter-spacing: 0.07em; }
+.role-shift strong { display: block; margin-top: 12px; font-size: clamp(1.18rem, 2vw, 1.55rem); line-height: 1.45; }
+.role-shift p { margin-top: 12px; color: var(--ink-2); font-size: 0.82rem; }
+.role-boundary { margin-top: 18px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line)); color: var(--ink-2); font-size: 0.72rem; }
+.role-boundary b { color: var(--ink); }
+.shift-table { overflow: hidden; border: 1px solid var(--line); border-radius: 15px; background: var(--surface); }
+.shift-row { display: grid; grid-template-columns: 0.72fr 1fr 1.16fr; border-bottom: 1px solid var(--line); }
+.shift-row:last-child { border-bottom: 0; }
+.shift-row > div { padding: 12px 14px; border-left: 1px solid var(--line); color: var(--ink-2); font-size: 0.7rem; }
+.shift-row > div:first-child { border-left: 0; color: var(--ink); font-weight: 760; }
+.shift-row.header { background: var(--bg-tint); }
+.shift-row.header > div { color: var(--ink-3); font-size: 0.72rem; font-weight: 780; }
+.shift-row > div:last-child { color: var(--brand); }
+
+.engineering-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.engineering-card { padding: 17px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.engineering-card small { color: var(--green); font-size: 0.72rem; font-weight: 820; }
+.engineering-card strong { display: block; margin-top: 7px; font-size: 0.8rem; }
+.engineering-card p { margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+.operations-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; }
+.operations-kpi { padding: 15px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); }
+.operations-kpi strong { display: block; color: var(--brand); font-size: 0.76rem; }
+.operations-kpi span { display: block; margin-top: 5px; color: var(--ink-3); font-size: 0.72rem; }
+
+.proof-formula {
+  margin-bottom: 22px;
+  padding: 22px;
+  border: 1px solid color-mix(in srgb, var(--green) 45%, var(--line));
+  border-radius: 13px;
+  background: var(--green-soft);
+  text-align: center;
+  font-size: clamp(1rem, 2vw, 1.3rem);
+  font-weight: 800;
+}
+.scroll-hint { display: none; margin: -8px 0 12px; color: var(--ink-3); font-size: 0.72rem; }
+.proof-ladder-shell { overflow-x: auto; padding-bottom: 10px; }
+.proof-ladder { min-width: 1080px; display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; align-items: end; }
+.proof-level {
+  min-height: 118px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px 10px 3px 3px;
+  background: var(--surface);
+}
+.proof-level:nth-child(2) { min-height: 132px; }
+.proof-level:nth-child(3) { min-height: 146px; }
+.proof-level:nth-child(4) { min-height: 160px; border-color: var(--brand); background: var(--brand-soft); }
+.proof-level:nth-child(5) { min-height: 174px; }
+.proof-level:nth-child(6) { min-height: 188px; }
+.proof-level:nth-child(7) { min-height: 202px; border-color: var(--green); background: var(--green-soft); }
+.proof-level small { color: var(--brand); font-size: 0.72rem; font-weight: 820; }
+.proof-level strong { display: block; margin-top: 7px; font-size: 0.78rem; }
+.proof-level span { display: block; margin-top: 7px; color: var(--ink-3); font-size: 0.72rem; }
+.phase-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 22px; }
+.phase-card { position: relative; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.phase-card + .phase-card::before { content: "→"; position: absolute; left: -12px; top: 45%; color: var(--brand); font-size: 1.1rem; font-weight: 850; }
+.phase-card small { color: var(--brand); font-size: 0.72rem; font-weight: 800; }
+.phase-card h3 { margin-top: 8px; }
+.phase-card p { margin-top: 8px; color: var(--ink-2); font-size: 0.76rem; }
+.invariant-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+.invariant { padding: 14px; border: 1px dashed var(--amber); border-radius: 9px; background: var(--amber-soft); }
+.invariant strong { display: block; color: var(--amber); font-size: 0.72rem; }
+.invariant span { display: block; margin-top: 5px; color: var(--ink-2); font-size: 0.72rem; }
+.truth-separation { margin-top: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft); text-align: center; color: var(--ink-2); font-size: 0.78rem; }
+.truth-separation b { color: var(--ink); }
+.truth-separation em { padding: 0 7px; color: var(--red); font-style: normal; font-weight: 850; }
+
+.trace-layout { display: grid; grid-template-columns: 0.58fr 1.42fr; gap: 18px; }
+.trace-selectors { display: grid; gap: 9px; align-content: start; }
+.trace-button { padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); color: var(--ink-2); text-align: left; cursor: pointer; }
+.trace-button:hover { border-color: var(--brand); color: var(--brand); }
+.trace-button[aria-pressed="true"] { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); font-weight: 760; }
+.trace-panel { padding: 24px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.trace-panel h3 { font-size: 1.35rem; }
+.trace-columns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+.trace-column { padding: 15px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft); }
+.trace-column small { color: var(--brand); font-size: 0.72rem; font-weight: 800; }
+.trace-column strong { display: block; margin-top: 7px; font-size: 0.78rem; }
+.trace-column p { margin-top: 6px; color: var(--ink-3); font-size: 0.72rem; }
+
+.roadmap-card { display: flex; flex-direction: column; min-height: 255px; }
+.roadmap-card .scope { margin-top: 10px; color: var(--ink-2); font-size: 0.76rem; }
+.roadmap-card .exit { margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line); color: var(--green); font-size: 0.72rem; font-weight: 720; }
+.decision-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.decision-item { padding: 18px 4px 0; border-top: 2px solid var(--brand); }
+.decision-item .decision-no { color: var(--brand); font-size: 0.72rem; font-weight: 820; }
+.decision-item h3 { margin-top: 9px; }
+.decision-item p { margin-top: 8px; color: var(--ink-2); font-size: 0.78rem; }
+.material-basis { margin-top: 22px; padding: 14px 16px; border-radius: 9px; background: var(--bg-tint); color: var(--ink-3); font-size: 0.7rem; }
+
+.report-footer { padding: 40px 32px; border-top: 1px solid var(--line); color: var(--ink-3); text-align: center; font-size: 0.75rem; }
+
+@media (max-width: 1100px) {
+  .hero-layout { grid-template-columns: 1fr; }
+  .grid-4, .outcome-grid { grid-template-columns: repeat(2, 1fr); }
+  .logic-chain, .workflow-states { grid-template-columns: repeat(3, 1fr); }
+  .logic-step:nth-child(3)::after, .workflow-state:nth-child(3)::after { display: none; }
+  .asset-lifecycle { grid-template-columns: repeat(4, 1fr); }
+  .lifecycle-step:nth-child(4)::after { display: none; }
+  .invariant-grid { grid-template-columns: repeat(2, 1fr); }
+  .operations-thesis { grid-template-columns: 1fr; }
+  .intent-flow { grid-template-columns: repeat(3, 1fr); }
+  .intent-step:nth-child(3)::after { display: none; }
+  .operations-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 760px) {
+  .report-nav { padding: 0 14px; gap: 12px; }
+  .nav-logo { font-size: 0; gap: 0; }
+  .report-section { padding: 82px 18px; }
+  .hero { padding-top: 108px; }
+  h1 { font-size: 2.45rem; }
+  .hero-summary, .metrics, .grid-2, .grid-3, .grid-4, .logic-chain, .workflow-io, .workflow-states, .pressure-grid, .outcome-grid, .asset-map, .asset-lifecycle, .phase-grid, .invariant-grid, .trace-layout, .trace-columns, .decision-grid, .intent-flow, .engineering-grid, .operations-kpis { grid-template-columns: 1fr; }
+  .hero-summary > div + div { border-top: 1px solid var(--line); border-left: 0; }
+  .hero-visual { min-height: 0; padding: 20px; }
+  .metric + .metric { border-top: 1px solid var(--line); border-left: 0; }
+  .logic-step::after, .logic-step:nth-child(3)::after, .workflow-state::after, .workflow-state:nth-child(3)::after {
+    display: block;
+    top: auto;
+    right: 50%;
+    bottom: -18px;
+    transform: translateX(50%) rotate(90deg);
+  }
+  .logic-step:last-child::after, .workflow-state:last-child::after { display: none; }
+  .diagram-head { align-items: flex-start; flex-direction: column; }
+  .diagram-viewport { min-height: 340px; padding: 16px; }
+  .diagram-viewport.drawio-viewport { min-height: 0; padding: 0; }
+  .lifecycle-step::after { display: block !important; top: auto; right: 50%; bottom: -18px; transform: translateX(50%) rotate(90deg); }
+  .lifecycle-step:last-child::after { display: none !important; }
+  .phase-card + .phase-card::before { left: 50%; top: -18px; transform: rotate(90deg); }
+  .intent-step::after, .intent-step:nth-child(3)::after { display: block; top: auto; right: 50%; bottom: -18px; transform: translateX(50%) rotate(90deg); }
+  .intent-step:last-child::after { display: none; }
+  .shift-table { overflow-x: auto; }
+  .shift-row { min-width: 760px; }
+  .scroll-hint { display: block; }
+  .architecture-brief { grid-template-columns: 1fr; }
+  .diagram-toolbar { align-items: flex-start; flex-direction: column; }
+  .architecture-viewport { min-height: 320px; padding: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
+
+@media print {
+  .report-nav, .progress-line, .theme-toggle { display: none !important; }
+  .report-section { break-inside: avoid; padding: 48px 24px; }
+  .fade-in { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="progress-line" id="progressLine" aria-hidden="true"></div>
+<nav class="report-nav" aria-label="汇报章节导航">
+  <div class="nav-logo">BLOGE · RESOURCE GATEWAY</div>
+  <div class="nav-links">
+    <a href="#case">结论</a>
+    <a href="#why-change">为何改变</a>
+    <a href="#dsl-assets">DSL 资产</a>
+    <a href="#operations-shift">运营升级</a>
+    <a href="#blueprint">运行架构</a>
+    <a href="#testability">正确性证明</a>
+    <a href="#delivery-value">交付与价值</a>
+    <a href="#roadmap">采用路径</a>
+  </div>
+  <button class="theme-toggle" id="themeToggle" type="button" aria-label="切换明亮与低光主题">
+    <span class="theme-dark" aria-hidden="true">◐</span><span class="theme-light" aria-hidden="true">◑</span>
+  </button>
+</nav>
+
+<main>
+  <section class="report-section hero" id="case">
+    <div class="container hero-layout">
+      <div class="hero-copy fade-in">
+        <div class="hero-badge">RESOURCE GATEWAY · 技术架构汇报</div>
+        <h1>把业务集成建设成可编排、可验证、可持续演进的业务资产</h1>
+        <p class="lead">Resource Descriptor、BLOGE DSL 与 Schema Contract 共同描述业务语义；通用执行内核负责稳定运行；Scenario、Coverage 与签名 Evidence 负责证明变更。运营人员据此从逐字段配置转向业务意图、正确答案和发布决策。</p>
+        <div class="hero-summary" aria-label="汇报核心摘要">
+          <div><small>战略目标</small><strong>把一次性接口集成转化为可复用的业务能力资产。</strong></div>
+          <div><small>业务结果</small><strong>缩短变更周期，同时降低缺陷逃逸和重复建设。</strong></div>
+          <div><small>关键突破</small><strong>让 Coding Agent（编码智能体）在受控 DSL、测试和证据体系内承担工程劳动。</strong></div>
+        </div>
+        <p class="fact-note">材料范围：Resource Gateway README、测试运行时隔离 ADR、工业级可测试性方案、Contract / Scenario Authoring 与 Test Kit 设计。</p>
+      </div>
+      <div class="hero-visual fade-in" aria-label="信用兜底规则变更示例">
+        <div class="hero-case">
+          <div class="hero-case-head"><small>贯穿案例 · 仓库内置信用兜底流程</small><strong>业务希望调整主授信超时后的备选服务规则</strong></div>
+          <div class="hero-case-step" data-step="1"><strong>运营表述业务意图</strong><span>完成条件、适用范围、重试边界和预期结果。</span></div>
+          <div class="hero-case-step" data-step="2"><strong>编码智能体生成资产变更</strong><span>定位 Graph、Descriptor、Scenario 与依赖，形成可审查 Diff。</span></div>
+          <div class="hero-case-step" data-step="3"><strong>平台执行确定性验证</strong><span>覆盖主服务超时、备选成功、全部失败和副作用边界。</span></div>
+          <div class="hero-case-step result" data-step="4"><strong>授权人员依据 Evidence 发布</strong><span>变更、路径、覆盖、版本和风险接受均可追溯。</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="why-change">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">01 · 决策问题：为何改变</div>
+        <h2>Resource Gateway 的价值不在多接一个 API，而在保存可复用的业务语义</h2>
+        <p class="lead">外部 API、模型服务和内部系统持续变化。若流程、异常策略和验证知识仍锁在项目代码或配置页面中，团队只能重复解释、重复实现、上线后再观察。</p>
+      </header>
+      <div class="case-context fade-in"><strong>案例中的损失：</strong>一次信用兜底规则调整同时涉及调用顺序、超时、重试、结果映射和失败策略。传统方式需要在多个配置入口和代码位置查找关联关系，业务人员很难在发布前确认完整语义。</div>
+      <div class="pressure-grid fade-in">
+        <article class="pressure-item"><span>知识不可见</span><strong>业务逻辑埋在服务代码和配置入口</strong><p>调用顺序、分支、降级和完成条件难以共同审阅。</p></article>
+        <article class="pressure-item"><span>变更高耦合</span><strong>每个 Provider 复制一套实现</strong><p>供应商差异扩散为算子类、测试、发布和运维成本。</p></article>
+        <article class="pressure-item"><span>质量后置</span><strong>运行成功被误当成业务正确</strong><p>算子单测无法证明 DAG 的分支、重试和组合语义。</p></article>
+      </div>
+      <div class="logic-chain chapter-block fade-in" aria-label="业务能力资产化路径">
+        <div class="logic-step"><small>外部能力</small><strong>API / 事件 / 函数</strong><span>来源多样、变化频繁</span></div>
+        <div class="logic-step"><small>资源契约</small><strong>Descriptor + Schema</strong><span>统一调用和数据边界</span></div>
+        <div class="logic-step"><small>业务语义</small><strong>Graph + Decision</strong><span>显式表达流程与策略</span></div>
+        <div class="logic-step"><small>正确性证明</small><strong>Scenario + Evidence</strong><span>冻结案例、路径与结果</span></div>
+        <div class="logic-step"><small>组织复用</small><strong>Publication + Catalog</strong><span>按版本发布和演进</span></div>
+      </div>
+      <div class="chapter-block fade-in">
+        <div class="chapter-label">架构投入对应的业务结果</div>
+        <div class="outcome-grid">
+          <article class="outcome-item"><div class="outcome-number">交付效率</div><h3>缩短新场景与规则变更周期</h3><p>优先装配 Descriptor、Graph 模板和测试资产，减少重复编码和跨团队解释。</p><div class="kpi-line">观察口径：需求确认至可发布版本的周期</div></article>
+          <article class="outcome-item"><div class="outcome-number">变更质量</div><h3>把影响识别和验证前移</h3><p>Fingerprint、Diff、Impact 和精确版本测试在发布前暴露不兼容与覆盖缺口。</p><div class="kpi-line">观察口径：失败率、回滚率、缺陷逃逸率</div></article>
+          <article class="outcome-item"><div class="outcome-number">资产复用</div><h3>减少专属 Operator 和孤立配置</h3><p>资源、Graph、Scenario 与 Evidence 进入统一生命周期。</p><div class="kpi-line">观察口径：复用资产占比、新增专属实现数量</div></article>
+          <article class="outcome-item"><div class="outcome-number">风险质量</div><h3>形成可审计的发布依据</h3><p>测试结果绑定目标、执行计划、Trace、Coverage 与签名 Evidence。</p><div class="kpi-line">观察口径：关键路径覆盖、证据完整率、定位时长</div></article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section" id="dsl-assets">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">02 · 决策问题：为什么要 DSL 化</div>
+        <h2>DSL 把业务知识从实现细节转化为可发现、可变更、可验证的资产</h2>
+        <p class="lead">流程、分支、决策表、超时、重试、降级与聚合获得稳定身份和版本。业务语义可以被人审阅，也可以被编码智能体和工程工具安全处理。</p>
+      </header>
+      <div class="asset-formula fade-in" aria-label="可经营业务资产的构成">
+        <b>业务语义</b><i>+</i><b>Schema 契约</b><i>+</i><b>稳定身份与版本</b><i>+</i><b>测试证据</b><i>+</i><b>Owner 与治理策略</b><i>=</i><b>可经营业务资产</b>
+      </div>
+      <div class="asset-map fade-in">
+        <div class="asset-stack">
+          <h3>从外部能力到可复用业务产品</h3>
+          <div class="asset-layer amber"><strong>资源资产 · ResourceDescriptor</strong><span>端点、参数映射、认证、响应协议与载荷提取</span></div>
+          <div class="asset-layer purple"><strong>能力资产 · Operator / Function Library</strong><span>输入输出、运行绑定、兼容语义与影响分析</span></div>
+          <div class="asset-layer"><strong>业务资产 · BLOGE Graph / Decision Table</strong><span>并发、分支、聚合、重试、超时与降级</span></div>
+          <div class="asset-layer green"><strong>产品资产 · Publication</strong><span>冻结依赖、契约、版本和发布门禁</span></div>
+        </div>
+        <div class="asset-support">
+          <h3>质量资产说明它为什么可信</h3>
+          <div class="support-list">
+            <div class="support-item"><strong>Contract</strong><span>明确输入、输出、兼容性和系统边界</span></div>
+            <div class="support-item"><strong>Scenario / FixtureBundle</strong><span>冻结业务案例、依赖行为和预期结果</span></div>
+            <div class="support-item"><strong>EffectiveExecutionPlan</strong><span>在运行前解析真实、替换、回放和拒绝的调用点</span></div>
+            <div class="support-item"><strong>Trace / Coverage / Evidence</strong><span>记录路径、尝试、断言、覆盖、版本与签名事实</span></div>
+            <div class="support-item"><strong>Diff / Impact / Stale</strong><span>资产变化后定位受影响的 Graph、Suite 与发布物</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="asset-lifecycle fade-in" aria-label="业务资产生命周期">
+        <div class="lifecycle-step"><strong>发现</strong><span>API / DSL / Catalog</span></div>
+        <div class="lifecycle-step"><strong>创作</strong><span>Intent / ChangeSet</span></div>
+        <div class="lifecycle-step"><strong>编译</strong><span>Canonical Contract</span></div>
+        <div class="lifecycle-step"><strong>验证</strong><span>Schema / Impact</span></div>
+        <div class="lifecycle-step"><strong>测试</strong><span>Scenario / Evidence</span></div>
+        <div class="lifecycle-step"><strong>发布</strong><span>Revision / Gate</span></div>
+        <div class="lifecycle-step"><strong>演进</strong><span>Trace / Stale</span></div>
+      </div>
+      <div class="grid-3 chapter-block fade-in">
+        <article class="card"><div class="item-kicker">版本控制</div><h3>文本资产支持 Diff、评审与回滚</h3><p>编码智能体可以提出可审查变更，不直接修改运行态。</p></article>
+        <article class="card"><div class="item-kicker">静态分析</div><h3>Schema 提供确定的工具边界</h3><p>生成、补全和影响分析建立在可机器校验的契约上。</p></article>
+        <article class="card result"><div class="item-kicker">测试自动化</div><h3>Scenario 让正确答案进入 CI</h3><p>每次资产变更都可以复用回归、覆盖和发布门禁。</p></article>
+      </div>
+      <div class="callout evidence fade-in chapter-block"><strong>业务重要性：</strong>DSL 化把复用单位从代码库提升为带契约、Owner、版本和证据的业务能力。运营、领域、测试与平台团队可以围绕同一个可执行事实协作。</div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="operations-shift">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">03 · 决策问题：运营怎样工作</div>
+        <h2>运营人员负责业务意图与正确答案，编码智能体承担工程化变更</h2>
+        <p class="lead">运营人员表达目标、适用范围、优先级、例外和验收标准。编码智能体复用成熟的代码检索、版本控制、静态分析、测试生成和 CI 工具，完成资产定位、变更草案、影响分析和验证执行。</p>
+      </header>
+      <div class="operations-thesis fade-in">
+        <article class="role-shift">
+          <small>角色变化</small>
+          <strong>从「配置执行者」转为「业务意图与正确性负责人」</strong>
+          <p>运营人员把精力放在业务目标、规则边界、异常处置和预期结果。字段定位、依赖查找、DSL 修改、测试补齐与影响分析由编码智能体在受控工具链内完成。</p>
+          <div class="role-boundary"><b>责任边界：</b>编码智能体生成可审查的方案，不替业务定义正确答案。业务 Oracle、风险接受和发布批准仍由授权人员确认；高风险变更进入双人复核或专门治理门禁。</div>
+        </article>
+        <div>
+          <p class="scroll-hint">横向滑动查看传统配置与意图驱动工作的完整对比</p>
+          <div class="shift-table" role="table" aria-label="传统配置与意图驱动运营工作方式对比">
+            <div class="shift-row header" role="row"><div role="columnheader">比较维度</div><div role="columnheader">传统配置工作</div><div role="columnheader">意图表述与验证工作</div></div>
+            <div class="shift-row" role="row"><div role="cell">管理对象</div><div role="cell">页面、字段、参数和值</div><div role="cell">业务目标、约束、规则、案例和证据</div></div>
+            <div class="shift-row" role="row"><div role="cell">主要动作</div><div role="cell">查找入口、逐项填写、人工核对</div><div role="cell">表述意图、审阅 Diff、确认结果、批准发布</div></div>
+            <div class="shift-row" role="row"><div role="cell">知识复用</div><div role="cell">操作手册、个人经验、复制模板</div><div role="cell">资产目录、Schema、DSL、Scenario 与历史 Evidence</div></div>
+            <div class="shift-row" role="row"><div role="cell">质量控制</div><div role="cell">配置后抽查或上线后观察</div><div role="cell">编译、静态校验、测试、覆盖分析与发布门禁</div></div>
+            <div class="shift-row" role="row"><div role="cell">变更记录</div><div role="cell">保留最终状态，过程难以还原</div><div role="cell">意图、变更集、评审、测试与 Evidence 全程可追溯</div></div>
+            <div class="shift-row" role="row"><div role="cell">改进依据</div><div role="cell">人工复盘和局部运行指标</div><div role="cell">失败路径、覆盖缺口、人工修正和资产版本</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="diagram-shell native-report-diagram fade-in">
+        <div class="diagram-head"><strong>意图驱动的运营变更工作流</strong><span class="diagram-hint">失败返回具体资产，高风险与语义不确定项返回授权人员</span></div>
+        <div class="diagram-viewport native-svg-viewport">
+<!-- BEGIN INLINE NATIVE OPERATIONS -->
+<svg class="native-report-svg native-operations-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 580" role="img" aria-labelledby="ops-flow-title ops-flow-desc">
+  <title id="ops-flow-title">意图驱动的运营变更工作流</title>
+  <desc id="ops-flow-desc">运营人员表述意图并定义业务正确答案，编码智能体装配上下文和生成变更，平台进行确定性校验与隔离验证，授权人员批准发布。</desc>
+  <defs>
+    <marker id="ops-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="ops-red-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B14D3C"/></marker>
+    <marker id="ops-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8C5B16"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.step{font-size:17px;font-weight:750}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#ops-blue-arrow)}.feedback{fill:none;stroke:#B14D3C;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#ops-red-arrow)}.gate{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#ops-amber-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="580" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2C7A6B">INTENT → CHANGESET → EVIDENCE</text>
+  <text x="38" y="72" class="title">运营定义正确答案，编码智能体完成工程劳动，平台提供可重复证明</text>
+
+  <line x1="128" y1="250" x2="1192" y2="250" stroke="#D7E5EF" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="128" cy="250" r="18" fill="#8C5B16"/><circle cx="341" cy="250" r="18" fill="#2C7A6B"/><circle cx="554" cy="250" r="18" fill="#2C7A6B"/><circle cx="767" cy="250" r="18" fill="#2F6F9F"/><circle cx="980" cy="250" r="18" fill="#2F7D59"/><circle cx="1192" cy="250" r="18" fill="#2F7D59"/>
+  <path d="M146 250 H313" class="flow"/><path d="M359 250 H526" class="flow"/><path d="M572 250 H739" class="flow"/><path d="M785 250 H952" class="flow"/><path d="M998 250 H1164" class="flow"/>
+
+  <rect x="48" y="116" width="160" height="100" rx="13" class="node amber"/>
+  <text x="68" y="148" class="step">1 · 意图表述</text><text x="68" y="175" class="sub">目标 · 规则 · 例外</text><text x="68" y="197" class="micro">Owner / IntentSpec</text>
+  <rect x="261" y="284" width="160" height="100" rx="13" class="node purple"/>
+  <text x="281" y="316" class="step">2 · 上下文装配</text><text x="281" y="343" class="sub">Catalog · Schema</text><text x="281" y="365" class="micro">智能体 / AssetContext</text>
+  <rect x="474" y="116" width="160" height="100" rx="13" class="node purple"/>
+  <text x="494" y="148" class="step">3 · 变更生成</text><text x="494" y="175" class="sub">DSL · Scenario</text><text x="494" y="197" class="micro">智能体 / ChangeSet</text>
+  <rect x="687" y="284" width="160" height="100" rx="13" class="node blue"/>
+  <text x="707" y="316" class="step">4 · 确定校验</text><text x="707" y="343" class="sub">Compile · Impact</text><text x="707" y="365" class="micro">Platform / Contract</text>
+  <rect x="900" y="116" width="160" height="100" rx="13" class="node green"/>
+  <text x="920" y="148" class="step">5 · 隔离验证</text><text x="920" y="175" class="sub">Trace · Coverage</text><text x="920" y="197" class="micro">Platform / Evidence</text>
+  <rect x="1112" y="284" width="160" height="100" rx="13" class="node green"/>
+  <text x="1132" y="316" class="step">6 · 批准发布</text><text x="1132" y="343" class="sub">范围 · 风险 · 版本</text><text x="1132" y="365" class="micro">Owner / Publication</text>
+
+  <path d="M980 216 V90 H554 V106" class="feedback"/>
+  <text x="692" y="82" class="sub" style="fill:#B14D3C">失败定位到具体资产，自动生成下一轮修订</text>
+  <path d="M1192 384 V432 H128 V226" class="gate"/>
+  <text x="434" y="452" class="sub" style="fill:#8C5B16">语义不确定、高风险例外和业务 Oracle 返回授权人员确认</text>
+
+  <rect x="48" y="486" width="1224" height="60" rx="12" fill="#1F2A3D"/>
+  <text x="70" y="511" font-size="13" font-weight="750" style="fill:#9EC5DE">效率跃迁</text>
+  <text x="70" y="533" font-size="14" style="fill:#DCE4EC">从逐字段配置与人工核对，升级为意图表述、Diff 审阅、证据验证与发布批准；成熟编码智能体生态成为运营生产力。</text>
+</svg>
+<!-- END INLINE NATIVE OPERATIONS -->
+        </div>
+      </div>
+      <div class="engineering-grid fade-in" aria-label="可复用的软件工程方法">
+        <article class="engineering-card"><small>VERSIONING</small><strong>版本控制与变更评审</strong><p>稳定 ID、Diff、历史回溯和可恢复发布。</p></article>
+        <article class="engineering-card"><small>CONTRACT</small><strong>Schema 与静态分析</strong><p>执行前发现类型、绑定、兼容性和依赖问题。</p></article>
+        <article class="engineering-card"><small>TESTING</small><strong>测试分层与回归套件</strong><p>从 Schema Contract 到完整 DAG 的分层证明。</p></article>
+        <article class="engineering-card"><small>GENERATIVE</small><strong>边界、属性与变异测试</strong><p>用 Schema 生成边界，并检验测试的防回归能力。</p></article>
+        <article class="engineering-card"><small>DELIVERY</small><strong>CI 与质量门禁</strong><p>把编译、测试、覆盖和 Evidence 固化为发布条件。</p></article>
+        <article class="engineering-card"><small>OBSERVABILITY</small><strong>Trace 与过程质量指标</strong><p>按节点、路径、规则、Fixture 和版本归因。</p></article>
+      </div>
+      <div class="operations-kpis fade-in" aria-label="运营工作方式度量建议">
+        <div class="operations-kpi"><strong>效率</strong><span>人工配置时长、意图到可验证方案周期、建议采纳率</span></div>
+        <div class="operations-kpi"><strong>正确性</strong><span>首次验证通过率、配置缺陷逃逸率、回滚率</span></div>
+        <div class="operations-kpi"><strong>覆盖</strong><span>关键路径、规则、边界、负向和外部依赖覆盖</span></div>
+        <div class="operations-kpi"><strong>过程质量</strong><span>自动校验覆盖率、Evidence 完整率、人工例外及修复周期</span></div>
+      </div>
+      <div class="callout attention fade-in chapter-block"><strong>适用边界：</strong>规则明确、低频且低风险的稳定配置可以继续使用表单。跨系统、规则密集、变化频繁或需要严格证明的业务资产优先进入意图驱动工作流；两种方式共享同一 Canonical Contract。</div>
+    </div>
+  </section>
+
+  <section class="report-section" id="blueprint">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">04 · 决策问题：架构如何承接</div>
+        <h2>三个视图连接 DSL 资产、稳定执行内核与正确性证据</h2>
+        <p class="lead">运行时只消费已批准资产；业务请求沿稳定主链执行；测试控制带外进入隔离运行时；Trace 与 Evidence 回到发布治理。</p>
+      </header>
+      <!-- BEGIN INLINE NATIVE ARCHITECTURE GALLERY -->
+      <div class="architecture-gallery fade-in">
+        <div class="architecture-tabs" role="tablist" aria-label="Resource Gateway 技术架构视图">
+          <button class="architecture-tab" id="architecture-tab-runtime" type="button" role="tab" aria-selected="true" aria-controls="architecture-panel-runtime" data-architecture="runtime">运行架构</button>
+          <button class="architecture-tab" id="architecture-tab-authoring" type="button" role="tab" aria-selected="false" aria-controls="architecture-panel-authoring" data-architecture="authoring" tabindex="-1">资产生产</button>
+          <button class="architecture-tab" id="architecture-tab-evidence" type="button" role="tab" aria-selected="false" aria-controls="architecture-panel-evidence" data-architecture="evidence" tabindex="-1">测试与证据</button>
+        </div>
+
+        <article class="architecture-panel diagram-shell" id="architecture-panel-runtime" role="tabpanel" aria-labelledby="architecture-tab-runtime" data-architecture-panel="runtime">
+          <div class="architecture-brief">
+            <div><small>架构判断</small><strong>稳定执行内核如何承接持续变化的业务资产？</strong></div>
+            <div><small>图上结论</small><span>DSL、Registry、Scenario 与发布版本在带外治理；业务请求沿 Gateway → Graph Engine → 通用 HttpResourceOperator 执行；Trace 与 Evidence 回到发布门禁。</span></div>
+          </div>
+          <div class="diagram-toolbar"><span>先看中部蓝色执行主链，再看上方资产控制与下方证据回流。</span><div class="diagram-scale-group" aria-label="图形缩放"><button class="diagram-scale" type="button" data-diagram-scale="fit" aria-pressed="false">适应宽度</button><button class="diagram-scale" type="button" data-diagram-scale="actual" aria-pressed="true">1:1 阅读</button></div></div>
+          <div class="architecture-viewport" data-scale="actual">
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 760" role="img" aria-labelledby="rg-runtime-title rg-runtime-desc">
+  <title id="rg-runtime-title">Resource Gateway 运行与治理架构</title>
+  <desc id="rg-runtime-desc">业务资产通过带外控制进入稳定的资源网关执行链，测试控制面与业务数据分离，运行证据回流到发布治理。</desc>
+  <defs>
+    <marker id="rg-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2F6F9F"/></marker>
+    <marker id="rg-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8C5B16"/></marker>
+    <marker id="rg-green-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2F7D59"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.lane{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFFFFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.blue-line{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#rg-blue-arrow)}.control{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#rg-amber-arrow)}.evidence{fill:none;stroke:#2F7D59;stroke-width:2.2;stroke-dasharray:7 7;marker-end:url(#rg-green-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="760" rx="20" fill="#FFFFFF"/>
+
+  <text x="38" y="42" class="eyebrow" style="fill:#2F6F9F">RESOURCE GATEWAY · STABLE CORE / PROGRAMMABLE EDGE</text>
+  <text x="38" y="72" class="title">资产带外治理，业务请求沿稳定主链执行，证据回到发布决策</text>
+
+  <rect x="38" y="98" width="1244" height="158" rx="16" class="lane"/>
+  <text x="58" y="124" class="eyebrow" style="fill:#8C5B16">业务资产与治理面</text>
+  <text x="58" y="145" class="micro">变化被版本化、可编译、可验证；运行时只消费已批准版本</text>
+  <rect x="58" y="166" width="210" height="62" rx="11" class="node amber"/>
+  <text x="78" y="191" class="label">业务意图 / Oracle</text><text x="78" y="212" class="sub">目标 · 约束 · 风险接受</text>
+  <rect x="292" y="166" width="210" height="62" rx="11" class="node purple"/>
+  <text x="312" y="191" class="label">BLOGE DSL</text><text x="312" y="212" class="sub">Graph · Decision · Mapping</text>
+  <rect x="526" y="166" width="210" height="62" rx="11" class="node green"/>
+  <text x="546" y="191" class="label">Scenario / Fixture</text><text x="546" y="212" class="sub">案例 · 替身 · 业务断言</text>
+  <rect x="760" y="166" width="210" height="62" rx="11" class="node blue"/>
+  <text x="780" y="191" class="label">Resource Registry</text><text x="780" y="212" class="sub">Descriptor · Schema · Policy</text>
+  <rect x="994" y="166" width="268" height="62" rx="11" class="node"/>
+  <text x="1014" y="191" class="label">Revision / Publication</text><text x="1014" y="212" class="sub">指纹 · 审批 · 晋级门禁</text>
+
+  <path d="M397 228 V286 H581" class="control"/>
+  <path d="M865 228 V274 H812 V286" class="control"/>
+  <path d="M1128 228 V274 H1018 V286" class="control"/>
+
+  <rect x="38" y="286" width="1244" height="258" rx="16" class="lane"/>
+  <text x="58" y="316" class="eyebrow" style="fill:#2F6F9F">Resource Gateway 执行面</text>
+  <text x="58" y="337" class="micro">稳定内核：Graph Engine 负责业务语义；通用 Operator 负责资源适配</text>
+  <rect x="58" y="366" width="190" height="100" rx="12" class="node"/>
+  <text x="78" y="397" class="label">业务消费者</text><text x="78" y="421" class="sub">API · Event · Job</text><text x="78" y="444" class="micro">只提交业务输入</text>
+  <rect x="292" y="366" width="190" height="100" rx="12" class="node blue"/>
+  <text x="312" y="397" class="label">Request Gateway</text><text x="312" y="421" class="sub">鉴权 · 路由 · 限流</text><text x="312" y="444" class="micro">purpose 边界校验</text>
+  <rect x="526" y="366" width="190" height="100" rx="12" class="node blue"/>
+  <text x="546" y="397" class="label">Graph Engine</text><text x="546" y="421" class="sub">DAG · Branch · Retry</text><text x="546" y="444" class="micro">执行冻结业务语义</text>
+  <rect x="760" y="366" width="220" height="100" rx="12" class="node purple"/>
+  <text x="780" y="397" class="label">HttpResourceOperator</text><text x="780" y="421" class="sub">统一资源调用抽象</text><text x="780" y="444" class="micro">避免 provider-specific 分叉</text>
+  <rect x="1024" y="366" width="238" height="100" rx="12" class="node"/>
+  <text x="1044" y="397" class="label">外部系统边界</text><text x="1044" y="421" class="sub">Mapping · Auth · Protocol</text><text x="1044" y="444" class="micro">SaaS · Legacy · Data</text>
+  <path d="M248 416 H282" class="blue-line"/><path d="M482 416 H516" class="blue-line"/><path d="M716 416 H750" class="blue-line"/><path d="M980 416 H1014" class="blue-line"/>
+  <rect x="292" y="490" width="688" height="34" rx="8" fill="#EDF5FA" stroke="#CFE0EC"/>
+  <text x="314" y="512" class="sub" style="fill:#285F88">GraphContext = 业务数据；不携带 Fixture、Mock、Selector 等测试控制信息</text>
+
+  <rect x="38" y="574" width="1244" height="142" rx="16" class="lane"/>
+  <text x="58" y="604" class="eyebrow" style="fill:#2F7D59">测试控制与证据面</text>
+  <rect x="58" y="625" width="210" height="62" rx="11" class="node amber"/>
+  <text x="78" y="650" class="label">Plan Compiler</text><text x="78" y="671" class="sub">冻结目标 · 安全预检</text>
+  <rect x="292" y="625" width="210" height="62" rx="11" class="node blue"/>
+  <text x="312" y="650" class="label">Isolated Runtime</text><text x="312" y="671" class="sub">REAL / MOCK / REPLAY / DENY</text>
+  <rect x="526" y="625" width="210" height="62" rx="11" class="node green"/>
+  <text x="546" y="650" class="label">Trace &amp; Coverage</text><text x="546" y="671" class="sub">调用点 · 分支 · 消费情况</text>
+  <rect x="760" y="625" width="210" height="62" rx="11" class="node green"/>
+  <text x="780" y="650" class="label">Signed Evidence</text><text x="780" y="671" class="sub">版本绑定 · 独立验证</text>
+  <rect x="994" y="625" width="268" height="62" rx="11" class="node"/>
+  <text x="1014" y="650" class="label">Release Gate</text><text x="1014" y="671" class="sub">覆盖阈值 · 风险策略 · 审计</text>
+  <path d="M268 656 H282" class="blue-line"/><path d="M502 656 H516" class="blue-line"/><path d="M736 656 H750" class="blue-line"/><path d="M970 656 H984" class="blue-line"/>
+  <path d="M397 625 V554 H620 V476" class="control"/>
+  <path d="M865 625 V558 H1143 V476" class="evidence"/>
+  <path d="M1128 625 V554 H1248 V244 H1150 V228" class="evidence"/>
+</svg>
+          </div>
+        </article>
+
+        <article class="architecture-panel diagram-shell" id="architecture-panel-authoring" role="tabpanel" aria-labelledby="architecture-tab-authoring" data-architecture-panel="authoring" hidden>
+          <div class="architecture-brief">
+            <div><small>架构判断</small><strong>运营工作如何从繁杂配置升级为意图与验证？</strong></div>
+            <div><small>图上结论</small><span>运营定义 IntentSpec 与业务 Oracle；编码智能体复用工程生态生成可审查 ChangeSet；确定性编译、隔离验证和人工风险门共同形成可发布业务资产。</span></div>
+          </div>
+          <div class="diagram-toolbar"><span>从左向右阅读四个责任区；红色回路将验证失败定位回具体资产。</span><div class="diagram-scale-group" aria-label="图形缩放"><button class="diagram-scale" type="button" data-diagram-scale="fit" aria-pressed="false">适应宽度</button><button class="diagram-scale" type="button" data-diagram-scale="actual" aria-pressed="true">1:1 阅读</button></div></div>
+          <div class="architecture-viewport" data-scale="actual">
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 720" role="img" aria-labelledby="dsl-production-title dsl-production-desc">
+  <title id="dsl-production-title">DSL 业务资产生产架构</title>
+  <desc id="dsl-production-desc">运营人员定义业务意图与正确答案，编码智能体生成工程化变更，确定性编译与隔离验证形成可发布业务资产。</desc>
+  <defs>
+    <marker id="dsl-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="dsl-red-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B14D3C"/></marker>
+    <marker id="dsl-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8C5B16"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.zone{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#dsl-blue-arrow)}.feedback{fill:none;stroke:#B14D3C;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#dsl-red-arrow)}.gate{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#dsl-amber-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="720" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2C7A6B">BUSINESS ASSET COMPILER</text>
+  <text x="38" y="72" class="title">运营表达意图，编码智能体完成变更，平台确定性地证明结果</text>
+
+  <rect x="38" y="98" width="260" height="486" rx="16" class="zone"/>
+  <text x="58" y="130" class="eyebrow" style="fill:#8C5B16">01 · 业务输入</text>
+  <rect x="58" y="154" width="220" height="92" rx="12" class="node amber"/>
+  <text x="78" y="183" class="label">IntentSpec</text><text x="78" y="207" class="sub">目标 · 约束 · 例外</text><text x="78" y="228" class="micro">由业务 Owner 定义</text>
+  <rect x="58" y="270" width="220" height="92" rx="12" class="node"/>
+  <text x="78" y="299" class="label">AssetContext</text><text x="78" y="323" class="sub">Catalog · Schema · Policy</text><text x="78" y="344" class="micro">机器可检索的上下文</text>
+  <rect x="58" y="386" width="220" height="92" rx="12" class="node"/>
+  <text x="78" y="415" class="label">Reference Corpus</text><text x="78" y="439" class="sub">API · 示例 · 历史 DSL</text><text x="78" y="460" class="micro">复用现有行业知识</text>
+  <rect x="58" y="502" width="220" height="58" rx="12" class="node amber"/>
+  <text x="78" y="527" class="label">业务 Oracle</text><text x="78" y="548" class="sub">什么才算正确</text>
+
+  <rect x="326" y="98" width="292" height="486" rx="16" class="zone"/>
+  <text x="346" y="130" class="eyebrow" style="fill:#2C7A6B">02 · CODING AGENT</text>
+  <rect x="346" y="154" width="252" height="286" rx="14" class="node purple"/>
+  <circle cx="379" cy="190" r="13" fill="#2C7A6B"/><text x="374" y="195" font-size="13" font-weight="800" style="fill:#FFF">A</text>
+  <text x="404" y="196" class="label">受控工程工作台</text>
+  <rect x="366" y="222" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="244" class="label">上下文解析</text><text x="384" y="263" class="micro">定位资产与依赖</text>
+  <rect x="366" y="290" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="312" class="label">变更规划与生成</text><text x="384" y="331" class="micro">DSL · Scenario · Fixture</text>
+  <rect x="366" y="358" width="212" height="52" rx="9" fill="#FFF" stroke="#D5E5E1"/>
+  <text x="384" y="380" class="label">测试补齐与修订</text><text x="384" y="399" class="micro">基于诊断自动迭代</text>
+  <rect x="346" y="466" width="252" height="94" rx="12" class="node"/>
+  <text x="366" y="494" class="label">可审查 ChangeSet</text>
+  <text x="366" y="518" class="sub">Diff · 说明 · 测试资产</text>
+  <text x="366" y="540" class="micro">不直接绕过治理写入运行时</text>
+
+  <rect x="646" y="98" width="300" height="486" rx="16" class="zone"/>
+  <text x="666" y="130" class="eyebrow" style="fill:#2F6F9F">03 · 确定性编译</text>
+  <rect x="666" y="154" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="181" class="label">Parse / Schema</text><text x="686" y="204" class="sub">语法、类型、契约一致性</text>
+  <rect x="666" y="250" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="277" class="label">Dependency / Impact</text><text x="686" y="300" class="sub">依赖闭包与受影响资产</text>
+  <rect x="666" y="346" width="260" height="74" rx="11" class="node blue"/>
+  <text x="686" y="373" class="label">Canonical Contract</text><text x="686" y="396" class="sub">规范化输出 · Fingerprint</text>
+  <rect x="666" y="466" width="260" height="94" rx="12" class="node green"/>
+  <text x="686" y="494" class="label">隔离验证</text><text x="686" y="518" class="sub">Scenario · Coverage · Evidence</text><text x="686" y="540" class="micro">同输入得到可重复证明</text>
+
+  <rect x="974" y="98" width="308" height="486" rx="16" class="zone"/>
+  <text x="994" y="130" class="eyebrow" style="fill:#2F7D59">04 · 治理输出</text>
+  <rect x="994" y="154" width="268" height="112" rx="12" class="node green"/>
+  <text x="1014" y="183" class="label">可发布业务资产包</text>
+  <text x="1014" y="208" class="sub">Contract + DSL + Test Assets</text>
+  <text x="1014" y="232" class="sub">Revision + Signed Evidence</text>
+  <rect x="994" y="294" width="268" height="92" rx="12" class="node amber"/>
+  <text x="1014" y="323" class="label">人工确认门</text><text x="1014" y="347" class="sub">语义不确定 · 高风险例外</text><text x="1014" y="368" class="micro">业务 Owner / 双人复核</text>
+  <rect x="994" y="414" width="268" height="146" rx="12" class="node"/>
+  <text x="1014" y="443" class="label">Publication</text>
+  <text x="1014" y="468" class="sub">Eligible → Approved → Active</text>
+  <line x1="1014" y1="490" x2="1242" y2="490" stroke="#DCE4EC"/>
+  <text x="1014" y="516" class="micro">完整保存：意图、变更、评审、</text><text x="1014" y="537" class="micro">测试、覆盖与发布决策</text>
+
+  <path d="M298 316 H316" class="flow"/><path d="M618 513 H636" class="flow"/><path d="M946 513 H964" class="flow"/>
+  <path d="M946 383 H964 V210 H984" class="flow"/>
+  <path d="M1128 386 V404" class="gate"/>
+  <path d="M796 466 V446 H628 V386 H608" class="feedback"/>
+  <text x="650" y="448" class="micro" style="fill:#B14D3C">诊断到具体 DSL / Fixture / Binding</text>
+  <path d="M278 531 H314 V200 H336" class="gate"/>
+
+  <rect x="38" y="612" width="1244" height="70" rx="14" fill="#1F2A3D"/>
+  <text x="64" y="640" font-size="14" font-weight="750" style="fill:#9EC5DE">责任边界</text>
+  <text x="64" y="663" font-size="14" style="fill:#DCE4EC">运营定义意图与正确答案　·　编码智能体承担检索、修改和测试劳动　·　确定性平台给出可重复证明　·　授权人员批准风险</text>
+</svg>
+          </div>
+        </article>
+
+        <article class="architecture-panel diagram-shell" id="architecture-panel-evidence" role="tabpanel" aria-labelledby="architecture-tab-evidence" data-architecture-panel="evidence" hidden>
+          <div class="architecture-brief">
+            <div><small>架构判断</small><strong>如何证明业务资产的组合语义与晋级条件正确？</strong></div>
+            <div><small>图上结论</small><span>测试控制、隔离执行和证据验证三面分离；GraphContext 不承载测试控制；生产依赖硬拒绝；独立 Test Kit 可复核签名 Evidence。</span></div>
+          </div>
+          <div class="diagram-toolbar"><span>从计划、执行到证据逐列阅读；底部蓝色与红色条带表示两条不可破坏的边界。</span><div class="diagram-scale-group" aria-label="图形缩放"><button class="diagram-scale" type="button" data-diagram-scale="fit" aria-pressed="false">适应宽度</button><button class="diagram-scale" type="button" data-diagram-scale="actual" aria-pressed="true">1:1 阅读</button></div></div>
+          <div class="architecture-viewport" data-scale="actual">
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 740" role="img" aria-labelledby="test-arch-title test-arch-desc">
+  <title id="test-arch-title">可测试性控制、执行与证据架构</title>
+  <desc id="test-arch-desc">测试控制通过不可变执行计划带外进入隔离运行时，业务 GraphContext 保持纯净，执行事实形成可独立验证的签名证据。</desc>
+  <defs>
+    <marker id="test-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="test-green-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F7D59"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.zone{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.red{fill:#FBF1EF;stroke:#B14D3C}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#test-blue-arrow)}.evidence{fill:none;stroke:#2F7D59;stroke-width:2.5;stroke-dasharray:8 7;marker-end:url(#test-green-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="740" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2F7D59">TESTABILITY BY ARCHITECTURE</text>
+  <text x="38" y="72" class="title">把测试控制、业务执行和验证证据拆开，正确性才可重复、可审计</text>
+
+  <rect x="38" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="58" y="134" class="eyebrow" style="fill:#8C5B16">01 · 测试控制面</text>
+  <text x="58" y="155" class="micro">先解析，再执行；歧义和越权在运行前失败</text>
+  <rect x="58" y="180" width="346" height="68" rx="11" class="node amber"/>
+  <text x="78" y="207" class="label">Purpose Gate</text><text x="78" y="230" class="sub">TEST / REPLAY / PRODUCTION</text>
+  <rect x="58" y="266" width="346" height="68" rx="11" class="node"/>
+  <text x="78" y="293" class="label">Frozen Target + FixtureBundle</text><text x="78" y="316" class="sub">Graph · Runtime · Schema · Revision</text>
+  <rect x="58" y="352" width="346" height="92" rx="11" class="node blue"/>
+  <text x="78" y="379" class="label">Plan Compiler + Safety Preflight</text><text x="78" y="402" class="sub">InvocationSite · Selector · 权限</text><text x="78" y="424" class="micro">零命中 / 歧义 / 外部写入默认拒绝</text>
+  <rect x="58" y="462" width="346" height="96" rx="11" class="node green"/>
+  <text x="78" y="489" class="label">EffectiveExecutionPlan</text><text x="78" y="512" class="sub">不可变 · 有指纹 · 有签名</text><text x="78" y="535" class="micro">明确每个调用点：REAL / MOCK / REPLAY / DENY</text>
+
+  <rect x="467" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="487" y="134" class="eyebrow" style="fill:#2F6F9F">02 · 隔离执行面</text>
+  <text x="487" y="155" class="micro">真实业务语义与替身边界在同一条运行轨道</text>
+  <rect x="487" y="180" width="346" height="68" rx="11" class="node blue"/>
+  <text x="507" y="207" class="label">Test Runtime API</text><text x="507" y="230" class="sub">只接受已签名执行计划</text>
+  <rect x="487" y="266" width="346" height="68" rx="11" class="node blue"/>
+  <text x="507" y="293" class="label">BLOGE Graph Engine</text><text x="507" y="316" class="sub">Branch · Join · Retry · Fallback</text>
+  <rect x="487" y="352" width="346" height="92" rx="11" class="node"/>
+  <text x="507" y="379" class="label">Resolver Chain</text><text x="507" y="402" class="sub">REAL → MOCK → REPLAY → DENY</text><text x="507" y="424" class="micro">Sandbox Binding / Fault Script / Consumption</text>
+  <rect x="487" y="462" width="346" height="96" rx="11" class="node green"/>
+  <text x="507" y="489" class="label">Invocation Trace</text><text x="507" y="512" class="sub">路径 · attempt · latency · outcome</text><text x="507" y="535" class="micro">记录调用事实，不改变业务数据</text>
+
+  <rect x="896" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="916" y="134" class="eyebrow" style="fill:#2F7D59">03 · 证据与治理面</text>
+  <text x="916" y="155" class="micro">证据可由网关之外的 Test Kit 重新验证</text>
+  <rect x="916" y="180" width="346" height="68" rx="11" class="node green"/>
+  <text x="936" y="207" class="label">Assertions + Semantic Coverage</text><text x="936" y="230" class="sub">结果、路径、分支、副作用意图</text>
+  <rect x="916" y="266" width="346" height="68" rx="11" class="node green"/>
+  <text x="936" y="293" class="label">Signed Evidence</text><text x="936" y="316" class="sub">绑定资产版本与执行计划指纹</text>
+  <rect x="916" y="352" width="346" height="92" rx="11" class="node"/>
+  <text x="936" y="379" class="label">Independent Test Kit</text><text x="936" y="402" class="sub">校验 Schema · Signature · Completeness</text><text x="936" y="424" class="micro">不依赖 Resource Gateway Server / Spring Boot</text>
+  <rect x="916" y="462" width="346" height="96" rx="11" class="node amber"/>
+  <text x="936" y="489" class="label">Publication Gate</text><text x="936" y="512" class="sub">Coverage · Risk · Approval · Audit</text><text x="936" y="535" class="micro">证据不完整则不可晋级</text>
+
+  <path d="M404 510 H457" class="flow"/><path d="M833 510 H886" class="flow"/>
+  <path d="M1090 462 V454 H876 V510 H843" class="evidence"/>
+
+  <rect x="38" y="612" width="810" height="46" rx="10" fill="#EDF5FA" stroke="#CFE0EC"/>
+  <text x="58" y="640" class="label" style="fill:#285F88">GraphContext / 业务输入：不携带 Test Control，保持业务语义纯净</text>
+  <rect x="38" y="674" width="1244" height="46" rx="10" class="red" stroke-dasharray="8 6"/>
+  <text x="58" y="702" class="label" style="fill:#8E3E32">生产硬边界：PRODUCTION purpose 发现非空测试计划，或测试运行命中生产写依赖，立即拒绝</text>
+  <rect x="872" y="612" width="410" height="46" rx="10" fill="#EEF7F2" stroke="#CFE5DA"/>
+  <text x="892" y="640" class="label" style="fill:#047857">Evidence 回绑 Graph / Runtime / Fixture / Plan</text>
+</svg>
+          </div>
+        </article>
+      </div>
+      <!-- END INLINE NATIVE ARCHITECTURE GALLERY -->
+      <div class="callout evidence fade-in chapter-block"><strong>边界结论：</strong>业务 DSL、Schema 与版本决定「执行什么」；带外执行计划决定「本次测试如何执行」；Trace、Coverage 与签名 Evidence 记录「实际发生了什么」。三类事实分离后，编码智能体才能安全修改资产，独立工具也能重复验证结果。</div>
+      <div class="grid-3 fade-in chapter-block">
+        <article class="card"><div class="item-kicker">主信息流</div><h3>业务请求只消费已批准资产</h3><p>Graph Engine 解析冻结 DSL，HttpResourceOperator 根据 Descriptor 访问外部系统。</p></article>
+        <article class="card attention"><div class="item-kicker">管理控制</div><h3>版本、策略和测试计划带外进入</h3><p>控制信息不混入 GraphContext；生产 purpose 发现非空测试计划时失败关闭。</p></article>
+        <article class="card result"><div class="item-kicker">证据回流</div><h3>运行事实回绑资产与发布决策</h3><p>Trace 连接 Graph、Runtime、Fixture 和 Plan 指纹，支持重放、Impact 与晋级门禁。</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="testability">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">05 · 决策问题：如何证明正确</div>
+        <h2>可测试性衡量业务变更能否被安全、确定、可重复地证明</h2>
+        <p class="lead">单个 Operator 可测试只是必要条件。DAG 仍可能在 binding、edge、branch、join、retry、fallback、decision table 和非确定性依赖上产生业务错误。</p>
+      </header>
+      <div class="case-context fade-in"><strong>案例中的证明责任：</strong>信用兜底规则不仅要证明两个 HTTP 调用都能成功，还要证明主服务超时后才进入备选分支、重试次数符合策略、全部失败时返回受控结果，并且测试运行没有触达生产写依赖。</div>
+      <div class="proof-formula fade-in">可寻址依赖 + 版本化 Fixture + 确定执行计划 + 语义覆盖 + 可验证 Evidence = 可晋级业务资产</div>
+      <p class="scroll-hint fade-in">横向滑动查看 L0–L6 正确性证明层级</p>
+      <div class="proof-ladder-shell fade-in" aria-label="L0 到 L6 正确性证明层级">
+        <div class="proof-ladder">
+          <article class="proof-level"><small>L0</small><strong>Schema Contract</strong><span>契约与 Fixture 自洽；不证明真实实现行为。</span></article>
+          <article class="proof-level"><small>L1</small><strong>Operator Unit</strong><span>以单节点微图执行真实 Runtime Binding。</span></article>
+          <article class="proof-level"><small>L2</small><strong>Subgraph Component</strong><span>验证局部业务语义，虚拟化边界依赖。</span></article>
+          <article class="proof-level"><small>L3 · 主力层</small><strong>Graph Contract</strong><span>执行完整 DAG，只替换外部系统边界。</span></article>
+          <article class="proof-level"><small>L4</small><strong>Adapter / Sandbox</strong><span>验证协议、序列化、认证与环境适配。</span></article>
+          <article class="proof-level"><small>L5</small><strong>Replay / Differential</strong><span>对比新旧版本的输出、路径、错误和副作用意图。</span></article>
+          <article class="proof-level"><small>L6</small><strong>Production Observation</strong><span>补充真实 SLO 与漂移事实；不使用 Fixture。</span></article>
+        </div>
+      </div>
+      <div class="phase-grid fade-in">
+        <article class="phase-card"><small>PHASE 01</small><h3>计划阶段 · 先证明可安全执行</h3><p>冻结 target、schema、runtime 和 fixture 版本；零命中、歧义和越权调用在执行前拒绝。</p></article>
+        <article class="phase-card"><small>PHASE 02</small><h3>执行阶段 · 真实语义与替身同轨运行</h3><p>BLOGE Engine 只消费已批准计划，逐调用记录 REAL、MOCK、FAULT、REPLAY、DENY 与 consumption。</p></article>
+        <article class="phase-card"><small>PHASE 03</small><h3>证据阶段 · 结果回绑精确版本</h3><p>输出 Trace、Assertion、Semantic Coverage 与签名 Evidence，由独立 Test Kit 重新验证。</p></article>
+      </div>
+      <div class="invariant-grid fade-in">
+        <div class="invariant"><strong>业务数据保持纯净</strong><span>测试控制不从 GraphContext 读取。</span></div>
+        <div class="invariant"><strong>生产数据面失败关闭</strong><span>Production purpose 拒绝任何非空 Control Plan。</span></div>
+        <div class="invariant"><strong>替身消费可以核验</strong><span>Required Fixture 未命中、未消费或超额使用均失败。</span></div>
+        <div class="invariant"><strong>外部写默认拒绝</strong><span>只有 Sandbox Binding、专用身份和策略同时满足才允许。</span></div>
+      </div>
+      <div class="truth-separation fade-in"><b>PASSED</b><em>≠</em>Coverage 满足<em>≠</em>Promotion Eligible<em>≠</em>Evidence Verified<em>≠</em>组织批准发布</div>
+      <div class="callout evidence fade-in chapter-block"><strong>业务意义：</strong>发布前可以回答哪条业务路径被验证、哪些外部调用被替换、哪个版本产生结果、失败来自执行还是断言，以及这份结果能否用于晋级。质量由个人经验转化为组织证据。</div>
+    </div>
+  </section>
+
+  <section class="report-section" id="delivery-value">
+    <div class="container-wide">
+      <header class="section-header fade-in">
+        <div class="section-index">06 · 决策问题：如何交付和衡量</div>
+        <h2>意图、变更集、合同、执行计划和 Evidence 构成同一条交付主线</h2>
+        <p class="lead">业务 Owner、运营人员、编码智能体、平台工程与质量治理围绕同一组可执行资产协作。失败返回对应资产修改，不在线下形成第二套业务事实。</p>
+      </header>
+      <div class="workflow-io fade-in">
+        <div><small>触发输入</small><strong>业务目标、完成条件、API / 事件契约、风险等级</strong></div>
+        <div class="output"><small>完成输出</small><strong>冻结发布物、质量门禁结果、可验证 Evidence、资产 Owner</strong></div>
+      </div>
+      <p class="scroll-hint fade-in">横向滑动查看角色、交付产物与诊断返回路径</p>
+      <div class="diagram-shell native-report-diagram fade-in">
+        <div class="diagram-head"><strong>业务资产交付协作模型</strong><span class="diagram-hint">业务批准与质量门禁共同决定晋级</span></div>
+        <div class="diagram-viewport native-svg-viewport">
+<!-- BEGIN INLINE NATIVE DELIVERY -->
+<svg class="native-report-svg native-delivery-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 650" role="img" aria-labelledby="delivery-flow-title delivery-flow-desc">
+  <title id="delivery-flow-title">业务资产交付协作模型</title>
+  <desc id="delivery-flow-desc">业务 Owner、编码智能体、平台工程和质量治理围绕意图、变更集、规范合同、执行计划、验证证据和发布版本协作。</desc>
+  <defs>
+    <marker id="delivery-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="delivery-red-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B14D3C"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.phase{font-size:14px;font-weight:750}.role{font-size:14px;font-weight:750}.label{font-size:14px;font-weight:700}.micro{font-size:12px;fill:#66768A}.cell{fill:#FFF;stroke:#DCE4EC}.blue{fill:#EDF5FA;stroke:#2F6F9F;stroke-width:1.5}.purple{fill:#EDF5F3;stroke:#2C7A6B;stroke-width:1.5}.amber{fill:#FBF6EA;stroke:#8C5B16;stroke-width:1.5}.green{fill:#EEF7F2;stroke:#2F7D59;stroke-width:1.5}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#delivery-blue-arrow)}.feedback{fill:none;stroke:#B14D3C;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#delivery-red-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="650" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2F6F9F">ASSET DELIVERY OPERATING MODEL</text>
+  <text x="38" y="72" class="title">角色围绕同一组可执行资产协作，失败回到具体产物而不是口头协调</text>
+
+  <rect x="38" y="104" width="1244" height="420" rx="16" fill="#F6F8FB" stroke="#DCE4EC"/>
+  <line x1="200" y1="104" x2="200" y2="524" stroke="#DCE4EC"/>
+  <line x1="200" y1="168" x2="1282" y2="168" stroke="#DCE4EC"/>
+  <line x1="38" y1="257" x2="1282" y2="257" stroke="#DCE4EC"/>
+  <line x1="38" y1="346" x2="1282" y2="346" stroke="#DCE4EC"/>
+  <line x1="38" y1="435" x2="1282" y2="435" stroke="#DCE4EC"/>
+  <line x1="380" y1="104" x2="380" y2="524" stroke="#DCE4EC"/>
+  <line x1="560" y1="104" x2="560" y2="524" stroke="#DCE4EC"/>
+  <line x1="740" y1="104" x2="740" y2="524" stroke="#DCE4EC"/>
+  <line x1="920" y1="104" x2="920" y2="524" stroke="#DCE4EC"/>
+  <line x1="1100" y1="104" x2="1100" y2="524" stroke="#DCE4EC"/>
+
+  <text x="62" y="143" class="eyebrow" style="fill:#66768A">责任 / 阶段</text>
+  <text x="290" y="143" text-anchor="middle" class="phase">定义</text><text x="470" y="143" text-anchor="middle" class="phase">创作</text><text x="650" y="143" text-anchor="middle" class="phase">编译</text><text x="830" y="143" text-anchor="middle" class="phase">计划</text><text x="1010" y="143" text-anchor="middle" class="phase">验证</text><text x="1190" y="143" text-anchor="middle" class="phase">发布</text>
+  <text x="62" y="210" class="role" style="fill:#8C5B16">业务 Owner / 运营</text><text x="62" y="233" class="micro">意图与正确性负责人</text>
+  <text x="62" y="299" class="role" style="fill:#2C7A6B">编码智能体</text><text x="62" y="322" class="micro">工程化变更执行者</text>
+  <text x="62" y="388" class="role" style="fill:#2F6F9F">平台工程</text><text x="62" y="411" class="micro">确定性与隔离边界</text>
+  <text x="62" y="477" class="role" style="fill:#2F7D59">质量治理</text><text x="62" y="500" class="micro">证据与晋级规则</text>
+
+  <rect x="218" y="184" width="144" height="54" rx="10" class="amber"/><text x="290" y="207" text-anchor="middle" class="label">IntentSpec</text><text x="290" y="226" text-anchor="middle" class="micro">Oracle · 风险</text>
+  <rect x="398" y="273" width="144" height="54" rx="10" class="purple"/><text x="470" y="296" text-anchor="middle" class="label">ChangeSet</text><text x="470" y="315" text-anchor="middle" class="micro">DSL · Scenario</text>
+  <rect x="578" y="362" width="144" height="54" rx="10" class="blue"/><text x="650" y="385" text-anchor="middle" class="label">Canonical Contract</text><text x="650" y="404" text-anchor="middle" class="micro">Fingerprint · Impact</text>
+  <rect x="758" y="362" width="144" height="54" rx="10" class="blue"/><text x="830" y="385" text-anchor="middle" class="label">Execution Plan</text><text x="830" y="404" text-anchor="middle" class="micro">Purpose · Selector</text>
+  <rect x="938" y="451" width="144" height="54" rx="10" class="green"/><text x="1010" y="474" text-anchor="middle" class="label">Evidence</text><text x="1010" y="493" text-anchor="middle" class="micro">Trace · Coverage</text>
+  <rect x="1118" y="184" width="144" height="54" rx="10" class="green"/><text x="1190" y="207" text-anchor="middle" class="label">Publication</text><text x="1190" y="226" text-anchor="middle" class="micro">Approve · Audit</text>
+
+  <path d="M362 211 H372 V300 H388" class="flow"/><path d="M542 300 H552 V389 H568" class="flow"/><path d="M722 389 H748" class="flow"/><path d="M902 389 H912 V478 H928" class="flow"/><path d="M1082 478 H1092 V211 H1108" class="flow"/>
+
+  <rect x="38" y="552" width="1244" height="66" rx="13" fill="#FBF1EF" stroke="#E2B8B1" stroke-dasharray="8 6"/>
+  <path d="M1010 505 V538 H470 V337" class="feedback"/>
+  <text x="64" y="580" class="label" style="fill:#8E3E32">诊断闭环</text>
+  <text x="154" y="580" class="micro" style="fill:#8E3E32">Schema 漂移 → Contract　·　Fixture 未命中 → 测试资产　·　断言失败 → Graph / Decision　·　运行失败 → Binding / Adapter</text>
+  <text x="64" y="601" class="micro">过程质量指标来自资产 Diff、编译诊断、语义覆盖、人工修正和 Evidence 完整度，而不是仅统计发布次数。</text>
+</svg>
+<!-- END INLINE NATIVE DELIVERY -->
+        </div>
+      </div>
+      <div class="chapter-block fade-in">
+        <div class="chapter-label">从业务结果追溯到架构能力和运行证据</div>
+        <div class="trace-layout">
+          <div class="trace-selectors" aria-label="选择业务结果">
+            <button class="trace-button" type="button" data-trace="delivery" aria-pressed="true">缩短新场景交付周期</button>
+            <button class="trace-button" type="button" data-trace="quality" aria-pressed="false">降低变更失败风险</button>
+            <button class="trace-button" type="button" data-trace="reuse" aria-pressed="false">提高业务资产复用率</button>
+            <button class="trace-button" type="button" data-trace="proof" aria-pressed="false">形成可审计质量证明</button>
+            <button class="trace-button" type="button" data-trace="operations" aria-pressed="false">升级运营工作方式</button>
+          </div>
+          <div class="trace-panel" aria-live="polite">
+            <div class="item-kicker" id="traceKicker">RESULT 01 · DELIVERY</div>
+            <h3 id="traceTitle">从复制集成代码，转向装配已验证资产</h3>
+            <div class="trace-columns">
+              <div class="trace-column"><small>架构承接</small><strong id="traceCapability">Resource Registry · Operator Library · Graph DSL</strong><p id="traceCapabilityDesc">外部能力完成一次契约化后，可以进入多个 Graph 复用。</p></div>
+              <div class="trace-column"><small>运行证据</small><strong id="traceEvidence">Revision · Compile Result · Publication</strong><p id="traceEvidenceDesc">证明创作输入、Canonical 产物和发布依赖处于同一精确版本。</p></div>
+              <div class="trace-column"><small>观察指标</small><strong id="traceMetric">端到端交付周期</strong><p id="traceMetricDesc">同时观察复用资产占比与新增 Java Operator 数量，避免以降低质量换取短期速度。</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="report-section tinted" id="roadmap">
+    <div class="container">
+      <header class="section-header fade-in">
+        <div class="section-index">07 · 决策问题：怎样采用</div>
+        <h2>先在一条高价值业务链建立完整资产流程，再依据结果和证据扩大范围</h2>
+        <p class="lead">现有实现已经具备 Descriptor、DSL、Graph Contract、隔离测试与 Test Kit 基础。采用路径的目标是把这些技术能力转化为稳定的组织工作方式。</p>
+      </header>
+      <div class="grid-4 fade-in">
+        <article class="card roadmap-card"><div class="item-kicker">阶段一 · 运营试点</div><h3>选定一条真实业务链</h3><p class="scope">明确业务 Owner、完成条件和风险边界；由运营描述变更意图，编码智能体生成 DSL 与测试草案。</p><div class="exit">退出条件：关键路径可重复执行，失败可定位，业务 Oracle 由授权人员确认。</div></article>
+        <article class="card roadmap-card"><div class="item-kicker">阶段二 · 资产目录</div><h3>把交付物升级为可复用产品</h3><p class="scope">建立 Descriptor、Library、Graph、Scenario、Fixture 的身份、版本、Owner、Diff 与生命周期。</p><div class="exit">退出条件：同类新集成优先装配已有资产，不再默认新增专属 Operator 类。</div></article>
+        <article class="card roadmap-card"><div class="item-kicker">阶段三 · 质量门禁</div><h3>把证据接入 CI 与发布决策</h3><p class="scope">固化分层证明、EffectiveExecutionPlan、Semantic Coverage、Signed Evidence 与 Test Kit 验证。</p><div class="exit">退出条件：发布绑定精确证据；生产环境结构性缺失测试控制能力。</div></article>
+        <article class="card roadmap-card result"><div class="item-kicker">阶段四 · 资产经营</div><h3>跨团队衡量复用与演进质量</h3><p class="scope">建立资产发现、兼容策略、Impact、Stale、退役与跨域复用机制。</p><div class="exit">退出条件：交付周期、复用率、变更失败率和证据完整率形成稳定看板。</div></article>
+      </div>
+      <div class="decision-request fade-in">
+        <div class="chapter-label">需要确认的三项组织级选择</div>
+        <div class="decision-grid">
+          <article class="decision-item"><div class="decision-no">DECISION 01</div><h3>确立 DSL 资产与编码智能体工作界面</h3><p>Graph、Decision、Descriptor、Scenario 与 Fixture 具备 Owner、版本和兼容策略，并暴露可发现的 Schema、工具和验证契约。</p></article>
+          <article class="decision-item"><div class="decision-no">DECISION 02</div><h3>把可测试性列为设计验收条件</h3><p>新增能力声明依赖、非确定性和副作用，能够进入 L1 / L3 测试链并产出精确 Evidence。</p></article>
+          <article class="decision-item"><div class="decision-no">DECISION 03</div><h3>以一条运营工作流建立度量基线</h3><p>共同确认人工配置时长、意图到可验证方案周期、首次验证通过率、语义覆盖和证据完整率的口径与 Owner。</p></article>
+        </div>
+      </div>
+      <div class="material-basis fade-in">材料基线：仓库内 Resource Gateway README、测试运行时隔离 ADR、工业级可测试性方案、Contract / Scenario Authoring、表格驱动测试和 Test Kit 设计。页面只使用仓库已确认事实；业务指标目标值待试点建立基线后确认。</div>
+    </div>
+  </section>
+</main>
+
+<footer class="report-footer">BLOGE · RESOURCE GATEWAY · 业务资产 DSL 化与可测试性架构 · 2026-08-16</footer>
+
+<script>
+(() => {
+  const root = document.documentElement;
+  const savedTheme = localStorage.getItem('briefing-theme');
+  root.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light';
+
+  document.getElementById('themeToggle').addEventListener('click', () => {
+    root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    localStorage.setItem('briefing-theme', root.dataset.theme);
+  });
+
+  const progress = document.getElementById('progressLine');
+  const updateProgress = () => {
+    const available = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = `${available > 0 ? (scrollY / available) * 100 : 0}%`;
+  };
+  addEventListener('scroll', updateProgress, { passive: true });
+  updateProgress();
+
+  const links = [...document.querySelectorAll('.nav-links a')];
+  const sections = links.map(link => document.querySelector(link.getAttribute('href'))).filter(Boolean);
+  const sectionObserver = new IntersectionObserver(entries => {
+    const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (!visible) return;
+    links.forEach(link => link.classList.toggle('active', link.getAttribute('href') === `#${visible.target.id}`));
+  }, { rootMargin: '-25% 0px -60%', threshold: [0.05, 0.35, 0.65] });
+  sections.forEach(section => sectionObserver.observe(section));
+
+  const revealObserver = new IntersectionObserver(entries => {
+    entries.forEach(entry => { if (entry.isIntersecting) entry.target.classList.add('visible'); });
+  }, { threshold: 0.1 });
+  document.querySelectorAll('.fade-in').forEach(element => revealObserver.observe(element));
+
+  const traceData = {
+    delivery: {
+      kicker: 'RESULT 01 · DELIVERY',
+      title: '从复制集成代码，转向装配已验证资产',
+      capability: 'Resource Registry · Operator Library · Graph DSL',
+      capabilityDesc: '外部能力只需完成一次契约化，即可进入多个 Graph 复用。',
+      evidence: 'Revision · Compile Result · Publication',
+      evidenceDesc: '证明创作输入、Canonical 产物和发布依赖处于同一精确版本。',
+      metric: '端到端交付周期',
+      metricDesc: '同时观察复用资产占比与新增 Java Operator 数量，避免用低质量加速换取短期速度。'
+    },
+    quality: {
+      kicker: 'RESULT 02 · CHANGE QUALITY',
+      title: '从上线后发现问题，转向发布前证明变更边界',
+      capability: 'Fingerprint · Diff · Impact · Stale',
+      capabilityDesc: '变更先定位受影响的 Graph、Contract、Fixture、Suite 与 Publication，再决定重测范围。',
+      evidence: 'Exact Target · Effective Plan · Regression Evidence',
+      evidenceDesc: '每次测试回绑目标、运行时、依赖与 Fixture 指纹，避免拿旧证据证明新版本。',
+      metric: '变更失败率与缺陷逃逸率',
+      metricDesc: '联合观察回滚率、受影响案例重跑比例和首次根因定位时间。'
+    },
+    reuse: {
+      kicker: 'RESULT 03 · ASSET REUSE',
+      title: '从项目交付物，转向跨场景可发现、可组合的能力目录',
+      capability: 'Descriptor · Library · Publication Catalog',
+      capabilityDesc: '资源、算子、函数与业务图以稳定身份、Owner 和兼容策略进入统一目录。',
+      evidence: 'Dependency Closure · Usage Index · Runtime Parity',
+      evidenceDesc: '复用前确认依赖闭包与运行时绑定，复用后保留消费关系和版本事实。',
+      metric: '业务资产复用率',
+      metricDesc: '联合观察新场景采用已有资产比例、重复 API 适配数量和边际交付成本。'
+    },
+    proof: {
+      kicker: 'RESULT 04 · TRUSTED PROOF',
+      title: '从“测试通过”一句话，转向可独立验证的正确性证明链',
+      capability: 'Testing Control Plane · Trace · Semantic Coverage',
+      capabilityDesc: '隔离运行真实 DAG，精确记录替身命中、attempt、路径、断言与覆盖。',
+      evidence: 'Signed Evidence · Test Kit · CI / Governance Gate',
+      evidenceDesc: '独立客户端重新验证终态 Evidence，不依赖服务端自报的绿色结果。',
+      metric: '证据完整率与关键路径覆盖率',
+      metricDesc: '联合观察 EVIDENCE_INCOMPLETE、Fixture 未消费、签名失败和晋级阻断原因。'
+    },
+    operations: {
+      kicker: 'RESULT 05 · OPERATIONS',
+      title: '从逐字段配置，转向业务意图表述、编码智能体执行与证据审核',
+      capability: '可供智能体读取的 Catalog · Schema · DSL · Tooling',
+      capabilityDesc: '编码智能体读取资产目录、Schema、依赖和治理策略，生成可审查的 DSL、Scenario 与 Fixture 变更集。',
+      evidence: 'Intent · Diff · Test · Coverage · Approval',
+      evidenceDesc: '业务意图、智能体草案、确定性校验、行为验证与人工批准共同构成过程证据。',
+      metric: '意图到可验证方案周期',
+      metricDesc: '联合观察人工配置时长、首次验证通过率、自动校验覆盖率、配置缺陷逃逸率和人工例外数量。'
+    }
+  };
+  const traceButtons = [...document.querySelectorAll('.trace-button')];
+  const traceFields = {
+    kicker: document.getElementById('traceKicker'),
+    title: document.getElementById('traceTitle'),
+    capability: document.getElementById('traceCapability'),
+    capabilityDesc: document.getElementById('traceCapabilityDesc'),
+    evidence: document.getElementById('traceEvidence'),
+    evidenceDesc: document.getElementById('traceEvidenceDesc'),
+    metric: document.getElementById('traceMetric'),
+    metricDesc: document.getElementById('traceMetricDesc')
+  };
+  traceButtons.forEach(button => button.addEventListener('click', () => {
+    const selected = traceData[button.dataset.trace];
+    if (!selected) return;
+    traceButtons.forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    Object.entries(traceFields).forEach(([key, field]) => { field.textContent = selected[key]; });
+  }));
+
+  const architectureTabs = [...document.querySelectorAll('.architecture-tab')];
+  const architecturePanels = [...document.querySelectorAll('[data-architecture-panel]')];
+  const activateArchitecture = tab => {
+    architectureTabs.forEach(item => {
+      const active = item === tab;
+      item.setAttribute('aria-selected', String(active));
+      item.tabIndex = active ? 0 : -1;
+    });
+    architecturePanels.forEach(panel => { panel.hidden = panel.dataset.architecturePanel !== tab.dataset.architecture; });
+  };
+  architectureTabs.forEach((tab, index) => {
+    tab.addEventListener('click', () => activateArchitecture(tab));
+    tab.addEventListener('keydown', event => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      let next = index;
+      if (event.key === 'ArrowLeft') next = (index - 1 + architectureTabs.length) % architectureTabs.length;
+      if (event.key === 'ArrowRight') next = (index + 1) % architectureTabs.length;
+      if (event.key === 'Home') next = 0;
+      if (event.key === 'End') next = architectureTabs.length - 1;
+      architectureTabs[next].focus();
+      activateArchitecture(architectureTabs[next]);
+    });
+  });
+
+  document.querySelectorAll('.diagram-scale').forEach(button => button.addEventListener('click', () => {
+    const panel = button.closest('.architecture-panel');
+    const viewport = panel?.querySelector('.architecture-viewport');
+    if (!viewport) return;
+    viewport.dataset.scale = button.dataset.diagramScale;
+    panel.querySelectorAll('.diagram-scale').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+    viewport.scrollTo({ left: 0, top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }));
+})();
+</script>
+</body>
+</html>

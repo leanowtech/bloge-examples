@@ -1,0 +1,60 @@
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 740" role="img" aria-labelledby="test-arch-title test-arch-desc">
+  <title id="test-arch-title">可测试性控制、执行与证据架构</title>
+  <desc id="test-arch-desc">测试控制通过不可变执行计划带外进入隔离运行时，业务 GraphContext 保持纯净，执行事实形成可独立验证的签名证据。</desc>
+  <defs>
+    <marker id="test-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="test-green-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F7D59"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.zone{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.red{fill:#FBF1EF;stroke:#B14D3C}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#test-blue-arrow)}.evidence{fill:none;stroke:#2F7D59;stroke-width:2.5;stroke-dasharray:8 7;marker-end:url(#test-green-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="740" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2F7D59">TESTABILITY BY ARCHITECTURE</text>
+  <text x="38" y="72" class="title">把测试控制、业务执行和验证证据拆开，正确性才可重复、可审计</text>
+
+  <rect x="38" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="58" y="134" class="eyebrow" style="fill:#8C5B16">01 · 测试控制面</text>
+  <text x="58" y="155" class="micro">先解析，再执行；歧义和越权在运行前失败</text>
+  <rect x="58" y="180" width="346" height="68" rx="11" class="node amber"/>
+  <text x="78" y="207" class="label">Purpose Gate</text><text x="78" y="230" class="sub">TEST / REPLAY / PRODUCTION</text>
+  <rect x="58" y="266" width="346" height="68" rx="11" class="node"/>
+  <text x="78" y="293" class="label">Frozen Target + FixtureBundle</text><text x="78" y="316" class="sub">Graph · Runtime · Schema · Revision</text>
+  <rect x="58" y="352" width="346" height="92" rx="11" class="node blue"/>
+  <text x="78" y="379" class="label">Plan Compiler + Safety Preflight</text><text x="78" y="402" class="sub">InvocationSite · Selector · 权限</text><text x="78" y="424" class="micro">零命中 / 歧义 / 外部写入默认拒绝</text>
+  <rect x="58" y="462" width="346" height="96" rx="11" class="node green"/>
+  <text x="78" y="489" class="label">EffectiveExecutionPlan</text><text x="78" y="512" class="sub">不可变 · 有指纹 · 有签名</text><text x="78" y="535" class="micro">明确每个调用点：REAL / MOCK / REPLAY / DENY</text>
+
+  <rect x="467" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="487" y="134" class="eyebrow" style="fill:#2F6F9F">02 · 隔离执行面</text>
+  <text x="487" y="155" class="micro">真实业务语义与替身边界在同一条运行轨道</text>
+  <rect x="487" y="180" width="346" height="68" rx="11" class="node blue"/>
+  <text x="507" y="207" class="label">Test Runtime API</text><text x="507" y="230" class="sub">只接受已签名执行计划</text>
+  <rect x="487" y="266" width="346" height="68" rx="11" class="node blue"/>
+  <text x="507" y="293" class="label">BLOGE Graph Engine</text><text x="507" y="316" class="sub">Branch · Join · Retry · Fallback</text>
+  <rect x="487" y="352" width="346" height="92" rx="11" class="node"/>
+  <text x="507" y="379" class="label">Resolver Chain</text><text x="507" y="402" class="sub">REAL → MOCK → REPLAY → DENY</text><text x="507" y="424" class="micro">Sandbox Binding / Fault Script / Consumption</text>
+  <rect x="487" y="462" width="346" height="96" rx="11" class="node green"/>
+  <text x="507" y="489" class="label">Invocation Trace</text><text x="507" y="512" class="sub">路径 · attempt · latency · outcome</text><text x="507" y="535" class="micro">记录调用事实，不改变业务数据</text>
+
+  <rect x="896" y="102" width="386" height="484" rx="16" class="zone"/>
+  <text x="916" y="134" class="eyebrow" style="fill:#2F7D59">03 · 证据与治理面</text>
+  <text x="916" y="155" class="micro">证据可由网关之外的 Test Kit 重新验证</text>
+  <rect x="916" y="180" width="346" height="68" rx="11" class="node green"/>
+  <text x="936" y="207" class="label">Assertions + Semantic Coverage</text><text x="936" y="230" class="sub">结果、路径、分支、副作用意图</text>
+  <rect x="916" y="266" width="346" height="68" rx="11" class="node green"/>
+  <text x="936" y="293" class="label">Signed Evidence</text><text x="936" y="316" class="sub">绑定资产版本与执行计划指纹</text>
+  <rect x="916" y="352" width="346" height="92" rx="11" class="node"/>
+  <text x="936" y="379" class="label">Independent Test Kit</text><text x="936" y="402" class="sub">校验 Schema · Signature · Completeness</text><text x="936" y="424" class="micro">不依赖 Resource Gateway Server / Spring Boot</text>
+  <rect x="916" y="462" width="346" height="96" rx="11" class="node amber"/>
+  <text x="936" y="489" class="label">Publication Gate</text><text x="936" y="512" class="sub">Coverage · Risk · Approval · Audit</text><text x="936" y="535" class="micro">证据不完整则不可晋级</text>
+
+  <path d="M404 510 H457" class="flow"/><path d="M833 510 H886" class="flow"/>
+  <path d="M1090 462 V454 H876 V510 H843" class="evidence"/>
+
+  <rect x="38" y="612" width="810" height="46" rx="10" fill="#EDF5FA" stroke="#CFE0EC"/>
+  <text x="58" y="640" class="label" style="fill:#285F88">GraphContext / 业务输入：不携带 Test Control，保持业务语义纯净</text>
+  <rect x="38" y="674" width="1244" height="46" rx="10" class="red" stroke-dasharray="8 6"/>
+  <text x="58" y="702" class="label" style="fill:#8E3E32">生产硬边界：PRODUCTION purpose 发现非空测试计划，或测试运行命中生产写依赖，立即拒绝</text>
+  <rect x="872" y="612" width="410" height="46" rx="10" fill="#EEF7F2" stroke="#CFE5DA"/>
+  <text x="892" y="640" class="label" style="fill:#047857">Evidence 回绑 Graph / Runtime / Fixture / Plan</text>
+</svg>

@@ -5,7 +5,7 @@
       <root>
         <mxCell id="0"/>
         <mxCell id="1" parent="0"/>
-        <mxCell id="title" value="Resource Gateway Testability and Correctness Evidence Chain" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
+        <mxCell id="title" value="Resource Gateway 可测试性与正确性证据链" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=22;fontStyle=1;fontColor=#263238;" vertex="1" parent="1">
           <mxGeometry x="40" y="20" width="920" height="40" as="geometry"/>
         </mxCell>
         <mxCell id="subtitle" value="单个 operator 正确只是起点；组合语义、环境边界、回放证据和治理门禁共同构成业务正确性" style="text;html=1;align=left;verticalAlign=middle;fontFamily=Arial;fontSize=12;fontColor=#455a64;" vertex="1" parent="1">

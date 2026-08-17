@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="面向业务管理者的 Resource Gateway 业务采用沟通演示稿">
+<title>Resource Gateway｜业务采用沟通</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#f6f8fb;--surface:#fff;--soft:#f0f4f8;--ink:#1f2a3d;--ink2:#4f6073;--ink3:#68788b;
+  --line:#dce4ec;--line2:#c6d2de;--brand:#2f6f9f;--brand2:#235778;--brandSoft:#eaf3f8;
+  --accent:#2c7a6b;--accentSoft:#eaf6f3;--green:#2f7d59;--greenSoft:#eaf6ef;
+  --amber:#8c5b16;--amberSoft:#fff6e6;--red:#b14d3c;--redSoft:#fff0ed;
+  --line-strong:var(--line2);--brand-soft:var(--brandSoft);--focus-ring:rgba(47,111,159,.32);
+  --nav:rgba(255,255,255,.96);--shadow:0 14px 36px rgba(31,42,61,.08);--radius:14px;
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#111820;--surface:#17212b;--soft:#1c2834;--ink:#edf3f8;--ink2:#b8c5d1;--ink3:#8798a8;
+  --line:#2b3a47;--line2:#3a4b59;--brand:#73acd0;--brand2:#95c3df;--brandSoft:rgba(115,172,208,.13);
+  --accent:#65b7a6;--accentSoft:rgba(101,183,166,.13);--green:#70c39a;--greenSoft:rgba(112,195,154,.13);
+  --amber:#ddb261;--amberSoft:rgba(221,178,97,.13);--red:#e58d7f;--redSoft:rgba(229,141,127,.13);
+  --nav:rgba(17,24,32,.96);--shadow:0 14px 36px rgba(0,0,0,.24);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  overflow-x:hidden;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  font-size:16px;line-height:1.72;-webkit-font-smoothing:antialiased
+}
+button,summary{font:inherit;color:inherit}
+button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid rgba(47,111,159,.32);outline-offset:3px}
+.progress{position:fixed;z-index:1001;top:63px;left:0;width:0;height:3px;background:var(--brand)}
+.nav{position:fixed;z-index:1000;inset:0 0 auto;height:64px;padding:0 26px;display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--line);background:var(--nav);backdrop-filter:blur(14px)}
+.logo{display:flex;align-items:center;gap:10px;color:var(--ink);font-size:.9rem;font-weight:780;text-decoration:none;white-space:nowrap}
+.mark{width:24px;height:24px;border-radius:7px;background:var(--brand);position:relative}
+.mark:before,.mark:after{content:"";position:absolute;left:6px;height:2px;background:#fff;border-radius:2px}
+.mark:before{top:8px;width:12px}.mark:after{top:14px;width:8px}
+.links{display:flex;flex:1;gap:3px;overflow-x:auto;scrollbar-width:none}.links::-webkit-scrollbar{display:none}
+.links a{padding:7px 10px;border-radius:8px;color:var(--ink2);font-size:.79rem;font-weight:650;text-decoration:none;white-space:nowrap}
+.links a:hover{background:var(--soft);color:var(--ink)}.links a.active{background:var(--brandSoft);color:var(--brand2)}
+.theme{min-width:68px;min-height:40px;padding:0 11px;border:1px solid var(--line2);border-radius:9px;background:var(--surface);color:var(--ink2);font-size:.78rem;font-weight:700;cursor:pointer}
+.theme:hover{border-color:var(--brand);color:var(--brand)}
+.section{padding:94px 30px;scroll-margin-top:62px;background:var(--surface)}.section.tinted{background:var(--bg)}
+.container{max-width:1160px;margin:auto}.wide{max-width:1360px;margin:auto}
+.header{margin-bottom:42px}.header.center{text-align:center}.header.center h2,.header.center .lead{margin-inline:auto}
+.label{display:inline-flex;margin-bottom:13px;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--brand2);font-size:.75rem;font-weight:760}
+h1,h2,h3{line-height:1.18;letter-spacing:-.025em;overflow-wrap:anywhere}
+h1{max-width:820px;font-size:clamp(2.5rem,4.4vw,4rem)}h2{max-width:920px;font-size:clamp(1.85rem,3vw,2.65rem)}h3{font-size:1.08rem}
+.lead{max-width:840px;margin-top:16px;color:var(--ink2);font-size:1.04rem;line-height:1.78}
+.hero{min-height:94vh;padding-top:132px;display:grid;align-items:center;background:linear-gradient(180deg,#f3f8fb 0%,var(--surface) 78%)}
+:root[data-theme="dark"] .hero{background:linear-gradient(180deg,#15212b 0%,var(--surface) 78%)}
+.hero-grid{display:grid;grid-template-columns:1.08fr .92fr;gap:56px;align-items:center}
+.badge{display:inline-flex;align-items:center;gap:9px;margin-bottom:23px;color:var(--brand2);font-size:.82rem;font-weight:760}.badge:before{content:"";width:18px;height:2px;background:var(--brand)}
+.hero .lead{margin-top:24px}.summary{margin-top:34px;display:grid;grid-template-columns:repeat(3,1fr);border-block:1px solid var(--line)}
+.summary>div{padding:17px 16px 17px 0}.summary>div+div{padding-left:16px;border-left:1px solid var(--line)}
+.summary small,.eyebrow{display:block;color:var(--ink3);font-size:.73rem;font-weight:760}.summary strong{display:block;margin-top:5px;font-size:.88rem;line-height:1.5}
+.visual{padding:24px;border:1px solid var(--line2);border-top:4px solid var(--brand);border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}
+.visual figcaption{margin-bottom:12px;color:var(--brand2);font-size:.76rem;font-weight:760}.visual svg{display:block;width:100%;height:auto}
+svg text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+.note{margin-top:12px;color:var(--ink3);font-size:.76rem}
+.board{display:grid;grid-template-columns:1fr 76px 1fr;gap:18px;align-items:stretch}
+.panel{padding:26px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.panel.risk{border-top:4px solid var(--amber)}.panel.answer{border-top:4px solid var(--brand)}
+.panel h3{margin-bottom:16px;font-size:1.24rem}.bridge{display:grid;place-items:center;color:var(--brand);font-size:1.8rem;font-weight:850}
+.list{list-style:none;display:grid;gap:11px}.list li{position:relative;padding-left:22px;color:var(--ink2);font-size:.9rem}
+.list li:before{content:"";position:absolute;left:0;top:.76em;width:9px;height:2px;background:var(--brand)}.risk .list li:before{background:var(--amber)}
+.strip{margin-top:22px;padding:16px 18px;border-left:3px solid var(--brand);background:var(--brandSoft);color:var(--ink2);font-size:.9rem}.strip strong{color:var(--ink)}
+.tabs{width:max-content;max-width:100%;margin-bottom:18px;padding:4px;display:flex;gap:4px;overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
+.tab{min-height:40px;padding:8px 15px;border:0;border-radius:7px;background:transparent;color:var(--ink2);font-size:.8rem;font-weight:730;white-space:nowrap;cursor:pointer}
+.tab:hover{background:var(--surface)}.tab[aria-selected="true"]{background:var(--surface);color:var(--brand2);box-shadow:0 1px 3px rgba(31,42,61,.08)}
+[role="tabpanel"][hidden]{display:none}
+.flow-shell{padding:28px;border:1px solid var(--line2);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:24px}
+.step{position:relative;min-height:145px;padding:18px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}
+.step:after{content:"→";position:absolute;top:50px;right:-19px;color:var(--brand);font-weight:850}.step:last-child:after{display:none}
+.step small{color:var(--ink3);font-size:.71rem;font-weight:760}.step strong{display:block;margin-top:8px}.step span{display:block;margin-top:7px;color:var(--ink3);font-size:.78rem;line-height:1.55}
+.step.primary{border-color:var(--brand);background:var(--brandSoft)}.step.gate{border-color:var(--amber);background:var(--amberSoft)}.step.done{border-color:var(--green);background:var(--greenSoft)}
+.experience-note{margin-top:18px;padding:14px 17px;border-left:3px solid var(--accent);background:var(--accentSoft);color:var(--ink2);font-size:.86rem}
+.case{overflow:hidden;border:1px solid var(--line2);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+.case-head{padding:20px 22px;display:flex;justify-content:space-between;gap:18px;align-items:center;border-bottom:1px solid var(--line)}
+.case-head h3{margin-top:3px}.case-badge{padding:6px 10px;border-radius:7px;background:var(--amberSoft);color:var(--amber);font-size:.73rem;font-weight:760}
+.context{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid var(--line);background:var(--soft)}
+.context>div{padding:16px 20px}.context>div+div{border-left:1px solid var(--line)}.context strong{display:block;margin-top:4px;font-size:.84rem}
+.case-flow{padding:28px 20px 22px;display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:18px;overflow-x:auto}
+.case-step{position:relative;min-height:138px;padding:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.case-step:after{content:"→";position:absolute;top:48px;right:-15px;color:var(--brand);font-weight:850}.case-step:last-child:after{display:none}
+.actor{display:inline-flex;padding:3px 7px;border-radius:5px;background:var(--brandSoft);color:var(--brand2);font-size:.68rem;font-weight:760}.actor.human{background:var(--amberSoft);color:var(--amber)}.actor.system{background:var(--accentSoft);color:var(--accent)}.actor.evidence{background:var(--greenSoft);color:var(--green)}
+.case-step strong{display:block;margin-top:10px;font-size:.87rem}.case-step small{display:block;margin-top:6px;color:var(--ink3);font-size:.74rem;line-height:1.5}
+.case-step.gate{border-color:var(--amber);background:var(--amberSoft)}.case-step.done{border-color:var(--green);background:var(--greenSoft)}
+.case-footer{padding:15px 20px;border-top:1px solid var(--line);background:var(--brandSoft);color:var(--ink2);font-size:.83rem}
+.roadmap{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:15px}.roadmap:before{content:"";position:absolute;top:22px;left:8%;right:8%;height:2px;background:var(--line2)}
+.stage{position:relative;min-height:246px;padding:40px 20px 20px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.stage:before{content:"";position:absolute;top:16px;left:20px;width:13px;height:13px;border:3px solid var(--surface);border-radius:50%;background:var(--line2);box-shadow:0 0 0 1px var(--line2)}
+.stage.current{border-color:var(--brand);background:var(--brandSoft)}.stage.current:before{background:var(--brand);box-shadow:0 0 0 1px var(--brand)}
+.stage.result{border-color:var(--green);background:var(--greenSoft)}.stage.result:before{background:var(--green);box-shadow:0 0 0 1px var(--green)}
+.stage h3{margin-top:6px}.stage p{margin-top:9px;color:var(--ink2);font-size:.83rem}.stage strong{display:block;margin-top:15px;padding-top:12px;border-top:1px solid var(--line);color:var(--ink2);font-size:.75rem;line-height:1.55}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.card{position:relative;min-height:236px;padding:54px 20px 20px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface)}
+.card.business{border-top:3px solid var(--amber)}.card.agent{border-top:3px solid var(--brand)}.card.platform{border-top:3px solid var(--accent)}.card.governance{border-top:3px solid var(--green)}
+.num{position:absolute;top:17px;left:20px;color:var(--brand);font-size:1.42rem;font-weight:850}.card p{margin-top:8px;color:var(--ink2);font-size:.83rem}.card b{display:block;margin-top:16px;color:var(--ink);font-size:.79rem}
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);overflow:hidden;border:1px solid var(--line2);border-radius:var(--radius);background:var(--surface)}
+.metric{min-height:160px;padding:21px 18px}.metric+.metric{border-left:1px solid var(--line)}.metric strong{display:block;margin-top:9px;font-size:.92rem}.metric span{display:block;margin-top:8px;color:var(--ink3);font-size:.75rem}
+.quote{margin-top:24px;padding:21px 25px;border-left:4px solid var(--green);background:var(--greenSoft);font-size:1.08rem;font-weight:750}
+.decision{display:grid;grid-template-columns:1.15fr .85fr;gap:18px}.ask,.stop{padding:28px;border-radius:var(--radius)}
+.ask{border:1px solid var(--brand);background:var(--brandSoft)}.stop{border:1px solid var(--line2);background:var(--surface)}
+.ask h3,.stop h3{font-size:1.25rem}.ask ol{margin:19px 0 0 1.2rem;color:var(--ink2)}.ask li+li{margin-top:8px}.stop h3{color:var(--amber)}.stop p{margin-top:14px;color:var(--ink2)}
+.faq{margin-top:18px;border:1px solid var(--line);border-radius:11px;background:var(--surface)}.faq summary{min-height:48px;padding:13px 18px;color:var(--ink2);font-size:.84rem;font-weight:730;cursor:pointer}.faq[open] summary{border-bottom:1px solid var(--line)}.faq div{padding:18px;color:var(--ink2);font-size:.85rem}.faq p+p{margin-top:10px}
+.fade{opacity:0;transform:translateY(10px);transition:opacity .38s ease,transform .38s ease}.fade.visible{opacity:1;transform:none}
+footer{padding:36px 28px;border-top:1px solid var(--line);background:var(--surface);color:var(--ink3);font-size:.77rem;text-align:center}
+@media(max-width:1100px){
+  .hero{min-height:auto}.hero-grid{grid-template-columns:1fr}.visual{max-width:760px}.board{grid-template-columns:1fr}.bridge{min-height:40px;transform:rotate(90deg)}
+  .flow{grid-template-columns:repeat(3,1fr)}.step:nth-child(3):after{display:none}.roadmap:before{display:none}.roadmap,.grid4{grid-template-columns:repeat(2,1fr)}
+  .metrics{grid-template-columns:repeat(2,1fr)}.metric+.metric{border-left:0;border-top:1px solid var(--line)}.decision{grid-template-columns:1fr}
+}
+@media(max-width:760px){
+  .nav{padding:0 13px;gap:9px}.logo{font-size:0;gap:0}.theme{min-width:40px;width:40px;padding:0}.theme span:last-child{display:none}
+  .section{padding:72px 18px}.hero{padding-top:108px}h1{font-size:2.28rem}.summary,.context,.flow,.roadmap,.grid4,.metrics{grid-template-columns:1fr}
+  .summary>div{padding:14px 0}.summary>div+div{padding-left:0;border-left:0;border-top:1px solid var(--line)}
+  .context>div+div{border-left:0;border-top:1px solid var(--line)}.step:after,.step:nth-child(3):after{display:block;top:auto;right:50%;bottom:-20px;transform:translateX(50%) rotate(90deg)}.step:last-child:after{display:none}
+  .case-head{align-items:flex-start;flex-direction:column}.case-flow{grid-template-columns:repeat(6,170px)}.roadmap:before{display:none}
+}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.fade{opacity:1;transform:none}*,*:before,*:after{transition-duration:.01ms!important}}
+@media print{
+  :root,:root[data-theme="dark"]{color-scheme:light;--bg:#f6f8fb;--surface:#fff;--soft:#f0f4f8;--ink:#1f2a3d;--ink2:#4f6073;--ink3:#68788b;--line:#dce4ec;--line2:#c6d2de;--brand:#2f6f9f;--brand2:#235778;--brandSoft:#eaf3f8;--accent:#2c7a6b;--accentSoft:#eaf6f3;--green:#2f7d59;--greenSoft:#eaf6ef;--amber:#8c5b16;--amberSoft:#fff6e6}
+  .nav,.progress,.theme{display:none!important}.section{padding:46px 22px;background:#fff!important}.fade{opacity:1;transform:none}[role="tabpanel"][hidden]{display:block!important;margin-top:18px}
+}
+</style>
+</head>
+<body>
+<div class="progress" id="progress" aria-hidden="true"></div>
+<nav class="nav" aria-label="演示章节">
+  <a class="logo" href="#hero" aria-label="返回首页"><span class="mark" aria-hidden="true"></span>RESOURCE GATEWAY</a>
+  <div class="links">
+    <a href="#hero">主张</a><a href="#concern">顾虑</a><a href="#experience">新体验</a><a href="#case">案例</a>
+    <a href="#adoption">采用路径</a><a href="#roles">责任</a><a href="#evidence">衡量</a><a href="#decision">试点</a>
+  </div>
+  <button class="theme" id="theme" type="button" aria-label="切换到低光模式" aria-pressed="false"><span aria-hidden="true">◐</span> <span>低光</span></button>
+</nav>
+<main>
+  <section class="section hero" id="hero">
+    <div class="container hero-grid">
+      <div class="fade">
+        <div class="badge">面向业务管理者 · 采用沟通</div>
+        <h1>业务人员不必学编程，也能把业务变化说清、验清、管住</h1>
+        <p class="lead">Resource Gateway 把 DSL、编码智能体和测试机制放在平台内部。业务人员继续使用业务语言，负责目标、规则边界、结果验收和发布批准。</p>
+        <div class="summary" aria-label="核心摘要">
+          <div><small>业务体验</small><strong>表达意图，而不是寻找配置入口</strong></div>
+          <div><small>责任边界</small><strong>智能体生成草案，业务 Owner 作决定</strong></div>
+          <div><small>采用方式</small><strong>先旁路观察，再依据证据逐步扩围</strong></div>
+        </div>
+      </div>
+      <figure class="visual fade">
+        <figcaption>新的业务变更工作方式</figcaption>
+        <svg viewBox="0 0 560 430" role="img" aria-labelledby="heroSvgTitle heroSvgDesc">
+          <title id="heroSvgTitle">从业务意图到受控发布</title>
+          <desc id="heroSvgDesc">业务人员表达目标和约束，平台生成候选方案并验证，业务 Owner 查看证据后决定发布。</desc>
+          <defs>
+            <marker id="heroArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="var(--brand)"/></marker>
+          </defs>
+          <rect x="22" y="28" width="516" height="356" rx="18" fill="var(--soft)" stroke="var(--line2)"/>
+          <g font-size="15" font-weight="700">
+            <rect x="52" y="58" width="185" height="74" rx="11" fill="var(--amberSoft)" stroke="var(--amber)"/>
+            <text x="72" y="88" fill="var(--ink)">业务意图与边界</text><text x="72" y="112" fill="var(--ink2)" font-size="12" font-weight="500">目标 · 规则 · 正确结果</text>
+            <rect x="322" y="58" width="185" height="74" rx="11" fill="var(--brandSoft)" stroke="var(--brand)"/>
+            <text x="342" y="88" fill="var(--ink)">候选变更草案</text><text x="342" y="112" fill="var(--ink2)" font-size="12" font-weight="500">最小差异 · 影响范围</text>
+            <rect x="322" y="194" width="185" height="74" rx="11" fill="var(--accentSoft)" stroke="var(--accent)"/>
+            <text x="342" y="224" fill="var(--ink)">确定性验证</text><text x="342" y="248" fill="var(--ink2)" font-size="12" font-weight="500">隔离测试 · 覆盖 · 风险</text>
+            <rect x="52" y="194" width="185" height="74" rx="11" fill="var(--greenSoft)" stroke="var(--green)"/>
+            <text x="72" y="224" fill="var(--ink)">业务批准或退回</text><text x="72" y="248" fill="var(--ink2)" font-size="12" font-weight="500">证据 · 责任人 · 回滚</text>
+          </g>
+          <g fill="none" stroke="var(--brand)" stroke-width="3" marker-end="url(#heroArrow)">
+            <path d="M237 95H310"/><path d="M414 132V182"/><path d="M322 231H249"/>
+          </g>
+          <rect x="52" y="310" width="455" height="44" rx="9" fill="var(--surface)" stroke="var(--line)"/>
+          <text x="279" y="337" text-anchor="middle" fill="var(--ink2)" font-size="13" font-weight="650">平台吸收：DSL · 编码智能体 · Schema · 测试控制 · 版本管理</text>
+        </svg>
+        <p class="note">业务人员默认看到业务差异与验证结论，底层坐标和 DSL 放在专家核查路径。</p>
+      </figure>
+    </div>
+  </section>
+
+  <section class="section tinted" id="concern">
+    <div class="container">
+      <header class="header fade">
+        <div class="label">采用问题 · 为什么先进方式也可能难以推广</div>
+        <h2>学习门槛是真实风险，产品需要主动吸收复杂度</h2>
+        <p class="lead">业务团队不应被要求一次性理解新的语法、工具链和工程流程。采用设计的第一原则，是保留业务控制权并降低认知负担。</p>
+      </header>
+      <div class="board fade">
+        <article class="panel risk">
+          <h3>业务管理者的合理顾虑</h3>
+          <ul class="list">
+            <li>是否需要学习 DSL 或像研发人员一样工作。</li>
+            <li>现有经验、流程和岗位职责是否会被突然改变。</li>
+            <li>智能体生成错误内容时，谁承担业务责任。</li>
+            <li>验证流程是否过重，反而拖慢低风险变化。</li>
+            <li>既有系统、审批和回滚机制是否仍然有效。</li>
+          </ul>
+        </article>
+        <div class="bridge" aria-hidden="true">→</div>
+        <article class="panel answer">
+          <h3>产品需要提供的采用保障</h3>
+          <ul class="list">
+            <li>表单、模板、对话和业务差异视图作为默认入口。</li>
+            <li>智能体只生成候选方案，不能绕过验证与批准。</li>
+            <li>草案、低风险变化和高风险变化采用分层门槛。</li>
+            <li>现有流程在试点期继续运行，正式变化可回滚。</li>
+            <li>用真实基线评估学习成本、周期、返工与风险。</li>
+          </ul>
+        </article>
+      </div>
+      <div class="strip fade"><strong>采用判断：</strong>如果平台只是把技术复杂度转嫁给业务人员，试点就不应扩大。</div>
+    </div>
+  </section>
+
+  <section class="section" id="experience">
+    <div class="container">
+      <header class="header fade">
+        <div class="label">体验问题 · 业务人员实际需要做什么</div>
+        <h2>从「配置执行」转向「意图、约束与验收」</h2>
+        <p class="lead">业务人员的专业判断进入正式资产和发布证据；机械配置、技术检索和重复验证由平台与编码智能体承担。</p>
+      </header>
+      <div class="tabs fade" role="tablist" aria-label="工作方式视图" data-tabs>
+        <button class="tab" id="businessViewTab" type="button" role="tab" aria-selected="true" aria-controls="businessView">业务人员看到</button>
+        <button class="tab" id="platformViewTab" type="button" role="tab" aria-selected="false" aria-controls="platformView">平台在后台处理</button>
+        <button class="tab" id="boundaryViewTab" type="button" role="tab" aria-selected="false" aria-controls="boundaryView">不可委托的判断</button>
+      </div>
+      <div class="flow-shell fade" id="businessView" role="tabpanel" aria-labelledby="businessViewTab">
+        <div class="flow">
+          <div class="step primary"><small>01</small><strong>表达目标</strong><span>说明希望改变什么，以及适用范围。</span></div>
+          <div class="step"><small>02</small><strong>确认约束</strong><span>明确风险边界、例外和完成条件。</span></div>
+          <div class="step"><small>03</small><strong>审阅差异</strong><span>查看新增、删除、影响范围和责任人。</span></div>
+          <div class="step gate"><small>04</small><strong>验收证据</strong><span>检查关键场景、未覆盖条件和风险。</span></div>
+          <div class="step done"><small>05</small><strong>批准或退回</strong><span>绑定准确版本、批准记录和回滚条件。</span></div>
+        </div>
+        <div class="experience-note">默认入口使用业务术语。DSL、技术指纹和内部坐标进入专家核查区域，不占用日常工作视图。</div>
+      </div>
+      <div class="flow-shell" id="platformView" role="tabpanel" aria-labelledby="platformViewTab" hidden>
+        <div class="flow">
+          <div class="step"><small>01</small><strong>检索已有资产</strong><span>查找资源、规则、流程和验证案例。</span></div>
+          <div class="step primary"><small>02</small><strong>生成最小差异</strong><span>编码智能体形成候选变更，不直接发布。</span></div>
+          <div class="step"><small>03</small><strong>结构与兼容检查</strong><span>验证 Schema、依赖和版本影响。</span></div>
+          <div class="step"><small>04</small><strong>隔离运行</strong><span>模拟返回、错误、超时、重试和禁用调用。</span></div>
+          <div class="step done"><small>05</small><strong>形成可复核证据</strong><span>记录覆盖、结果、责任和准确资产版本。</span></div>
+        </div>
+        <div class="experience-note">编码智能体负责生成与修复，确定性工具负责证明；两者都不能自行定义业务正确结果。</div>
+      </div>
+      <div class="flow-shell" id="boundaryView" role="tabpanel" aria-labelledby="boundaryViewTab" hidden>
+        <div class="flow">
+          <div class="step gate"><small>业务 Owner</small><strong>定义正确结果</strong><span>哪些结果可接受，哪些条件不能接受。</span></div>
+          <div class="step gate"><small>业务 Owner</small><strong>确认风险例外</strong><span>哪些变化需要人工确认或管理批准。</span></div>
+          <div class="step gate"><small>业务 Owner</small><strong>判断业务价值</strong><span>周期、体验、经营或风险是否改善。</span></div>
+          <div class="step"><small>质量与风险</small><strong>制定验证政策</strong><span>覆盖要求、例外期限和审计规则。</span></div>
+          <div class="step done"><small>授权角色</small><strong>作出发布决定</strong><span>批准、退回、暂停或回滚。</span></div>
+        </div>
+        <div class="experience-note">责任不会因为引入智能体而消失。平台需要让每项业务判断、批准和例外都有明确责任人。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section tinted" id="case">
+    <div class="wide">
+      <header class="header fade">
+        <div class="label">贯穿案例 · 新工作方式怎样发生</div>
+        <h2>一次客户资格策略调整，从业务描述进入受控发布</h2>
+        <p class="lead">以下为沟通示意：主数据服务发生指定故障时允许切换备用服务；高风险客户不能自动放行；发布前需要证明关键分支已经覆盖。</p>
+      </header>
+      <article class="case fade" aria-labelledby="caseTitle">
+        <div class="case-head">
+          <div><span class="eyebrow">业务变化示意</span><h3 id="caseTitle">增加受控降级，同时保留高风险人工确认</h3></div>
+          <span class="case-badge">正式试点需映射真实流程</span>
+        </div>
+        <div class="context">
+          <div><span class="eyebrow">业务目标</span><strong>主服务故障时保持服务连续性</strong></div>
+          <div><span class="eyebrow">不可突破的边界</span><strong>高风险客户不得自动放行</strong></div>
+          <div><span class="eyebrow">完成证据</span><strong>关键分支、禁用调用与版本均可复核</strong></div>
+        </div>
+        <div class="case-flow" aria-label="案例工作流">
+          <div class="case-step"><span class="actor human">业务人员</span><strong>描述变化</strong><small>故障条件、风险边界和正确结果</small></div>
+          <div class="case-step"><span class="actor">编码智能体</span><strong>生成草案</strong><small>复用已有资产，形成最小差异</small></div>
+          <div class="case-step"><span class="actor system">平台</span><strong>隔离验证</strong><small>模拟主服务失败、备用服务和禁用路径</small></div>
+          <div class="case-step gate"><span class="actor human">业务 Owner</span><strong>查看证据</strong><small>差异、覆盖缺口、风险和例外</small></div>
+          <div class="case-step"><span class="actor system">发布系统</span><strong>受控发布</strong><small>绑定准确版本、审批记录和回滚条件</small></div>
+          <div class="case-step done"><span class="actor evidence">结果</span><strong>可追溯运行</strong><small>结果、人工修正和失败返回下一版本</small></div>
+        </div>
+        <div class="case-footer">验证失败时返回业务可读问题，例如「高风险条件未进入人工确认」或「备用服务在非指定故障下被调用」，而不只显示技术错误。</div>
+      </article>
+    </div>
+  </section>
+
+  <section class="section" id="adoption">
+    <div class="container">
+      <header class="header center fade">
+        <div class="label">采用问题 · 如何降低一次性迁移风险</div>
+        <h2>从旁路观察开始，每一步都用业务证据决定是否继续</h2>
+        <p class="lead">现有流程、人工门禁和回滚能力在试点期间继续存在。阶段完成不等于模块建成，而是业务价值和风险条件同时满足。</p>
+      </header>
+      <div class="roadmap fade">
+        <article class="stage current"><span class="eyebrow">阶段一</span><h3>旁路观察</h3><p>不改变现有生产流程，记录资产、依赖、人工步骤和等待时间。</p><strong>退出：现状基线清楚，业务人员无需承担新操作</strong></article>
+        <article class="stage"><span class="eyebrow">阶段二</span><h3>智能草案</h3><p>业务人员通过模板或自然语言提出变化，智能体生成候选方案。</p><strong>退出：差异可理解，草案准确率和修订成本可接受</strong></article>
+        <article class="stage"><span class="eyebrow">阶段三</span><h3>受控发布</h3><p>在可隔离、可回滚的场景中接入验证、审批和准确版本。</p><strong>退出：周期或返工改善，且无高风险绕过</strong></article>
+        <article class="stage result"><span class="eyebrow">阶段四</span><h3>规模复用</h3><p>把经过验证的资源、规则、流程和场景推广到更多团队。</p><strong>退出：第二场景无需维护专属运行分支</strong></article>
+      </div>
+      <div class="strip fade"><strong>停止条件：</strong>学习成本过高、业务价值不清、证据不足或风险边界不可控时，不进入下一阶段。</div>
+    </div>
+  </section>
+
+  <section class="section tinted" id="roles">
+    <div class="container">
+      <header class="header fade">
+        <div class="label">责任问题 · 引入智能体后谁负责什么</div>
+        <h2>智能体扩大执行能力，业务责任仍由明确角色承担</h2>
+        <p class="lead">新工作方式把原本散落在会议、页面和人工记录中的责任显式化，让目标、生成、验证和批准分别归属清楚。</p>
+      </header>
+      <div class="grid4 fade">
+        <article class="card business"><span class="num">01</span><h3>业务 Owner</h3><p>定义目标、适用范围、正确结果标准、风险边界和业务例外。</p><b>保留：最终业务判断与发布批准</b></article>
+        <article class="card agent"><span class="num">02</span><h3>编码智能体</h3><p>检索已有资产、生成最小差异、补充验证场景并根据诊断修复草案。</p><b>限制：不能自行定义业务正确性</b></article>
+        <article class="card platform"><span class="num">03</span><h3>平台与研发团队</h3><p>负责连接适配、运行稳定、权限、隔离、工具链和产品体验。</p><b>责任：把技术复杂度留在平台</b></article>
+        <article class="card governance"><span class="num">04</span><h3>质量与风险团队</h3><p>制定覆盖政策、风险分级、证据要求、例外期限和审计规则。</p><b>责任：门槛与业务风险相匹配</b></article>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="evidence">
+    <div class="container">
+      <header class="header fade">
+        <div class="label">衡量问题 · 如何判断试点真的更好</div>
+        <h2>先记录现状，再同时衡量效率、质量与采用体验</h2>
+        <p class="lead">不预设收益数字，也不使用单一综合分数隐藏风险。试点前由业务、平台、质量和财务共同确认口径。</p>
+      </header>
+      <div class="metrics fade">
+        <div class="metric"><span class="eyebrow">交付周期</span><strong>从业务意图到可验证发布候选</strong><span>同时包含生成、验证和批准等待。</span></div>
+        <div class="metric"><span class="eyebrow">人工负担</span><strong>操作步骤、等待时间和跨团队沟通</strong><span>判断是否真正减少机械配置。</span></div>
+        <div class="metric"><span class="eyebrow">采用体验</span><strong>草案接受率、修订次数和学习反馈</strong><span>识别产品是否转嫁了复杂度。</span></div>
+        <div class="metric"><span class="eyebrow">正确性</span><strong>关键条件覆盖与未覆盖分母</strong><span>通过不等于覆盖完整，缺口需要可见。</span></div>
+        <div class="metric"><span class="eyebrow">风险质量</span><strong>生产误触、未授权写入和回滚事件</strong><span>高风险动作应保留人工门禁和审计。</span></div>
+      </div>
+      <div class="quote fade">核心指标是「可验证业务资产交付周期」：同时衡量速度与正确性，任一恶化都不算成功。</div>
+    </div>
+  </section>
+
+  <section class="section tinted" id="decision">
+    <div class="container">
+      <header class="header center fade">
+        <div class="label">决策请求 · 现在需要批准什么</div>
+        <h2>批准一个可控试点，以证据决定是否扩围</h2>
+        <p class="lead">先选择一条真实业务流程，在不替换生产流程的前提下验证采用体验、交付效率和风险质量。</p>
+      </header>
+      <div class="decision fade">
+        <article class="ask">
+          <h3>建议批准的五项事项</h3>
+          <ol>
+            <li>选择一个高变更、多依赖、可隔离、可回滚的业务流程。</li>
+            <li>指定业务 Owner、平台 Owner 和质量／风险负责人。</li>
+            <li>授权采集当前周期、人工步骤、返工和质量基线。</li>
+            <li>先运行旁路观察与智能草案，不直接替换生产流程。</li>
+            <li>以业务指标、采用反馈和风险证据决定是否进入受控发布。</li>
+          </ol>
+        </article>
+        <article class="stop">
+          <h3>业务管理者保留的选择权</h3>
+          <p>草案不准确，可以退回；验证证据不足，可以暂停；学习成本过高，可以调整入口；风险边界不清，可以停止扩围。</p>
+          <p>Resource Gateway 的成功标准直接落在业务体验上：业务人员减少机械操作，获得更清楚的判断依据，并保持对关键变化的控制。</p>
+        </article>
+      </div>
+      <details class="faq fade">
+        <summary>常见疑问：业务人员需要学习 DSL 吗？现有系统是否需要替换？</summary>
+        <div>
+          <p><strong>DSL：</strong>不作为业务人员的默认入口。表单、模板、对话和业务差异视图承担日常任务，DSL 作为平台内部的标准资产形式。</p>
+          <p><strong>现有系统：</strong>不要求一次性替换。Resource Gateway 与现有 API Gateway、工作流、业务系统和集成平台组合，先旁路观察再逐步迁移。</p>
+          <p><strong>智能体错误：</strong>智能体只生成候选方案，不能绕过结构检查、隔离测试、覆盖策略、权限和人工批准。</p>
+        </div>
+      </details>
+      <div class="quote fade">业务人员少做配置，多做判断；系统少依赖经验，多依赖可验证证据。</div>
+    </div>
+  </section>
+</main>
+<footer>RESOURCE GATEWAY · 面向业务管理者的采用沟通材料</footer>
+<script>
+(function(){
+  var root=document.documentElement;
+  var saved=localStorage.getItem("rg-business-briefing-theme");
+  root.dataset.theme=saved==="dark"?"dark":"light";
+  var theme=document.getElementById("theme");
+  function syncTheme(){
+    var dark=root.dataset.theme==="dark";
+    theme.setAttribute("aria-pressed",String(dark));
+    theme.setAttribute("aria-label",dark?"切换到明亮模式":"切换到低光模式");
+    theme.lastElementChild.textContent=dark?"明亮":"低光";
+  }
+  syncTheme();
+  theme.addEventListener("click",function(){
+    root.dataset.theme=root.dataset.theme==="dark"?"light":"dark";
+    localStorage.setItem("rg-business-briefing-theme",root.dataset.theme);
+    syncTheme();
+  });
+  var progress=document.getElementById("progress"),queued=false;
+  function updateProgress(){
+    var available=document.documentElement.scrollHeight-innerHeight;
+    progress.style.width=(available>0?scrollY/available*100:0)+"%";
+    queued=false;
+  }
+  addEventListener("scroll",function(){if(!queued)requestAnimationFrame(updateProgress);queued=true},{passive:true});
+  updateProgress();
+  var links=Array.from(document.querySelectorAll(".links a"));
+  var sections=links.map(function(link){return document.querySelector(link.getAttribute("href"))}).filter(Boolean);
+  var navObserver=new IntersectionObserver(function(entries){
+    var visible=entries.filter(function(entry){return entry.isIntersecting}).sort(function(a,b){return b.intersectionRatio-a.intersectionRatio})[0];
+    if(!visible)return;
+    links.forEach(function(link){
+      var active=link.getAttribute("href")==="#"+visible.target.id;
+      link.classList.toggle("active",active);
+      if(active)link.setAttribute("aria-current","location");else link.removeAttribute("aria-current");
+    });
+  },{rootMargin:"-28% 0px -58%",threshold:[.05,.35,.65]});
+  sections.forEach(function(section){navObserver.observe(section)});
+  if(matchMedia("(prefers-reduced-motion: reduce)").matches){
+    document.querySelectorAll(".fade").forEach(function(el){el.classList.add("visible")});
+  }else{
+    var reveal=new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){if(entry.isIntersecting){entry.target.classList.add("visible");reveal.unobserve(entry.target)}})
+    },{threshold:.08});
+    document.querySelectorAll(".fade").forEach(function(el){reveal.observe(el)});
+  }
+  document.querySelectorAll("[data-tabs]").forEach(function(tablist){
+    var tabs=Array.from(tablist.querySelectorAll('[role="tab"]'));
+    function activate(tab,focus){
+      tabs.forEach(function(item){
+        var selected=item===tab;
+        item.setAttribute("aria-selected",String(selected));
+        item.tabIndex=selected?0:-1;
+        var panel=document.getElementById(item.getAttribute("aria-controls"));
+        if(panel)panel.hidden=!selected;
+      });
+      if(focus)tab.focus();
+    }
+    tabs.forEach(function(tab,index){
+      tab.addEventListener("click",function(){activate(tab,false)});
+      tab.addEventListener("keydown",function(event){
+        var next=null;
+        if(event.key==="ArrowRight")next=(index+1)%tabs.length;
+        if(event.key==="ArrowLeft")next=(index-1+tabs.length)%tabs.length;
+        if(event.key==="Home")next=0;
+        if(event.key==="End")next=tabs.length-1;
+        if(next===null)return;
+        event.preventDefault();activate(tabs[next],true);
+      });
+    });
+    activate(tabs.find(function(tab){return tab.getAttribute("aria-selected")==="true"})||tabs[0],false);
+  });
+})();
+</script>
+</body>
+</html>

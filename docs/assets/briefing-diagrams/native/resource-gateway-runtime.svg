@@ -1,0 +1,68 @@
+<svg class="native-report-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 760" role="img" aria-labelledby="rg-runtime-title rg-runtime-desc">
+  <title id="rg-runtime-title">Resource Gateway 运行与治理架构</title>
+  <desc id="rg-runtime-desc">业务资产通过带外控制进入稳定的资源网关执行链，测试控制面与业务数据分离，运行证据回流到发布治理。</desc>
+  <defs>
+    <marker id="rg-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2F6F9F"/></marker>
+    <marker id="rg-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8C5B16"/></marker>
+    <marker id="rg-green-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#2F7D59"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.label{font-size:16px;font-weight:700}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.lane{fill:#F6F8FB;stroke:#DCE4EC;stroke-width:1.5}.node{fill:#FFFFFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.blue-line{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#rg-blue-arrow)}.control{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#rg-amber-arrow)}.evidence{fill:none;stroke:#2F7D59;stroke-width:2.2;stroke-dasharray:7 7;marker-end:url(#rg-green-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="760" rx="20" fill="#FFFFFF"/>
+
+  <text x="38" y="42" class="eyebrow" style="fill:#2F6F9F">RESOURCE GATEWAY · STABLE CORE / PROGRAMMABLE EDGE</text>
+  <text x="38" y="72" class="title">资产带外治理，业务请求沿稳定主链执行，证据回到发布决策</text>
+
+  <rect x="38" y="98" width="1244" height="158" rx="16" class="lane"/>
+  <text x="58" y="124" class="eyebrow" style="fill:#8C5B16">业务资产与治理面</text>
+  <text x="58" y="145" class="micro">变化被版本化、可编译、可验证；运行时只消费已批准版本</text>
+  <rect x="58" y="166" width="210" height="62" rx="11" class="node amber"/>
+  <text x="78" y="191" class="label">业务意图 / Oracle</text><text x="78" y="212" class="sub">目标 · 约束 · 风险接受</text>
+  <rect x="292" y="166" width="210" height="62" rx="11" class="node purple"/>
+  <text x="312" y="191" class="label">BLOGE DSL</text><text x="312" y="212" class="sub">Graph · Decision · Mapping</text>
+  <rect x="526" y="166" width="210" height="62" rx="11" class="node green"/>
+  <text x="546" y="191" class="label">Scenario / Fixture</text><text x="546" y="212" class="sub">案例 · 替身 · 业务断言</text>
+  <rect x="760" y="166" width="210" height="62" rx="11" class="node blue"/>
+  <text x="780" y="191" class="label">Resource Registry</text><text x="780" y="212" class="sub">Descriptor · Schema · Policy</text>
+  <rect x="994" y="166" width="268" height="62" rx="11" class="node"/>
+  <text x="1014" y="191" class="label">Revision / Publication</text><text x="1014" y="212" class="sub">指纹 · 审批 · 晋级门禁</text>
+
+  <path d="M397 228 V286 H581" class="control"/>
+  <path d="M865 228 V274 H812 V286" class="control"/>
+  <path d="M1128 228 V274 H1018 V286" class="control"/>
+
+  <rect x="38" y="286" width="1244" height="258" rx="16" class="lane"/>
+  <text x="58" y="316" class="eyebrow" style="fill:#2F6F9F">Resource Gateway 执行面</text>
+  <text x="58" y="337" class="micro">稳定内核：Graph Engine 负责业务语义；通用 Operator 负责资源适配</text>
+  <rect x="58" y="366" width="190" height="100" rx="12" class="node"/>
+  <text x="78" y="397" class="label">业务消费者</text><text x="78" y="421" class="sub">API · Event · Job</text><text x="78" y="444" class="micro">只提交业务输入</text>
+  <rect x="292" y="366" width="190" height="100" rx="12" class="node blue"/>
+  <text x="312" y="397" class="label">Request Gateway</text><text x="312" y="421" class="sub">鉴权 · 路由 · 限流</text><text x="312" y="444" class="micro">purpose 边界校验</text>
+  <rect x="526" y="366" width="190" height="100" rx="12" class="node blue"/>
+  <text x="546" y="397" class="label">Graph Engine</text><text x="546" y="421" class="sub">DAG · Branch · Retry</text><text x="546" y="444" class="micro">执行冻结业务语义</text>
+  <rect x="760" y="366" width="220" height="100" rx="12" class="node purple"/>
+  <text x="780" y="397" class="label">HttpResourceOperator</text><text x="780" y="421" class="sub">统一资源调用抽象</text><text x="780" y="444" class="micro">避免 provider-specific 分叉</text>
+  <rect x="1024" y="366" width="238" height="100" rx="12" class="node"/>
+  <text x="1044" y="397" class="label">外部系统边界</text><text x="1044" y="421" class="sub">Mapping · Auth · Protocol</text><text x="1044" y="444" class="micro">SaaS · Legacy · Data</text>
+  <path d="M248 416 H282" class="blue-line"/><path d="M482 416 H516" class="blue-line"/><path d="M716 416 H750" class="blue-line"/><path d="M980 416 H1014" class="blue-line"/>
+  <rect x="292" y="490" width="688" height="34" rx="8" fill="#EDF5FA" stroke="#CFE0EC"/>
+  <text x="314" y="512" class="sub" style="fill:#285F88">GraphContext = 业务数据；不携带 Fixture、Mock、Selector 等测试控制信息</text>
+
+  <rect x="38" y="574" width="1244" height="142" rx="16" class="lane"/>
+  <text x="58" y="604" class="eyebrow" style="fill:#2F7D59">测试控制与证据面</text>
+  <rect x="58" y="625" width="210" height="62" rx="11" class="node amber"/>
+  <text x="78" y="650" class="label">Plan Compiler</text><text x="78" y="671" class="sub">冻结目标 · 安全预检</text>
+  <rect x="292" y="625" width="210" height="62" rx="11" class="node blue"/>
+  <text x="312" y="650" class="label">Isolated Runtime</text><text x="312" y="671" class="sub">REAL / MOCK / REPLAY / DENY</text>
+  <rect x="526" y="625" width="210" height="62" rx="11" class="node green"/>
+  <text x="546" y="650" class="label">Trace &amp; Coverage</text><text x="546" y="671" class="sub">调用点 · 分支 · 消费情况</text>
+  <rect x="760" y="625" width="210" height="62" rx="11" class="node green"/>
+  <text x="780" y="650" class="label">Signed Evidence</text><text x="780" y="671" class="sub">版本绑定 · 独立验证</text>
+  <rect x="994" y="625" width="268" height="62" rx="11" class="node"/>
+  <text x="1014" y="650" class="label">Release Gate</text><text x="1014" y="671" class="sub">覆盖阈值 · 风险策略 · 审计</text>
+  <path d="M268 656 H282" class="blue-line"/><path d="M502 656 H516" class="blue-line"/><path d="M736 656 H750" class="blue-line"/><path d="M970 656 H984" class="blue-line"/>
+  <path d="M397 625 V554 H620 V476" class="control"/>
+  <path d="M865 625 V558 H1143 V476" class="evidence"/>
+  <path d="M1128 625 V554 H1248 V244 H1150 V228" class="evidence"/>
+</svg>

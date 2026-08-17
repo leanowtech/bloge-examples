@@ -1,0 +1,41 @@
+<svg class="native-report-svg native-operations-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1320 580" role="img" aria-labelledby="ops-flow-title ops-flow-desc">
+  <title id="ops-flow-title">意图驱动的运营变更工作流</title>
+  <desc id="ops-flow-desc">运营人员表述意图并定义业务正确答案，编码智能体装配上下文和生成变更，平台进行确定性校验与隔离验证，授权人员批准发布。</desc>
+  <defs>
+    <marker id="ops-blue-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6F9F"/></marker>
+    <marker id="ops-red-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#B14D3C"/></marker>
+    <marker id="ops-amber-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8C5B16"/></marker>
+    <style>
+      text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}.eyebrow{font-size:13px;font-weight:750;letter-spacing:1.2px}.title{font-size:19px;font-weight:750}.step{font-size:17px;font-weight:750}.sub{font-size:13px;fill:#66768A}.micro{font-size:12px;fill:#66768A}.node{fill:#FFF;stroke:#DCE4EC;stroke-width:1.5}.blue{fill:#EDF5FA;stroke:#2F6F9F}.purple{fill:#EDF5F3;stroke:#2C7A6B}.amber{fill:#FBF6EA;stroke:#8C5B16}.green{fill:#EEF7F2;stroke:#2F7D59}.flow{fill:none;stroke:#2F6F9F;stroke-width:3;marker-end:url(#ops-blue-arrow)}.feedback{fill:none;stroke:#B14D3C;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#ops-red-arrow)}.gate{fill:none;stroke:#8C5B16;stroke-width:2.2;stroke-dasharray:8 7;marker-end:url(#ops-amber-arrow)}
+    </style>
+  </defs>
+  <rect width="1320" height="580" rx="20" fill="#FFF"/>
+  <text x="38" y="42" class="eyebrow" style="fill:#2C7A6B">INTENT → CHANGESET → EVIDENCE</text>
+  <text x="38" y="72" class="title">运营定义正确答案，编码智能体完成工程劳动，平台提供可重复证明</text>
+
+  <line x1="128" y1="250" x2="1192" y2="250" stroke="#D7E5EF" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="128" cy="250" r="18" fill="#8C5B16"/><circle cx="341" cy="250" r="18" fill="#2C7A6B"/><circle cx="554" cy="250" r="18" fill="#2C7A6B"/><circle cx="767" cy="250" r="18" fill="#2F6F9F"/><circle cx="980" cy="250" r="18" fill="#2F7D59"/><circle cx="1192" cy="250" r="18" fill="#2F7D59"/>
+  <path d="M146 250 H313" class="flow"/><path d="M359 250 H526" class="flow"/><path d="M572 250 H739" class="flow"/><path d="M785 250 H952" class="flow"/><path d="M998 250 H1164" class="flow"/>
+
+  <rect x="48" y="116" width="160" height="100" rx="13" class="node amber"/>
+  <text x="68" y="148" class="step">1 · 意图表述</text><text x="68" y="175" class="sub">目标 · 规则 · 例外</text><text x="68" y="197" class="micro">Owner / IntentSpec</text>
+  <rect x="261" y="284" width="160" height="100" rx="13" class="node purple"/>
+  <text x="281" y="316" class="step">2 · 上下文装配</text><text x="281" y="343" class="sub">Catalog · Schema</text><text x="281" y="365" class="micro">智能体 / AssetContext</text>
+  <rect x="474" y="116" width="160" height="100" rx="13" class="node purple"/>
+  <text x="494" y="148" class="step">3 · 变更生成</text><text x="494" y="175" class="sub">DSL · Scenario</text><text x="494" y="197" class="micro">智能体 / ChangeSet</text>
+  <rect x="687" y="284" width="160" height="100" rx="13" class="node blue"/>
+  <text x="707" y="316" class="step">4 · 确定校验</text><text x="707" y="343" class="sub">Compile · Impact</text><text x="707" y="365" class="micro">Platform / Contract</text>
+  <rect x="900" y="116" width="160" height="100" rx="13" class="node green"/>
+  <text x="920" y="148" class="step">5 · 隔离验证</text><text x="920" y="175" class="sub">Trace · Coverage</text><text x="920" y="197" class="micro">Platform / Evidence</text>
+  <rect x="1112" y="284" width="160" height="100" rx="13" class="node green"/>
+  <text x="1132" y="316" class="step">6 · 批准发布</text><text x="1132" y="343" class="sub">范围 · 风险 · 版本</text><text x="1132" y="365" class="micro">Owner / Publication</text>
+
+  <path d="M980 216 V90 H554 V106" class="feedback"/>
+  <text x="692" y="82" class="sub" style="fill:#B14D3C">失败定位到具体资产，自动生成下一轮修订</text>
+  <path d="M1192 384 V432 H128 V226" class="gate"/>
+  <text x="434" y="452" class="sub" style="fill:#8C5B16">语义不确定、高风险例外和业务 Oracle 返回授权人员确认</text>
+
+  <rect x="48" y="486" width="1224" height="60" rx="12" fill="#1F2A3D"/>
+  <text x="70" y="511" font-size="13" font-weight="750" style="fill:#9EC5DE">效率跃迁</text>
+  <text x="70" y="533" font-size="14" style="fill:#DCE4EC">从逐字段配置与人工核对，升级为意图表述、Diff 审阅、证据验证与发布批准；成熟编码智能体生态成为运营生产力。</text>
+</svg>
