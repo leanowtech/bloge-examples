@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCapabilityStudioDemoPack } from './domain';
+import { parseCapabilityStudioDemoPack, parseScenarioDatasetProjection } from './domain';
+import { scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio backend projection adapter', () => {
   it('adapts exact refs, business contract summaries, and governed scenario metadata', () => {
@@ -30,6 +31,55 @@ describe('Capability Studio backend projection adapter', () => {
     });
     expect(result.baseline).toMatchObject({ name: 'Canonical Baseline', status: 'IMMUTABLE' });
     expect(result.tutorialBranch).toMatchObject({ name: 'Tutorial Branch', status: 'ISOLATED_NOT_RUN' });
+  });
+
+  it('strictly parses all nine Dataset cases and preserves complete reference closure', () => {
+    const result = parseScenarioDatasetProjection(scenarioDatasetProjectionFixture);
+
+    expect(result.cases).toHaveLength(9);
+    expect(result.datasetRef.scope).toMatchObject({ tenantId: 'tenant-demo', environmentId: 'demo' });
+    expect(result.cases.every((scenario) => scenario.caseRef.scope.region === 'ap-southeast-1')).toBe(true);
+    expect(result.cases[4].behaviorProfiles[0].behavior).toBe('TIMEOUT');
+  });
+
+  it('rejects unknown fields and incomplete exact-ref scope instead of accepting a partial projection', () => {
+    expect(() => parseScenarioDatasetProjection({ ...scenarioDatasetProjectionFixture, unexpected: true })).toThrow('INVALID_SCENARIO_DATASET');
+    const incompleteScope = structuredClone(scenarioDatasetProjectionFixture);
+    delete (incompleteScope.cases[0].caseRef.scope as { region?: string }).region;
+    expect(() => parseScenarioDatasetProjection(incompleteScope)).toThrow('scenarioDataset.cases[0].caseRef.scope.region');
+  });
+
+  it('rejects cross-scope and contract-closure violations before rendering governed cases', () => {
+    const crossScope = structuredClone(scenarioDatasetProjectionFixture);
+    crossScope.cases[0].sourceRef.scope = {
+      ...crossScope.cases[0].sourceRef.scope,
+      environmentId: 'production',
+    };
+    expect(() => parseScenarioDatasetProjection(crossScope)).toThrow('cross-scope reference');
+
+    const brokenClosure = structuredClone(scenarioDatasetProjectionFixture);
+    brokenClosure.cases[0].applicableContractRefs[0].id = 'unknown-contract';
+    expect(() => parseScenarioDatasetProjection(brokenClosure)).toThrow('contract closure is incomplete');
+  });
+
+  it('rejects duplicate governed identities and quality summaries that drift from case content', () => {
+    const duplicateCase = structuredClone(scenarioDatasetProjectionFixture);
+    duplicateCase.cases[1].caseRef.id = duplicateCase.cases[0].caseRef.id;
+    expect(() => parseScenarioDatasetProjection(duplicateCase)).toThrow('duplicate case reference');
+
+    const qualityDrift = structuredClone(scenarioDatasetProjectionFixture);
+    qualityDrift.quality.activeCaseCount = 7;
+    expect(() => parseScenarioDatasetProjection(qualityDrift)).toThrow('quality metrics do not match');
+  });
+
+  it('fails closed when an active case or active Dataset is not readiness-complete', () => {
+    const incompleteCase = structuredClone(scenarioDatasetProjectionFixture);
+    incompleteCase.cases[0].qualityState = 'DESIGNED_NOT_RUN';
+    expect(() => parseScenarioDatasetProjection(incompleteCase)).toThrow('incomplete active case');
+
+    const blockedDataset = structuredClone(scenarioDatasetProjectionFixture);
+    blockedDataset.quality.status = 'BLOCKED';
+    expect(() => parseScenarioDatasetProjection(blockedDataset)).toThrow('Active Scenario Dataset is not ready');
   });
 });
 

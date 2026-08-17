@@ -44,3 +44,77 @@ export const capabilityStudioDemoPackFixture = {
     name: { en: name, 'zh-CN': name }, category: { en: category, 'zh-CN': category }, source: { en: source, 'zh-CN': source }, owner: { en: 'Customer Service Platform', 'zh-CN': '客服平台团队' }, oracle: { en: 'Feature Oracle', 'zh-CN': '特征正确性依据' }, applicableContractCount: 4, expectedResult: { en: expectedResult, 'zh-CN': expectedResult }, quality: { en: index === 6 ? 'REVIEW' : 'CURATED', 'zh-CN': index === 6 ? '待复核' : '已整理' }, lifecycle: { en: index === 6 ? 'DRAFT' : 'CURRENT', 'zh-CN': index === 6 ? '草稿' : '当前' },
   })),
 };
+
+const scenarioDatasetScope = {
+  tenantId: 'tenant-demo',
+  organizationId: 'customer-service-platform',
+  projectId: 'resource-gateway',
+  environmentId: 'demo',
+  region: 'ap-southeast-1',
+};
+
+function scenarioDatasetRef(kind: string, id: string, seed: string) {
+  return {
+    kind,
+    id,
+    revision: 1,
+    fingerprint: `sha256:${seed.repeat(64).slice(0, 64)}`,
+    authority: 'resource-gateway-demo-authority',
+    scope: scenarioDatasetScope,
+  };
+}
+
+const scenarioDatasetCaseDefinitions = [
+  ['Driver liable and fee exceeds policy', 'Confirm a driver-liable cancellation fee and explain why compensation is due.', 'GOLDEN', 'ACTIVE', 'READY', 'Business case', 'Return an explainable fee decision and a compensation recommendation.', 'RETURN'],
+  ['Passenger liable and amount matches policy', 'Prevent compensation when the passenger is responsible and the fee is policy-compliant.', 'NEGATIVE', 'ACTIVE', 'READY', 'Business policy review', 'Do not recommend compensation; explain the policy match.', 'RETURN'],
+  ['Compensation reaches the city cap', 'Keep a valid compensation recommendation within the configured city maximum.', 'BOUNDARY', 'ACTIVE', 'READY', 'Policy boundary review', 'Return a capped recommendation that never exceeds the city limit.', 'RETURN'],
+  ['Policy effective time boundary', 'Use the policy version effective one minute before or after the trip event.', 'BOUNDARY', 'ACTIVE', 'READY', 'Policy release record', 'Use the policy version that was effective at the event time.', 'RETURN'],
+  ['Compensation history times out', 'Make a missing historical lookup explicit instead of treating it as no history.', 'FAULT', 'ACTIVE', 'READY', 'Isolation rehearsal', 'Stop automatic decisioning and route the case to human review.', 'TIMEOUT'],
+  ['City policy is missing', 'Block an automatic decision when no applicable city policy can be found.', 'FAULT', 'ACTIVE', 'READY', 'Contract fault case', 'Explain that policy data is missing and require human review.', 'ERROR'],
+  ['Responsibility cannot be determined', 'Give the service agent a useful next action when responsibility facts are incomplete.', 'NEGATIVE', 'DRAFT', 'DESIGNED_NOT_RUN', 'Support escalation case', 'Return an information-incomplete outcome and a next-step request.', 'RETURN'],
+  ['Duplicate fee incident regression', 'Keep a known duplicate-charge incident from reappearing in the decision.', 'REGRESSION', 'ACTIVE', 'READY', 'Historical incident', 'Detect the duplicate charge and recommend the governed correction.', 'RETURN'],
+  ['Payment credential appears in dependency response', 'Prevent sensitive payment credential fields from reaching the feature or tool result.', 'SECURITY', 'ACTIVE', 'READY', 'Security review', 'Redact sensitive fields and continue with a safe business explanation.', 'MUST_NOT_CALL'],
+] as const;
+
+export const scenarioDatasetProjectionFixture = {
+  schemaVersion: 'resource-gateway.capability-studio.scenario-dataset.v1',
+  datasetRef: scenarioDatasetRef('DATASET', 'cancellation-fee-scenarios', 'd'),
+  name: 'Cancellation fee dispute scenario dataset',
+  description: 'Governed business cases for explaining and reviewing cancellation fee disputes.',
+  lifecycle: 'ACTIVE',
+  classification: 'INTERNAL',
+  owner: { id: 'customer-service-platform', name: 'Customer Service Platform' },
+  targetRef: scenarioDatasetRef('TOOL', 'cancellation-resolution', 'e'),
+  contractRefs: Array.from({ length: 4 }, (_, index) => scenarioDatasetRef('CONTRACT', `cancellation-contract-${index + 1}`, String(index + 1))),
+  cases: scenarioDatasetCaseDefinitions.map(([name, businessIntent, category, lifecycle, qualityState, sourceName, oracleSummary, behavior], index) => ({
+    caseRef: scenarioDatasetRef('DATA_CASE', `cancellation-fee-case-${index + 1}`, String(index + 1)),
+    name,
+    businessIntent,
+    category,
+    lifecycle,
+    qualityState,
+    owner: { id: 'customer-service-platform', name: 'Customer Service Platform' },
+    sourceRef: scenarioDatasetRef('SOURCE', `cancellation-source-${index + 1}`, 'a'),
+    source: { displayName: sourceName, type: 'BUSINESS_RECORD' },
+    oracleRef: scenarioDatasetRef('ORACLE', `cancellation-oracle-${index + 1}`, 'b'),
+    oracle: { displayName: 'Cancellation dispute business oracle', summary: oracleSummary },
+    applicableContractRefs: Array.from({ length: 4 }, (_, contractIndex) => scenarioDatasetRef('CONTRACT', `cancellation-contract-${contractIndex + 1}`, String(contractIndex + 1))),
+    behaviorProfiles: [{
+      behaviorRef: scenarioDatasetRef('BEHAVIOR_PROFILE', `cancellation-behavior-${index + 1}`, 'c'),
+      dependencyRef: scenarioDatasetRef('API', 'cancellation-dependency', 'f'),
+      behavior,
+      summary: behavior === 'TIMEOUT' ? 'The compensation history dependency times out; the case must be reviewed by a person.' : 'The dependency returns the governed behavior for this business case.',
+    }],
+  })),
+  quality: {
+    status: 'READY',
+    totalCaseCount: 9,
+    activeCaseCount: 8,
+    staleCaseCount: 0,
+    ownerCoveragePercent: 100,
+    sourceCoveragePercent: 100,
+    oracleCoveragePercent: 100,
+    contractCoveragePercent: 100,
+    behaviorClosurePercent: 100,
+  },
+};

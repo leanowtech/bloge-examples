@@ -7,7 +7,7 @@ import I18nProvider from '../i18n/I18nProvider';
 import CapabilityStudio from './CapabilityStudio';
 import type { CapabilityStudioFetcher } from './api';
 import { parseCapabilityStudioDemoPack } from './domain';
-import { capabilityStudioDemoPackFixture } from './testFixtures';
+import { capabilityStudioDemoPackFixture, scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio Stage 0 read-only slice', () => {
   let host: HTMLDivElement;
@@ -65,18 +65,63 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('Technical references (expand when needed)');
   });
 
-  it('renders all nine GP-03 rows and supports search and category filtering', async () => {
+  it('loads the real Dataset, supports search and category filtering, and opens business details', async () => {
     await render();
     await act(async () => buttonWithText('Scenario data').click());
+    await settle();
 
-    expect(document.querySelectorAll('.capability-scenario-table tbody tr')).toHaveLength(9);
+    expect(query('[data-testid="capability-scenarios"]')).toBeTruthy();
+    expect(document.querySelectorAll('.capability-scenario-list-item')).toHaveLength(9);
+    expect(document.body.textContent).toContain('Cancellation fee dispute scenario dataset');
+    expect(document.body.textContent).toContain('Owner coverage');
+    expect(document.body.textContent).toContain('Business goal');
+    expect(document.body.textContent).not.toContain('payload');
+    await act(async () => buttonWithText('Compensation history times out').click());
+    expect(document.body.textContent).toContain('Stop automatic decisioning and route the case to human review.');
+    expect(document.body.textContent).toContain('Exact technical references');
+    expect(document.querySelectorAll('details[open]')).toHaveLength(0);
     const search = query<HTMLInputElement>('input[placeholder="Search business scenario, owner, or expected result"]');
     await act(async () => {
       const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      setValue?.call(search, '应停止');
-      search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: '应停止' }));
+      setValue?.call(search, 'Stop automatic decisioning');
+      search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'Stop automatic decisioning' }));
     });
-    expect(document.querySelectorAll('.capability-scenario-table tbody tr')).toHaveLength(1);
+    expect(document.querySelectorAll('.capability-scenario-list-item')).toHaveLength(1);
+  });
+
+  it('shows an empty filtered state without changing the Dataset', async () => {
+    await render();
+    await act(async () => buttonWithText('Scenario data').click());
+    await settle();
+    const search = query<HTMLInputElement>('input[placeholder="Search business scenario, owner, or expected result"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(search, 'no such business case');
+      search.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: 'no such business case' }));
+    });
+    expect(query('[data-testid="capability-scenario-empty"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('No matching scenarios');
+  });
+
+  it('retries a failed Dataset request in place', async () => {
+    let attempts = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/scenario-dataset') && attempts++ === 0) return json({ code: 'DATASET_OFFLINE' }, 503);
+      if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+    await render(fetcher);
+    await act(async () => buttonWithText('Scenario data').click());
+    await settle();
+    expect(query('[data-testid="capability-scenario-error"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('What happened');
+    expect(document.body.textContent).toContain('Impact');
+    await act(async () => buttonWithText('Retry scenario dataset').click());
+    await settle();
+    expect(query('[data-testid="capability-scenarios"]')).toBeTruthy();
+    expect(document.querySelectorAll('.capability-scenario-list-item')).toHaveLength(9);
   });
 
   it('edits GP-04 as a business sentence and proves branch isolation in preflight', async () => {
@@ -161,6 +206,12 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).not.toContain('Next action');
     expect(document.body.textContent).not.toContain('METADATA_READY_RUNTIME_EVIDENCE_PENDING');
     expect(document.body.textContent).not.toContain('NO_GO');
+    await act(async () => buttonWithText('场景数据').click());
+    await settle();
+    expect(document.body.textContent).toContain('场景数据中心');
+    expect(document.body.textContent).toContain('质量摘要');
+    expect(document.body.textContent).toContain('业务目标');
+    expect(document.body.textContent).not.toContain('Quality summary');
   });
 
   it('rejects incomplete cardinality with a deterministic protocol error and tolerates extra fields', () => {
@@ -170,13 +221,19 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(parsed.scenarios).toHaveLength(9);
   });
 
-  async function render(fetcher: CapabilityStudioFetcher = async () => new Response(JSON.stringify(capabilityStudioDemoPackFixture), { status: 200, headers: { 'Content-Type': 'application/json' } })) {
+  async function render(fetcher: CapabilityStudioFetcher = defaultFetcher()) {
     await act(async () => {
       root = createRoot(host);
       root.render(<I18nProvider><CapabilityStudio fetcher={fetcher} /></I18nProvider>);
     });
   }
 });
+
+function defaultFetcher(): CapabilityStudioFetcher {
+  return async (input) => String(input).endsWith('/scenario-dataset')
+    ? json(scenarioDatasetProjectionFixture)
+    : json(capabilityStudioDemoPackFixture);
+}
 
 const tutorialBranch = {
   branchId: 'tutorial-compensation-history-timeout',
@@ -196,6 +253,7 @@ function tutorialFetcher(options: { conflict?: boolean } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+    if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
     if (url.endsWith('/behaviors/compensation-history') && init?.method === 'PUT') {
       if (options.conflict) return json({
         code: 'RG.CAPABILITY_STUDIO.REVISION_CONFLICT',

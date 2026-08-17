@@ -22,7 +22,7 @@
 |---|---|---|---|---|---|
 | `GP-01` | `/capabilities/` 能力总览 | 4 API、1 Feature、1 Tool、9 Case；主要动作是查看订单查询契约 | Demo Pack 不可用时显示错误码、影响和重试 | `data-testid=capability-overview`；中文 1440/1024/390 Chrome | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-02` | 订单信息查询契约 | 输入、成功结果、错误、副作用、Owner、SLA、敏感度 | 契约不完整时拒绝猜测，返回总览 | `data-testid=capability-contract`；中文 1440 Chrome API 选择 | `BROWSER_SMOKE_VERIFIED_ZH` |
-| `GP-03` | 场景数据 | 九行及分类、来源、Owner、Oracle、契约数、预期、质量 | 空筛选可清除；协议缺九条时 fail closed | `data-testid=capability-scenarios`；中文 1440/390 Chrome | `BROWSER_SMOKE_VERIFIED_ZH` |
+| `GP-03` | 场景数据中心 | Dataset 分母、生命周期、分类、Owner、九条 Case、五项质量覆盖；选择 Case 后显示业务目标、来源、Oracle、适用契约、依赖表现与精确引用 | 空筛选可清除；网络、Schema、跨 Scope、重复引用、契约闭包、质量漂移或 Active readiness 失败时 fail closed 并提供重试 | `data-testid=capability-scenarios` / `capability-scenario-details`；严格前后端协议与 Test Kit；中文 1440/390 Chrome | `BROWSER_SMOKE_VERIFIED_ZH_STAGE0_PROJECTION` |
 | `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成数据库 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；数据库 CAS/重建/漂移测试；中文 1440 Chrome 实际保存/预检；Test Kit 实际 HTTP 互验 | `BROWSER_SMOKE_VERIFIED_ZH_DURABLE_AUTHORITY` |
 | `GP-05` | Feature DAG + Data Lens | 四 API、转换、规则、Feature 输出和边值血缘无遮挡 | 无 Payload 权限时仍显示结构与差异类型 | Canvas DOM、像素检查、截图 | `MISSING` |
 | `GP-06` | Feature 隔离运行 | 补偿历史为 `TIMEOUT`，Oracle 要求人工复核，真实调用为 0 | 缺 Binding 时预检阻断并定位调用点 | RunTrace、网络 deny、差异定位 | `MISSING` |
@@ -44,7 +44,8 @@
 
 | 文件 | 已证明 | 未证明 |
 |---|---|---|
-| [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) | 中文桌面布局、九行场景、验收阻断可见、主界面无内部状态码 | 英文、键盘全路径、读屏、运行结果 |
+| [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) | 中文桌面 Dataset 分母、质量摘要、九条 Case、超时行为详情、验收阻断可见 | 英文、键盘全路径、读屏、Dataset 写入 Authority、运行结果 |
 | [`capability-studio-gp01-zh-1024.png`](../../assets/capability-studio/capability-studio-gp01-zh-1024.png) | 中文紧凑桌面布局、无页面级横向溢出 | 全部任务视图与异常状态 |
-| [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) | 移动端任务选择器、场景筛选入口、无页面级横向溢出 | 表格横向阅读效率、移动端全流程 |
+| [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) | 移动端任务选择器、Dataset 摘要、无页面级横向溢出 | 移动端完整异常恢复与键盘路径 |
+| [`capability-studio-gp03-quality-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-quality-zh-390.png) | 移动端五项质量覆盖、搜索、筛选与有界 Case 列表 | Case 详情全路径与读屏 |
 | [`capability-studio-gp04-zh-1440.png`](../../assets/capability-studio/capability-studio-gp04-zh-1440.png) | 中文桌面业务句式编辑、分支安全边界、实际保存后的隔离预检反馈、无页面级溢出 | 英文/移动端、409/断网视觉、持久化 Authority、业务签署 |

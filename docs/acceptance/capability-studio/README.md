@@ -24,7 +24,7 @@
 - 默认 `/capabilities/` 入口和只读 `CapabilityAsset` 产品投影；
 - 4 API、1 Feature、1 Tool、9 Case 的 payload-free Canonical Golden Demo Pack；
 - Canonical Baseline 与 Tutorial Branch 的不可混用引用及加载期不变量；
-- GP-01 至 GP-03 的组件、协议、路由和启动脚本测试；
+- GP-01 至 GP-03 的组件、严格协议、真实 HTTP 路由和启动脚本探针；
 - GP-01 至 GP-03 的中文真实 Chrome 烟测，覆盖 1440×900、1024×768 和 390×844；
 - Capability Studio 的 Baseline/Manifest Schema、初始 `NO_GO` fixture 和追踪矩阵。
 - GP-04 的教程分支业务句式编辑器，用户通过条件、表现和持续时间配置超时，无需编辑 Mock JSON；
@@ -32,9 +32,11 @@
 - GP-04 的 SQL 原子 optimistic CAS、同版本并发单赢家、stale 同内容重试幂等、Authority 重建恢复和 Canonical Baseline 漂移失败关闭测试；
 - GP-04 的四份严格 JSON Schema、独立 Test Kit 内容指纹重算和真实 HTTP before/after/preflight 互验；
 - GP-04 中文 1440×900 真实 Chrome 保存与预检烟测。
-- Scenario Dataset v1 的严格 payload-free 投影 Schema，以及独立 Test Kit 的指纹、Scope、引用闭包、质量计数和 Active readiness 验证器；服务端 Authority 与 UI 接入尚未完成。
+- Scenario Dataset v1 的严格 payload-free 投影 Schema、由 Golden Demo Pack 确定性生成的服务端投影端点，以及独立 Test Kit 的指纹、Scope、引用闭包、质量计数和 Active readiness 验证器；
+- GP-03 已从静态九行表切换为真实 Dataset master-detail 视图，显示 Dataset 分母、生命周期、分类、Owner、五项质量覆盖、Case 业务目标、来源、Oracle、适用契约、依赖表现与精确引用；协议、网络或语义校验失败时拒绝展示并提供恢复动作；
+- GP-03 中文 1440×900 与 390×844 真实 Chrome 烟测，覆盖 Dataset 摘要、质量状态、九条 Case、超时案例详情、移动端筛选与无横向溢出。
 
-仍未完成的是持久化 Dataset Authority 与确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、GP-04 英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、Dataset 到 `ScenarioDraftSetV2` 的确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
@@ -44,10 +46,11 @@
 
 | 视口 | 覆盖内容 | 证据 |
 |---|---|---|
-| 1440×900 | GP-01 总览、GP-02 API 选择、GP-03 九行场景 | [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) |
+| 1440×900 | GP-01 总览、GP-02 API 选择、GP-03 Dataset 分母、质量摘要、九条 Case 与超时案例详情 | [`capability-studio-gp01-gp03-zh-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png) |
 | 1440×900 | GP-04 业务句式编辑、分支边界、保存后的隔离预检 | [`capability-studio-gp04-zh-1440.png`](../../assets/capability-studio/capability-studio-gp04-zh-1440.png) |
 | 1024×768 | GP-01 紧凑桌面布局 | [`capability-studio-gp01-zh-1024.png`](../../assets/capability-studio/capability-studio-gp01-zh-1024.png) |
-| 390×844 | GP-03 移动端任务选择与筛选入口 | [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) |
+| 390×844 | GP-03 移动端任务选择、Dataset 摘要 | [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) |
+| 390×844 | GP-03 五项质量覆盖、搜索、筛选与有界 Case 列表 | [`capability-studio-gp03-quality-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-quality-zh-390.png) |
 
 这些证据只关闭中文 `READY` 状态的浏览器烟测，不覆盖英文、键盘全路径、读屏、异常状态、运行证据或人工可用性签署。
 
@@ -80,7 +83,7 @@
 
 所有制品都使用 UTF-8 JSON 或 UTF-8 Markdown。JSON 的 fingerprint 计算使用项目统一的 RFC 8785 JCS canonical bytes，并将自身 `artifactFingerprint` 字段归一化为 `null` 后计算 `sha256:<64 位小写十六进制>`。签署信息仍然参与指纹；只有自身 fingerprint 字段被排除，避免循环引用。
 
-Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-04 Tutorial Branch 已使用 test/staging 数据库 Authority：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；head 只做 SQL 原子 CAS，revision 只追加，Test Kit 会从 before/after 投影重算并校验 digest。Dataset、Graph、Binding 和运行 material 尚未全部替换为 Authority 内容 fingerprint，因此 Manifest 继续保持 `NO_GO`。
+Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-03 Dataset 投影的根、Case 与 Behavior Profile 已使用内容指纹，Test Kit 可独立重算根指纹并校验 Scope、引用闭包和质量统计，但 Source、Oracle、Contract 等引用仍继承 Stage 0 坐标摘要，且没有持久化 Dataset Authority。GP-04 Tutorial Branch 已使用 test/staging 数据库 Authority：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；head 只做 SQL 原子 CAS，revision 只追加，Test Kit 会从 before/after 投影重算并校验 digest。Graph、Binding 和运行 material 尚未全部替换为 Authority 内容 fingerprint，因此 Manifest 继续保持 `NO_GO`。
 
 `resource-gateway-test-kit` 已提供 `CapabilityStudioAcceptanceVerifier`。它使用随 JAR 打包的两份权威 Schema 校验结构，并检查 GP/Case 精确集合、Case 类型映射、证据闭包、零真实外呼和签署绑定。运行回归：
 验证器还会将自身 `artifactFingerprint` 归一化为 `null`，递归排序对象 key 后独立复算内容地址；仅修改说明、时间或状态而不更新指纹也会失败关闭。
@@ -88,6 +91,9 @@ Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影�
 ```bash
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioAcceptanceVerifierTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioScenarioDatasetVerifierTest test
 ```
 
 也可以用以下命令复算当前 Stage 0 JSON 的临时内容摘要：

@@ -2,10 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   CapabilityStudioRequestError,
+  fetchScenarioDataset,
   preflightTutorialBranch,
   saveTutorialBehavior,
   type CapabilityStudioFetcher,
 } from './api';
+import { scenarioDatasetProjectionFixture } from './testFixtures';
 
 describe('Capability Studio tutorial branch API', () => {
   it('sends only the business behavior fields required by GP-04', async () => {
@@ -77,6 +79,56 @@ describe('Capability Studio tutorial branch API', () => {
       code: 'RG.CAPABILITY_STUDIO.NETWORK_UNAVAILABLE',
       status: 0,
       impact: 'The tutorial branch was not changed.',
+    });
+  });
+});
+
+describe('Capability Studio Scenario Dataset API', () => {
+  it('loads and strictly parses the dedicated scenario-dataset endpoint', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
+      expect(String(input)).toBe('/api/capability-studio/scenario-dataset');
+      expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+      return json(scenarioDatasetProjectionFixture);
+    });
+
+    const dataset = await fetchScenarioDataset(fetcher);
+
+    expect(dataset.cases).toHaveLength(9);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('reuses structured recovery data when the Dataset endpoint rejects the request', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json({
+      code: 'RG.CAPABILITY_STUDIO.DATASET_UNAVAILABLE',
+      whatHappened: 'The scenario dataset is not published.',
+      impact: 'GP-03 cannot show governed cases.',
+      recoveryAction: 'Publish the projection and retry.',
+    }, 503));
+
+    await expect(fetchScenarioDataset(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.DATASET_UNAVAILABLE',
+      impact: 'GP-03 cannot show governed cases.',
+      recoveryAction: 'Publish the projection and retry.',
+    });
+  });
+
+  it('describes Dataset impact instead of referring to the tutorial branch on transport failure', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => { throw new TypeError('connection refused'); });
+
+    await expect(fetchScenarioDataset(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.NETWORK_UNAVAILABLE',
+      impact: 'The scenario dataset was not loaded or changed.',
+      recoveryAction: 'Check that the local demo service is running, then retry.',
+    });
+  });
+
+  it('uses Dataset-specific recovery when the endpoint returns a non-object body', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(['not', 'a', 'dataset']));
+
+    await expect(fetchScenarioDataset(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.INVALID_RESPONSE',
+      impact: 'The scenario dataset cannot be trusted or displayed.',
+      recoveryAction: 'Reload the scenario dataset before continuing.',
     });
   });
 });

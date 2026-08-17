@@ -1,6 +1,9 @@
 import {
   parseCapabilityStudioDemoPack,
+  parseScenarioDatasetProjection,
+  isCapabilityStudioProtocolError,
   type CapabilityStudioModel,
+  type ScenarioDataset,
 } from './domain';
 
 export type CapabilityStudioFetcher = (
@@ -78,6 +81,35 @@ export async function fetchCapabilityStudioDemoPack(
   return parseCapabilityStudioDemoPack(payload);
 }
 
+export async function fetchScenarioDataset(
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<ScenarioDataset> {
+  const payload = await requestJson<unknown>(
+    fetcher,
+    '/api/capability-studio/scenario-dataset',
+    undefined,
+    {
+      unchangedImpact: 'The scenario dataset was not loaded or changed.',
+      invalidImpact: 'The scenario dataset cannot be trusted or displayed.',
+      invalidRecovery: 'Reload the scenario dataset before continuing.',
+    },
+  );
+  try {
+    return parseScenarioDatasetProjection(payload);
+  } catch (error) {
+    if (isCapabilityStudioProtocolError(error)) {
+      throw new CapabilityStudioRequestError(
+        error.code,
+        error.message,
+        error.impact,
+        'Reload the scenario dataset and retry.',
+        200,
+      );
+    }
+    throw error;
+  }
+}
+
 export async function fetchTutorialBranch(
   fetcher: CapabilityStudioFetcher = fetch,
 ): Promise<TutorialBranchProjection> {
@@ -109,6 +141,7 @@ async function requestJson<T>(
   fetcher: CapabilityStudioFetcher,
   input: string,
   init?: RequestInit,
+  context: RequestErrorContext = tutorialBranchRequestContext,
 ): Promise<T> {
   let response: Response;
   try {
@@ -120,7 +153,7 @@ async function requestJson<T>(
     throw new CapabilityStudioRequestError(
       'RG.CAPABILITY_STUDIO.NETWORK_UNAVAILABLE',
       error instanceof Error ? error.message : 'The request could not reach Capability Studio.',
-      'The tutorial branch was not changed.',
+      context.unchangedImpact,
       'Check that the local demo service is running, then retry.',
       0,
     );
@@ -131,7 +164,7 @@ async function requestJson<T>(
     throw new CapabilityStudioRequestError(
       stringField(error.code) ?? `RG.CAPABILITY_STUDIO.HTTP_${response.status}`,
       stringField(error.whatHappened) ?? `Capability Studio rejected the request with HTTP ${response.status}.`,
-      stringField(error.impact) ?? 'The tutorial branch was not changed.',
+      stringField(error.impact) ?? context.unchangedImpact,
       stringField(error.recoveryAction) ?? 'Review the highlighted value and retry.',
       response.status,
       stringField(error.field),
@@ -141,13 +174,25 @@ async function requestJson<T>(
     throw new CapabilityStudioRequestError(
       'RG.CAPABILITY_STUDIO.INVALID_RESPONSE',
       'Capability Studio returned an invalid response.',
-      'The result cannot be trusted or displayed.',
-      'Reload the tutorial branch before continuing.',
+      context.invalidImpact,
+      context.invalidRecovery,
       response.status,
     );
   }
   return payload as T;
 }
+
+interface RequestErrorContext {
+  unchangedImpact: string;
+  invalidImpact: string;
+  invalidRecovery: string;
+}
+
+const tutorialBranchRequestContext: RequestErrorContext = {
+  unchangedImpact: 'The tutorial branch was not changed.',
+  invalidImpact: 'The result cannot be trusted or displayed.',
+  invalidRecovery: 'Reload the tutorial branch before continuing.',
+};
 
 async function parseResponseBody(response: Response): Promise<unknown> {
   try {

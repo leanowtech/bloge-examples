@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -25,6 +25,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import {
   CapabilityStudioRequestError,
   fetchCapabilityStudioDemoPack,
+  fetchScenarioDataset,
   fetchTutorialBranch,
   preflightTutorialBranch,
   saveTutorialBehavior,
@@ -38,6 +39,8 @@ import {
   type CapabilityAssetSummary,
   type CapabilityStudioModel,
   type ContractSummary,
+  type ScenarioCase,
+  type ScenarioDataset,
   type ScenarioRow,
 } from './domain';
 import './capabilityStudio.css';
@@ -132,7 +135,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
         <section className="capability-main" aria-live="polite">
           {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => setTask('scenarios')} onOpenTutorial={() => setTask('tutorial')} />}
           {task === 'contract' && currentAsset && <ContractView asset={currentAsset} text={text} locale={locale} />}
-          {task === 'scenarios' && <ScenarioView scenarios={model.scenarios} text={text} locale={locale} />}
+          {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} />}
           {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
           {task === 'feature' && selectedFeature && <StageOneView asset={selectedFeature} text={text} locale={locale} kind="feature" />}
           {task === 'tool' && selectedTool && <StageOneView asset={selectedTool} text={text} locale={locale} kind="tool" />}
@@ -221,26 +224,98 @@ function TechnicalDetails({ asset, locale }: { asset: CapabilityAssetSummary; lo
   return <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '技术引用（按需展开）' : 'Technical references (expand when needed)'}</summary><dl><div><dt>Ref</dt><dd>{asset.technicalRef ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{asset.fingerprint ?? missing}</dd></div></dl></details>;
 }
 
-function ScenarioView({ scenarios, text, locale }: { scenarios: ScenarioRow[]; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
+function ScenarioView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
+  const [dataset, setDataset] = useState<ScenarioDataset | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('ALL');
   const [lifecycle, setLifecycle] = useState('ALL');
-  const categories = useMemo(() => [...new Set(scenarios.map((scenario) => displayScenarioValue(text(scenario.category), locale)))], [locale, scenarios, text]);
-  const lifecycles = useMemo(() => [...new Set(scenarios.map((scenario) => displayScenarioValue(text(scenario.lifecycle), locale)))], [locale, scenarios, text]);
-  const visible = scenarios.filter((scenario) => {
-    const displayedCategory = displayScenarioValue(text(scenario.category), locale);
-    const displayedLifecycle = displayScenarioValue(text(scenario.lifecycle), locale);
-    const haystack = [scenario.name, scenario.source, scenario.owner, scenario.oracle, scenario.expectedResult].map(text).concat(displayedCategory, displayedLifecycle).join(' ').toLowerCase();
-    return haystack.includes(query.toLowerCase()) && (category === 'ALL' || displayedCategory === category) && (lifecycle === 'ALL' || displayedLifecycle === lifecycle);
+  const [selectedCaseRef, setSelectedCaseRef] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const nextDataset = await fetchScenarioDataset(fetcher);
+      setDataset(nextDataset);
+      setSelectedCaseRef(nextDataset.cases[0]?.caseRef.id ?? '');
+    } catch (nextError) {
+      setDataset(null);
+      setError(nextError instanceof Error ? nextError : new Error('The scenario dataset could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [fetcher]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (loading) {
+    return <div className="capability-view capability-scenario-state" data-testid="capability-scenario-loading" aria-busy="true"><ViewHeading kicker="GP-03" title={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} description={locale === 'zh-CN' ? '正在加载受治理的 Scenario Dataset…' : 'Loading the governed scenario dataset...'} status={locale === 'zh-CN' ? '加载中' : 'Loading'} /><p className="capability-inline-state">{locale === 'zh-CN' ? '正在读取业务场景与质量摘要。' : 'Reading business cases and quality summary.'}</p></div>;
+  }
+
+  if (error || !dataset) return <ScenarioDatasetError error={error} locale={locale} onRetry={() => void load()} />;
+
+  const categories = [...new Set(dataset.cases.map((scenario) => scenario.category))];
+  const lifecycles = [...new Set(dataset.cases.map((scenario) => scenario.lifecycle))];
+  const visible = dataset.cases.filter((scenario) => {
+    const haystack = [
+      scenario.name,
+      scenario.businessIntent,
+      scenario.source?.displayName,
+      scenario.owner?.name,
+      scenario.oracle?.displayName,
+      scenario.oracle?.summary,
+      ...scenario.behaviorProfiles.map((profile) => profile.summary),
+      scenario.category,
+      scenario.lifecycle,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return haystack.includes(query.toLowerCase())
+      && (category === 'ALL' || scenario.category === category)
+      && (lifecycle === 'ALL' || scenario.lifecycle === lifecycle);
   });
-  return <div className="capability-view" data-testid="capability-scenarios"><ViewHeading kicker="GP-03" title={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} description={locale === 'zh-CN' ? '九条业务场景共同构成当前验证分母。这里维护业务预期，不展示模拟桩的原始数据。' : 'Nine business scenarios form the current validation denominator. Business expectations are visible without exposing raw fixture payloads.'} status={`${visible.length}/${scenarios.length}`} />
-    <div className="capability-filter-bar"><label className="capability-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '搜索场景' : 'Search scenarios'}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === 'zh-CN' ? '搜索业务场景、负责人或预期结果' : 'Search business scenario, owner, or expected result'} /></label><label><Filter size={15} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '分类' : 'Category'}</span><select value={category} onChange={(event) => setCategory(event.target.value)}><option value="ALL">{locale === 'zh-CN' ? '全部分类' : 'All categories'}</option>{categories.map((value) => <option key={value}>{value}</option>)}</select></label><label><Clock3 size={15} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '生命周期' : 'Lifecycle'}</span><select value={lifecycle} onChange={(event) => setLifecycle(event.target.value)}><option value="ALL">{locale === 'zh-CN' ? '全部状态' : 'All lifecycle states'}</option>{lifecycles.map((value) => <option key={value}>{value}</option>)}</select></label></div>
-    <div className="capability-table-wrap"><table className="capability-scenario-table"><thead><tr><th>{locale === 'zh-CN' ? '业务场景' : 'Business scenario'}</th><th>{locale === 'zh-CN' ? '分类' : 'Category'}</th><th>{locale === 'zh-CN' ? '来源' : 'Source'}</th><th>{locale === 'zh-CN' ? '负责人' : 'Owner'}</th><th>{locale === 'zh-CN' ? '正确性依据' : 'Oracle'}</th><th>{locale === 'zh-CN' ? '契约数' : 'Contracts'}</th><th>{locale === 'zh-CN' ? '预期结果' : 'Expected result'}</th><th>{locale === 'zh-CN' ? '质量 / 生命周期' : 'Quality / lifecycle'}</th></tr></thead><tbody>{visible.map((scenario, index) => <ScenarioTableRow key={scenario.technicalRef ?? `${text(scenario.name)}-${index}`} scenario={scenario} text={text} locale={locale} />)}</tbody></table></div>
+  const selected = visible.find((scenario) => scenario.caseRef.id === selectedCaseRef) ?? visible[0];
+
+  return <div className="capability-view" data-testid="capability-scenarios">
+    <ViewHeading kicker="GP-03" title={locale === 'zh-CN' ? '场景数据中心' : 'Scenario data center'} description={dataset.description} status={`${visible.length}/${dataset.cases.length}`} />
+    <section className="capability-scenario-dataset-header" aria-label={locale === 'zh-CN' ? '数据集摘要' : 'Dataset summary'}>
+      <div className="capability-scenario-dataset-title"><Database size={19} aria-hidden="true" /><div><strong>{dataset.name}</strong><span>{locale === 'zh-CN' ? '业务验证分母' : 'Business validation denominator'} · {dataset.cases.length} {locale === 'zh-CN' ? '条 case' : 'cases'}</span></div></div>
+      <dl className="capability-scenario-metadata"><div><dt>{locale === 'zh-CN' ? '生命周期' : 'Lifecycle'}</dt><dd>{displayScenarioValue(dataset.lifecycle, locale)}</dd></div><div><dt>{locale === 'zh-CN' ? '版本' : 'Revision'}</dt><dd>{dataset.datasetRef.revision}</dd></div><div><dt>{locale === 'zh-CN' ? '分类' : 'Classification'}</dt><dd>{displayScenarioValue(dataset.classification, locale)}</dd></div><div><dt>{locale === 'zh-CN' ? '负责人' : 'Owner'}</dt><dd>{dataset.owner.name}</dd></div></dl>
+    </section>
+    <section className="capability-scenario-quality" aria-label={locale === 'zh-CN' ? '质量摘要' : 'Quality summary'}><div className="capability-scenario-quality-heading"><ShieldCheck size={17} aria-hidden="true" /><strong>{locale === 'zh-CN' ? '质量摘要' : 'Quality summary'}</strong><span className={`capability-quality-status capability-quality-${dataset.quality.status.toLowerCase()}`}>{displayScenarioValue(dataset.quality.status, locale)}</span></div><div className="capability-scenario-quality-grid"><QualityMetric label={locale === 'zh-CN' ? 'Owner 覆盖' : 'Owner coverage'} value={dataset.quality.ownerCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '来源覆盖' : 'Source coverage'} value={dataset.quality.sourceCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? 'Oracle 覆盖' : 'Oracle coverage'} value={dataset.quality.oracleCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '契约覆盖' : 'Contract coverage'} value={dataset.quality.contractCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '行为闭包' : 'Behavior closure'} value={dataset.quality.behaviorClosurePercent} /></div></section>
+    <div className="capability-filter-bar"><label className="capability-search"><Search size={16} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '搜索场景' : 'Search scenarios'}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={locale === 'zh-CN' ? '搜索业务场景、负责人或预期结果' : 'Search business scenario, owner, or expected result'} /></label><label><Filter size={15} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '分类' : 'Category'}</span><select aria-label={locale === 'zh-CN' ? '分类' : 'Category'} value={category} onChange={(event) => setCategory(event.target.value)}><option value="ALL">{locale === 'zh-CN' ? '全部分类' : 'All categories'}</option>{categories.map((value) => <option key={value} value={value}>{displayScenarioValue(value, locale)}</option>)}</select></label><label><Clock3 size={15} aria-hidden="true" /><span className="sr-only">{locale === 'zh-CN' ? '生命周期' : 'Lifecycle'}</span><select aria-label={locale === 'zh-CN' ? '生命周期' : 'Lifecycle'} value={lifecycle} onChange={(event) => setLifecycle(event.target.value)}><option value="ALL">{locale === 'zh-CN' ? '全部状态' : 'All lifecycle states'}</option>{lifecycles.map((value) => <option key={value} value={value}>{displayScenarioValue(value, locale)}</option>)}</select></label></div>
+    {visible.length === 0 ? <ScenarioEmptyState locale={locale} onClear={() => { setQuery(''); setCategory('ALL'); setLifecycle('ALL'); }} /> : <div className="capability-scenario-master-detail"><div className="capability-scenario-list" aria-label={locale === 'zh-CN' ? '场景列表' : 'Scenario list'}>{visible.map((scenario) => <ScenarioListItem key={scenario.caseRef.id} scenario={scenario} selected={scenario.caseRef.id === selected?.caseRef.id} locale={locale} onClick={() => setSelectedCaseRef(scenario.caseRef.id)} />)}</div>{selected && <ScenarioDetails scenario={selected} locale={locale} />}</div>}
   </div>;
 }
 
-function ScenarioTableRow({ scenario, text, locale }: { scenario: ScenarioRow; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
-  return <tr><th scope="row">{text(scenario.name)}</th><td>{displayScenarioValue(text(scenario.category), locale)}</td><td>{text(scenario.source)}</td><td>{text(scenario.owner)}</td><td>{text(scenario.oracle)}</td><td>{scenario.contractCount}</td><td>{text(scenario.expectedResult)}</td><td><span>{displayScenarioValue(text(scenario.quality), locale)}</span><small>{displayScenarioValue(text(scenario.lifecycle), locale)}</small></td></tr>;
+function ScenarioListItem({ scenario, selected, locale, onClick }: { scenario: ScenarioCase; selected: boolean; locale: 'en' | 'zh-CN'; onClick: () => void }) {
+  return <button type="button" className={`capability-scenario-list-item${selected ? ' selected' : ''}`} aria-pressed={selected} onClick={onClick}><span className="capability-scenario-list-item-heading"><strong>{scenario.name}</strong><span>{displayScenarioValue(scenario.category, locale)}</span></span><span className="capability-scenario-list-item-meta">{displayScenarioValue(scenario.lifecycle, locale)} · {displayScenarioValue(scenario.qualityState, locale)}</span></button>;
+}
+
+function ScenarioDetails({ scenario, locale }: { scenario: ScenarioCase; locale: 'en' | 'zh-CN' }) {
+  const missing = locale === 'zh-CN' ? '未声明' : 'Not declared';
+  return <article className="capability-scenario-details" data-testid="capability-scenario-details"><div className="capability-scenario-details-heading"><div><p className="capability-kicker">{displayScenarioValue(scenario.category, locale)}</p><h4>{scenario.name}</h4></div><span className={`capability-quality-status capability-quality-${scenario.qualityState.toLowerCase()}`}>{displayScenarioValue(scenario.qualityState, locale)}</span></div><dl className="capability-scenario-detail-grid"><div><dt>{locale === 'zh-CN' ? '业务目标' : 'Business goal'}</dt><dd>{scenario.businessIntent}</dd></div><div><dt>{locale === 'zh-CN' ? '预期 / Oracle' : 'Expected / Oracle'}</dt><dd><strong>{scenario.oracle?.displayName ?? missing}</strong><span>{scenario.oracle?.summary ?? missing}</span></dd></div><div><dt>{locale === 'zh-CN' ? '来源' : 'Source'}</dt><dd>{scenario.source?.displayName ?? missing}<span>{scenario.source?.type ?? ''}</span></dd></div><div><dt>{locale === 'zh-CN' ? '适用契约' : 'Applicable contracts'}</dt><dd>{scenario.applicableContractRefs.length} {locale === 'zh-CN' ? '个契约' : 'contracts'}</dd></div><div><dt>{locale === 'zh-CN' ? '依赖表现' : 'Dependency behavior'}</dt><dd>{scenario.behaviorProfiles.length === 0 ? missing : scenario.behaviorProfiles.map((profile) => <span key={profile.behaviorRef.id}>{displayScenarioValue(profile.behavior, locale)} · {profile.summary}</span>)}</dd></div><div><dt>{locale === 'zh-CN' ? '负责人' : 'Owner'}</dt><dd>{scenario.owner?.name ?? missing}</dd></div></dl><details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '精确技术引用' : 'Exact technical references'}</summary><dl><div><dt>Case</dt><dd>{formatScenarioRef(scenario.caseRef)}</dd></div><div><dt>Contracts</dt><dd>{scenario.applicableContractRefs.map(formatScenarioRef).join(', ')}</dd></div><div><dt>Source / Oracle</dt><dd>{scenario.sourceRef ? formatScenarioRef(scenario.sourceRef) : missing} / {scenario.oracleRef ? formatScenarioRef(scenario.oracleRef) : missing}</dd></div><div><dt>Behavior</dt><dd>{scenario.behaviorProfiles.map((profile) => formatScenarioRef(profile.behaviorRef)).join(', ') || missing}</dd></div></dl></details></article>;
+}
+
+function QualityMetric({ label, value }: { label: string; value: number }) {
+  return <div><span>{label}</span><strong>{value}%</strong><div className="capability-quality-meter" aria-hidden="true"><i style={{ width: `${value}%` }} /></div></div>;
+}
+
+function ScenarioEmptyState({ locale, onClear }: { locale: 'en' | 'zh-CN'; onClear: () => void }) {
+  return <section className="capability-scenario-empty" data-testid="capability-scenario-empty"><ListFilter size={20} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '没有匹配的场景' : 'No matching scenarios'}</strong><p>{locale === 'zh-CN' ? '当前搜索或筛选条件没有结果，Dataset 本身没有被修改。' : 'The current search or filters returned no result; the dataset was not changed.'}</p><button type="button" className="capability-secondary-action" onClick={onClear}>{locale === 'zh-CN' ? '清除筛选' : 'Clear filters'}</button></div></section>;
+}
+
+function ScenarioDatasetError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
+  const protocolCode = requestError?.code ?? (isCapabilityStudioProtocolError(error) ? error.code : 'RG.CAPABILITY_STUDIO.SCENARIO_DATASET_UNAVAILABLE');
+  const message = error?.message ?? (locale === 'zh-CN' ? '场景数据集无法加载。' : 'The scenario dataset could not be loaded.');
+  const impact = requestError?.impact ?? (isCapabilityStudioProtocolError(error) ? error.impact : (locale === 'zh-CN' ? '场景列表、业务预期和质量摘要暂时无法展示。' : 'The scenario list, business expectations, and quality summary cannot be shown.'));
+  const recovery = requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认服务端提供严格 Dataset projection 后重试。' : 'Confirm that the server provides the strict dataset projection, then retry.');
+  return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{protocolCode}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{recovery}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
+}
+
+function formatScenarioRef(ref: { kind: string; id: string; revision: number }): string {
+  return `${ref.kind}:${ref.id}@${ref.revision}`;
 }
 
 function TutorialBranchView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
@@ -421,10 +496,25 @@ function displayScenarioValue(value: string, locale: 'en' | 'zh-CN'): string {
     GOLDEN: { en: 'Golden', 'zh-CN': '黄金场景' },
     NEGATIVE: { en: 'Negative', 'zh-CN': '反向场景' },
     BOUNDARY: { en: 'Boundary', 'zh-CN': '边界场景' },
+    FAULT: { en: 'Fault', 'zh-CN': '故障场景' },
     REGRESSION: { en: 'Regression', 'zh-CN': '回归场景' },
     SECURITY: { en: 'Security', 'zh-CN': '安全场景' },
     ACTIVE: { en: 'Active', 'zh-CN': '使用中' },
+    DRAFT: { en: 'Draft', 'zh-CN': '草稿' },
+    REVIEW_READY: { en: 'Review ready', 'zh-CN': '待评审' },
+    RETIRED: { en: 'Retired', 'zh-CN': '已退役' },
+    INTERNAL: { en: 'Internal', 'zh-CN': '内部' },
+    PUBLIC: { en: 'Public', 'zh-CN': '公开' },
+    CONFIDENTIAL: { en: 'Confidential', 'zh-CN': '机密' },
+    RESTRICTED: { en: 'Restricted', 'zh-CN': '受限' },
+    READY: { en: 'Ready', 'zh-CN': '就绪' },
+    STALE: { en: 'Stale', 'zh-CN': '已过期' },
+    BLOCKED: { en: 'Blocked', 'zh-CN': '已阻断' },
     DESIGNED_NOT_RUN: { en: 'Designed, not run', 'zh-CN': '已设计，未运行' },
+    RETURN: { en: 'Return', 'zh-CN': '正常返回' },
+    ERROR: { en: 'Error', 'zh-CN': '业务错误' },
+    TIMEOUT: { en: 'Timeout', 'zh-CN': '超时' },
+    MUST_NOT_CALL: { en: 'Must not call', 'zh-CN': '禁止调用' },
   };
   return translations[value]?.[locale] ?? value;
 }

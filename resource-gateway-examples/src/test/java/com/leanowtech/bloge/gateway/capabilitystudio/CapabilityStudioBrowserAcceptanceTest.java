@@ -136,7 +136,16 @@ class CapabilityStudioBrowserAcceptanceTest {
 
         driver.findElement(By.cssSelector("[data-testid='capability-task-scenarios']")).click();
         wait.until(ExpectedConditions.numberOfElementsToBe(
-                By.cssSelector(".capability-scenario-table tbody tr"), 9));
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-scenario-details']")));
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenarios']")).getText())
+                .contains("业务验证分母", "9 条 case", "质量摘要", "Owner 覆盖", "100%", "已阻断");
+        driver.findElement(By.xpath(
+                "//button[contains(@class,'capability-scenario-list-item')][contains(.,'补偿历史超时')]"))
+                .click();
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
+                .contains("补偿历史超时", "业务目标", "预期 / Oracle", "依赖表现", "超时");
         assertNoPageOverflow();
         capture("capability-studio-gp01-gp03-zh-1440.png");
     }
@@ -158,11 +167,19 @@ class CapabilityStudioBrowserAcceptanceTest {
         new Select(driver.findElement(By.id("capability-task-select")))
                 .selectByValue("scenarios");
         wait.until(ExpectedConditions.numberOfElementsToBe(
-                By.cssSelector(".capability-scenario-table tbody tr"), 9));
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        assertThat(driver.findElement(By.cssSelector(".capability-scenario-dataset-header")).getText())
+                .contains("业务验证分母", "9 条 case");
+        assertThat(driver.findElement(By.cssSelector(".capability-scenario-quality")).getText())
+                .contains("质量摘要", "Owner 覆盖", "100%");
         assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed())
                 .isFalse();
         assertNoPageOverflow();
         capture("capability-studio-gp03-zh-390.png");
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});",
+                driver.findElement(By.cssSelector(".capability-scenario-quality")));
+        capture("capability-studio-gp03-quality-zh-390.png");
     }
 
     @Test
