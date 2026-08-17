@@ -139,6 +139,32 @@ The projection carries metadata references and business summaries only. Fixture,
 Replay, and protected payload material remain in their existing authorities and cannot be
 embedded in the Dataset document. Errors expose only stable codes and check names.
 
+## Verify Capability Studio Feature Rehearsal
+
+`CapabilityStudioFeatureRehearsalVerifier` verifies the strict v1 wire projection returned by
+`GET /api/capability-studio/feature-rehearsal`. It is independent from Spring and Resource
+Gateway server classes. The verifier checks the canonical 6-node/5-edge topology, Run/Data Lens
+identity, invocation-site edge closure, permission-aware payload handling, observed zero real
+external calls, visible payload fingerprints, and the Data Lens content fingerprint.
+
+```java
+CapabilityStudioFeatureRehearsalVerifier verifier =
+        new CapabilityStudioFeatureRehearsalVerifier();
+CapabilityStudioFeatureRehearsalVerifier.VerificationResult result =
+        verifier.verify(responseBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+For `STRUCTURE_ONLY`, payload values must be `null`; source fingerprints remain as opaque
+commitments and are included in the independently recomputed Data Lens fingerprint. For
+`PAYLOAD_VISIBLE`, the verifier independently recomputes each payload fingerprint. A successful
+result proves that the bounded projection is internally consistent and declares
+`realExternalCallCount=0`. It does not prove operating-system network denial, enterprise identity
+authorization, or that the graph and semantic fingerprints came from a trusted production
+Authority. Those remain separate release gates.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:

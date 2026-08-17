@@ -1229,7 +1229,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 |---|---|---|---|
 | `S0-AC-01` | `PARTIAL` | GP-01 至 GP-06 已有中英文真实 Chrome 开发证据；覆盖 1440、1024、390，包含 Dataset、教程分支、Feature Trace、键盘路径和 axe | GP-07 至 GP-10 尚未形成同等纵向切片；异常状态、人工读屏、产品/UX/QA 签署未闭合 |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在 | Dataset 仍为只读投影；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
-| `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | Spike A 注册产物尚未作为同一闭包运行；Spike B 缺字段级 source map 与企业身份授权；Spike C 缺部署级 network deny 和安全签署 |
+| `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens，并由严格 v1 Schema 与独立 Test Kit verifier 对真实 wire response 校验 6/5 基数、Run 身份、边闭包、权限和指纹；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | Spike A 注册产物尚未作为同一闭包运行；Spike B 缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 缺部署级 network deny 和安全签署 |
 | `S0-AC-04` | `NOT_RUN` | 9 个 Case 可通过 test-owned material 单次运行；并发运行 ID 隔离和 semantic/Graph fingerprint 稳定已有开发测试 | 尚无 Canonical 9/9 × 3 业务 Oracle Evidence；duplicate/idempotency、forbidden-write 和运行环境 fingerprint 未闭合 |
 | `S0-AC-05` | `NOT_RUN` | 已有可执行任务界面和黄金演示数据 | 尚未组织 6 名代表性用户测试，也没有 P0/P1 关闭和复验记录 |
 | `S0-AC-06` | `NOT_RUN` | Baseline、ADR、Screen Inventory、追踪矩阵和 `NO_GO` Manifest 已版本化 | ADR 仍为 `Proposed`；Baseline 未批准；Manifest 未接受；七类签署均为空 |

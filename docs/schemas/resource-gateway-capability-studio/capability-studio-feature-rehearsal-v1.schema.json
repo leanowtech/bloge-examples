@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schema/resource-gateway-capability-studio/feature-rehearsal-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Feature Rehearsal v1",
+  "description": "Strict read-only wire projection for one isolated Capability Studio feature rehearsal.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "scenario", "graph", "run", "dataLens"],
+  "properties": {
+    "schemaVersion": {"const": "resource-gateway.capability-studio.feature-rehearsal.v1"},
+    "scenario": {"$ref": "#/$defs/scenario"},
+    "graph": {"$ref": "#/$defs/graph"},
+    "run": {"$ref": "#/$defs/run"},
+    "dataLens": {"$ref": "#/$defs/dataLens"}
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 256,
+      "pattern": "^/[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "boundedString": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "expectedResult"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "name": {"type": "string", "minLength": 1, "maxLength": 4000},
+        "expectedResult": {"type": "string", "minLength": 1, "maxLength": 4000}
+      }
+    },
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fingerprint"],
+      "properties": {
+        "id": {"$ref": "#/$defs/identifier"},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runId", "status", "semanticFingerprint", "realExternalCallCount", "bindingMode"],
+      "properties": {
+        "runId": {"$ref": "#/$defs/identifier"},
+        "status": {"$ref": "#/$defs/runStatus"},
+        "semanticFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "realExternalCallCount": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "bindingMode": {"const": "FIXTURE_CONTROLLED_NON_PRODUCTION"}
+      }
+    },
+    "dataLens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "runStatus", "permissionMode", "nodes", "edges", "firstDifference", "truncation", "fingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "resource-gateway.capability-studio.data-lens.v1"},
+        "runId": {"$ref": "#/$defs/identifier"},
+        "runStatus": {"$ref": "#/$defs/runStatus"},
+        "permissionMode": {"enum": ["STRUCTURE_ONLY", "PAYLOAD_VISIBLE"]},
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {"$ref": "#/$defs/node"}
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 512,
+          "items": {"$ref": "#/$defs/edge"}
+        },
+        "firstDifference": {
+          "anyOf": [{"type": "null"}, {"$ref": "#/$defs/firstDifference"}]
+        },
+        "truncation": {"$ref": "#/$defs/truncation"},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodeId", "operatorRef", "status", "fidelity", "graphPath", "invocationSite", "correlation", "occurrence", "graphOccurrence", "input", "inputFingerprint", "output", "outputFingerprint", "errorCode", "durationMs", "attempts", "retryCount", "fallbackStatus"],
+      "properties": {
+        "nodeId": {"$ref": "#/$defs/identifier"},
+        "operatorRef": {"$ref": "#/$defs/identifier"},
+        "status": {"$ref": "#/$defs/nodeStatus"},
+        "fidelity": {"type": "string", "maxLength": 128},
+        "graphPath": {"$ref": "#/$defs/path"},
+        "invocationSite": {"$ref": "#/$defs/path"},
+        "correlation": {"$ref": "#/$defs/boundedString"},
+        "occurrence": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "graphOccurrence": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "input": {},
+        "inputFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "output": {},
+        "outputFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "errorCode": {"type": "string", "maxLength": 128},
+        "durationMs": {"type": "integer", "minimum": 0, "maximum": 86400000},
+        "attempts": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {"$ref": "#/$defs/attempt"}
+        },
+        "retryCount": {"type": "integer", "minimum": 0, "maximum": 100},
+        "fallbackStatus": {"anyOf": [{"type": "null"}, {"type": "string", "maxLength": 128}]}
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempt", "status", "fidelity", "input", "inputFingerprint", "output", "outputFingerprint", "errorCode", "durationMs"],
+      "properties": {
+        "attempt": {"type": "integer", "minimum": 0, "maximum": 100},
+        "status": {"$ref": "#/$defs/nodeStatus"},
+        "fidelity": {"type": "string", "maxLength": 128},
+        "input": {},
+        "inputFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "output": {},
+        "outputFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "errorCode": {"type": "string", "maxLength": 128},
+        "durationMs": {"type": "integer", "minimum": 0, "maximum": 86400000}
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edgeId", "status", "graphPath", "correlation", "graphOccurrence", "fromInvocationSite", "toInvocationSite", "value", "valueFingerprint"],
+      "properties": {
+        "edgeId": {"$ref": "#/$defs/identifier"},
+        "status": {"enum": ["TRANSFERRED", "SKIPPED", "NOT_TRANSFERRED"]},
+        "graphPath": {"$ref": "#/$defs/path"},
+        "correlation": {"$ref": "#/$defs/boundedString"},
+        "graphOccurrence": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "fromInvocationSite": {"$ref": "#/$defs/path"},
+        "toInvocationSite": {"$ref": "#/$defs/path"},
+        "value": {},
+        "valueFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]}
+      }
+    },
+    "firstDifference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "locator", "scope", "path", "expected", "expectedFingerprint", "actual", "actualFingerprint"],
+      "properties": {
+        "source": {"$ref": "#/$defs/identifier"},
+        "locator": {"$ref": "#/$defs/path"},
+        "scope": {"$ref": "#/$defs/boundedString"},
+        "path": {"type": "string", "maxLength": 512},
+        "expected": {},
+        "expectedFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "actual": {},
+        "actualFingerprint": {"anyOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]}
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodesTruncated", "omittedNodes", "edgesTruncated", "omittedEdges", "attemptsTruncated", "omittedAttempts"],
+      "properties": {
+        "nodesTruncated": {"type": "boolean"},
+        "omittedNodes": {"type": "integer", "minimum": 0, "maximum": 256},
+        "edgesTruncated": {"type": "boolean"},
+        "omittedEdges": {"type": "integer", "minimum": 0, "maximum": 512},
+        "attemptsTruncated": {"type": "boolean"},
+        "omittedAttempts": {"type": "integer", "minimum": 0, "maximum": 4096}
+      }
+    },
+    "runStatus": {
+      "enum": ["PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED", "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE", "CANCELLED", "TIMED_OUT"]
+    },
+    "nodeStatus": {
+      "enum": ["SUCCESS", "FAILED", "TIMEOUT", "SKIPPED", "PARTIAL", "MOCKED", "CANCELLED", "FALLBACK", "NOT_INVOKED"]
+    }
+  }
+}
