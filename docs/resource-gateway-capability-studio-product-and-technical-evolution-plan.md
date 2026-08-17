@@ -1200,6 +1200,18 @@ Stage 1 开工后，新反馈必须先归类：
 
 下表是阶段退出的最低可执行合同。各 Stage 的原交付清单继续说明建设范围，本表负责回答“什么证据出现后才算交付完成”。任一必填项为 `NOT_RUN`、`FAIL`、`PARTIAL` 或 `BLOCKED`，阶段状态均不是 `PASS`。
 
+所有 `S*-AC-*` 在执行前必须满足以下统一前置条件。验收运行必须在 Manifest 中引用这些值，不能依赖测试人员口头说明：
+
+| ID | 前置条件 | 不满足时的处理 |
+|---|---|---|
+| `AC-PRE-01` | 候选构建具有不可变 build ref、revision、artifact fingerprint 和源码提交；工作区没有未记录补丁 | `NOT_RUN`；不能用开发工作区截图替代候选证据 |
+| `AC-PRE-02` | Acceptance Baseline、Golden Demo Pack、Contract、Dataset、Graph 和 Binding 使用 exact ref；所有 fingerprint 已由独立 verifier 复算 | `BLOCKED`；先修复引用闭包或重新生成候选 |
+| `AC-PRE-03` | 记录 profile、Scope、region、feature flags、运行身份、逻辑时钟、网络策略和外部依赖可达性；环境与目标门禁一致 | `NOT_RUN` 或 `BLOCKED`；环境不符时不得复用结果 |
+| `AC-PRE-04` | Evidence store、egress counter、审计、浏览器版本、Test Kit/verifier 版本和签署入口可用；证据 URI 可解析并校验 fingerprint | `BLOCKED`；不能以控制台文本或人工截图代替缺失的机器证据 |
+| `AC-PRE-05` | 角色、语言、视口、Case、异常状态和重复次数矩阵已冻结；执行期间不手工改数据库、不粘贴隐藏 ID、不切换未记录配置 | `FAIL`；污染运行作废，修复后从干净环境重跑 |
+
+每条 Acceptance Contract 继承 `AC-PRE-01` 至 `AC-PRE-05`，并在本条结果中补充自己的用户动作、业务结果和系统不变量。只有前置条件与本条证据都闭合，Owner 才能签署 `PASS`。
+
 #### Stage 0：Acceptance Baseline
 
 | ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
