@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
@@ -123,7 +125,10 @@ class TestSuiteExecutionServiceTest {
                 .containsExactly("run-golden", "run-negative");
         assertThat(result.evidence().metadata())
                 .containsKey("requestMetadataFingerprint")
-                .doesNotContainKey("requestMetadata");
+                .doesNotContainKey("requestMetadata")
+                .doesNotContainKeys("governedProvenanceSchemaVersion",
+                        "governedProvenanceFingerprint", "governedSourceMapFingerprint",
+                        "governedExactRefs");
 
         TestSuiteExecutionResponse retry = service.execute("suite-a", request("request-a",
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
@@ -141,6 +146,125 @@ class TestSuiteExecutionServiceTest {
         verify(admissionGuard).checkpoint();
         verify(admissionGuard).close();
         assertThat(runRepository.records).hasSize(1);
+    }
+
+    @Test
+    void completeGovernedProvenanceIsCopiedToAggregateAndEveryChildRequest() {
+        Map<String, Object> provenance = governedProvenanceMetadata();
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuiteWithMetadata(provenance));
+        when(executions.describeGraphTarget("graph-a", identity))
+                .thenReturn(graphTarget(TARGET, true));
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                        "", "", TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY",
+                        "", "", TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE));
+
+        TestSuiteExecutionResponse result = service.execute("suite-a",
+                request("governed-provenance", TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity);
+
+        assertThat(result.evidence().metadata())
+                .containsEntry("governedProvenanceSchemaVersion",
+                        provenance.get("governedProvenanceSchemaVersion"))
+                .containsEntry("governedProvenanceFingerprint",
+                        provenance.get("governedProvenanceFingerprint"))
+                .containsEntry("governedSourceMapFingerprint",
+                        provenance.get("governedSourceMapFingerprint"))
+                .doesNotContainKey("owner");
+        JsonNode actualAggregateRefs = objectMapper.valueToTree(result.evidence().metadata()
+                .get("governedExactRefs"));
+        JsonNode expectedRefs = objectMapper.valueToTree(provenance.get("governedExactRefs"));
+        assertThat(actualAggregateRefs.toString()).isEqualTo(expectedRefs.toString());
+
+        ArgumentCaptor<TestExecutionApiRequest> child =
+                ArgumentCaptor.forClass(TestExecutionApiRequest.class);
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(child.capture(), eq(identity));
+        assertThat(child.getAllValues()).allSatisfy(request -> assertThat(request.metadata())
+                .containsEntry("governedProvenanceSchemaVersion",
+                        provenance.get("governedProvenanceSchemaVersion"))
+                .containsEntry("governedProvenanceFingerprint",
+                        provenance.get("governedProvenanceFingerprint"))
+                .containsEntry("governedSourceMapFingerprint",
+                        provenance.get("governedSourceMapFingerprint"))
+                .doesNotContainKey("owner"));
+        assertThat(child.getAllValues()).allSatisfy(request -> assertThat(request.metadata())
+                .containsEntry("governedExactRefCount", 1)
+                .doesNotContainKey("governedExactRefs"));
+    }
+
+    @Test
+    void partialGovernedProvenanceIsRejectedBeforeAnyChildOrRunRecord() {
+        Map<String, Object> partial = Map.of(
+                "governedProvenanceSchemaVersion",
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION);
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuiteWithMetadata(partial));
+
+        assertThatThrownBy(() -> service.execute("suite-a", request("partial-provenance",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.SUITE_GOVERNED_PROVENANCE_INVALID"));
+
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
+        verify(admissions, never()).admit(any(), any());
+        assertThat(runRepository.records).isEmpty();
+    }
+
+    @Test
+    void tamperedGovernedProvenanceFingerprintIsRejectedBeforeAnyChild() {
+        Map<String, Object> tampered = new LinkedHashMap<>(governedProvenanceMetadata());
+        tampered.put("governedProvenanceFingerprint", "sha256:" + "f".repeat(64));
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuiteWithMetadata(tampered));
+
+        assertThatThrownBy(() -> service.execute("suite-a", request("tampered-provenance",
+                TestSuiteExecutionRequest.Strategy.COLLECT_ALL), identity))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code())
+                                .isEqualTo("RG.TEST.SUITE_GOVERNED_PROVENANCE_INVALID"));
+
+        verify(executions, never()).executeAdmittedSuiteGraphCase(any(), any());
+        assertThat(runRepository.records).isEmpty();
+    }
+
+    @Test
+    void requestMetadataCannotOverrideServerDerivedGovernedProvenance() {
+        Map<String, Object> provenance = governedProvenanceMetadata();
+        when(registry.find("suite-a", 3, identity)).thenReturn(storedSuiteWithMetadata(provenance));
+        when(executions.describeGraphTarget("graph-a", identity))
+                .thenReturn(graphTarget(TARGET, true));
+        when(executions.executeAdmittedSuiteGraphCase(any(), eq(identity)))
+                .thenReturn(response("run-golden", "golden", "/root/fetch#PRIMARY",
+                        "", "", TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE))
+                .thenReturn(response("run-negative", "negative", "/root/output#PRIMARY",
+                        "", "", TestRunEvidence.Status.PASSED,
+                        TestRunEvidence.EvidenceClass.CERTIFIABLE));
+        Map<String, Object> callerMetadata = Map.of(
+                "governedProvenanceSchemaVersion", "caller-schema",
+                "governedProvenanceFingerprint", "sha256:" + "0".repeat(64),
+                "governedSourceMapFingerprint", "sha256:" + "1".repeat(64),
+                "governedExactRefs", List.of(Map.of("caller", true)));
+
+        TestSuiteExecutionResponse result = service.execute("suite-a", request(
+                "caller-provenance", TestSuiteExecutionRequest.Strategy.COLLECT_ALL,
+                callerMetadata), identity);
+
+        assertThat(result.evidence().metadata())
+                .containsEntry("governedProvenanceFingerprint",
+                        provenance.get("governedProvenanceFingerprint"))
+                .doesNotContainEntry("governedProvenanceFingerprint", callerMetadata
+                        .get("governedProvenanceFingerprint"));
+        ArgumentCaptor<TestExecutionApiRequest> child =
+                ArgumentCaptor.forClass(TestExecutionApiRequest.class);
+        verify(executions, times(2)).executeAdmittedSuiteGraphCase(child.capture(), eq(identity));
+        assertThat(child.getAllValues()).allSatisfy(request -> assertThat(request.metadata())
+                .containsEntry("governedProvenanceFingerprint",
+                        provenance.get("governedProvenanceFingerprint"))
+                .doesNotContainEntry("governedProvenanceFingerprint",
+                        callerMetadata.get("governedProvenanceFingerprint"))
+                .doesNotContainEntry("governedExactRefs", callerMetadata.get("governedExactRefs")));
     }
 
     @Test
@@ -764,6 +888,33 @@ class TestSuiteExecutionServiceTest {
                 suite, Instant.now(), "runner");
     }
 
+    private StoredTestSuite storedSuiteWithMetadata(Map<String, Object> metadata) {
+        TestSuite source = (TestSuite) storedSuite().suite();
+        TestSuite suite = new TestSuite(source.schemaVersion(), source.suiteId(), source.revision(),
+                source.target(), source.classification(), source.cases(), source.coveragePolicy(),
+                source.promotionPolicy(), metadata);
+        return new StoredTestSuite("", "tenant-a", "test", "suite-a", 3, SUITE,
+                suite, Instant.now(), "runner");
+    }
+
+    private Map<String, Object> governedProvenanceMetadata() {
+        ScenarioGovernedCompilationProvenance.ExactRef exactRef =
+                new ScenarioGovernedCompilationProvenance.ExactRef(
+                        "FIXTURE_BUNDLE", "fixture-golden", 1, FIXTURE_1,
+                        new ScenarioGovernedCompilationProvenance.Scope(
+                                "tenant-a", "org-a", "project-a", "test", "local"),
+                        "RESOURCE_GATEWAY");
+        ScenarioGovernedCompilationProvenance provenance =
+                new ScenarioGovernedCompilationProvenance(
+                        ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                        "sha256:" + "e".repeat(64), List.of(exactRef));
+        return Map.of(
+                "governedProvenanceSchemaVersion", provenance.schemaVersion(),
+                "governedProvenanceFingerprint", provenance.fingerprint(objectMapper),
+                "governedSourceMapFingerprint", provenance.sourceMapFingerprint(),
+                "governedExactRefs", provenance.exactRefs());
+    }
+
     private StoredTestSuite storedPropertySuite() {
         TestSuite.FixtureBundleRef fixture = new TestSuite.FixtureBundleRef(
                 "fixture-property", 1, FIXTURE_1);
@@ -910,8 +1061,15 @@ class TestSuiteExecutionServiceTest {
 
     private static TestSuiteExecutionRequest request(String requestId,
                                                      TestSuiteExecutionRequest.Strategy strategy) {
+        return request(requestId, strategy, Map.of("pipeline", "nightly"));
+    }
+
+    private static TestSuiteExecutionRequest request(
+            String requestId,
+            TestSuiteExecutionRequest.Strategy strategy,
+            Map<String, Object> metadata) {
         return new TestSuiteExecutionRequest("", new TestSuiteExecutionRequest.SuiteRef(
-                "suite-a", 3, SUITE), requestId, strategy, Map.of("pipeline", "nightly"));
+                "suite-a", 3, SUITE), requestId, strategy, metadata);
     }
 
     private static TestGraphTargetDescriptor graphTarget(String fingerprint, boolean eligible) {

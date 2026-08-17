@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationPlan;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
@@ -10,7 +11,9 @@ import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -62,15 +65,16 @@ public final class CapabilityStudioGovernedCompilationService {
         require(sourceMap != null, "SOURCE_MAP_MISSING", "/adapterCompilation/sourceMap");
         validateExactTarget(graph, operator, contract, runtimeTarget, adapterCompilation);
         validateDatasetClosure(draftSet, sourceMap, adapterCompilation);
+        ScenarioGovernedCompilationProvenance provenance = provenance(sourceMap);
 
         ScenarioGovernedCompilationPlan plan = compiler.compile(
-                graph, operator, contract, draftSet, runtimeTarget);
+                graph, operator, contract, draftSet, runtimeTarget, provenance);
         if (!plan.compiled() || plan.diagnostics().stream().anyMatch(diagnostic -> diagnostic.error())) {
             // The delegated compiler already removes all registration outputs when blocked.
             return result(plan, sourceMap);
         }
         require(plan.suite() != null, "SUITE_MISSING", "/plan/suite");
-        validateCompiledSourceClosure(draftSet, sourceMap, plan);
+        validateCompiledSourceClosure(draftSet, sourceMap, plan, provenance);
         return result(plan, sourceMap);
     }
 
@@ -169,7 +173,8 @@ public final class CapabilityStudioGovernedCompilationService {
     private void validateCompiledSourceClosure(
             ScenarioDraftSet draftSet,
             CapabilityStudioScenarioDatasetSourceMap sourceMap,
-            ScenarioGovernedCompilationPlan plan) {
+            ScenarioGovernedCompilationPlan plan,
+            ScenarioGovernedCompilationProvenance provenance) {
         Set<String> sourceIds = sourceMap.cases().stream()
                 .map(CapabilityStudioScenarioDatasetSourceMap.CaseSource::scenarioId)
                 .collect(java.util.stream.Collectors.toSet());
@@ -179,7 +184,10 @@ public final class CapabilityStudioGovernedCompilationService {
         for (ScenarioGovernedCompilationPlan.CompiledFixture fixture : plan.fixtures()) {
             require(fixture.request() != null && fixture.request().fixtureBundle() != null,
                     "FIXTURE_REGISTRATION_MISSING", "/plan/fixtures");
-            Set<String> ruleIds = fixture.request().fixtureBundle().rules().stream()
+            var bundle = fixture.request().fixtureBundle();
+            validateProvenanceMetadata(bundle.metadata(), provenance, true,
+                    "/plan/fixtures/metadata");
+            Set<String> ruleIds = bundle.rules().stream()
                     .map(rule -> rule.ruleId()).collect(java.util.stream.Collectors.toSet());
             CapabilityStudioScenarioDatasetSourceMap.CaseSource source = sourceMap.cases().stream()
                     .filter(candidate -> candidate.scenarioId().equals(fixture.scenarioId()))
@@ -189,8 +197,83 @@ public final class CapabilityStudioGovernedCompilationService {
                             .collect(java.util.stream.Collectors.toSet()).equals(ruleIds),
                     "COMPILED_BEHAVIOR_CLOSURE", "/plan/fixtures/rules");
         }
+        var suite = plan.suite().testSuite();
+        validateProvenanceMetadata(suite.metadata(), provenance, true, "/plan/suite/metadata");
+        for (var testCase : suite.cases()) {
+            validateProvenanceMetadata(testCase.metadata(), provenance, false,
+                    "/plan/suite/cases/metadata");
+        }
         require(draftSet.scenarios().size() == plan.fixtures().size(),
                 "COMPILED_CASE_COUNT_MISMATCH", "/plan/fixtures");
+    }
+
+    private ScenarioGovernedCompilationProvenance provenance(
+            CapabilityStudioScenarioDatasetSourceMap sourceMap) {
+        String sourceMapFingerprint = VisualBundleFingerprint.fromCanonicalValue(
+                mapper, sourceMap, 16 * 1_048_576);
+        LinkedHashSet<ScenarioGovernedCompilationProvenance.ExactRef> refs = new LinkedHashSet<>();
+        add(refs, sourceMap.datasetRef());
+        add(refs, sourceMap.targetRef());
+        for (CapabilityStudioScenarioDatasetSourceMap.CaseSource source : sourceMap.cases()) {
+            add(refs, source.caseRef());
+            add(refs, source.sourceRef());
+            add(refs, source.oracleRef());
+            source.contractRefs().forEach(ref -> add(refs, ref));
+            source.behaviors().forEach(behavior -> {
+                add(refs, behavior.behaviorRef());
+                add(refs, behavior.dependencyRef());
+            });
+            source.expectations().forEach(expectation -> {
+                add(refs, expectation.behaviorRef());
+                add(refs, expectation.dependencyRef());
+            });
+        }
+        return new ScenarioGovernedCompilationProvenance(
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                sourceMapFingerprint,
+                new ArrayList<>(refs));
+    }
+
+    private static void add(
+            Set<ScenarioGovernedCompilationProvenance.ExactRef> refs,
+            CapabilityStudioScenarioDatasetProjector.ExactRef source) {
+        require(source != null && source.scope() != null,
+                "SOURCE_REF_NOT_EXACT", "/sourceMap/exactRefs");
+        CapabilityStudioScenarioDatasetProjector.Scope scope = source.scope();
+        refs.add(new ScenarioGovernedCompilationProvenance.ExactRef(
+                source.kind(),
+                source.id(),
+                source.revision(),
+                source.fingerprint(),
+                new ScenarioGovernedCompilationProvenance.Scope(
+                        scope.tenantId(),
+                        scope.organizationId(),
+                        scope.projectId(),
+                        scope.environmentId(),
+                        scope.region()),
+                source.authority()));
+    }
+
+    private void validateProvenanceMetadata(
+            java.util.Map<String, Object> metadata,
+            ScenarioGovernedCompilationProvenance provenance,
+            boolean requireExactRefs,
+            String path) {
+        require(metadata != null, "PROVENANCE_METADATA_MISSING", path);
+        require(Objects.equals(metadata.get(ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION),
+                        provenance.schemaVersion()),
+                "PROVENANCE_SCHEMA_DRIFT", path);
+        require(Objects.equals(metadata.get(ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT),
+                        provenance.fingerprint(mapper)),
+                "PROVENANCE_FINGERPRINT_DRIFT", path);
+        require(Objects.equals(metadata.get(ScenarioGovernedCompiler.GOVERNED_SOURCE_MAP_FINGERPRINT),
+                        provenance.sourceMapFingerprint()),
+                "SOURCE_MAP_FINGERPRINT_DRIFT", path);
+        if (requireExactRefs) {
+            require(Objects.equals(metadata.get(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS),
+                            provenance.exactRefs()),
+                    "EXACT_REF_CLOSURE_DRIFT", path);
+        }
     }
 
     private static void requireExactRef(

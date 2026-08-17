@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
@@ -37,6 +38,7 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -64,12 +66,19 @@ public final class TestSuiteExecutionService {
 
     private static final int MAX_CLIENT_REQUEST_ID_LENGTH = 255;
     private static final int MAX_METADATA_BYTES = 16_384;
+    private static final int MAX_GOVERNED_EXACT_REFS = 4_096;
+    private static final int MAX_GOVERNED_PROVENANCE_BYTES = 1_048_576;
+    private static final int MAX_GOVERNED_PROVENANCE_SCHEMA_VERSION_LENGTH = 128;
+    private static final int MAX_GOVERNED_REF_TEXT_LENGTH = 512;
     private static final int MAX_DIAGNOSTIC_LENGTH = 512;
     private static final Set<String> ENABLED_ENVIRONMENTS = Set.of("test", "staging");
     private static final Set<String> EXECUTION_PURPOSES = Set.of("TEST_EXECUTION", "TEST_REPLAY");
     private static final List<String> CLASSIFICATIONS = List.of(
             "PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
+    private static final Set<String> GOVERNED_PROVENANCE_KEYS = Set.of(
+            "governedProvenanceSchemaVersion", "governedProvenanceFingerprint",
+            "governedSourceMapFingerprint", "governedExactRefs");
 
     private final TestSuiteRegistryService suiteRegistry;
     private final TestExecutionApiService executions;
@@ -246,6 +255,7 @@ public final class TestSuiteExecutionService {
             throw conflict(identity, "RG.TEST.SUITE_FINGERPRINT_CONFLICT",
                     "Stored suite fingerprint differs from the exact execution reference.", Map.of());
         }
+        GovernedProvenance provenance = governedProvenance(stored.suite().metadata(), identity);
         if (stored.suite() instanceof TestSuiteV5) {
             throw conflict(identity, "RG.TEST.MUTATION_SUITE_EXECUTION_UNAVAILABLE",
                     "Mutation suites require the isolated mutation runner; ordinary suite execution is forbidden.",
@@ -261,7 +271,7 @@ public final class TestSuiteExecutionService {
         }
         if (stored.suite() instanceof TestSuiteV3 admissionSuite) {
             return executeSchemaAdmission(
-                    stored, admissionSuite, request, identity, requestFingerprint);
+                    stored, admissionSuite, request, identity, requestFingerprint, provenance);
         }
 
         Instant startedAt = Instant.now();
@@ -270,7 +280,7 @@ public final class TestSuiteExecutionService {
         TestSuiteRunEvidenceProtocol running = evidence(stored, request, identity, suiteRunId, startedAt,
                 null, TestSuiteRunEvidence.Status.RUNNING, observations,
                 pendingCoverage(stored.suite()), pendingSemanticCoverage(stored.suite()),
-                pendingPromotion(stored.suite()), List.of());
+                pendingPromotion(stored.suite()), List.of(), provenance);
         TestSuiteRunAttestationService.SealResult initialSeal = attestations.seal(running,
                 requestFingerprint, List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
         if (!initialSeal.verified()) {
@@ -296,7 +306,7 @@ public final class TestSuiteExecutionService {
                 stored.suiteId(), subjects.operatorRefs(), subjects.dependencyRefs());
         try (AdmissionGuard admission = admissions.admit(identity, intent)) {
             TestSuiteExecutionResponse response = executeAdmitted(
-                    record, stored, request, identity, executionCases, observations);
+                    record, stored, request, identity, executionCases, observations, provenance);
             admission.checkpoint();
             return response;
         }
@@ -307,7 +317,8 @@ public final class TestSuiteExecutionService {
             TestSuiteV3 suite,
             TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
-            String requestFingerprint) {
+            String requestFingerprint,
+            GovernedProvenance provenance) {
         TestSchemaAdmissionTarget current;
         TestSchemaAdmissionEvaluator.PreparedAdmission prepared;
         try {
@@ -328,7 +339,7 @@ public final class TestSuiteExecutionService {
                 new ArrayList<>(schemaAdmissions.pending(suite));
         TestSuiteRunEvidenceV3 running = admissionEvidence(stored, suite, request, identity,
                 current, suiteRunId, startedAt, null, TestSuiteRunEvidence.Status.RUNNING,
-                results, List.of());
+                results, List.of(), provenance);
         TestSuiteRunAttestationService.SealResult initialSeal = attestations.seal(running,
                 requestFingerprint, List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
         if (!initialSeal.verified()) {
@@ -356,7 +367,7 @@ public final class TestSuiteExecutionService {
                 stored.suiteId(), operatorRefs, Set.of());
         try (AdmissionGuard admission = admissions.admit(identity, intent)) {
             TestSuiteExecutionResponse response = executeAdmittedSchemaAdmission(
-                    record, stored, suite, request, identity, current, prepared, results);
+                    record, stored, suite, request, identity, current, prepared, results, provenance);
             admission.checkpoint();
             return response;
         }
@@ -370,7 +381,8 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             TestSchemaAdmissionTarget current,
             TestSchemaAdmissionEvaluator.PreparedAdmission prepared,
-            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results) {
+            List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            GovernedProvenance provenance) {
         TestSuiteRunRecord record;
         try {
             record = createVerified(initial);
@@ -390,7 +402,7 @@ public final class TestSuiteExecutionService {
 
         try (TestSuiteRunLeaseCoordinator.LeaseGuard lease = leaseCoordinator.monitor(record)) {
             return executeOwnedSchemaAdmission(record, stored, suite, request, identity,
-                    current, prepared, results, lease);
+                    current, prepared, results, provenance, lease);
         }
     }
 
@@ -403,13 +415,14 @@ public final class TestSuiteExecutionService {
             TestSchemaAdmissionTarget current,
             TestSchemaAdmissionEvaluator.PreparedAdmission prepared,
             List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         for (int index = 0; index < suite.cases().size(); index++) {
             if (!lease.held()) {
                 markAdmissionRemaining(results, index, "SUITE_RUN_LEASE_LOST");
                 return finishSchemaAdmission(record, stored, suite, request, identity, current,
                         results, TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
-                        List.of("SUITE_RUN_LEASE_LOST"), lease);
+                        List.of("SUITE_RUN_LEASE_LOST"), provenance, lease);
             }
             TestSuite.TestCase testCase = suite.cases().get(index);
             results.set(index, schemaAdmissions.evaluate(prepared, testCase,
@@ -420,18 +433,18 @@ public final class TestSuiteExecutionService {
                 markAdmissionRemaining(results, index + 1, "FAIL_FAST_STOP");
                 return finishSchemaAdmission(record, stored, suite, request, identity, current,
                         results, TestSuiteRunEvidence.Status.PARTIAL,
-                        List.of("FAIL_FAST_STOP"), lease);
+                        List.of("FAIL_FAST_STOP"), provenance, lease);
             }
             if (index + 1 < suite.cases().size()) {
                 try {
                     checkpointSchemaAdmission(record, stored, suite, request, identity,
-                            current, results, lease);
+                            current, results, provenance, lease);
                 } catch (RuntimeException persistenceFailure) {
                     markAdmissionRemaining(results, index + 1,
                             "SUITE_RUN_STORE_UNAVAILABLE");
                     return finishSchemaAdmission(record, stored, suite, request, identity, current,
                             results, TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
-                            List.of("SUITE_RUN_STORE_UNAVAILABLE"), lease);
+                            List.of("SUITE_RUN_STORE_UNAVAILABLE"), provenance, lease);
                 }
             }
         }
@@ -443,7 +456,7 @@ public final class TestSuiteExecutionService {
             case NOT_EVALUATED, INCOMPLETE -> TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE;
         };
         return finishSchemaAdmission(record, stored, suite, request, identity, current,
-                results, status, List.of(), lease);
+                results, status, List.of(), provenance, lease);
     }
 
     private TestSuiteExecutionResponse executeAdmitted(
@@ -452,7 +465,8 @@ public final class TestSuiteExecutionService {
             TestSuiteExecutionRequest request,
             IntegrationRequestContext identity,
             List<TestSuite.TestCase> executionCases,
-            List<TestSuiteEvidenceAggregator.CaseObservation> observations) {
+            List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+            GovernedProvenance provenance) {
         TestSuiteRunRecord record = initial;
         try {
             record = createVerified(record);
@@ -471,7 +485,7 @@ public final class TestSuiteExecutionService {
 
         try (TestSuiteRunLeaseCoordinator.LeaseGuard lease = leaseCoordinator.monitor(record)) {
             return executeOwned(
-                    record, stored, request, identity, executionCases, observations, lease);
+                    record, stored, request, identity, executionCases, observations, provenance, lease);
         }
     }
 
@@ -480,22 +494,23 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             List<TestSuite.TestCase> executionCases,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TargetPreflight target;
         try {
             target = currentTarget(stored.suite(), identity);
         } catch (IntegrationProblemException rejected) {
             return finishWithoutCases(record, stored, request, identity, observations, lease,
-                    rejected.problem().code(), rejected.problem().title());
+                    rejected.problem().code(), rejected.problem().title(), provenance);
         } catch (RuntimeException failure) {
             return finishWithoutCases(record, stored, request, identity, observations, lease,
                     "TARGET_PREFLIGHT_UNAVAILABLE",
-                    "Target preflight failed before any suite case was scheduled.");
+                    "Target preflight failed before any suite case was scheduled.", provenance);
         }
         if (!stored.suite().target().fingerprint().equals(target.fingerprint())) {
             return finishWithoutCases(record, stored, request, identity, observations, lease,
                     "TARGET_FINGERPRINT_CONFLICT",
-                    "The suite target changed after this immutable revision was registered.");
+                    "The suite target changed after this immutable revision was registered.", provenance);
         }
 
         for (int index = 0; index < executionCases.size(); index++) {
@@ -503,18 +518,19 @@ public final class TestSuiteExecutionService {
                 markRemaining(observations, index, "SUITE_RUN_LEASE_LOST",
                         "Case scheduling stopped because active suite-run ownership could not be renewed.");
                 return finishEvidenceIncomplete(record, stored, request, identity, observations,
-                        target.state(), "SUITE_RUN_LEASE_LOST", lease);
+                        target.state(), "SUITE_RUN_LEASE_LOST", provenance, lease);
             }
             TestSuite.TestCase testCase = executionCases.get(index);
-            observations.set(index, executeCase(stored, request, record.suiteRunId(), testCase, identity));
+            observations.set(index, executeCase(stored, request, record.suiteRunId(), testCase,
+                    identity, provenance));
             try {
-                checkpoint(record, stored, request, identity, observations, lease);
+                checkpoint(record, stored, request, identity, observations, provenance, lease);
             } catch (RuntimeException persistenceFailure) {
                 markRemaining(observations, index + 1,
                         "SUITE_RUN_STORE_UNAVAILABLE",
                         "Case scheduling stopped because aggregate progress could not be persisted.");
                 return finishEvidenceIncomplete(record, stored, request, identity, observations,
-                        target.state(), "SUITE_RUN_STORE_UNAVAILABLE", lease);
+                        target.state(), "SUITE_RUN_STORE_UNAVAILABLE", provenance, lease);
             }
             if (request.strategy() == TestSuiteExecutionRequest.Strategy.FAIL_FAST
                     && failFastBoundary(stored.suite(), observations, index)) {
@@ -524,7 +540,8 @@ public final class TestSuiteExecutionService {
                 break;
             }
         }
-        return finish(record, stored, request, identity, observations, target.state(), List.of(), lease);
+        return finish(record, stored, request, identity, observations, target.state(), List.of(),
+                provenance, lease);
     }
 
     /**
@@ -592,12 +609,14 @@ public final class TestSuiteExecutionService {
 
     private TestSuiteEvidenceAggregator.CaseObservation executeCase(
             StoredTestSuite stored, TestSuiteExecutionRequest request, String suiteRunId,
-            TestSuite.TestCase testCase, IntegrationRequestContext identity) {
+            TestSuite.TestCase testCase, IntegrationRequestContext identity,
+            GovernedProvenance provenance) {
         TestSuiteProtocol suite = stored.suite();
         TestExecutionApiRequest.FixtureBundleRef fixtureRef = new TestExecutionApiRequest.FixtureBundleRef(
                 testCase.fixtureBundleRef().fixtureBundleId(), testCase.fixtureBundleRef().revision(),
                 testCase.fixtureBundleRef().fingerprint());
-        Map<String, Object> metadata = caseMetadata(stored, request, suiteRunId, testCase);
+        Map<String, Object> metadata = caseMetadata(
+                stored, request, suiteRunId, testCase, provenance);
         try {
             TestExecutionApiResponse child;
             if ("GRAPH".equals(suite.target().kind())) {
@@ -709,10 +728,11 @@ public final class TestSuiteExecutionService {
             List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
             TestSuiteRunEvidence.Status status,
             List<String> diagnostics,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteRunEvidenceV3 terminal = admissionEvidence(
                 stored, suite, request, identity, current, record.suiteRunId(),
-                record.createdAt(), Instant.now(), status, results, diagnostics);
+                record.createdAt(), Instant.now(), status, results, diagnostics, provenance);
         TestSuiteRunRecord completed = terminalRecordFromChildren(record, terminal, List.of());
         try {
             return response(updateOwned(completed, lease));
@@ -730,11 +750,12 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             TestSchemaAdmissionTarget current,
             List<TestSuiteRunEvidenceV3.AdmissionCaseResult> results,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteRunEvidenceV3 running = admissionEvidence(
                 stored, suite, request, identity, current, record.suiteRunId(),
                 record.createdAt(), null, TestSuiteRunEvidence.Status.RUNNING,
-                results, List.of());
+                results, List.of(), provenance);
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(running,
                 record.requestFingerprint(), List.of(), TestSuiteRunAttestation.Scope.CHECKPOINT);
         if (!seal.verified()) {
@@ -754,7 +775,8 @@ public final class TestSuiteExecutionService {
             Instant completedAt,
             TestSuiteRunEvidence.Status status,
             List<TestSuiteRunEvidenceV3.AdmissionCaseResult> admissionResults,
-            List<String> diagnostics) {
+            List<String> diagnostics,
+            GovernedProvenance provenance) {
         List<TestSuiteRunEvidence.CaseResult> commonResults = new ArrayList<>();
         for (int index = 0; index < suite.cases().size(); index++) {
             commonResults.add(schemaAdmissions.commonResult(
@@ -790,6 +812,7 @@ public final class TestSuiteExecutionService {
         metadata.put("businessTargetInvoked", false);
         metadata.put("childRunCount", 0);
         metadata.put("suiteFingerprint", stored.fingerprint());
+        metadata.putAll(provenance.aggregateMetadata());
         return new TestSuiteRunEvidenceV3("", suiteRunId, request.clientRequestId(), status,
                 TestSuiteRunEvidenceV3.EXECUTION_PURPOSE, request.suiteRef(), suite.target(),
                 startedAt, completedAt, commonResults,
@@ -821,10 +844,12 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease,
-            String diagnosticCode, String diagnostic) {
+            String diagnosticCode, String diagnostic,
+            GovernedProvenance provenance) {
         markRemaining(observations, 0, diagnosticCode, diagnostic);
         return finish(record, stored, request, identity, observations,
-                new TestSuiteEvidenceAggregator.TargetState(false, false), List.of(diagnosticCode), lease);
+                new TestSuiteEvidenceAggregator.TargetState(false, false), List.of(diagnosticCode),
+                provenance, lease);
     }
 
     private TestSuiteExecutionResponse finish(
@@ -832,12 +857,14 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteEvidenceAggregator.TargetState targetState, List<String> diagnostics,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
         TestSuiteRunEvidenceProtocol terminal = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), Instant.now(), aggregate.status(), observations,
-                aggregate.coverage(), aggregate.semanticCoverage(), aggregate.promotion(), diagnostics);
+                aggregate.coverage(), aggregate.semanticCoverage(), aggregate.promotion(), diagnostics,
+                provenance);
         TestSuiteRunRecord completed = terminalRecord(record, terminal, observations);
         try {
             return response(updateOwned(completed, lease));
@@ -851,13 +878,14 @@ public final class TestSuiteExecutionService {
             IntegrationRequestContext identity,
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteEvidenceAggregator.TargetState targetState, String diagnostic,
+            GovernedProvenance provenance,
             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteEvidenceAggregator.Aggregate aggregate = aggregator.aggregate(
                 stored.suite(), observations, targetState);
         TestSuiteRunEvidenceProtocol incomplete = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), Instant.now(), TestSuiteRunEvidence.Status.EVIDENCE_INCOMPLETE,
                 observations, aggregate.coverage(), aggregate.semanticCoverage(), aggregate.promotion(),
-                List.of(diagnostic));
+                List.of(diagnostic), provenance);
         TestSuiteRunRecord completed = terminalRecord(record, incomplete, observations);
         try {
             updateOwned(completed, lease);
@@ -884,11 +912,12 @@ public final class TestSuiteExecutionService {
     private void checkpoint(TestSuiteRunRecord record, StoredTestSuite stored,
                             TestSuiteExecutionRequest request, IntegrationRequestContext identity,
                             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
+                            GovernedProvenance provenance,
                             TestSuiteRunLeaseCoordinator.LeaseGuard lease) {
         TestSuiteRunEvidenceProtocol running = evidence(stored, request, identity, record.suiteRunId(),
                 record.createdAt(), null, TestSuiteRunEvidence.Status.RUNNING, observations,
                 pendingCoverage(stored.suite()), pendingSemanticCoverage(stored.suite()),
-                pendingPromotion(stored.suite()), List.of());
+                pendingPromotion(stored.suite()), List.of(), provenance);
         TestSuiteRunAttestationService.SealResult seal = attestations.seal(running,
                 record.requestFingerprint(), childRefs(observations),
                 TestSuiteRunAttestation.Scope.CHECKPOINT);
@@ -929,7 +958,8 @@ public final class TestSuiteExecutionService {
             List<TestSuiteEvidenceAggregator.CaseObservation> observations,
             TestSuiteRunEvidence.CoverageVerdict coverage,
             SemanticCoverageVerdict semanticCoverage,
-            TestSuiteRunEvidence.PromotionVerdict promotion, List<String> diagnostics) {
+            TestSuiteRunEvidence.PromotionVerdict promotion, List<String> diagnostics,
+            GovernedProvenance provenance) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("tenantId", identity.tenantId());
         metadata.put("organizationId", identity.organizationId());
@@ -949,6 +979,7 @@ public final class TestSuiteExecutionService {
                 "caseIds", executedCaseIds)));
         metadata.put("requestMetadataFingerprint", ProtocolFingerprint.of(objectMapper,
                 request.metadata()));
+        metadata.putAll(provenance.aggregateMetadata());
         List<TestSuiteRunEvidence.CaseResult> results = observations.stream()
                 .map(TestSuiteEvidenceAggregator.CaseObservation::result).toList();
         if (stored.suite() instanceof TestSuiteV4 propertySuite) {
@@ -1052,7 +1083,7 @@ public final class TestSuiteExecutionService {
 
     private static Map<String, Object> caseMetadata(
             StoredTestSuite stored, TestSuiteExecutionRequest request, String suiteRunId,
-            TestSuite.TestCase testCase) {
+            TestSuite.TestCase testCase, GovernedProvenance provenance) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("suiteRunId", suiteRunId);
         metadata.put("clientRequestId", request.clientRequestId());
@@ -1066,6 +1097,7 @@ public final class TestSuiteExecutionService {
             metadata.put("inputSchemaFingerprint", propertySuite.inputSchemaFingerprint());
             propertyCoordinate(propertySuite, testCase.caseId()).forEach(metadata::put);
         }
+        metadata.putAll(provenance.childMetadata());
         return Map.copyOf(metadata);
     }
 
@@ -1443,6 +1475,101 @@ public final class TestSuiteExecutionService {
         return value != null && FINGERPRINT.matcher(value).matches();
     }
 
+    /**
+     * Reads only the server-derived governed compilation provenance contract from a stored suite.
+     *
+     * <p>The suite metadata is intentionally not copied wholesale. A legacy suite has no
+     * governed keys and keeps the historical execution behavior; once any governed key appears,
+     * the complete four-key value is treated as an integrity boundary and must verify before a
+     * run record or child request can be created.</p>
+     */
+    private GovernedProvenance governedProvenance(
+            Map<String, Object> metadata, IntegrationRequestContext identity) {
+        Map<String, Object> source = metadata == null ? Map.of() : metadata;
+        long present = GOVERNED_PROVENANCE_KEYS.stream().filter(source::containsKey).count();
+        if (present == 0) {
+            return GovernedProvenance.none();
+        }
+        if (present != GOVERNED_PROVENANCE_KEYS.size()) {
+            throw governedProvenanceInvalid(identity, "INCOMPLETE");
+        }
+
+        String schemaVersion = governedString(source.get("governedProvenanceSchemaVersion"),
+                MAX_GOVERNED_PROVENANCE_SCHEMA_VERSION_LENGTH);
+        String provenanceFingerprint = governedString(
+                source.get("governedProvenanceFingerprint"), MAX_GOVERNED_REF_TEXT_LENGTH);
+        String sourceMapFingerprint = governedString(
+                source.get("governedSourceMapFingerprint"), MAX_GOVERNED_REF_TEXT_LENGTH);
+        if (schemaVersion.isBlank() || !validFingerprint(provenanceFingerprint)
+                || !validFingerprint(sourceMapFingerprint)
+                || !ScenarioGovernedCompilationProvenance.SCHEMA_VERSION.equals(schemaVersion)) {
+            throw governedProvenanceInvalid(identity, "HEADER_INVALID");
+        }
+
+        Object refsValue = source.get("governedExactRefs");
+        if (!(refsValue instanceof Collection<?> refs)
+                || refs.isEmpty() || refs.size() > MAX_GOVERNED_EXACT_REFS) {
+            throw governedProvenanceInvalid(identity, "EXACT_REFS_BOUNDS");
+        }
+        final ScenarioGovernedCompilationProvenance parsed;
+        try {
+            if (objectMapper.writeValueAsBytes(refsValue).length
+                    > MAX_GOVERNED_PROVENANCE_BYTES) {
+                throw governedProvenanceInvalid(identity, "CANONICAL_VALUE_BOUNDS");
+            }
+            List<ScenarioGovernedCompilationProvenance.ExactRef> exactRefs =
+                    objectMapper.convertValue(refsValue, new TypeReference<>() { });
+            parsed = new ScenarioGovernedCompilationProvenance(
+                    schemaVersion, sourceMapFingerprint, exactRefs);
+            if (parsed.exactRefs().size() != exactRefs.size()) {
+                throw governedProvenanceInvalid(identity, "EXACT_REF_DUPLICATE");
+            }
+        } catch (IntegrationProblemException invalid) {
+            throw invalid;
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            throw governedProvenanceInvalid(identity, "EXACT_REF_SHAPE");
+        } catch (RuntimeException invalid) {
+            throw governedProvenanceInvalid(identity, "CANONICAL_VALUE_BOUNDS");
+        }
+        final String canonicalFingerprint;
+        try {
+            canonicalFingerprint = parsed.fingerprint(objectMapper);
+        } catch (RuntimeException invalid) {
+            throw governedProvenanceInvalid(identity, "CANONICAL_VALUE_BOUNDS");
+        }
+        if (!canonicalFingerprint.equals(provenanceFingerprint)) {
+            throw governedProvenanceInvalid(identity, "FINGERPRINT_MISMATCH");
+        }
+
+        Map<String, Object> propagated = new LinkedHashMap<>();
+        propagated.put("governedProvenanceSchemaVersion", schemaVersion);
+        propagated.put("governedProvenanceFingerprint", provenanceFingerprint);
+        propagated.put("governedSourceMapFingerprint", sourceMapFingerprint);
+        propagated.put("governedExactRefs", parsed.exactRefs());
+        Map<String, Object> aggregateMetadata = Map.copyOf(propagated);
+        Map<String, Object> childMetadata = Map.of(
+                "governedProvenanceSchemaVersion", schemaVersion,
+                "governedProvenanceFingerprint", provenanceFingerprint,
+                "governedSourceMapFingerprint", sourceMapFingerprint,
+                "governedExactRefCount", parsed.exactRefs().size());
+        return new GovernedProvenance(aggregateMetadata, childMetadata);
+    }
+
+    private static String governedString(Object value, int maximumLength) {
+        if (!(value instanceof String text)) {
+            return "";
+        }
+        String normalized = text.trim();
+        return normalized.length() <= maximumLength ? normalized : "";
+    }
+
+    private static IntegrationProblemException governedProvenanceInvalid(
+            IntegrationRequestContext identity, String reason) {
+        return conflict(identity, "RG.TEST.SUITE_GOVERNED_PROVENANCE_INVALID",
+                "Stored suite governed provenance metadata failed integrity validation.",
+                Map.of("reason", reason));
+    }
+
     private static IntegrationProblemException badRequest(IntegrationRequestContext identity,
                                                           String code, String title,
                                                           Map<String, Object> details) {
@@ -1471,6 +1598,20 @@ public final class TestSuiteExecutionService {
             String fingerprint,
             TestSuiteEvidenceAggregator.TargetState state
     ) {
+    }
+
+    private record GovernedProvenance(
+            Map<String, Object> aggregateMetadata,
+            Map<String, Object> childMetadata) {
+        private GovernedProvenance {
+            aggregateMetadata = aggregateMetadata == null
+                    ? Map.of() : Map.copyOf(aggregateMetadata);
+            childMetadata = childMetadata == null ? Map.of() : Map.copyOf(childMetadata);
+        }
+
+        private static GovernedProvenance none() {
+            return new GovernedProvenance(Map.of(), Map.of());
+        }
     }
 
     private record BundleMaterial(

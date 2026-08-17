@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Golden and fail-closed tests for the Scenario-to-testing-control-plane compiler.
@@ -113,6 +114,103 @@ class ScenarioGovernedCompilerTest {
                 .startsWith("scenario-loan-scenarios-controlled-path-");
         assertThat(first.suite().testSuite().suiteId())
                 .startsWith("scenario-suite-loan-scenarios-");
+    }
+
+    @Test
+    void legacyCompilerSignatureDelegatesToTheExplicitEmptyProvenance() {
+        GraphDraft graph = ScenarioValidationServiceTest.graphDraft();
+        ContractDraft contract = contract(graph);
+        ScenarioDraftSet draftSet = draftSet(graph, contract, dependencies(), assertions());
+
+        ScenarioGovernedCompilationPlan legacy = compiler.compile(
+                graph, contract, draftSet, runtimeTarget());
+        ScenarioGovernedCompilationPlan explicit = compiler.compile(
+                graph, null, contract, draftSet, runtimeTarget(),
+                ScenarioGovernedCompilationProvenance.empty(objectMapper));
+
+        assertThat(legacy).isEqualTo(explicit);
+        assertThat(legacy.fixtures().getFirst().request().fixtureBundle().metadata())
+                .doesNotContainKeys(
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_SOURCE_MAP_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
+        assertThat(legacy.suite().testSuite().metadata())
+                .doesNotContainKeys(
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_SOURCE_MAP_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
+    }
+
+    @Test
+    void provenanceDeduplicatesAndSortsExactRefsDeterministicallyWithoutAcceptingBlankFields() {
+        ScenarioGovernedCompilationProvenance.Scope scope = new ScenarioGovernedCompilationProvenance.Scope(
+                "tenant-a", "org-a", "project-a", "test", "sg");
+        ScenarioGovernedCompilationProvenance.ExactRef z = new ScenarioGovernedCompilationProvenance.ExactRef(
+                "Z", "z", 2, fingerprint('b'), scope, "authority");
+        ScenarioGovernedCompilationProvenance.ExactRef a = new ScenarioGovernedCompilationProvenance.ExactRef(
+                "A", "a", 1, fingerprint('a'), scope, "authority");
+        ScenarioGovernedCompilationProvenance first = new ScenarioGovernedCompilationProvenance(
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                fingerprint('c'), List.of(z, a, z));
+        ScenarioGovernedCompilationProvenance second = new ScenarioGovernedCompilationProvenance(
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                fingerprint('c'), List.of(a, z));
+
+        assertThat(first.exactRefs()).containsExactly(a, z);
+        assertThat(first).isEqualTo(second);
+        assertThat(first.fingerprint(objectMapper)).isEqualTo(second.fingerprint(objectMapper));
+        assertThatThrownBy(() -> new ScenarioGovernedCompilationProvenance.ExactRef(
+                "", "id", 1, fingerprint('a'), scope, "authority"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ScenarioGovernedCompilationProvenance(
+                "bloge.scenarioGovernedCompilationProvenance.v2",
+                fingerprint('c'), List.of(a)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void changingProvenanceChangesFixtureAndSuiteContentAddresses() {
+        GraphDraft graph = ScenarioValidationServiceTest.graphDraft();
+        ContractDraft contract = contract(graph);
+        ScenarioDraftSet draftSet = draftSet(graph, contract, dependencies(), assertions());
+        ScenarioGovernedCompilationProvenance.Scope scope = new ScenarioGovernedCompilationProvenance.Scope(
+                "tenant-a", "org-a", "project-a", "test", "sg");
+        ScenarioGovernedCompilationProvenance first = new ScenarioGovernedCompilationProvenance(
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                fingerprint('c'), List.of(new ScenarioGovernedCompilationProvenance.ExactRef(
+                        "DATASET", "dataset-a", 1, fingerprint('a'), scope, "authority")));
+        ScenarioGovernedCompilationProvenance second = new ScenarioGovernedCompilationProvenance(
+                ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                fingerprint('c'), List.of(new ScenarioGovernedCompilationProvenance.ExactRef(
+                        "DATASET", "dataset-b", 1, fingerprint('b'), scope, "authority")));
+
+        ScenarioGovernedCompilationPlan firstPlan = compiler.compile(
+                graph, null, contract, draftSet, runtimeTarget(), first);
+        ScenarioGovernedCompilationPlan secondPlan = compiler.compile(
+                graph, null, contract, draftSet, runtimeTarget(), second);
+
+        assertThat(firstPlan.fixtures().getFirst().fingerprint())
+                .isNotEqualTo(secondPlan.fixtures().getFirst().fingerprint());
+        assertThat(firstPlan.fixtures().getFirst().request().fixtureBundle().fixtureBundleId())
+                .isNotEqualTo(secondPlan.fixtures().getFirst().request().fixtureBundle().fixtureBundleId());
+        assertThat(firstPlan.suite().testSuite().suiteId())
+                .isNotEqualTo(secondPlan.suite().testSuite().suiteId());
+        assertThat(firstPlan.fixtures().getFirst().request().fixtureBundle().metadata())
+                .containsKeys(
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_SOURCE_MAP_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
+        assertThat(firstPlan.suite().testSuite().metadata())
+                .containsKey(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
+        assertThat(firstPlan.suite().testSuite().cases().getFirst().metadata())
+                .containsKeys(
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
+                        ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT,
+                        ScenarioGovernedCompiler.GOVERNED_SOURCE_MAP_FINGERPRINT)
+                .doesNotContainKey(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
     }
 
     @Test
@@ -545,5 +643,9 @@ class ScenarioGovernedCompilerTest {
     private static TestExecutionApiRequest.Target runtimeTarget() {
         return new TestExecutionApiRequest.Target(
                 "GRAPH", "loanPolicy", ScenarioValidationServiceTest.fingerprint('e'));
+    }
+
+    private static String fingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
     }
 }

@@ -42,6 +42,15 @@ public class ScenarioGovernedCompiler {
     private static final Instant LOGICAL_CLOCK = Instant.parse("2000-01-01T00:00:00Z");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
 
+    /** Fixed server-derived metadata keys consumed by testing evidence propagation. */
+    public static final String GOVERNED_PROVENANCE_SCHEMA_VERSION =
+            "governedProvenanceSchemaVersion";
+    public static final String GOVERNED_PROVENANCE_FINGERPRINT =
+            "governedProvenanceFingerprint";
+    public static final String GOVERNED_SOURCE_MAP_FINGERPRINT =
+            "governedSourceMapFingerprint";
+    public static final String GOVERNED_EXACT_REFS = "governedExactRefs";
+
     private final ScenarioValidationService validation;
     private final ObjectMapper objectMapper;
 
@@ -70,7 +79,8 @@ public class ScenarioGovernedCompiler {
             ContractDraft contract,
             ScenarioDraftSet draftSet,
             TestExecutionApiRequest.Target runtimeTarget) {
-        return compile(graph, null, contract, draftSet, runtimeTarget);
+        return compile(graph, null, contract, draftSet, runtimeTarget,
+                ScenarioGovernedCompilationProvenance.empty(objectMapper));
     }
 
     /**
@@ -89,6 +99,25 @@ public class ScenarioGovernedCompiler {
             ContractDraft contract,
             ScenarioDraftSet draftSet,
             TestExecutionApiRequest.Target runtimeTarget) {
+        return compile(graph, operator, contract, draftSet, runtimeTarget,
+                ScenarioGovernedCompilationProvenance.empty(objectMapper));
+    }
+
+    /**
+     * Compiles a Scenario revision with typed, server-derived source closure provenance.
+     *
+     * <p>The provenance is injected into every content-addressed protocol object. No arbitrary
+     * caller metadata map is accepted at this boundary.</p>
+     */
+    public ScenarioGovernedCompilationPlan compile(
+            GraphDraft graph,
+            OperatorDefinition operator,
+            ContractDraft contract,
+            ScenarioDraftSet draftSet,
+            TestExecutionApiRequest.Target runtimeTarget,
+            ScenarioGovernedCompilationProvenance provenance) {
+        Objects.requireNonNull(provenance, "provenance");
+        String provenanceFingerprint = provenance.fingerprint(objectMapper);
         List<VisualDiagnostic> diagnostics = new ArrayList<>();
         ScenarioValidationReport report = validation.validate(draftSet, contract, graph);
         diagnostics.addAll(report.diagnostics());
@@ -126,7 +155,8 @@ public class ScenarioGovernedCompiler {
             }
             minimumAssertions = Math.min(minimumAssertions, assertions.size());
             FixtureBundle fixture = fixture(
-                    draftSet, scenario, operator, runtimeTarget, rules, assertions);
+                    draftSet, scenario, operator, runtimeTarget, rules, assertions,
+                    provenance, provenanceFingerprint);
             String fixtureFingerprint = ProtocolFingerprint.ofBounded(
                     objectMapper, fixture, MAX_PROTOCOL_BYTES);
             FixtureBundleRegistrationRequest request = new FixtureBundleRegistrationRequest(
@@ -136,7 +166,8 @@ public class ScenarioGovernedCompiler {
             fixtures.add(new ScenarioGovernedCompilationPlan.CompiledFixture(
                     scenario.scenarioId(), fixtureFingerprint, request));
             cases.add(testCase(
-                    scenario, fixture, fixtureFingerprint, draftSet, runtimeTarget, runtimeInput));
+                    scenario, fixture, fixtureFingerprint, draftSet, runtimeTarget, runtimeInput,
+                    provenance, provenanceFingerprint));
         }
         if (diagnostics.stream().anyMatch(VisualDiagnostic::error)) {
             return blocked(draftSet, runtimeTarget, diagnostics);
@@ -148,7 +179,9 @@ public class ScenarioGovernedCompiler {
                 runtimeTarget,
                 cases,
                 requiredEdges,
-                minimumAssertions == Integer.MAX_VALUE ? 0 : minimumAssertions);
+                minimumAssertions == Integer.MAX_VALUE ? 0 : minimumAssertions,
+                provenance,
+                provenanceFingerprint);
         return new ScenarioGovernedCompilationPlan(
                 "",
                 true,
@@ -285,9 +318,12 @@ public class ScenarioGovernedCompiler {
             OperatorDefinition operator,
             TestExecutionApiRequest.Target runtimeTarget,
             List<FixtureRule> rules,
-            List<FixtureBundle.Assertion> assertions) {
+            List<FixtureBundle.Assertion> assertions,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint) {
         Map<String, Object> metadata =
-                fixtureMetadata(draftSet, scenario, operator, runtimeTarget);
+                fixtureMetadata(draftSet, scenario, operator, runtimeTarget,
+                        provenance, provenanceFingerprint);
         boolean usesLogicalTime = scenario.dependencies().stream().anyMatch(dependency ->
                 dependency.behavior().kind() == ScenarioDraftSet.BehaviorKind.DELAY
                         || dependency.behavior().kind() == ScenarioDraftSet.BehaviorKind.TIMEOUT);
@@ -326,7 +362,9 @@ public class ScenarioGovernedCompiler {
             String fixtureFingerprint,
             ScenarioDraftSet draftSet,
             TestExecutionApiRequest.Target runtimeTarget,
-            Object runtimeInput) {
+            Object runtimeInput,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint) {
         return new TestSuite.TestCase(
                 scenario.scenarioId(),
                 TestSuite.CaseType.valueOf(scenario.caseType().name()),
@@ -334,7 +372,8 @@ public class ScenarioGovernedCompiler {
                 new TestSuite.FixtureBundleRef(
                         fixture.fixtureBundleId(), fixture.revision(), fixtureFingerprint),
                 scenario.tags(),
-                testCaseMetadata(draftSet, scenario, runtimeTarget));
+                testCaseMetadata(draftSet, scenario, runtimeTarget,
+                        provenance, provenanceFingerprint));
     }
 
     private TestSuite suite(
@@ -343,7 +382,9 @@ public class ScenarioGovernedCompiler {
             TestExecutionApiRequest.Target runtimeTarget,
             List<TestSuite.TestCase> cases,
             List<TestSuite.EdgeTransferRef> edges,
-            int minimumAssertions) {
+            int minimumAssertions,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint) {
         List<TestSuite.CaseType> caseTypes = cases.stream()
                 .map(TestSuite.TestCase::caseType)
                 .distinct()
@@ -358,7 +399,8 @@ public class ScenarioGovernedCompiler {
                 new TestSuite.CoveragePolicy(
                         cases.size(), caseTypes, List.of(), edges, minimumAssertions, true),
                 new TestSuite.PromotionPolicy(true, cases.size(), true),
-                targetMetadata(draftSet, operator, runtimeTarget));
+                targetMetadata(draftSet, operator, runtimeTarget,
+                        provenance, provenanceFingerprint, true));
         String digest = suffix(ProtocolFingerprint.ofBounded(
                 objectMapper, idMaterial, MAX_PROTOCOL_BYTES));
         String id = contentAddressedId(
@@ -379,9 +421,12 @@ public class ScenarioGovernedCompiler {
             ScenarioDraftSet draftSet,
             ScenarioDraftSet.ScenarioDraft scenario,
             OperatorDefinition operator,
-            TestExecutionApiRequest.Target runtimeTarget) {
+            TestExecutionApiRequest.Target runtimeTarget,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint) {
         Map<String, Object> metadata =
-                new LinkedHashMap<>(targetMetadata(draftSet, operator, runtimeTarget));
+                new LinkedHashMap<>(targetMetadata(draftSet, operator, runtimeTarget,
+                        provenance, provenanceFingerprint, true));
         metadata.put("scenarioId", scenario.scenarioId());
         metadata.put("assertionIds", scenario.then().assertions().stream()
                 .map(ScenarioDraftSet.AssertionDraft::assertionId).toList());
@@ -391,7 +436,9 @@ public class ScenarioGovernedCompiler {
     private static Map<String, Object> testCaseMetadata(
             ScenarioDraftSet draftSet,
             ScenarioDraftSet.ScenarioDraft scenario,
-            TestExecutionApiRequest.Target runtimeTarget) {
+            TestExecutionApiRequest.Target runtimeTarget,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("source", "scenario-authoring");
         metadata.put("scenarioName", scenario.name());
@@ -402,13 +449,17 @@ public class ScenarioGovernedCompiler {
         metadata.put("sourceTargetId", draftSet.target().id());
         metadata.put("runtimeTargetKind", runtimeTarget.kind());
         metadata.put("runtimeTargetId", runtimeTarget.id());
+        metadata.putAll(governedMetadata(provenance, provenanceFingerprint, false));
         return Map.copyOf(metadata);
     }
 
     private static Map<String, Object> targetMetadata(
             ScenarioDraftSet draftSet,
             OperatorDefinition operator,
-            TestExecutionApiRequest.Target runtimeTarget) {
+            TestExecutionApiRequest.Target runtimeTarget,
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint,
+            boolean includeExactRefs) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("source", "scenario-authoring");
         metadata.put("scenarioDraftSetId", draftSet.scenarioDraftSetId());
@@ -423,7 +474,25 @@ public class ScenarioGovernedCompiler {
         if (operator != null) {
             metadata.put("loweringMode", operator.lowering().mode());
         }
+        metadata.putAll(governedMetadata(provenance, provenanceFingerprint, includeExactRefs));
         return Map.copyOf(metadata);
+    }
+
+    private static Map<String, Object> governedMetadata(
+            ScenarioGovernedCompilationProvenance provenance,
+            String provenanceFingerprint,
+            boolean includeExactRefs) {
+        if (provenance.empty()) {
+            return Map.of();
+        }
+        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(GOVERNED_PROVENANCE_SCHEMA_VERSION, provenance.schemaVersion());
+        metadata.put(GOVERNED_PROVENANCE_FINGERPRINT, provenanceFingerprint);
+        metadata.put(GOVERNED_SOURCE_MAP_FINGERPRINT, provenance.sourceMapFingerprint());
+        if (includeExactRefs) {
+            metadata.put(GOVERNED_EXACT_REFS, provenance.exactRefs());
+        }
+        return metadata;
     }
 
     private static TestSuite.EdgeTransferRef edge(ScenarioDraftSet.AssertionDraft assertion) {
