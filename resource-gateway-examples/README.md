@@ -83,8 +83,13 @@ implemented. The tutorial branch also supports a business-sentence timeout edit 
 an isolated preflight with zero unresolved dependencies, zero real calls, and no fallback to
 real services. The tutorial branch uses a database-backed head plus immutable revisions, so
 saved edits survive application restart and concurrent saves use optimistic revision control.
-Feature/Tool execution and release acceptance remain explicitly `NOT_RUN`. To disable the Capability
-Studio sample and open the legacy Business Mirror:
+The Stage 0 Dataset compiler deterministically adapts all nine Cases to the existing
+`ScenarioDraftSet` model, preserves RETURN, ERROR, TIMEOUT, ordered consumption, and
+`MUST_NOT_CALL`, and rejects real fallback, ambiguous selectors, incomplete exact references,
+or unsupported lowerings. It does not yet invoke `ScenarioGovernedCompiler`, produce
+FixtureBundle/TestSuite artifacts, or prove a 9/9 run. Feature/Tool execution and release
+acceptance therefore remain explicitly `NOT_RUN`. To disable the Capability Studio sample and
+open the legacy Business Mirror:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --no-capability-studio --open
@@ -116,7 +121,11 @@ This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
 profile by default so `/api/testing/**` is available; use
 `--profile production --no-correctness --no-capability-studio` to demonstrate that the
-testing and Capability Studio demo beans and endpoints are structurally absent.
+testing and Capability Studio demo beans and endpoints are structurally absent. Production run
+protocols also reject nested fixture, stub, binding-override, dependency-behavior, Dataset,
+mirror, replay, and replacement controls before DTO deserialization and commit a payload-free
+security audit. This boundary is tested for `production`, `production,test`, and
+`production,staging`; zero-egress Capability execution remains a separate, unfinished Spike.
 Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
 dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
 DAG workers plus isolated evidence-finalization lanes for one exact

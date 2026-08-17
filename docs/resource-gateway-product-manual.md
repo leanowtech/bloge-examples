@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片（含 Scenario Dataset v1）
+> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片（含 Scenario Dataset v1）
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -167,15 +167,21 @@ Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` �
 6. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
 7. 查看「验收状态」。正确结论仍是 `NO_GO`：当前只证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检；Dataset 写入 Authority、Feature/Tool 隔离执行、9/9 批量证据、完整 zero-egress 观测和业务签署仍未完成。
 
+需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 已覆盖英文 1440×900、1024×768 和 390×844，并用 Tab、Enter、Space 完成 Dataset 选择路径。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
+
 ![Scenario Dataset 分母、质量与 Case 详情](assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png)
 
 移动端先显示 Dataset 摘要；继续向下可查看五项质量、搜索、筛选和有界 Case 列表。列表使用独立滚动区域，避免九条 Case 把当前详情推到页面末尾。
 
 ![移动端 Scenario Dataset 质量与场景列表](assets/capability-studio/capability-studio-gp03-quality-zh-390.png)
 
+![英文桌面 Scenario Dataset 与质量状态](assets/capability-studio/capability-studio-gp01-gp03-en-1440.png)
+
+![英文移动端任务选择与 Dataset 摘要](assets/capability-studio/capability-studio-gp01-gp03-en-390.png)
+
 ![隔离教程分支的业务句式编辑与预检](assets/capability-studio/capability-studio-gp04-zh-1440.png)
 
-保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包或 Scenario Dataset 未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Feature/Tool Run 按钮；这不是权限错误，而是当前开发切片的明确边界。
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包或 Scenario Dataset 未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Feature/Tool Run 按钮。后端已能将 9 个 Case 确定性适配为既有 `ScenarioDraftSet`，但尚未接入 governed compiler、FixtureBundle/TestSuite 和运行证据；这不是权限错误，而是当前开发切片的明确边界。
 
 ### 3.3 从业务能力资产组合开始
 

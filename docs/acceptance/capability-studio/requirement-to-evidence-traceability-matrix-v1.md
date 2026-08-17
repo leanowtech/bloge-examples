@@ -6,10 +6,10 @@
 
 | Requirement | 当前实现 / 数据 | 自动化证据 | 仍缺证据 | Owner | Gate |
 |---|---|---|---|---|---|
-| `GP-01` | `/capabilities/`；4/1/1/9 Demo Pack | 组件、Loader/Controller；中文 1440/1024/390 真实 Chrome | 英文三视口、异常状态、产品签署 | Product + QA | `PENDING` |
+| `GP-01` | `/capabilities/`；4/1/1/9 Demo Pack | 组件、Loader/Controller；中文与英文 1440/1024/390 真实 Chrome；页面级无横向溢出和内部状态泄漏 | 异常状态完整浏览器矩阵、产品签署；英文演示数据仍保留中文权威业务名称 | Product + QA | `PARTIAL` |
 | `GP-02` | 四个可独立选择的业务契约投影 | 前端选择/契约测试、后端投影；中文 1440 Chrome 选择第二个 API | Schema round-trip、键盘和读屏 | Product + API Owner | `PENDING` |
-| `GP-03` | Golden Pack 确定性 Scenario Dataset 投影；根/Case/Behavior 内容指纹；Dataset 摘要、五项质量覆盖、搜索筛选和 Case 主从详情 | 严格 Schema；独立 Test Kit 指纹/Scope/引用闭包/质量/Active readiness；前后端语义 fail-closed 测试；中文 1440/390 Chrome | 持久化 Dataset Authority、权限投影、`ScenarioDraftSetV2` 编译、英文/键盘/读屏、Correctness Owner 签署 | Correctness Owner | `PARTIAL` |
-| `GP-04` | Tutorial Branch 业务句式编辑器；数据库 head 与 immutable revision；保存与隔离预检闭环 | 组件/API/Controller；SQL 原子 CAS、同版本并发单赢家、stale retry 幂等、Authority 重建恢复、Baseline 漂移失败关闭；中文 1440 Chrome；Test Kit 严格 Schema、内容指纹重算、revision/baseline/preflight exact binding；真实 HTTP 三制品互验 | 英文三视口、键盘/读屏、并发浏览器、业务签署 | Correctness Owner | `PARTIAL` |
+| `GP-03` | Golden Pack 确定性 Scenario Dataset 投影；根/Case/Behavior 内容指纹；Dataset 摘要、五项质量覆盖、搜索筛选和 Case 主从详情 | 严格 Schema；独立 Test Kit 指纹/Scope/引用闭包/质量/Active readiness；前后端语义 fail-closed 测试；中英文三视口 Chrome；真实 Tab/Space 选择 Case；Dataset 到既有 `ScenarioDraftSet` 的确定性适配器与 source map | 持久化 Dataset Authority、权限投影、接入 `ScenarioGovernedCompiler` 后的 FixtureBundle/TestSuite 与运行证据、完整读屏、Correctness Owner 签署 | Correctness Owner | `PARTIAL` |
+| `GP-04` | Tutorial Branch 业务句式编辑器；数据库 head 与 immutable revision；保存与隔离预检闭环 | 组件/API/Controller；SQL 原子 CAS、同版本并发单赢家、stale retry 幂等、Authority 重建恢复、Baseline 漂移失败关闭；中英文真实 Chrome；Test Kit 严格 Schema、内容指纹重算、revision/baseline/preflight exact binding；真实 HTTP 三制品互验 | Tutorial 全键盘/读屏、409/断网真实浏览器、并发浏览器、业务签署 | Correctness Owner | `PARTIAL` |
 | `GP-05` | 现有 Graph/Canvas 可复用 | 既有 layout 单元测试 | 取消争议 Feature Graph、Data Lens、像素验收 | Canvas Owner | `NO_GO` |
 | `GP-06` | 现有 TIMEOUT lowerer 可复用 | 相邻 Correctness 编译测试 | Dataset 编译、Feature Oracle、零外呼运行 | Runtime Owner | `NO_GO` |
 | `GP-07` | Tool 业务摘要和契约元数据 | Demo Pack contract invariant | 禁止结果、exact dependency、影响报告 | Product + Runtime | `NO_GO` |
@@ -21,15 +21,15 @@
 
 | Requirement | 根问题 | 通过标准 | 当前证据 | 缺口 | Gate |
 |---|---|---|---|---|---|
-| `SPIKE-A` | Dataset 是否能无损下沉到现有 Runtime | 确定性编译；RETURN/ERROR/TIMEOUT/MUST_NOT_CALL 保真；拒绝 REAL fallback | `ScenarioDraftSetV2`、Correctness lowerer 已存在 | 新 Dataset/Binding 协议与端到端编译未实现 | `NO_GO` |
+| `SPIKE-A` | Dataset 是否能无损下沉到现有 Runtime | 确定性编译；RETURN/ERROR/TIMEOUT/顺序消费/MUST_NOT_CALL 保真；拒绝 REAL fallback；runtime rule 可回溯 Dataset/Case/Behavior | Dataset 到既有 `ScenarioDraftSet` 的适配器已实现；9 Case 编译、三次确定性、双 RETURN 顺序、source map、Authority/Scope/断言和 unsupported lowering 失败关闭测试通过 | 尚未接入 `ScenarioGovernedCompiler` 生成 FixtureBundle/TestSuite；9/9 运行、真实调用为 0 和 UI 字段级 source map 未证明 | `PARTIAL` |
 | `SPIKE-B` | Data Lens 能否可读且不泄露 Payload | 字段来源、边值、差异、权限投影和无遮挡 | Canvas/Trace 邻接能力 | 取消争议图和浏览器像素证据缺失 | `NO_GO` |
-| `SPIKE-C` | 注入能力能否从生产物理消失 | production route/bean/DTO 缺席；network deny + counter | Demo Pack 已使用 profile/property 隔离 | Capability Run 面尚未建立，零 egress 未证明 | `NO_GO` |
+| `SPIKE-C` | 注入能力能否从生产物理消失 | production route/bean/DTO 缺席；network deny + counter | `production`、`production,test`、`production,staging` 均不装配 Capability Studio 演示 Bean；五类生产运行入口在 DTO 前拒绝 fixture/stub/binding override/dependency behavior/Dataset 字段并安全审计，94 项聚焦测试通过 | Capability Run 面和网络策略尚未建立，完全隔离运行的零 egress 未证明 | `PARTIAL` |
 
 ## Security
 
 | Requirement | 威胁 | 验收 | 当前证据 | Owner | Gate |
 |---|---|---|---|---|---|
-| `SEC-01` | 生产误用 Fixture/Mock | production 不装配注入面 | Controller 与 Pack 同条件装配；default/production 缺席测试 | Security | `PARTIAL` |
+| `SEC-01` | 生产误用 Fixture/Mock | production 不装配注入面，普通运行协议在反序列化前失败关闭 | 三组 production profile 装配否定测试；五类入口、16 类控制字段、嵌套与命名变体、审计失败关闭和 Payload 不泄漏测试 | Security | `PARTIAL` |
 | `SEC-02` | 隔离运行静默访问真实服务 | `realExternalCallCount=0` 且 egress deny | 仅有相邻 Mirror 测试 | Security + Runtime | `NO_GO` |
 | `SEC-03` | Payload 经日志、URL、Evidence 泄露 | 普通投影和验收制品 payload-free | Controller 响应负向断言 | Data Security | `PARTIAL` |
 | `SEC-04` | 跨 Scope 引用 | tenant/org/project/env/region 全维 fail closed | 现有 Correctness/Mirror Scope 模型 | 新 Capability/Dataset API 未接入 | `NO_GO` |
@@ -40,7 +40,7 @@
 | Requirement | 阈值 | 当前证据 | 缺口 | Owner | Gate |
 |---|---|---|---|---|---|
 | `NFR-01` | 黄金样例离线可读取和运行 | Pack 为本地资源 | 运行尚未接入 | Delivery | `PARTIAL` |
-| `NFR-02` | 双语、三视口、完整键盘路径 | 双语组件测试；中文三视口 Chrome 无页面级溢出 | 英文三视口、键盘全路径和可访问性报告 | UX + QA | `PARTIAL` |
+| `NFR-02` | 双语、三视口、完整键盘路径 | 双语组件测试；中英文 1440/1024/390 Chrome；真实 Tab/Enter/Space Dataset 路径；六种组件状态和真实 Chrome 完整 axe-core serious/critical 为 0；已修复选中行对比度缺陷 | 契约与 Tutorial 的完整键盘路径、人工屏幕阅读器、异常状态三视口；业务资产内容未本地化 | UX + QA | `PARTIAL` |
 | `NFR-03` | 三次运行语义 fingerprint 一致 | Pack fingerprint 加载确定 | Runtime semantic fingerprint 尚无 | Runtime | `NO_GO` |
 | `NFR-04` | 无手工 ID、无 Raw JSON | 默认视图折叠技术引用 | 六人可用性测试 | UX | `PENDING` |
 | `NFR-05` | 404/400/409 有恢复动作且不丢内容 | Demo Pack 加载重试；GP-04 冲突保留输入；服务端统一返回原因、影响、恢复动作和可选字段；传输失败单独分类；Authority 重建恢复已自动化证明 | 冲突/断网真实浏览器矩阵 | Frontend + API | `PARTIAL` |

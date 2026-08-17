@@ -35,8 +35,11 @@
 - Scenario Dataset v1 的严格 payload-free 投影 Schema、由 Golden Demo Pack 确定性生成的服务端投影端点，以及独立 Test Kit 的指纹、Scope、引用闭包、质量计数和 Active readiness 验证器；
 - GP-03 已从静态九行表切换为真实 Dataset master-detail 视图，显示 Dataset 分母、生命周期、分类、Owner、五项质量覆盖、Case 业务目标、来源、Oracle、适用契约、依赖表现与精确引用；协议、网络或语义校验失败时拒绝展示并提供恢复动作；
 - GP-03 中文 1440×900 与 390×844 真实 Chrome 烟测，覆盖 Dataset 摘要、质量状态、九条 Case、超时案例详情、移动端筛选与无横向溢出。
+- Dataset 到既有 `ScenarioDraftSet` 的确定性编译适配器，覆盖 9 Case、RETURN/ERROR/TIMEOUT/顺序消费/`MUST_NOT_CALL`、rule source map、三次确定性和 fail-closed 负向语义；尚未生成 FixtureBundle/TestSuite 或运行证据；
+- 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
+- GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，Dataset 的 Tab/Enter/Space 键盘路径，以及六种组件状态与真实浏览器完整 axe-core 检查；真实 axe 曾检出并推动修复选中场景辅助文字对比度问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、Dataset 到 `ScenarioDraftSetV2` 的确定性编译、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、英文/键盘/读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、Dataset 到 `ScenarioGovernedCompiler`/FixtureBundle/TestSuite 的端到端 lowering、Feature DAG Data Lens、隔离运行、9/9 三次语义一致性、完整 zero-egress 运行证明、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-05 至 GP-10 的完整自动化和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
@@ -51,8 +54,11 @@
 | 1024×768 | GP-01 紧凑桌面布局 | [`capability-studio-gp01-zh-1024.png`](../../assets/capability-studio/capability-studio-gp01-zh-1024.png) |
 | 390×844 | GP-03 移动端任务选择、Dataset 摘要 | [`capability-studio-gp03-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-zh-390.png) |
 | 390×844 | GP-03 五项质量覆盖、搜索、筛选与有界 Case 列表 | [`capability-studio-gp03-quality-zh-390.png`](../../assets/capability-studio/capability-studio-gp03-quality-zh-390.png) |
+| 1440×900 | 英文 GP-01/03、Dataset 质量与 Case 详情；真实 axe serious/critical 为 0 | [`capability-studio-gp01-gp03-en-1440.png`](../../assets/capability-studio/capability-studio-gp01-gp03-en-1440.png) |
+| 1024×768 | 英文 GP-04 Tutorial Branch 紧凑桌面 | [`capability-studio-gp01-gp03-en-1024.png`](../../assets/capability-studio/capability-studio-gp01-gp03-en-1024.png) |
+| 390×844 | 英文 GP-03 移动端任务选择与 Dataset 摘要 | [`capability-studio-gp01-gp03-en-390.png`](../../assets/capability-studio/capability-studio-gp01-gp03-en-390.png) |
 
-这些证据只关闭中文 `READY` 状态的浏览器烟测，不覆盖英文、键盘全路径、读屏、异常状态、运行证据或人工可用性签署。
+这些证据关闭了所列中英文 `READY` 状态、Dataset 键盘路径和自动 axe 检查，但不覆盖契约/Tutorial 全键盘、人工屏幕阅读器、异常状态三视口、运行证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
 
 ## 3. 更新流程
 
