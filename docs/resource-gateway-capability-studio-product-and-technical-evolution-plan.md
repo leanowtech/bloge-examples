@@ -103,6 +103,43 @@
 
 不设置“默认通过”或口头豁免。测试跳过、证据过期、引用 fingerprint 不匹配、签署缺失和环境不符合前置条件时，一律不能生成 `PASS`。
 
+#### 0.4.1 唯一通过公式
+
+一个 Acceptance Contract 只有在以下条件**同时成立**时才能判定为 `PASS`：
+
+```text
+PASS = 前置条件全部满足
+    AND 用户结果逐项符合 Oracle
+    AND 系统不变量全部保持
+    AND 约定测试矩阵 100% 执行且无跳过
+    AND 机器证据可解析、可复算且 fingerprint 一致
+    AND 指定 Owner 全部签署
+    AND 未关闭 P0/P1 = 0
+```
+
+其中任一业务 Oracle、安全或隔离不变量不成立，结果直接为 `FAIL`，不能用其他成功项抵消；因环境、权限或证据设施不可用而无法执行时为 `BLOCKED`，不能记为“有条件通过”；只完成组件测试、开发截图或部分矩阵时为 `PARTIAL`，不能用于阶段退出。
+
+#### 0.4.2 验收对象与失败边界
+
+| 验收轴 | 最低通过阈值 | 直接失败条件 | 证据 |
+|---|---|---|---|
+| 业务正确性 | Canonical 9 Case × 3 轮全部符合逐 Case Oracle；同 Case 三轮业务结果 fingerprint 一致 | 任一 Case 错判、漏跑、重复 `runId`、结果漂移或 Oracle 被跳过 | Run Evidence、Oracle 明细、semantic fingerprint |
+| 引用闭包 | Contract、Graph、Dataset、Case、Behavior、Binding 全部使用 exact ref，独立复算 fingerprint 一致 | 运行中读取 mutable head、跨 Scope 引用、混用版本或引用缺失 | closure manifest、Test Kit verifier |
+| 隔离运行 | 进程内 connector counter 与部署级 egress 观测均为 0；所有依赖行为可追溯到 Binding Plan | 任一未声明真实调用、未解析依赖继续运行、生产面可注入任意替身 | network deny、counter、装配测试、审计 |
+| 故障语义 | timeout、retry、fallback、skip、partial 在 UI、Trace、Oracle 中含义一致 | 把超时当空数据、fallback 后丢失原始失败尝试、最终状态与业务结果矛盾 | attempt/final trace、Data Lens、错误注入测试 |
+| 操作体验 | 5/6 代表性用户在 15 分钟内独立完成 `GP-01` 至 `GP-10`；默认路径技术 ID 与 Raw JSON 输入均为 0 | 任一 P0/P1；主任务必须依赖主持人口头补步骤；关键状态无恢复动作 | 原始可用性记录、浏览器录像、任务计时 |
+| 视觉与可访问性 | 中英文 × 1440/1024/390 关键视口完成；键盘主路径可达；axe serious/critical 为 0 | 控件、节点、边标签或错误反馈被遮挡；焦点丢失；仅靠颜色表达状态 | Playwright、DOM 几何、截图、人工签署、axe |
+| 安全与治理 | Payload 权限、脱敏、审计、保留、撤销与 Scope 负向用例全部通过 | 明文泄漏、越权访问、撤销后仍可新运行、日志或 Evidence 泄漏 Payload | RBAC/ABAC、攻击 fixture、日志扫描、审计 |
+| 企业兼容性 | 冻结协议矩阵中的 N/N-1/N+1 全部产生确定的兼容或拒绝结果 | 静默丢字段、错误降级、无法判断版本兼容性 | consumer contract、capability probe、兼容矩阵 |
+
+容量、延迟、并发、保留和恢复目标必须在 Stage 0 以客户规模与环境基线冻结为数值化 SLO；未冻结前相关 NFR 只能是 `NOT_RUN`，不得用“性能基本可接受”替代。
+
+#### 0.4.3 证据有效期与重新验收触发器
+
+以下任一变化都会使受影响 Acceptance Result 立即失效并回到 `NOT_RUN`：候选 build、业务 Oracle、Contract/Schema、Graph/DSL、Dataset/Case/Behavior、Binding、权限策略、生产装配、网络策略、协议主次版本或目标运行环境发生变化。仅文案和视觉改动也必须重跑受影响的 UX、可访问性和视觉合同；不得沿用旧截图签署新版本。
+
+每次重新验收只重跑追踪矩阵证明受影响的合同，但影响分析本身必须可审计。若无法证明影响边界，则重跑该 Stage 全部合同。
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -743,7 +780,7 @@ DAG 同时调用订单、责任、规则和补偿接口，进行字段标准化�
 | `GP-03` | 进入场景数据中心 | 显示五类场景、来源、Owner、适用契约和质量状态 | 不需要理解 FixtureBundle；所有场景均有业务名称和正确结果 | Dataset projection 与表格断言 |
 | `GP-04` | 在 Tutorial Branch 将历史补偿接口设为超时 | 显示「当什么条件、依赖如何表现、持续多久」的业务句式 | 保存成功；Canonical Baseline 未被修改；运行预检显示 0 个未解析依赖 | Revision、branch isolation、preflight |
 | `GP-05` | 打开争议上下文特征 DAG 并选择超时场景 | 四个接口、转换、规则和特征输出完整展示，边上可查看样例值 | 无节点、边标签和数据摘要遮挡；可解释每个输出字段来源 | Canvas DOM、像素检查、lineage assertion |
-| `GP-06` | 运行当前特征场景 | 历史补偿接口显示 `TIMEOUT`，Feature 输出要求后续工具进入人工复核 | 真实外部调用数为 0；结果符合 Feature Oracle；首个差异可定位 | RunTrace、mock 标记、network deny |
+| `GP-06` | 运行当前特征场景 | 历史补偿依赖的原始尝试显示 `TIMEOUT`，BLOGE fallback 被明确标识；Feature 最终状态为 `PASSED`，输出 `action=MANUAL_REVIEW`、`informationGap=COMPENSATION_HISTORY_TIMEOUT` | 不能把超时投影为空数据；聚合与决策节点按降级输入继续执行；真实外部调用数为 0；Trace 同时保留失败尝试和恢复后结果 | RunTrace attempt/final 断言、Feature Oracle、Data Lens、mock 标记、network deny |
 | `GP-07` | 打开工具契约 | 显示输入、输出、错误、禁止结果、副作用和精确依赖 | 用户可以说明工具对上层调用方的承诺；技术坐标默认折叠 | Contract projection 与引用断言 |
 | `GP-08` | 恢复 Baseline 并运行全部 9 个场景 | 显示执行、断言、覆盖、证据和门禁五轴结论 | 9 个场景全部通过；连续 3 次运行语义结果一致；真实调用数为 0 | Batch API、semantic fingerprint、egress counter |
 | `GP-09` | 查看场景数据质量与影响 | 显示来源、脱敏、新鲜度、覆盖、复用和受影响资产 | 每个 Active Case 均有 Owner、Oracle 和适用契约；无孤立数据 | Quality projection、impact graph |
@@ -1231,7 +1268,7 @@ Stage 1 开工后，新反馈必须先归类：
 | `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录 | 产品、UX、QA 全部签署后 `PASS` |
 | `S0-AC-02` | Golden Demo Pack 固定为 4 API、1 Feature、1 Tool、9 Case；Case 均有 Owner、Source、Oracle、适用契约和精确引用闭包 | Demo Pack Schema 校验、Test Kit verifier、内容 fingerprint、篡改与跨 Scope 负向用例 | 业务 Owner、正确性 Owner `PASS` |
 | `S0-AC-03` | Spike A 无损下沉到既有测试 Runtime；Spike B 来自真实 BLOGE Trace；Spike C 从生产装配和协议移除注入能力 | 三份 Spike 报告与仓库测试；确定性、source map、Data Lens、生产 profile、network deny 和 counter 证据 | 架构、Runtime、画布、安全分别签署，三项均 `PASS` |
-| `S0-AC-04` | 固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 按预期超时且下游未调用；进程内与部署级真实外部调用观测均为 0 | 27 份独立 Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包复算 | 任一 Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写/下游未调用不成立、counter 非 0 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
+| `S0-AC-04` | 固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 的依赖尝试为 `TIMEOUT`，fallback 后 Feature/Tool 最终 `PASSED` 并输出 `MANUAL_REVIEW` 与 `COMPENSATION_HISTORY_TIMEOUT`；进程内与部署级真实外部调用观测均为 0 | 27 份独立 Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、timeout attempt/final/fallback Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包复算 | 任一 Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写不成立、timeout 原始尝试丢失、fallback 未执行、最终结果不是人工复核、counter 非 0 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
 | `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
 | `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
 
@@ -1242,7 +1279,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S0-AC-01` | `PARTIAL` | GP-01 至 GP-06 已有中英文真实 Chrome 开发证据；覆盖 1440、1024、390，包含 Dataset、教程分支、Feature Trace、键盘路径和 axe | GP-07 至 GP-10 尚未形成同等纵向切片；异常状态、人工读屏、产品/UX/QA 签署未闭合 |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在；每个 Case 已投影完整四 API `RUNTIME_CONTROL`，幂等与禁止写入作为独立 `BUSINESS_EXPECTATION` 保留，编译 source map 不再把业务预期误降为 Tool fixture；前后端与独立 Test Kit 均按该语义验证运行闭包 | Dataset 仍为只读投影；受保护 fixture material 仍由开发服务组装；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
 | `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划，并已把同一 Canonical Feature DAG 包装为 Tool binding，经既有 `OperatorMicroGraphRunner -> TestRunService -> BLOGE nested graph` 路径完成真实嵌套执行、nested selector 命中和零 HTTP delegate 调用；绑定快照稳定，且在嵌套依赖闭包未证明前明确拒绝认证。Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens，并由严格 v1 Schema 与独立 Test Kit verifier 对真实 wire response 校验 6/5 基数、Run 身份、边闭包、权限和指纹；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | Spike A 编译计划仍未注册并作为同一 Fixture/TestSuite 资产闭包运行，Tool 嵌套依赖尚无控制平面认可的 composability manifest；Spike B 缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 缺部署级 network deny 和安全签署 |
-| `S0-AC-04` | `PARTIAL` | test/staging 的 payload-free 开发基线已固定执行 9×3，产生 27 个唯一 `runId`；9 个独立业务 Oracle、同 Case semantic/business fingerprint 三轮稳定、duplicate 幂等、forbidden-write 的 Graph operator + Trace、预期 timeout、零进程内真实调用和两批并发隔离已有自动化证据；严格 v1 Schema 与独立 Test Kit verifier 已对真实响应闭包互验；投影明确标记 `DEVELOPMENT_TEST_OWNED` | 运行材料不是 SPIKE-A 注册产物的同一资产闭包；未绑定 Graph/Contract/Dataset/Binding exact refs 和环境 fingerprint；缺部署级 network deny/egress 观测与正确性/Runtime/QA 签署，因而不能 `PASS` |
+| `S0-AC-04` | `PARTIAL` | test/staging 的 payload-free 开发基线已固定执行 9×3，产生 27 个唯一 `runId`；9 个独立业务 Oracle、同 Case semantic/business fingerprint 三轮稳定、duplicate 幂等、forbidden-write 的 Graph operator + Trace、依赖 timeout 尝试、零进程内真实调用和两批并发隔离已有自动化证据；严格 v1 Schema 与独立 Test Kit verifier 已对真实响应闭包互验；投影明确标记 `DEVELOPMENT_TEST_OWNED` | timeout Case 的 fallback 后最终 `PASSED`、`MANUAL_REVIEW` 及 attempt/final 双态证据仍在收口；运行材料不是 SPIKE-A 注册产物的同一资产闭包；未绑定 Graph/Contract/Dataset/Binding exact refs 和环境 fingerprint；缺部署级 network deny/egress 观测与正确性/Runtime/QA 签署，因而不能 `PASS` |
 | `S0-AC-05` | `NOT_RUN` | 已有可执行任务界面和黄金演示数据 | 尚未组织 6 名代表性用户测试，也没有 P0/P1 关闭和复验记录 |
 | `S0-AC-06` | `NOT_RUN` | Baseline、ADR、Screen Inventory、追踪矩阵和 `NO_GO` Manifest 已版本化 | ADR 仍为 `Proposed`；Baseline 未批准；Manifest 未接受；七类签署均为空 |
 
@@ -1294,7 +1331,33 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S5-AC-03` | draft/operator/run/contract 的 Deep Link、治理反馈和 Owner action 均回到正确上下文；刷新和跨版本不丢失坐标 | 中文/英文真实浏览器、权限、过期链接和迁移测试 | 产品、治理 Owner、QA `PASS` |
 | `S5-AC-04` | change event/webhook 可重试、去重、补拉和审计；消费者停机或乱序不会造成静默漏治理 | outbox、cursor、幂等、乱序、重放、灾难恢复和观测证据 | 平台、集成、SRE `PASS` |
 
-### 13.2 所有阶段共用的验收纪律
+### 13.2 固定验收执行矩阵
+
+除单条 `S*-AC-*` 的专项证据外，各阶段必须完整执行下列矩阵。矩阵单元的分母必须出现在 Acceptance Result 中；跳过、重试后只保留成功结果或缩小分母均视为 `FAIL`。
+
+| Stage | 固定执行矩阵 | 通过阈值 | 立即失败条件 |
+|---|---|---|---|
+| Stage 0 | `GP-01..10 × zh-CN/en-US × 1440/1024/390`；Canonical `9 Case × 3 轮`；6 名代表性用户；3 项技术 Spike | 自动矩阵 100%；至少 5/6 用户在 15 分钟内独立完成；P0/P1 为 0；三项 Spike 全部签署 | 黄金路径依赖手填 ID/Raw JSON/主持人补步骤；任一 Case 错判；真实调用非 0；协议或证据不可复算 |
+| Stage 1 | 订单查询、城市规则 `2 API × 样例/表单/OpenAPI/Schema 4 种入口 × 新建/兼容修改/breaking 修改/非法输入 4 类变更`；正常、业务错误、超时、禁止访问 4 类依赖表现 | 32 个创作组合和 8 个隔离运行组合全部通过；round-trip 语义差异为 0 | breaking change 未阻断；保存丢数据；未解析依赖继续运行；敏感字段泄漏 |
+| Stage 2 | 取消费争议 `1 Feature × timeout/retry/fallback/skip/partial 5 类故障 × 有/无 Payload 权限 2 类身份 × 1440/1024 2 个视口` | 20 个 Data Lens 组合全部通过；节点、端口、边标签和数据摘要遮挡数为 0 | Trace 与 Oracle 状态矛盾；字段来源不可解释；无权限身份看到 Payload；Auto Layout 遮挡关键数据 |
+| Stage 3 | `9 Canonical Case × 3 轮` Tool 整包运行；exact export、篡改、混版、越权 4 类离线验证；依赖兼容与 breaking 升级各 1 组 | 27 次运行与 exact export 全通过；3 类负向包全部被拒绝；breaking 升级稳定阻断 | 任一依赖未进入闭包；本地替身被标为现场认证；禁止写入发生；结果 fingerprint 漂移 |
+| Stage 4 | 全量 Active Case 质量扫描；至少 30 个或全量（取较小者）随机复验；Payload 查看/运行/导出/派生 4 权限 × 允许/拒绝 2 结果；撤销、过期、Scope 变化 3 类生命周期事件 | Active Case 完整率 100%；越权成功数 0；三类失效传播均阻断新运行且保留历史证据 | 无 Owner/Source/Oracle 的 Case 可激活；明文泄漏；撤销后仍可新运行；历史 Evidence 被静默改写 |
+| Stage 5 | 协议 N/N-1/N+1 × Resource Gateway 先升级/ANEKE 先升级 2 个方向；webhook 重复、乱序、延迟、消费者停机 4 类故障；有效/过期/无权/已迁移 Deep Link 4 类状态 | 版本协商和降级结果 100% 确定；事件最终无遗漏且无重复副作用；Deep Link 均返回正确上下文或明确恢复动作 | 静默丢字段；事件永久漏治理；重放产生重复副作用；Deep Link 跳到错误资产或泄漏越权信息 |
+
+Stage 0 冻结的性能与恢复 SLO 必须从 Stage 1 起进入每次发布候选。至少包含：单场景运行延迟、9 Case 批量运行延迟、并发运行数、Dataset/Case 规模、Evidence 保留、RPO、RTO、限流和背压阈值。任一指标未测、未达标或没有超载降级证据时，对应阶段不能 `PASS`。
+
+### 13.3 缺陷严重级别与退出规则
+
+| 级别 | 定义 | 示例 | 阶段处理 |
+|---|---|---|---|
+| `P0` | 业务结果错误、数据或权限泄漏、访问真实生产依赖、证据伪造或不可逆数据破坏 | 超时被当成“无历史补偿”并自动赔付；普通用户看到 Payload；隔离运行发出真实写请求 | 立即停止验收，候选 `FAIL`，修复并重跑受影响 Stage 全矩阵 |
+| `P1` | 黄金主任务无法独立完成、无可执行恢复路径、核心状态或引用闭包不可信 | 必须手填隐藏 ID；保存失败且内容丢失；Trace 无法返回对应节点 | 候选 `FAIL`，不得带病退出 Stage |
+| `P2` | 有明确绕行且不改变业务正确性、安全和证据可信度的体验或非关键功能缺陷 | 次要筛选条件未保留，但主任务可恢复 | 记录 Owner 与期限；产品、UX、QA 明确接受后可有限制 `PASS` |
+| `P3` | 不影响任务、可访问性和理解的轻微一致性问题 | 非关键间距或辅助文案瑕疵 | 进入 backlog，不影响合同判定 |
+
+同一根因导致的多个表象按最高级别处理，不能拆成多个低级缺陷稀释严重性。任何标记为 `P2/P3` 的问题如果影响黄金路径完成率、业务 Oracle、安全不变量或机器证据，必须升级为 `P0/P1`。
+
+### 13.4 所有阶段共用的验收纪律
 
 - 每个 Stage 只能以可运行的纵向增量结束，不能用「前端完成」「接口完成」或「代码已合并」作为阶段完成结论。
 - 每个 Stage 都要升级 Acceptance Baseline、Golden Demo Pack、追踪矩阵和 Manifest Schema；四者版本必须互相引用。
@@ -1302,6 +1365,18 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 - 阶段退出必须生成 `ACCEPTED` Manifest，并由该阶段对应业务、产品、架构、安全或 QA Owner 签署。
 - 同一时间最多推进一个未被用户验收的主纵向切片；发现方向性问题时先回到原型和 Baseline，不继续横向铺开页面。
 - 对阶段范围的任何扩展必须说明它关闭了哪个 `GP-*`、领域不变量或 NFR；无法关联时进入后续 backlog。
+
+### 13.5 单条合同的执行与签署顺序
+
+1. **冻结候选**：记录源码提交、制品、配置、Baseline、Demo Pack 与环境 fingerprint。
+2. **独立预检**：由 Test Kit 复算 exact closure；验证身份、网络策略、证据设施和执行矩阵分母。
+3. **自动执行**：运行协议、组件、端到端、隔离、安全、视觉与可访问性检查；保留全部尝试，不删除失败后重跑记录。
+4. **业务复核**：业务或能力 Owner 逐 Case 核对输入事实、依赖表现、业务结果和禁止结果，而不是只看绿色总数。
+5. **专业签署**：UX、安全、Runtime、架构和 QA 只签署各自拥有的证据，不允许单一角色代签。
+6. **生成结果**：Acceptance Result 记录分母、失败、豁免、证据 URI 和签署；只有唯一通过公式成立时生成 `PASS`。
+7. **发布后校验**：在目标部署执行 capability probe、smoke、network deny 和 Deep Link 复验；部署差异使预发布结果失效时立即回滚。
+
+验收结果必须同时服务三类读者：业务 Owner 能看懂场景和结果，工程团队能定位代码与协议，审计方能独立复算引用和证据。任何只满足其中一类的报告都不是完整交付物。
 
 ## 14. 工程工作包
 
