@@ -1,7 +1,8 @@
 # Resource Gateway 能力设计工作台产品与技术演进方案
 
-> 文档状态：Proposed for Review  
-> 日期：2026-08-17  
+> 文档状态：Proposed for Review；Stage 0 开发证据持续收口
+>
+> 日期：2026-08-18
 > 适用范围：Resource Gateway 浏览器端、VS Code 轻量宿主、Author Canvas、Correctness Studio、Business Mirror、Testing Control Plane  
 > 核心目标：让业务人员可以连续完成「定义业务接口 → 准备可复现数据 → 编排业务特征 → 交付契约化工具 → 隔离试跑并沉淀证据」
 
@@ -1209,6 +1210,19 @@ Stage 1 开工后，新反馈必须先归类：
 | `S0-AC-04` | Canonical Baseline 连续运行 3 次均为 9/9；semantic fingerprint 一致；真实外部调用数始终为 0 | 三次独立 Run Evidence、断言结果、egress counter、运行环境 fingerprint | 正确性 Owner、Runtime、QA `PASS` |
 | `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
 | `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
+
+Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，当前结论仍为 `NO_GO`：
+
+| ID | 当前状态 | 已有可复验证据 | 阻止 `PASS` 的缺口 |
+|---|---|---|---|
+| `S0-AC-01` | `PARTIAL` | GP-01 至 GP-06 已有中英文真实 Chrome 开发证据；覆盖 1440、1024、390，包含 Dataset、教程分支、Feature Trace、键盘路径和 axe | GP-07 至 GP-10 尚未形成同等纵向切片；异常状态、人工读屏、产品/UX/QA 签署未闭合 |
+| `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在 | Dataset 仍为只读投影；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
+| `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | Spike A 注册产物尚未作为同一闭包运行；Spike B 缺字段级 source map 与企业身份授权；Spike C 缺部署级 network deny 和安全签署 |
+| `S0-AC-04` | `NOT_RUN` | 9 个 Case 可通过 test-owned material 单次运行；并发运行 ID 隔离和 semantic/Graph fingerprint 稳定已有开发测试 | 尚无 Canonical 9/9 × 3 业务 Oracle Evidence；duplicate/idempotency、forbidden-write 和运行环境 fingerprint 未闭合 |
+| `S0-AC-05` | `NOT_RUN` | 已有可执行任务界面和黄金演示数据 | 尚未组织 6 名代表性用户测试，也没有 P0/P1 关闭和复验记录 |
+| `S0-AC-06` | `NOT_RUN` | Baseline、ADR、Screen Inventory、追踪矩阵和 `NO_GO` Manifest 已版本化 | ADR 仍为 `Proposed`；Baseline 未批准；Manifest 未接受；七类签署均为空 |
+
+局部开发证据只允许把对应合同从 `NOT_RUN` 更新为 `PARTIAL`。只有表中全部缺口关闭并由指定 Owner 签署，Stage 0 才能退出；启动脚本、组件测试或截图均不能单独生成 `PASS`。
 
 #### Stage 1：业务接口与场景数据
 

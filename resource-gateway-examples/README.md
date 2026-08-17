@@ -89,11 +89,14 @@ The Stage 0 Dataset compiler deterministically adapts all nine Cases to the exis
 or unsupported lowerings. The governed adapter now delegates to the existing
 `ScenarioGovernedCompiler` and deterministically produces FixtureBundle/TestSuite registration
 plans with a payload-free source map. A Data Lens read model also projects the existing
-`TestRunEvidence` in structure-only or payload-visible modes. A narrow in-process zero-egress
-spike proves that a fail-fast HTTP delegate is not called across the nine metadata Cases, but it
-uses test-owned material and is not deployment network-policy or 9/9 business-Oracle evidence.
-Registration, full Feature/Tool execution, browser Data Lens, and release acceptance therefore
-remain explicitly incomplete. To disable the Capability Studio sample and
+`TestRunEvidence` in structure-only or payload-visible modes. The test/staging-only Feature
+Rehearsal endpoint now executes an actual BLOGE graph with four `HttpResourceOperator` nodes,
+one pure aggregator, and one pure decision; Capability Studio renders the same Trace as a stable
+6-node/5-edge DAG and Data Lens. The default timeout Case cancels downstream work, exposes zero
+real calls, and never invokes its fail-fast HTTP delegates. All nine Cases are selectable, but
+the service still uses test-owned material: SPIKE-A registration, same-closure governed
+execution, field-level source maps, Tool execution, 9/9 business Oracle evidence, and deployment
+network policy remain explicitly incomplete. To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
 ```bash
@@ -162,6 +165,7 @@ silently consuming work.
 | `GET http://localhost:8080/api/capability-studio/tutorial-branch` | Read the durable tutorial head revision and content fingerprint |
 | `PUT http://localhost:8080/api/capability-studio/tutorial-branch/behaviors/compensation-history` | Save a strict business-shaped timeout behavior with optimistic revision control; test/staging only |
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |
+| `GET http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY` | Run the non-production cancellation Feature through BLOGE and read the payload-free 6-node/5-edge Trace; use `PAYLOAD_VISIBLE` only for controlled demo values |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |

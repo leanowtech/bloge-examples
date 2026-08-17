@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-04 开发切片（含 Scenario Dataset v1）
+> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-06 开发切片（含 Scenario Dataset v1 与 Feature Trace Data Lens）
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -134,7 +134,7 @@ Owner 冻结的正确性分母和预期。
 
 脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
 黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线、严格
-Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针固定检查默认超时场景为 6 个节点、5 条边、`TIMED_OUT`、结构权限且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
 较长；已有完整 JAR 时可使用 `--no-build`。
 
 需要省略 Capability Studio 样板并直接打开业务镜像时使用：
@@ -163,11 +163,23 @@ Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` �
 2. 选择「场景数据」，先检查 Dataset 的业务验证分母、生命周期、版本、分类和 Owner。当前黄金包投影为「待评审」，不是已发布生产数据集。
 3. 检查五项质量摘要：Owner、来源、Oracle、契约与依赖行为均为 100% 闭合；总体仍显示「已阻断」，因为九条 Case 尚未运行并形成证据。100% 元数据覆盖不等于业务验收通过。
 4. 按黄金、反向、边界、故障、回归和安全分类筛选九条 Case。选择「补偿历史超时」，检查业务目标、预期/Oracle、来源、适用契约、超时表现和按需展开的精确引用。
-5. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
-6. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-7. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、Trace Data Lens 后端投影，以及 test-owned material 下进程内 connector 调用为 0；Dataset 写入 Authority、编译产物注册与同闭包执行、Feature/Tool 画布体验、业务 Oracle 驱动的 9/9 三轮批量证据、部署级 network deny 和业务签署仍未完成。
+5. 选择「特征编排」。页面默认加载「历史补偿记录查询超时」。先保持「结构」权限，确认 DAG 有 4 个接口节点、1 个聚合节点和 1 个决策节点；历史补偿查询为「超时」，聚合与决策为「已取消」，真实调用为 `0`。
+6. 选择「受控数据」。系统重新读取同一个 Case 的 Payload 权限投影。检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。
+7. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
+8. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
+9. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、真实 BLOGE Trace 驱动的 Feature DAG/Data Lens，以及 test-owned material 下进程内 connector 调用为 0；Dataset 写入 Authority、编译产物注册与同闭包执行、字段级 source map、Tool 画布、业务 Oracle 驱动的 9/9 三轮批量证据、部署级 network deny 和业务签署仍未完成。
 
-需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 已覆盖英文 1440×900、1024×768 和 390×844，并用 Tab、Enter、Space 完成 Dataset 选择路径。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
+需要直接检查 Feature Trace 协议时，使用以下请求。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只返回 Canonical Demo Pack 的受控演示值。两个权限态必须引用同一次 Case 语义和同一 Graph fingerprint。
+
+```bash
+curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY' | jq
+
+curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=PAYLOAD_VISIBLE' | jq
+```
+
+如果 `caseId` 不属于九个 Canonical Case，服务返回业务 404。production profile 不装配该端点。不要把 `PAYLOAD_VISIBLE` 当作生产 Payload 授权协议；当前查询参数仅用于非生产演示切片，企业身份授权仍是验收缺口。
+
+需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 的整体工作区证据覆盖英文 1440×900、1024×768 和 390×844；Dataset 使用 Tab、Enter、Space 完成选择路径，Feature 在 1024×768 使用键盘切换权限。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
 
 ![Scenario Dataset 分母、质量与 Case 详情](assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png)
 
@@ -181,7 +193,11 @@ Scenario Dataset、教程分支、隔离预检和全部页面就绪。`--open` �
 
 ![隔离教程分支的业务句式编辑与预检](assets/capability-studio/capability-studio-gp04-zh-1440.png)
 
-保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包或 Scenario Dataset 未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支只在 test/staging 装配，head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Feature/Tool Run 按钮。后端已能将 9 个 Case 确定性适配为既有 `ScenarioDraftSet`，但尚未接入 governed compiler、FixtureBundle/TestSuite 和运行证据；这不是权限错误，而是当前开发切片的明确边界。
+![结构权限下的 Feature 超时演练](assets/capability-studio/capability-studio-gp05-gp06-structure-zh-1440.png)
+
+![受控数据权限下的完整 Feature DAG 与 Data Lens](assets/capability-studio/capability-studio-gp05-gp06-dag-payload-zh-1440.png)
+
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包、Scenario Dataset 或 Feature Trace 未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支和 Feature Rehearsal 只在 test/staging 装配。教程分支 head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Tool Run 按钮。Feature Rehearsal 虽然使用真实 BLOGE Graph、`TestRunService` 和 `TestRunEvidence`，运行材料仍由非生产演示服务组装；它尚未执行 SPIKE-A 的受治理注册产物，也不构成发布候选 9/9 业务 Oracle 证据。
 
 ### 3.3 从业务能力资产组合开始
 
@@ -466,7 +482,7 @@ ANEKE 已允许发布。
 
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
-| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包、进程内教程分支保存/预检与默认 Correctness exact Workspace；Feature/Tool Run 保持关闭 |
+| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包、进程内教程分支保存/预检、Feature Trace 演练与默认 Correctness exact Workspace；Tool Run 和发布验收保持关闭 |
 | 不装配 Capability Studio 样板 | `./scripts/start-visual-canvas-demo.sh --no-capability-studio --open` | 默认打开 legacy 业务镜像；Capability Studio 演示 API 不装配 |
 | 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并打开 Capability Studio；`correctnessWorkspaceApi=false` |
 | 验证生产装配隔离 | `./scripts/start-visual-canvas-demo.sh --profile production --no-capability-studio --no-correctness` | 两类演示 Authority 均不装配；不能用于演示黄金数据 |

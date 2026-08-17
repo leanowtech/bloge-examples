@@ -110,7 +110,11 @@ payload-free cancellation-fee pack containing four API capabilities, one Feature
 Tool, and nine business scenarios. The page is deliberately honest about its boundary:
 contract and scenario discovery are available, and the test/staging-only tutorial branch
 can save a timeout behavior and prove an isolated, zero-real-call preflight. Feature/Tool
-execution and release acceptance remain `NOT_RUN` until their governed runtime is connected.
+release acceptance remains `NOT_RUN`. A test/staging-only Feature Rehearsal development slice
+executes the cancellation graph through BLOGE, projects one real Trace as a 6-node/5-edge Data
+Lens, and exposes structure-only or controlled-payload views with zero HTTP delegate calls. It
+still uses test-owned runtime material; governed same-closure execution, Tool execution, 9/9
+business Oracle evidence, and deployment network deny remain unfinished.
 Correctness Studio is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
 `--no-correctness` to disable either sample. Both opt-outs are required for `production`
 because neither demo authority is assembled there.
@@ -120,8 +124,9 @@ points; an API-only jar fails before Java starts and explains how to rebuild or
 use `--api-only`. Startup becomes ready only after both
 `GET /api/integration/capabilities` and the Capability Studio, Business Mirror, Author,
 Library, Rehearsal, Correctness, and Showcase pages respond successfully. When the
-Capability Studio sample is enabled, startup also verifies its `4 / 1 / 1 / 9` pack and
-the truthful `NO_GO` acceptance baseline. API-only mode prints API entry points and
+Capability Studio sample is enabled, startup also verifies its `4 / 1 / 1 / 9` pack,
+the truthful `NO_GO` acceptance baseline, and the default Feature Trace as 6 nodes, 5 edges,
+`TIMED_OUT`, structure-only, and zero real calls. API-only mode prints API entry points and
 does not advertise visual URLs.
 `--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
 `--shadow-scheduler` additionally starts bounded pollers while honestly leaving
