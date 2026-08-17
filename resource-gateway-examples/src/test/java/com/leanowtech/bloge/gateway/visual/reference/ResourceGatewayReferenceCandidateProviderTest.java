@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.reference;
 
+import com.leanowtech.bloge.gateway.visualadapter.reference.ResourceGatewayReferenceCandidateProvider;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;

@@ -1,9 +1,12 @@
-package com.leanowtech.bloge.gateway.visual.authoring.link;
+package com.leanowtech.bloge.gateway.visualadapter.authoring.link;
 
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkDescriptor;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolution;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolveRequest;
 
 import java.util.LinkedHashMap;
 import java.util.Map;

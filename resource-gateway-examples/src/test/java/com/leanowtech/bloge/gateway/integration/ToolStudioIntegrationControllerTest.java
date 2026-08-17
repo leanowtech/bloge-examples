@@ -11,8 +11,8 @@ import java.util.Set;
 
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrationService;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverService;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkSourceAuthority;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkSourceAuthority;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;

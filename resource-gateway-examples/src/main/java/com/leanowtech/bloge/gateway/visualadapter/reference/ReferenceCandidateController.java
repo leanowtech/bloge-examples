@@ -1,10 +1,17 @@
-package com.leanowtech.bloge.gateway.visual.reference;
+package com.leanowtech.bloge.gateway.visualadapter.reference;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.reference.Page;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateService;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceResolveCommand;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceScope;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceSearchException;
+import com.leanowtech.bloge.gateway.visual.reference.ResolveResult;
+import com.leanowtech.bloge.gateway.visual.reference.SearchRequest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;

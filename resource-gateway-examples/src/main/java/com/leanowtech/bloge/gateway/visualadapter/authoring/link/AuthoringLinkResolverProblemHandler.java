@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.authoring.link;
+package com.leanowtech.bloge.gateway.visualadapter.authoring.link;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import org.springframework.http.CacheControl;

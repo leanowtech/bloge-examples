@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.reference;
 
+import com.leanowtech.bloge.gateway.visualadapter.reference.CorrectnessDefinitionCandidateController;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;

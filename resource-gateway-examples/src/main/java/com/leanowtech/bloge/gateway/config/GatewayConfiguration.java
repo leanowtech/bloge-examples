@@ -51,7 +51,7 @@ import com.leanowtech.bloge.gateway.businessmirror.governance.PackageGovernanceP
 import com.leanowtech.bloge.gateway.businessmirror.governance.PackageRegistryIngestBundleIntegrity;
 import com.leanowtech.bloge.gateway.businessmirror.compilation.PackageCompiler;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageProjector;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverService;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingRepository;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationBindingService;
 import com.leanowtech.bloge.gateway.businessmirror.implementation.CapabilityImplementationConformanceRepository;

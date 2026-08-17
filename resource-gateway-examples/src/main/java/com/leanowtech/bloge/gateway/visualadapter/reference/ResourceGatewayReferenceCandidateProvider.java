@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.reference;
+package com.leanowtech.bloge.gateway.visualadapter.reference;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorCatalogQuery;
@@ -12,6 +12,13 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessDefini
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.CorrectnessDefinitionRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredCorrectnessDefinition;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidate;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateContributor;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateProvider;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceScope;
+import com.leanowtech.bloge.gateway.visual.reference.ResolveRequest;
+import com.leanowtech.bloge.gateway.visual.reference.ResolveResult;
+import com.leanowtech.bloge.gateway.visual.reference.SearchRequest;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

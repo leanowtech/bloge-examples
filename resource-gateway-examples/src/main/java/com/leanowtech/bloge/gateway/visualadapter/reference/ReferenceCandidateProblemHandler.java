@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.reference;
+package com.leanowtech.bloge.gateway.visualadapter.reference;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import org.springframework.http.CacheControl;

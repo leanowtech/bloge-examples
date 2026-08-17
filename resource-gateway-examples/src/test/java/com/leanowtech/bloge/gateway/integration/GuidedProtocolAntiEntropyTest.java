@@ -4,11 +4,11 @@ import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPac
 import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceController;
-import com.leanowtech.bloge.gateway.visual.reference.CorrectnessDefinitionCandidateController;
-import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateController;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverController;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverService;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkSourceAuthority;
+import com.leanowtech.bloge.gateway.visualadapter.reference.CorrectnessDefinitionCandidateController;
+import com.leanowtech.bloge.gateway.visualadapter.reference.ReferenceCandidateController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkSourceAuthority;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

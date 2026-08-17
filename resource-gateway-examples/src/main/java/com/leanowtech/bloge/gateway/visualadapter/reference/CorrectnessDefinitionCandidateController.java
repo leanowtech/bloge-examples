@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.reference;
+package com.leanowtech.bloge.gateway.visualadapter.reference;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
@@ -10,6 +10,15 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtoc
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.TargetKind;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.CorrectnessDefinitionRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredCorrectnessDefinition;
+import com.leanowtech.bloge.gateway.visual.reference.Page;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidate;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateProvider;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateService;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceScope;
+import com.leanowtech.bloge.gateway.visual.reference.ReferenceSearchException;
+import com.leanowtech.bloge.gateway.visual.reference.ResolveRequest;
+import com.leanowtech.bloge.gateway.visual.reference.ResolveResult;
+import com.leanowtech.bloge.gateway.visual.reference.SearchRequest;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.CacheControl;

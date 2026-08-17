@@ -17,7 +17,7 @@ public record ReferenceResolveCommand(
         }
     }
 
-    ResolveRequest toRequest(ReferenceScope trustedScope) {
+    public ResolveRequest toRequest(ReferenceScope trustedScope) {
         return new ResolveRequest(kind, id, revision, fingerprint, trustedScope, intendedUse);
     }
 }

@@ -1,10 +1,13 @@
-package com.leanowtech.bloge.gateway.visual.authoring.link;
+package com.leanowtech.bloge.gateway.visualadapter.authoring.link;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkDescriptor;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolution;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolveRequest;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;

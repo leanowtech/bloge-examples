@@ -21,9 +21,9 @@ import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessP
 import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessGovernedRunController;
 import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessRunController;
 import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceController;
-import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateController;
-import com.leanowtech.bloge.gateway.visual.reference.CorrectnessDefinitionCandidateController;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverController;
+import com.leanowtech.bloge.gateway.visualadapter.reference.ReferenceCandidateController;
+import com.leanowtech.bloge.gateway.visualadapter.reference.CorrectnessDefinitionCandidateController;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverController;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;

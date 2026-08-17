@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.visual.reference;
 
+import com.leanowtech.bloge.gateway.visualadapter.reference.ReferenceCandidateController;
+import com.leanowtech.bloge.gateway.visualadapter.reference.ReferenceCandidateProblemHandler;
+
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemHandler;

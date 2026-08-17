@@ -6,7 +6,7 @@ import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageP
 import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkDescriptor;
 import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolveRequest;
 import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolution;
-import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverService;
+import com.leanowtech.bloge.gateway.visualadapter.authoring.link.AuthoringLinkResolverService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.testing.api.ControlPlaneCertificateRotationEventWatcher;
