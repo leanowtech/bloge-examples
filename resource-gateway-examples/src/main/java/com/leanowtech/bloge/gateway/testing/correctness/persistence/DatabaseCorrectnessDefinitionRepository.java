@@ -49,11 +49,36 @@ public class DatabaseCorrectnessDefinitionRepository
     }
 
     @Override
+    public boolean supportsHeadListing() {
+        return true;
+    }
+
+    @Override
     public Optional<StoredCorrectnessDefinition> findHead(
             EnterpriseScope scope,
             String definitionId
     ) {
         return queryOne(HEAD_TABLE, exactScope(scope), exactId(definitionId), 0);
+    }
+
+    @Override
+    public List<StoredCorrectnessDefinition> listHeads(EnterpriseScope scope, int limit) {
+        EnterpriseScope exactScope = exactScope(scope);
+        if (limit < 1 || limit > 100) {
+            throw new IllegalArgumentException("Definition candidate limit must be between 1 and 100");
+        }
+        return jdbc.query("""
+                        SELECT * FROM rg_correctness_definition_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                        ORDER BY updated_at DESC, definition_id ASC
+                        LIMIT ?
+                        """,
+                (result, row) -> readAndVerify(
+                        result, exactScope, result.getString("definition_id")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), limit)
+                .stream().flatMap(Optional::stream).toList();
     }
 
     @Override

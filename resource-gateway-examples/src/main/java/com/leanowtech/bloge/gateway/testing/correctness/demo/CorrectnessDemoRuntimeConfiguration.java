@@ -306,6 +306,16 @@ public class CorrectnessDemoRuntimeConfiguration {
         }
 
         @Override
+        public boolean supportsHeadListing() {
+            return true;
+        }
+
+        @Override
+        public List<StoredCorrectnessDefinition> listHeads(EnterpriseScope scope, int limit) {
+            return matchesScope(scope) && limit > 0 ? List.of(stored) : List.of();
+        }
+
+        @Override
         public Optional<StoredCorrectnessDefinition> findHead(
                 EnterpriseScope scope,
                 String definitionId

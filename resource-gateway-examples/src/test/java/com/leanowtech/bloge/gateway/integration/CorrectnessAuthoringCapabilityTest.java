@@ -14,6 +14,9 @@ class CorrectnessAuthoringCapabilityTest {
         assertThat(capabilities.features())
                 .containsEntry("correctnessWorkspaceProtocol", true)
                 .containsEntry("correctnessWorkspaceApi", false)
+                .containsEntry("referenceCandidateApi", true)
+                .containsEntry("correctnessTargetCatalogApi", false)
+                .containsEntry("guidedWorkspaceLauncher", false)
                 .containsEntry("correctnessFixtureCatalogProtocol", true)
                 .containsEntry("correctnessFixtureCatalogApi", false)
                 .containsEntry("correctnessFixtureMaterialProtocol", true)
@@ -23,7 +26,14 @@ class CorrectnessAuthoringCapabilityTest {
                 .containsEntry("correctnessEvidenceCompanionProtocol", true)
                 .containsEntry("correctnessEvidenceCompanionApi", false);
         assertThat(capabilities.endpoints())
+                .anyMatch(endpoint -> endpoint.path().equals("/api/visual/reference-candidates"))
+                .noneMatch(endpoint -> endpoint.path().startsWith("/api/visual/correctness-targets"))
                 .noneMatch(endpoint -> endpoint.path().startsWith("/api/visual/fixture-"));
+        assertThat(capabilities.supportedObjects())
+                .containsEntry("referenceCandidate", java.util.List.of(
+                        com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidate.SCHEMA_VERSION))
+                .containsEntry("referenceResolveResult", java.util.List.of(
+                        com.leanowtech.bloge.gateway.visual.reference.ResolveResult.SCHEMA_VERSION));
     }
 
     @Test
@@ -38,6 +48,7 @@ class CorrectnessAuthoringCapabilityTest {
 
         assertThat(capabilities.features())
                 .containsEntry("correctnessWorkspaceApi", true)
+                .containsEntry("correctnessTargetCatalogApi", true)
                 .containsEntry("correctnessCoverageApi", true)
                 .containsEntry("correctnessOracleAssertionApi", false)
                 .containsEntry("correctnessScenarioV2Api", true)
@@ -53,6 +64,10 @@ class CorrectnessAuthoringCapabilityTest {
         assertThat(capabilities.endpoints())
                 .anyMatch(endpoint -> endpoint.path().startsWith(
                         "/api/visual/correctness-workspaces/"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-targets"))
+                .anyMatch(endpoint -> endpoint.path().equals(
+                        "/api/visual/correctness-targets/{kind}/{id}/definitions"))
                 .anyMatch(endpoint -> endpoint.method().equals("GET")
                         && endpoint.path().equals(
                                 "/api/visual/coverage-inventories/{inventoryId}"))

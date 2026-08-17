@@ -708,6 +708,10 @@ public class ToolStudioIntegrationService {
         features.put("businessMirrorPackageGovernanceProjectionIngestReady",
                 businessMirrorPackageGovernanceIngestReady);
         features.put("correctnessWorkspaceApi", correctnessAuthoringRuntime.workspaceApi());
+        features.put("referenceCandidateApi", true);
+        features.put("correctnessTargetCatalogApi", correctnessAuthoringRuntime.workspaceApi());
+        features.put("guidedWorkspaceLauncher", false);
+        features.put("businessMirrorGuidedRemediation", true);
         features.put("correctnessCoverageApi", correctnessAuthoringRuntime.coverageApi());
         features.put("correctnessOracleAssertionApi",
                 correctnessAuthoringRuntime.oracleAssertionApi());
@@ -2069,6 +2073,24 @@ public class ToolStudioIntegrationService {
         }
         List<IntegrationCapabilities.Endpoint> endpoints =
                 new java.util.ArrayList<>(current.endpoints());
+        supportedObjects.put("referenceCandidate", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidate.SCHEMA_VERSION));
+        supportedObjects.put("referencePage", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.Page.SCHEMA_VERSION));
+        supportedObjects.put("referenceResolveCommand", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ReferenceResolveCommand.SCHEMA_VERSION));
+        supportedObjects.put("referenceResolveResult", List.of(
+                com.leanowtech.bloge.gateway.visual.reference.ResolveResult.SCHEMA_VERSION));
+        endpoints.add(new IntegrationCapabilities.Endpoint(
+                "GET", "/api/visual/reference-candidates"));
+        endpoints.add(new IntegrationCapabilities.Endpoint(
+                "POST", "/api/visual/reference-candidates:resolve"));
+        if (correctnessAuthoringRuntime.workspaceApi()) {
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-targets"));
+            endpoints.add(new IntegrationCapabilities.Endpoint(
+                    "GET", "/api/visual/correctness-targets/{kind}/{id}/definitions"));
+        }
         addCorrectnessAuthoringEndpoints(endpoints);
         if (domainFidelityRuntimeAvailability.inventoryApi()) {
             endpoints.add(new IntegrationCapabilities.Endpoint(

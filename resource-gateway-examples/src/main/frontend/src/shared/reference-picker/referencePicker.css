@@ -1,0 +1,164 @@
+.reference-picker {
+  position: relative;
+  display: grid;
+  gap: 0.45rem;
+  max-width: 32rem;
+  color: var(--text-primary, #18212b);
+}
+
+.reference-picker-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.reference-picker-control {
+  display: flex;
+}
+
+.reference-picker-input {
+  width: 100%;
+  min-height: 2.6rem;
+  border: 1px solid var(--border-strong, #96a4b2);
+  border-radius: 4px;
+  padding: 0.55rem 0.7rem;
+  color: inherit;
+  background: var(--surface-primary, #fff);
+  font: inherit;
+}
+
+.reference-picker-input:focus-visible,
+.reference-picker-option.is-active,
+.reference-picker-load-more:focus-visible,
+.reference-picker-status button:focus-visible {
+  outline: 2px solid var(--focus-ring, #1769aa);
+  outline-offset: 2px;
+}
+
+.reference-picker-menu {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 0.5rem;
+  max-height: 22rem;
+  overflow: auto;
+  margin-top: 0.25rem;
+  border: 1px solid var(--border-strong, #96a4b2);
+  border-radius: 4px;
+  padding: 0.45rem;
+  background: var(--surface-primary, #fff);
+  box-shadow: 0 8px 24px rgb(24 33 43 / 14%);
+}
+
+.reference-picker-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem;
+  font-size: 0.86rem;
+}
+
+.reference-picker-status button,
+.reference-picker-load-more {
+  border: 1px solid var(--border-strong, #96a4b2);
+  border-radius: 3px;
+  padding: 0.35rem 0.55rem;
+  background: var(--surface-secondary, #f4f7f9);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.reference-picker-status button:hover,
+.reference-picker-load-more:hover:not(:disabled) {
+  background: var(--surface-hover, #e7eef3);
+}
+
+.reference-picker-options {
+  display: grid;
+  gap: 0.2rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reference-picker-option {
+  display: grid;
+  gap: 0.18rem;
+  border-radius: 3px;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+
+.reference-picker-option:hover,
+.reference-picker-option.is-active {
+  background: var(--surface-hover, #e7eef3);
+}
+
+.reference-picker-option.is-disabled {
+  color: var(--text-muted, #687784);
+  cursor: not-allowed;
+}
+
+.reference-picker-option-heading,
+.reference-picker-option-meta,
+.reference-picker-option-disabled {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.reference-picker-option-heading > span,
+.reference-picker-option-meta,
+.reference-picker-option-disabled {
+  font-size: 0.78rem;
+}
+
+.reference-picker-option-meta,
+.reference-picker-option-disabled {
+  color: var(--text-muted, #687784);
+}
+
+.reference-picker-selection {
+  display: grid;
+  gap: 0.2rem;
+  border-left: 3px solid var(--accent, #1769aa);
+  padding: 0.55rem 0.7rem;
+  background: var(--surface-secondary, #f4f7f9);
+  font-size: 0.86rem;
+}
+
+.reference-picker-selection > span {
+  color: var(--text-muted, #687784);
+  font-size: 0.78rem;
+}
+
+.reference-picker-selection details {
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+}
+
+.reference-picker-selection dl {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0.45rem 0 0;
+}
+
+.reference-picker-selection dl div {
+  display: grid;
+  grid-template-columns: 6rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.reference-picker-selection dt {
+  color: var(--text-muted, #687784);
+}
+
+.reference-picker-selection dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+}

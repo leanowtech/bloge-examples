@@ -13,7 +13,7 @@
 | P0：Author legacy Graph source validation | `IMPLEMENTED` | Author 反查 legacy projection，比较 id/revision/fingerprint，加载官方 scenario/diagram；漂移失败关闭 | 只读态视觉提示和显式“创建工作副本”命令 |
 | P0：Remediation 命令闭环 | `IMPLEMENTED` | 21 类已知 gap 有稳定 descriptor；同页/跨页均切换、滚动、聚焦、高亮、写入 URL 并播报 outcome；未知 gap 显式失败 | Picker 自动打开、跨工作区 `NAVIGATED`、权威重算后的 `RESOLVED` |
 | P0：任务指引骨架 | `IMPLEMENTED` | 七步均显示业务问题、Why、输入状态、权威完成状态、Next Best Action 和底部决策；中英文与响应式布局完整 | Picker 接入后把 `OPEN_PICKER` 动作从定位升级为自动展开 |
-| P1：候选资产与 Picker | `IN_PROGRESS` | Provider SPI、候选协议和共享 Combobox 正在实施 | Controller/Capability、Correctness Launcher 和各字段接入 |
+| P1：候选资产与 Picker | `PARTIAL` | metadata-only Candidate/Page/Resolve 协议、Graph/Operator/Function 默认 Provider、Correctness Target/Definition 两级目录、认证 Scope、稳定错误、Capability Probe 和共享 Combobox 已实现 | Correctness Launcher 与业务镜像字段接入、5000 候选压测 |
 | P1：七步可操作化 | `PLANNED` | 目标控件与完成标准已在方案冻结 | Contract/Owner/Scenario/Fidelity 等目录适配与创建回跳 |
 
 ## Exact Author Link 行为
@@ -68,6 +68,22 @@ Author 收到坐标后：
 - 下一最佳动作显示待补输入、业务影响和精确控件入口，协议 code/field path 收进技术详情；
 - 底部根据权威 gap 决定“继续补齐本步”或“进入下一步”，仍允许专家从左侧直接跳步；
 - Step Contract、具体 Sheet 和 Remediation Descriptor 分层，业务表单没有复制导航与完成规则。
+
+## 引用候选协议
+
+候选目录已形成独立的发现与解析边界：
+
+1. `GET /api/visual/reference-candidates` 统一搜索 Graph、Operator 和 built-in function；
+2. `GET /api/visual/correctness-targets` 从 Correctness Definition head 投影可验证 Target；
+3. `GET /api/visual/correctness-targets/{kind}/{id}/definitions` 返回零个、唯一或歧义 Definition；
+4. `POST /api/visual/reference-candidates:resolve` 在绑定前重新读取 authority；
+5. 搜索 Scope 只从认证上下文生成，query 最长 200 字符，page limit 最大 100；
+6. cursor 绑定 query fingerprint 与 catalog generation，目录变化后失败关闭；
+7. `DRIFTED` 返回当前权威候选供比较，`NOT_FOUND/FORBIDDEN` 不泄漏候选元数据。
+
+前端共享 `AsyncReferenceCombobox` 已与 Java `bloge.referenceCandidate.v1` 对齐，覆盖防抖、取消、分页、
+去重、键盘、禁用候选、空结果、目录不可用和重试。使用方式与错误恢复见
+[引用候选 API 指南](resource-gateway-reference-candidate-api-guide.md)。
 
 ## 自动化证据
 
