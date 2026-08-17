@@ -2,6 +2,8 @@
 
 > 最新的跨页面体验、启动方式、角色工作流和生产边界请先阅读
 > [Resource Gateway 产品手册](resource-gateway-product-manual.md)。本文保留为 Business Mirror Workspace 专项说明。
+> 首次操作指引、主动筛选 Picker、七步任务合同、阻断处理与 Author 精确跳转的专项改进，见
+> [引导式正确性与业务镜像产品技术改进方案](resource-gateway-guided-correctness-and-business-mirror-ux-technical-evolution-plan.md)。
 
 > 适用实现：RG-BM-005
 >

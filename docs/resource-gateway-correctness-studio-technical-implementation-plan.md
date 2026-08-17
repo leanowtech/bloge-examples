@@ -3,6 +3,7 @@
 > 文档状态：评审稿，可直接拆分 Epic 与技术任务  
 > 基准日期：2026-08-15  
 > 上游产品方案：[正确性定义与测试数据配置 UX 深度审查及演进方案](resource-gateway-correctness-authoring-ux-audit-and-evolution-plan.md)  
+> 入口选择、任务指引、阻断动作和跨工作区链接专项：[引导式正确性与业务镜像产品技术改进方案](resource-gateway-guided-correctness-and-business-mirror-ux-technical-evolution-plan.md)
 > 适用范围：`resource-gateway-examples` 的 Correctness Studio、Scenario authoring、Fixture authoring、Testing Control Plane 及 ANEKE 集成投影
 
 ## 0. 结论先行
