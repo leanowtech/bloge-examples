@@ -158,6 +158,7 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
 .capability-scenario-list-item-heading strong { min-width: 0; font-size: 13px; line-height: 1.35; }
 .capability-scenario-list-item-heading span { flex: 0 0 auto; color: var(--cap-blue); font-size: 10px; font-weight: 800; }
 .capability-scenario-list-item-meta { color: var(--cap-muted); font-size: 11px; }
+.capability-scenario-list-item.selected .capability-scenario-list-item-meta { color: var(--cap-ink); }
 .capability-scenario-details { min-width: 0; border-left: 1px solid var(--cap-border); padding-left: 20px; }
 .capability-scenario-details-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .capability-scenario-details-heading h4 { margin: 0; font-size: 20px; line-height: 1.25; }

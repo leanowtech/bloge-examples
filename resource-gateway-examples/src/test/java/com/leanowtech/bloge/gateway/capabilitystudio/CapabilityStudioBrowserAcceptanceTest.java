@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
+import org.openqa.selenium.Keys;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
 import org.openqa.selenium.WebDriver;
@@ -32,6 +33,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -210,6 +212,108 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp04-zh-1440.png");
     }
 
+    @Test
+    void englishNfr02CoversOverviewDatasetAndTutorialAcrossThreeViewports() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 900);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        assertThat(driver.findElement(By.tagName("html")).getAttribute("lang")).isEqualTo("en");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("Capability Studio", "Overview", "Acceptance and readiness")
+                .doesNotContain("NO_GO", "METADATA_READY_RUNTIME_EVIDENCE_PENDING", "RG.CAPABILITY_STUDIO.");
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+
+        driver.findElement(By.cssSelector("[data-testid='capability-task-scenarios']")).click();
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenarios']")).getText())
+                .contains("Business validation denominator", "9 cases", "Quality summary", "Owner coverage", "100%");
+        WebElement secondCase = driver.findElements(By.cssSelector(".capability-scenario-list-item")).get(1);
+        String secondCaseName = secondCase.getText().split("\\n")[0];
+        secondCase.click();
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
+                .contains(secondCaseName, "Business goal", "Expected / Oracle", "Dependency behavior");
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp01-gp03-en-1440.png");
+
+        driver.findElement(By.cssSelector("[data-testid='capability-task-tutorial']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tutorial-branch']")));
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("Rehearse a compensation-history timeout", "isolated branch")
+                .doesNotContain("NO_GO", "METADATA_READY_RUNTIME_EVIDENCE_PENDING", "RG.CAPABILITY_STUDIO.");
+        assertNoInternalStatusLeakage();
+        assertNoSeriousOrCriticalAxeViolations();
+
+        driver.manage().window().setSize(new Dimension(1024, 768));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tutorial-branch']")));
+        assertNoPageOverflow();
+        assertNoInternalStatusLeakage();
+        capture("capability-studio-gp01-gp03-en-1024.png");
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        new Select(driver.findElement(By.id("capability-task-select"))).selectByValue("scenarios");
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        assertThat(driver.findElement(By.cssSelector(".capability-scenario-dataset-header")).getText())
+                .contains("Business validation denominator", "9 cases");
+        assertThat(driver.findElement(By.cssSelector(".capability-scenario-quality")).getText())
+                .contains("Quality summary", "Owner coverage", "100%");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
+                .contains("Business goal", "Expected / Oracle");
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        capture("capability-studio-gp01-gp03-en-390.png");
+    }
+
+    @Test
+    void englishNfr02SupportsKeyboardNavigationIntoDatasetAndCaseDetails() {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 900);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+
+        WebElement scenarioTask = tabUntilActive(By.cssSelector("[data-testid='capability-task-scenarios']"));
+        assertThat(scenarioTask.getAttribute("data-testid")).isEqualTo("capability-task-scenarios");
+        scenarioTask.sendKeys(Keys.ENTER);
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".capability-scenario-list-item"), 9));
+
+        String initialDetails = driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText();
+        WebElement targetCase = tabUntilActive(By.cssSelector(
+                ".capability-scenario-list-item:nth-of-type(2)"));
+        String targetCaseText = targetCase.getText();
+        assertThat(driver.switchTo().activeElement().getText()).isEqualTo(targetCaseText);
+        targetCase.sendKeys(Keys.SPACE);
+        assertThat(driver.switchTo().activeElement().getAttribute("aria-pressed")).isEqualTo("true");
+        wait.until(webDriver -> !webDriver.findElement(
+                By.cssSelector("[data-testid='capability-scenario-details']")).getText().equals(initialDetails));
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
+                .contains(targetCaseText.split("\\n")[0]);
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        WebElement taskSelect = tabUntilActive(By.id("capability-task-select"));
+        assertThat(driver.switchTo().activeElement().getAttribute("id")).isEqualTo("capability-task-select");
+        taskSelect.sendKeys(Keys.HOME, Keys.ARROW_DOWN, Keys.ARROW_DOWN, Keys.ENTER);
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        assertThat(driver.switchTo().activeElement().getAttribute("id")).isEqualTo("capability-task-select");
+        assertNoPageOverflow();
+    }
+
     private String url(String path) {
         return "http://localhost:" + port + path;
     }
@@ -274,6 +378,61 @@ class CapabilityStudioBrowserAcceptanceTest {
                 return Math.max(0, root.scrollWidth - window.innerWidth);
                 """);
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private void assertNoInternalStatusLeakage() {
+        String text = driver.findElement(By.tagName("body")).getText();
+        assertThat(text)
+                .doesNotContain("NO_GO", "METADATA_READY_RUNTIME_EVIDENCE_PENDING", "CONTRACT_READY_RUNTIME_PENDING",
+                        "DAG_CONTRACT_READY_RUNTIME_PENDING", "RG.CAPABILITY_STUDIO.");
+        assertThat(text).doesNotMatch(".*\\b[A-Z][A-Z0-9_]{15,}\\b.*");
+    }
+
+    @SuppressWarnings("unchecked")
+    private void assertNoSeriousOrCriticalAxeViolations() throws IOException {
+        Path axeSource = Path.of(System.getProperty("user.dir"),
+                "src/main/frontend/node_modules/axe-core/axe.min.js");
+        if (!Files.isRegularFile(axeSource)) {
+            axeSource = Path.of(System.getProperty("user.dir"),
+                    "resource-gateway-examples/src/main/frontend/node_modules/axe-core/axe.min.js");
+        }
+        assertThat(axeSource).as("real-browser axe-core source").isRegularFile();
+        JavascriptExecutor javascript = (JavascriptExecutor) driver;
+        javascript.executeScript(Files.readString(axeSource));
+        Map<String, Object> report = (Map<String, Object>) javascript.executeAsyncScript("""
+                const done = arguments[arguments.length - 1];
+                window.axe.run(document).then(result => done({
+                  error: '',
+                  violations: result.violations
+                    .filter(item => item.impact === 'serious' || item.impact === 'critical')
+                    .map(item => ({
+                      id: item.id,
+                      impact: item.impact,
+                      targets: item.nodes.map(node => node.target)
+                    }))
+                })).catch(error => done({error: String(error), violations: []}));
+                """);
+        assertThat(report.get("error")).as("axe execution error").isEqualTo("");
+        assertThat((List<Map<String, Object>>) report.get("violations"))
+                .as("serious or critical real-browser axe violations")
+                .isEmpty();
+    }
+
+    private WebElement tabUntilActive(By locator) {
+        for (int attempt = 0; attempt < 80; attempt++) {
+            WebElement active = driver.switchTo().activeElement();
+            if (!driver.findElements(locator).stream().noneMatch(candidate -> {
+                try {
+                    return candidate.equals(active);
+                } catch (RuntimeException ignored) {
+                    return false;
+                }
+            })) {
+                return active;
+            }
+            active.sendKeys(Keys.TAB);
+        }
+        throw new AssertionError("TAB did not reach " + locator);
     }
 
     private void capture(String fileName) throws IOException {

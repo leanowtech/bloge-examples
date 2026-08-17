@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import axe, { type AxeResults } from 'axe-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../i18n/I18nProvider';
@@ -15,6 +16,10 @@ describe('Capability Studio Stage 0 read-only slice', () => {
 
   beforeEach(() => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({
+      font: '',
+      measureText: (text: string) => ({ width: text.length * 8 }),
+    }) as unknown as CanvasRenderingContext2D);
     host = document.createElement('div');
     document.body.appendChild(host);
     window.history.pushState({}, '', '/capabilities/?lang=en');
@@ -183,6 +188,51 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
   });
 
+  it('has no serious or critical automated accessibility violations across NFR-02 states', async () => {
+    await render();
+    await expectNoSevereAccessibilityViolations('overview');
+
+    await act(async () => buttonWithText('Order lookup').click());
+    await expectNoSevereAccessibilityViolations('contract');
+
+    await act(async () => buttonWithText('Scenario data').click());
+    await settle();
+    await expectNoSevereAccessibilityViolations('dataset ready');
+
+    let attempts = 0;
+    const datasetErrorFetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/scenario-dataset') && attempts++ === 0) return new Response('offline', { status: 503 });
+      return json(scenarioDatasetProjectionFixture);
+    });
+    await render(datasetErrorFetcher);
+    await act(async () => buttonWithText('Scenario data').click());
+    await settle();
+    expect(query('[data-testid="capability-scenario-error"]')).toBeTruthy();
+    await expectNoSevereAccessibilityViolations('dataset error');
+
+    await render(tutorialFetcher());
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+    await expectNoSevereAccessibilityViolations('tutorial ready');
+
+    await render(tutorialFetcher({ conflict: true }));
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+    const duration = query<HTMLInputElement>('input[aria-label="Timeout duration in milliseconds"]');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setValue?.call(duration, '5100');
+      duration.dispatchEvent(new Event('input', { bubbles: true }));
+      duration.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => buttonWithText('Save and run isolated preflight').click());
+    await settle();
+    expect(query('[data-testid="capability-tutorial-error"]')).toBeTruthy();
+    await expectNoSevereAccessibilityViolations('tutorial conflict');
+  });
+
   it('shows a visible what happened / impact / retry error state', async () => {
     const fetcher = vi.fn(async () => new Response('offline', { status: 503 }));
     await render(fetcher);
@@ -222,6 +272,10 @@ describe('Capability Studio Stage 0 read-only slice', () => {
   });
 
   async function render(fetcher: CapabilityStudioFetcher = defaultFetcher()) {
+    if (root) {
+      await act(async () => root?.unmount());
+      root = null;
+    }
     await act(async () => {
       root = createRoot(host);
       root.render(<I18nProvider><CapabilityStudio fetcher={fetcher} /></I18nProvider>);
@@ -299,4 +353,18 @@ function query<T extends Element = Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
   if (!element) throw new Error(`Missing element: ${selector}`);
   return element;
+}
+
+async function expectNoSevereAccessibilityViolations(state: string) {
+  let result: AxeResults | undefined;
+  await act(async () => {
+    result = await axe.run(document.body);
+  });
+  const severe = (result as AxeResults).violations.filter((violation) =>
+    violation.impact === 'serious' || violation.impact === 'critical');
+  expect(severe.map((violation) => ({
+    state,
+    id: violation.id,
+    targets: violation.nodes.map((node) => node.target),
+  }))).toEqual([]);
 }
