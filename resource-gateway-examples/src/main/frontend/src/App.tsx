@@ -2,6 +2,7 @@ import { Fragment, lazy, Suspense, useEffect, useState } from 'react';
 import { LoaderCircle, Menu, X } from 'lucide-react';
 
 import I18nProvider, { useI18n } from './i18n/I18nProvider';
+import type { MessageId } from './i18n/messageCatalog';
 import LanguageSwitcher from './i18n/LanguageSwitcher';
 import DensityProvider from './ux/DensityProvider';
 import DensitySwitcher from './ux/DensitySwitcher';
@@ -15,8 +16,9 @@ import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
 
-type WorkspaceRoute = 'business-mirror' | 'author' | 'correctness' | 'libraries' | 'rehearsals' | 'showcase';
+type WorkspaceRoute = 'capabilities' | 'business-mirror' | 'author' | 'correctness' | 'libraries' | 'rehearsals' | 'showcase';
 
+const loadCapabilityStudio = () => import('./capability-studio/CapabilityStudio');
 const loadBusinessMirrorWorkspace = () => import('./business-mirror/BusinessMirrorWorkspace');
 const loadAuthorCanvas = () => import('./AuthorCanvas');
 const loadCorrectnessStudio = () => import('./correctness-studio/CorrectnessStudio');
@@ -24,6 +26,7 @@ const loadLibraryWorkbench = () => import('./library-authoring/LibraryWorkbench'
 const loadRehearsalWorkbench = () => import('./RehearsalWorkbench');
 const loadShowcase = () => import('./Showcase');
 
+const CapabilityStudio = lazy(loadCapabilityStudio);
 const BusinessMirrorWorkspace = lazy(loadBusinessMirrorWorkspace);
 const AuthorCanvas = lazy(loadAuthorCanvas);
 const CorrectnessStudio = lazy(loadCorrectnessStudio);
@@ -32,6 +35,7 @@ const RehearsalWorkbench = lazy(loadRehearsalWorkbench);
 const Showcase = lazy(loadShowcase);
 
 const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
+  capabilities: loadCapabilityStudio,
   'business-mirror': loadBusinessMirrorWorkspace,
   author: loadAuthorCanvas,
   correctness: loadCorrectnessStudio,
@@ -40,7 +44,8 @@ const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
   showcase: loadShowcase,
 };
 
-const NAVIGATION_ROUTES: Array<{ route: WorkspaceRoute; label: string }> = [
+const NAVIGATION_ROUTES: Array<{ route: WorkspaceRoute; label: string; titleId?: MessageId }> = [
+  { route: 'capabilities', label: 'Capability Studio', titleId: 'app.capabilityStudio' },
   { route: 'business-mirror', label: 'Business Mirror' },
   { route: 'author', label: 'Author' },
   { route: 'correctness', label: 'Correctness' },
@@ -63,12 +68,12 @@ export default function App() {
 }
 
 function AppShell() {
-  const { t } = useI18n();
+  const { t, m } = useI18n();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const vscodeHost = typeof globalThis.acquireVsCodeApi === 'function';
   const route = resolveWorkspaceRoute(window.location.pathname, window.location.search, vscodeHost);
-  const titleSource = NAVIGATION_ROUTES.find((entry) => entry.route === route)?.label ?? 'Author';
-  const title = t(titleSource);
+  const titleEntry = NAVIGATION_ROUTES.find((entry) => entry.route === route);
+  const title = titleEntry?.titleId ? m(titleEntry.titleId) : t(titleEntry?.label ?? 'Author');
   const authorWorkspaceVersion = resolveAuthorWorkspaceVersion(window.location.search);
   const authorHref = !vscodeHost && route !== 'author'
     ? '/author/'
@@ -125,7 +130,7 @@ function AppShell() {
                     onPointerEnter={prefetch(entry.route)}
                     onFocus={prefetch(entry.route)}
                   >
-                    {t(entry.label)}
+                    {entry.titleId ? m(entry.titleId) : t(entry.label)}
                   </a>
                   {entry.route === 'author' && route === 'author' && (
                     <a
@@ -151,7 +156,9 @@ function AppShell() {
       </header>
       <Suspense fallback={<WorkspaceLoading />}>
         <HostReadySignal route={route} />
-        {route === 'business-mirror'
+        {route === 'capabilities'
+          ? <CapabilityStudio />
+          : route === 'business-mirror'
           ? <BusinessMirrorWorkspace />
           : route === 'correctness'
           ? <CorrectnessStudio />
@@ -170,13 +177,17 @@ function AppShell() {
 function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boolean): WorkspaceRoute {
   if (vscodeHost) {
     const requested = new URLSearchParams(search).get('workspaceRoute');
-    if (requested === 'business-mirror' || requested === 'author' || requested === 'correctness' || requested === 'libraries'
+    if (requested === 'capabilities' || requested === 'business-mirror' || requested === 'author' || requested === 'correctness' || requested === 'libraries'
         || requested === 'rehearsals' || requested === 'showcase') {
       return requested;
     }
-    return 'business-mirror';
+    return 'capabilities';
   }
-  return pathname.startsWith('/author')
+  return pathname.startsWith('/capabilities')
+    ? 'capabilities'
+    : pathname.startsWith('/business-mirror')
+    ? 'business-mirror'
+    : pathname.startsWith('/author')
     ? 'author'
     : pathname.startsWith('/correctness')
     ? 'correctness'
@@ -186,7 +197,7 @@ function resolveWorkspaceRoute(pathname: string, search: string, vscodeHost: boo
     ? 'showcase'
     : pathname.startsWith('/rehearsals')
       ? 'rehearsals'
-      : 'business-mirror';
+      : 'capabilities';
 }
 
 function workspaceEntryHref(
@@ -197,6 +208,7 @@ function workspaceEntryHref(
 ): string {
   if (!vscodeHost) {
     if (route === 'author') return authorWorkspaceEntryHref(search, authorVersion);
+    if (route === 'capabilities') return '/capabilities/';
     if (route === 'business-mirror') return '/business-mirror/';
     return `/${route}/`;
   }

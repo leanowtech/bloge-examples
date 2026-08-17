@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-acceptance-baseline-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Acceptance Baseline v1",
+  "description": "Stage 0 acceptance contract for the Capability Studio golden path. This schema constrains structure; cross-field acceptance semantics require a verifier.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "baselineId",
+    "revision",
+    "status",
+    "artifactFingerprint",
+    "planRef",
+    "scope",
+    "canonicalPack",
+    "branches",
+    "goldenPaths",
+    "spikes",
+    "browserMatrix",
+    "usabilityGate",
+    "securityGates",
+    "nfrGates",
+    "evidenceRefs",
+    "signoffs",
+    "createdAt",
+    "updatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resourceGateway.capabilityStudioAcceptanceBaseline.v1" },
+    "baselineId": { "type": "string", "pattern": "^capability-studio-baseline-[a-z0-9-]+$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "status": { "enum": ["NO_GO", "PENDING", "APPROVED", "REVOKED"] },
+    "artifactFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "planRef": { "$ref": "#/$defs/documentRef" },
+    "scope": { "$ref": "#/$defs/scope" },
+    "canonicalPack": { "$ref": "#/$defs/canonicalPack" },
+    "branches": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalBaseline", "tutorialBranch"],
+      "properties": {
+        "canonicalBaseline": { "$ref": "#/$defs/branch" },
+        "tutorialBranch": { "$ref": "#/$defs/branch" }
+      }
+    },
+    "goldenPaths": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/goldenPath" }
+    },
+    "spikes": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/spike" }
+    },
+    "browserMatrix": { "$ref": "#/$defs/browserMatrix" },
+    "usabilityGate": { "$ref": "#/$defs/usabilityGate" },
+    "securityGates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/securityGate" }
+    },
+    "nfrGates": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/nfrGate" }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/evidenceRef" }
+    },
+    "signoffs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/signoff" }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "documentRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint", "authority", "scope"],
+      "properties": {
+        "kind": {
+          "enum": ["API", "FEATURE", "TOOL", "GRAPH_DRAFT", "CONTRACT", "DATASET", "DATA_CASE", "BEHAVIOR_PROFILE", "BINDING_PLAN", "CAPABILITY_SNAPSHOT", "FIXTURE_BUNDLE", "TEST_SUITE", "MIRROR_PLAN", "EVIDENCE"]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authority": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/scope" }
+      }
+    },
+    "cardinality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api", "feature", "tool", "case"],
+      "properties": {
+        "api": { "const": 4 },
+        "feature": { "const": 1 },
+        "tool": { "const": 1 },
+        "case": { "const": 9 }
+      }
+    },
+    "actualCardinality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["api", "feature", "tool", "case"],
+      "properties": {
+        "api": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "feature": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "tool": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+        "case": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] }
+      }
+    },
+    "canonicalPack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["packId", "expectedCardinality", "actualCardinality", "verificationStatus", "apiRefs", "featureRef", "toolRef", "datasetRef", "graphRef", "caseRefs", "evidenceRefs"],
+      "properties": {
+        "packId": { "$ref": "#/$defs/identifier" },
+        "expectedCardinality": { "$ref": "#/$defs/cardinality" },
+        "actualCardinality": { "$ref": "#/$defs/actualCardinality" },
+        "verificationStatus": { "enum": ["NOT_RUN", "PENDING", "VERIFIED", "REJECTED"] },
+        "apiRefs": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "API" } } }] }
+        },
+        "featureRef": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "FEATURE" } } }] },
+        "toolRef": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "TOOL" } } }] },
+        "datasetRef": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "DATASET" } } }] },
+        "graphRef": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "GRAPH_DRAFT" } } }] },
+        "caseRefs": {
+          "type": "array",
+          "minItems": 9,
+          "maxItems": 9,
+          "items": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "DATA_CASE" } } }] }
+        },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    },
+    "branch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["branchId", "branchType", "sourceRef", "branchRef", "status", "baselineMutationAllowed", "verificationStatus", "evidenceRefs"],
+      "properties": {
+        "branchId": { "$ref": "#/$defs/identifier" },
+        "branchType": { "enum": ["CANONICAL_BASELINE", "TUTORIAL_BRANCH"] },
+        "sourceRef": { "$ref": "#/$defs/exactRef" },
+        "branchRef": { "$ref": "#/$defs/exactRef" },
+        "status": { "enum": ["DRAFT", "FROZEN", "RESTORED", "STALE", "REJECTED"] },
+        "baselineMutationAllowed": { "const": false },
+        "verificationStatus": { "enum": ["NOT_RUN", "PENDING", "VERIFIED", "REJECTED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    },
+    "goldenPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gpId", "title", "primaryAction", "expectedOutcome", "acceptanceState", "requiredEvidence", "currentStatus", "evidenceRefs", "ownerRole"],
+      "properties": {
+        "gpId": { "enum": ["GP-01", "GP-02", "GP-03", "GP-04", "GP-05", "GP-06", "GP-07", "GP-08", "GP-09", "GP-10"] },
+        "title": { "type": "string", "minLength": 1 },
+        "primaryAction": { "type": "string", "minLength": 1 },
+        "expectedOutcome": { "type": "string", "minLength": 1 },
+        "acceptanceState": { "enum": ["NOT_DEFINED", "DEFINED", "IMPLEMENTED", "VERIFIED", "REJECTED"] },
+        "requiredEvidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/identifier" } },
+        "currentStatus": { "enum": ["PENDING", "NOT_RUN", "PASSED", "FAILED", "BLOCKED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "ownerRole": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "spike": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["spikeId", "title", "question", "passCriteria", "currentStatus", "evidenceRefs", "ownerRole"],
+      "properties": {
+        "spikeId": { "enum": ["SPIKE-A", "SPIKE-B", "SPIKE-C"] },
+        "title": { "type": "string", "minLength": 1 },
+        "question": { "type": "string", "minLength": 1 },
+        "passCriteria": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "currentStatus": { "enum": ["PENDING", "NOT_RUN", "PASSED", "FAILED", "BLOCKED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "ownerRole": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "browserMatrix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["languages", "viewports", "keyboardRequired", "deepLinkRefreshRequired"],
+      "properties": {
+        "languages": { "type": "array", "minItems": 2, "maxItems": 2, "uniqueItems": true, "items": { "enum": ["zh-CN", "en-US"] } },
+        "viewports": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["width", "height", "label"],
+            "properties": {
+              "width": { "enum": [1440, 1024, 390] },
+              "height": { "enum": [900, 768, 844] },
+              "label": { "enum": ["desktop", "compact-desktop", "mobile"] }
+            }
+          }
+        },
+        "keyboardRequired": { "const": true },
+        "deepLinkRefreshRequired": { "const": true }
+      }
+    },
+    "usabilityGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["participantCount", "minimumIndependentCompletionCount", "maximumMedianMinutes", "manualTechnicalIdInputsMax", "rawJsonEditsMax", "openP0P1Max", "currentStatus", "evidenceRefs"],
+      "properties": {
+        "participantCount": { "const": 6 },
+        "minimumIndependentCompletionCount": { "const": 5 },
+        "maximumMedianMinutes": { "const": 15 },
+        "manualTechnicalIdInputsMax": { "const": 0 },
+        "rawJsonEditsMax": { "const": 0 },
+        "openP0P1Max": { "const": 0 },
+        "currentStatus": { "enum": ["PENDING", "NOT_RUN", "PASSED", "FAILED", "BLOCKED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } }
+      }
+    },
+    "securityGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateId", "title", "threshold", "currentStatus", "evidenceRefs", "ownerRole"],
+      "properties": {
+        "gateId": { "type": "string", "pattern": "^SEC-[0-9]{2}$" },
+        "title": { "type": "string", "minLength": 1 },
+        "threshold": { "type": "string", "minLength": 1 },
+        "currentStatus": { "enum": ["PENDING", "NOT_RUN", "PASSED", "FAILED", "BLOCKED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "ownerRole": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "nfrGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gateId", "title", "threshold", "currentStatus", "evidenceRefs", "ownerRole"],
+      "properties": {
+        "gateId": { "type": "string", "pattern": "^NFR-[0-9]{2}$" },
+        "title": { "type": "string", "minLength": 1 },
+        "threshold": { "type": "string", "minLength": 1 },
+        "currentStatus": { "enum": ["PENDING", "NOT_RUN", "PASSED", "FAILED", "BLOCKED"] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/evidenceRef" } },
+        "ownerRole": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "kind", "uri", "status", "note"],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["PLAN", "ADR", "DOM", "PROTOCOL", "RUN_TRACE", "SCREENSHOT", "ACCESSIBILITY", "SECURITY", "NFR", "USABILITY", "SIGNOFF"] },
+        "uri": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["DESIGN_ONLY", "NOT_RUN", "PENDING", "AVAILABLE", "INVALIDATED"] },
+        "note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "signoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["signoffId", "role", "status", "actorRef", "signedAt", "signatureRef", "comment"],
+      "properties": {
+        "signoffId": { "$ref": "#/$defs/identifier" },
+        "role": { "enum": ["PRODUCT_OWNER", "BUSINESS_OWNER", "UX_OWNER", "ARCHITECTURE_OWNER", "SECURITY_OWNER", "QA_OWNER", "DELIVERY_OWNER"] },
+        "status": { "enum": ["PENDING", "APPROVED", "REJECTED", "REVOKED"] },
+        "actorRef": { "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+        "signedAt": { "oneOf": [{ "type": "string", "format": "date-time" }, { "type": "null" }] },
+        "signatureRef": { "oneOf": [{ "$ref": "#/$defs/documentRef" }, { "type": "null" }] },
+        "comment": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

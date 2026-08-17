@@ -26,6 +26,7 @@ SHADOW_SCHEDULER="${BLOGE_VISUAL_CANVAS_SHADOW_SCHEDULER:-${RG_MIRROR_SHADOW_JOB
 SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}"
 OUTCOME_CONTINUOUS_ASSESSMENT="${BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT:-${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-0}}"
 CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-1}"
+CAPABILITY_STUDIO_DEMO="${BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO:-1}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -59,7 +60,9 @@ Options:
   --outcome-continuous-assessment  Enable selected-population freshness workers; customer authorities are still required.
   --correctness     Explicitly enable the read-only Correctness Studio sample (enabled by default).
   --no-correctness  Disable the Correctness Studio sample; required for production-profile demos.
-  --open            Open Correctness Studio when enabled; otherwise open Business Mirror.
+  --capability-studio     Enable the Capability Studio golden pack (enabled by default).
+  --no-capability-studio  Disable the Capability Studio golden pack; required for production.
+  --open            Open Capability Studio when enabled; otherwise open the legacy workspace.
   -h, --help        Show this help.
 
 Environment:
@@ -78,6 +81,7 @@ Environment:
   BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE default: 0; same effect as --shadow-detached-data-plane
   BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT default: 0; same effect as --outcome-continuous-assessment
   BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 1; set to 0 or use --no-correctness to disable
+  BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO default: 1; use --no-capability-studio to disable
   BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE  local demo AES-256 key file; never printed
   RG_MIRROR_SHADOW_JOB_INSTANCE_ID     stable local Shadow scheduler replica id
   RG_MIRROR_SHADOW_JOB_REGION          exact regional queue partition
@@ -277,7 +281,7 @@ Examples:
   scripts/start-visual-canvas-demo.sh --shadow-scheduler
   scripts/start-visual-canvas-demo.sh --shadow-detached-data-plane
   scripts/start-visual-canvas-demo.sh --outcome-continuous-assessment
-  scripts/start-visual-canvas-demo.sh --no-correctness --open
+  scripts/start-visual-canvas-demo.sh --no-capability-studio --no-correctness --open
   scripts/start-visual-canvas-demo.sh --port 18080 -- --gateway.base-url=http://localhost:9091
   scripts/visual-canvas-demo.sh status
 EOF
@@ -2056,6 +2060,10 @@ author_url() {
     echo "http://localhost:$(configured_port)/author/"
 }
 
+capability_studio_url() {
+    echo "http://localhost:$(configured_port)/capabilities/?lang=zh-CN"
+}
+
 business_mirror_url() {
     echo "http://localhost:$(configured_port)/business-mirror/"
 }
@@ -2086,6 +2094,14 @@ legacy_url() {
 
 capabilities_url() {
     echo "http://localhost:$(configured_port)/api/integration/capabilities"
+}
+
+capability_studio_demo_pack_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/demo-pack"
+}
+
+capability_studio_acceptance_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/acceptance-baseline"
 }
 
 jar_path() {
@@ -2120,6 +2136,7 @@ artifact_has_visual_frontend() {
     fi
 
     jar tf "${artifact}" 2>/dev/null | awk '
+        $0 == "BOOT-INF/classes/static/capabilities/index.html" ||
         $0 == "BOOT-INF/classes/static/business-mirror/index.html" ||
         $0 == "BOOT-INF/classes/static/author/index.html" ||
         $0 == "BOOT-INF/classes/static/correctness/index.html" ||
@@ -2130,7 +2147,7 @@ artifact_has_visual_frontend() {
                 found++
             }
         }
-        END { exit found == 6 ? 0 : 1 }
+        END { exit found == 7 ? 0 : 1 }
     '
 }
 
@@ -2199,6 +2216,7 @@ print_urls() {
     echo "Demo URLs:"
     if truthy "${BUILD_FRONTEND}" && artifact_has_visual_frontend; then
         cat <<EOF
+  Capability Studio: $(capability_studio_url)
   Business Mirror: $(business_mirror_url)
 $(truthy "${CORRECTNESS_DEMO}" && printf '  Correctness:     %s\n' "$(correctness_url)")
   Author canvas:   $(author_url)
@@ -2212,6 +2230,8 @@ EOF
     fi
     cat <<EOF
   Capability probe: $(capabilities_url)
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Golden demo pack: %s\n' "$(capability_studio_demo_pack_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Acceptance base:  %s\n' "$(capability_studio_acceptance_url)")
   Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
@@ -2265,7 +2285,8 @@ build_app() {
 }
 
 visual_routes_ready() {
-    curl -fsS "$(business_mirror_url)" >/dev/null 2>&1 &&
+    curl -fsS "$(capability_studio_url)" >/dev/null 2>&1 &&
+        curl -fsS "$(business_mirror_url)" >/dev/null 2>&1 &&
         curl -fsS "$(author_url)" >/dev/null 2>&1 &&
         curl -fsS "$(correctness_url)" >/dev/null 2>&1 &&
         curl -fsS "$(libraries_url)" >/dev/null 2>&1 &&
@@ -2298,6 +2319,45 @@ wait_for_ready() {
             fi
             if truthy "${BUILD_FRONTEND}"; then
                 visual_readiness=", and visual route probes passed"
+            fi
+            if truthy "${CAPABILITY_STUDIO_DEMO}"; then
+                local capability_studio_pack
+                local capability_studio_acceptance
+                if ! capability_studio_pack="$(curl -fsS \
+                    "$(capability_studio_demo_pack_url)" 2>/dev/null)" ||
+                    ! capability_studio_acceptance="$(curl -fsS \
+                    "$(capability_studio_acceptance_url)" 2>/dev/null)"; then
+                    sleep 2
+                    continue
+                fi
+                if command -v jq >/dev/null 2>&1; then
+                    if ! printf '%s' "${capability_studio_pack}" | jq -e '
+                        .cardinality.api == 4
+                        and .cardinality.feature == 1
+                        and .cardinality.tool == 1
+                        and .cardinality.scenarios == 9
+                    ' >/dev/null 2>&1 ||
+                        ! printf '%s' "${capability_studio_acceptance}" | jq -e '
+                        (.status == "NO_GO")
+                        and ((.gates | length) == 10)
+                        and ([.gates[].status] | all(. == "NOT_RUN"))
+                    ' >/dev/null 2>&1; then
+                        sleep 2
+                        continue
+                    fi
+                elif ! printf '%s' "${capability_studio_pack}" |
+                    grep -Eq '"api"[[:space:]]*:[[:space:]]*4' ||
+                    ! printf '%s' "${capability_studio_pack}" |
+                    grep -Eq '"feature"[[:space:]]*:[[:space:]]*1' ||
+                    ! printf '%s' "${capability_studio_pack}" |
+                    grep -Eq '"tool"[[:space:]]*:[[:space:]]*1' ||
+                    ! printf '%s' "${capability_studio_pack}" |
+                    grep -Eq '"scenarios"[[:space:]]*:[[:space:]]*9' ||
+                    ! printf '%s' "${capability_studio_acceptance}" |
+                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"NO_GO"'; then
+                    sleep 2
+                    continue
+                fi
             fi
             if truthy "${CORRECTNESS_DEMO}"; then
                 if command -v jq >/dev/null 2>&1; then
@@ -2470,6 +2530,10 @@ wait_for_ready() {
                 echo "Demo service ready; Shadow job, lifecycle, and source-resolution API probes passed${visual_readiness}: ${url}"
                 return 0
             fi
+            if truthy "${CAPABILITY_STUDIO_DEMO}"; then
+                echo "Demo service ready; Capability Studio 4/1/1/9 baseline and visual probes passed${visual_readiness}: ${url}"
+                return 0
+            fi
             if truthy "${CORRECTNESS_DEMO}"; then
                 echo "Demo service ready; Correctness capability and exact Workspace probes passed${visual_readiness}: ${url}"
                 return 0
@@ -2495,7 +2559,9 @@ open_author_if_requested() {
         return 0
     fi
     if command -v open >/dev/null 2>&1; then
-        if truthy "${CORRECTNESS_DEMO}"; then
+        if truthy "${CAPABILITY_STUDIO_DEMO}"; then
+            open "$(capability_studio_url)" >/dev/null 2>&1 || true
+        elif truthy "${CORRECTNESS_DEMO}"; then
             open "$(correctness_url)" >/dev/null 2>&1 || true
         else
             open "$(business_mirror_url)" >/dev/null 2>&1 || true
@@ -2536,6 +2602,15 @@ start_service() {
     local -a args
     log="$(log_file)"
     args=("--server.port=$(configured_port)" "--spring.profiles.active=${SPRING_PROFILE}")
+    if truthy "${CAPABILITY_STUDIO_DEMO}"; then
+        case ",${SPRING_PROFILE}," in
+            *,production,*)
+                echo "The Capability Studio golden pack is physically unavailable in production." >&2
+                return 1
+                ;;
+        esac
+        args+=("--gateway.capability-studio.demo.enabled=true")
+    fi
     if truthy "${CORRECTNESS_DEMO}"; then
         case ",${SPRING_PROFILE}," in
             *,production,*)
@@ -2686,6 +2761,14 @@ parse_options() {
                 ;;
             --no-correctness)
                 CORRECTNESS_DEMO=0
+                shift
+                ;;
+            --capability-studio)
+                CAPABILITY_STUDIO_DEMO=1
+                shift
+                ;;
+            --no-capability-studio)
+                CAPABILITY_STUDIO_DEMO=0
                 shift
                 ;;
             --open)

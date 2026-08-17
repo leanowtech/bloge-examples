@@ -68,12 +68,14 @@ class VisualCanvasDemoScriptTest {
         String source = Files.readString(SCRIPT, StandardCharsets.UTF_8);
 
         assertThat(source).contains(
+                "BOOT-INF/classes/static/capabilities/index.html",
                 "BOOT-INF/classes/static/business-mirror/index.html",
                 "BOOT-INF/classes/static/author/index.html",
                 "BOOT-INF/classes/static/correctness/index.html",
                 "BOOT-INF/classes/static/libraries/index.html",
                 "BOOT-INF/classes/static/rehearsals/index.html",
                 "BOOT-INF/classes/static/showcase/index.html",
+                "curl -fsS \"$(capability_studio_url)\"",
                 "curl -fsS \"$(business_mirror_url)\"",
                 "curl -fsS \"$(author_url)\"",
                 "curl -fsS \"$(correctness_url)\"",
@@ -93,6 +95,25 @@ class VisualCanvasDemoScriptTest {
                 "--no-correctness)",
                 "CORRECTNESS_DEMO=0",
                 "BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO default: 1");
+    }
+
+    @Test
+    void capabilityStudioGoldenPackIsEnabledByDefaultAndReadinessChecksItsBaseline()
+            throws Exception {
+        String source = Files.readString(SCRIPT, StandardCharsets.UTF_8);
+
+        assertThat(source).contains(
+                "CAPABILITY_STUDIO_DEMO=\"${BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO:-1}\"",
+                "--no-capability-studio  Disable the Capability Studio golden pack",
+                "--gateway.capability-studio.demo.enabled=true",
+                "$(capability_studio_demo_pack_url)",
+                "$(capability_studio_acceptance_url)",
+                ".cardinality.api == 4",
+                ".cardinality.feature == 1",
+                ".cardinality.tool == 1",
+                ".cardinality.scenarios == 9",
+                ".status == \"NO_GO\"",
+                "all(. == \"NOT_RUN\")");
     }
 
     @Test

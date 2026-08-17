@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "resourceGateway.capabilityStudioAcceptanceBaseline.v1",
+  "baselineId": "capability-studio-baseline-cancellation-fee-v1",
+  "revision": 1,
+  "status": "NO_GO",
+  "artifactFingerprint": "sha256:7da3e1279808a855911be62d4f9ed94135083811f6283e77a595ee815561f833",
+  "planRef": "docs/resource-gateway-capability-studio-product-and-technical-evolution-plan.md",
+  "scope": {
+    "tenantId": "demo-tenant",
+    "organizationId": "customer-service",
+    "projectId": "capability-studio",
+    "environmentId": "test",
+    "region": "local"
+  },
+  "canonicalPack": {
+    "packId": "cancellation-fee-capability-studio-golden-v1",
+    "expectedCardinality": { "api": 4, "feature": 1, "tool": 1, "case": 9 },
+    "actualCardinality": { "api": 4, "feature": 1, "tool": 1, "case": 9 },
+    "verificationStatus": "PENDING",
+    "apiRefs": [
+      { "kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } }
+    ],
+    "featureRef": { "kind": "FEATURE", "id": "feature-cancellation-dispute-context", "revision": 1, "fingerprint": "sha256:74e4108ff74c3b8517c733a8625f65aa2db09407e03d60da2de54368abe6d791", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+    "toolRef": { "kind": "TOOL", "id": "tool-cancellation-fee-dispute-handling", "revision": 1, "fingerprint": "sha256:7662a471e37decfaa7158f5e90a66c57d038c9b6c23b5e5e013251dafc568f8a", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+    "datasetRef": { "kind": "DATASET", "id": "dataset-cancellation-fee-golden-v1", "revision": 1, "fingerprint": "sha256:f500e82eab52a6537017bc6e934c9e8f45931dc230838f24522c932c0e196905", "authority": "capability-studio-stage0", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+    "graphRef": { "kind": "GRAPH_DRAFT", "id": "graph-cancellation-dispute-context-v1", "revision": 1, "fingerprint": "sha256:fe01149fbbcfdc6de1235b521bba79399bb19047e37d077437f97d5a07382870", "authority": "visual-authoring", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+    "caseRefs": [
+      { "kind": "DATA_CASE", "id": "case-01", "revision": 1, "fingerprint": "sha256:1bda9ad5c8f0f4b2f0be65edc9b9866112f1d689007b13b560f5fe155856274c", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-02", "revision": 1, "fingerprint": "sha256:2e23a3a1c9785001dbbe002f91a834fad306fc8b0ef3f8e2e5a973ea82c93e25", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-03", "revision": 1, "fingerprint": "sha256:53c4609152464d1e0e5166860a32b53cf500de9634eb7fc6b0b0bba20eef9278", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-04", "revision": 1, "fingerprint": "sha256:786bafd0b01f3a2cf7d5c0c3584204284e7a2f8487e388ec8a7ec55a0fa69069", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-05", "revision": 1, "fingerprint": "sha256:3417a0dedc23b459c253c6c6e4a03a01d836603ba99073be25a40ed07d0919ff", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-06", "revision": 1, "fingerprint": "sha256:27cea952f5f499e1e4d29aedc480e613ac586ec3860a3a573ee0f6e5601776c6", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-07", "revision": 1, "fingerprint": "sha256:16b207c008aea5f67fffa4b53df82abe1f8d01d587d70cb83058298ed4cd4f1e", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-08", "revision": 1, "fingerprint": "sha256:00096c4641aa44066887b65d3674d4302e982408414bdf5e76bdafcb37888bb3", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      { "kind": "DATA_CASE", "id": "case-09", "revision": 1, "fingerprint": "sha256:866ccd7df3b3600b00e45f6140312444c42eb6738770555dfe212613c18a0be3", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } }
+    ],
+    "evidenceRefs": []
+  },
+  "branches": {
+    "canonicalBaseline": {
+      "branchId": "canonical-baseline-v1",
+      "branchType": "CANONICAL_BASELINE",
+      "sourceRef": { "kind": "CAPABILITY_SNAPSHOT", "id": "cancellation-fee-canonical-source", "revision": 1, "fingerprint": "sha256:d96ad4530dd3285e915dc4784e6269bf92d36eb2a929473174dc2fa2bb613e02", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      "branchRef": { "kind": "CAPABILITY_SNAPSHOT", "id": "cancellation-fee-canonical-baseline", "revision": 1, "fingerprint": "sha256:94199c7b37cbf24f515ce3ceb0c3801c0de2ec0a5e784a2be6beb94080209aca", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      "status": "FROZEN",
+      "baselineMutationAllowed": false,
+      "verificationStatus": "PENDING",
+      "evidenceRefs": []
+    },
+    "tutorialBranch": {
+      "branchId": "tutorial-compensation-history-timeout",
+      "branchType": "TUTORIAL_BRANCH",
+      "sourceRef": { "kind": "CAPABILITY_SNAPSHOT", "id": "cancellation-fee-canonical-baseline", "revision": 1, "fingerprint": "sha256:94199c7b37cbf24f515ce3ceb0c3801c0de2ec0a5e784a2be6beb94080209aca", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      "branchRef": { "kind": "CAPABILITY_SNAPSHOT", "id": "tutorial-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:51ac4033f5df2979a39d823d1ccaab13bb6400a5a815e743511f503030a693fa", "authority": "capability-studio-demo-pack", "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" } },
+      "status": "DRAFT",
+      "baselineMutationAllowed": false,
+      "verificationStatus": "NOT_RUN",
+      "evidenceRefs": []
+    }
+  },
+  "goldenPaths": [
+    { "gpId": "GP-01", "title": "打开取消费争议处理", "primaryAction": "查看订单查询契约", "expectedOutcome": "显示 4 API、1 Feature、1 Tool、9 Case", "acceptanceState": "IMPLEMENTED", "requiredEvidence": ["DOM", "PROTOCOL"], "currentStatus": "PENDING", "evidenceRefs": [], "ownerRole": "PRODUCT_QA" },
+    { "gpId": "GP-02", "title": "查看订单查询契约", "primaryAction": "打开业务契约", "expectedOutcome": "输入、输出、错误、副作用和 SLA 可读", "acceptanceState": "IMPLEMENTED", "requiredEvidence": ["DOM", "SCHEMA_ROUND_TRIP"], "currentStatus": "PENDING", "evidenceRefs": [], "ownerRole": "PRODUCT_QA" },
+    { "gpId": "GP-03", "title": "查看场景数据", "primaryAction": "打开九条场景", "expectedOutcome": "来源、Owner、Oracle 和适用契约完整", "acceptanceState": "IMPLEMENTED", "requiredEvidence": ["DOM", "DATASET"], "currentStatus": "PENDING", "evidenceRefs": [], "ownerRole": "CORRECTNESS_OWNER" },
+    { "gpId": "GP-04", "title": "编辑教程超时分支", "primaryAction": "设置补偿历史超时", "expectedOutcome": "Canonical Baseline 不变", "acceptanceState": "DEFINED", "requiredEvidence": ["REVISION", "PREFLIGHT"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "CORRECTNESS_OWNER" },
+    { "gpId": "GP-05", "title": "查看 Feature DAG 数据透镜", "primaryAction": "选择超时场景", "expectedOutcome": "节点、边和字段血缘完整可读", "acceptanceState": "DEFINED", "requiredEvidence": ["DOM", "SCREENSHOT", "LINEAGE"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "CANVAS_OWNER" },
+    { "gpId": "GP-06", "title": "运行 Feature 场景", "primaryAction": "运行当前场景", "expectedOutcome": "TIMEOUT 安全降级且零真实调用", "acceptanceState": "DEFINED", "requiredEvidence": ["RUN_TRACE", "NETWORK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" },
+    { "gpId": "GP-07", "title": "查看 Tool 契约", "primaryAction": "打开工具承诺", "expectedOutcome": "契约、禁止结果、副作用和依赖完整", "acceptanceState": "DEFINED", "requiredEvidence": ["DOM", "PROTOCOL"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "PRODUCT_QA" },
+    { "gpId": "GP-08", "title": "运行全部九个场景", "primaryAction": "恢复并运行 Baseline", "expectedOutcome": "三次 9/9 语义一致且零真实调用", "acceptanceState": "DEFINED", "requiredEvidence": ["BATCH_RUN", "SEMANTIC_FINGERPRINT", "NETWORK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" },
+    { "gpId": "GP-09", "title": "查看数据质量和影响", "primaryAction": "打开质量视图", "expectedOutcome": "无孤立 Active Case", "acceptanceState": "DEFINED", "requiredEvidence": ["QUALITY", "IMPACT"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "DATA_OWNER" },
+    { "gpId": "GP-10", "title": "查看证据并回到节点", "primaryAction": "打开运行证据", "expectedOutcome": "精确引用闭合且 Deep Link 恢复", "acceptanceState": "DEFINED", "requiredEvidence": ["EVIDENCE", "DEEP_LINK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "QA_OWNER" }
+  ],
+  "spikes": [
+    { "spikeId": "SPIKE-A", "title": "Scenario Dataset 确定性编译", "question": "能否无损下沉到现有 Correctness 编译器", "passCriteria": ["相同输入产生相同 fingerprint", "TIMEOUT 与 MUST_NOT_CALL 语义保留"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" },
+    { "spikeId": "SPIKE-B", "title": "DAG Data Lens", "question": "能否展示字段样例、来源和差异且不泄露 payload", "passCriteria": ["关键视口无遮挡", "权限不足时保持 payload-free"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "CANVAS_OWNER" },
+    { "spikeId": "SPIKE-C", "title": "生产物理隔离", "question": "生产装配是否物理不存在注入面", "passCriteria": ["production bean 与 route 缺席", "隔离运行零 egress"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "SECURITY_OWNER" }
+  ],
+  "browserMatrix": {
+    "languages": ["zh-CN", "en-US"],
+    "viewports": [
+      { "width": 1440, "height": 900, "label": "desktop" },
+      { "width": 1024, "height": 768, "label": "compact-desktop" },
+      { "width": 390, "height": 844, "label": "mobile" }
+    ],
+    "keyboardRequired": true,
+    "deepLinkRefreshRequired": true
+  },
+  "usabilityGate": { "participantCount": 6, "minimumIndependentCompletionCount": 5, "maximumMedianMinutes": 15, "manualTechnicalIdInputsMax": 0, "rawJsonEditsMax": 0, "openP0P1Max": 0, "currentStatus": "NOT_RUN", "evidenceRefs": [] },
+  "securityGates": [
+    { "gateId": "SEC-01", "title": "生产注入面缺席", "threshold": "production profile 不装配 fixture/mock/replay route 与 bean", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "SECURITY_OWNER" },
+    { "gateId": "SEC-02", "title": "零真实外呼", "threshold": "Canonical Baseline 运行 realExternalCallCount = 0 且 egress deny 有证据", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "SECURITY_OWNER" },
+    { "gateId": "SEC-03", "title": "Payload 边界", "threshold": "日志、URL、指标、Manifest 和普通 Evidence 不含业务 payload", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "DATA_SECURITY_OWNER" }
+  ],
+  "nfrGates": [
+    { "gateId": "NFR-01", "title": "离线可运行", "threshold": "黄金路径不依赖外部服务", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "QA_OWNER" },
+    { "gateId": "NFR-02", "title": "浏览器与可访问性", "threshold": "两种语言、三种视口和键盘路径全部通过", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "UX_QA" },
+    { "gateId": "NFR-03", "title": "确定性", "threshold": "连续三次运行语义 fingerprint 相同", "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" }
+  ],
+  "evidenceRefs": [
+    { "evidenceId": "stage0-plan", "kind": "PLAN", "uri": "docs/resource-gateway-capability-studio-product-and-technical-evolution-plan.md", "status": "AVAILABLE", "note": "产品与技术演进方案及明确验收标准" },
+    { "evidenceId": "stage0-adr", "kind": "ADR", "uri": "docs/adr/ADR-007-capability-studio-asset-projections-and-compiler-boundary.md", "status": "PENDING", "note": "架构边界待签署" }
+  ],
+  "signoffs": [
+    { "signoffId": "product-owner", "role": "PRODUCT_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待产品验收" },
+    { "signoffId": "business-owner", "role": "BUSINESS_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待业务正确性确认" },
+    { "signoffId": "ux-owner", "role": "UX_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待可用性测试" },
+    { "signoffId": "architecture-owner", "role": "ARCHITECTURE_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待架构评审" },
+    { "signoffId": "security-owner", "role": "SECURITY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待隔离与数据安全验证" },
+    { "signoffId": "qa-owner", "role": "QA_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待自动化与浏览器验收" },
+    { "signoffId": "delivery-owner", "role": "DELIVERY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待交付验收" }
+  ],
+  "createdAt": "2026-08-17T12:00:00Z",
+  "updatedAt": "2026-08-17T12:00:00Z"
+}

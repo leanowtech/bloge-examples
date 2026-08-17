@@ -3,6 +3,7 @@ import type { Locale, TranslationValues } from './i18n';
 type LocalizedMessage = Record<Locale, string>;
 
 export const MESSAGE_CATALOG = {
+  'app.capabilityStudio': { en: 'Capability Studio', 'zh-CN': '能力设计' },
   'author.command.run': { en: 'Run & Compare', 'zh-CN': '运行并比较' },
   'author.command.rerun': { en: 'Rerun & Compare', 'zh-CN': '重新运行并比较' },
   'author.command.running': { en: 'Running...', 'zh-CN': '正在运行...' },

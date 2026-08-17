@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "resourceGateway.capabilityStudioGoldenPathAcceptanceManifest.v1",
+  "manifestId": "capability-studio-golden-path-initial-no-go",
+  "revision": 1,
+  "status": "NO_GO",
+  "artifactFingerprint": "sha256:fac2ba8e0b0e7a27c0c660a90abc200550b4896ab21ee800c09502300979e34c",
+  "candidateBuildRef": {
+    "kind": "BUILD",
+    "id": "working-tree-stage0",
+    "revision": 1,
+    "fingerprint": "sha256:65c6bc7b8b65812b7fc067fd55385b053b4e315808094d16d411bd03a6c5db77",
+    "authority": "local-build",
+    "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" }
+  },
+  "acceptanceBaselineRef": {
+    "kind": "ACCEPTANCE_BASELINE",
+    "id": "capability-studio-baseline-cancellation-fee-v1",
+    "revision": 1,
+    "fingerprint": "sha256:7da3e1279808a855911be62d4f9ed94135083811f6283e77a595ee815561f833",
+    "authority": "repository",
+    "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" }
+  },
+  "goldenDemoPackRef": {
+    "kind": "GOLDEN_DEMO_PACK",
+    "id": "cancellation-fee-capability-studio-golden-v1",
+    "revision": 1,
+    "fingerprint": "sha256:9f1ce1b792d48f0c493f5137b944f529870a8a427e9a2ab19a33803b51038238",
+    "authority": "capability-studio-demo-pack",
+    "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" }
+  },
+  "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" },
+  "contractAndDatasetFingerprints": {
+    "apiContractFingerprints": [
+      "sha256:59bc1adc5828e520c1a228b4c4d45b998942988dd5b81d9ec97903f34d5560da",
+      "sha256:578ffe69bf8ba1ba4a5697b570daf0e4185d01f85f14809988288c2191cbbfbf",
+      "sha256:15a788f35cbb036b2d93bdff7e31bc4ef6b15811f33f98b9c5cfaea90e837007",
+      "sha256:c9a46a2b1ba9b740b79013555344dbf2b082310972e01033d30a59e0692fd806"
+    ],
+    "featureContractFingerprint": "sha256:c0aefadf38994abf18c6fa00463ea835d5f8242cea2d18c63beb2df2b8fbd847",
+    "toolContractFingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f",
+    "graphFingerprint": "sha256:fe01149fbbcfdc6de1235b521bba79399bb19047e37d077437f97d5a07382870",
+    "datasetFingerprint": "sha256:f500e82eab52a6537017bc6e934c9e8f45931dc230838f24522c932c0e196905",
+    "bindingPlanFingerprint": "sha256:bb90695519ebda8f1b1053b1fd0d8ac81e682df9c7b861dc7e38050d4f7b6860"
+  },
+  "gpResults": [
+    { "gpId": "GP-01", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "组件和协议实现已进入工作树，尚未形成发布候选浏览器证据" },
+    { "gpId": "GP-02", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "业务契约视图待真实浏览器验收" },
+    { "gpId": "GP-03", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "九条场景目录待真实浏览器验收" },
+    { "gpId": "GP-04", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Tutorial Branch 编辑与恢复尚未实现" },
+    { "gpId": "GP-05", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Feature DAG Data Lens 尚未实现" },
+    { "gpId": "GP-06", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "隔离运行和 Feature Oracle 尚未接入" },
+    { "gpId": "GP-07", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Tool 契约完整视图尚未验收" },
+    { "gpId": "GP-08", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "9/9 三次确定性运行尚未执行" },
+    { "gpId": "GP-09", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "质量和影响投影尚未实现" },
+    { "gpId": "GP-10", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Evidence exact closure 和 Deep Link 尚未实现" }
+  ],
+  "scenarioResults": [
+    { "scenarioId": "CASE-01", "caseType": "GOLDEN", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-02", "caseType": "NEGATIVE", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-03", "caseType": "BOUNDARY", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-04", "caseType": "NEGATIVE", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-05", "caseType": "BOUNDARY", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-06", "caseType": "TIMEOUT", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-07", "caseType": "REGRESSION", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-08", "caseType": "MUST_NOT_CALL", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
+    { "scenarioId": "CASE-09", "caseType": "REGRESSION", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" }
+  ],
+  "realExternalCallCount": null,
+  "egressObservation": { "status": "NOT_RUN", "observedAt": null, "source": "network-policy-and-runtime-counter", "count": null, "evidenceRefs": [], "notes": "零外呼是目标，不是尚未执行时的事实" },
+  "browserAndViewportResults": [
+    { "language": "zh-CN", "viewport": { "width": 1440, "height": 900 }, "status": "PASSED", "domEvidenceRefs": [{ "evidenceId": "browser-dom-zh-1440", "kind": "DOM", "uri": "test://CapabilityStudioBrowserAcceptanceTest/gp01ToGp03RemainTruthfulAndSelectableInChineseDesktop", "fingerprint": "sha256:3f230f907ab08c4a23f9e5e9aa16065028f8fb948bf0d1797a7aa60f6d7344c0", "status": "AVAILABLE" }], "visualEvidenceRefs": [{ "evidenceId": "browser-visual-zh-1440", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png", "fingerprint": "sha256:f8ffe131aa297ce8d9909fdfa0097bb138df8940a44efac93d03d14f65454eb9", "status": "AVAILABLE" }], "network404Count": 0, "notes": "GP-01 至 GP-03 中文 READY 状态真实 Chrome 烟测通过；不代表完整 GP 或可访问性验收" },
+    { "language": "zh-CN", "viewport": { "width": 1024, "height": 768 }, "status": "PASSED", "domEvidenceRefs": [{ "evidenceId": "browser-dom-zh-1024", "kind": "DOM", "uri": "test://CapabilityStudioBrowserAcceptanceTest/gp01ResponsiveLayoutHasNoPageOverflowAtCompactAndMobileViewports", "fingerprint": "sha256:3f230f907ab08c4a23f9e5e9aa16065028f8fb948bf0d1797a7aa60f6d7344c0", "status": "AVAILABLE" }], "visualEvidenceRefs": [{ "evidenceId": "browser-visual-zh-1024", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp01-zh-1024.png", "fingerprint": "sha256:1180505070b6f1873aa57b8059ce84151662ac3a3f5cb1a7d6c4f9a57f35fe5c", "status": "AVAILABLE" }], "network404Count": 0, "notes": "GP-01 中文 READY 状态紧凑桌面烟测通过，无页面级横向溢出" },
+    { "language": "zh-CN", "viewport": { "width": 390, "height": 844 }, "status": "PASSED", "domEvidenceRefs": [{ "evidenceId": "browser-dom-zh-390", "kind": "DOM", "uri": "test://CapabilityStudioBrowserAcceptanceTest/gp01ResponsiveLayoutHasNoPageOverflowAtCompactAndMobileViewports", "fingerprint": "sha256:3f230f907ab08c4a23f9e5e9aa16065028f8fb948bf0d1797a7aa60f6d7344c0", "status": "AVAILABLE" }], "visualEvidenceRefs": [{ "evidenceId": "browser-visual-zh-390", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp03-zh-390.png", "fingerprint": "sha256:4911a17885398f9553d91a139b314af9b581b4f52e3657494e50191d8524f024", "status": "AVAILABLE" }], "network404Count": 0, "notes": "GP-03 中文 READY 状态移动端烟测通过，无页面级横向溢出" }
+  ],
+  "accessibilityResults": [
+    { "checkId": "A11Y-01", "status": "NOT_RUN", "evidenceRefs": [], "notes": "键盘与屏幕阅读器检查尚未执行" }
+  ],
+  "protocolAndSecurityResults": [
+    { "checkId": "SPIKE-A", "status": "NOT_RUN", "evidenceRefs": [], "notes": "Dataset 编译 Spike 尚未执行" },
+    { "checkId": "SPIKE-B", "status": "NOT_RUN", "evidenceRefs": [], "notes": "Data Lens Spike 尚未执行" },
+    { "checkId": "SPIKE-C", "status": "NOT_RUN", "evidenceRefs": [], "notes": "生产隔离 Spike 尚未执行" },
+    { "checkId": "SEC-01", "status": "NOT_RUN", "evidenceRefs": [], "notes": "生产装配缺席证据尚未绑定发布候选" }
+  ],
+  "knownLimitations": [
+    { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "Golden Pack 当前是只读元数据权威，尚未接入受治理的 Dataset 编译和隔离运行", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
+    { "limitationId": "capability-studio-browser-evidence-missing", "severity": "P1", "status": "OPEN", "description": "GP-01 至 GP-10 尚无完整真实浏览器证据", "ownerRole": "QA_OWNER", "blocksAcceptance": true }
+  ],
+  "signOffs": [
+    { "signoffId": "product-owner", "role": "PRODUCT_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "business-owner", "role": "BUSINESS_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "ux-owner", "role": "UX_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "architecture-owner", "role": "ARCHITECTURE_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "security-owner", "role": "SECURITY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "qa-owner", "role": "QA_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
+    { "signoffId": "delivery-owner", "role": "DELIVERY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" }
+  ],
+  "generatedAt": "2026-08-17T12:00:00Z"
+}

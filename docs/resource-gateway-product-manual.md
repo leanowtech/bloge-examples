@@ -1,8 +1,8 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-15，覆盖仓库内 RG-BM-001 至 RG-BM-015 实现
+> 版本基线：2026-08-17，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio Stage 0 实现
 >
-> 默认入口：`http://localhost:8080/business-mirror/`
+> 默认入口：`http://localhost:8080/capabilities/`
 >
 > 适用读者：客服业务设计人员、能力包负责人、算子开发者、测试与治理人员、平台实施人员
 
@@ -21,13 +21,14 @@ ANEKE 仍分别负责真实业务事实、资产治理与发布门禁。
 
 | 页面 | 地址 | 主要用户 | 解决的问题 |
 |---|---|---|---|
+| 能力设计工作台 | `/capabilities/` | 业务设计人员、正确性负责人 | 从业务能力出发查看接口契约、Feature/Tool 依赖和场景数据；当前 Stage 0 支持只读发现 |
 | 业务镜像 | `/business-mirror/` | 业务负责人、服务设计人员 | 把客户问题经营为有负责人、有正确性定义、有场景分母、有证据的能力包 |
 | 编排 | `/author/` | 流程作者、算子开发者 | 在 Schema 约束下编排 Graph，定义输入输出、上下文绑定和测试场景 |
 | 算子库 | `/libraries/` | 平台开发者、领域专家 | 用向导、发现和推断方式定义 Operator 与 built-in function 库 |
 | 演练 | `/rehearsals/` | 测试、治理和业务审阅人员 | 批量运行场景，按执行、证据、断言和治理原因分诊结果 |
 | 运行示例 | `/showcase/` | 首次体验者、集成开发者 | 运行七个内置 Graph，查看真实 Gateway 输出和协议示例 |
 
-所有页面共享 `EN / 中文`、舒适/紧凑密度和 Scope 上下文。Graph 名、operator ref、JSON Pointer、
+`/capabilities/` 是新的默认入口；原业务镜像仍可直接访问，不会被删除。所有页面共享 `EN / 中文`、舒适/紧凑密度和 Scope 上下文。Graph 名、operator ref、JSON Pointer、
 fingerprint、错误码和 DSL 不翻译，避免机器身份随语言变化。
 
 ## 2. 业务正确性定义与验证数据资产
@@ -131,11 +132,18 @@ Owner 冻结的正确性分母和预期。
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-脚本会构建六个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配只读 Correctness
-Studio 样板，并等待 capability probe、exact Workspace 和全部页面就绪。`--open` 默认打开正确性工作台的
-exact deep link；业务镜像仍可从全局导航进入。首次构建耗时较长；已有完整 JAR 时可使用 `--no-build`。
+脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
+黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线和全部页面
+就绪。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+较长；已有完整 JAR 时可使用 `--no-build`。
 
-需要省略正确性样板并直接打开业务镜像时使用：
+需要省略 Capability Studio 样板并直接打开业务镜像时使用：
+
+```bash
+./scripts/start-visual-canvas-demo.sh --no-capability-studio --open
+```
+
+需要省略正确性样板时使用：
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --no-correctness --open
@@ -147,7 +155,19 @@ exact deep link；业务镜像仍可从全局导航进入。首次构建耗时�
 ./scripts/start-visual-canvas-demo.sh --port 18080 --open
 ```
 
-### 3.2 从业务能力资产组合开始
+### 3.2 先理解 Capability Studio 的业务入口
+
+默认页面以「取消费用争议处理」为贯穿案例。首屏应直接显示 `4 个业务接口 / 1 个业务特征 / 1 个业务工具 / 9 个场景`，不要求输入 draft、contract 或 scenario ID。
+
+1. 在左侧选择「订单信息查询」，查看业务输入、成功结果、错误、副作用、SLA 和 Owner。
+2. 选择「场景数据」，按黄金、异常、边界、故障和回归筛选九条场景。
+3. 检查每条场景的业务名称、来源、Owner、Oracle、适用契约和期望结果。
+4. 查看 Canonical Baseline 与 Tutorial Branch。两者必须显示为独立 revision；教程分支不能改写基线。
+5. 查看「验收状态」。Stage 0 的正确结论是 `NO_GO`：当前只完成契约与场景发现，Feature/Tool 隔离运行、9/9 批量证据和零真实外呼证明仍为 `NOT_RUN`。
+
+页面加载失败时选择「重试」。若启动脚本提示黄金数据包未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。当前页面不提供 Dataset 写入或真实 Run 按钮；这不是权限错误，而是 Stage 0 的能力边界。
+
+### 3.3 从业务能力资产组合开始
 
 打开「业务镜像」，切换到「中文」。资产组合把七个内置 Graph 投影为可导入的能力包，并同时显示
 已导入数量、待导入数量和正式阻断任务，而不是只给出技术文件列表。
@@ -169,7 +189,7 @@ exact deep link；业务镜像仍可从全局导航进入。首次构建耗时�
 生产环境证据不能由演示 Fixture 自动推断。演示目录提供的 State/Effect、Scenario、Fidelity 等候选只用于
 练习受治理绑定，不会伪装成客户权威事实。
 
-### 3.3 检查 L0-L3 能力链
+### 3.4 检查 L0-L3 能力链
 
 打开「3. 组装能力」。L0 显示已有 Graph 和 built-in 能力；L1 服务设计、L2 服务载体和 L3 业务应用
 先显示当前精确引用或明确缺失项。可以分别搜索并绑定 Solution、Service Carrier 与 Channel。选择
@@ -178,7 +198,7 @@ source id、revision、fingerprint 和返回坐标；Author 校验权威 project
 
 ![L0-L3 能力地图](assets/resource-gateway-business-mirror-layers-zh.png)
 
-### 3.4 检查证据与保真度
+### 3.5 检查证据与保真度
 
 打开「6. 检查证据」。如果当前能力包还没有 evidence projection，选择「打开参考证据」。页面会明确
 标识该数据是只读协议样例，不是当前能力包的生产证据。
@@ -192,7 +212,7 @@ source id、revision、fingerprint 和返回坐标；Author 校验权威 project
 
 系统不提供一个可以掩盖薄弱维度的综合分数。
 
-### 3.5 定义并运行正确性场景
+### 3.6 定义并运行正确性场景
 
 进入「编排」，在开始对话框中选择「载入示例」和「贷款策略与降级」，再选择「自动布局」。该示例包含
 申请人资料、双信用数据源、决策表、转换节点、正式 Graph 输入输出 Schema，以及 golden、negative、
@@ -212,7 +232,7 @@ boundary 三类可运行正确性数据。
 体验重点不是三行样例全部通过，而是理解新增一个真实业务分支时，应先扩充场景分母，再补 Fixture 和预期，
 最后运行全量回归。不能只为新分支追加一条孤立的 happy path。
 
-### 3.6 分诊批量演练
+### 3.7 分诊批量演练
 
 进入「演练」。默认启动未启用批次 worker 时，页面自动进入「示例数据」，提供成功、部分完成、运行中和
 证据隔离四类完整样例。先选择「溯源策略回归」，再用失败分类筛选执行、证据、断言、治理、警告和通过结果。
@@ -225,7 +245,7 @@ boundary 三类可运行正确性数据。
 ./scripts/start-visual-canvas-demo.sh --scenario-batch --open
 ```
 
-### 3.7 使用 Correctness Studio 定义、运行与校准业务正确性
+### 3.8 使用 Correctness Studio 定义、运行与校准业务正确性
 
 Correctness Studio 是面向业务正确性资产的一级入口，不是 Author 画布里继续堆叠的测试浮层。先用只读样板理解
 信息架构：
@@ -430,8 +450,10 @@ ANEKE 已允许发布。
 
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
-| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 六个页面、业务镜像与默认 Correctness exact Workspace；写入与 Run capability 保持关闭 |
-| 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并直接打开业务镜像；`correctnessWorkspaceApi=false` |
+| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包与默认 Correctness exact Workspace；Capability 写入与 Run 保持关闭 |
+| 不装配 Capability Studio 样板 | `./scripts/start-visual-canvas-demo.sh --no-capability-studio --open` | 默认打开 legacy 业务镜像；Capability Studio 演示 API 不装配 |
+| 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并打开 Capability Studio；`correctnessWorkspaceApi=false` |
+| 验证生产装配隔离 | `./scripts/start-visual-canvas-demo.sh --profile production --no-capability-studio --no-correctness` | 两类演示 Authority 均不装配；不能用于演示黄金数据 |
 | 批量 Scenario worker | `./scripts/start-visual-canvas-demo.sh --scenario-batch --open` | 区域队列和隔离 evidence finalizer |
 | 有状态模拟 | `./scripts/start-visual-canvas-demo.sh --stateful --open` | 加密 Session、checkpoint 和恢复协议 |
 | Shadow API | `./scripts/start-visual-canvas-demo.sh --shadow-jobs` | 只读 submit/read/lifecycle；默认不启动 poller |

@@ -82,15 +82,27 @@ class GatewayExampleControllerTest {
     }
 
     @Test
-    void pageControllerMakesBusinessMirrorTheDefaultProductWorkspace() throws Exception {
+    void pageControllerMakesCapabilityStudioTheDefaultProductWorkspace() throws Exception {
         MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
 
         pageMvc.perform(get("/"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/business-mirror/"));
-        pageMvc.perform(get("/business-mirror"))
+                .andExpect(redirectedUrl("/capabilities/"));
+        pageMvc.perform(get("/capabilities"))
                 .andExpect(status().is3xxRedirection())
-                .andExpect(redirectedUrl("/business-mirror/"));
+                .andExpect(redirectedUrl("/capabilities/"));
+        pageMvc.perform(get("/capabilities/"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/capabilities/index.html"));
+    }
+
+    @Test
+    void pageControllerKeepsBusinessMirrorAsALegacyWorkspace() throws Exception {
+        MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
+
+        pageMvc.perform(get("/business-mirror"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/business-mirror/index.html"));
         pageMvc.perform(get("/business-mirror/"))
                 .andExpect(status().isOk())
                 .andExpect(forwardedUrl("/business-mirror/index.html"));

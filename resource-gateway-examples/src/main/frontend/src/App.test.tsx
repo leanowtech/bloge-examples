@@ -25,6 +25,10 @@ vi.mock('./AuthorCanvas', () => ({
   },
 }));
 
+vi.mock('./capability-studio/CapabilityStudio', () => ({
+  default: () => <div data-testid="capability-studio-mock">Capability Studio</div>,
+}));
+
 vi.mock('./business-mirror/BusinessMirrorWorkspace', () => ({
   default: () => <div data-testid="business-mirror-mock">Business Mirror workspace</div>,
 }));
@@ -78,13 +82,20 @@ describe('App route shell', () => {
     vi.restoreAllMocks();
   });
 
-  it('renders Business Mirror as the default product workspace', async () => {
+  it('renders Capability Studio as the default product workspace', async () => {
     await renderAt('/');
 
-    expect(document.title).toBe('BLOGE Visual Canvas - Business Mirror');
-    expect(query('[data-testid="business-mirror-mock"]').textContent).toContain('Business Mirror');
+    expect(document.title).toBe('BLOGE Visual Canvas - Capability Studio');
+    expect(query('[data-testid="capability-studio-mock"]').textContent).toContain('Capability Studio');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
-      .toBe('/business-mirror/');
+      .toBe('/capabilities/');
+  });
+
+  it('renders the Capability Studio route explicitly', async () => {
+    await renderAt('/capabilities/');
+
+    expect(query('[data-testid="capability-studio-mock"]')).toBeTruthy();
+    expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/capabilities/');
   });
 
   it('renders the canonical Business Mirror route', async () => {
@@ -140,7 +151,7 @@ describe('App route shell', () => {
     expect(query('[data-testid="rehearsals-mock"]').textContent).toContain('Rehearsal workbench');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href')).toBe('/rehearsals/');
     expect(query<HTMLAnchorElement>('.topbar-link[href="/author/"]').textContent).toContain('Author');
-    expect(document.querySelectorAll('.topbar-link')).toHaveLength(6);
+    expect(document.querySelectorAll('.topbar-link')).toHaveLength(7);
   });
 
   it('renders Correctness Studio as a first-class route', async () => {
@@ -181,14 +192,14 @@ describe('App route shell', () => {
       .toBe('?workspaceRoute=author&draftId=library-1');
   });
 
-  it('defaults the packaged VS Code WebView to offline Business Mirror', async () => {
+  it('defaults the packaged VS Code WebView to Capability Studio', async () => {
     (globalThis as typeof globalThis & { acquireVsCodeApi?: () => { postMessage(): void } })
       .acquireVsCodeApi = () => ({ postMessage() {} });
     await renderAt('/index.html');
 
-    expect(query('[data-testid="business-mirror-mock"]').textContent).toContain('Business Mirror');
+    expect(query('[data-testid="capability-studio-mock"]').textContent).toContain('Capability Studio');
     expect(query<HTMLAnchorElement>('.topbar-link.active').getAttribute('href'))
-      .toBe('?workspaceRoute=business-mirror');
+      .toBe('?workspaceRoute=capabilities');
   });
 
   it('switches the shell to Chinese and persists the preference without reloading', async () => {

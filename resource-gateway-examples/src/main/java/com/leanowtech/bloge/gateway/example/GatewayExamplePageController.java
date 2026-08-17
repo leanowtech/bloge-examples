@@ -14,9 +14,19 @@ public class GatewayExamplePageController {
      *
      * @return canonical workspace redirect target
      */
-    @GetMapping({"/", "/business-mirror"})
-    public String businessMirrorWorkspaceRedirect() {
-        return "redirect:/business-mirror/";
+    @GetMapping({"/", "/capabilities"})
+    public String capabilityStudioRedirect() {
+        return "redirect:/capabilities/";
+    }
+
+    /**
+     * Serves Capability Studio as the default product workspace.
+     *
+     * @return static resource forward target
+     */
+    @GetMapping("/capabilities/")
+    public String capabilityStudio() {
+        return "forward:/capabilities/index.html";
     }
 
     /**
@@ -24,7 +34,7 @@ public class GatewayExamplePageController {
      *
      * @return static resource forward target
      */
-    @GetMapping("/business-mirror/")
+    @GetMapping({"/business-mirror", "/business-mirror/"})
     public String businessMirrorWorkspace() {
         return "forward:/business-mirror/index.html";
     }

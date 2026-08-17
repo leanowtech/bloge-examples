@@ -46,6 +46,38 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 The local demo uses `http://localhost:8080` and the test-only bearer token
 `bloge-aneke-demo-token`. Do not reuse that credential outside the local demo.
 
+## Verify Capability Studio Acceptance Artifacts
+
+`CapabilityStudioAcceptanceVerifier` is the bounded offline verifier for the
+Capability Studio acceptance baseline and golden-path manifest. The test-kit JAR
+packages the two authoritative schemas under
+`/schemas/resource-gateway-capability-studio/`; consumers do not need the Spring
+Boot gateway to validate an exported artifact.
+
+```java
+CapabilityStudioAcceptanceVerifier verifier =
+        new CapabilityStudioAcceptanceVerifier();
+CapabilityStudioAcceptanceVerifier.VerificationResult result =
+        verifier.verifyGoldenPathAcceptanceManifest(manifestJson);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+The baseline entry point is `verifyAcceptanceBaseline(JsonNode)`. A result is
+valid when its schema and semantic checks both pass; `NO_GO` and `PENDING` are
+truthful, valid artifact states and are not converted into acceptance. The
+verifier enforces exact `GP-01` through `GP-10` coverage, exact `CASE-01` through
+`CASE-09` coverage with the committed canonical case-type mapping, truthful
+aggregate acceptance, and observed `realExternalCallCount == 0` before any
+`APPROVED`/`ACCEPTED` result is accepted. Aggregate acceptance also requires
+non-empty evidence references for every GP/scenario and quality result, an
+observed egress timestamp, and bound sign-off identity/time/signature fields.
+A schema failure returns `schemaValid=false`, whereas a cross-field gate
+rejection returns `schemaValid=true, semanticValid=false`. Payload-like fields
+and secrets are rejected, and error codes never include instance values or
+validator paths.
+
 ## Capability Inventory
 
 The JAR packages the authoritative v1 JSON Schema and provides:

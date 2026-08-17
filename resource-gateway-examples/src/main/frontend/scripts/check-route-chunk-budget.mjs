@@ -8,6 +8,7 @@ const shellChunkBudget = 180 * 1024;
 const routeStartupTransferBudget = 350 * 1024;
 const vendorPrefixes = ['react-runtime-', 'react-flow-'];
 const requiredApplicationChunks = [
+  'CapabilityStudio-',
   'BusinessMirrorWorkspace-',
   'AuthorCanvas-',
   'CorrectnessStudio-',
@@ -18,7 +19,7 @@ const requiredApplicationChunks = [
   'locale-catalog-',
 ];
 const routePrefixes = [
-  'BusinessMirrorWorkspace-', 'AuthorCanvas-', 'CorrectnessStudio-', 'LibraryWorkbench-',
+  'CapabilityStudio-', 'BusinessMirrorWorkspace-', 'AuthorCanvas-', 'CorrectnessStudio-', 'LibraryWorkbench-',
   'RehearsalWorkbench-', 'Showcase-',
 ];
 

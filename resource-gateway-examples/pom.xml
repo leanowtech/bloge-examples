@@ -256,8 +256,10 @@
         Opt-in frontend build. The default build (mvn test / mvn package) does NOT build the React
         authoring app, so the Java build stays fast and offline. Enable with: mvn -Pfrontend package
         which installs a local Node, runs the Vite build, and bundles the app into the jar under
-        static/business-mirror, static/author, static/libraries, static/rehearsals, and static/showcase
-        (served at /business-mirror/, /author/, /libraries/, /rehearsals/, and /showcase/, coexisting with the vanilla
+        static/capabilities, static/business-mirror, static/author, static/correctness,
+        static/libraries, static/rehearsals, and static/showcase (served at /capabilities/,
+        /business-mirror/, /author/, /correctness/, /libraries/, /rehearsals/, and /showcase/,
+        coexisting with the vanilla
         /examples/gateway showcase).
     -->
     <profiles>
@@ -342,6 +344,21 @@
                         <artifactId>maven-resources-plugin</artifactId>
                         <version>3.4.0</version>
                         <executions>
+                            <execution>
+                                <id>copy-frontend-capabilities-dist</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.outputDirectory}/static/capabilities</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/frontend/dist</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
                             <execution>
                                 <id>copy-frontend-business-mirror-dist</id>
                                 <phase>process-classes</phase>

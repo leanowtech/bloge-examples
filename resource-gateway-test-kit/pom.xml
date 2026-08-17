@@ -114,6 +114,14 @@
                     <include>*.fixture.json</include>
                 </includes>
             </resource>
+            <resource>
+                <directory>../docs/schemas/resource-gateway-capability-studio</directory>
+                <targetPath>schemas/resource-gateway-capability-studio</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>*.schema.json</include>
+                </includes>
+            </resource>
         </resources>
         <plugins>
             <plugin>

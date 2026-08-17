@@ -75,11 +75,21 @@ From the repository root:
 ./scripts/start-visual-canvas-demo.sh --open
 ```
 
-The default `test`-profile startup enables the read-only Correctness Studio sample,
-verifies the Workspace and target-catalog capabilities, and makes `--open` open the guided
-target picker. Select the loan-decision Graph; its sole Correctness Definition is bound
-automatically. Exact deep links remain compatible under the advanced coordinate panel. To start
-without the sample and open Business Mirror instead:
+The default `test`-profile startup enables Capability Studio and the read-only
+Correctness Studio sample. `--open` opens `/capabilities/`, where the cancellation-fee
+golden pack exposes four API capabilities, one Feature, one Tool, and nine business
+scenarios without requiring technical identifiers. Contract and scenario discovery are
+implemented; Feature/Tool isolated execution and release acceptance remain explicitly
+`NOT_RUN`. To disable the Capability Studio sample and open the legacy Business Mirror:
+
+```bash
+./scripts/start-visual-canvas-demo.sh --no-capability-studio --open
+```
+
+Correctness Studio still verifies the Workspace and target-catalog capabilities. Its
+guided picker binds the loan-decision Graph and sole Correctness Definition automatically.
+Exact deep links remain compatible under the advanced coordinate panel. To disable that
+sample as well:
 
 ```bash
 ./scripts/start-visual-canvas-demo.sh --no-correctness --open
@@ -95,13 +105,14 @@ for the walkthrough, exact URL, API probe, stop command, and capability boundary
 [reference candidate API guide](../docs/resource-gateway-reference-candidate-api-guide.md)
 documents metadata-only Graph/Operator/Function discovery, Correctness Target/Definition lookup,
 authenticated scope, bounded cursor pagination, exact re-resolution, and enterprise Provider SPI. The
-[product manual](../docs/resource-gateway-product-manual.md#37-使用-correctness-studio-定义运行与校准业务正确性)
+[product manual](../docs/resource-gateway-product-manual.md#38-使用-correctness-studio-定义运行与校准业务正确性)
 continues with the full authoring, publication, run, evidence, calibration, and ANEKE workflow.
 
 This packages the Spring Boot gateway with the React frontend and starts the
 demo on `http://localhost:8080`. The dedicated demo script activates the `test`
-profile by default so `/api/testing/**` is available; use `--profile production --no-correctness`
-to demonstrate that the testing beans and endpoints are structurally absent.
+profile by default so `/api/testing/**` is available; use
+`--profile production --no-correctness --no-capability-studio` to demonstrate that the
+testing and Capability Studio demo beans and endpoints are structurally absent.
 Add `--stateful` to assemble the encrypted stateful-mirror Session API and its
 dedicated local data plane. Add `--scenario-batch` to start bounded autonomous
 DAG workers plus isolated evidence-finalization lanes for one exact
@@ -117,7 +128,9 @@ silently consuming work.
 
 | Open | Best first move |
 | --- | --- |
-| `http://localhost:8080/` | Open the default Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
+| `http://localhost:8080/` | Open the default Capability Studio and inspect the cancellation-fee capability pack |
+| `http://localhost:8080/capabilities/` | Inspect 4 API capabilities, 1 Feature, 1 Tool, 9 scenarios, exact refs, contracts, and the truthful acceptance state |
+| `http://localhost:8080/business-mirror/` | Open the legacy Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
 | `http://localhost:8080/rehearsals/` | Triage exact-scope Scenario batches, or use automatic Samples fallback without `--scenario-batch` |
@@ -125,6 +138,8 @@ silently consuming work.
 | `http://localhost:8080/showcase/` | Run real Gateway examples and inspect sample outputs; diagram JSON and the legacy runner stay under Advanced |
 | `http://localhost:8080/examples/gateway` | Use the legacy Custom Composer regression surface |
 | `http://localhost:8080/api/integration/capabilities` | Verify protocol versions, endpoints, feature flags, identity provider, payload policy, and signer readiness |
+| `http://localhost:8080/api/capability-studio/demo-pack` | Read the test/staging-only payload-free golden demo projection when the Capability Studio sample is enabled |
+| `http://localhost:8080/api/capability-studio/acceptance-baseline` | Read the truthful Stage 0 `NO_GO`/`NOT_RUN` acceptance projection; this is not runtime evidence |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |

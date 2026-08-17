@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "packId": "cancellation-fee-capability-studio-golden-v1",
+  "revision": 1,
+  "packFingerprint": "sha256:9f1ce1b792d48f0c493f5137b944f529870a8a427e9a2ab19a33803b51038238",
+  "displayName": "取消费用争议能力演示包",
+  "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+  "readiness": "METADATA_READY_RUNTIME_EVIDENCE_PENDING",
+  "canonicalBaseline": {
+    "id": "cancellation-fee-canonical-baseline",
+    "ref": {"kind": "CAPABILITY_STUDIO_BASELINE", "id": "cancellation-fee-canonical-baseline", "revision": 1, "fingerprint": "sha256:8abed67545bd784929162a5639bc91f587a50d195e0fcca9cab5f47b1cda9544"},
+    "immutable": true,
+    "assetRefs": [
+      {"kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2"},
+      {"kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769"},
+      {"kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d"},
+      {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"},
+      {"kind": "FEATURE", "id": "feature-cancellation-dispute-context", "revision": 1, "fingerprint": "sha256:74e4108ff74c3b8517c733a8625f65aa2db09407e03d60da2de54368abe6d791"},
+      {"kind": "TOOL", "id": "tool-cancellation-fee-dispute-handling", "revision": 1, "fingerprint": "sha256:7662a471e37decfaa7158f5e90a66c57d038c9b6c23b5e5e013251dafc568f8a"}
+    ],
+    "scenarioRefs": [
+      {"kind": "SCENARIO", "id": "case-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:ac1b593489c014d64177383c6522d686aae3eaf32eb7c61d3739b037907bce8f"},
+      {"kind": "SCENARIO", "id": "case-rider-not-responsible", "revision": 1, "fingerprint": "sha256:d7bb8c74a1a19c4c5bded2cdd13a33458f679cd208a3b7b674fd2a1c8652a8e4"},
+      {"kind": "SCENARIO", "id": "case-driver-responsible", "revision": 1, "fingerprint": "sha256:6884c32cdf56fc10ff2fcafcfbe38418b4ccbd5177f2f96ec55107c1eab402de"},
+      {"kind": "SCENARIO", "id": "case-city-policy-missing", "revision": 1, "fingerprint": "sha256:b46ba1693838c4b79241739249f27f202249f290e104c684798dbe184184ee1f"},
+      {"kind": "SCENARIO", "id": "case-compensation-history-empty", "revision": 1, "fingerprint": "sha256:ed3154eeccfb013743eae7d415c15dd70e0a9d1a926c585bbddb507516b96ec9"},
+      {"kind": "SCENARIO", "id": "case-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:ec33cbdd95a4c1a563422d57d7faab724167426574cc2cd208cad2b517b1f115"},
+      {"kind": "SCENARIO", "id": "case-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:60968747391392a5894ac2bc408c193b34e6182146335b67ca47ca4cd251f81d"},
+      {"kind": "SCENARIO", "id": "case-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:22196b921a84b6e4fa1330b2d9f66b9f0bf21bf759cdbd235ea8a9a1406ee4b4"},
+      {"kind": "SCENARIO", "id": "case-policy-revision-regression", "revision": 1, "fingerprint": "sha256:c57e1ce81eef5e11b216a7e1fec500a44dfed27c0815c35f569700e5109f6a5a"}
+    ]
+  },
+  "apiCapabilities": [
+    {
+      "id": "api-order-lookup",
+      "name": "订单信息查询",
+      "description": "为取消费用判断提供订单状态、行程城市和取消时间等业务上下文。",
+      "ref": {"kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-order-lookup", "revision": 2, "fingerprint": "sha256:59bc1adc5828e520c1a228b4c4d45b998942988dd5b81d9ec97903f34d5560da"},
+      "contract": {
+        "inputs": [
+          {"name": "orderId", "label": "订单 ID", "type": "string", "required": true, "sensitive": false, "description": "业务系统中的订单标识。"},
+          {"name": "queryAt", "label": "查询时点", "type": "datetime", "required": true, "sensitive": false, "description": "用于确定查询使用的业务时间。"}
+        ],
+        "successOutputs": ["order.status", "order.cityCode", "order.cancelledAt", "order.serviceType"],
+        "errors": [
+          {"code": "ORDER_NOT_FOUND", "meaning": "订单不存在或已超出可查询范围", "retryable": false, "suggestedAction": "转人工核验订单信息"},
+          {"code": "ORDER_QUERY_TIMEOUT", "meaning": "订单查询在规定时间内未完成", "retryable": true, "suggestedAction": "按重试策略重试一次后转人工"}
+        ]
+      },
+      "sideEffect": "READ_ONLY",
+      "sla": "P95 <= 300ms; timeout <= 800ms",
+      "readiness": "CONTRACT_READY_MOCK_PENDING",
+      "dependencyRefs": []
+    },
+    {
+      "id": "api-cancellation-responsibility",
+      "name": "取消责任判定",
+      "description": "根据订单取消上下文判定乘客、司机或平台责任。",
+      "ref": {"kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-responsibility", "revision": 2, "fingerprint": "sha256:578ffe69bf8ba1ba4a5697b570daf0e4185d01f85f14809988288c2191cbbfbf"},
+      "contract": {"inputs": [{"name": "cancellationContext", "label": "取消上下文", "type": "object", "required": true, "sensitive": false, "description": "由订单查询和取消事件组成的上下文。"}], "successOutputs": ["responsibility.owner", "responsibility.reasonCode"], "errors": [{"code": "RESPONSIBILITY_UNDETERMINED", "meaning": "无法确定责任归属", "retryable": false, "suggestedAction": "转人工核验"}]},
+      "sideEffect": "READ_ONLY",
+      "sla": "P95 <= 250ms; timeout <= 600ms",
+      "readiness": "CONTRACT_READY_MOCK_PENDING",
+      "dependencyRefs": [
+        {"kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2"}
+      ]
+    },
+    {
+      "id": "api-city-pricing-policy",
+      "name": "城市计价政策查询",
+      "description": "查询城市和服务类型对应的取消费用政策版本。",
+      "ref": {"kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-city-pricing-policy", "revision": 3, "fingerprint": "sha256:15a788f35cbb036b2d93bdff7e31bc4ef6b15811f33f98b9c5cfaea90e837007"},
+      "contract": {"inputs": [{"name": "cityCode", "label": "城市编码", "type": "string", "required": true, "sensitive": false, "description": "订单发生城市的标准编码。"}, {"name": "serviceType", "label": "服务类型", "type": "string", "required": true, "sensitive": false, "description": "订单对应的服务类型。"}], "successOutputs": ["policy.version", "policy.feeRule", "policy.effectiveFrom"], "errors": [{"code": "POLICY_NOT_FOUND", "meaning": "没有适用的城市政策", "retryable": false, "suggestedAction": "阻断自动报价并转人工"}]},
+      "sideEffect": "READ_ONLY",
+      "sla": "P95 <= 200ms; timeout <= 500ms",
+      "readiness": "CONTRACT_READY_MOCK_PENDING",
+      "dependencyRefs": []
+    },
+    {
+      "id": "api-compensation-history",
+      "name": "补偿历史查询",
+      "description": "查询订单相关的历史补偿摘要，用于避免重复补偿。",
+      "ref": {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-compensation-history", "revision": 2, "fingerprint": "sha256:c9a46a2b1ba9b740b79013555344dbf2b082310972e01033d30a59e0692fd806"},
+      "contract": {"inputs": [{"name": "orderId", "label": "订单 ID", "type": "string", "required": true, "sensitive": false, "description": "待核查历史补偿的订单标识。"}], "successOutputs": ["compensation.history", "compensation.totalAmount"], "errors": [{"code": "COMPENSATION_HISTORY_TIMEOUT", "meaning": "历史补偿查询超时", "retryable": true, "suggestedAction": "禁止未经核验的自动补偿并转人工"}]},
+      "sideEffect": "READ_ONLY",
+      "sla": "P95 <= 250ms; timeout <= 700ms",
+      "readiness": "CONTRACT_READY_MOCK_PENDING",
+      "dependencyRefs": []
+    }
+  ],
+  "featureCapabilities": [
+    {
+      "id": "feature-cancellation-dispute-context",
+      "name": "取消争议上下文",
+      "description": "把订单、责任、城市政策和补偿历史组织为可解释的取消争议上下文。",
+      "ref": {"kind": "FEATURE", "id": "feature-cancellation-dispute-context", "revision": 1, "fingerprint": "sha256:74e4108ff74c3b8517c733a8625f65aa2db09407e03d60da2de54368abe6d791"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-dispute-context", "revision": 1, "fingerprint": "sha256:c0aefadf38994abf18c6fa00463ea835d5f8242cea2d18c63beb2df2b8fbd847"},
+      "contract": {"inputs": [{"name": "orderId", "label": "订单 ID", "type": "string", "required": true, "sensitive": false, "description": "用于串联取消争议相关信息。"}], "successOutputs": ["disputeContext.responsibility", "disputeContext.policy", "disputeContext.compensationHistory", "disputeContext.explainability"], "errors": [{"code": "CONTEXT_INCOMPLETE", "meaning": "形成上下文所需的契约信息不完整", "retryable": false, "suggestedAction": "补齐可用契约或转人工"}]},
+      "sideEffect": "READ_ONLY",
+      "sla": "依赖 DAG 的总超时 <= 2s",
+      "readiness": "DAG_CONTRACT_READY_RUNTIME_PENDING",
+      "dependencyRefs": [
+        {"kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2"},
+        {"kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769"},
+        {"kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d"},
+        {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"}
+      ]
+    }
+  ],
+  "toolCapabilities": [
+    {
+      "id": "tool-cancellation-fee-dispute-handling",
+      "name": "取消费用争议处理",
+      "description": "基于取消争议上下文输出可解释的费用处理建议。",
+      "ref": {"kind": "TOOL", "id": "tool-cancellation-fee-dispute-handling", "revision": 1, "fingerprint": "sha256:7662a471e37decfaa7158f5e90a66c57d038c9b6c23b5e5e013251dafc568f8a"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "contract": {"inputs": [{"name": "disputeContext", "label": "争议上下文", "type": "object", "required": true, "sensitive": false, "description": "由取消争议特征 DAG 产出的解释性上下文。"}], "successOutputs": ["handling.recommendation", "handling.feeAmount", "handling.explanation", "handling.nextAction"], "errors": [{"code": "HANDLING_NOT_READY", "meaning": "上下文不足以形成费用处理建议", "retryable": false, "suggestedAction": "转人工并展示缺失契约"}]},
+      "sideEffect": "NO_WRITE_EFFECT",
+      "sla": "DAG 总体 P95 <= 2.5s",
+      "readiness": "CONTRACT_READY_RUNTIME_PENDING",
+      "dependencyRefs": [
+        {"kind": "FEATURE", "id": "feature-cancellation-dispute-context", "revision": 1, "fingerprint": "sha256:74e4108ff74c3b8517c733a8625f65aa2db09407e03d60da2de54368abe6d791"}
+      ]
+    }
+  ],
+  "supportingRefs": [
+    {"kind": "SOURCE", "id": "source-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:842ac2fa51d7d5058cac1f2ed797ab29b0f4e2fb18f8a8fa920081452eabe9a5"},
+    {"kind": "ORACLE", "id": "oracle-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:c014f08c2d677838bb9f4f741b80a4b038675ae1ebac34319ea9cb075383784c"},
+    {"kind": "SOURCE", "id": "source-rider-not-responsible", "revision": 1, "fingerprint": "sha256:819e6ae08bb1a87140ecc3e56b5be571d5a237d82a1e4a8dedd27fec4f296a44"},
+    {"kind": "ORACLE", "id": "oracle-rider-not-responsible", "revision": 1, "fingerprint": "sha256:bc2442b923f039412249fb10d07533dcf573069f75ece2d4336bae2f3e86008b"},
+    {"kind": "SOURCE", "id": "source-driver-responsible", "revision": 1, "fingerprint": "sha256:6953f859ec6b910f66f749b4533c41ae432ea4e1119c9744bd8e040d297af7ea"},
+    {"kind": "ORACLE", "id": "oracle-driver-responsible", "revision": 1, "fingerprint": "sha256:54d8ccc2d5609a1863b239934de08d378057ceed19dd0847329c19888e181eed"},
+    {"kind": "SOURCE", "id": "source-city-policy-missing", "revision": 1, "fingerprint": "sha256:4e89ffb42b202fc6763dba9b5ae43f0cb32d51a4b0dfefd02ecbe9fd96b1d196"},
+    {"kind": "ORACLE", "id": "oracle-city-policy-missing", "revision": 1, "fingerprint": "sha256:13cd205d1124bced43666577bcb644fe7182e4219c16755598c0409b82b2a274"},
+    {"kind": "SOURCE", "id": "source-compensation-history-empty", "revision": 1, "fingerprint": "sha256:9b766de7e2d06e0e66d393c97dd1b7106a46f2c22e86c6ff841f8746391e8af5"},
+    {"kind": "ORACLE", "id": "oracle-compensation-history-empty", "revision": 1, "fingerprint": "sha256:9b25ae0ce0c778bb8f6837ff3e6713d55335cfeba375639315cc711cdb3a1a9c"},
+    {"kind": "SOURCE", "id": "source-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:b2c256691e6f0028ed6fa185c3850ce2b219b1e5969a44e17863cb5fdd927cf7"},
+    {"kind": "ORACLE", "id": "oracle-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:faf4cc9a56d0c856bf468a0f9c97d8d25f143986367c4bc553589a4f448f1614"},
+    {"kind": "SOURCE", "id": "source-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:f8a00e336faa283b5f6d6688821c37a621365ea81cf04246a8bf7d0761017bbf"},
+    {"kind": "ORACLE", "id": "oracle-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:c71d9dffea7c61f3cd6b380394f7c6cfde90e6074e89c7b364c627be67f8804a"},
+    {"kind": "SOURCE", "id": "source-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:5755ddd39c244a5283aed8e72dfb9a6d679b909dda18459c471432441f1f294b"},
+    {"kind": "ORACLE", "id": "oracle-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:f4359c7ca83e49befe255821e782fa4f2039ace3c33d3133256d9c1cf1494445"},
+    {"kind": "SOURCE", "id": "source-policy-revision-regression", "revision": 1, "fingerprint": "sha256:d2bb4c3c6ccf51c18993f6b7f638ceeccfeb6bdff9e8a27b42f90ba5ae27999f"},
+    {"kind": "ORACLE", "id": "oracle-policy-revision-regression", "revision": 1, "fingerprint": "sha256:c1799debaafb71cc5025288209fd6d35454b0d1d0e89764d5f1bc0edc813cfd3"}
+  ],
+  "scenarios": [
+    {
+      "id": "case-standard-cancellation-fee",
+      "name": "标准取消费用",
+      "ref": {"kind": "SCENARIO", "id": "case-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:ac1b593489c014d64177383c6522d686aae3eaf32eb7c61d3739b037907bce8f"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:842ac2fa51d7d5058cac1f2ed797ab29b0f4e2fb18f8a8fa920081452eabe9a5"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-standard-cancellation-fee", "revision": 1, "fingerprint": "sha256:c014f08c2d677838bb9f4f741b80a4b038675ae1ebac34319ea9cb075383784c"},
+      "source": {"displayName": "标准取消费用案例来源", "type": "BUSINESS_CASE"},
+      "oracle": {"displayName": "标准费用结论校验器", "summary": "校验费用、责任归因和解释信息均符合城市政策。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"}],
+      "category": "GOLDEN",
+      "expectedResult": "按城市政策计算费用并返回可解释争议结论",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-order-lookup", "revision": 1, "fingerprint": "sha256:6366e6f8ebe08567f51394e22af001e61e765dcbfafbf53f1ccb81d95cacb7e2"}, "behavior": "RETURN", "summary": "返回有效订单上下文"}]
+    },
+    {
+      "id": "case-rider-not-responsible",
+      "name": "乘客无责",
+      "ref": {"kind": "SCENARIO", "id": "case-rider-not-responsible", "revision": 1, "fingerprint": "sha256:d7bb8c74a1a19c4c5bded2cdd13a33458f679cd208a3b7b674fd2a1c8652a8e4"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-rider-not-responsible", "revision": 1, "fingerprint": "sha256:819e6ae08bb1a87140ecc3e56b5be571d5a237d82a1e4a8dedd27fec4f296a44"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-rider-not-responsible", "revision": 1, "fingerprint": "sha256:bc2442b923f039412249fb10d07533dcf573069f75ece2d4336bae2f3e86008b"},
+      "source": {"displayName": "乘客无责案例来源", "type": "BUSINESS_CASE"},
+      "oracle": {"displayName": "责任归因校验器", "summary": "校验乘客无责时不产生乘客取消费用。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-cancellation-responsibility", "revision": 2, "fingerprint": "sha256:578ffe69bf8ba1ba4a5697b570daf0e4185d01f85f14809988288c2191cbbfbf"}],
+      "category": "NEGATIVE",
+      "expectedResult": "免除乘客取消费用并给出责任归因",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769"}, "behavior": "RETURN", "summary": "返回乘客无责"}]
+    },
+    {
+      "id": "case-driver-responsible",
+      "name": "司机责任",
+      "ref": {"kind": "SCENARIO", "id": "case-driver-responsible", "revision": 1, "fingerprint": "sha256:6884c32cdf56fc10ff2fcafcfbe38418b4ccbd5177f2f96ec55107c1eab402de"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-driver-responsible", "revision": 1, "fingerprint": "sha256:6953f859ec6b910f66f749b4533c41ae432ea4e1119c9744bd8e040d297af7ea"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-driver-responsible", "revision": 1, "fingerprint": "sha256:54d8ccc2d5609a1863b239934de08d378057ceed19dd0847329c19888e181eed"},
+      "source": {"displayName": "司机责任案例来源", "type": "BUSINESS_CASE"},
+      "oracle": {"displayName": "司机责任边界校验器", "summary": "校验责任归属、费用结果和解释依据保持一致。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-cancellation-responsibility", "revision": 2, "fingerprint": "sha256:578ffe69bf8ba1ba4a5697b570daf0e4185d01f85f14809988288c2191cbbfbf"}],
+      "category": "BOUNDARY",
+      "expectedResult": "按司机责任规则处理费用并记录解释依据",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-cancellation-responsibility", "revision": 1, "fingerprint": "sha256:58a0097efc43b6fc9677c2b78541c12e12ac34b1fc58a5c19e8382fc800a2769"}, "behavior": "RETURN", "summary": "返回司机责任"}]
+    },
+    {
+      "id": "case-city-policy-missing",
+      "name": "城市政策缺失",
+      "ref": {"kind": "SCENARIO", "id": "case-city-policy-missing", "revision": 1, "fingerprint": "sha256:b46ba1693838c4b79241739249f27f202249f290e104c684798dbe184184ee1f"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-city-policy-missing", "revision": 1, "fingerprint": "sha256:4e89ffb42b202fc6763dba9b5ae43f0cb32d51a4b0dfefd02ecbe9fd96b1d196"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-city-policy-missing", "revision": 1, "fingerprint": "sha256:13cd205d1124bced43666577bcb644fe7182e4219c16755598c0409b82b2a274"},
+      "source": {"displayName": "城市政策缺失案例来源", "type": "FAULT_CASE"},
+      "oracle": {"displayName": "政策缺失安全降级校验器", "summary": "校验缺失政策时不会生成未经核验的自动报价。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-city-pricing-policy", "revision": 3, "fingerprint": "sha256:15a788f35cbb036b2d93bdff7e31bc4ef6b15811f33f98b9c5cfaea90e837007"}],
+      "category": "NEGATIVE",
+      "expectedResult": "阻断自动报价并转人工核验",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d"}, "behavior": "RETURN_EMPTY", "summary": "城市政策无匹配版本"}]
+    },
+    {
+      "id": "case-compensation-history-empty",
+      "name": "补偿历史为空",
+      "ref": {"kind": "SCENARIO", "id": "case-compensation-history-empty", "revision": 1, "fingerprint": "sha256:ed3154eeccfb013743eae7d415c15dd70e0a9d1a926c585bbddb507516b96ec9"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-compensation-history-empty", "revision": 1, "fingerprint": "sha256:9b766de7e2d06e0e66d393c97dd1b7106a46f2c22e86c6ff841f8746391e8af5"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-compensation-history-empty", "revision": 1, "fingerprint": "sha256:9b25ae0ce0c778bb8f6837ff3e6713d55335cfeba375639315cc711cdb3a1a9c"},
+      "source": {"displayName": "补偿历史为空案例来源", "type": "BOUNDARY_CASE"},
+      "oracle": {"displayName": "历史为空校验器", "summary": "校验空历史被明确表达，而不是被误判为已有补偿。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-compensation-history", "revision": 2, "fingerprint": "sha256:c9a46a2b1ba9b740b79013555344dbf2b082310972e01033d30a59e0692fd806"}],
+      "category": "BOUNDARY",
+      "expectedResult": "按无历史记录规则继续处理并标记信息缺口",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"}, "behavior": "RETURN_EMPTY", "summary": "没有历史补偿记录"}]
+    },
+    {
+      "id": "case-compensation-history-timeout",
+      "name": "补偿历史超时",
+      "ref": {"kind": "SCENARIO", "id": "case-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:ec33cbdd95a4c1a563422d57d7faab724167426574cc2cd208cad2b517b1f115"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:b2c256691e6f0028ed6fa185c3850ce2b219b1e5969a44e17863cb5fdd927cf7"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:faf4cc9a56d0c856bf468a0f9c97d8d25f143986367c4bc553589a4f448f1614"},
+      "source": {"displayName": "补偿历史超时案例来源", "type": "FAULT_CASE"},
+      "oracle": {"displayName": "超时安全降级校验器", "summary": "校验依赖超时时进入安全路径，不输出未经核验的费用结论。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-compensation-history", "revision": 2, "fingerprint": "sha256:c9a46a2b1ba9b740b79013555344dbf2b082310972e01033d30a59e0692fd806"}],
+      "category": "REGRESSION",
+      "expectedResult": "不因历史查询超时产生未经核验的费用结论",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"}, "behavior": "TIMEOUT", "summary": "依赖在受控超时窗口内无响应"}]
+    },
+    {
+      "id": "case-duplicate-cancellation",
+      "name": "重复取消请求",
+      "ref": {"kind": "SCENARIO", "id": "case-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:60968747391392a5894ac2bc408c193b34e6182146335b67ca47ca4cd251f81d"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:f8a00e336faa283b5f6d6688821c37a621365ea81cf04246a8bf7d0761017bbf"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-duplicate-cancellation", "revision": 1, "fingerprint": "sha256:c71d9dffea7c61f3cd6b380394f7c6cfde90e6074e89c7b364c627be67f8804a"},
+      "source": {"displayName": "重复取消案例来源", "type": "REGRESSION_CASE"},
+      "oracle": {"displayName": "幂等性校验器", "summary": "校验重复输入不会重复产生费用或副作用。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"}],
+      "category": "REGRESSION",
+      "expectedResult": "重复请求保持幂等且不重复产生费用动作",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "TOOL", "id": "tool-cancellation-fee-dispute-handling", "revision": 1, "fingerprint": "sha256:7662a471e37decfaa7158f5e90a66c57d038c9b6c23b5e5e013251dafc568f8a"}, "behavior": "IDEMPOTENT", "summary": "重复输入映射到同一业务结论"}]
+    },
+    {
+      "id": "case-forbidden-write-effect",
+      "name": "禁止写入副作用",
+      "ref": {"kind": "SCENARIO", "id": "case-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:22196b921a84b6e4fa1330b2d9f66b9f0bf21bf759cdbd235ea8a9a1406ee4b4"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:5755ddd39c244a5283aed8e72dfb9a6d679b909dda18459c471432441f1f294b"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-forbidden-write-effect", "revision": 1, "fingerprint": "sha256:f4359c7ca83e49befe255821e782fa4f2039ace3c33d3133256d9c1cf1494445"},
+      "source": {"displayName": "禁止写入副作用案例来源", "type": "SECURITY_CASE"},
+      "oracle": {"displayName": "副作用边界校验器", "summary": "校验只读演示不触发任何写入动作。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"}],
+      "category": "SECURITY",
+      "expectedResult": "只产生解释性结果，不调用任何写操作",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "TOOL", "id": "tool-cancellation-fee-dispute-handling", "revision": 1, "fingerprint": "sha256:7662a471e37decfaa7158f5e90a66c57d038c9b6c23b5e5e013251dafc568f8a"}, "behavior": "MUST_NOT_CALL_WRITE", "summary": "工具契约禁止写入副作用"}]
+    },
+    {
+      "id": "case-policy-revision-regression",
+      "name": "政策版本回归",
+      "ref": {"kind": "SCENARIO", "id": "case-policy-revision-regression", "revision": 1, "fingerprint": "sha256:c57e1ce81eef5e11b216a7e1fec500a44dfed27c0815c35f569700e5109f6a5a"},
+      "owner": {"id": "customer-service-platform", "name": "客服技术平台"},
+      "contractRef": {"kind": "CONTRACT", "id": "contract-cancellation-fee-dispute-tool", "revision": 1, "fingerprint": "sha256:5729112c422e38e01ec21ba15686282dd5713fa497f5b40812ec33958dbf8e5f"},
+      "sourceRef": {"kind": "SOURCE", "id": "source-policy-revision-regression", "revision": 1, "fingerprint": "sha256:d2bb4c3c6ccf51c18993f6b7f638ceeccfeb6bdff9e8a27b42f90ba5ae27999f"},
+      "oracleRef": {"kind": "ORACLE", "id": "oracle-policy-revision-regression", "revision": 1, "fingerprint": "sha256:c1799debaafb71cc5025288209fd6d35454b0d1d0e89764d5f1bc0edc813cfd3"},
+      "source": {"displayName": "政策版本回归案例来源", "type": "REGRESSION_CASE"},
+      "oracle": {"displayName": "冻结版本回归校验器", "summary": "校验政策版本变更不会悄然改变冻结案例结论。"},
+      "applicableContractRefs": [{"kind": "CONTRACT", "id": "contract-city-pricing-policy", "revision": 3, "fingerprint": "sha256:15a788f35cbb036b2d93bdff7e31bc4ef6b15811f33f98b9c5cfaea90e837007"}],
+      "category": "REGRESSION",
+      "expectedResult": "政策版本变化不会改变已冻结案例的责任和计费结论",
+      "lifecycle": "ACTIVE",
+      "qualityState": "DESIGNED_NOT_RUN",
+      "dependencyBehaviors": [{"dependencyRef": {"kind": "API", "id": "api-city-pricing-policy", "revision": 1, "fingerprint": "sha256:f215de75462e450afb937bc7012365c43a92a7a4e25ba9189d4b4373e403856d"}, "behavior": "RETURN_VERSIONED", "summary": "返回固定的政策版本"}]
+    }
+  ],
+  "tutorialBranch": {
+    "id": "tutorial-compensation-history-timeout",
+    "ref": {"kind": "CAPABILITY_STUDIO_BRANCH", "id": "tutorial-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:214b1b6ad80f3cfeb212073007d91994f81761485603af6cf8aa9ca28209f1b7"},
+    "baseBaselineRef": {"kind": "CAPABILITY_STUDIO_BASELINE", "id": "cancellation-fee-canonical-baseline", "revision": 1, "fingerprint": "sha256:8abed67545bd784929162a5639bc91f587a50d195e0fcca9cab5f47b1cda9544"},
+    "behaviorOverrides": [
+      {
+        "scenarioRef": {"kind": "SCENARIO", "id": "case-compensation-history-timeout", "revision": 1, "fingerprint": "sha256:ec33cbdd95a4c1a563422d57d7faab724167426574cc2cd208cad2b517b1f115"},
+        "dependencyRef": {"kind": "API", "id": "api-compensation-history", "revision": 1, "fingerprint": "sha256:4eb02039a7317916ea361c62b1f9b0bc7ee5ebdc2189c89cff286456b3110c37"},
+        "behavior": "TIMEOUT",
+        "summary": "教程分支把补偿历史查询替换为受控 TIMEOUT，保持 canonical baseline 不变"
+      }
+    ]
+  }
+}

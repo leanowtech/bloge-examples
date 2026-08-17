@@ -78,9 +78,9 @@ PID files are written to `target/example-pids/`, and logs are written to
 Boot jar.
 
 For the newer BLOGE visual canvas product demo, use the dedicated Resource
-Gateway script. It builds the React Business Mirror, Author, Library, Rehearsal,
-and Showcase workspaces by default, starts the service on port `8080` with the
-`test` profile, and prints the demo URLs. This exposes the isolated
+Gateway script. It builds the React Capability Studio, Business Mirror, Author,
+Library, Rehearsal, Correctness, and Showcase workspaces by default, starts the
+service on port `8080` with the `test` profile, and prints the demo URLs. This exposes the isolated
 `/api/testing/**` control plane without enabling it in production:
 
 ```bash
@@ -98,23 +98,29 @@ Common demo options:
 ./scripts/start-visual-canvas-demo.sh --no-build
 ./scripts/start-visual-canvas-demo.sh --api-only
 ./scripts/start-visual-canvas-demo.sh --profile staging
-./scripts/start-visual-canvas-demo.sh --profile production --no-correctness
+./scripts/start-visual-canvas-demo.sh --profile production --no-correctness --no-capability-studio
 ./scripts/start-visual-canvas-demo.sh --no-correctness --open
+./scripts/start-visual-canvas-demo.sh --no-capability-studio --open
 ./scripts/start-visual-canvas-demo.sh --shadow-jobs
 ./scripts/start-visual-canvas-demo.sh --shadow-scheduler
 ```
 
-The default `test`-profile startup assembles the read-only Correctness Studio sample,
-prints its exact deep link, and verifies its Workspace capability. `--open` opens that
-deep link. Use `--no-correctness` to omit the sample and open Business Mirror instead;
-the opt-out is required for `production` because demo correctness data is physically
-unavailable there.
+The default `test`-profile startup opens Capability Studio at `/capabilities/` with a
+payload-free cancellation-fee pack containing four API capabilities, one Feature, one
+Tool, and nine business scenarios. The page is deliberately honest about its boundary:
+contract and scenario discovery are available, while isolated execution and acceptance
+evidence remain `NOT_RUN` until their governed runtime is connected. Correctness Studio
+is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
+`--no-correctness` to disable either sample. Both opt-outs are required for `production`
+because neither demo authority is assembled there.
 
-`--no-build` first verifies that the reused jar contains all six visual entries
+`--no-build` first verifies that the reused jar contains all seven visual entry
 points; an API-only jar fails before Java starts and explains how to rebuild or
 use `--api-only`. Startup becomes ready only after both
-`GET /api/integration/capabilities` and the Business Mirror, Author, Library,
-Rehearsal, and Showcase pages respond successfully. API-only mode prints API entry points and
+`GET /api/integration/capabilities` and the Capability Studio, Business Mirror, Author,
+Library, Rehearsal, Correctness, and Showcase pages respond successfully. When the
+Capability Studio sample is enabled, startup also verifies its `4 / 1 / 1 / 9` pack and
+the truthful `NO_GO` acceptance baseline. API-only mode prints API entry points and
 does not advertise visual URLs.
 `--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
 `--shadow-scheduler` additionally starts bounded pollers while honestly leaving

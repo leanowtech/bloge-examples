@@ -6,6 +6,10 @@ const viteSource = readFileSync(new URL('../../vite.config.ts', import.meta.url)
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 ) as { scripts: Record<string, string> };
+const budgetSource = readFileSync(
+  new URL('../../scripts/check-route-chunk-budget.mjs', import.meta.url),
+  'utf8',
+);
 
 describe('Route chunk contract', () => {
   it('loads each heavyweight workspace through a route boundary', () => {
@@ -15,12 +19,14 @@ describe('Route chunk contract', () => {
     expect(appSource).not.toMatch(/^import RehearsalWorkbench/m);
     expect(appSource).not.toMatch(/^import Showcase/m);
     expect(appSource).not.toMatch(/^import LibraryWorkbench/m);
+    expect(appSource).not.toMatch(/^import CapabilityStudio/m);
     expect(appSource).toContain("lazy(loadBusinessMirrorWorkspace)");
     expect(appSource).toContain("lazy(loadAuthorCanvas)");
     expect(appSource).toContain("lazy(loadCorrectnessStudio)");
     expect(appSource).toContain("lazy(loadLibraryWorkbench)");
     expect(appSource).toContain("lazy(loadRehearsalWorkbench)");
     expect(appSource).toContain("lazy(loadShowcase)");
+    expect(appSource).toContain("lazy(loadCapabilityStudio)");
   });
 
   it('prefetches only after explicit navigation intent', () => {
@@ -46,5 +52,6 @@ describe('Route chunk contract', () => {
     expect(packageJson.scripts['check:bundle']).toBe('node scripts/check-route-chunk-budget.mjs');
     expect(packageJson.scripts['check:host']).toContain('vscodeWebviewBridge.test.ts');
     expect(packageJson.scripts.build).toContain('vite build && npm run check:bundle');
+    expect(budgetSource).toContain("'CapabilityStudio-'");
   });
 });
