@@ -86,6 +86,10 @@ describe('Business Mirror Workspace', () => {
     expect(document.body.textContent).toContain('Package readiness');
     expect(document.body.textContent).toContain('ACCOUNTABLE_OWNER_MISSING');
     expect(document.body.textContent).toContain('1. Define problem');
+    expect(document.body.textContent).toContain('Which customer problem are we accountable for');
+    expect(document.body.textContent).toContain('Inputs for this step');
+    expect(document.body.textContent).toContain('Next best action');
+    expect(button('Continue this step')).toBeInstanceOf(HTMLButtonElement);
     expect(input('Business domain').closest('fieldset')?.disabled).toBe(true);
     expect(document.querySelectorAll('.business-mirror-task-rail button')).toHaveLength(7);
   });
@@ -131,6 +135,7 @@ describe('Business Mirror Workspace', () => {
     );
     expect(document.querySelector('.business-mirror-task-rail button[aria-current="step"]')?.textContent)
       .toContain('4. Freeze scenarios');
+    expect(document.body.textContent).toContain('Which business branches must always be covered');
     expect(document.activeElement).toBe(target);
     expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
     const params = new URLSearchParams(window.location.search);
@@ -203,12 +208,17 @@ describe('Business Mirror Workspace', () => {
 
     await render();
 
-    expect(document.body.textContent).toContain('L0-L3 capability map');
+    expect(document.body.textContent).toContain('Which L0-L3 assets form the complete path');
+    expect(document.body.textContent).toContain('1 of 4 ready');
     expect(document.body.textContent).toContain('Impact target located');
     expect(document.body.textContent).toContain('Package compilation r7');
     const focused = document.querySelector('[data-focused-asset="true"]');
     expect(focused?.textContent).toContain('trip-api');
     expect(focused?.closest('.capability-layer')?.textContent).toContain('L0 Foundation');
+
+    await click(button('Next: 4. Freeze scenarios'));
+    expect(new URLSearchParams(window.location.search).get('task')).toBe('scenarios');
+    expect(document.body.textContent).toContain('Which business branches must always be covered');
   });
 
   it('opens the exact source Graph in Author Compose instead of the run Showcase', async () => {
@@ -244,7 +254,8 @@ describe('Business Mirror Workspace', () => {
     await render();
     await act(async () => Promise.resolve());
 
-    expect(document.body.textContent).toContain('Package evidence and Fidelity');
+    expect(document.body.textContent).toContain('What current evidence proves each layer');
+    expect(document.body.textContent).toContain('0 of 2 ready');
     expect(document.querySelectorAll('.business-mirror-evidence-layers article')).toHaveLength(5);
     expect(document.querySelectorAll('.business-mirror-fidelity-table [role="row"]')).toHaveLength(8);
     expect(document.body.textContent).toContain('20%-100%');

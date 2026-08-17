@@ -1087,6 +1087,106 @@ export const MESSAGE_CATALOG = {
   'businessMirror.task.blocked': { en: 'Blocked', 'zh-CN': '阻断' },
   'businessMirror.task.review': { en: 'Review', 'zh-CN': '审阅' },
   'businessMirror.task.complete': { en: 'Complete', 'zh-CN': '完成' },
+  'businessMirror.guidance.step': { en: 'Step {current} of {total}', 'zh-CN': '第 {current} / {total} 步' },
+  'businessMirror.guidance.readOnly': { en: 'Source preview', 'zh-CN': '来源预览' },
+  'businessMirror.guidance.inputs': { en: 'Inputs for this step', 'zh-CN': '本步所需输入' },
+  'businessMirror.guidance.inputProgress': { en: '{ready} of {total} ready', 'zh-CN': '{ready} / {total} 已具备' },
+  'businessMirror.guidance.authorityNote': {
+    en: 'These states come from the latest Package readiness result, not a browser-only guess.',
+    'zh-CN': '以下状态来自最新能力包就绪结果，不是浏览器本地猜测。',
+  },
+  'businessMirror.guidance.inputNeedsAction': { en: 'Action required', 'zh-CN': '需要处理' },
+  'businessMirror.guidance.inputReady': { en: 'Confirmed by readiness', 'zh-CN': '已由就绪结果确认' },
+  'businessMirror.guidance.inputNotBound': { en: 'Not bound in this snapshot', 'zh-CN': '当前快照未绑定' },
+  'businessMirror.guidance.inputReview': { en: 'Inspect in this step', 'zh-CN': '请在本步检查' },
+  'businessMirror.guidance.input.unknown': { en: 'Governed input', 'zh-CN': '受治理输入' },
+  'businessMirror.guidance.input.ownerConfirmation': { en: 'Owner confirmation', 'zh-CN': '负责人确认' },
+  'businessMirror.guidance.input.executable': { en: 'Executable Graph or capability', 'zh-CN': '可执行编排图或能力' },
+  'businessMirror.guidance.input.discoveredSuiteDisposition': {
+    en: 'Discovered suite disposition',
+    'zh-CN': '已发现测试套件处置结论',
+  },
+  'businessMirror.guidance.input.mirrorPlan': { en: 'Isolation Mirror Plan', 'zh-CN': '隔离镜像计划' },
+  'businessMirror.guidance.input.evidencePortfolio': { en: 'Current evidence portfolio', 'zh-CN': '当前证据组合' },
+  'businessMirror.guidance.nextBestAction': { en: 'Next best action', 'zh-CN': '下一最佳动作' },
+  'businessMirror.guidance.completeInput': { en: 'Complete {input}', 'zh-CN': '补齐“{input}”' },
+  'businessMirror.guidance.blockingImpact': {
+    en: 'This missing requirement blocks Package readiness. The control below targets it without hiding other gaps.',
+    'zh-CN': '该缺失项会阻断能力包就绪；下方动作只定位该要求，不会隐藏其他缺口。',
+  },
+  'businessMirror.guidance.openControl': { en: 'Open exact control', 'zh-CN': '打开精确控件' },
+  'businessMirror.guidance.technicalDetail': { en: 'Technical detail', 'zh-CN': '技术详情' },
+  'businessMirror.guidance.completion': { en: 'Step completion', 'zh-CN': '本步完成条件' },
+  'businessMirror.guidance.completionBlocked': {
+    en: 'Complete the highlighted requirement, then save and check readiness again.',
+    'zh-CN': '补齐高亮要求后保存，并重新检查就绪度。',
+  },
+  'businessMirror.guidance.completionReview': {
+    en: 'Review the current evidence and acknowledge any owned debt before continuing.',
+    'zh-CN': '继续前请检查当前证据，并确认已接手的证据债务。',
+  },
+  'businessMirror.guidance.completionReady': {
+    en: 'The latest authority result has no remaining requirement for this step.',
+    'zh-CN': '最新权威结果中，本步已无待完成要求。',
+  },
+  'businessMirror.guidance.continueStep': { en: 'Continue this step', 'zh-CN': '继续补齐本步' },
+  'businessMirror.guidance.nextStep': { en: 'Next: {step}', 'zh-CN': '下一步：{step}' },
+  'businessMirror.guidance.problem.question': {
+    en: 'Which customer problem are we accountable for, and what observable outcome means success?',
+    'zh-CN': '我们对哪类客户问题负责，什么可观测结果才算成功？',
+  },
+  'businessMirror.guidance.problem.why': {
+    en: 'A precise domain, problem, outcome, and owner keep technical capability tied to a real service obligation.',
+    'zh-CN': '明确业务域、问题、结果和负责人，才能让技术能力持续对应真实服务责任。',
+  },
+  'businessMirror.guidance.boundary.question': {
+    en: 'What may enter, leave, change state, or create side effects?',
+    'zh-CN': '什么信息可以进入和输出，哪些状态或副作用可能发生变化？',
+  },
+  'businessMirror.guidance.boundary.why': {
+    en: 'Explicit contracts and execution models make high-risk behavior testable before a real system is touched.',
+    'zh-CN': '显式契约与执行模型，使高风险行为能在接触真实系统前被验证。',
+  },
+  'businessMirror.guidance.capabilities.question': {
+    en: 'Which L0-L3 assets form the complete path from executable resources to customer-facing service?',
+    'zh-CN': '哪些 L0-L3 资产共同构成从可执行资源到客户服务的完整链路？',
+  },
+  'businessMirror.guidance.capabilities.why': {
+    en: 'A visible capability closure exposes missing service design, carrier, or channel links before delivery.',
+    'zh-CN': '可见的能力闭包能在交付前暴露服务设计、载体或渠道层的断点。',
+  },
+  'businessMirror.guidance.scenarios.question': {
+    en: 'Which business branches must always be covered, and which executable packs prove that denominator?',
+    'zh-CN': '哪些业务分支必须长期覆盖，哪些可执行场景包能够证明这份分母？',
+  },
+  'businessMirror.guidance.scenarios.why': {
+    en: 'Freezing the denominator turns business understanding into reusable correctness assets instead of anecdotes.',
+    'zh-CN': '冻结场景分母，才能把业务理解沉淀为可复用的正确性资产，而不是零散经验。',
+  },
+  'businessMirror.guidance.rehearsal.question': {
+    en: 'Can this capability be rehearsed without hidden access to real systems or uncontrolled side effects?',
+    'zh-CN': '这项能力能否在不隐式访问真实系统、不产生失控副作用的条件下演练？',
+  },
+  'businessMirror.guidance.rehearsal.why': {
+    en: 'An explicit Mirror Plan makes fixtures, replay, mocks, and any approved real dependency inspectable.',
+    'zh-CN': '显式镜像计划让 Fixture、回放、Mock 和获批真实依赖都可检查。',
+  },
+  'businessMirror.guidance.evidence.question': {
+    en: 'What current evidence proves each layer, and which conclusions are stale, missing, or ownerless?',
+    'zh-CN': '哪些当前证据证明了各层能力，哪些结论已过期、缺失或无人负责？',
+  },
+  'businessMirror.guidance.evidence.why': {
+    en: 'Execution alone is not proof; evidence must retain lineage, freshness, limitations, and accountable debt.',
+    'zh-CN': '执行过不等于已证明；证据必须保留来源、新鲜度、限制和责任债务。',
+  },
+  'businessMirror.guidance.calibrate.question': {
+    en: 'Is fidelity sufficient for the intended decision, who accepts the limitations, and where is it governed?',
+    'zh-CN': '当前保真度是否足以支撑目标决策，谁接受其限制，最终由谁治理？',
+  },
+  'businessMirror.guidance.calibrate.why': {
+    en: 'Calibration separates measured confidence from optimism and hands an explainable proposal to governance.',
+    'zh-CN': '校准把可测量信心与主观乐观区分开，并向治理侧提交可解释提案。',
+  },
   'businessMirror.problem.title': { en: 'Business definition', 'zh-CN': '业务定义' },
   'businessMirror.problem.detail': {
     en: 'Describe the customer problem in governed business language. Technical Graph structure remains an exact reference.',

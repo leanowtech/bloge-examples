@@ -18,7 +18,7 @@ import {
   SlidersHorizontal,
   TableProperties,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   acknowledgeBusinessMirrorEvidenceTask,
@@ -54,9 +54,11 @@ import {
   type StoredBusinessMirrorPackage,
 } from './domain';
 import {
+  getBusinessMirrorStepContract,
   remediationDescriptorForGap,
   type RemediationDescriptor,
 } from './guidance';
+import GuidedTaskShell, { type GuidedInputState } from './GuidedTaskShell';
 import './businessMirror.css';
 
 type CommandState =
@@ -463,6 +465,8 @@ export default function BusinessMirrorWorkspace() {
             editable={selected.stored !== null}
             assetFocus={assetFocus}
             onDraft={setEditor}
+            onRemediate={remediate}
+            onTask={selectTask}
           />
         </section>
 
@@ -650,6 +654,8 @@ function TaskSurface({
   editable,
   assetFocus,
   onDraft,
+  onRemediate,
+  onTask,
 }: {
   task: BusinessMirrorTaskId;
   item: BusinessMirrorPortfolioItem;
@@ -658,18 +664,74 @@ function TaskSurface({
   editable: boolean;
   assetFocus: BusinessAssetFocus | null;
   onDraft(draft: BusinessMirrorPackageDraft): void;
+  onRemediate(gap: BusinessMirrorGap): void;
+  onTask(task: BusinessMirrorTaskId): void;
 }) {
+  const contract = getBusinessMirrorStepContract(task);
+  let content: ReactNode;
   if (task === 'problem') {
-    return <ProblemTask draft={draft} editable={editable} onDraft={onDraft} />;
+    content = <ProblemTask draft={draft} editable={editable} onDraft={onDraft} />;
+  } else if (task === 'boundary') {
+    content = <BoundaryTask draft={draft} gaps={gaps} />;
+  } else if (task === 'capabilities') {
+    content = <CapabilityTask item={item} draft={draft} focus={assetFocus} />;
+  } else if (task === 'scenarios') {
+    content = <ScenarioTask item={item} draft={draft} />;
+  } else if (task === 'rehearsal') {
+    content = <RehearsalTask draft={draft} />;
+  } else if (task === 'evidence') {
+    content = <EvidenceTask item={item} />;
+  } else {
+    content = <CalibrateTask draft={draft} />;
   }
-  if (task === 'boundary') return <BoundaryTask draft={draft} gaps={gaps} />;
-  if (task === 'capabilities') {
-    return <CapabilityTask item={item} draft={draft} focus={assetFocus} />;
-  }
-  if (task === 'scenarios') return <ScenarioTask item={item} draft={draft} />;
-  if (task === 'rehearsal') return <RehearsalTask draft={draft} />;
-  if (task === 'evidence') return <EvidenceTask item={item} />;
-  return <CalibrateTask draft={draft} />;
+  return (
+    <GuidedTaskShell
+      contract={contract}
+      gaps={gaps}
+      progress={businessMirrorTaskProgress(task, gaps)}
+      readOnly={!editable}
+      inputStates={guidedInputStates(draft, item)}
+      onRemediate={onRemediate}
+      onTask={onTask}
+    >
+      {content}
+    </GuidedTaskShell>
+  );
+}
+
+function guidedInputStates(
+  draft: BusinessMirrorPackageDraft,
+  item: BusinessMirrorPortfolioItem,
+): Record<string, GuidedInputState> {
+  const definition = draft.businessDefinition;
+  const state = (available: boolean): GuidedInputState => available ? 'READY' : 'MISSING';
+  return {
+    domain: state(Boolean(definition.domainId)),
+    taxonomy: state(definition.problemTaxonomyRef !== null),
+    problemCode: state(Boolean(definition.problemCode)),
+    businessGoal: state(Boolean(definition.businessGoal)),
+    expectedOutcome: state(Boolean(definition.expectedOutcome)),
+    accountableOwner: state(Boolean(definition.accountableOwner)),
+    contract: state(draft.packageContractRef !== null),
+    state: state(draft.stateModelRefs.length > 0),
+    effect: state(draft.effectModelRefs.length > 0),
+    ownerConfirmation: state(Boolean(draft.provenance.approvedBy)),
+    executable: state(draft.capabilityRefs.length > 0 || draft.graphRefs.length > 0
+      || Boolean(item.projection.projectedCapabilityRef.id)),
+    solution: state(draft.solutionRefs.length > 0),
+    carrier: state(draft.carrierRefs.length > 0),
+    channel: state(draft.channelRefs.length > 0),
+    scenarioInventory: state(draft.scenarioInventoryRef !== null),
+    scenarioPack: state(draft.scenarioPackRefs.length > 0),
+    discoveredSuiteDisposition: state(item.projection.discoveredTestSuiteRefs.length === 0
+      || (draft.scenarioInventoryRef !== null && draft.scenarioPackRefs.length > 0)),
+    mirrorPlan: 'MISSING',
+    evidencePortfolio: 'REVIEW',
+    ownerTasks: 'REVIEW',
+    fidelity: state(draft.fidelityInventoryRef !== null),
+    outcome: state(draft.outcomeDefinitionRefs.length > 0),
+    approval: state(Boolean(draft.provenance.approvedBy)),
+  };
 }
 
 function ProblemTask({
@@ -689,7 +751,6 @@ function ProblemTask({
   });
   return (
     <>
-      <TaskHeading heading="businessMirror.problem.title" detail="businessMirror.problem.detail" />
       <fieldset className="business-mirror-form" disabled={!editable}>
         <label data-remediation-anchor="business-mirror.problem.domain">
           <span>{m('businessMirror.field.domain')}</span>
@@ -751,7 +812,6 @@ function BoundaryTask({ draft, gaps }: { draft: BusinessMirrorPackageDraft; gaps
   const ownerReview = gaps.some((gap) => gap.code === 'GRAPH_CONTRACT_OWNER_CONFIRMATION_MISSING');
   return (
     <>
-      <TaskHeading heading="businessMirror.boundary.title" detail="businessMirror.task.boundaryDetail" />
       <div className="business-mirror-requirement-list">
         {rows.map((row) => (
           <div
@@ -805,7 +865,6 @@ function CapabilityTask({
   };
   return (
     <>
-      <TaskHeading heading="businessMirror.capability.title" detail="businessMirror.capability.detail" />
       {focus && (
         <div className="business-mirror-focus-coordinate" role="status">
           <Network aria-hidden="true" size={18} />
@@ -870,7 +929,6 @@ function ScenarioTask({ item, draft }: { item: BusinessMirrorPortfolioItem; draf
   const { m } = useI18n();
   return (
     <>
-      <TaskHeading heading="businessMirror.scenario.title" detail="businessMirror.task.scenariosDetail" />
       <div
         className="business-mirror-scenario-discovery"
         data-remediation-anchor="business-mirror.scenarios.discovered-suite"
@@ -897,7 +955,6 @@ function RehearsalTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
   const ready = draft.scenarioPackRefs.length > 0;
   return (
     <>
-      <TaskHeading heading="businessMirror.rehearsal.title" detail="businessMirror.task.rehearsalDetail" />
       <div
         className={`business-mirror-stage-message ${ready ? 'ready' : 'blocked'}`}
         data-remediation-anchor="business-mirror.rehearsal.mirror-plan"
@@ -996,7 +1053,6 @@ function EvidenceTask({ item }: { item: BusinessMirrorPortfolioItem }) {
 
   return (
     <>
-      <TaskHeading heading="businessMirror.evidence.title" detail="businessMirror.evidence.detail" />
       <div data-remediation-anchor="business-mirror.evidence.portfolio">
       {state === 'loading' && (
         <div className="business-mirror-evidence-state" aria-busy="true">
@@ -1178,7 +1234,6 @@ function CalibrateTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
   const { m } = useI18n();
   return (
     <>
-      <TaskHeading heading="businessMirror.calibrate.title" detail="businessMirror.task.calibrateDetail" />
       <div className="business-mirror-requirement-list">
         <Requirement label="businessMirror.calibrate.fidelity" available={draft.fidelityInventoryRef !== null}
           remediationAnchor="business-mirror.calibrate.fidelity" />
@@ -1217,11 +1272,6 @@ function Requirement({
       </span>
     </div>
   );
-}
-
-function TaskHeading({ heading, detail }: { heading: MessageId; detail: MessageId }) {
-  const { m } = useI18n();
-  return <header className="business-mirror-task-heading"><h3>{m(heading)}</h3><p>{m(detail)}</p></header>;
 }
 
 function GapInventory({ gaps, onSelect }: { gaps: BusinessMirrorGap[]; onSelect(gap: BusinessMirrorGap): void }) {

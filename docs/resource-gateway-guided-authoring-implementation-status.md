@@ -12,7 +12,7 @@
 | P0：Business Mirror -> Author exact link | `IMPLEMENTED` | `businessMirrorAuthorHref` 生成 allowlisted exact source/return coordinate；Business Mirror 不再引用 Showcase | 服务端 Link Resolver 与 durable fork receipt |
 | P0：Author legacy Graph source validation | `IMPLEMENTED` | Author 反查 legacy projection，比较 id/revision/fingerprint，加载官方 scenario/diagram；漂移失败关闭 | 只读态视觉提示和显式“创建工作副本”命令 |
 | P0：Remediation 命令闭环 | `IMPLEMENTED` | 21 类已知 gap 有稳定 descriptor；同页/跨页均切换、滚动、聚焦、高亮、写入 URL 并播报 outcome；未知 gap 显式失败 | Picker 自动打开、跨工作区 `NAVIGATED`、权威重算后的 `RESOLVED` |
-| P0：任务指引骨架 | `IN_PROGRESS` | 七步 Step Contract 正在实施 | 页面投影、Next Best Action、i18n |
+| P0：任务指引骨架 | `IMPLEMENTED` | 七步均显示业务问题、Why、输入状态、权威完成状态、Next Best Action 和底部决策；中英文与响应式布局完整 | Picker 接入后把 `OPEN_PICKER` 动作从定位升级为自动展开 |
 | P1：候选资产与 Picker | `IN_PROGRESS` | Provider SPI、候选协议和共享 Combobox 正在实施 | Controller/Capability、Correctness Launcher 和各字段接入 |
 | P1：七步可操作化 | `PLANNED` | 目标控件与完成标准已在方案冻结 | Contract/Owner/Scenario/Fidelity 等目录适配与创建回跳 |
 
@@ -57,6 +57,17 @@ Author 收到坐标后：
 
 当前 outcome 为 `STILL_BLOCKED` 或 `FAILED`。选择器接入后再增加 `CANCELLED`，跨工作区动作增加
 `NAVIGATED`，保存并读取权威 readiness 后才允许显示 `RESOLVED`。
+
+## 七步任务壳行为
+
+每个 Sheet 现在共享 `GuidedTaskShell`，不再直接把领域对象和协议字段堆给首次用户：
+
+- 顶部先说明“本步回答什么问题”和“为什么重要”，并标明当前步骤、权威状态和来源预览状态；
+- 输入清单分别显示“已绑定”“当前快照未绑定”“需在本步检查”和“构成权威阻断”，不再用“没有 gap”
+  猜测输入已经存在；
+- 下一最佳动作显示待补输入、业务影响和精确控件入口，协议 code/field path 收进技术详情；
+- 底部根据权威 gap 决定“继续补齐本步”或“进入下一步”，仍允许专家从左侧直接跳步；
+- Step Contract、具体 Sheet 和 Remediation Descriptor 分层，业务表单没有复制导航与完成规则。
 
 ## 自动化证据
 
