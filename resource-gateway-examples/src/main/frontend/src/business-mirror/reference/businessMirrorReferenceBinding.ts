@@ -41,6 +41,17 @@ export const BUSINESS_MIRROR_REFERENCE_KINDS: Record<BusinessMirrorReferenceFiel
   approvalOwner: 'OWNER',
 };
 
+const BINDABLE_CANDIDATE_KINDS: Partial<Record<BusinessMirrorReferenceField, readonly string[]>> = {
+  carrier: ['SOP', 'AGENT', 'WORKFLOW'],
+  channel: ['CHANNEL_APPLICATION'],
+};
+
+export function businessMirrorBindableCandidateKinds(
+  field: BusinessMirrorReferenceField,
+): readonly string[] {
+  return BINDABLE_CANDIDATE_KINDS[field] ?? [BUSINESS_MIRROR_REFERENCE_KINDS[field]];
+}
+
 export function referenceBindingIntent(field: BusinessMirrorReferenceField): string {
   return `BIND_${field.replace(/([a-z])([A-Z])/g, '$1_$2').toUpperCase()}`;
 }
@@ -55,11 +66,11 @@ export function applyResolvedBusinessMirrorReference(
     throw new BusinessMirrorReferenceBindingError(result.status, result.errorCode);
   }
   const candidate = result.candidate;
-  const expectedKind = BUSINESS_MIRROR_REFERENCE_KINDS[field];
-  if (candidate.kind !== expectedKind) {
+  const expectedKinds = businessMirrorBindableCandidateKinds(field);
+  if (!expectedKinds.includes(candidate.kind)) {
     throw new BusinessMirrorReferenceBindingError(
       'KIND_MISMATCH',
-      `Expected ${expectedKind}; received ${candidate.kind}.`,
+      `Expected ${expectedKinds.join('|')}; received ${candidate.kind}.`,
     );
   }
   const artifactRef = toArtifactRef(candidate);
@@ -157,7 +168,13 @@ function toAssetRef(
 ): BusinessMirrorAssetRef {
   return {
     ...toArtifactRef(candidate),
-    scope: candidate.scope,
+    scope: {
+      tenantId: candidate.scope.tenantId,
+      organizationId: candidate.scope.organizationId,
+      projectId: candidate.scope.projectId,
+      environmentId: candidate.scope.environmentId,
+      region: candidate.scope.region,
+    },
     layer: field === 'solution' ? 'L1_SERVICE_DESIGN'
       : field === 'carrier' ? 'L2_SERVICE_CARRIER' : 'L3_APPLICATION',
     authority: candidate.authority,

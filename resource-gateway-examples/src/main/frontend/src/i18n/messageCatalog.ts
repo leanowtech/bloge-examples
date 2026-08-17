@@ -1035,11 +1035,209 @@ export const MESSAGE_CATALOG = {
     en: 'The exact control is focused and highlighted. Complete it, then check readiness again.',
     'zh-CN': '已聚焦并高亮精确控件。完成配置后，请再次检查就绪度。',
   },
+  'businessMirror.remediation.resolved': {
+    en: 'The saved Package was re-evaluated and this blocker is now resolved.',
+    'zh-CN': '已重新评估保存后的能力包，该阻断现已解决。',
+  },
+  'businessMirror.remediation.navigated': {
+    en: 'Opening the required workspace. The return coordinate keeps this Package and step.',
+    'zh-CN': '正在打开所需工作区；返回坐标会保留当前能力包和步骤。',
+  },
   'businessMirror.remediation.unavailable': {
     en: 'This deployment cannot open the required capability ({capability}). No data was changed.',
     'zh-CN': '当前部署无法打开所需能力（{capability}），未修改任何数据。',
   },
+  'businessMirror.remediation.accountableOwnerMissing.title': {
+    en: 'Accountable owner is missing', 'zh-CN': '缺少责任负责人',
+  },
+  'businessMirror.remediation.accountableOwnerMissing.impact': {
+    en: 'The Package has no accountable business owner.', 'zh-CN': '能力包尚未指定业务责任负责人。',
+  },
+  'businessMirror.remediation.accountableOwnerMissing.instruction': {
+    en: 'Select the accountable owner from the governed directory.', 'zh-CN': '从受治理目录中选择责任负责人。',
+  },
+  'businessMirror.remediation.businessDomainMissing.title': {
+    en: 'Business domain is missing', 'zh-CN': '缺少业务域',
+  },
+  'businessMirror.remediation.businessDomainMissing.impact': {
+    en: 'The Package cannot be placed in a governed business domain.', 'zh-CN': '能力包无法归属到受治理的业务域。',
+  },
+  'businessMirror.remediation.businessDomainMissing.instruction': {
+    en: 'Select the governed business domain for this Package.', 'zh-CN': '选择该能力包所属的受治理业务域。',
+  },
+  'businessMirror.remediation.businessGoalMissing.title': {
+    en: 'Business goal is missing', 'zh-CN': '缺少业务目标',
+  },
+  'businessMirror.remediation.businessGoalMissing.impact': {
+    en: 'The topology does not explain which customer-service goal it serves.', 'zh-CN': '当前拓扑无法说明它服务于哪个客服业务目标。',
+  },
+  'businessMirror.remediation.businessGoalMissing.instruction': {
+    en: 'Write a measurable customer-service goal.', 'zh-CN': '填写可衡量的客服业务目标。',
+  },
+  'businessMirror.remediation.expectedOutcomeMissing.title': {
+    en: 'Expected outcome is missing', 'zh-CN': '缺少预期结果',
+  },
+  'businessMirror.remediation.expectedOutcomeMissing.impact': {
+    en: 'The Package has no independently observable success outcome.', 'zh-CN': '能力包没有可独立观察的成功结果。',
+  },
+  'businessMirror.remediation.expectedOutcomeMissing.instruction': {
+    en: 'Define the independently observable expected outcome.', 'zh-CN': '定义可独立观察的预期结果。',
+  },
+  'businessMirror.remediation.problemCodeMissing.title': {
+    en: 'Problem code is missing', 'zh-CN': '缺少问题编码',
+  },
+  'businessMirror.remediation.problemCodeMissing.impact': {
+    en: 'The customer problem cannot be referenced consistently.', 'zh-CN': '客户问题无法被稳定引用。',
+  },
+  'businessMirror.remediation.problemCodeMissing.instruction': {
+    en: 'Enter the taxonomy-local customer problem code.', 'zh-CN': '填写该分类体系下的客户问题编码。',
+  },
+  'businessMirror.remediation.problemTaxonomyMissing.title': {
+    en: 'Problem taxonomy is missing', 'zh-CN': '缺少问题分类',
+  },
+  'businessMirror.remediation.problemTaxonomyMissing.impact': {
+    en: 'Problem definitions cannot be compared under a governed taxonomy.', 'zh-CN': '问题定义无法在受治理的分类体系下比较。',
+  },
+  'businessMirror.remediation.problemTaxonomyMissing.instruction': {
+    en: 'Bind an exact governed problem taxonomy revision.', 'zh-CN': '绑定精确的受治理问题分类修订版。',
+  },
+  'businessMirror.remediation.packageContractMissing.title': {
+    en: 'Package Contract is missing', 'zh-CN': '缺少能力包契约',
+  },
+  'businessMirror.remediation.packageContractMissing.impact': {
+    en: 'The business boundary is not formally defined.', 'zh-CN': '业务边界尚未形式化定义。',
+  },
+  'businessMirror.remediation.packageContractMissing.instruction': {
+    en: 'Author and bind an exact Package Contract.', 'zh-CN': '定义并绑定精确的能力包契约。',
+  },
+  'businessMirror.remediation.graphContractOwnerConfirmationMissing.title': {
+    en: 'Contract owner confirmation is missing', 'zh-CN': '缺少契约负责人确认',
+  },
+  'businessMirror.remediation.graphContractOwnerConfirmationMissing.impact': {
+    en: 'The imported Graph Contract is technical evidence, not an approved business boundary.', 'zh-CN': '导入的编排图契约只是技术证据，还不是已批准的业务边界。',
+  },
+  'businessMirror.remediation.graphContractOwnerConfirmationMissing.instruction': {
+    en: 'Select the accountable owner to confirm the Contract.', 'zh-CN': '选择责任负责人确认该契约。',
+  },
+  'businessMirror.remediation.highRiskEffectModelMissing.title': {
+    en: 'High-risk effect model is missing', 'zh-CN': '缺少高风险影响模型',
+  },
+  'businessMirror.remediation.highRiskEffectModelMissing.impact': {
+    en: 'Write and side-effect semantics are not explicit for this high-risk Package.', 'zh-CN': '该高风险能力包的写入与副作用语义尚未明确。',
+  },
+  'businessMirror.remediation.highRiskEffectModelMissing.instruction': {
+    en: 'Bind the exact effect model for write and side-effect behavior.', 'zh-CN': '绑定精确的写入与副作用影响模型。',
+  },
+  'businessMirror.remediation.highRiskStateModelMissing.title': {
+    en: 'High-risk state model is missing', 'zh-CN': '缺少高风险状态模型',
+  },
+  'businessMirror.remediation.highRiskStateModelMissing.impact': {
+    en: 'Fail-closed behavior cannot be checked against an explicit state model.', 'zh-CN': '无法依据明确的状态模型检查故障关闭行为。',
+  },
+  'businessMirror.remediation.highRiskStateModelMissing.instruction': {
+    en: 'Bind the exact state model for this high-risk Package.', 'zh-CN': '绑定该高风险能力包的精确状态模型。',
+  },
+  'businessMirror.remediation.executableProjectionMissing.title': {
+    en: 'Executable projection is missing', 'zh-CN': '缺少可执行投影',
+  },
+  'businessMirror.remediation.executableProjectionMissing.impact': {
+    en: 'The Package has no executable Graph or Capability to run.', 'zh-CN': '能力包没有可运行的编排图或能力。',
+  },
+  'businessMirror.remediation.executableProjectionMissing.instruction': {
+    en: 'Open Author Compose and bind an exact Graph or Capability.', 'zh-CN': '打开编排创作并绑定精确的编排图或能力。',
+  },
+  'businessMirror.remediation.solutionBindingMissing.title': {
+    en: 'Solution binding is missing', 'zh-CN': '缺少解决方案绑定',
+  },
+  'businessMirror.remediation.solutionBindingMissing.impact': {
+    en: 'No L1 service design asset is connected to this Package.', 'zh-CN': '该能力包尚未连接 L1 服务设计资产。',
+  },
+  'businessMirror.remediation.solutionBindingMissing.instruction': {
+    en: 'Bind an exact L1 Solution asset.', 'zh-CN': '绑定精确的 L1 解决方案资产。',
+  },
+  'businessMirror.remediation.serviceCarrierBindingMissing.title': {
+    en: 'Service carrier binding is missing', 'zh-CN': '缺少服务载体绑定',
+  },
+  'businessMirror.remediation.serviceCarrierBindingMissing.impact': {
+    en: 'No L2 SOP, Workflow, or Agent carries this service capability.', 'zh-CN': '没有 L2 SOP、Workflow 或 Agent 承载该服务能力。',
+  },
+  'businessMirror.remediation.serviceCarrierBindingMissing.instruction': {
+    en: 'Bind an exact SOP, Workflow, or Agent asset.', 'zh-CN': '绑定精确的 SOP、Workflow 或 Agent 资产。',
+  },
+  'businessMirror.remediation.channelBindingMissing.title': {
+    en: 'Channel binding is missing', 'zh-CN': '缺少应用渠道绑定',
+  },
+  'businessMirror.remediation.channelBindingMissing.impact': {
+    en: 'No L3 application channel consumes this service capability.', 'zh-CN': '没有 L3 应用渠道消费该服务能力。',
+  },
+  'businessMirror.remediation.channelBindingMissing.instruction': {
+    en: 'Bind the consuming channel application.', 'zh-CN': '绑定实际消费该能力的应用渠道。',
+  },
+  'businessMirror.remediation.scenarioInventoryMissing.title': {
+    en: 'Scenario inventory is missing', 'zh-CN': '缺少场景清单',
+  },
+  'businessMirror.remediation.scenarioInventoryMissing.impact': {
+    en: 'Coverage has no owner-governed denominator.', 'zh-CN': '覆盖率没有经负责人治理的分母。',
+  },
+  'businessMirror.remediation.scenarioInventoryMissing.instruction': {
+    en: 'Freeze the expected business Scenario inventory.', 'zh-CN': '冻结预期覆盖的业务场景清单。',
+  },
+  'businessMirror.remediation.scenarioPackMissing.title': {
+    en: 'Scenario pack is missing', 'zh-CN': '缺少场景包',
+  },
+  'businessMirror.remediation.scenarioPackMissing.impact': {
+    en: 'The expected branches have not been assembled into executable Scenarios.', 'zh-CN': '预期业务分支尚未组装为可执行场景。',
+  },
+  'businessMirror.remediation.scenarioPackMissing.instruction': {
+    en: 'Convert reviewed tests and business cases into exact Scenario packs.', 'zh-CN': '将已审阅测试和业务用例转换为精确的场景包。',
+  },
+  'businessMirror.remediation.discoveredTestSuiteRequiresScenarioGovernance.title': {
+    en: 'Discovered tests need Scenario governance', 'zh-CN': '发现的测试需要纳入场景治理',
+  },
+  'businessMirror.remediation.discoveredTestSuiteRequiresScenarioGovernance.impact': {
+    en: 'Discovered Contract tests are not yet an owner-governed Scenario denominator.', 'zh-CN': '发现的契约测试还不是经负责人治理的场景分母。',
+  },
+  'businessMirror.remediation.discoveredTestSuiteRequiresScenarioGovernance.instruction': {
+    en: 'Classify, deduplicate, version, and approve the tests as Scenarios.', 'zh-CN': '将测试分类、去重、版本化并审批为业务场景。',
+  },
+  'businessMirror.remediation.mirrorPlanMissing.title': {
+    en: 'Mirror Plan is missing', 'zh-CN': '缺少业务镜像计划',
+  },
+  'businessMirror.remediation.mirrorPlanMissing.impact': {
+    en: 'The Package has no exact isolated rehearsal plan.', 'zh-CN': '能力包没有精确的隔离演练计划。',
+  },
+  'businessMirror.remediation.mirrorPlanMissing.instruction': {
+    en: 'Compile and review the exact Mirror Plan.', 'zh-CN': '编译并审阅精确的业务镜像计划。',
+  },
+  'businessMirror.remediation.fidelityInventoryMissing.title': {
+    en: 'Fidelity inventory is missing', 'zh-CN': '缺少保真度清单',
+  },
+  'businessMirror.remediation.fidelityInventoryMissing.impact': {
+    en: 'The rehearsal cannot state which business dimensions it represents.', 'zh-CN': '演练无法说明它代表哪些业务维度。',
+  },
+  'businessMirror.remediation.fidelityInventoryMissing.instruction': {
+    en: 'Define dimensions, strata, thresholds, and observation horizons.', 'zh-CN': '定义维度、分层、阈值和观察窗口。',
+  },
+  'businessMirror.remediation.outcomeDefinitionMissing.title': {
+    en: 'Outcome definition is missing', 'zh-CN': '缺少结果定义',
+  },
+  'businessMirror.remediation.outcomeDefinitionMissing.impact': {
+    en: 'Rehearsal results cannot be calibrated against an independent Outcome.', 'zh-CN': '演练结果无法依据独立结果进行校准。',
+  },
+  'businessMirror.remediation.outcomeDefinitionMissing.instruction': {
+    en: 'Bind exact Outcome definitions and their authority source.', 'zh-CN': '绑定精确的结果定义及其权威来源。',
+  },
+  'businessMirror.remediation.legacyProjectionOwnerApprovalMissing.title': {
+    en: 'Migration owner approval is missing', 'zh-CN': '缺少迁移负责人审批',
+  },
+  'businessMirror.remediation.legacyProjectionOwnerApprovalMissing.impact': {
+    en: 'The inferred migration projection has not been independently approved.', 'zh-CN': '推断出的迁移投影尚未经过独立审批。',
+  },
+  'businessMirror.remediation.legacyProjectionOwnerApprovalMissing.instruction': {
+    en: 'Review inferred bindings and record an independent owner approval.', 'zh-CN': '审阅推断绑定并记录独立的负责人审批。',
+  },
   'businessMirror.command.openRehearsals': { en: 'Open Rehearsals', 'zh-CN': '打开演练工作台' },
+  'businessMirror.command.openCorrectness': { en: 'Open Correctness workspace', 'zh-CN': '打开正确性工作台' },
   'businessMirror.command.imported': {
     en: 'Package imported as durable revision {revision}.',
     'zh-CN': '能力包已导入为持久修订版 {revision}。',
@@ -1265,6 +1463,14 @@ export const MESSAGE_CATALOG = {
   'businessMirror.capability.l3': { en: 'L3 Application', 'zh-CN': 'L3 业务应用层' },
   'businessMirror.capability.missing': { en: 'Missing {kind}', 'zh-CN': '缺少 {kind}' },
   'businessMirror.capability.openGraph': { en: 'Open exact Graph', 'zh-CN': '打开精确编排图' },
+  'businessMirror.capability.resolvingGraph': {
+    en: 'Resolving exact Graph...',
+    'zh-CN': '正在解析精确编排图...',
+  },
+  'businessMirror.capability.graphLinkFailed': {
+    en: 'The exact Author link could not be resolved. You remain on this Package.',
+    'zh-CN': '无法解析精确编排链接，当前页面会保留在此能力包。',
+  },
   'businessMirror.capability.focus': {
     en: 'Impact target located',
     'zh-CN': '已定位影响目标',

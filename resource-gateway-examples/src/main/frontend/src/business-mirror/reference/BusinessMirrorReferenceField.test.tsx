@@ -65,6 +65,25 @@ describe('BusinessMirrorReferenceField', () => {
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
+  it('accepts concrete domain kinds returned by a catalog-family query', async () => {
+    const agent = { ...candidate('服务 Agent'), kind: 'AGENT' };
+    const workflow = { ...candidate('退款工作流'), kind: 'WORKFLOW' };
+    const onChange = vi.fn();
+    await render({
+      kind: 'SERVICE_CARRIER',
+      acceptedKinds: ['SOP', 'AGENT', 'WORKFLOW'],
+      loadCandidates: vi.fn<ReferenceCandidateSearch>().mockResolvedValue(page([
+        agent, workflow, { ...candidate('错误类型'), kind: 'CHANNEL_APPLICATION' },
+      ])),
+      onChange,
+    });
+
+    await openPicker();
+    expect(optionNames()).toEqual(['服务 Agent', '退款工作流']);
+    await act(async () => host.querySelectorAll<HTMLLIElement>('[role="option"]')[0]?.click());
+    expect(onChange).toHaveBeenCalledWith(agent);
+  });
+
   it('shows the caller fallback when the capability is unavailable without loading', async () => {
     const loadCandidates = vi.fn<ReferenceCandidateSearch>();
     await render({

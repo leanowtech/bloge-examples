@@ -13,6 +13,7 @@ import BusinessMirrorReferenceField from './BusinessMirrorReferenceField';
 import {
   applyResolvedBusinessMirrorReference,
   BUSINESS_MIRROR_REFERENCE_KINDS,
+  businessMirrorBindableCandidateKinds,
   type BusinessMirrorReferenceField as BindingField,
   clearBusinessMirrorReference,
   referenceBindingIntent,
@@ -134,6 +135,8 @@ export default function BusinessMirrorReferenceBindingControl({
         </div>
       )}
       <BusinessMirrorReferenceField
+        acceptedKinds={field === 'carrier' || field === 'channel'
+          ? businessMirrorBindableCandidateKinds(field) : undefined}
         capabilityAvailable={capabilityAvailable}
         clearable
         disabled={!editable || state === 'resolving'}

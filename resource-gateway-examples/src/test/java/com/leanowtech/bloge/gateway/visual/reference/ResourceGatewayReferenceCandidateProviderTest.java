@@ -164,7 +164,7 @@ class ResourceGatewayReferenceCandidateProviderTest {
         assertThat(candidates).extracting(ReferenceCandidate::kind)
                 .containsExactlyInAnyOrder(
                         "BUSINESS_DOMAIN", "PROBLEM_TAXONOMY", "OWNER", "PACKAGE_CONTRACT",
-                        "STATE_MODEL", "EFFECT_MODEL", "SOLUTION", "SERVICE_CARRIER", "CHANNEL",
+                        "STATE_MODEL", "EFFECT_MODEL", "SOLUTION", "AGENT", "CHANNEL_APPLICATION",
                         "SCENARIO_INVENTORY", "SCENARIO_PACK", "FIDELITY_INVENTORY", "OUTCOME_DEFINITION");
         assertThat(candidates).allSatisfy(candidate -> {
             assertThat(candidate.scope()).isEqualTo(scope());

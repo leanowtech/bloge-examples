@@ -21,7 +21,9 @@ and Close**. Reopen the workspace to verify exact Author recovery.
 
 The offline Business Mirror adapter never accesses the network, Secret, or production business payload. It binds
 idempotency keys to canonical request material, exactly replays an ambiguous save, and rejects key reuse with changed
-material. Package heads are extension-process state; they are not presented as durable production storage. See the
+material. Its metadata-only candidate catalog implements the same bounded search, stable cursor, catalog-family
+expansion, and exact resolve contract as the server, so all 13 guided reference fields remain usable offline. Package
+heads are extension-process state; they are not presented as durable production storage. See the
 [Business Mirror Workspace guide](../../docs/resource-gateway-business-mirror-workspace-guide.md) for the complete fixed
 task and the server/remote-runtime boundary.
 
@@ -68,7 +70,8 @@ npm run verify
 ```
 
 The tests cover protocol validation, secret-key encryption, tamper detection, tenant/environment partitioning, offline
-catalog behavior, remote SSRF boundaries, credential ownership, CSP generation, and fail-closed safe disposal.
+catalog search/resolve and family expansion, remote SSRF boundaries, credential ownership, CSP generation, and
+fail-closed safe disposal.
 
 The complete security boundary, actual VS Code measurements, screenshots, discovered defects, and E3/E4 gap are in
 [`docs/resource-gateway-ux-round3-s5-vscode-host-integration.md`](../../docs/resource-gateway-ux-round3-s5-vscode-host-integration.md).

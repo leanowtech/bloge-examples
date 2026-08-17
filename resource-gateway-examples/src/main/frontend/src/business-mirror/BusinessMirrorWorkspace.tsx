@@ -7,7 +7,6 @@ import {
   CircleAlert,
   CloudOff,
   FileCheck2,
-  Layers3,
   LoaderCircle,
   Network,
   Play,
@@ -18,7 +17,7 @@ import {
   SlidersHorizontal,
   TableProperties,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import {
   acknowledgeBusinessMirrorEvidenceTask,
@@ -34,8 +33,15 @@ import {
 } from '../api';
 import { useI18n } from '../i18n/I18nProvider';
 import type { MessageId } from '../i18n/messageCatalog';
-import { businessMirrorAuthorHref } from '../shared/workspace-routing/businessMirrorAuthorLink';
+import { useWorkspaceNavigationGuard } from '../author/continuity/SafeWorkspaceNavigation';
+import CrossWorkspaceAuthorLink from '../shared/workspace-routing/CrossWorkspaceAuthorLink';
 import referenceEvidenceJson from '../../../../../../docs/schemas/resource-gateway-business-mirror/package-evidence-index-stage1-v1.fixture.json';
+import {
+  guidedTelemetryDurationBucket,
+  guidedTelemetryGapCode,
+  noopGuidedAuthoringTelemetry,
+  type GuidedAuthoringTelemetry,
+} from '../shared/guided-telemetry/guidedTelemetry';
 import {
   businessMirrorCapabilityLayers,
   businessMirrorTaskProgress,
@@ -70,8 +76,9 @@ type CommandState =
 
 type RemediationUiState = {
   requestId: number;
+  packageId: string;
   descriptor: RemediationDescriptor;
-  outcome: 'LOCATING' | 'STILL_BLOCKED' | 'FAILED';
+  outcome: 'LOCATING' | 'STILL_BLOCKED' | 'RESOLVED' | 'NAVIGATED' | 'FAILED';
 };
 
 interface BusinessAssetFocus {
@@ -109,7 +116,13 @@ const BUILT_IN_GRAPH_TITLES: Record<string, MessageId> = {
 const REFERENCE_PACKAGE_EVIDENCE =
   referenceEvidenceJson as unknown as BusinessMirrorPackageEvidenceIndex;
 
-export default function BusinessMirrorWorkspace() {
+export interface BusinessMirrorWorkspaceProps {
+  telemetry?: GuidedAuthoringTelemetry;
+}
+
+export default function BusinessMirrorWorkspace({
+  telemetry = noopGuidedAuthoringTelemetry,
+}: BusinessMirrorWorkspaceProps = {}) {
   const { m } = useI18n();
   const [catalog, setCatalog] = useState<LegacyGraphPackageProjectionCatalog | null>(null);
   const [packagePage, setPackagePage] = useState<BusinessMirrorPackagePage | null>(null);
@@ -130,6 +143,8 @@ export default function BusinessMirrorWorkspace() {
   const workspace = useRef<HTMLElement | null>(null);
   const remediationTarget = useRef<HTMLElement | null>(null);
   const remediationSequence = useRef(0);
+  const remediationStartedAt = useRef<number | null>(null);
+  const previousSelectedPackageId = useRef<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -150,6 +165,11 @@ export default function BusinessMirrorWorkspace() {
     catalog && packagePage ? projectBusinessMirrorPortfolio(catalog, packagePage) : []
   ), [catalog, packagePage]);
   const selected = items.find((item) => item.packageId === selectedPackageId) ?? null;
+  const authoritativeGaps = useMemo(() => selected
+    ? effectiveBusinessMirrorGaps(selected.projection, selected.stored, compilation)
+    : [], [compilation, selected]);
+  const authoritativeDirty = Boolean(selected?.stored && editor
+    && JSON.stringify(editor) !== JSON.stringify(selected.stored.draft));
 
   useEffect(() => {
     if (!selected) {
@@ -162,12 +182,16 @@ export default function BusinessMirrorWorkspace() {
   useEffect(() => {
     setCompilation(null);
     setCommand({ kind: 'idle' });
-    setRemediation(null);
+    if (previousSelectedPackageId.current !== null
+      && previousSelectedPackageId.current !== selected?.packageId) {
+      setRemediation(null);
+    }
+    previousSelectedPackageId.current = selected?.packageId ?? null;
   }, [selected?.packageId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!remediation || !selected) return undefined;
-    const frame = window.requestAnimationFrame(() => {
+    const locateRemediationTarget = () => {
       remediationTarget.current?.classList.remove('business-mirror-remediation-target');
       const target = [...(workspace.current?.querySelectorAll<HTMLElement>(
         '[data-remediation-anchor]',
@@ -175,6 +199,14 @@ export default function BusinessMirrorWorkspace() {
         candidate.dataset.remediationAnchor === remediation.descriptor.anchor
       ));
       if (!target) {
+        telemetry.record('REMEDIATION_COMPLETED', {
+          gapCode: guidedTelemetryGapCode(remediation.descriptor.gapCode),
+          outcome: 'FAILED',
+          durationBucket: guidedTelemetryDurationBucket(
+            performance.now() - (remediationStartedAt.current ?? performance.now()),
+          ),
+        });
+        remediationStartedAt.current = null;
         setRemediation((current) => current?.requestId === remediation.requestId
           ? { ...current, outcome: 'FAILED' }
           : current);
@@ -183,26 +215,87 @@ export default function BusinessMirrorWorkspace() {
       remediationTarget.current = target;
       target.classList.add('business-mirror-remediation-target');
       target.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-      const focusTarget = target.matches('a, button, input, select, textarea, [tabindex]')
+      const pickerTarget = remediation.descriptor.actionKind === 'OPEN_PICKER'
+        ? target.querySelector<HTMLElement>('[role="combobox"]:not([disabled])')
+        : null;
+      const focusTarget = pickerTarget ?? (target.matches('a, button, input, select, textarea, [tabindex]')
         && !target.matches('[disabled], [aria-disabled="true"]')
         ? target
         : target.querySelector<HTMLElement>(
           'a:not([aria-disabled="true"]), button:not([disabled]), input:not([disabled]), '
           + 'select:not([disabled]), textarea:not([disabled]), [tabindex]:not([aria-disabled="true"])',
-        );
+        ));
       const resolvedFocus = focusTarget ?? target;
       if (!focusTarget) resolvedFocus.tabIndex = -1;
       resolvedFocus.focus({ preventScroll: true });
+      if (isCrossWorkspaceRemediation(remediation.descriptor.actionKind)) {
+        const navigationTarget = target.matches('a[href]')
+          ? target as HTMLAnchorElement
+          : target.querySelector<HTMLAnchorElement>('a[href]');
+        if (!navigationTarget) {
+          telemetry.record('REMEDIATION_COMPLETED', {
+            gapCode: guidedTelemetryGapCode(remediation.descriptor.gapCode),
+            outcome: 'FAILED',
+            durationBucket: guidedTelemetryDurationBucket(
+              performance.now() - (remediationStartedAt.current ?? performance.now()),
+            ),
+          });
+          remediationStartedAt.current = null;
+          setRemediation((current) => current?.requestId === remediation.requestId
+            ? { ...current, outcome: 'FAILED' }
+            : current);
+          return;
+        }
+        telemetry.record('REMEDIATION_COMPLETED', {
+          gapCode: guidedTelemetryGapCode(remediation.descriptor.gapCode),
+          outcome: 'NAVIGATED',
+          durationBucket: guidedTelemetryDurationBucket(
+            performance.now() - (remediationStartedAt.current ?? performance.now()),
+          ),
+        });
+        remediationStartedAt.current = null;
+        setRemediation((current) => current?.requestId === remediation.requestId
+          ? { ...current, outcome: 'NAVIGATED' }
+          : current);
+        navigationTarget.click();
+        return;
+      }
+      telemetry.record('REMEDIATION_COMPLETED', {
+        gapCode: guidedTelemetryGapCode(remediation.descriptor.gapCode),
+        outcome: 'TARGETED',
+        durationBucket: guidedTelemetryDurationBucket(
+          performance.now() - (remediationStartedAt.current ?? performance.now()),
+        ),
+      });
       setRemediation((current) => current?.requestId === remediation.requestId
         ? { ...current, outcome: 'STILL_BLOCKED' }
         : current);
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [activeTask, remediation?.requestId, selected?.packageId]);
+    };
+    locateRemediationTarget();
+    return undefined;
+  }, [activeTask, remediation?.requestId, selected?.packageId, telemetry]);
 
   useEffect(() => () => {
     remediationTarget.current?.classList.remove('business-mirror-remediation-target');
   }, []);
+
+  useEffect(() => {
+    if (!remediation || remediation.outcome !== 'STILL_BLOCKED'
+      || remediation.packageId !== selected?.packageId
+      || authoritativeGaps.some((gap) => gap.code === remediation.descriptor.gapCode)) return;
+    telemetry.record('REMEDIATION_COMPLETED', {
+      gapCode: guidedTelemetryGapCode(remediation.descriptor.gapCode),
+      outcome: 'RESOLVED',
+      durationBucket: guidedTelemetryDurationBucket(
+        performance.now() - (remediationStartedAt.current ?? performance.now()),
+      ),
+    });
+    remediationStartedAt.current = null;
+    setRemediation((current) => current?.requestId === remediation.requestId
+      && current.outcome === 'STILL_BLOCKED'
+      ? { ...current, outcome: 'RESOLVED' }
+      : current);
+  }, [authoritativeGaps, remediation, selected?.packageId, telemetry]);
 
   useEffect(() => {
     const align = () => {
@@ -262,26 +355,33 @@ export default function BusinessMirrorWorkspace() {
     );
   }
 
-  const gaps = effectiveBusinessMirrorGaps(selected.projection, selected.stored, compilation);
+  const gaps = authoritativeGaps;
   const firstBlocker = gaps.find((gap) => gap.severity === 'BLOCKING') ?? null;
   const blockerCount = gaps.filter((gap) => gap.severity === 'BLOCKING').length;
   const offline = catalog.scope.environmentId === 'offline';
-  const dirty = selected.stored !== null
-    && JSON.stringify(editor) !== JSON.stringify(selected.stored.draft);
+  const dirty = authoritativeDirty;
 
   const selectTask = (task: BusinessMirrorTaskId) => {
     setActiveTask(task);
     setAssetFocus(null);
     setRemediation(null);
+    remediationStartedAt.current = null;
     replaceWorkspaceQuery(selected.packageId, task);
   };
   const remediate = (gap: BusinessMirrorGap) => {
     const descriptor = remediationDescriptorForGap(gap);
     remediationSequence.current += 1;
+    remediationStartedAt.current = performance.now();
+    telemetry.record('REMEDIATION_STARTED', {
+      gapCode: guidedTelemetryGapCode(descriptor.gapCode),
+      actionKind: descriptor.actionKind,
+      sameStep: descriptor.taskId === activeTask,
+    });
     setActiveTask(descriptor.taskId);
     setAssetFocus(null);
     setRemediation({
       requestId: remediationSequence.current,
+      packageId: selected.packageId,
       descriptor,
       outcome: 'LOCATING',
     });
@@ -316,7 +416,7 @@ export default function BusinessMirrorWorkspace() {
     }
   };
   const runSave = async () => {
-    if (!selected.stored) return;
+    if (!selected.stored) return false;
     setCommand({ kind: 'running', operation: 'save' });
     try {
       const receipt = await saveBusinessMirrorPackage(editor, commandId('save', editor.revision));
@@ -327,8 +427,10 @@ export default function BusinessMirrorWorkspace() {
         messageId: 'businessMirror.command.saved',
         values: { revision: receipt.result.draft.revision },
       });
+      return true;
     } catch (cause) {
       setCommand({ kind: 'error', detail: errorDetail(cause) });
+      return false;
     }
   };
   const runCompile = async () => {
@@ -356,6 +458,13 @@ export default function BusinessMirrorWorkspace() {
 
   return (
     <main className="business-mirror-workspace" ref={workspace}>
+      <BusinessMirrorNavigationGuard
+        dirty={dirty}
+        saving={command.kind === 'running' && command.operation === 'save'}
+        draft={editor}
+        onDiscard={() => setEditor(structuredClone(selected.stored?.draft ?? editor))}
+        onSave={runSave}
+      />
       <header className="business-mirror-context">
         <button
           type="button"
@@ -415,14 +524,22 @@ export default function BusinessMirrorWorkspace() {
         >
           {remediation.outcome === 'LOCATING'
             ? <LoaderCircle aria-hidden="true" className="spin" size={16} />
-            : <SlidersHorizontal aria-hidden="true" size={16} />}
+            : remediation.outcome === 'RESOLVED'
+              ? <Check aria-hidden="true" size={16} />
+              : remediation.outcome === 'NAVIGATED'
+                ? <ChevronRight aria-hidden="true" size={16} />
+                : <SlidersHorizontal aria-hidden="true" size={16} />}
           <span>
             <strong>{remediation.descriptor.gapCode}</strong>
             <small>{m(remediation.outcome === 'FAILED'
               ? 'businessMirror.remediation.unavailable'
               : remediation.outcome === 'LOCATING'
                 ? 'businessMirror.remediation.locating'
-                : 'businessMirror.remediation.targeted', {
+                : remediation.outcome === 'RESOLVED'
+                  ? 'businessMirror.remediation.resolved'
+                  : remediation.outcome === 'NAVIGATED'
+                    ? 'businessMirror.remediation.navigated'
+                    : 'businessMirror.remediation.targeted', {
               capability: remediation.descriptor.capabilityRequired,
             })}</small>
           </span>
@@ -468,6 +585,7 @@ export default function BusinessMirrorWorkspace() {
             onDraft={setEditor}
             onRemediate={remediate}
             onTask={selectTask}
+            telemetry={telemetry}
           />
         </section>
 
@@ -478,6 +596,43 @@ export default function BusinessMirrorWorkspace() {
       </div>
     </main>
   );
+}
+
+function BusinessMirrorNavigationGuard({
+  dirty,
+  saving,
+  draft,
+  onDiscard,
+  onSave,
+}: {
+  dirty: boolean;
+  saving: boolean;
+  draft: BusinessMirrorPackageDraft;
+  onDiscard(): void;
+  onSave(): Promise<boolean>;
+}) {
+  useWorkspaceNavigationGuard(useMemo(() => ({
+    lifecycle: saving ? 'SAVING' : dirty ? 'DIRTY' : 'SAVED',
+    flushRecovery: async () => false,
+    save: onSave,
+    exportRecovery: () => exportBusinessMirrorRecovery(draft),
+    discard: async () => onDiscard(),
+  }), [dirty, draft, onDiscard, onSave, saving]));
+  return null;
+}
+
+function exportBusinessMirrorRecovery(draft: BusinessMirrorPackageDraft): void {
+  const blob = new Blob([JSON.stringify({
+    schemaVersion: 'bloge.businessMirrorRecovery.v1',
+    exportedAt: new Date().toISOString(),
+    draft,
+  }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${draft.packageId.replace(/[^A-Za-z0-9._-]/g, '_')}-recovery.json`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function Portfolio({
@@ -657,6 +812,7 @@ function TaskSurface({
   onDraft,
   onRemediate,
   onTask,
+  telemetry,
 }: {
   task: BusinessMirrorTaskId;
   item: BusinessMirrorPortfolioItem;
@@ -667,6 +823,7 @@ function TaskSurface({
   onDraft(draft: BusinessMirrorPackageDraft): void;
   onRemediate(gap: BusinessMirrorGap): void;
   onTask(task: BusinessMirrorTaskId): void;
+  telemetry: GuidedAuthoringTelemetry;
 }) {
   const contract = getBusinessMirrorStepContract(task);
   let content: ReactNode;
@@ -676,7 +833,7 @@ function TaskSurface({
     content = <BoundaryTask draft={draft} gaps={gaps} editable={editable} onDraft={onDraft} />;
   } else if (task === 'capabilities') {
     content = <CapabilityTask item={item} draft={draft} focus={assetFocus}
-      editable={editable} onDraft={onDraft} />;
+      editable={editable} onDraft={onDraft} telemetry={telemetry} />;
   } else if (task === 'scenarios') {
     content = <ScenarioTask item={item} draft={draft} editable={editable} onDraft={onDraft} />;
   } else if (task === 'rehearsal') {
@@ -871,12 +1028,14 @@ function CapabilityTask({
   focus,
   editable,
   onDraft,
+  telemetry,
 }: {
   item: BusinessMirrorPortfolioItem;
   draft: BusinessMirrorPackageDraft;
   focus: BusinessAssetFocus | null;
   editable: boolean;
   onDraft(draft: BusinessMirrorPackageDraft): void;
+  telemetry: GuidedAuthoringTelemetry;
 }) {
   const { m } = useI18n();
   const layers = businessMirrorCapabilityLayers(item.projection, draft).map((layer) => ({
@@ -939,20 +1098,18 @@ function CapabilityTask({
           </div>
         ))}
       </div>
-      <a
-        className="business-mirror-secondary-link"
-        data-remediation-anchor="business-mirror.capabilities.executable"
-        href={businessMirrorAuthorHref({
-        graphName: item.graphName,
-        graphRef: item.projection.sourceGraphRef,
-        packageId: item.packageId,
-      }, {
-        vscode: typeof globalThis.acquireVsCodeApi === 'function',
-        search: window.location.search,
-      })}>
-        <Layers3 aria-hidden="true" size={16} />
-        {m('businessMirror.capability.openGraph')}
-      </a>
+      <CrossWorkspaceAuthorLink
+        subject={{
+          graphName: item.graphName,
+          graphRef: item.projection.sourceGraphRef,
+          packageId: item.packageId,
+        }}
+        label={m('businessMirror.capability.openGraph')}
+        resolvingLabel={m('businessMirror.capability.resolvingGraph')}
+        failedLabel={m('businessMirror.capability.graphLinkFailed')}
+        retryLabel={m('businessMirror.command.retry')}
+        telemetry={telemetry}
+      />
       <div className="business-mirror-reference-grid">
         <BusinessMirrorReferenceBindingControl
           currentReferences={draft.solutionRefs}
@@ -993,7 +1150,6 @@ function ScenarioTask({
     <>
       <div
         className="business-mirror-scenario-discovery"
-        data-remediation-anchor="business-mirror.scenarios.discovered-suite"
       >
         <FileCheck2 aria-hidden="true" size={22} />
         <strong>{m('businessMirror.scenario.discovered', {
@@ -1002,6 +1158,14 @@ function ScenarioTask({
         {item.projection.discoveredTestSuiteRefs.map((ref) => <code key={ref.id}>{ref.id}</code>)}
       </div>
       <p className="business-mirror-inline-warning">{m('businessMirror.scenario.warning')}</p>
+      <a
+        className="business-mirror-secondary-link"
+        data-remediation-anchor="business-mirror.scenarios.discovered-suite"
+        href={workspaceHref('correctness', draft.packageId, 'scenarios', 'discovered-suite')}
+      >
+        <Search aria-hidden="true" size={16} />
+        {m('businessMirror.command.openCorrectness')}
+      </a>
       <div className="business-mirror-reference-grid">
         <BusinessMirrorReferenceBindingControl
           currentReferences={draft.scenarioInventoryRef ? [draft.scenarioInventoryRef] : []}
@@ -1027,12 +1191,15 @@ function RehearsalTask({ draft }: { draft: BusinessMirrorPackageDraft }) {
     <>
       <div
         className={`business-mirror-stage-message ${ready ? 'ready' : 'blocked'}`}
-        data-remediation-anchor="business-mirror.rehearsal.mirror-plan"
       >
         {ready ? <Play aria-hidden="true" size={24} /> : <CircleAlert aria-hidden="true" size={24} />}
         <p>{m(ready ? 'businessMirror.rehearsal.ready' : 'businessMirror.rehearsal.blocked')}</p>
       </div>
-      <a className="business-mirror-secondary-link" href={workspaceHref('rehearsals')}>
+      <a
+        className="business-mirror-secondary-link"
+        data-remediation-anchor="business-mirror.rehearsal.mirror-plan"
+        href={workspaceHref('rehearsals', draft.packageId, 'rehearsal', 'mirror-plan')}
+      >
         <Play aria-hidden="true" size={16} />
         {m('businessMirror.command.openRehearsals')}
       </a>
@@ -1439,15 +1606,34 @@ function replaceWorkspaceQuery(
   window.history.replaceState({}, '', `${window.location.pathname}${search ? `?${search}` : ''}`);
 }
 
-function workspaceHref(route: string): string {
-  if (typeof globalThis.acquireVsCodeApi !== 'function') return `/${route}/`;
-  const params = new URLSearchParams(window.location.search);
-  params.set('workspaceRoute', route);
-  params.delete('packageId');
-  params.delete('task');
-  ['compilationRevision', 'assetKind', 'assetId', 'assetRevision', 'assetAuthority']
-    .forEach((key) => params.delete(key));
-  return `?${params.toString()}`;
+function workspaceHref(
+  route: string,
+  packageId: string,
+  returnTask: BusinessMirrorTaskId,
+  returnAnchor: string,
+): string {
+  const source = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams();
+  ['lang', 'sessionTenantId'].forEach((key) => {
+    const value = source.get(key);
+    if (value) params.set(key, value);
+  });
+  params.set('returnRoute', 'business-mirror');
+  params.set('returnPackageId', packageId);
+  params.set('returnTask', returnTask);
+  params.set('returnAnchor', returnAnchor);
+  if (typeof globalThis.acquireVsCodeApi === 'function') {
+    params.set('workspaceRoute', route);
+    return `?${params.toString()}`;
+  }
+  return `/${route}/?${params.toString()}`;
+}
+
+function isCrossWorkspaceRemediation(actionKind: RemediationDescriptor['actionKind']): boolean {
+  return actionKind === 'OPEN_AUTHOR'
+    || actionKind === 'OPEN_REHEARSAL'
+    || actionKind === 'OPEN_CORRECTNESS'
+    || actionKind === 'OPEN_GOVERNANCE';
 }
 
 function commandId(operation: string, revision: number): string {

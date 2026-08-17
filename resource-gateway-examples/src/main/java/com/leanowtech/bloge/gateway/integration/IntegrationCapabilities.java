@@ -1361,6 +1361,7 @@ public record IntegrationCapabilities(
         features.put("correctnessWorkspaceProtocol", true);
         features.put("correctnessWorkspaceApi", false);
         features.put("referenceCandidateApi", false);
+        features.put("authoringLinkResolverApi", false);
         features.put("correctnessTargetCatalogApi", false);
         features.put("guidedWorkspaceLauncher", false);
         features.put("businessMirrorGuidedRemediation", true);

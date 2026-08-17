@@ -140,7 +140,7 @@ export const BUSINESS_MIRROR_STEP_CONTRACTS = {
       input('discoveredSuiteDisposition', '/scenarioInventoryRef', 'correctnessScenarioGovernance'),
     ],
     primaryAction: stepAction(
-      'OPEN_CORRECTNESS',
+      'OPEN_PICKER',
       'business-mirror.scenarios.inventory',
       '/scenarioInventoryRef',
       'scenarioInventoryCatalog',
@@ -192,7 +192,7 @@ export const BUSINESS_MIRROR_STEP_CONTRACTS = {
       input('approval', '/provenance/approvedBy', 'ownerDirectoryApi'),
     ],
     primaryAction: stepAction(
-      'OPEN_GOVERNANCE',
+      'OPEN_PICKER',
       'business-mirror.calibrate.approval',
       '/provenance/approvedBy',
       'ownerDirectoryApi',
@@ -270,13 +270,13 @@ const DESCRIPTOR_SPECS: Record<KnownBusinessMirrorGapCode, DescriptorSpec> = {
   SOLUTION_BINDING_MISSING: spec('SERVICE_ASSET', 'capabilities', 'business-mirror.capabilities.solution', 'OPEN_PICKER', '/solutionRefs', 'solutionCatalog', 'solutionRefs.length > 0', 'SHOW_UNAVAILABLE'),
   SERVICE_CARRIER_BINDING_MISSING: spec('SERVICE_ASSET', 'capabilities', 'business-mirror.capabilities.carrier', 'OPEN_PICKER', '/carrierRefs', 'carrierCatalog', 'carrierRefs.length > 0', 'SHOW_UNAVAILABLE'),
   CHANNEL_BINDING_MISSING: spec('SERVICE_ASSET', 'capabilities', 'business-mirror.capabilities.channel', 'OPEN_PICKER', '/channelRefs', 'channelCatalog', 'channelRefs.length > 0', 'SHOW_UNAVAILABLE'),
-  SCENARIO_INVENTORY_MISSING: spec('SCENARIO', 'scenarios', 'business-mirror.scenarios.inventory', 'OPEN_CORRECTNESS', '/scenarioInventoryRef', 'scenarioInventoryCatalog', 'scenarioInventoryRef != null', 'SHOW_UNAVAILABLE'),
-  SCENARIO_PACK_MISSING: spec('SCENARIO', 'scenarios', 'business-mirror.scenarios.pack', 'OPEN_CORRECTNESS', '/scenarioPackRefs', 'scenarioPackCatalog', 'scenarioPackRefs.length > 0', 'SHOW_UNAVAILABLE'),
+  SCENARIO_INVENTORY_MISSING: spec('SCENARIO', 'scenarios', 'business-mirror.scenarios.inventory', 'OPEN_PICKER', '/scenarioInventoryRef', 'scenarioInventoryCatalog', 'scenarioInventoryRef != null', 'SHOW_UNAVAILABLE'),
+  SCENARIO_PACK_MISSING: spec('SCENARIO', 'scenarios', 'business-mirror.scenarios.pack', 'OPEN_PICKER', '/scenarioPackRefs', 'scenarioPackCatalog', 'scenarioPackRefs.length > 0', 'SHOW_UNAVAILABLE'),
   DISCOVERED_TEST_SUITE_REQUIRES_SCENARIO_GOVERNANCE: spec('SCENARIO', 'scenarios', 'business-mirror.scenarios.discovered-suite', 'OPEN_CORRECTNESS', '/scenarioInventoryRef', 'correctnessScenarioGovernance', 'scenarioInventoryRef != null && scenarioPackRefs.length > 0', 'SHOW_UNAVAILABLE'),
   MIRROR_PLAN_MISSING: spec('EXECUTION_MODEL', 'rehearsal', 'business-mirror.rehearsal.mirror-plan', 'OPEN_REHEARSAL', '/mirrorPlanRef', 'rehearsalCatalog', 'mirrorPlanRef != null', 'SHOW_UNAVAILABLE'),
-  FIDELITY_INVENTORY_MISSING: spec('FIDELITY', 'calibrate', 'business-mirror.calibrate.fidelity', 'OPEN_GOVERNANCE', '/fidelityInventoryRef', 'fidelityCatalog', 'fidelityInventoryRef != null', 'SHOW_UNAVAILABLE'),
-  OUTCOME_DEFINITION_MISSING: spec('OUTCOME', 'calibrate', 'business-mirror.calibrate.outcome', 'OPEN_GOVERNANCE', '/outcomeDefinitionRefs', 'outcomeCatalog', 'outcomeDefinitionRefs.length > 0', 'SHOW_UNAVAILABLE'),
-  LEGACY_PROJECTION_OWNER_APPROVAL_MISSING: spec('APPROVAL', 'calibrate', 'business-mirror.calibrate.approval', 'OPEN_GOVERNANCE', '/provenance/approvedBy', 'ownerDirectoryApi', 'provenance.approvedBy != empty', 'REQUEST_ACCESS'),
+  FIDELITY_INVENTORY_MISSING: spec('FIDELITY', 'calibrate', 'business-mirror.calibrate.fidelity', 'OPEN_PICKER', '/fidelityInventoryRef', 'fidelityCatalog', 'fidelityInventoryRef != null', 'SHOW_UNAVAILABLE'),
+  OUTCOME_DEFINITION_MISSING: spec('OUTCOME', 'calibrate', 'business-mirror.calibrate.outcome', 'OPEN_PICKER', '/outcomeDefinitionRefs', 'outcomeCatalog', 'outcomeDefinitionRefs.length > 0', 'SHOW_UNAVAILABLE'),
+  LEGACY_PROJECTION_OWNER_APPROVAL_MISSING: spec('APPROVAL', 'calibrate', 'business-mirror.calibrate.approval', 'OPEN_PICKER', '/provenance/approvedBy', 'ownerDirectoryApi', 'provenance.approvedBy != empty', 'REQUEST_ACCESS'),
 };
 
 export const BUSINESS_MIRROR_REMEDIATION_DESCRIPTORS = Object.fromEntries(

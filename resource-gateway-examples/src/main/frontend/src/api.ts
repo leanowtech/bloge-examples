@@ -114,6 +114,10 @@ import type {
   LegacyGraphPackageProjection,
   LegacyGraphPackageProjectionCatalog,
 } from './business-mirror/domain';
+import type {
+  AuthoringLinkDescriptor,
+  ExactBusinessMirrorGraphSubject,
+} from './shared/workspace-routing/businessMirrorAuthorLink';
 
 /** Structured transport failure that lets optional product surfaces distinguish capability absence. */
 export class BlogeApiRequestError extends Error {
@@ -339,6 +343,32 @@ export async function resolveBusinessMirrorReferenceCandidate(
       revision: candidate.revision,
       fingerprint: candidate.fingerprint,
       intendedUse,
+    }),
+  }));
+}
+
+/** Resolves an exact Business Mirror Graph into an allowlisted Author Compose descriptor. */
+export async function resolveBusinessMirrorAuthorLink(
+  subject: ExactBusinessMirrorGraphSubject,
+): Promise<AuthoringLinkDescriptor> {
+  return readTestingJson(await sendRequest('/api/visual/authoring-links:resolve', {
+    method: 'POST',
+    headers: businessMirrorHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      schemaVersion: 'bloge.authoringLinkResolveRequest.v1',
+      subjectRef: {
+        kind: 'BUSINESS_MIRROR_LEGACY_GRAPH',
+        id: subject.graphRef.id,
+        revision: subject.graphRef.revision,
+        fingerprint: subject.graphRef.fingerprint,
+      },
+      intent: 'EDIT_TOPOLOGY',
+      returnCoordinate: {
+        route: 'business-mirror',
+        packageId: subject.packageId,
+        task: 'capabilities',
+        anchor: `graph:${subject.graphRef.id}`,
+      },
     }),
   }));
 }

@@ -54,14 +54,30 @@ describe('businessMirrorReferenceBinding', () => {
   });
 
   it('maps L1-L3 candidates into scoped asset refs and clears governed bindings', () => {
+    const solutionCandidate = candidate('SOLUTION', 'refund-solution', 'Refund solution');
+    Object.assign(solutionCandidate.scope, { fullySpecified: true });
     const solution = applyResolvedBusinessMirrorReference(
-      minimalDraft(), 'solution', resolved(candidate('SOLUTION', 'refund-solution', 'Refund solution')),
+      minimalDraft(), 'solution', resolved(solutionCandidate),
     );
     expect(solution.solutionRefs[0]).toMatchObject({
       id: 'refund-solution', layer: 'L1_SERVICE_DESIGN', authority: 'resource-gateway://demo',
       scope: { tenantId: 'ride-hailing', projectId: 'loan' },
     });
+    expect(solution.solutionRefs[0].scope).not.toHaveProperty('fullySpecified');
     expect(clearBusinessMirrorReference(solution, 'solution').solutionRefs).toEqual([]);
+
+    const carrier = applyResolvedBusinessMirrorReference(
+      solution, 'carrier', resolved(candidate('AGENT', 'policy-agent', 'Policy agent')),
+    );
+    const channel = applyResolvedBusinessMirrorReference(
+      carrier, 'channel', resolved(candidate('CHANNEL_APPLICATION', 'support-chat', 'Support chat')),
+    );
+    expect(carrier.carrierRefs[0]).toMatchObject({
+      kind: 'AGENT', layer: 'L2_SERVICE_CARRIER',
+    });
+    expect(channel.channelRefs[0]).toMatchObject({
+      kind: 'CHANNEL_APPLICATION', layer: 'L3_APPLICATION',
+    });
   });
 });
 

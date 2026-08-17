@@ -4,6 +4,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../i18n/I18nProvider';
+import { SafeWorkspaceNavigationProvider } from '../author/continuity/SafeWorkspaceNavigation';
 import type { ReferenceCandidate, ReferencePage } from '../shared/reference-picker/types';
 import BusinessMirrorWorkspace from './BusinessMirrorWorkspace';
 import type {
@@ -13,6 +14,7 @@ import type {
   LegacyGraphPackageProjection,
   StoredBusinessMirrorPackage,
 } from './domain';
+import { createGuidedAuthoringTelemetry, type GuidedTelemetryEvent } from '../shared/guided-telemetry/guidedTelemetry';
 
 const api = vi.hoisted(() => ({
   BlogeApiRequestError: class BlogeApiRequestError extends Error {
@@ -31,6 +33,7 @@ const api = vi.hoisted(() => ({
   acknowledgeBusinessMirrorEvidenceTask: vi.fn(),
   fetchBusinessMirrorReferenceCandidates: vi.fn(),
   resolveBusinessMirrorReferenceCandidate: vi.fn(),
+  resolveBusinessMirrorAuthorLink: vi.fn(),
 }));
 
 vi.mock('../api', () => api);
@@ -72,6 +75,7 @@ describe('Business Mirror Workspace', () => {
       candidate,
       errorCode: '',
     }));
+    api.resolveBusinessMirrorAuthorLink.mockImplementation(async () => authoringLinkDescriptor());
     host = document.createElement('div');
     document.body.appendChild(host);
     root = createRoot(host);
@@ -112,6 +116,8 @@ describe('Business Mirror Workspace', () => {
       items: [stored],
       nextCursor: '',
     });
+    api.saveBusinessMirrorPackage.mockImplementation(async (draft: BusinessMirrorPackageDraft) =>
+      saveReceipt(storedPackage(draft, 2)));
     window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
 
     await render();
@@ -121,11 +127,68 @@ describe('Business Mirror Workspace', () => {
     const owner = referenceInput('Accountable owner');
     const target = owner.closest<HTMLElement>('[data-remediation-anchor]');
     expect(document.activeElement).toBe(owner);
+    expect(owner.getAttribute('aria-expanded')).toBe('true');
     expect(target?.dataset.remediationAnchor).toBe('business-mirror.problem.owner');
     expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
     expect(document.querySelector('[data-testid="business-mirror-remediation-outcome"]')?.textContent)
       .toContain('exact control is focused and highlighted');
     expect(new URLSearchParams(window.location.search).get('gapCode')).toBe('ACCOUNTABLE_OWNER_MISSING');
+
+    await chooseReference('Accountable owner', 'Risk service owner');
+    await click(button('Save Package changes'));
+    expect(document.querySelector('[data-testid="business-mirror-remediation-outcome"]')?.textContent)
+      .toContain('blocker is now resolved');
+  });
+
+  it('closes every remediation start with a payload-free terminal event', async () => {
+    const events: GuidedTelemetryEvent[] = [];
+    const telemetry = createGuidedAuthoringTelemetry((event) => events.push(event));
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
+
+    await render(telemetry);
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 50)));
+    await settleFrame();
+    await click(button('Resolve first blocker'));
+    await settleFrame();
+    await settleFrame();
+
+    expect(events.map((event) => event.name)).toEqual([
+      'REMEDIATION_STARTED', 'REMEDIATION_COMPLETED',
+    ]);
+    expect(events[0]?.metadata).toEqual({
+      gapCode: 'ACCOUNTABLE_OWNER_MISSING', actionKind: 'OPEN_PICKER', sameStep: true,
+    });
+    expect(events[1]?.metadata).toMatchObject({
+      gapCode: 'ACCOUNTABLE_OWNER_MISSING', outcome: 'TARGETED',
+    });
+    expect(events.every((event) => !JSON.stringify(event).includes('loanDecisionPolicy'))).toBe(true);
+  });
+
+  it('reopens the exact picker when a preview remediation is retried after import', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.importBusinessMirrorLegacyPackage.mockResolvedValue(saveReceipt(stored));
+
+    await render();
+    await click(button('Loan Decision Policy'));
+    await click(button('Resolve first blocker'));
+    await settleFrame();
+    expect(referenceInput('Accountable owner').disabled).toBe(true);
+
+    await click(button('Import Package'));
+    await settleFrame();
+    await click(button('Resolve first blocker'));
+    await settleFrame();
+
+    const owner = referenceInput('Accountable owner');
+    expect(owner.disabled).toBe(false);
+    expect(document.activeElement).toBe(owner);
+    expect(owner.getAttribute('aria-expanded')).toBe('true');
   });
 
   it('moves a cross-Sheet blocker to its exact actionable requirement and preserves the coordinate', async () => {
@@ -147,11 +210,74 @@ describe('Business Mirror Workspace', () => {
     expect(document.querySelector('.business-mirror-task-rail button[aria-current="step"]')?.textContent)
       .toContain('4. Freeze scenarios');
     expect(document.body.textContent).toContain('Which business branches must always be covered');
-    expect(document.activeElement).toBe(referenceInput('Executable Scenario packs'));
+    const scenarioPack = referenceInput('Executable Scenario packs');
+    expect(document.activeElement).toBe(scenarioPack);
+    expect(scenarioPack.getAttribute('aria-expanded')).toBe('true');
     expect(target?.classList.contains('business-mirror-remediation-target')).toBe(true);
     const params = new URLSearchParams(window.location.search);
     expect(params.get('task')).toBe('scenarios');
     expect(params.get('remediationAnchor')).toBe('business-mirror.scenarios.pack');
+  });
+
+  it('executes a cross-workspace remediation and preserves its return coordinate', async () => {
+    const projectionWithRehearsal = {
+      ...projection,
+      gaps: [...projection.gaps, {
+        code: 'MIRROR_PLAN_MISSING', origin: 'MIGRATION_POLICY' as const,
+        category: 'EXECUTION_MODEL', severity: 'BLOCKING' as const,
+        draftPath: '/mirrorPlanRef', explanation: 'missing', requiredAction: 'open rehearsal',
+        evidenceRefs: [],
+      }],
+    };
+    const stored = storedPackage(projectionWithRehearsal.packageDraft, 1);
+    const navigate = vi.fn();
+    api.fetchBusinessMirrorLegacyCatalog.mockResolvedValue({
+      schemaVersion: 'resourceGateway.legacyGraphPackageProjectionCatalog.v1',
+      scope: projection.scope,
+      items: [projectionWithRehearsal],
+    });
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    window.history.replaceState({}, '', '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
+
+    await render(undefined, navigate);
+    await click(button('MIRROR_PLAN_MISSING'));
+    await settleFrame();
+
+    expect(navigate).toHaveBeenCalledWith(expect.stringContaining('/rehearsals/?'));
+    const href = navigate.mock.calls[0]?.[0] as string;
+    const target = new URL(href, window.location.origin);
+    expect(target.searchParams.get('returnRoute')).toBe('business-mirror');
+    expect(target.searchParams.get('returnPackageId')).toBe('legacy:loanDecisionPolicy');
+    expect(target.searchParams.get('returnTask')).toBe('rehearsal');
+    expect(target.searchParams.get('returnAnchor')).toBe('mirror-plan');
+  });
+
+  it('keeps a catalog outage distinct from no results and explains the safe fallback', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1',
+      items: [stored],
+      nextCursor: '',
+    });
+    api.fetchBusinessMirrorReferenceCandidates.mockRejectedValue(
+      Object.assign(new Error('catalog down'), { status: 'unavailable' }),
+    );
+    window.history.replaceState({}, '',
+      '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=problem');
+
+    await render();
+    await act(async () => referenceInput('Accountable owner').focus());
+    await act(async () => new Promise((resolve) => window.setTimeout(resolve, 275)));
+
+    expect(document.querySelector('[role="alert"]')?.textContent)
+      .toContain('This deployment does not provide the required directory.');
+    expect(document.body.textContent)
+      .toContain('Keep the current exact binding or ask the platform owner');
+    expect(document.body.textContent).not.toContain('No matching governed assets.');
   });
 
   it('imports durably, edits business fields, and asks the server for readiness', async () => {
@@ -232,6 +358,30 @@ describe('Business Mirror Workspace', () => {
     }), expect.any(String));
   });
 
+  it('guards exact Author navigation until unsaved Package changes are secured', async () => {
+    const stored = storedPackage(projection.packageDraft, 1);
+    const navigate = vi.fn();
+    api.fetchBusinessMirrorPackages.mockResolvedValue({
+      schemaVersion: 'resourceGateway.domainCapabilityPackagePage.v1', items: [stored], nextCursor: '',
+    });
+    api.saveBusinessMirrorPackage.mockImplementation(async (draft: BusinessMirrorPackageDraft) =>
+      saveReceipt(storedPackage(draft, 2)));
+    window.history.replaceState({}, '',
+      '/business-mirror/?packageId=legacy%3AloanDecisionPolicy&task=capabilities');
+
+    await render(undefined, navigate);
+    await chooseReference('L3 Application', 'Customer support chat');
+    await click(anchor('Open exact Graph'));
+
+    expect(document.querySelector('[data-testid="workspace-leave-dialog"]')).not.toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+    await click(button('Save and leave'));
+
+    expect(api.saveBusinessMirrorPackage).toHaveBeenCalledOnce();
+    expect(navigate).toHaveBeenCalledWith(expect.stringContaining('/author/'));
+    expect(String(navigate.mock.calls[0]?.[0])).not.toContain('/showcase/');
+  });
+
   it('renders the same fixed task in Chinese and exposes keyboard-native controls', async () => {
     window.history.replaceState({}, '', '/business-mirror/?lang=zh-CN');
     await render();
@@ -279,6 +429,27 @@ describe('Business Mirror Workspace', () => {
     expect(url.searchParams.get('sourceFingerprint')).toBe(projection.sourceGraphRef.fingerprint);
     expect(url.searchParams.get('returnPackageId')).toBe(projection.packageDraft.packageId);
     expect(href).not.toContain('showcase');
+    expect(api.resolveBusinessMirrorAuthorLink).toHaveBeenCalledWith({
+      graphName: 'loanDecisionPolicy',
+      graphRef: projection.sourceGraphRef,
+      packageId: projection.packageDraft.packageId,
+    });
+  });
+
+  it('fails closed and offers retry when exact Author link resolution fails', async () => {
+    api.resolveBusinessMirrorAuthorLink.mockRejectedValueOnce(new Error('resolver unavailable'));
+    await render();
+    await click(button('Loan Decision Policy'));
+    await click(button('3. Assemble capabilities'));
+    await act(async () => Promise.resolve());
+
+    expect(document.body.textContent).toContain('You remain on this Package');
+    expect(document.body.textContent).toContain('resolver unavailable');
+    expect(document.querySelector('a[href*="/author/"]')).toBeNull();
+
+    await click(button('Retry'));
+    await act(async () => Promise.resolve());
+    expect(anchor('Open exact Graph')).toBeInstanceOf(HTMLAnchorElement);
   });
 
   it('keeps five evidence layers and seven Fidelity dimensions independently inspectable', async () => {
@@ -330,8 +501,17 @@ describe('Business Mirror Workspace', () => {
     expect(button('Return to current Package')).toBeInstanceOf(HTMLButtonElement);
   });
 
-  async function render() {
-    await act(async () => root?.render(<I18nProvider><BusinessMirrorWorkspace /></I18nProvider>));
+  async function render(
+    telemetry?: import('../shared/guided-telemetry/guidedTelemetry').GuidedAuthoringTelemetry,
+    navigate: (href: string) => void = () => undefined,
+  ) {
+    await act(async () => root?.render(
+      <I18nProvider>
+        <SafeWorkspaceNavigationProvider navigate={navigate}>
+          <BusinessMirrorWorkspace telemetry={telemetry} />
+        </SafeWorkspaceNavigationProvider>
+      </I18nProvider>,
+    ));
     await act(async () => Promise.resolve());
   }
 });
@@ -383,6 +563,30 @@ function legacyProjection(): LegacyGraphPackageProjection {
     ],
     status: 'BLOCKED', projectionFingerprint: fingerprint('projection'),
   };
+}
+
+function authoringLinkDescriptor() {
+  return {
+    schemaVersion: 'bloge.authoringLinkDescriptor.v1' as const,
+    resolution: 'READ_ONLY_SOURCE' as const,
+    route: {
+      path: '/author/' as const,
+      workspace: 'v2' as const,
+      authorMode: 'compose' as const,
+      query: {
+        authorWorkspace: 'v2', authorMode: 'compose',
+        sourceKind: 'BUSINESS_MIRROR_LEGACY_GRAPH', sourceGraphName: 'loanDecisionPolicy',
+        sourceId: projectionRef().id, sourceRevision: String(projectionRef().revision),
+        sourceFingerprint: projectionRef().fingerprint,
+        returnRoute: 'business-mirror', returnPackageId: 'legacy:loanDecisionPolicy',
+        returnTask: 'capabilities', returnAnchor: `graph:${projectionRef().id}`,
+      },
+    },
+  };
+}
+
+function projectionRef() {
+  return ref('GRAPH_DRAFT', 'built-in:loanDecisionPolicy');
 }
 
 function storedPackage(draft: BusinessMirrorPackageDraft, revision: number): StoredBusinessMirrorPackage {
@@ -500,10 +704,12 @@ function demoReference(kind: string): ReferenceCandidate {
     OUTCOME_DEFINITION: ['loan-outcomes', 'Loan decision outcomes'],
   };
   const [id, displayName] = values[kind] ?? [`${kind.toLowerCase()}-id`, kind];
+  const candidateKind = kind === 'SERVICE_CARRIER' ? 'AGENT'
+    : kind === 'CHANNEL' ? 'CHANNEL_APPLICATION' : kind;
   return {
-    schemaVersion: 'bloge.referenceCandidate.v1', kind, id, displayName,
+    schemaVersion: 'bloge.referenceCandidate.v1', kind: candidateKind, id, displayName,
     description: `${displayName} description`, revision: 1,
-    fingerprint: fingerprint(`${kind}:${id}`), authority: 'test://business-catalog',
+    fingerprint: fingerprint(`${candidateKind}:${id}`), authority: 'test://business-catalog',
     scope: {
       tenantId: 'tenant-a', organizationId: 'knowledge-governance',
       projectId: 'tool-studio', environmentId: 'test', region: 'local',

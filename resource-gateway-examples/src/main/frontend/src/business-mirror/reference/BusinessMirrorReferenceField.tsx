@@ -24,6 +24,7 @@ export interface BusinessMirrorReferenceFieldProps {
   label: string;
   help?: ReactNode;
   kind: string;
+  acceptedKinds?: readonly string[];
   value?: ReferenceCandidate | null;
   loadCandidates: ReferenceCandidateSearch;
   onChange: (candidate: ReferenceCandidate | null) => void;
@@ -50,6 +51,7 @@ export default function BusinessMirrorReferenceField({
   label,
   help,
   kind,
+  acceptedKinds,
   value,
   loadCandidates,
   onChange,
@@ -73,9 +75,11 @@ export default function BusinessMirrorReferenceField({
     const page = await loadCandidates(query, signal);
     return {
       ...page,
-      items: page.items.filter((candidate) => candidate.kind === kind),
+      items: page.items.filter((candidate) => (
+        acceptedKinds ? acceptedKinds.includes(candidate.kind) : candidate.kind === kind
+      )),
     };
-  }, [kind, loadCandidates]);
+  }, [acceptedKinds, kind, loadCandidates]);
   const notifyChange = useCallback((candidate: ReferenceCandidate | null) => {
     setInternalValue(candidate);
     onChange(candidate);
@@ -85,8 +89,10 @@ export default function BusinessMirrorReferenceField({
       if (clearable) notifyChange(null);
       return;
     }
-    if (candidate.kind === kind) notifyChange(candidate);
-  }, [clearable, kind, notifyChange]);
+    if (acceptedKinds ? acceptedKinds.includes(candidate.kind) : candidate.kind === kind) {
+      notifyChange(candidate);
+    }
+  }, [acceptedKinds, clearable, kind, notifyChange]);
   const classNames = ['business-mirror-reference-field', className].filter(Boolean).join(' ');
   const pickerDisabled = disabled || (selectedValue !== null && !clearable);
   const helpId = id ? `${id}-help` : undefined;
@@ -108,6 +114,7 @@ export default function BusinessMirrorReferenceField({
             loadCandidates={loadCandidatesForKind}
             name={name}
             onChange={handleChange}
+            unavailableFallback={fallback}
             value={selectedValue}
           />
           {selectedValue && clearable && (

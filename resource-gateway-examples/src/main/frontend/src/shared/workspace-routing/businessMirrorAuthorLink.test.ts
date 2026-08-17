@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { businessMirrorAuthorHref } from './businessMirrorAuthorLink';
+import {
+  businessMirrorAuthorHref,
+  resolvedBusinessMirrorAuthorHref,
+} from './businessMirrorAuthorLink';
 
 const subject = {
   graphName: 'loanDecisionPolicy',
@@ -52,5 +55,35 @@ describe('businessMirrorAuthorHref', () => {
       ...subject,
       graphRef: { ...subject.graphRef, fingerprint: 'latest' },
     }, { vscode: false })).toThrow(/SHA-256/);
+  });
+
+  it('accepts only an allowlisted service descriptor and adapts it for VS Code', () => {
+    const href = resolvedBusinessMirrorAuthorHref({
+      schemaVersion: 'bloge.authoringLinkDescriptor.v1', resolution: 'READ_ONLY_SOURCE',
+      route: {
+        path: '/author/', workspace: 'v2', authorMode: 'compose',
+        query: {
+          sourceId: subject.graphRef.id, sourceRevision: '3',
+          sourceFingerprint: subject.graphRef.fingerprint, returnRoute: 'business-mirror',
+        },
+      },
+    }, { vscode: true, search: '?lang=zh-CN&unsafe=drop-me' });
+    const params = new URLSearchParams(href.slice(1));
+
+    expect(params.get('workspaceRoute')).toBe('author');
+    expect(params.get('authorMode')).toBe('compose');
+    expect(params.get('sourceId')).toBe(subject.graphRef.id);
+    expect(params.get('lang')).toBe('zh-CN');
+    expect(params.has('unsafe')).toBe(false);
+  });
+
+  it('rejects a resolver descriptor that attempts to route through Showcase', () => {
+    expect(() => resolvedBusinessMirrorAuthorHref({
+      schemaVersion: 'bloge.authoringLinkDescriptor.v1', resolution: 'READ_ONLY_SOURCE',
+      route: {
+        path: '/author/', workspace: 'v2', authorMode: 'compose',
+        query: { returnUrl: '/showcase/' },
+      },
+    }, { vscode: false })).toThrow(/forbidden route/);
   });
 });

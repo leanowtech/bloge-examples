@@ -134,6 +134,20 @@ describe('AsyncReferenceCombobox', () => {
     expect(host.textContent).not.toContain('should-not-render');
   });
 
+  it('shows a safe caller-provided fallback when the directory becomes unavailable at runtime', async () => {
+    const loadCandidates = vi.fn<ReferenceCandidateSearch>().mockRejectedValue(
+      Object.assign(new Error('down'), { status: 'unavailable' }),
+    );
+    await render(loadCandidates, { unavailableFallback: 'Keep the current exact binding.' });
+
+    await act(async () => query<HTMLInputElement>('input[role="combobox"]').focus());
+    await advanceDebounce();
+
+    expect(host.textContent).toContain('The reference directory is unavailable.');
+    expect(host.textContent).toContain('Keep the current exact binding.');
+    expect(host.textContent).not.toContain('No matching references.');
+  });
+
   async function render(
     loadCandidates: ReferenceCandidateSearch,
     props: Partial<ComponentProps<typeof AsyncReferenceCombobox>> = {},

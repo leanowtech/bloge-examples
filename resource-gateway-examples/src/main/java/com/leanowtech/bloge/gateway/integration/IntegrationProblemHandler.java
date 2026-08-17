@@ -23,6 +23,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessRunContro
 import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceController;
 import com.leanowtech.bloge.gateway.visual.reference.ReferenceCandidateController;
 import com.leanowtech.bloge.gateway.visual.reference.CorrectnessDefinitionCandidateController;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverController;
 
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
@@ -72,7 +73,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CorrectnessRunController.class,
         CorrectnessGovernanceController.class,
         ReferenceCandidateController.class,
-        CorrectnessDefinitionCandidateController.class
+        CorrectnessDefinitionCandidateController.class,
+        AuthoringLinkResolverController.class
 })
 public class IntegrationProblemHandler {
 

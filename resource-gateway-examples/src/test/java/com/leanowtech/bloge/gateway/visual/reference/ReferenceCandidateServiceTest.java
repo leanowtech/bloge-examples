@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.visual.reference;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,25 @@ class ReferenceCandidateServiceTest {
         Page page = service.search(new SearchRequest("graph", "", APAC));
 
         assertThat(page.items()).extracting(ReferenceCandidate::id).containsExactly("apac-graph");
+    }
+
+    @Test
+    void catalogFamiliesReturnOnlyConcretePersistableBusinessAssetKinds() {
+        provider.add(candidate("AGENT", "support-agent", "Support agent",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("WORKFLOW", "refund-workflow", "Refund workflow",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("CHANNEL_APPLICATION", "support-chat", "Support chat",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC))
+                .add(candidate("SOLUTION", "refund-solution", "Refund solution",
+                        ReferenceCandidate.Lifecycle.ACTIVE, APAC));
+
+        assertThat(service.search(new SearchRequest("SERVICE_CARRIER", "", APAC)).items())
+                .extracting(ReferenceCandidate::kind)
+                .containsExactly("AGENT", "WORKFLOW");
+        assertThat(service.search(new SearchRequest("CHANNEL", "", APAC)).items())
+                .extracting(ReferenceCandidate::kind)
+                .containsExactly("CHANNEL_APPLICATION");
     }
 
     @Test
@@ -183,6 +203,36 @@ class ReferenceCandidateServiceTest {
                 "graph", "", "", 20, APAC, "retired", ""))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("lifecycle");
+    }
+
+    @Test
+    void fiveThousandCandidateCatalogKeepsBoundedPagesWithinTheP95Budget() {
+        for (int index = 0; index < 5_000; index++) {
+            String id = "asset-%04d".formatted(index);
+            provider.add(candidate(
+                    "graph", id, "Business asset " + index,
+                    ReferenceCandidate.Lifecycle.ACTIVE, APAC));
+        }
+        SearchRequest request = new SearchRequest("graph", "asset", "", 100, APAC);
+        service.search(request);
+        service.search(request);
+
+        long[] elapsedNanos = new long[20];
+        Page last = null;
+        for (int sample = 0; sample < elapsedNanos.length; sample++) {
+            long started = System.nanoTime();
+            last = service.search(request);
+            elapsedNanos[sample] = System.nanoTime() - started;
+        }
+        Arrays.sort(elapsedNanos);
+        long p95Nanos = elapsedNanos[(int) Math.ceil(elapsedNanos.length * 0.95) - 1];
+
+        assertThat(last).isNotNull();
+        assertThat(last.items()).hasSize(100);
+        assertThat(last.nextCursor()).isNotBlank();
+        assertThat(p95Nanos)
+                .withFailMessage("5000-candidate search P95 was %.2f ms", p95Nanos / 1_000_000.0)
+                .isLessThanOrEqualTo(300_000_000L);
     }
 
     private static ReferenceCandidate candidate(String kind,

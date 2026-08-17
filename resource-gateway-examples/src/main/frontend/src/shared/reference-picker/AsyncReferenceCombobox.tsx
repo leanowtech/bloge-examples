@@ -2,6 +2,7 @@ import {
   type ChangeEvent,
   type FocusEvent,
   type KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useId,
@@ -62,6 +63,7 @@ export interface AsyncReferenceComboboxProps {
   minQueryLength?: number;
   pageSize?: number;
   className?: string;
+  unavailableFallback?: ReactNode;
 }
 
 interface FailedRequest {
@@ -86,6 +88,7 @@ export default function AsyncReferenceCombobox({
   minQueryLength = 2,
   pageSize = DEFAULT_PAGE_SIZE,
   className,
+  unavailableFallback,
 }: AsyncReferenceComboboxProps) {
   const labels = { ...DEFAULT_LABELS, ...labelOverrides };
   const generatedId = useId();
@@ -284,6 +287,9 @@ export default function AsyncReferenceCombobox({
           {loadState !== 'ready' && loadState !== 'idle' && (
             <div aria-live="polite" className="reference-picker-status" role={statusRole}>
               <span>{statusMessage}</span>
+              {loadState === 'unavailable' && unavailableFallback && (
+                <span className="reference-picker-fallback">{unavailableFallback}</span>
+              )}
               {(loadState === 'error' || loadState === 'unavailable') && (
                 <button data-testid="reference-picker-retry" type="button" onClick={retry}>{labels.retry}</button>
               )}

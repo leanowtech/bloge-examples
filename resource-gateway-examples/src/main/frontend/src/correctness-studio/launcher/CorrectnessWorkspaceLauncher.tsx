@@ -12,6 +12,12 @@ import { useI18n } from '../../i18n/I18nProvider';
 import AsyncReferenceCombobox, {
   type AsyncReferenceComboboxLabels,
 } from '../../shared/reference-picker/AsyncReferenceCombobox';
+import {
+  guidedTelemetryDurationBucket,
+  guidedTelemetryResultCountBucket,
+  noopGuidedAuthoringTelemetry,
+  type GuidedAuthoringTelemetry,
+} from '../../shared/guided-telemetry/guidedTelemetry';
 import type {
   ReferenceCandidate,
   ReferenceCandidateSearch,
@@ -38,6 +44,7 @@ export interface CorrectnessWorkspaceLauncherProps {
   ) => ReturnType<ReferenceCandidateSearch>;
   onOpen(value: CorrectnessWorkspaceCoordinate): void;
   pickerDebounceMs?: number;
+  telemetry?: GuidedAuthoringTelemetry;
 }
 
 const TARGET_KINDS: CorrectnessTargetKind[] = ['GRAPH', 'OPERATOR', 'FUNCTION'];
@@ -48,6 +55,7 @@ export default function CorrectnessWorkspaceLauncher({
   searchDefinitions,
   onOpen,
   pickerDebounceMs = 250,
+  telemetry = noopGuidedAuthoringTelemetry,
 }: CorrectnessWorkspaceLauncherProps) {
   const { t } = useI18n();
   const catalogAvailable = deployment.features.correctnessTargetCatalogApi === true
@@ -59,16 +67,63 @@ export default function CorrectnessWorkspaceLauncher({
   const [definitionCount, setDefinitionCount] = useState(0);
   const [probeEpoch, setProbeEpoch] = useState(0);
 
+  useEffect(() => {
+    telemetry.record('WORKSPACE_LAUNCHER_OPENED', {
+      surface: 'CORRECTNESS',
+      entryKind: catalogAvailable ? 'GUIDED' : 'ADVANCED',
+    });
+  }, [catalogAvailable, telemetry]);
+
   const loadTargets = useCallback<ReferenceCandidateSearch>(
-    (request, signal) => searchTargets(targetKind, request, signal),
-    [searchTargets, targetKind],
+    (request, signal) => {
+      const startedAt = performance.now();
+      return searchTargets(targetKind, request, signal)
+        .then((page) => {
+          telemetry.record('REFERENCE_SEARCH_COMPLETED', {
+            kind: targetKind,
+            latencyBucket: guidedTelemetryDurationBucket(performance.now() - startedAt),
+            resultCountBucket: guidedTelemetryResultCountBucket(page.items.length),
+            outcome: page.items.length > 0 ? 'MATCHED' : 'EMPTY',
+          });
+          return page;
+        })
+        .catch((failure: unknown) => {
+          telemetry.record('REFERENCE_SEARCH_COMPLETED', {
+            kind: targetKind,
+            latencyBucket: guidedTelemetryDurationBucket(performance.now() - startedAt),
+            resultCountBucket: 'ZERO',
+            outcome: referenceFailureStatus(failure) === 'unavailable' ? 'UNAVAILABLE' : 'ERROR',
+          });
+          throw failure;
+        });
+    },
+    [searchTargets, targetKind, telemetry],
   );
   const loadDefinitions = useCallback<ReferenceCandidateSearch>(
     (request, signal) => {
       if (!target) return Promise.reject(new Error('Select a target before loading definitions.'));
-      return searchDefinitions(target, request, signal);
+      const startedAt = performance.now();
+      return searchDefinitions(target, request, signal)
+        .then((page) => {
+          telemetry.record('REFERENCE_SEARCH_COMPLETED', {
+            kind: 'CORRECTNESS_DEFINITION',
+            latencyBucket: guidedTelemetryDurationBucket(performance.now() - startedAt),
+            resultCountBucket: guidedTelemetryResultCountBucket(page.items.length),
+            outcome: page.items.length > 0 ? 'MATCHED' : 'EMPTY',
+          });
+          return page;
+        })
+        .catch((failure: unknown) => {
+          telemetry.record('REFERENCE_SEARCH_COMPLETED', {
+            kind: 'CORRECTNESS_DEFINITION',
+            latencyBucket: guidedTelemetryDurationBucket(performance.now() - startedAt),
+            resultCountBucket: 'ZERO',
+            outcome: referenceFailureStatus(failure) === 'unavailable' ? 'UNAVAILABLE' : 'ERROR',
+          });
+          throw failure;
+        });
     },
-    [searchDefinitions, target],
+    [searchDefinitions, target, telemetry],
   );
 
   useEffect(() => {
@@ -80,7 +135,7 @@ export default function CorrectnessWorkspaceLauncher({
     }
     const controller = new AbortController();
     setDefinitionState('loading');
-    searchDefinitions(target, { query: '', cursor: null, limit: 20 }, controller.signal)
+    loadDefinitions({ query: '', cursor: null, limit: 20 }, controller.signal)
       .then((page) => {
         if (controller.signal.aborted) return;
         const selectable = page.items.filter(isCandidateSelectable);
@@ -99,7 +154,7 @@ export default function CorrectnessWorkspaceLauncher({
         setDefinitionState(referenceFailureStatus(failure));
       });
     return () => controller.abort();
-  }, [catalogAvailable, probeEpoch, searchDefinitions, target]);
+  }, [catalogAvailable, loadDefinitions, probeEpoch, target]);
 
   const changeTargetKind = (kind: CorrectnessTargetKind) => {
     setTargetKind(kind);
@@ -108,14 +163,28 @@ export default function CorrectnessWorkspaceLauncher({
     setDefinitionState('idle');
   };
   const openWorkspace = () => {
-    if (!target || !definition) return;
-    onOpen({
-      targetKind,
-      targetId: target.id,
-      targetFingerprint: target.fingerprint,
-      definitionId: definition.id,
-      caseLimit: 100,
-    });
+    if (!target || !definition) {
+      telemetry.record('CROSS_WORKSPACE_LINK_RESOLVED', {
+        targetWorkspace: 'CORRECTNESS', resolutionKind: 'CANDIDATE', outcome: 'FAILED',
+      });
+      return;
+    }
+    try {
+      onOpen({
+        targetKind,
+        targetId: target.id,
+        targetFingerprint: target.fingerprint,
+        definitionId: definition.id,
+        caseLimit: 100,
+      });
+      telemetry.record('CROSS_WORKSPACE_LINK_RESOLVED', {
+        targetWorkspace: 'CORRECTNESS', resolutionKind: 'CANDIDATE', outcome: 'SUCCESS',
+      });
+    } catch {
+      telemetry.record('CROSS_WORKSPACE_LINK_RESOLVED', {
+        targetWorkspace: 'CORRECTNESS', resolutionKind: 'CANDIDATE', outcome: 'FAILED',
+      });
+    }
   };
   const pickerLabels = referencePickerLabels(t);
 

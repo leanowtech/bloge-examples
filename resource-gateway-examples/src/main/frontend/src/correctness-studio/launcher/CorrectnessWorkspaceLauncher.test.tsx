@@ -7,6 +7,7 @@ import I18nProvider from '../../i18n/I18nProvider';
 import CorrectnessI18nProvider from '../CorrectnessI18nProvider';
 import { deploymentCapabilities } from '../testFixtures';
 import type { ReferenceCandidate, ReferencePage } from '../../shared/reference-picker/types';
+import { createGuidedAuthoringTelemetry, type GuidedTelemetryEvent } from '../../shared/guided-telemetry/guidedTelemetry';
 import CorrectnessWorkspaceLauncher from './CorrectnessWorkspaceLauncher';
 
 describe('CorrectnessWorkspaceLauncher', () => {
@@ -95,7 +96,45 @@ describe('CorrectnessWorkspaceLauncher', () => {
     expect(searchTargets).not.toHaveBeenCalled();
   });
 
-  async function render(overrides: Record<string, boolean> = {}) {
+  it('records launcher, candidate search, and candidate open outcomes without coordinates', async () => {
+    const events: GuidedTelemetryEvent[] = [];
+    const telemetry = createGuidedAuthoringTelemetry((event) => events.push(event));
+    const target = candidate('GRAPH', 'loan-decision', 'Loan decision');
+    const definition = candidate('CORRECTNESS_DEFINITION', 'loan-correctness', 'Loan correctness');
+    searchTargets.mockResolvedValue(page([target]));
+    searchDefinitions.mockResolvedValue(page([definition]));
+    await render({}, telemetry);
+
+    await choose('Business target', 'Loan decision');
+    await click(button('Open correctness workspace'));
+
+    expect(events.map((event) => event.name)).toEqual(expect.arrayContaining([
+      'WORKSPACE_LAUNCHER_OPENED', 'REFERENCE_SEARCH_COMPLETED', 'CROSS_WORKSPACE_LINK_RESOLVED',
+    ]));
+    expect(events.every((event) => !JSON.stringify(event).includes('loan-decision'))).toBe(true);
+    expect(events.find((event) => event.name === 'CROSS_WORKSPACE_LINK_RESOLVED')?.metadata)
+      .toEqual({ targetWorkspace: 'CORRECTNESS', resolutionKind: 'CANDIDATE', outcome: 'SUCCESS' });
+  });
+
+  it('records a failed candidate open without exposing the selected coordinate', async () => {
+    const events: GuidedTelemetryEvent[] = [];
+    const telemetry = createGuidedAuthoringTelemetry((event) => events.push(event));
+    const target = candidate('GRAPH', 'loan-decision', 'Loan decision');
+    const definition = candidate('CORRECTNESS_DEFINITION', 'loan-correctness', 'Loan correctness');
+    searchTargets.mockResolvedValue(page([target]));
+    searchDefinitions.mockResolvedValue(page([definition]));
+    onOpen.mockImplementation(() => { throw new Error('route unavailable'); });
+    await render({}, telemetry);
+
+    await choose('Business target', 'Loan decision');
+    await click(button('Open correctness workspace'));
+
+    expect(events.find((event) => event.name === 'CROSS_WORKSPACE_LINK_RESOLVED')?.metadata)
+      .toEqual({ targetWorkspace: 'CORRECTNESS', resolutionKind: 'CANDIDATE', outcome: 'FAILED' });
+    expect(events.every((event) => !JSON.stringify(event).includes('loan-decision'))).toBe(true);
+  });
+
+  async function render(overrides: Record<string, boolean> = {}, telemetry?: import('../../shared/guided-telemetry/guidedTelemetry').GuidedAuthoringTelemetry) {
     await act(async () => {
       root = createRoot(host);
       root.render(
@@ -107,6 +146,7 @@ describe('CorrectnessWorkspaceLauncher', () => {
               pickerDebounceMs={0}
               searchDefinitions={searchDefinitions}
               searchTargets={searchTargets}
+              telemetry={telemetry}
             />
           </CorrectnessI18nProvider>
         </I18nProvider>,

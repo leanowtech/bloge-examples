@@ -13,6 +13,17 @@ export interface WorkspaceRouteEnvironment {
   search?: string;
 }
 
+export interface AuthoringLinkDescriptor {
+  schemaVersion: 'bloge.authoringLinkDescriptor.v1';
+  resolution: 'READ_ONLY_SOURCE' | 'EXISTING_DRAFT';
+  route: {
+    path: '/author/';
+    workspace: 'v2';
+    authorMode: 'compose';
+    query: Record<string, string>;
+  };
+}
+
 const PRESERVED_QUERY_KEYS = ['lang', 'sessionTenantId'] as const;
 
 /** Builds an allowlisted exact Author coordinate for one Business Mirror source Graph. */
@@ -37,6 +48,38 @@ export function businessMirrorAuthorHref(
   params.set('returnPackageId', required(subject.packageId, 'packageId'));
   params.set('returnTask', 'capabilities');
   params.set('returnAnchor', `graph:${required(subject.graphRef.id, 'graphRef.id')}`);
+  const query = params.toString();
+  return environment.vscode ? `?${query}` : `/author/?${query}`;
+}
+
+/** Converts the service-resolved structured route into the current Web or VS Code host route. */
+export function resolvedBusinessMirrorAuthorHref(
+  descriptor: AuthoringLinkDescriptor,
+  environment: WorkspaceRouteEnvironment,
+): string {
+  if (descriptor.schemaVersion !== 'bloge.authoringLinkDescriptor.v1'
+    || descriptor.route.path !== '/author/'
+    || descriptor.route.workspace !== 'v2'
+    || descriptor.route.authorMode !== 'compose') {
+    throw new Error('The Authoring Link Resolver returned an unsupported route.');
+  }
+  const params = new URLSearchParams();
+  for (const key of PRESERVED_QUERY_KEYS) {
+    const value = new URLSearchParams(environment.search ?? '').get(key)?.trim();
+    if (value) params.set(key, value);
+  }
+  for (const [key, value] of Object.entries(descriptor.route.query)) {
+    if (!/^[A-Za-z][A-Za-z0-9]*$/.test(key) || !value.trim()) {
+      throw new Error('The Authoring Link Resolver returned an invalid query coordinate.');
+    }
+    if (key === 'returnUrl' || key === 'showcaseHref' || value.includes('/showcase')) {
+      throw new Error('The Authoring Link Resolver returned a forbidden route.');
+    }
+    params.set(key, value);
+  }
+  params.set('authorWorkspace', 'v2');
+  params.set('authorMode', 'compose');
+  if (environment.vscode) params.set('workspaceRoute', 'author');
   const query = params.toString();
   return environment.vscode ? `?${query}` : `/author/?${query}`;
 }

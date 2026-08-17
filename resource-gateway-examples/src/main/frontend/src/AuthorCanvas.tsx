@@ -32,7 +32,7 @@ import ReactFlow, {
   Position,
   getSmoothStepPath,
 } from 'reactflow';
-import { ChevronLeft, ChevronRight, Minus, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CopyPlus, LockKeyhole, Minus, Plus } from 'lucide-react';
 import 'reactflow/dist/style.css';
 
 import {
@@ -5403,6 +5403,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [graphName, setGraphName] = useState('visualGraph');
   const [graphDraftId, setGraphDraftId] = useState('');
   const [graphDraftRevision, setGraphDraftRevision] = useState(0);
+  const sourcePreviewReadOnly = Boolean(initialBusinessMirrorSeed && !graphDraftId);
+  const lastSavedGraphRef = useRef<GraphDraft | null>(null);
+  const [sourceCopyBusy, setSourceCopyBusy] = useState(false);
+  const [sourceCopyError, setSourceCopyError] = useState('');
   const [graphTenantId, setGraphTenantId] = useState(initialTaskCoordinate.tenantId);
   const [graphNamespace, setGraphNamespace] = useState(initialTaskCoordinate.namespace);
   const [graphEnvironment, setGraphEnvironment] = useState(initialTaskCoordinate.environment);
@@ -7702,6 +7706,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       if (!stored.draftId || !stored.revision) {
         throw new Error('Graph persistence did not return an exact draft revision.');
       }
+      lastSavedGraphRef.current = stored;
       const projection = await fetchScenarioGraphContract(stored.draftId);
       const savedCanvasDraft = savedCanvasDraftAtRevision(exportableDraft, stored);
       authoritativeContractRef.current = {
@@ -8026,13 +8031,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, []);
 
   const allowOperatorDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
+    if (sourcePreviewReadOnly) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
-  }, []);
+  }, [sourcePreviewReadOnly]);
 
   const dropOperatorOnFlow = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
-    if (layoutPlanning || layoutPreview) {
+    if (sourcePreviewReadOnly || layoutPlanning || layoutPreview) {
       return;
     }
     const operatorRef =
@@ -8049,7 +8055,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         }
       : undefined;
     addOperator(operator, position);
-  }, [addOperator, layoutPlanning, layoutPreview, operatorByRef]);
+  }, [addOperator, layoutPlanning, layoutPreview, operatorByRef, sourcePreviewReadOnly]);
 
   const updateFixtureDraftForNode = useCallback((nodeId: string, value: string) => {
     clearRunResult();
@@ -10487,6 +10493,38 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       throw new Error('Graph save did not reach an authoritative revision.');
     }
   }, [authoringContinuity.save]);
+  const createBusinessMirrorWorkingCopy = useCallback(async () => {
+    if (!initialBusinessMirrorSeed || sourceCopyBusy) return;
+    setSourceCopyBusy(true);
+    setSourceCopyError('');
+    lastSavedGraphRef.current = null;
+    try {
+      await saveGraphForScenario();
+      const stored = lastSavedGraphRef.current as GraphDraft | null;
+      if (!stored?.draftId || !stored.revision) {
+        throw new Error('The working copy did not return an exact Graph revision.');
+      }
+      const url = new URL(window.location.href);
+      [
+        'sourceKind', 'sourceGraphName', 'sourceId', 'sourceRevision', 'sourceFingerprint',
+      ].forEach((key) => url.searchParams.delete(key));
+      url.searchParams.set('draftId', stored.draftId);
+      url.searchParams.set('revision', String(stored.revision));
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+      setDeepLinkNotice({
+        level: 'ok',
+        message: `Created editable working copy ${stored.draftId}@${stored.revision}. The source lineage remains attached.`,
+      });
+      setConnectionNotice({
+        level: 'ok',
+        message: `Working copy ${stored.draftId}@${stored.revision} is editable and retains its source lineage.`,
+      });
+    } catch (cause: unknown) {
+      setSourceCopyError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setSourceCopyBusy(false);
+    }
+  }, [initialBusinessMirrorSeed, saveGraphForScenario, sourceCopyBusy]);
   const authorReadiness = projectAuthorReadiness({
     draft: {
       durable: Boolean(graphDraftId && graphDraftRevision > 0),
@@ -12024,6 +12062,28 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             {d(deepLinkNotice.message)}
           </div>
         )}
+        {sourcePreviewReadOnly && initialBusinessMirrorSeed && (
+          <section className="author-source-preview" data-testid="author-source-preview" role="status">
+            <LockKeyhole aria-hidden="true" size={18} />
+            <div>
+              <strong>{t('Read-only source')}</strong>
+              <span>{t('Inspect the exact source topology. Create a working copy before editing.')}</span>
+              <code>
+                {initialBusinessMirrorSeed.sourceId}@{initialBusinessMirrorSeed.sourceRevision}
+              </code>
+              {sourceCopyError && <small role="alert">{d(sourceCopyError)}</small>}
+            </div>
+            <button
+              type="button"
+              className="primary"
+              disabled={sourceCopyBusy}
+              onClick={() => void createBusinessMirrorWorkingCopy()}
+            >
+              <CopyPlus aria-hidden="true" size={16} />
+              {t(sourceCopyBusy ? 'Creating working copy...' : 'Create working copy')}
+            </button>
+          </section>
+        )}
         {deepLinkRun && (
           <section className={`run-context-strip ${deepLinkRun.success ? 'ok' : 'error'}`} data-testid="run-context-strip">
             <div className="context-strip-heading">
@@ -12446,8 +12506,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onConnect={onConnect}
             onConnectStart={onConnectStart}
             onConnectEnd={onConnectEnd}
-            nodesDraggable={!layoutPlanning && !layoutPreview}
-            nodesConnectable={!layoutPlanning && !layoutPreview}
+            nodesDraggable={!sourcePreviewReadOnly && !layoutPlanning && !layoutPreview}
+            nodesConnectable={!sourcePreviewReadOnly && !layoutPlanning && !layoutPreview}
             deleteKeyCode={null}
             elementsSelectable={!layoutPlanning && !layoutPreview}
             onInit={(instance) => {
@@ -12461,7 +12521,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 setFocusPathNodeId('');
               }
             }}
-            onNodeDoubleClick={(_, node) => openNodeEditor(node)}
+            onNodeDoubleClick={(_, node) => {
+              if (!sourcePreviewReadOnly) openNodeEditor(node);
+            }}
             onPaneClick={() => {
               setSelectedNodeId('');
               setFocusPathNodeId('');

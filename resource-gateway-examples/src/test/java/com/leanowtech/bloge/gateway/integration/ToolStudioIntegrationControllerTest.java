@@ -6,9 +6,13 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.http.MediaType;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
+import com.leanowtech.bloge.gateway.businessmirror.compilation.BuiltInGraphAssetAuthority;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshotIntegrationService;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkResolverService;
+import com.leanowtech.bloge.gateway.visual.authoring.link.AuthoringLinkSourceAuthority;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -32,6 +36,38 @@ class ToolStudioIntegrationControllerTest {
                 .andExpect(jsonPath("$.payload.features.runEvidenceBundle").value(true))
                 .andExpect(jsonPath("$.payload.features.capabilitySnapshotApi").value(true))
                 .andExpect(jsonPath("$.payload.features.mirrorServing").value(false));
+    }
+
+    @Test
+    void authoringLinkCapabilityAndEndpointCannotDriftFromServiceAssembly() {
+        ToolStudioIntegrationService service = new ToolStudioIntegrationService(null, null, null, null);
+        IntegrationCapabilities unavailable = service.capabilities().payload();
+        org.assertj.core.api.Assertions.assertThat(unavailable.features())
+                .containsEntry("authoringLinkResolverApi", false);
+        org.assertj.core.api.Assertions.assertThat(unavailable.endpoints())
+                .extracting(IntegrationCapabilities.Endpoint::path)
+                .doesNotContain("/api/visual/authoring-links:resolve");
+
+        service.configureAuthoringLinkResolver(new AuthoringLinkResolverService(
+                new AuthoringLinkSourceAuthority() {
+                    @Override
+                    public List<String> graphNames() {
+                        return List.of();
+                    }
+
+                    @Override
+                    public BuiltInGraphAssetAuthority.Snapshot resolve(
+                            com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot.Scope scope,
+                            String graphName) {
+                        throw new IllegalStateException("not used by capability probe");
+                    }
+                }));
+        IntegrationCapabilities available = service.capabilities().payload();
+        org.assertj.core.api.Assertions.assertThat(available.features())
+                .containsEntry("authoringLinkResolverApi", true);
+        org.assertj.core.api.Assertions.assertThat(available.endpoints())
+                .extracting(IntegrationCapabilities.Endpoint::path)
+                .contains("/api/visual/authoring-links:resolve");
     }
 
     @Test

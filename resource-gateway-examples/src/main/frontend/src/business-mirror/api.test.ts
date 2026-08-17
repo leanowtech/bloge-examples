@@ -7,6 +7,7 @@ import {
   fetchBusinessMirrorReferenceCandidates,
   importBusinessMirrorLegacyPackage,
   resetBlogeApiTransport,
+  resolveBusinessMirrorAuthorLink,
   resolveBusinessMirrorReferenceCandidate,
   saveBusinessMirrorPackage,
   setBlogeApiTransport,
@@ -99,6 +100,46 @@ describe('Business Mirror API client', () => {
       schemaVersion: 'bloge.referenceResolveCommand.v1',
       kind: 'PACKAGE_CONTRACT', id: 'loan-contract', revision: 3,
       intendedUse: 'BIND_PACKAGE_CONTRACT',
+    });
+  });
+
+  it('maps a runtime catalog outage to the picker unavailable state', async () => {
+    setBlogeApiTransport(vi.fn(async () => json({
+      detail: 'Reference catalog is temporarily unavailable.',
+    }, 503, 'Service Unavailable')));
+
+    await expect(fetchBusinessMirrorReferenceCandidates(
+      'OWNER', { query: '', cursor: null, limit: 20 }, new AbortController().signal,
+    )).rejects.toMatchObject({ status: 'unavailable', retryable: true });
+  });
+
+  it('resolves exact Author navigation through the authenticated protocol', async () => {
+    const transport = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => json({
+      schemaVersion: 'bloge.authoringLinkDescriptor.v1',
+      resolution: 'READ_ONLY_SOURCE',
+      route: { path: '/author/', workspace: 'v2', authorMode: 'compose', query: {} },
+    }));
+    setBlogeApiTransport(transport);
+
+    await resolveBusinessMirrorAuthorLink({
+      graphName: 'loanDecisionPolicy',
+      graphRef: { id: 'built-in:loanDecisionPolicy', revision: 3, fingerprint: `sha256:${'a'.repeat(64)}` },
+      packageId: 'legacy:loanDecisionPolicy',
+    });
+
+    expect(String(transport.mock.calls[0][0])).toBe('/api/visual/authoring-links:resolve');
+    expect(header(transport.mock.calls[0][1], 'X-Purpose')).toBe('BUSINESS_MIRROR_AUTHORING');
+    expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toEqual({
+      schemaVersion: 'bloge.authoringLinkResolveRequest.v1',
+      subjectRef: {
+        kind: 'BUSINESS_MIRROR_LEGACY_GRAPH', id: 'built-in:loanDecisionPolicy',
+        revision: 3, fingerprint: `sha256:${'a'.repeat(64)}`,
+      },
+      intent: 'EDIT_TOPOLOGY',
+      returnCoordinate: {
+        route: 'business-mirror', packageId: 'legacy:loanDecisionPolicy', task: 'capabilities',
+        anchor: 'graph:built-in:loanDecisionPolicy',
+      },
     });
   });
 });

@@ -1023,6 +1023,41 @@ body {
   color: var(--danger);
 }
 
+.author-source-preview {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid #b9c7d8;
+  background: #eef4fb;
+  color: #2b4d71;
+}
+
+.author-source-preview > svg { color: #174ea6; }
+.author-source-preview > div { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 10px; min-width: 0; }
+.author-source-preview strong { color: #173c63; }
+.author-source-preview span { overflow-wrap: anywhere; }
+.author-source-preview code { grid-column: 1 / -1; color: #415a76; }
+.author-source-preview small { grid-column: 1 / -1; color: #a22f1b; }
+.author-source-preview button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: var(--rg-control-min);
+  padding: 7px 11px;
+  border: 1px solid #1a56db;
+  border-radius: 4px;
+  background: #1a56db;
+  color: #fff;
+  font-weight: 800;
+}
+
+@media (max-width: 700px) {
+  .author-source-preview { grid-template-columns: auto minmax(0, 1fr); }
+  .author-source-preview > button { grid-column: 2; justify-self: start; }
+}
+
 .run-context-strip,
 .governance-gate-strip {
   display: grid;

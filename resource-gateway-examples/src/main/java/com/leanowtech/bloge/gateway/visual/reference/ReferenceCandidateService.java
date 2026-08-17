@@ -10,10 +10,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 
 /** Pure domain service for bounded candidate discovery and exact resolution. */
 public final class ReferenceCandidateService {
     private static final String CURSOR_VERSION = "v1";
+    private static final Set<String> SERVICE_CARRIER_KINDS = Set.of("SOP", "AGENT", "WORKFLOW");
     private static final Comparator<ReferenceCandidate> TIE_BREAKER = Comparator
             .comparing(ReferenceCandidate::kind)
             .thenComparing(ReferenceCandidate::id)
@@ -100,7 +102,7 @@ public final class ReferenceCandidateService {
         String query = request.query().toLowerCase(Locale.ROOT);
         LinkedHashMap<String, ReferenceCandidate> unique = new LinkedHashMap<>();
         for (ReferenceCandidate candidate : candidates) {
-            if (!request.kind().isEmpty() && !request.kind().equals(candidate.kind())) {
+            if (!matchesKind(request.kind(), candidate.kind())) {
                 continue;
             }
             if (!request.scope().matches(candidate.scope())) {
@@ -136,6 +138,17 @@ public final class ReferenceCandidateService {
                 || candidate.displayName().toLowerCase(Locale.ROOT).contains(query)
                 || candidate.description().toLowerCase(Locale.ROOT).contains(query)
                 || candidate.labels().stream().map(label -> label.toLowerCase(Locale.ROOT)).anyMatch(label -> label.contains(query));
+    }
+
+    private static boolean matchesKind(String requestedKind, String candidateKind) {
+        if (requestedKind.isEmpty() || requestedKind.equals(candidateKind)) {
+            return true;
+        }
+        return switch (requestedKind) {
+            case "SERVICE_CARRIER" -> SERVICE_CARRIER_KINDS.contains(candidateKind);
+            case "CHANNEL" -> "CHANNEL_APPLICATION".equals(candidateKind);
+            default -> false;
+        };
     }
 
     private static int relevance(ReferenceCandidate candidate, String query) {
