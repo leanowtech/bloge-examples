@@ -15,10 +15,14 @@ public record CapabilityStudioGovernedBaselineProjection(
         String status,
         String verificationScope,
         String releaseGateStatus,
+        String evidenceClass,
         int caseCount,
         int roundCount,
         int suiteRunCount,
         int childRunCount,
+        int oraclePassCount,
+        int businessCheckCount,
+        int businessCheckPassCount,
         Integer realExternalCallCount,
         String compilationFingerprint,
         String sourceMapFingerprint,
@@ -30,10 +34,12 @@ public record CapabilityStudioGovernedBaselineProjection(
         List<String> diagnostics) {
 
     public static final String SCHEMA_VERSION =
-            "resource-gateway.capability-studio.governed-baseline.v1";
+            "resource-gateway.capability-studio.governed-baseline.v2";
     public static final String EVIDENCE_KIND = "DEVELOPMENT_TEST_OWNED";
-    public static final String VERIFICATION_SCOPE = "GOVERNED_SUITE_ASSERTIONS";
+    public static final String VERIFICATION_SCOPE =
+            "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES";
     public static final String RELEASE_GATE_STATUS = "NO_GO";
+    public static final String EVIDENCE_CLASS = "EXPLORATORY";
     public static final String PASSED = "PASSED";
     public static final String FAILED_CLOSED = "FAILED_CLOSED";
 
@@ -67,8 +73,17 @@ public record CapabilityStudioGovernedBaselineProjection(
 
     public record CaseProjection(
             String caseId,
+            String oracleId,
+            String oracleStatus,
+            String semanticResultFingerprint,
+            int assertionsEvaluated,
+            int assertionsPassed,
+            int fixtureControlsEvaluated,
+            int fixtureControlsSatisfied,
+            List<String> proofs,
             List<CaseRound> rounds) {
         public CaseProjection {
+            proofs = proofs == null ? List.of() : List.copyOf(proofs);
             rounds = rounds == null ? List.of() : List.copyOf(rounds);
         }
     }
@@ -79,6 +94,12 @@ public record CapabilityStudioGovernedBaselineProjection(
             String status,
             String fixtureBundleId,
             long fixtureRevision,
-            String fixtureFingerprint) {
+            String fixtureFingerprint,
+            String evidenceFingerprint,
+            String semanticResultFingerprint,
+            int assertionsEvaluated,
+            int assertionsPassed,
+            int fixtureControlsEvaluated,
+            int fixtureControlsSatisfied) {
     }
 }

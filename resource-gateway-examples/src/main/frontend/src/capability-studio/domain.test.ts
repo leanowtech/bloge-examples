@@ -146,6 +146,8 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(result.roundCount).toBe(3);
     expect(result.suiteRunCount).toBe(3);
     expect(result.childRunCount).toBe(27);
+    expect(result.oraclePassCount).toBe(9);
+    expect(result.businessCheckPassCount).toBe(27);
     expect(result.publication.suiteRef.kind).toBe('TEST_SUITE');
     expect(new Set(result.rounds.map((round) => round.suiteRunId)).size).toBe(3);
     expect(new Set(result.cases.flatMap((entry) => entry.rounds.map((round) => round.runId))).size).toBe(27);
@@ -156,6 +158,10 @@ describe('Capability Studio governed baseline protocol', () => {
     failed.status = 'FAILED_CLOSED';
     failed.suiteRunCount = 0;
     failed.childRunCount = 0;
+    failed.oraclePassCount = 0;
+    failed.businessCheckCount = 0;
+    failed.businessCheckPassCount = 0;
+    failed.evidenceClass = null;
     failed.realExternalCallCount = null;
     failed.compilationFingerprint = null;
     failed.sourceMapFingerprint = null;
@@ -204,9 +210,9 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(() => parseGovernedBaselineProjection(duplicateSuiteRun)).toThrow('Duplicate governedBaseline.rounds suiteRunId');
   });
 
-  it('requires all three required limitations and exact round sequences', () => {
+  it('requires all four release limitations and exact round sequences', () => {
     const missingLimitation = structuredClone(governedBaselineProjectionFixture);
-    missingLimitation.limitations = ['BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED'];
+    missingLimitation.limitations = ['IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND'];
     expect(() => parseGovernedBaselineProjection(missingLimitation)).toThrow('Required governed baseline limitation');
 
     const brokenSequence = structuredClone(governedBaselineProjectionFixture);
@@ -216,6 +222,21 @@ describe('Capability Studio governed baseline protocol', () => {
     const wrongCaseOrder = structuredClone(governedBaselineProjectionFixture);
     [wrongCaseOrder.cases[0], wrongCaseOrder.cases[1]] = [wrongCaseOrder.cases[1], wrongCaseOrder.cases[0]];
     expect(() => parseGovernedBaselineProjection(wrongCaseOrder)).toThrow('canonical case order');
+  });
+
+  it('rejects business Oracle drift and missing high-risk proofs', () => {
+    const fingerprintDrift = structuredClone(governedBaselineProjectionFixture);
+    fingerprintDrift.cases[0].rounds[2].semanticResultFingerprint = `sha256:${'f'.repeat(64)}`;
+    expect(() => parseGovernedBaselineProjection(fingerprintDrift)).toThrow('business Oracle closure');
+
+    const assertionDrift = structuredClone(governedBaselineProjectionFixture);
+    assertionDrift.cases[1].rounds[0].assertionsPassed = 0;
+    expect(() => parseGovernedBaselineProjection(assertionDrift)).toThrow('business assertion counts');
+
+    const timeoutProofMissing = structuredClone(governedBaselineProjectionFixture);
+    timeoutProofMissing.cases[2].proofs = timeoutProofMissing.cases[2].proofs
+      .filter((proof) => proof !== 'TIMEOUT_FALLBACK_CONFIRMED');
+    expect(() => parseGovernedBaselineProjection(timeoutProofMissing)).toThrow('business Oracle proofs');
   });
 });
 

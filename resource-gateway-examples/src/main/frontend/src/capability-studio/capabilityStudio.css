@@ -328,8 +328,15 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
 .capability-governed-case-table th, .capability-governed-case-table td { padding: 9px 12px; border-bottom: 1px solid var(--cap-border); text-align: left; }
 .capability-governed-case-table thead th { color: var(--cap-muted); background: var(--cap-subtle); font-size: 10px; white-space: nowrap; }
 .capability-governed-case-table tbody th { font-weight: 700; }
+.capability-governed-case-table tbody th small { display: block; max-width: 180px; margin-top: 3px; overflow: hidden; color: var(--cap-muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 9px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .capability-governed-case-table td { color: var(--cap-green); }
 .capability-governed-case-table td svg { margin-right: 5px; vertical-align: -2px; }
+.capability-governed-case-table .capability-oracle-cell { color: var(--cap-blue); font-weight: 750; white-space: nowrap; }
+.capability-governed-oracle-proofs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border-bottom: 1px solid var(--cap-border); background: var(--cap-border); }
+.capability-governed-oracle-proofs > div { display: flex; align-items: flex-start; gap: 9px; min-width: 0; padding: 13px 16px; background: var(--cap-blue-soft); color: var(--cap-blue); }
+.capability-governed-oracle-proofs span { display: grid; gap: 3px; min-width: 0; }
+.capability-governed-oracle-proofs strong { color: var(--cap-ink); font-size: 11px; }
+.capability-governed-oracle-proofs small { color: var(--cap-muted); font-size: 10px; line-height: 1.4; }
 .capability-governed-limitations { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(0, 1.2fr); gap: 18px; padding: 16px; border-bottom: 1px solid #ead9a5; background: var(--cap-amber-soft); }
 .capability-governed-limitations > div { display: flex; align-items: flex-start; gap: 9px; color: var(--cap-amber); }
 .capability-governed-limitations span { display: grid; gap: 4px; }
@@ -404,6 +411,7 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
   .capability-governed-result-heading, .capability-governed-limitations { grid-template-columns: 1fr; }
   .capability-governed-result-heading > div:last-child { border-left: 0; border-top: 1px solid #ead9a5; }
   .capability-governed-rounds { grid-template-columns: 1fr; }
+  .capability-governed-oracle-proofs { grid-template-columns: 1fr; }
   .capability-governed-case-table { min-width: 100%; table-layout: fixed; font-size: 10px; }
   .capability-governed-case-table thead th:first-child { width: 40%; }
   .capability-governed-case-table th, .capability-governed-case-table td { padding: 8px 4px; }

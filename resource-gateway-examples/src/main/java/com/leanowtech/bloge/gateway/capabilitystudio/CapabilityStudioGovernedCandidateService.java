@@ -3,12 +3,15 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -41,17 +44,20 @@ public final class CapabilityStudioGovernedCandidateService {
     private final ObjectMapper mapper;
     private final CapabilityStudioGovernedCompilationService compiler;
     private final CapabilityStudioGovernedAssetPublisher publisher;
-    private final TestSuiteExecutionService executions;
+    private final TestSuiteExecutionService suiteExecutions;
+    private final TestExecutionApiService childExecutions;
 
     public CapabilityStudioGovernedCandidateService(
             ObjectMapper mapper,
             CapabilityStudioGovernedCompilationService compiler,
             CapabilityStudioGovernedAssetPublisher publisher,
-            TestSuiteExecutionService executions) {
+            TestSuiteExecutionService suiteExecutions,
+            TestExecutionApiService childExecutions) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.publisher = Objects.requireNonNull(publisher, "publisher");
-        this.executions = Objects.requireNonNull(executions, "executions");
+        this.suiteExecutions = Objects.requireNonNull(suiteExecutions, "suiteExecutions");
+        this.childExecutions = Objects.requireNonNull(childExecutions, "childExecutions");
     }
 
     /**
@@ -100,10 +106,10 @@ public final class CapabilityStudioGovernedCandidateService {
                 normalizedRequestId,
                 TestSuiteExecutionRequest.Strategy.COLLECT_ALL,
                 requestMetadata);
-        TestSuiteExecutionResponse response = executions.execute(
+        TestSuiteExecutionResponse response = suiteExecutions.execute(
                 publication.suiteRef().id(), request, executionIdentity);
         CandidateEvidence evidence = verifiedEvidence(compilation, publication, response,
-                normalizedRequestId);
+                normalizedRequestId, runtimeTarget, executionIdentity);
         String receiptFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 mapper,
                 new CandidateMaterial(publication, evidence),
@@ -115,7 +121,9 @@ public final class CapabilityStudioGovernedCandidateService {
             CapabilityStudioGovernedCompilation compilation,
             CapabilityStudioGovernedAssetPublisher.Receipt publication,
             TestSuiteExecutionResponse response,
-            String clientRequestId) {
+            String clientRequestId,
+            TestExecutionApiRequest.Target runtimeTarget,
+            IntegrationRequestContext executionIdentity) {
         require(response != null && response.evidence() != null,
                 "EVIDENCE_MISSING", "/response/evidence");
         TestSuiteRunEvidenceProtocol evidence = response.evidence();
@@ -165,18 +173,80 @@ public final class CapabilityStudioGovernedCandidateService {
         }
 
         List<ChildRunRef> childRuns = evidence.caseResults().stream()
-                .map(result -> new ChildRunRef(
-                        result.caseId(), result.runId(), result.status().name(),
-                        result.fixtureBundleRef() == null ? "" :
-                                result.fixtureBundleRef().fixtureBundleId(),
-                        result.fixtureBundleRef() == null ? 0 :
-                                result.fixtureBundleRef().revision(),
-                        result.fixtureBundleRef() == null ? "" :
-                                result.fixtureBundleRef().fingerprint()))
+                .map(result -> verifiedChild(result, runtimeTarget, executionIdentity))
                 .toList();
         return new CandidateEvidence(
                 response.suiteRunId(), response.evidenceFingerprint(), evidence.status().name(),
                 actualProvenance, publication.sourceMapFingerprint(), childRuns);
+    }
+
+    private ChildRunRef verifiedChild(
+            TestSuiteRunEvidence.CaseResult aggregate,
+            TestExecutionApiRequest.Target runtimeTarget,
+            IntegrationRequestContext executionIdentity) {
+        require(aggregate != null && !normalized(aggregate.runId()).isBlank(),
+                "CHILD_RUN_ID_MISSING", "/response/evidence/caseResults/runId");
+        TestExecutionApiResponse response = childExecutions.find(
+                aggregate.runId(), TestExecutionApiRequest.Verbosity.FULL, executionIdentity);
+        require(response != null && response.evidence() != null,
+                "CHILD_EVIDENCE_MISSING", "/child/evidence");
+        TestRunEvidence evidence = response.evidence();
+        require(aggregate.runId().equals(response.runId())
+                        && aggregate.runId().equals(evidence.runId()),
+                "CHILD_RUN_ID_DRIFT", "/child/runId");
+        require(response.target() != null && runtimeTarget != null
+                        && runtimeTarget.kind().equals(response.target().kind())
+                        && runtimeTarget.id().equals(response.target().id())
+                        && runtimeTarget.fingerprint().equals(response.target().fingerprint())
+                        && runtimeTarget.fingerprint().equals(evidence.targetFingerprint()),
+                "CHILD_TARGET_DRIFT", "/child/target");
+        require(aggregate.fixtureBundleRef() != null && response.fixtureBundleRef() != null
+                        && aggregate.fixtureBundleRef().fixtureBundleId().equals(
+                        response.fixtureBundleRef().fixtureBundleId())
+                        && aggregate.fixtureBundleRef().revision()
+                        == response.fixtureBundleRef().revision()
+                        && aggregate.fixtureBundleRef().fingerprint().equals(
+                        response.fixtureBundleRef().fingerprint())
+                        && aggregate.fixtureBundleRef().fingerprint().equals(
+                        evidence.fixtureBundleFingerprint()),
+                "CHILD_FIXTURE_DRIFT", "/child/fixtureBundleRef");
+        require(aggregate.evidenceStatus() == evidence.status()
+                        && aggregate.evidenceClass() == evidence.evidenceClass()
+                        && aggregate.status() == TestSuiteRunEvidence.CaseStatus.PASSED
+                        && evidence.status() == TestRunEvidence.Status.PASSED,
+                "CHILD_STATUS_DRIFT", "/child/evidence/status");
+        require(response.integrity() != null && response.integrity().independentlyVerifiable()
+                        && response.integrity().projection()
+                        == com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity.Projection.FULL,
+                "CHILD_INTEGRITY_INVALID", "/child/integrity");
+        require(FINGERPRINT.matcher(evidence.semanticResultFingerprint()).matches(),
+                "CHILD_SEMANTIC_FINGERPRINT_INVALID",
+                "/child/evidence/semanticResultFingerprint");
+        long assertionsPassed = evidence.assertionResults().stream()
+                .filter(TestRunEvidence.AssertionResult::passed).count();
+        require(aggregate.assertionsEvaluated() == evidence.assertionResults().size()
+                        && aggregate.assertionsPassed() == assertionsPassed,
+                "CHILD_ASSERTION_COUNT_DRIFT", "/child/evidence/assertionResults");
+
+        List<NodeFact> nodes = evidence.nodeTrace().stream()
+                .map(node -> new NodeFact(
+                        node.nodeId(), node.operatorRef(), node.status(), node.errorCode(),
+                        node.attempts().stream()
+                                .map(attempt -> new AttemptFact(
+                                        attempt.attempt(), attempt.status(), attempt.errorCode()))
+                                .toList()))
+                .toList();
+        int fixtureControlsSatisfied = (int) evidence.fixtureConsumptions().stream()
+                .filter(value -> "SATISFIED".equals(value.status())).count();
+        return new ChildRunRef(
+                aggregate.caseId(), aggregate.runId(), aggregate.status().name(),
+                aggregate.fixtureBundleRef().fixtureBundleId(),
+                aggregate.fixtureBundleRef().revision(),
+                aggregate.fixtureBundleRef().fingerprint(), evidence.status().name(),
+                evidence.evidenceClass().name(), response.integrity().evidenceFingerprint(),
+                evidence.semanticResultFingerprint(),
+                evidence.assertionResults().size(), Math.toIntExact(assertionsPassed),
+                evidence.fixtureConsumptions().size(), fixtureControlsSatisfied, nodes);
     }
 
     private static String stringValue(Object value) {
@@ -200,13 +270,51 @@ public final class CapabilityStudioGovernedCandidateService {
             String status,
             String fixtureBundleId,
             long fixtureRevision,
-            String fixtureFingerprint) {
+            String fixtureFingerprint,
+            String evidenceStatus,
+            String evidenceClass,
+            String evidenceFingerprint,
+            String semanticResultFingerprint,
+            int assertionsEvaluated,
+            int assertionsPassed,
+            int fixtureControlsEvaluated,
+            int fixtureControlsSatisfied,
+            List<NodeFact> nodes) {
         public ChildRunRef {
             caseId = normalized(caseId);
             runId = normalized(runId);
             status = normalized(status);
             fixtureBundleId = normalized(fixtureBundleId);
             fixtureFingerprint = normalized(fixtureFingerprint);
+            evidenceStatus = normalized(evidenceStatus);
+            evidenceClass = normalized(evidenceClass);
+            evidenceFingerprint = normalized(evidenceFingerprint);
+            semanticResultFingerprint = normalized(semanticResultFingerprint);
+            nodes = nodes == null ? List.of() : List.copyOf(nodes);
+        }
+    }
+
+    /** Payload-free runtime node fact retained for business Oracle evaluation. */
+    public record NodeFact(
+            String nodeId,
+            String operatorRef,
+            String status,
+            String errorCode,
+            List<AttemptFact> attempts) {
+        public NodeFact {
+            nodeId = normalized(nodeId);
+            operatorRef = normalized(operatorRef);
+            status = normalized(status);
+            errorCode = normalized(errorCode);
+            attempts = attempts == null ? List.of() : List.copyOf(attempts);
+        }
+    }
+
+    /** Payload-free delegate-attempt fact retained for timeout Oracle evaluation. */
+    public record AttemptFact(int attempt, String status, String errorCode) {
+        public AttemptFact {
+            status = normalized(status);
+            errorCode = normalized(errorCode);
         }
     }
 

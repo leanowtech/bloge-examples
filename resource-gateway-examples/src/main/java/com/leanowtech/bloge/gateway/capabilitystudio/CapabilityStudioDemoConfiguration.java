@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -99,8 +100,10 @@ public class CapabilityStudioDemoConfiguration {
             ObjectMapper mapper,
             CapabilityStudioGovernedCompilationService compiler,
             CapabilityStudioGovernedAssetPublisher publisher,
-            TestSuiteExecutionService executions) {
-        return new CapabilityStudioGovernedCandidateService(mapper, compiler, publisher, executions);
+            TestSuiteExecutionService executions,
+            TestExecutionApiService childExecutions) {
+        return new CapabilityStudioGovernedCandidateService(
+                mapper, compiler, publisher, executions, childExecutions);
     }
 
     @Bean

@@ -28,7 +28,11 @@ class CapabilityStudioGovernedBaselineServiceTest {
                 .isEqualTo(CapabilityStudioGovernedBaselineProjection.FAILED_CLOSED);
         assertThat(result.suiteRunCount()).isZero();
         assertThat(result.childRunCount()).isZero();
+        assertThat(result.oraclePassCount()).isZero();
+        assertThat(result.businessCheckCount()).isZero();
+        assertThat(result.businessCheckPassCount()).isZero();
         assertThat(result.realExternalCallCount()).isNull();
+        assertThat(result.evidenceClass()).isNull();
         assertThat(result.compilationFingerprint()).isNull();
         assertThat(result.sourceMapFingerprint()).isNull();
         assertThat(result.provenanceFingerprint()).isNull();

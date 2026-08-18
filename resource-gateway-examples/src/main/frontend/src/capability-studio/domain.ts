@@ -147,18 +147,32 @@ export interface GovernedBaselineCaseRound {
   fixtureBundleId: string;
   fixtureRevision: number;
   fixtureFingerprint: string;
+  evidenceFingerprint: string;
+  semanticResultFingerprint: string;
+  assertionsEvaluated: 1;
+  assertionsPassed: 1;
+  fixtureControlsEvaluated: number;
+  fixtureControlsSatisfied: number;
 }
 
 export interface GovernedBaselineCase {
   caseId: string;
+  oracleId: string;
+  oracleStatus: 'PASS';
+  semanticResultFingerprint: string;
+  assertionsEvaluated: 3;
+  assertionsPassed: 3;
+  fixtureControlsEvaluated: number;
+  fixtureControlsSatisfied: number;
+  proofs: string[];
   rounds: GovernedBaselineCaseRound[];
 }
 
 interface GovernedBaselineProjectionBase {
-  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v1';
+  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v2';
   evidenceKind: 'DEVELOPMENT_TEST_OWNED';
   baselineId: string;
-  verificationScope: 'GOVERNED_SUITE_ASSERTIONS';
+  verificationScope: 'GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES';
   releaseGateStatus: 'NO_GO';
   caseCount: 9;
   roundCount: 3;
@@ -170,6 +184,10 @@ export interface GovernedBaselineSuccessProjection extends GovernedBaselineProje
   status: 'PASSED';
   suiteRunCount: 3;
   childRunCount: 27;
+  evidenceClass: 'EXPLORATORY';
+  oraclePassCount: 9;
+  businessCheckCount: 27;
+  businessCheckPassCount: 27;
   realExternalCallCount: number;
   compilationFingerprint: string;
   sourceMapFingerprint: string;
@@ -197,6 +215,10 @@ export interface GovernedBaselineFailureProjection extends GovernedBaselineProje
   status: 'FAILED_CLOSED';
   suiteRunCount: 0;
   childRunCount: 0;
+  evidenceClass: null;
+  oraclePassCount: 0;
+  businessCheckCount: 0;
+  businessCheckPassCount: 0;
   realExternalCallCount: null;
   compilationFingerprint: null;
   sourceMapFingerprint: null;
@@ -1172,7 +1194,9 @@ const governedBaselineCaseStatuses: GovernedBaselineCaseStatus[] = [
   'NOT_SCHEDULED',
 ];
 const governedBaselineRequiredLimitations = [
-  'BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED',
+  'IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND',
+  'RUNTIME_ENVIRONMENT_NOT_ATTESTED',
+  'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
   'DEPLOYMENT_EGRESS_NOT_OBSERVED',
   'OWNER_SIGNOFF_NOT_PRESENT',
 ] as const;
@@ -1263,7 +1287,19 @@ function parseGovernedBaselineRound(value: unknown, path: string): GovernedBasel
 function parseGovernedBaselineCaseRound(value: unknown, path: string): GovernedBaselineCaseRound {
   const source = governedObject(value, path, [
     'round', 'runId', 'status', 'fixtureBundleId', 'fixtureRevision', 'fixtureFingerprint',
+    'evidenceFingerprint', 'semanticResultFingerprint', 'assertionsEvaluated',
+    'assertionsPassed', 'fixtureControlsEvaluated', 'fixtureControlsSatisfied',
   ]);
+  const assertionsEvaluated = governedInteger(source.assertionsEvaluated, `${path}.assertionsEvaluated`);
+  const assertionsPassed = governedInteger(source.assertionsPassed, `${path}.assertionsPassed`);
+  const fixtureControlsEvaluated = governedInteger(source.fixtureControlsEvaluated, `${path}.fixtureControlsEvaluated`, 1);
+  const fixtureControlsSatisfied = governedInteger(source.fixtureControlsSatisfied, `${path}.fixtureControlsSatisfied`, 1);
+  if (assertionsEvaluated !== 1 || assertionsPassed !== 1) {
+    throw invalidGovernedBaseline(`Invalid ${path} business assertion counts.`);
+  }
+  if (fixtureControlsEvaluated !== fixtureControlsSatisfied) {
+    throw invalidGovernedBaseline(`Invalid ${path} fixture control counts.`);
+  }
   return {
     round: governedInteger(source.round, `${path}.round`, 1),
     runId: governedString(source.runId, `${path}.runId`),
@@ -1271,16 +1307,73 @@ function parseGovernedBaselineCaseRound(value: unknown, path: string): GovernedB
     fixtureBundleId: governedString(source.fixtureBundleId, `${path}.fixtureBundleId`),
     fixtureRevision: governedInteger(source.fixtureRevision, `${path}.fixtureRevision`, 1),
     fixtureFingerprint: governedFingerprint(source.fixtureFingerprint, `${path}.fixtureFingerprint`),
+    evidenceFingerprint: governedFingerprint(source.evidenceFingerprint, `${path}.evidenceFingerprint`),
+    semanticResultFingerprint: governedFingerprint(source.semanticResultFingerprint, `${path}.semanticResultFingerprint`),
+    assertionsEvaluated: 1,
+    assertionsPassed: 1,
+    fixtureControlsEvaluated,
+    fixtureControlsSatisfied,
   };
 }
 
 function parseGovernedBaselineCase(value: unknown, path: string): GovernedBaselineCase {
-  const source = governedObject(value, path, ['caseId', 'rounds']);
+  const source = governedObject(value, path, [
+    'caseId', 'oracleId', 'oracleStatus', 'semanticResultFingerprint',
+    'assertionsEvaluated', 'assertionsPassed', 'fixtureControlsEvaluated',
+    'fixtureControlsSatisfied', 'proofs', 'rounds',
+  ]);
+  const caseId = governedString(source.caseId, `${path}.caseId`);
+  const oracleId = governedString(source.oracleId, `${path}.oracleId`);
+  const oracleStatus = governedEnum(source.oracleStatus, ['PASS'], `${path}.oracleStatus`);
+  const semanticResultFingerprint = governedFingerprint(
+    source.semanticResultFingerprint, `${path}.semanticResultFingerprint`,
+  );
+  const assertionsEvaluated = governedInteger(source.assertionsEvaluated, `${path}.assertionsEvaluated`);
+  const assertionsPassed = governedInteger(source.assertionsPassed, `${path}.assertionsPassed`);
+  const fixtureControlsEvaluated = governedInteger(source.fixtureControlsEvaluated, `${path}.fixtureControlsEvaluated`, 1);
+  const fixtureControlsSatisfied = governedInteger(source.fixtureControlsSatisfied, `${path}.fixtureControlsSatisfied`, 1);
+  const proofs = governedStringArray(source.proofs, `${path}.proofs`);
+  const rounds = governedArray(source.rounds, `${path}.rounds`, 3)
+    .map((entry, index) => parseGovernedBaselineCaseRound(entry, `${path}.rounds[${index}]`));
+  if (oracleId !== `oracle-${caseId.replace(/^case-/, '')}` || assertionsEvaluated !== 3
+    || assertionsPassed !== 3 || fixtureControlsEvaluated !== fixtureControlsSatisfied
+    || rounds.some((round) => round.semanticResultFingerprint !== semanticResultFingerprint)
+    || rounds.reduce((total, round) => total + round.assertionsEvaluated, 0) !== assertionsEvaluated
+    || rounds.reduce((total, round) => total + round.assertionsPassed, 0) !== assertionsPassed
+    || rounds.reduce((total, round) => total + round.fixtureControlsEvaluated, 0) !== fixtureControlsEvaluated
+    || rounds.reduce((total, round) => total + round.fixtureControlsSatisfied, 0) !== fixtureControlsSatisfied) {
+    throw invalidGovernedBaseline(`Invalid ${path} business Oracle closure.`);
+  }
+  const expectedProofs = governedBaselineProofs(caseId);
+  if (proofs.length !== expectedProofs.length
+    || proofs.some((proof, index) => proof !== expectedProofs[index])) {
+    throw invalidGovernedBaseline(`Invalid ${path} business Oracle proofs.`);
+  }
   return {
-    caseId: governedString(source.caseId, `${path}.caseId`),
-    rounds: governedArray(source.rounds, `${path}.rounds`, 3)
-      .map((entry, index) => parseGovernedBaselineCaseRound(entry, `${path}.rounds[${index}]`)),
+    caseId,
+    oracleId,
+    oracleStatus,
+    semanticResultFingerprint,
+    assertionsEvaluated: 3,
+    assertionsPassed: 3,
+    fixtureControlsEvaluated,
+    fixtureControlsSatisfied,
+    proofs,
+    rounds,
   };
+}
+
+function governedBaselineProofs(caseId: string): string[] {
+  const common = [
+    'BUSINESS_ASSERTION_PASSED',
+    'SEMANTIC_RESULT_STABLE',
+    'FIXTURE_CONTROL_SATISFIED',
+    'ZERO_REAL_EXTERNAL_CALLS',
+  ];
+  if (caseId === 'case-compensation-history-timeout') return [...common, 'TIMEOUT_FALLBACK_CONFIRMED'];
+  if (caseId === 'case-duplicate-cancellation') return [...common, 'DUPLICATE_IDEMPOTENCY_CONFIRMED'];
+  if (caseId === 'case-forbidden-write-effect') return [...common, 'FORBIDDEN_WRITE_EFFECT_ABSENT'];
+  return common;
 }
 
 function requireGovernedRoundSequence(rounds: GovernedBaselineRound[], path: string): void {
@@ -1299,24 +1392,28 @@ function requireGovernedCaseRoundSequence(rounds: GovernedBaselineCaseRound[], p
 export function parseGovernedBaselineProjection(payload: unknown): GovernedBaselineProjection {
   const root = governedObject(payload, 'governedBaseline', [
     'schemaVersion', 'evidenceKind', 'baselineId', 'status', 'verificationScope',
-    'releaseGateStatus', 'caseCount', 'roundCount', 'suiteRunCount', 'childRunCount',
+    'releaseGateStatus', 'evidenceClass', 'caseCount', 'roundCount', 'suiteRunCount', 'childRunCount',
+    'oraclePassCount', 'businessCheckCount', 'businessCheckPassCount',
     'realExternalCallCount', 'compilationFingerprint', 'sourceMapFingerprint',
     'provenanceFingerprint', 'publication', 'rounds', 'cases', 'limitations', 'diagnostics',
   ]);
   const schemaVersion = governedEnum(
     root.schemaVersion,
-    ['resource-gateway.capability-studio.governed-baseline.v1'],
+    ['resource-gateway.capability-studio.governed-baseline.v2'],
     'governedBaseline.schemaVersion',
   );
   const evidenceKind = governedEnum(root.evidenceKind, ['DEVELOPMENT_TEST_OWNED'], 'governedBaseline.evidenceKind');
   const status = governedEnum(root.status, ['PASSED', 'FAILED_CLOSED'], 'governedBaseline.status');
-  const verificationScope = governedEnum(root.verificationScope, ['GOVERNED_SUITE_ASSERTIONS'], 'governedBaseline.verificationScope');
+  const verificationScope = governedEnum(root.verificationScope, ['GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES'], 'governedBaseline.verificationScope');
   const releaseGateStatus = governedEnum(root.releaseGateStatus, ['NO_GO'], 'governedBaseline.releaseGateStatus');
   const baselineId = governedString(root.baselineId, 'governedBaseline.baselineId');
   const caseCount = governedInteger(root.caseCount, 'governedBaseline.caseCount');
   const roundCount = governedInteger(root.roundCount, 'governedBaseline.roundCount');
   const suiteRunCount = governedInteger(root.suiteRunCount, 'governedBaseline.suiteRunCount');
   const childRunCount = governedInteger(root.childRunCount, 'governedBaseline.childRunCount');
+  const oraclePassCount = governedInteger(root.oraclePassCount, 'governedBaseline.oraclePassCount');
+  const businessCheckCount = governedInteger(root.businessCheckCount, 'governedBaseline.businessCheckCount');
+  const businessCheckPassCount = governedInteger(root.businessCheckPassCount, 'governedBaseline.businessCheckPassCount');
   const limitations = governedStringArray(root.limitations, 'governedBaseline.limitations');
   const diagnostics = governedStringArray(root.diagnostics, 'governedBaseline.diagnostics');
 
@@ -1329,7 +1426,9 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
   if (status === 'FAILED_CLOSED') {
     const rounds = governedArray(root.rounds, 'governedBaseline.rounds', 0);
     const cases = governedArray(root.cases, 'governedBaseline.cases', 0);
-    if (suiteRunCount !== 0 || childRunCount !== 0
+    if (suiteRunCount !== 0 || childRunCount !== 0 || oraclePassCount !== 0
+      || businessCheckCount !== 0 || businessCheckPassCount !== 0
+      || root.evidenceClass !== null
       || root.realExternalCallCount !== null
       || root.compilationFingerprint !== null
       || root.sourceMapFingerprint !== null
@@ -1349,6 +1448,10 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
       roundCount: 3,
       suiteRunCount: 0,
       childRunCount: 0,
+      evidenceClass: null,
+      oraclePassCount: 0,
+      businessCheckCount: 0,
+      businessCheckPassCount: 0,
       realExternalCallCount: null,
       compilationFingerprint: null,
       sourceMapFingerprint: null,
@@ -1362,6 +1465,7 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
   }
 
   const realExternalCallCount = governedInteger(root.realExternalCallCount, 'governedBaseline.realExternalCallCount');
+  const evidenceClass = governedEnum(root.evidenceClass, ['EXPLORATORY'], 'governedBaseline.evidenceClass');
   const compilationFingerprint = governedFingerprint(root.compilationFingerprint, 'governedBaseline.compilationFingerprint');
   const sourceMapFingerprint = governedFingerprint(root.sourceMapFingerprint, 'governedBaseline.sourceMapFingerprint');
   const provenanceFingerprint = governedFingerprint(root.provenanceFingerprint, 'governedBaseline.provenanceFingerprint');
@@ -1381,6 +1485,12 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
   if (suiteRunCount !== rounds.length) throw invalidGovernedBaseline('Suite run count does not match rounds.');
   if (childRunCount !== 27 || rounds.reduce((total, round) => total + round.childRunCount, 0) !== childRunCount) {
     throw invalidGovernedBaseline('Child run count does not close over rounds.');
+  }
+  if (oraclePassCount !== 9 || businessCheckCount !== 27 || businessCheckPassCount !== 27
+    || cases.filter((entry) => entry.oracleStatus === 'PASS').length !== oraclePassCount
+    || cases.reduce((total, entry) => total + entry.assertionsEvaluated, 0) !== businessCheckCount
+    || cases.reduce((total, entry) => total + entry.assertionsPassed, 0) !== businessCheckPassCount) {
+    throw invalidGovernedBaseline('Business Oracle counts do not close over cases.');
   }
   if (fixtureCount !== 9) throw invalidGovernedBaseline('Fixture count is not nine.');
   requireGovernedRoundSequence(rounds, 'governedBaseline.rounds');
@@ -1415,6 +1525,10 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
     roundCount: 3,
     suiteRunCount: 3,
     childRunCount: 27,
+    evidenceClass,
+    oraclePassCount: 9,
+    businessCheckCount: 27,
+    businessCheckPassCount: 27,
     realExternalCallCount,
     compilationFingerprint,
     sourceMapFingerprint,

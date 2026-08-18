@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
@@ -12,6 +13,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -39,7 +41,9 @@ public final class CapabilityStudioGovernedBaselineService {
     private static final String WORKLOAD_GROUP = "resource-gateway-test-runtime-operators";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private static final List<String> LIMITATIONS = List.of(
-            "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+            "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+            "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
+            "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
             "DEPLOYMENT_EGRESS_NOT_OBSERVED",
             "OWNER_SIGNOFF_NOT_PRESENT");
 
@@ -138,12 +142,14 @@ public final class CapabilityStudioGovernedBaselineService {
             receipts.add(candidate.run(null, target.operator(), target.contract(), runtimeTarget,
                     datasetCompilation, clientRequestId, publicationIdentity, executionIdentity));
         }
-        return projectVerified(receipts, expectedCaseIds, runtimeAsset.realExternalCalls().get());
+        return projectVerified(receipts, expectedCaseIds, rehearsal.operatorFootprints(),
+                runtimeAsset.realExternalCalls().get());
     }
 
     private CapabilityStudioGovernedBaselineProjection projectVerified(
             List<CapabilityStudioGovernedCandidateService.CandidateReceipt> receipts,
             List<String> expectedCaseIds,
+            List<CapabilityStudioFeatureRehearsalService.OperatorFootprint> operatorFootprints,
             int realExternalCallCount) {
         require(receipts.size() == ROUND_COUNT, "ROUND_COUNT_INVALID");
         Set<String> suiteRunIds = new HashSet<>();
@@ -190,7 +196,10 @@ public final class CapabilityStudioGovernedBaselineService {
                         "CASE_COVERAGE_INVALID");
                 caseRounds.get(child.caseId()).add(new CapabilityStudioGovernedBaselineProjection.CaseRound(
                         round, child.runId(), child.status(), child.fixtureBundleId(),
-                        child.fixtureRevision(), child.fixtureFingerprint()));
+                        child.fixtureRevision(), child.fixtureFingerprint(),
+                        child.evidenceFingerprint(), child.semanticResultFingerprint(),
+                        child.assertionsEvaluated(), child.assertionsPassed(),
+                        child.fixtureControlsEvaluated(), child.fixtureControlsSatisfied()));
             }
             require(roundCases.equals(caseIds), "CASE_COVERAGE_INVALID");
             rounds.add(new CapabilityStudioGovernedBaselineProjection.Round(
@@ -204,11 +213,15 @@ public final class CapabilityStudioGovernedBaselineService {
         require(realExternalCallCount == 0, "REAL_EXTERNAL_CALL_FORBIDDEN");
 
         List<CapabilityStudioGovernedBaselineProjection.CaseProjection> cases = expectedCaseIds.stream()
-                .map(caseId -> new CapabilityStudioGovernedBaselineProjection.CaseProjection(
-                        caseId, caseRounds.get(caseId).stream()
+                .map(caseId -> oracleProjection(
+                        caseId,
+                        caseRounds.get(caseId).stream()
                                 .sorted(Comparator.comparingInt(
                                         CapabilityStudioGovernedBaselineProjection.CaseRound::round))
-                                .toList()))
+                                .toList(),
+                        receipts,
+                        operatorFootprints,
+                        realExternalCallCount))
                 .toList();
         CapabilityStudioGovernedAssetPublisher.ExactRef suite = publication.suiteRef();
         return new CapabilityStudioGovernedBaselineProjection(
@@ -218,10 +231,14 @@ public final class CapabilityStudioGovernedBaselineService {
                 CapabilityStudioGovernedBaselineProjection.PASSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
+                CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS,
                 CASE_COUNT,
                 ROUND_COUNT,
                 suiteRunIds.size(),
                 childRunIds.size(),
+                cases.size(),
+                EXPECTED_CHILD_RUN_COUNT,
+                EXPECTED_CHILD_RUN_COUNT,
                 realExternalCallCount,
                 compilationFingerprint,
                 sourceMapFingerprint,
@@ -245,8 +262,12 @@ public final class CapabilityStudioGovernedBaselineService {
                 CapabilityStudioGovernedBaselineProjection.FAILED_CLOSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
+                null,
                 CASE_COUNT,
                 ROUND_COUNT,
+                0,
+                0,
+                0,
                 0,
                 0,
                 null,
@@ -258,6 +279,123 @@ public final class CapabilityStudioGovernedBaselineService {
                 List.of(),
                 LIMITATIONS,
                 List.of(diagnostic));
+    }
+
+    private CapabilityStudioGovernedBaselineProjection.CaseProjection oracleProjection(
+            String caseId,
+            List<CapabilityStudioGovernedBaselineProjection.CaseRound> rounds,
+            List<CapabilityStudioGovernedCandidateService.CandidateReceipt> receipts,
+            List<CapabilityStudioFeatureRehearsalService.OperatorFootprint> operatorFootprints,
+            int realExternalCallCount) {
+        require(rounds.size() == ROUND_COUNT, "ORACLE_ROUND_COUNT_INVALID");
+        String semanticFingerprint = rounds.getFirst().semanticResultFingerprint();
+        requireFingerprint(semanticFingerprint, "BUSINESS_RESULT_FINGERPRINT_INVALID");
+        require(rounds.stream().allMatch(round ->
+                        semanticFingerprint.equals(round.semanticResultFingerprint())),
+                "BUSINESS_RESULT_NOT_STABLE");
+        require(rounds.stream().allMatch(round ->
+                        round.assertionsEvaluated() == 1 && round.assertionsPassed() == 1),
+                "BUSINESS_ASSERTION_NOT_PASSED");
+        require(rounds.stream().allMatch(round ->
+                        round.fixtureControlsEvaluated() > 0
+                                && round.fixtureControlsEvaluated()
+                                == round.fixtureControlsSatisfied()),
+                "FIXTURE_CONTROL_NOT_SATISFIED");
+
+        List<CapabilityStudioGovernedCandidateService.ChildRunRef> children = receipts.stream()
+                .flatMap(receipt -> receipt.evidence().childRuns().stream())
+                .filter(child -> caseId.equals(child.caseId()))
+                .toList();
+        require(children.size() == ROUND_COUNT, "ORACLE_CHILD_EVIDENCE_MISSING");
+        require(children.stream().allMatch(child ->
+                        CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS.equals(
+                                child.evidenceClass())),
+                "CHILD_EVIDENCE_CLASS_DRIFT");
+        List<String> proofs = new ArrayList<>(List.of(
+                "BUSINESS_ASSERTION_PASSED",
+                "SEMANTIC_RESULT_STABLE",
+                "FIXTURE_CONTROL_SATISFIED",
+                "ZERO_REAL_EXTERNAL_CALLS"));
+        switch (caseId) {
+            case "case-compensation-history-timeout" -> {
+                require(children.stream().allMatch(this::timeoutFallbackObserved),
+                        "TIMEOUT_FALLBACK_NOT_PROVEN");
+                proofs.add("TIMEOUT_FALLBACK_CONFIRMED");
+            }
+            case "case-duplicate-cancellation" -> {
+                require(children.stream().map(
+                                CapabilityStudioGovernedCandidateService.ChildRunRef::runId)
+                                .distinct().count() == ROUND_COUNT,
+                        "DUPLICATE_RUN_ID_NOT_UNIQUE");
+                proofs.add("DUPLICATE_IDEMPOTENCY_CONFIRMED");
+            }
+            case "case-forbidden-write-effect" -> {
+                require(noWriteObserved(children, operatorFootprints, realExternalCallCount),
+                        "FORBIDDEN_WRITE_EFFECT_OBSERVED");
+                proofs.add("FORBIDDEN_WRITE_EFFECT_ABSENT");
+            }
+            default -> {
+                // The common governed assertion and stability checks are the complete v2 Oracle.
+            }
+        }
+        int assertionsEvaluated = rounds.stream()
+                .mapToInt(CapabilityStudioGovernedBaselineProjection.CaseRound::assertionsEvaluated)
+                .sum();
+        int assertionsPassed = rounds.stream()
+                .mapToInt(CapabilityStudioGovernedBaselineProjection.CaseRound::assertionsPassed)
+                .sum();
+        int fixtureControlsEvaluated = rounds.stream().mapToInt(
+                        CapabilityStudioGovernedBaselineProjection.CaseRound::fixtureControlsEvaluated)
+                .sum();
+        int fixtureControlsSatisfied = rounds.stream().mapToInt(
+                        CapabilityStudioGovernedBaselineProjection.CaseRound::fixtureControlsSatisfied)
+                .sum();
+        return new CapabilityStudioGovernedBaselineProjection.CaseProjection(
+                caseId,
+                "oracle-" + caseId.substring("case-".length()),
+                "PASS",
+                semanticFingerprint,
+                assertionsEvaluated,
+                assertionsPassed,
+                fixtureControlsEvaluated,
+                fixtureControlsSatisfied,
+                proofs,
+                rounds);
+    }
+
+    private boolean timeoutFallbackObserved(
+            CapabilityStudioGovernedCandidateService.ChildRunRef child) {
+        CapabilityStudioGovernedCandidateService.NodeFact timeout = child.nodes().stream()
+                .filter(node -> "compensationHistoryLookup".equals(node.nodeId()))
+                .findFirst().orElse(null);
+        if (timeout == null || !"MOCKED".equals(timeout.status())
+                || timeout.attempts().stream().noneMatch(attempt ->
+                "TIMEOUT".equals(attempt.status())
+                        && "COMPENSATION_HISTORY_TIMEOUT".equals(attempt.errorCode()))) {
+            return false;
+        }
+        return List.of("aggregateCancellationContext", "cancellationDecision").stream()
+                .allMatch(nodeId -> child.nodes().stream()
+                        .filter(node -> nodeId.equals(node.nodeId()))
+                        .map(CapabilityStudioGovernedCandidateService.NodeFact::status)
+                        .anyMatch(status -> List.of("SUCCESS", "MOCKED").contains(status)));
+    }
+
+    private static boolean noWriteObserved(
+            List<CapabilityStudioGovernedCandidateService.ChildRunRef> children,
+            List<CapabilityStudioFeatureRehearsalService.OperatorFootprint> operatorFootprints,
+            int realExternalCallCount) {
+        if (operatorFootprints == null || operatorFootprints.isEmpty()
+                || realExternalCallCount != 0) {
+            return false;
+        }
+        boolean writeOperator = operatorFootprints.stream().anyMatch(operator ->
+                operator.sideEffectType() == SideEffectType.WRITE
+                        || operator.sideEffectType() == SideEffectType.MIXED
+                        || operator.operatorRef().toLowerCase(Locale.ROOT).contains("write"));
+        boolean writeTrace = children.stream().flatMap(child -> child.nodes().stream())
+                .anyMatch(node -> node.operatorRef().toLowerCase(Locale.ROOT).contains("write"));
+        return !writeOperator && !writeTrace;
     }
 
     private IntegrationRequestContext identity(

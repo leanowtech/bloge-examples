@@ -81,13 +81,17 @@ class CapabilityStudioDemoControllerTest {
         String response = governedMvc.perform(post("/api/capability-studio/governed-baseline"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value(
-                        "resource-gateway.capability-studio.governed-baseline.v1"))
+                        "resource-gateway.capability-studio.governed-baseline.v2"))
                 .andExpect(jsonPath("$.evidenceKind").value("DEVELOPMENT_TEST_OWNED"))
+                .andExpect(jsonPath("$.evidenceClass").value("EXPLORATORY"))
                 .andExpect(jsonPath("$.status").value("PASSED"))
                 .andExpect(jsonPath("$.caseCount").value(9))
                 .andExpect(jsonPath("$.roundCount").value(3))
                 .andExpect(jsonPath("$.suiteRunCount").value(3))
                 .andExpect(jsonPath("$.childRunCount").value(27))
+                .andExpect(jsonPath("$.oraclePassCount").value(9))
+                .andExpect(jsonPath("$.businessCheckCount").value(27))
+                .andExpect(jsonPath("$.businessCheckPassCount").value(27))
                 .andExpect(jsonPath("$.realExternalCallCount").value(0))
                 .andExpect(jsonPath("$.rounds", hasSize(3)))
                 .andExpect(jsonPath("$.cases", hasSize(9)))
@@ -118,11 +122,22 @@ class CapabilityStudioDemoControllerTest {
                 java.util.stream.IntStream.range(0, caseIds.size())
                         .mapToObj(caseIndex -> new CapabilityStudioGovernedBaselineProjection.CaseProjection(
                                 caseIds.get(caseIndex),
+                                "oracle-" + caseIds.get(caseIndex).substring("case-".length()),
+                                "PASS",
+                                fingerprintC,
+                                3,
+                                3,
+                                18,
+                                18,
+                                java.util.List.of(
+                                        "BUSINESS_ASSERTION_PASSED",
+                                        "SEMANTIC_RESULT_STABLE"),
                                 java.util.stream.IntStream.rangeClosed(1, 3)
                                         .mapToObj(round -> new CapabilityStudioGovernedBaselineProjection.CaseRound(
                                                 round, "child-run-" + caseIndex + "-" + round,
                                                 "PASSED", "fixture-bundle-" + caseIndex, 1,
-                                                fingerprintB))
+                                                fingerprintB, fingerprintA, fingerprintC,
+                                                1, 1, 6, 6))
                                         .toList()))
                         .toList();
         return new CapabilityStudioGovernedBaselineProjection(
@@ -132,7 +147,8 @@ class CapabilityStudioDemoControllerTest {
                 CapabilityStudioGovernedBaselineProjection.PASSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
-                9, 3, 3, 27, 0,
+                CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS,
+                9, 3, 3, 27, 9, 27, 27, 0,
                 fingerprintA, fingerprintB, fingerprintC,
                 new CapabilityStudioGovernedBaselineProjection.Publication(
                         fingerprintA,
@@ -142,7 +158,9 @@ class CapabilityStudioDemoControllerTest {
                 rounds,
                 cases,
                 java.util.List.of(
-                        "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+                        "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+                        "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
+                        "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
                         "DEPLOYMENT_EGRESS_NOT_OBSERVED",
                         "OWNER_SIGNOFF_NOT_PRESENT"),
                 java.util.List.of());

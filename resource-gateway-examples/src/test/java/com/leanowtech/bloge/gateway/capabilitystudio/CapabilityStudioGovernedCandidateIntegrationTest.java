@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
@@ -67,6 +68,9 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
     private TestSuiteExecutionService suiteExecutions;
 
     @Autowired
+    private TestExecutionApiService childExecutions;
+
+    @Autowired
     private CapabilityStudioGovernedBaselineService governedBaseline;
 
     private IntegrationRequestContext publicationIdentity;
@@ -111,7 +115,7 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         CapabilityStudioGovernedAssetPublisher publisher =
                 new CapabilityStudioGovernedAssetPublisher(mapper, registryGateway);
         candidate = new CapabilityStudioGovernedCandidateService(
-                mapper, compiler, publisher, suiteExecutions);
+                mapper, compiler, publisher, suiteExecutions, childExecutions);
     }
 
     @Test
@@ -128,7 +132,18 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(receipt.evidence().provenanceFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(receipt.evidence().sourceMapFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(receipt.evidence().childRuns()).allSatisfy(child ->
-                assertThat(child.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name()));
+        {
+            assertThat(child.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
+            assertThat(child.evidenceStatus()).isEqualTo("PASSED");
+            assertThat(child.evidenceClass()).isEqualTo("EXPLORATORY");
+            assertThat(child.evidenceFingerprint()).matches("sha256:[a-f0-9]{64}");
+            assertThat(child.semanticResultFingerprint()).matches("sha256:[a-f0-9]{64}");
+            assertThat(child.assertionsEvaluated()).isOne();
+            assertThat(child.assertionsPassed()).isOne();
+            assertThat(child.fixtureControlsEvaluated()).isPositive();
+            assertThat(child.fixtureControlsSatisfied())
+                    .isEqualTo(child.fixtureControlsEvaluated());
+        });
         assertThat(receipt.publication().suiteRef().fingerprint())
                 .isEqualTo(ProtocolFingerprint.of(
                         mapper, governedCompilation.plan().suite().testSuite()));
@@ -166,7 +181,11 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(projection.roundCount()).isEqualTo(3);
         assertThat(projection.suiteRunCount()).isEqualTo(3);
         assertThat(projection.childRunCount()).isEqualTo(27);
+        assertThat(projection.oraclePassCount()).isEqualTo(9);
+        assertThat(projection.businessCheckCount()).isEqualTo(27);
+        assertThat(projection.businessCheckPassCount()).isEqualTo(27);
         assertThat(projection.realExternalCallCount()).isZero();
+        assertThat(projection.evidenceClass()).isEqualTo("EXPLORATORY");
         assertThat(projection.publication()).isNotNull();
         assertThat(projection.publication().fixtureCount()).isEqualTo(9);
         assertThat(projection.rounds()).hasSize(3)
@@ -189,18 +208,50 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
                         "case-rider-not-responsible",
                         "case-standard-cancellation-fee");
         assertThat(projection.cases()).hasSize(9).allSatisfy(caseProjection -> {
+            assertThat(caseProjection.oracleStatus()).isEqualTo("PASS");
+            assertThat(caseProjection.semanticResultFingerprint())
+                    .matches("sha256:[a-f0-9]{64}");
+            assertThat(caseProjection.assertionsEvaluated()).isEqualTo(3);
+            assertThat(caseProjection.assertionsPassed()).isEqualTo(3);
+            assertThat(caseProjection.fixtureControlsEvaluated()).isPositive();
+            assertThat(caseProjection.fixtureControlsSatisfied())
+                    .isEqualTo(caseProjection.fixtureControlsEvaluated());
+            assertThat(caseProjection.proofs()).contains(
+                    "BUSINESS_ASSERTION_PASSED",
+                    "SEMANTIC_RESULT_STABLE",
+                    "FIXTURE_CONTROL_SATISFIED",
+                    "ZERO_REAL_EXTERNAL_CALLS");
             assertThat(caseProjection.rounds()).hasSize(3)
                     .extracting(CapabilityStudioGovernedBaselineProjection.CaseRound::runId)
                     .doesNotHaveDuplicates();
-            assertThat(caseProjection.rounds()).allSatisfy(round ->
-                    assertThat(round.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name()));
+            assertThat(caseProjection.rounds()).allSatisfy(round -> {
+                assertThat(round.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
+                assertThat(round.evidenceFingerprint()).matches("sha256:[a-f0-9]{64}");
+                assertThat(round.semanticResultFingerprint())
+                        .isEqualTo(caseProjection.semanticResultFingerprint());
+                assertThat(round.assertionsEvaluated()).isOne();
+                assertThat(round.assertionsPassed()).isOne();
+                assertThat(round.fixtureControlsSatisfied())
+                        .isEqualTo(round.fixtureControlsEvaluated());
+            });
         });
+        assertThat(projection.cases().stream()
+                .filter(value -> value.caseId().equals("case-compensation-history-timeout"))
+                .findFirst().orElseThrow().proofs()).contains("TIMEOUT_FALLBACK_CONFIRMED");
+        assertThat(projection.cases().stream()
+                .filter(value -> value.caseId().equals("case-duplicate-cancellation"))
+                .findFirst().orElseThrow().proofs()).contains("DUPLICATE_IDEMPOTENCY_CONFIRMED");
+        assertThat(projection.cases().stream()
+                .filter(value -> value.caseId().equals("case-forbidden-write-effect"))
+                .findFirst().orElseThrow().proofs()).contains("FORBIDDEN_WRITE_EFFECT_ABSENT");
         assertThat(projection.cases().stream()
                 .flatMap(caseProjection -> caseProjection.rounds().stream())
                 .map(CapabilityStudioGovernedBaselineProjection.CaseRound::runId))
                 .doesNotHaveDuplicates();
         assertThat(projection.limitations()).containsExactly(
-                "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+                "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+                "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
+                "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
                 "DEPLOYMENT_EGRESS_NOT_OBSERVED",
                 "OWNER_SIGNOFF_NOT_PRESENT");
         assertThat(projection.diagnostics()).isEmpty();

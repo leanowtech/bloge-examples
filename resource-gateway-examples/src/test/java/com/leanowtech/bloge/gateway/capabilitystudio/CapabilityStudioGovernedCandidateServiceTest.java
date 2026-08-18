@@ -5,11 +5,15 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilati
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistrationRequest;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
@@ -46,6 +50,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
     private final CapabilityStudioGovernedAssetPublisher publisher =
             mock(CapabilityStudioGovernedAssetPublisher.class);
     private final TestSuiteExecutionService executions = mock(TestSuiteExecutionService.class);
+    private final TestExecutionApiService childExecutions = mock(TestExecutionApiService.class);
     private final IntegrationRequestContext publicationIdentity = identity("TEST_SCENARIO_PUBLISH");
     private final IntegrationRequestContext executionIdentity = identity("TEST_EXECUTION");
 
@@ -54,20 +59,22 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @BeforeEach
     void setUp() {
         service = new CapabilityStudioGovernedCandidateService(
-                mapper, compiler, publisher, executions);
+                mapper, compiler, publisher, executions, childExecutions);
     }
 
     @Test
     void bindsCompilationPublicationAndExistingSuiteRuntimeIntoOneReceipt() {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
         CapabilityStudioGovernedAssetPublisher.Receipt publication = publication();
-        when(compiler.compile(null, null, null, null, null)).thenReturn(compilation);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication);
         when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
                 .thenReturn(response(evidence("candidate-001", Map.of(
                         "governedProvenanceFingerprint", PROVENANCE_FINGERPRINT,
                         "governedSourceMapFingerprint", SOURCE_MAP_FINGERPRINT,
                         "governedExactRefs", exactRefs()))));
+        when(childExecutions.find("child-run-001", TestExecutionApiRequest.Verbosity.FULL,
+                executionIdentity)).thenReturn(childResponse(childEvidence()));
 
         CapabilityStudioGovernedCandidateService.CandidateReceipt first = run("candidate-001");
         CapabilityStudioGovernedCandidateService.CandidateReceipt second = run("candidate-001");
@@ -78,10 +85,20 @@ class CapabilityStudioGovernedCandidateServiceTest {
         assertThat(first.evidence().status()).isEqualTo("PASSED");
         assertThat(first.evidence().provenanceFingerprint()).isEqualTo(PROVENANCE_FINGERPRINT);
         assertThat(first.evidence().sourceMapFingerprint()).isEqualTo(SOURCE_MAP_FINGERPRINT);
-        assertThat(first.evidence().childRuns()).containsExactly(
-                new CapabilityStudioGovernedCandidateService.ChildRunRef(
-                        "case-golden", "child-run-001", "PASSED", "fixture-golden", 1,
-                        FIXTURE_FINGERPRINT));
+        assertThat(first.evidence().childRuns()).singleElement().satisfies(child -> {
+            assertThat(child.caseId()).isEqualTo("case-golden");
+            assertThat(child.runId()).isEqualTo("child-run-001");
+            assertThat(child.evidenceStatus()).isEqualTo("PASSED");
+            assertThat(child.evidenceClass()).isEqualTo("CERTIFIABLE");
+            assertThat(child.evidenceFingerprint()).isEqualTo(fingerprint('7'));
+            assertThat(child.semanticResultFingerprint()).isEqualTo(fingerprint('6'));
+            assertThat(child.assertionsEvaluated()).isEqualTo(1);
+            assertThat(child.assertionsPassed()).isEqualTo(1);
+            assertThat(child.fixtureControlsEvaluated()).isEqualTo(1);
+            assertThat(child.fixtureControlsSatisfied()).isEqualTo(1);
+            assertThat(child.nodes()).singleElement().satisfies(node ->
+                    assertThat(node.operatorRef()).isEqualTo("tool-golden"));
+        });
         assertThat(first.receiptFingerprint()).matches("sha256:[a-f0-9]{64}");
 
         ArgumentCaptor<TestSuiteExecutionRequest> request =
@@ -98,7 +115,8 @@ class CapabilityStudioGovernedCandidateServiceTest {
 
     @Test
     void rejectsBlockedCompilationBeforePublishingOrExecuting() {
-        when(compiler.compile(null, null, null, null, null)).thenReturn(compilation(false));
+        when(compiler.compile(null, null, null, runtimeTarget(), null))
+                .thenReturn(compilation(false));
 
         assertThatThrownBy(() -> run("candidate-blocked"))
                 .isInstanceOf(CapabilityStudioGovernedCompilationException.class)
@@ -111,7 +129,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @Test
     void rejectsAResponseThatExecutedAnotherSuiteRevision() {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
-        when(compiler.compile(null, null, null, null, null)).thenReturn(compilation);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
         TestSuiteRunEvidence drifted = evidence(
                 "candidate-suite-drift",
@@ -132,7 +150,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @Test
     void rejectsMissingOrDriftedGovernedProvenanceInTerminalEvidence() {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
-        when(compiler.compile(null, null, null, null, null)).thenReturn(compilation);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
         when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
                 .thenReturn(response(evidence("candidate-no-provenance", Map.of())));
@@ -158,7 +176,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @Test
     void rejectsRunningOrUnfingerprintedEvidence() {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
-        when(compiler.compile(null, null, null, null, null)).thenReturn(compilation);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
         TestSuiteRunEvidence running = evidence(
                 "candidate-running",
@@ -176,8 +194,25 @@ class CapabilityStudioGovernedCandidateServiceTest {
     }
 
     private CapabilityStudioGovernedCandidateService.CandidateReceipt run(String requestId) {
-        return service.run(null, null, null, null, null, requestId,
+        return service.run(null, null, null, runtimeTarget(), null, requestId,
                 publicationIdentity, executionIdentity);
+    }
+
+    @Test
+    void rejectsAggregatePassWhenTheSignedChildEvidenceCannotBeRecovered() {
+        CapabilityStudioGovernedCompilation compilation = compilation(true);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
+        when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
+        when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
+                .thenReturn(response(evidence("candidate-child-missing", Map.of(
+                        "governedProvenanceFingerprint", PROVENANCE_FINGERPRINT,
+                        "governedSourceMapFingerprint", SOURCE_MAP_FINGERPRINT,
+                        "governedExactRefs", exactRefs()))));
+
+        assertThatThrownBy(() -> run("candidate-child-missing"))
+                .isInstanceOf(CapabilityStudioGovernedCompilationException.class)
+                .extracting("code")
+                .isEqualTo("RG.CAPABILITY_STUDIO.GOVERNED_CANDIDATE.CHILD_EVIDENCE_MISSING");
     }
 
     private CapabilityStudioGovernedCompilation compilation(boolean compiled) {
@@ -287,6 +322,58 @@ class CapabilityStudioGovernedCandidateServiceTest {
                 evidence.suiteRunId(),
                 EVIDENCE_FINGERPRINT,
                 evidence);
+    }
+
+    private TestExecutionApiResponse childResponse(TestRunEvidence evidence) {
+        String evidenceFingerprint = fingerprint('7');
+        return new TestExecutionApiResponse(
+                TestExecutionApiResponse.SCHEMA_VERSION,
+                evidence.runId(),
+                runtimeTarget(),
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef(
+                        "STORED", "fixture-golden", 1, FIXTURE_FINGERPRINT),
+                null,
+                new TestEvidenceIntegrity(
+                        TestEvidenceIntegrity.SCHEMA_VERSION,
+                        evidenceFingerprint,
+                        TestEvidenceIntegrity.SignatureStatus.VERIFIED,
+                        "test-key",
+                        "HMAC-SHA256",
+                        Instant.parse("2026-08-18T00:00:02Z"),
+                        "c2lnbmF0dXJl",
+                        TestEvidenceIntegrity.Projection.FULL,
+                        evidenceFingerprint,
+                        true),
+                evidence);
+    }
+
+    private TestRunEvidence childEvidence() {
+        return new TestRunEvidence(
+                TestRunEvidence.SCHEMA_VERSION,
+                "child-run-001",
+                TestRunEvidence.Status.PASSED,
+                TestRunEvidence.EvidenceClass.CERTIFIABLE,
+                "TEST_EXECUTION",
+                runtimeTarget().fingerprint(),
+                FIXTURE_FINGERPRINT,
+                fingerprint('5'),
+                fingerprint('6'),
+                Instant.parse("2026-08-18T00:00:00Z"),
+                Instant.parse("2026-08-18T00:00:01Z"),
+                List.of(new TestRunEvidence.NodeTrace(
+                        "tool", "tool-golden", "SUCCESS", "OUTPUT_LEVEL",
+                        null, null, "", 1)),
+                List.of(),
+                List.of(new TestRunEvidence.FixtureConsumption(
+                        "fixture-rule", 1, true, "SATISFIED")),
+                List.of(new TestRunEvidence.AssertionResult(
+                        "OUTPUT_PATH", "/action", true, null, null, "")),
+                List.of(),
+                Map.of());
+    }
+
+    private static TestExecutionApiRequest.Target runtimeTarget() {
+        return new TestExecutionApiRequest.Target("OPERATOR", "tool-golden", fingerprint('4'));
     }
 
     private static TestSuiteExecutionRequest.SuiteRef suiteRef() {
