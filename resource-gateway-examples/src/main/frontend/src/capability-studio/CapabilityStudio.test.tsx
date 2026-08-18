@@ -301,7 +301,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     expect(duration.value).toBe('5100');
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
     expect(document.activeElement).toBe(query<HTMLButtonElement>('[data-testid="capability-tutorial-error"] button'));
   });
 
@@ -760,8 +760,14 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.querySelector('[data-testid="capability-load-error"] details')).toBeNull();
   });
 
-  it('focuses and scrolls the recoverable load action into view', async () => {
-    const scrollIntoView = vi.fn();
+  it('completes the recoverable load action focus and scroll during the error commit', async () => {
+    const events: string[] = [];
+    const nativeFocus = HTMLElement.prototype.focus;
+    vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(function focus(this: HTMLElement, options?: FocusOptions) {
+      events.push('focus');
+      nativeFocus.call(this, options);
+    });
+    const scrollIntoView = vi.fn(() => events.push('scroll'));
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
       configurable: true,
       value: scrollIntoView,
@@ -773,7 +779,8 @@ describe('Capability Studio Stage 0 read-only slice', () => {
 
     const retry = query<HTMLButtonElement>('[data-testid="capability-load-error"] button');
     expect(document.activeElement).toBe(retry);
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
+    expect(events).toEqual(['focus', 'scroll']);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
   });
 
   it('keeps critical labels bilingual when the explicit locale is Chinese', async () => {

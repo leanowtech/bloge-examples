@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -531,12 +531,12 @@ interface CapabilityStudioErrorPresentation {
 function useRecoveryActionFocus(recoverableError: Error | null | undefined) {
   const recoveryButtonRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!recoverableError) return;
     const recoveryButton = recoveryButtonRef.current;
     if (!recoveryButton) return;
     recoveryButton.focus({ preventScroll: true });
-    recoveryButton.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    recoveryButton.scrollIntoView?.({ block: 'center', inline: 'nearest' });
   }, [recoverableError]);
 
   return recoveryButtonRef;
