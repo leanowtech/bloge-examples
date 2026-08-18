@@ -15,6 +15,7 @@
 | Authority Evidence Envelope v1 Schema | [`capability-studio-authority-evidence-envelope-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-authority-evidence-envelope-v1.schema.json) | 约束 Evidence Store 按精确坐标返回的无业务 Payload 权威事实、候选/环境/时间窗绑定和 Ed25519 seal | 通用 resolver 与 pinned issuer policy 已实现；企业存储、Issuer pin、Owner Authority 和目标环境证据仍待配置 |
 | Browser Matrix Result v1 Schema | [`capability-studio-browser-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json) | 固定 `GP-01..10 × 中英文 × 3 视口` 的 60 格机器结果、候选/基线/环境/时间窗绑定和证据闭包 | 真实 producer 与本地干净候选 60/60 已闭合；CI Candidate/Environment Authority 和产品/UX/QA 签署未闭合 |
 | Browser Anomaly Matrix Result v1 Schema | [`capability-studio-browser-anomaly-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-anomaly-matrix-result-v1.schema.json) | 固定服务错误 60 格、目标请求断网 60 格和 GP-04 stale revision 冲突 6 格，校验故障真实触发、业务化反馈、恢复、数据保留和正常态 exact binding | 同一干净候选已完成异常态 `COMPLETE` 126/126：ERROR 60、OFFLINE 60、CONFLICT 6；独立 CLI 和正式脚本合计返回 `COMPLETE: 186/186`，但仍属于本地 `DEVELOPMENT_VERIFIED`，不是正式 Stage 0 通过 |
+| Browser Evidence Bundle Manifest v1 Schema | [`browser-evidence-bundle-manifest-v1.schema.json`](../../schemas/resource-gateway-capability-studio/browser-evidence-bundle-manifest-v1.schema.json) | 固定 438 份浏览器证据的精确引用、角色、字节数、内容指纹和 normal/anomaly closure 绑定，不复制业务 Payload | Test Kit 可离线生成并校验；本地文件闭包不能替代外部 Evidence Store 收据和 Owner 签署 |
 | Golden Path Manifest Schema | [`capability-studio-golden-path-acceptance-manifest-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-golden-path-acceptance-manifest-v1.schema.json) | 约束发布候选验收证据的机器结构 | 可消费，未证明通过 |
 | Golden Path NO_GO fixture | [`capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json`](capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json) | 提供真实的初始缺证据状态 | `NO_GO` |
 | Governed Baseline Schema | [`capability-studio-governed-baseline-v3.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json) | 固定 GP-07/08 的 9 × 3 矩阵、逐 Case 业务 Oracle、部署候选与 canonical execution intent；失败态强制 `NOT_VERIFIED` | 当前为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO` |
@@ -150,7 +151,9 @@
 ./scripts/run-capability-studio-browser-matrix.sh
 ```
 
-脚本会构建一次生产前端与候选 JAR，先执行固定 60 格正常态真实 Chrome 矩阵，再执行固定 126 格异常态矩阵，并分别由 `resource-gateway-test-kit` 独立校验。成功条件是正常态与异常态都绑定同一候选、Baseline 和浏览器环境，`186/186` 全部通过、0 跳过、0 P0/P1，并且两个 CLI 都输出 `VALID status=COMPLETE`。正常态结果写入 `resource-gateway-examples/target/acceptance/capability-studio-browser-matrix-result-v1.json`，异常态结果写入同目录的 `capability-studio-browser-anomaly-matrix-result-v1.json`；截图分别位于 `browser-matrix-evidence/` 和 `browser-anomaly-evidence/`。
+脚本在任何 Maven 或 Chrome 运行前执行正式 fail-closed preflight：根文件系统至少剩余 `4194304 KiB`（4 GiB）和 `20000` 个 inode；artifact root、Resource Gateway 与 Test Kit 的 Maven `target`、`TMPDIR` 都必须通过实际可写探针。`CAPABILITY_STUDIO_MIN_FREE_KIB` 与 `CAPABILITY_STUDIO_MIN_FREE_INODES` 只能配置为非负整数；正式模式允许提高阈值，但低于合同下限会以 `RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_FORMAL_THRESHOLD_BELOW_MINIMUM` 在 Maven 前拒绝。探针文件在检查后清理。2026-08-19 的一次本地观测约剩 `0.6 GiB`，在该条件下正式脚本会在候选构建前预检失败；每次运行仍以当次 preflight 实测为准，不能把这次观测视为稳定产品事实。
+
+通过 preflight 后，默认输出使用唯一目录 `resource-gateway-examples/target/acceptance/runs/<commit-short>-<utc>-<pid>/`。正常态结果、异常态结果、`browser-matrix-evidence/`、`browser-anomaly-evidence/` 和 `capability-studio-browser-evidence-bundle-manifest-v1.json` 全部位于同一 root。显式 `--output` 与 `--anomaly-output` 必须同父目录，否则在启动前拒绝。clean 模式还要求该 root 在 preflight 写探针清理后保持 fresh；任何已有文件、子目录或 symlink，包括预存结果、manifest 或 evidence，都会以 `RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_ARTIFACT_ROOT_NOT_FRESH` 在 Maven 前失败。dirty `--allow-dirty` 诊断不受 fresh 门禁影响，可以复用显式 existing base。脚本会构建一次生产前端与候选 JAR，先执行固定 60 格正常态真实 Chrome 矩阵，再执行固定 126 格异常态矩阵，并分别由 `resource-gateway-test-kit` 独立校验。证据文件固定分母为 438：60 个正常态 `.png` 截图，加上 126 个异常 obligation 各自同前缀的 `-error.png`、`-recovered.png` 和 `-trigger.json`，即 `60 + 126 × 3 = 438`；任意三文件、角色缺失、跨 obligation 引用或 normal 非 PNG 都以 `RG.CAPABILITY_STUDIO.BROWSER_EVIDENCE_BUNDLE_EVIDENCE_ROLE_MISMATCH` 拒绝。只有两个既有 JSON CLI 都输出 `VALID status=COMPLETE`，且 `CapabilityStudioBrowserEvidenceBundleCli` 以 normal-result、anomaly-result、artifact-root、manifest-output 四个固定参数退出 0，并只输出一行 `VALID status=COMPLETE expectedCount=438 persistedCount=438 manifestFingerprint=sha256:<64 lowercase hex>`，脚本才输出 `COMPLETE: 186/186` 和 `EVIDENCE_MANIFEST`。
 
 工作树不干净时，默认命令会在浏览器启动前拒绝执行。开发诊断可显式运行：
 
@@ -163,7 +166,7 @@
   --anomaly-viewport 1024x768
 ```
 
-开发模式必须复用一个已经独立验证为 `COMPLETE` 的正常态 Base Matrix。异常过滤只改变本次实际执行的 obligation，不改变 126 格固定分母；未执行项保持 `NOT_RUN`，独立 CLI 返回退出码 3，脚本最多输出 `DEVELOPMENT_VERIFIED`。不得将过滤结果复制为正式证据。`--no-build` 只用于复用已存在且与 Base Matrix 指纹一致的候选 JAR，不改变候选干净度和 `COMPLETE` 门槛。`CONFLICT` 过滤只允许 `GP-04`；非法 profile、GP、语言或视口会在构建和浏览器启动前失败。
+`--allow-dirty` 是强制开发模式，而不只是“允许工作树脏”：无论源码树为 `CLEAN` 还是 `DIRTY`，一旦传入该参数就跳过正式容量、fresh root 和 bundle 门禁，最多输出 `DEVELOPMENT_VERIFIED`，绝不生成正式 manifest 或 `COMPLETE: 186/186`。DIRTY 源码树必须复用一个已经独立验证为 `COMPLETE` 的正常态 Base Matrix。异常过滤只改变本次实际执行的 obligation，不改变 126 格固定分母；未执行项保持 `NOT_RUN`，独立 CLI 返回退出码 3。不得将开发结果复制为正式证据。`--no-build` 只用于复用已存在且与 Base Matrix 指纹一致的候选 JAR，不改变候选干净度和正式门槛。开发模式只能证明机制，不能替代外部 Candidate/Environment Authority、Evidence Store 或 Owner 签署。`CONFLICT` 过滤只允许 `GP-04`；非法 profile、GP、语言或视口会在构建和浏览器启动前失败。
 
 ### 3.2 先改合同，再改实现
 

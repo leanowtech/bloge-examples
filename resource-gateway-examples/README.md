@@ -4683,8 +4683,39 @@ Run the fixed Capability Studio release-candidate browser matrix from the reposi
 
 The command builds the candidate, executes `GP-01..GP-10` in both languages at
 `1440×900`, `1024×768`, and `390×844`, writes 60 fingerprinted screenshots, and asks the
-independent Test Kit CLI to revalidate the result. It rejects a dirty worktree by default. Use
-`--allow-dirty` only for development diagnosis; that mode cannot produce a `COMPLETE` result.
+independent Test Kit CLI to revalidate the result. A clean formal run first performs a fail-closed
+preflight for root filesystem capacity, free inodes, the artifact root, both Maven `target`
+directories, and the actual `TMPDIR` write path. The contract minimums are `4194304` KiB (4 GiB)
+and `20000` free inodes; both `CAPABILITY_STUDIO_MIN_FREE_KIB` and
+`CAPABILITY_STUDIO_MIN_FREE_INODES` must be non-negative integers. Formal runs may raise these
+values, but lowering either one fails before Maven with
+`RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_FORMAL_THRESHOLD_BELOW_MINIMUM`. A local observation on
+2026-08-19 measured about `0.6 GiB` available, under which the formal script stops at preflight;
+every run uses its own preflight measurement rather than treating that observation as a product
+constant.
+
+Successful clean runs use a unique
+`resource-gateway-examples/target/acceptance/runs/<commit-short>-<utc>-<pid>/` root. The normal
+result, anomaly result, `browser-matrix-evidence/`, `browser-anomaly-evidence/`, and
+`capability-studio-browser-evidence-bundle-manifest-v1.json` all live under that root. In clean
+mode the artifact root must be fresh before any producer starts: after its own write probe is
+removed, any file, directory, or symlink causes
+`RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_ARTIFACT_ROOT_NOT_FRESH` before Maven. This also applies
+to an explicitly selected shared parent; dirty `--allow-dirty` diagnosis may still reuse its
+explicit existing base. The two
+matrix CLIs must first print `VALID status=COMPLETE`; the Test Kit
+`CapabilityStudioBrowserEvidenceBundleCli` must then emit exactly one line matching
+`VALID status=COMPLETE expectedCount=438 persistedCount=438 manifestFingerprint=sha256:<64 lowercase hex>`
+and exit zero before the wrapper prints `COMPLETE: 186/186` and `EVIDENCE_MANIFEST`. The 438-file
+denominator is `60` normal `.png` screenshots plus, for each of 126 anomaly obligations, one exact
+same-prefix `-error.png`, `-recovered.png`, and `-trigger.json`, or `60 + 126 × 3 = 438`.
+Arbitrary triples, missing roles, cross-obligation references, and non-PNG normal evidence fail
+closed with `RG.CAPABILITY_STUDIO.BROWSER_EVIDENCE_BUNDLE_EVIDENCE_ROLE_MISMATCH`. A dirty or filtered run never
+creates the formal bundle manifest and remains explicitly `DEVELOPMENT_VERIFIED`. `--allow-dirty`
+forces development diagnosis even when the source tree is clean: it never invokes the formal bundle
+gate and can never print `COMPLETE: 186/186`. A dirty-tree diagnosis must provide explicit existing
+result paths. The script does not replace external Candidate,
+Environment, Authority, or Owner sign-off.
 
 If BLOGE core artifacts are missing, install them from the main BLOGE repo:
 

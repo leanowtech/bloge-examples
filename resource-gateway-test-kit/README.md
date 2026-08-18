@@ -532,12 +532,60 @@ For the repository implementation, run the end-to-end producer and independent v
 ./scripts/run-capability-studio-browser-matrix.sh
 ```
 
-The script accepts only a clean source tree by default and exits successfully after the CLI prints
-`VALID status=COMPLETE`. `--allow-dirty` is an explicit development diagnostic mode: all 60 cells
-may pass, but the root artifact remains `FAILED`, the CLI returns exit code 3, and the script labels
-the run `DEVELOPMENT_VERIFIED`. Invalid or unreadable artifacts return exit code 2. The CLI output
+The script accepts only a clean source tree by default. Before Maven or Chrome it performs a
+fail-closed capacity and write preflight: at least `4194304` KiB (4 GiB) and `20000` free inodes,
+plus actual write probes for the artifact root, Maven `target` directories, and `TMPDIR`. The
+thresholds are configurable only as non-negative integers through
+`CAPABILITY_STUDIO_MIN_FREE_KIB` and `CAPABILITY_STUDIO_MIN_FREE_INODES`; formal runs may raise
+them, but lowering either contract minimum fails before Maven with
+`RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_FORMAL_THRESHOLD_BELOW_MINIMUM`. A local observation on
+2026-08-19 measured about `0.6 GiB` available, under which the formal wrapper fails at that gate;
+runtime preflight measurements remain authoritative. `--allow-dirty` forces development diagnosis
+for both clean and dirty source trees, skips the formal bundle gate, and can never create formal
+evidence.
+
+Clean output is isolated in
+`resource-gateway-examples/target/acceptance/runs/<commit-short>-<utc>-<pid>/`, with both matrix
+results, their evidence directories, and
+`capability-studio-browser-evidence-bundle-manifest-v1.json` under the same root. Clean preflight
+requires that root to remain empty after its write probe is removed; any existing file, directory,
+or symlink, including under an explicit shared result parent, fails with
+`RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_ARTIFACT_ROOT_NOT_FRESH` before Maven. Dirty
+`--allow-dirty` diagnosis is exempt so it can reuse an explicit existing base. The normal and
+anomaly CLIs must print `VALID status=COMPLETE`, then
+`CapabilityStudioBrowserEvidenceBundleCli` receives the normal result, anomaly result, artifact
+root, and manifest path. It must exit zero and emit exactly one line matching
+`VALID status=COMPLETE expectedCount=438 persistedCount=438 manifestFingerprint=sha256:<64 lowercase hex>`.
+The fixed evidence denominator is `60` normal `.png` screenshots plus, for each of 126 anomaly
+obligations, one exact same-prefix `-error.png`, `-recovered.png`, and `-trigger.json`, or
+`60 + 126 × 3 = 438`. Arbitrary triples, missing roles, cross-obligation references, and non-PNG
+normal evidence fail closed with `RG.CAPABILITY_STUDIO.BROWSER_EVIDENCE_BUNDLE_EVIDENCE_ROLE_MISMATCH`.
+Only then may the wrapper print
+`COMPLETE: 186/186` and `EVIDENCE_MANIFEST`. `--allow-dirty` and filtered runs
+do not create the formal bundle manifest and remain `DEVELOPMENT_VERIFIED`; they may reuse an
+explicit existing base. Invalid or unreadable artifacts return exit code 2. The CLI output
 contains only status and stable error codes; it never prints browser observations or business
-payloads.
+payloads. This mechanism does not replace external Authority or Owner sign-off.
+
+To revalidate one already-produced clean run without executing Chrome again, invoke the packaged
+CLI with the run root and an output path in that same root:
+
+```bash
+RUN_ROOT=/path/to/acceptance/run
+RUNTIME_CLASSPATH=$(cat resource-gateway-test-kit/target/browser-matrix-runtime-classpath.txt)
+java -cp "resource-gateway-test-kit/target/classes:${RUNTIME_CLASSPATH}" \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioBrowserEvidenceBundleCli \
+  --normal-result "${RUN_ROOT}/capability-studio-browser-matrix-result-v1.json" \
+  --anomaly-result "${RUN_ROOT}/capability-studio-browser-anomaly-matrix-result-v1.json" \
+  --artifact-root "${RUN_ROOT}" \
+  --manifest-output "${RUN_ROOT}/capability-studio-browser-evidence-bundle-manifest-v1.json"
+```
+
+The verifier inventories at most 4096 filesystem entries, rejects the artifact root or any
+caller-controlled ancestor symlink, never follows evidence symlinks, streams each regular file
+through SHA-256, requires an exact 438-file set, and writes the manifest only after every check
+passes. Verification assumes the artifact tree remains immutable for the duration of that single
+inventory-and-hash operation.
 
 The verifier independently rejects missing, duplicate, invented, or reordered cells; actual
 viewport drift; horizontal overflow; serious/critical axe violations; leaked technical IDs or raw

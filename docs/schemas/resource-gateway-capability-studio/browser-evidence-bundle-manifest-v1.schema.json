@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-capability-studio/browser-evidence-bundle-manifest-v1.schema.json",
+  "title": "Capability Studio Browser Evidence Bundle Manifest v1",
+  "description": "Strict, payload-free manifest for the complete normal and anomaly browser evidence file closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "normal",
+    "anomaly",
+    "expectedEntryCount",
+    "persistedEntryCount",
+    "entries",
+    "manifestFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.capabilityStudioBrowserEvidenceBundleManifest.v1" },
+    "normal": { "$ref": "#/$defs/normalResultSummary" },
+    "anomaly": { "$ref": "#/$defs/anomalyResultSummary" },
+    "expectedEntryCount": { "const": 438 },
+    "persistedEntryCount": { "const": 438 },
+    "entries": {
+      "type": "array",
+      "minItems": 438,
+      "maxItems": 438,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "manifestFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "normalResultSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultId", "evidenceClosureFingerprint"],
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^BMR-[A-Za-z0-9._-]{1,120}$"
+        },
+        "evidenceClosureFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "anomalyResultSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultId", "evidenceClosureFingerprint"],
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^BAMR-[A-Za-z0-9._-]{1,120}$"
+        },
+        "evidenceClosureFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint", "byteSize"],
+      "properties": {
+        "exactRef": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^artifact:browser-(matrix|anomaly)-evidence/[A-Za-z0-9_:@+-][A-Za-z0-9._:@+-]*(/[A-Za-z0-9_:@+-][A-Za-z0-9._:@+-]*)*$"
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "byteSize": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

@@ -66,6 +66,9 @@ final class CapabilityStudioSchemaSupport {
     static final String BROWSER_ANOMALY_MATRIX_RESULT_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-browser-anomaly-matrix-result-v1.schema.json";
+    static final String BROWSER_EVIDENCE_BUNDLE_MANIFEST_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "browser-evidence-bundle-manifest-v1.schema.json";
     static final String STAGE_ACCEPTANCE_RESULT_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-stage-acceptance-result-v1.schema.json";
