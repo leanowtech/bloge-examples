@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-authority-evidence-envelope-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Authority Evidence Envelope v1",
+  "description": "Strict payload-free authority facts resolved for one Stage Acceptance evidence or owner-signature coordinate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "referenceKind",
+    "referenceKey",
+    "coordinate",
+    "evidenceKind",
+    "issuerRef",
+    "scope",
+    "bindings",
+    "observationWindow",
+    "seal"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.authority-evidence-envelope.v1"
+    },
+    "referenceKind": {
+      "enum": ["EVIDENCE", "SIGNATURE"]
+    },
+    "referenceKey": {
+      "$ref": "#/$defs/safeRef"
+    },
+    "coordinate": {
+      "$ref": "#/$defs/coordinate"
+    },
+    "evidenceKind": {
+      "enum": [
+        "ACCEPTANCE_EVIDENCE",
+        "ENVIRONMENT_ATTESTATION",
+        "DEPLOYMENT_EGRESS_OBSERVATION",
+        "OWNER_SIGNATURE"
+      ]
+    },
+    "issuerRef": {
+      "$ref": "#/$defs/safeRef"
+    },
+    "scope": {
+      "$ref": "#/$defs/safeRef"
+    },
+    "bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateArtifactFingerprint",
+        "candidateIntentFingerprint",
+        "environmentFingerprint",
+        "evidenceClosureFingerprint"
+      ],
+      "properties": {
+        "candidateArtifactFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "candidateIntentFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "environmentFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "evidenceClosureFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    },
+    "observationWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "through"],
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "through": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "seal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "keyId",
+        "algorithm",
+        "materialFingerprint",
+        "signedAt",
+        "expiresAt",
+        "signature"
+      ],
+      "properties": {
+        "keyId": {
+          "$ref": "#/$defs/safeRef"
+        },
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "materialFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "signedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "signature": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384,
+          "pattern": "^[A-Za-z0-9_+/=-]+$"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": {
+          "$ref": "#/$defs/safeRef"
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

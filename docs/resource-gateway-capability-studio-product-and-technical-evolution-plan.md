@@ -1301,6 +1301,12 @@ matrix: <角色 × 语言 × 视口 × Case × 异常状态>
 recovery: <失败后用户可执行的恢复动作>
 evidence: [<协议/运行/浏览器/视觉/安全证据>]
 owners: [<业务/产品/UX/工程/安全/QA 责任人>]
+directFailureConditions: [<任一命中即不得通过的条件>]
+evidenceAuthority:
+  producer: <谁产生原始证据>
+  resolver: <谁按 exact ref 解析证据>
+  verifier: <谁独立复验>
+  signer: [<谁对业务结论和运行边界负责>]
 ```
 
 验收卡只有满足以下条件才可进入开发：
@@ -1314,6 +1320,52 @@ owners: [<业务/产品/UX/工程/安全/QA 责任人>]
 7. Owner 接受验收责任和直接失败条件；不存在“开发完成后再找人签”的空缺角色。
 
 切片完成时必须逐项回填实际观察值、证据 URI、fingerprint、缺陷和签署。任一必需矩阵未执行、任一 Oracle 或不变量失败、任一 P0/P1 未关闭、任一指定 Owner 未签署，切片不得标记为 `DONE`，也不得进入下一条主纵向切片。
+
+### 12.10 开工就绪与交付验收采用两道独立门禁
+
+此前多轮修补效率偏低的根因不是实现速度不足，而是把产品决策、交互探索、协议冻结和交付验收混在同一轮开发中。后续切片必须先通过 `Definition of Ready`，实现完成后再通过 `Definition of Accepted`。两者不能互相替代：原型评审通过不表示代码可验收，自动化全绿也不表示业务任务和 Owner 责任已经闭合。
+
+#### Definition of Ready：允许开工
+
+| 冻结项 | 必须明确的内容 | 可复验证据 | 直接 `NO_GO` 条件 |
+|---|---|---|---|
+| 用户与任务 | 主用户、触发条件、期望业务结果、非目标和完成定义 | Acceptance Charter、目标用户复述记录 | 同时存在多个同优先级主路径，或任务只能用技术术语解释 |
+| 黄金路径 | 从进入页面到获得业务结论的唯一主路径；每步包含入口、动作、成功、失败、恢复和数据保留 | 可点击高保真原型、Screen State Inventory、逐步走查记录 | 关键动作依赖主持人说明、技术 ID、Raw JSON 或隐藏导航 |
+| 业务正确性 | 成功、业务失败、技术失败、边界、权限和隔离场景；每个场景具有 Source、Oracle、禁止结果和 Owner | Canonical Demo Pack、Scenario Dataset、Oracle 清单 | 任一 Active Case 缺来源、Oracle、禁止结果或 Owner |
+| 领域与 Authority | Capability、Contract、Dataset、Case、Behavior、Binding、Run、Evidence 的写入权威、Scope、版本和生命周期 | ADR、术语表、对象关系图、Authority 表 | 同一事实存在两个写入权威，或运行读取 mutable head |
+| 协议与兼容性 | 输入、输出、错误、状态机、exact ref、fingerprint、版本协商、迁移和废弃策略 | 严格 Schema、正负 fixture、consumer contract | 未知字段、跨版本、引用漂移和关闭态没有确定语义 |
+| 运行与安全 | Fixture/Mock/Real 的允许边界，生产装配隔离，身份、权限、网络、审计、Payload 和保留策略 | Spike、威胁模型、故障模型、生产否定测试 | 测试注入可进入生产，或无权限路径仍可能读取 Payload/调用真实依赖 |
+| 验收责任 | 固定执行分母、证据生产者/解析器/验证器、各结论 Owner、签署入口和直接失败条件 | 已评审验收卡、自动化测试 ID、签署责任表 | Owner 未接受责任，或计划开发完成后再补验收标准 |
+
+`Definition of Ready` 只允许四类输出：`GO`、`NO_GO`、待验证假设和明确的非目标。存在待验证假设时，只能进入有时间边界的原型或 Spike，不能进入正式实现。所有冻结制品必须使用 revision 和 exact ref；评审后的语义变化必须先提升 revision，再调整实现。
+
+#### Definition of Accepted：允许声明交付完成
+
+单条纵向切片只有同时满足以下八项条件，才能在开发台账中标记为 `DONE`。Stage 退出还必须继续满足第 13.1 节对应的 `S*-AC-*` 合同。
+
+1. **候选唯一**：结果绑定不可变构建、源码提交、配置和环境 fingerprint；工作区补丁、请求参数或页面状态不能替换候选身份。
+2. **分母完整**：验收卡中的角色、语言、视口、Case、异常和重复次数全部执行；`NOT_RUN`、`SKIPPED` 和过滤运行均不计为通过。
+3. **业务结论正确**：每个 Case 的 Oracle、禁止结果和副作用约束全部成立；HTTP 200、节点绿色或 Suite `PASSED` 不能替代业务 Oracle。
+4. **系统不变量成立**：exact-ref 闭包、Schema、Scope、Authority、隔离、权限、确定性、幂等和恢复语义均通过正向与负向验证。
+5. **故障真实触发**：服务错误、断网、超时、冲突、权限拒绝和证据不可用必须由对应层真实触发；不能通过注入前端文案或改写结果对象模拟。
+6. **证据可独立复验**：原始 Evidence 可按 exact ref 解析，内容 fingerprint、签名、签发权限、有效期、撤销和候选/环境/时间窗绑定由独立 Test Kit 与外部 Authority 校验。
+7. **体验可独立完成**：目标用户不依赖主持人、技术 ID 或 Raw JSON 完成任务；错误时能理解影响、保留已有输入并执行明确恢复动作；P0/P1 为 0。
+8. **责任完成签署**：业务、正确性、产品、UX、Runtime、安全和 QA 中该合同指定的 Owner 对同一候选和同一证据闭包完成签署；脚本与 Resource Gateway 不得代签。
+
+判定采用全量布尔合取，不计算平均分：
+
+```text
+accepted = candidateBound
+        && matrixComplete
+        && allBusinessOraclesPassed
+        && allSystemInvariantsPassed
+        && allFaultsAuthenticallyTriggered
+        && evidenceIndependentlyVerified
+        && usabilityGatePassed
+        && allRequiredOwnersApproved
+```
+
+任一条件为 `false` 或未知时，结果只能是 `NOT_RUN`、`BLOCKED`、`FAIL` 或开发台账中的 `PARTIAL`。不得用测试数量、截图数量、设计评分、后续口头解释或成功用例比例折算 `PASS`。
 
 ## 13. 分阶段实施计划
 
@@ -1519,7 +1571,8 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-19，�
 | `S0-DEV-GOV-18` | Stage 退出结果的构建 API 必须默认诚实：调用方不得只给出成功布尔值便生成 `PASS`，不得伪造目标环境、部署级 egress 或 Owner Authority；缺少外部事实时必须保留 `NOT_RUN`、`BLOCKED` 或 `FAIL` 及逐项诊断 | `CapabilityStudioStageAcceptanceResultV2Builder` 与聚焦测试已实现；builder 与独立 verifier 使用同一严格 v2 Schema，但分别执行构造约束和跨字段复算。当前 Test Kit 全量 905 项测试通过、0 失败、0 错误、0 跳过 | `PASS`，仅限诚实构造与语义协议机制；builder 不能签发外部 Environment/Egress/Evidence/Owner Authority，正式 Stage 退出仍为 `NO_GO` |
 | `S0-DEV-GOV-19` | `S0-AC-01` 的异常态结果必须固定 126 个 obligation：服务错误 60、目标请求断网 60、GP-04 stale revision 冲突 6。每格必须证明 fault trigger、业务化错误说明、键盘恢复、恢复后 `READY`、无陈旧成功状态、精确 viewport、无遮挡、axe、技术信息不泄漏及 P0/P1；冲突格还必须证明本地草稿保留、服务端 revision 保留且陈旧预检不沿用。结果必须与同一候选的正常态 60 格 exact binding | 严格 `Browser Anomaly Matrix Result v1` Schema、Resource Gateway 固定 obligation/汇总构造器、Test Kit builder/verifier/CLI 与负向测试已实现。Verifier 精确校验 126 格身份和顺序、场景到目标路由映射、ERROR/OFFLINE/CONFLICT 的真实 fault mechanism、成功/失败关闭、Evidence fingerprint、候选/Baseline/环境/合同 revision 与 Base Matrix exact binding；CLI 独立读取并复验异常结果和被引用的正常态结果。当前 Test Kit 全量 905 项测试通过、0 失败、0 错误、0 跳过 | `PARTIAL`：协议与复验工具已闭合，但真实浏览器异常 producer 尚未完成 126 格正式全量运行；已通过的 5 个开发过滤格只验证机制，不计入正式分母，因此正式完成度仍为 0/126；不得据此将异常态或 `S0-AC-01` 标为 `PASS` |
 | `S0-DEV-GOV-20` | 真实浏览器异常 producer 必须使用目标 API 的 CDP 503、目标请求 transport failure 和真实 stale-revision HTTP 409，不得注入前端文案或伪造观测；恢复控件必须由真实 viewport 几何证明；开发过滤只能缩小执行集，输出仍须保留固定 126 obligation，且不得成为发布证据；producer 必须拒绝非 canonical JAR、HEAD 漂移和 `src/main` 漂移；正式脚本必须分别运行两个独立 CLI，并仅在 186/186 通过时成功 | producer、双矩阵脚本、候选绑定检查、恢复控件 viewport 几何门禁和页面自动滚动/焦点修复已实现；协议、组件、编译测试与 `7112211d4` canonical candidate 复跑通过。过滤产物 `BAMR-7112211d4a47-1787075656` exact binding `BMR-7112211d4a47-1787075364`，执行 ERROR/GP-04、ERROR/GP-09、OFFLINE/GP-04、OFFLINE/GP-09 和 CONFLICT/GP-04 英文 1024 五格，5 `PASS`、0 `FAIL`、121 `NOT_RUN`；409 同时证明本地草稿、服务端 revision、无陈旧预检、恢复后 `READY` 和恢复按钮完整位于 viewport 内；独立 CLI 返回 `VALID status=NOT_RUN` 和退出码 3 | `DEVELOPMENT_VERIFIED`，仅证明 producer、候选绑定、过滤诊断、视口恢复与失败关闭机制；尚无 126/126 `COMPLETE` 结果，正式异常态完成度仍按 0/126 计，`S0-AC-01` 与 Stage 0 继续为 `NO_GO` |
-| `S0-DEV-GOV-21` | 候选身份必须在运行服务构造时从部署 Authority 冻结，公共运行 API 不得允许调用方逐次注入或替换；正式验收必须在 v2 语义验证后执行独立 Authority 二阶段，完整解析每个 Evidence 与 Owner signature，并把环境、egress 和签署事实绑定到同一候选、执行窗口和签署前闭包 | `CapabilityStudioGovernedCandidateService` 已移除公开 Binding 参数并在构造时快照 `CapabilityStudioDeploymentCandidateAuthority`；服务端 16 个聚焦测试闭合 bound/unbound、三轮同候选、intent fingerprint 与真实集成运行。Test Kit 新增 `CapabilityStudioStageAcceptanceAuthorityVerifier`，17 个聚焦测试覆盖协议非法/非 PASS 零外调、全量稳定解析、坐标漂移、环境 issuer/Scope/候选/窗口漂移、egress intent/窗口漂移、Owner closure 漂移、Authority 不可用/拒绝、异常失败关闭和结果不泄密 | `DEVELOPMENT_VERIFIED`：候选注入边界和二阶段编排已闭合；具体 Evidence Resolver、pinned Key Set/Issuer Policy、签名与撤销验证、组织 Owner Authority、目标环境 attestation 和正式外部签署仍未闭合，因此不能把编排器返回能力等同于已有正式 `ACCEPTED` 证据 |
+| `S0-DEV-GOV-21` | 候选身份必须在运行服务构造时从部署 Authority 冻结，公共运行 API 不得允许调用方逐次注入或替换；正式验收必须在 v2 语义验证后执行独立 Authority 二阶段，完整解析每个 Evidence 与 Owner signature，并把环境、egress 和签署事实绑定到同一候选、执行窗口和签署前闭包 | `CapabilityStudioGovernedCandidateService` 已移除公开 Binding 参数并在构造时快照 `CapabilityStudioDeploymentCandidateAuthority`；服务端 16 个聚焦测试闭合 bound/unbound、三轮同候选、intent fingerprint 与真实集成运行。Test Kit 新增 `CapabilityStudioStageAcceptanceAuthorityVerifier`，17 个聚焦测试覆盖协议非法/非 PASS 零外调、全量稳定解析、坐标漂移、环境 issuer/Scope/候选/窗口漂移、egress intent/窗口漂移、Owner closure 漂移、Authority 不可用/拒绝、异常失败关闭和结果不泄密 | `DEVELOPMENT_VERIFIED`：候选注入边界和二阶段编排已闭合；通用 Evidence Resolver 与 pinned Issuer Policy 由 `S0-DEV-GOV-22` 继续闭合，但组织 Owner Authority、目标环境 attestation、部署级 egress Evidence 和正式外部签署仍未闭合，因此不能把编排器返回能力等同于已有正式 `ACCEPTED` 证据 |
+| `S0-DEV-GOV-22` | Evidence Resolver 必须按精确 kind/key/URI/fingerprint 解析严格、无业务 Payload、大小受限的权威 envelope；确定性缺失或漂移必须拒绝，存储不可用必须阻断。Issuer Policy 必须按 issuer+Scope+evidence kind 白名单和 out-of-band pinned Key Set 验证候选、意图、环境、观测窗口、闭包、TTL、Ed25519、密钥生命周期与撤销状态，不能信任证据旁附的自签公钥 | `capability-studio-authority-evidence-envelope-v1.schema.json`、`CapabilityStudioAuthorityEvidenceResolver` 与 `CapabilityStudioPinnedEvidenceIssuerPolicy` 已实现；22 条聚焦测试覆盖完整映射、Evidence/Signature 身份、Schema/未知 Payload/超限/坐标/时间漂移、存储异常、issuer/Scope/kind/key/pin/签名/TTL/上下文漂移、前瞻与追溯撤销，以及公开结果不泄密。当前 Test Kit `clean verify` 共 927 条测试，0 失败、0 错误、0 跳过，Javadoc 零警告 | `DEVELOPMENT_VERIFIED`：通用解析和发行方密码学门禁已闭合；尚无企业 Evidence Store、部署级 issuer pin、组织 Owner Authority、正式 target-environment/egress Evidence 和外部签署，正式 Stage 0 保持 `NO_GO` |
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 

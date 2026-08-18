@@ -411,8 +411,55 @@ The three collaborators must be backed by external authorities. In particular, a
 returns `VERIFIED` without checking an independently pinned `EvidenceVerificationKeySet`, issuer
 permissions, key lifecycle/revocation, signature, expiry, and organizational Owner role does not
 constitute formal acceptance. The orchestration and cross-binding gate are implemented; the
-repository still keeps Stage 0 at `NO_GO` until concrete trusted Resolver/Issuer/Owner adapters and
+repository still keeps Stage 0 at `NO_GO` until trusted storage, organizational Owner adapters and
 target-environment evidence are configured and independently exercised.
+
+`CapabilityStudioAuthorityEvidenceResolver` is the strict generic resolver for the first of those
+boundaries. Its caller-owned `ArtifactSource` receives the exact typed request and returns only
+`AVAILABLE`, `NOT_FOUND`, or `UNAVAILABLE`. Available documents must satisfy the bundled
+`capability-studio-authority-evidence-envelope-v1.schema.json`, remain below 64 KiB, contain no
+business payload or unknown field, and exactly match the requested reference kind, key, URI, and
+fingerprint. Malformed or drifting artifacts become deterministic `NOT_FOUND`, which the authority
+stage rejects; source exceptions and transient transport failures become `UNAVAILABLE`, which
+blocks acceptance. The resolver snapshots input and redacts its public descriptions.
+
+```java
+CapabilityStudioAuthorityEvidenceResolver resolver =
+        new CapabilityStudioAuthorityEvidenceResolver(request ->
+                evidenceStore.read(request.coordinate())
+                        .map(CapabilityStudioAuthorityEvidenceResolver.ArtifactRead::available)
+                        .orElseGet(
+                                CapabilityStudioAuthorityEvidenceResolver.ArtifactRead::notFound));
+```
+
+`CapabilityStudioPinnedEvidenceIssuerPolicy` is the concrete fail-closed evidence issuer policy.
+Each `TrustedIssuer` binds one exact issuer and Scope to an evidence-kind allow-list, an
+out-of-band pinned key-set fingerprint, a complete `EvidenceVerificationKeySet`, and a maximum
+proof TTL. Construction and every verification reuse `TestSuiteEvidenceVerifier.verifyKeySet`;
+proof verification also applies the shared key lifecycle and revocation timeline, exact candidate,
+intent, environment, observation-window and evidence-closure bindings, Ed25519 verification,
+expiry, and the configured TTL. Producers sign the value returned by `canonicalFingerprint(...)`.
+
+```java
+var issuer = new CapabilityStudioPinnedEvidenceIssuerPolicy.TrustedIssuer(
+        "ci:acceptance-authority",
+        "environment:staging-sg",
+        Set.of(CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceKind
+                .ENVIRONMENT_ATTESTATION),
+        pinnedKeySetFingerprint,
+        verifiedKeySet,
+        Duration.ofHours(1));
+var issuerPolicy = new CapabilityStudioPinnedEvidenceIssuerPolicy(
+        trustedClock, List.of(issuer));
+```
+
+The envelope's coordinate fingerprint identifies the externally stored primary evidence; it is not
+the envelope fingerprint. The detached seal binds that coordinate and every payload-free authority
+fact through the canonical signed message. A key set embedded beside an evidence document is not
+trusted by itself: its snapshot fingerprint must be pinned by deployment configuration or another
+independently governed trust publication. The repository does not ship a production Evidence Store,
+enterprise issuer pins, or the organizational `OwnerAuthority`; those remain deployment-owned
+inputs to formal acceptance.
 
 ## Verify the Stage 0 Browser Matrix Result
 
