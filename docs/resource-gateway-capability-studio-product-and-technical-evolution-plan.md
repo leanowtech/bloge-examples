@@ -213,6 +213,23 @@ Test Kit 的默认 v2 verifier 只负责严格 Schema、状态机、时间窗口
 
 Wire-to-UI 通过只允许把该纵向切片标为 `DEVELOPMENT_VERIFIED`。目标环境、部署级隔离、人工可用性和 Owner 签署未闭合时，仍不得生成 `CANDIDATE_VERIFIED` 或 `ACCEPTED`。
 
+### 0.5 本轮演进的一页验收总表
+
+本表是本方案的产品验收入口。它回答“用户最终能完成什么”，第 9.6 节的 `GP-*`、第 13.1 节的 `S*-AC-*` 和第 15 章的测试证据负责展开实现细节。三处发生冲突时，按**更严格、可被机器验证且不降低业务正确性与安全边界**的一项执行，并在开工前修订 Baseline 消除冲突。
+
+| 验收域 | 固定验收任务 | 明确通过标准 | 直接失败条件 | 权威证据与签署 |
+|---|---|---|---|---|
+| 业务接口契约 | 业务作者从请求/响应样例定义“订单查询”和“城市规则”两个接口的输入、输出、错误与敏感字段 | 默认路径不输入技术 ID、不编辑 Raw JSON；样例、表单、OpenAPI 和高级 Schema 四种入口 round-trip 语义差异为 0；breaking change 被明确阻断 | 只保存一段 JSON；输入输出方向不清；非法样例可保存；breaking change 静默生效 | Contract snapshot、兼容性报告、浏览器任务记录；接口 Owner、产品、QA |
+| 场景与依赖表现 | 为取消费争议维护 9 个 Canonical Case，并为每个外部依赖定义正常、业务错误、超时、序列和禁止访问等表现 | 9/9 Case 均具备 Owner、Source、Oracle、适用 Contract 和 exact dependency binding；未匹配行为在调度前失败；普通作者使用业务句式完成配置 | Case 无正确结果或来源；Fixture 与 Mock 被压成不可解释的 Raw JSON；未命中后访问真实服务 | Demo Pack、Dataset quality projection、Binding Plan、负向运行；业务 Owner、正确性 Owner、数据 Owner |
+| 业务特征 DAG | 用 4 个接口组装“取消费判定上下文”，选择 timeout Case 检查数据如何流动和降级 | 画布显示 6 节点、5 边及字段来源；Data Lens 能解释输入、输出、边值、首个差异和 fallback；1440/1024/390 关键视口遮挡数为 0 | 只能看拓扑而不能解释数据；Trace 与 Oracle 冲突；节点或边标签遮挡；无权限用户看到 Payload | Graph exact ref、真实 BLOGE Trace、DOM 几何、截图、axe；Feature Owner、UX、QA |
+| 业务工具契约 | 定义“取消费争议处理工具”的独立输入、输出、错误、禁止结果和副作用，并引用前置接口与特征 | Tool 契约与内部 DAG 分离；依赖闭包可独立复算；9 Case × 3 轮共 27 次业务断言通过，同 Case semantic fingerprint 稳定 | 用 DAG 端口冒充 Tool 契约；依赖缺失或读取 mutable head；任一 Case 错判、漏跑或结果漂移 | Tool snapshot、closure manifest、27 份 child Evidence、Test Kit verifier；Tool Owner、正确性 Owner、Runtime |
+| 完全隔离运行 | 选择“完全隔离”运行整个工具，并检查 timeout、duplicate 与 forbidden-write 三类高风险分支 | 进程内真实调用、部署级真实 egress 和被网络策略拒绝的调用尝试均为 0；timeout 原始尝试和 fallback 均可追溯；duplicate 幂等；forbidden-write 无写入 | 任一真实或被拒外呼尝试；生产入口可注入替身；超时被解释为空数据；禁写分支发生写调用 | candidate/environment attestation、counter、network deny、attempt/final Trace；Runtime、安全、QA |
+| 正确性与数据积累 | 从运行结果回到 exact Case、Dataset、Oracle、Contract、DAG 节点和数据版本，并查看质量与影响 | 证据和 Deep Link 精确回到原 Run/Case/Node；Active Case 具备完整来源、责任人、正确性依据、审批、复用方与保留策略；撤销和过期会阻断新运行 | 只能看到绿色总数；证据无法定位原数据和图；本地替身被标为客户现场认证；撤销后仍可新运行 | Evidence bundle、impact graph、lifecycle event、Deep Link 浏览器测试；数据 Owner、治理 Owner、正确性 Owner |
+| 首次使用体验 | 代表性业务作者从默认入口完成 `GP-01` 至 `GP-10` | 至少 5/6 在 15 分钟内独立完成；技术 ID 输入 0 次、Raw JSON 编辑 0 次；能说清替身、真实调用和证据边界；P0/P1 为 0 | 依赖主持人补步骤；关键 ID 需手填；失败无恢复动作；用户把开发验证误解为发布认证 | 原始任务录像、计时、错误记录、复验报告；业务 Owner、产品、UX |
+| 企业交付可信度 | 从不可变候选执行完整矩阵并导出可独立复验的结果 | `GP-01..10 × 2 语言 × 3 视口=60` 格全部执行且无跳过；`AC-STD-01..09` 全部通过；目标环境、证据闭包和指定 Owner 签署完整 | 缩小分母；脏工作区；证据 fingerprint 不一致；自动化代签；只保留重跑后的成功记录 | Candidate、Browser Matrix Result、Stage Acceptance Result v2、签署；产品、架构、安全、Runtime、QA |
+
+本轮演进的产品验收结论只有两种：上述七个验收域全部闭合时为 `ACCEPTED`；否则为 `NO_GO`，并按合同记录 `NOT_RUN`、`BLOCKED` 或 `FAIL` 的具体原因。`DEVELOPMENT_VERIFIED` 和 `PARTIAL` 可以说明工程进展，但不能替代最终产品验收。
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -1227,6 +1244,44 @@ Stage 1 开工后，新反馈必须先归类：
 
 每次评审只接受带 `GP-*`、领域不变量或非功能门禁引用的变更。没有验收依据的「这里再加一个按钮」不进入当前迭代。
 
+### 12.9 纵向切片交付验收卡
+
+Stage 1 之后的每个实现任务都必须先填写并评审一张验收卡。验收卡是 PR、自动化测试、演示脚本和 Stage Result 的共同输入，不允许开发完成后再根据已有实现补写。建议使用以下固定字段：
+
+```yaml
+sliceId: CS-<stage>-<sequence>
+requirementRefs: [GP-xx, Sx-AC-xx, AC-STD-xx]
+primaryUser: <业务角色>
+businessTask: <用户试图完成的业务任务>
+preconditions:
+  candidate: <不可变候选要求>
+  baseline: <exact ref>
+  demoPack: <exact ref>
+  environment: <profile/scope/identity/network>
+given: <固定业务事实和依赖表现>
+when: <用户动作，不写组件内部调用>
+then:
+  userOutcome: [<可见结果>]
+  businessOracle: [<正确结果与禁止结果>]
+  systemInvariants: [<exact ref/隔离/权限/确定性>]
+matrix: <角色 × 语言 × 视口 × Case × 异常状态>
+recovery: <失败后用户可执行的恢复动作>
+evidence: [<协议/运行/浏览器/视觉/安全证据>]
+owners: [<业务/产品/UX/工程/安全/QA 责任人>]
+```
+
+验收卡只有满足以下条件才可进入开发：
+
+1. `businessTask` 可以由目标用户复述，且没有 FixtureBundle、revision、fingerprint 等实现词汇。
+2. `given/when/then` 使用 Golden Demo Pack 中的真实业务名称、数据和 Oracle，不使用占位数据。
+3. 每个业务结果都能落到一个机器观测或明确的人工签署，不使用“体验良好”“运行正常”等不可证伪描述。
+4. 至少包含一个成功、一个业务失败、一个技术失败和一个权限或隔离负向场景。
+5. 测试矩阵写清固定分母，不能使用“覆盖主流浏览器”“抽样验证”等开放表述。
+6. `recovery` 写清错误发生后用户看到什么、数据是否保留、从哪里重试；没有恢复动作的关键错误按 P1 处理。
+7. Owner 接受验收责任和直接失败条件；不存在“开发完成后再找人签”的空缺角色。
+
+切片完成时必须逐项回填实际观察值、证据 URI、fingerprint、缺陷和签署。任一必需矩阵未执行、任一 Oracle 或不变量失败、任一 P0/P1 未关闭、任一指定 Owner 未签署，切片不得标记为 `DONE`，也不得进入下一条主纵向切片。
+
 ## 13. 分阶段实施计划
 
 ### Stage 0：建立 Acceptance Baseline v1
@@ -1714,6 +1769,9 @@ Manifest 只保存精确引用、状态、计数和 fingerprint，不复制业�
 - `GP-01` 至 `GP-10` 自动化骨架可执行，需求追踪矩阵无空项。
 - 6 名目标参与者的可用性测试达到第 12.6 节阈值。
 - 第 12.7 节所有门禁为 `GO`，不存在口头或临时豁免。
+- 首条纵向切片已经按第 12.9 节完成验收卡，固定了用户、数据、Oracle、矩阵、恢复动作、证据与 Owner。
+
+上述七项是布尔门禁，不按完成比例加权。任一项不成立时，结论只能是 `NO_GO`；此时允许继续做原型、Spike、数据准备和验收骨架，不允许开始大规模正式实现或把探索代码计入阶段交付。
 
 ### 产品
 
@@ -1748,6 +1806,10 @@ Manifest 只保存精确引用、状态、计数和 fingerprint，不复制业�
 - 404、400、无权限、冲突、过期和运行失败均说明原因、影响和可执行恢复动作。
 - 保存、运行、跨页面和 Deep Link 不丢失当前能力、场景与数据上下文。
 - `CapabilityStudioGoldenPathAcceptanceManifest` 为 `ACCEPTED`，且所有签署和证据引用闭合。
+
+### 最终结论
+
+本方案的最终 `DONE` 不是“全部功能已开发”，而是第 0.5 节七个验收域全部 `PASS`、第 13.1 节 27 个阶段退出合同全部 `PASS`、第 15.7 节硬门禁零触发，并由对应 Owner 对同一候选和同一证据闭包完成签署。任何开发级 `PASS`、局部演示成功、截图完整或自动化数量增长，都不能单独改变这一结论。
 
 ## 19. 待评审决策
 
