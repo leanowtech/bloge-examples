@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-06 开发切片（含 Scenario Dataset v1 与 Feature Trace Data Lens）
+> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-08 开发切片（含 Scenario Dataset v1、Feature Trace Data Lens 与 Tool 受治理 9 × 3 验证）
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -167,7 +167,9 @@ Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面�
 6. 选择「受控数据」。系统重新读取同一个 Case 的 Payload 权限投影。检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。
 7. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
 8. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-9. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、source map exact-ref provenance 的内容寻址、注册后独立回读，以及同一注册闭包在真实 Spring test profile 中完成一轮 9 Case 执行；9 个 child run 全部通过且进程内真实外部调用为 0。页面另有 test-owned material 下 9 个 Case 各运行 3 次的开发业务 Oracle，但两份证据尚未合并为同一发布候选矩阵；Dataset 写入 Authority、浏览器 9×3 基线切换、字段级 source map、Tool 画布、部署级 network deny 和业务签署仍未完成。
+9. 选择「业务工具」，在「业务正确性验证」中先确认目标为 `9 个固定场景 / 3 轮重复 / 27 项预期检查 / 0 个真实接口`，再选择「运行 9 × 3 受治理验证」。
+10. 运行完成后检查三组信息：顶部是 `9/9、3/3、27/27、0` 摘要；中部是 3 个 suite run 和 9 × 3 Case 矩阵；底部是“每轮业务结果指纹尚未导出、尚缺部署级断网与出口观测、负责人尚未签署”三项限制。页面应并列呈现「27 项检查全部通过」和「仍不可验收」，这是正确结论，不是冲突。
+11. 查看「验收状态」。正式结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支、Feature Trace，以及同一受治理 compiler/Registry/exact-suite runtime 下的 3 suite/27 child 运行；但 Dataset 写入 Authority、字段级 source map、每 Case 每轮业务结果 fingerprint、不可变候选与环境绑定、部署级 network deny/egress 和 Owner 签署仍未完成。
 
 需要直接检查 Feature Trace 协议时，使用以下请求。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只返回 Canonical Demo Pack 的受控演示值。两个权限态必须引用同一次 Case 语义和同一 Graph fingerprint。
 
@@ -178,9 +180,14 @@ curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=
 
 curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal-baseline' | \
   jq '{evidenceKind,status,caseCount,roundCount,runCount,realExternalCallCount,cases,operators,diagnostics}'
+
+curl -fsS -X POST 'http://localhost:8080/api/capability-studio/governed-baseline' | \
+  jq '{evidenceKind,status,releaseGateStatus,caseCount,roundCount,suiteRunCount,childRunCount,realExternalCallCount,publication,rounds,cases,limitations,diagnostics}'
 ```
 
 基线响应应显示 `DEVELOPMENT_TEST_OWNED / PASSED / 9 / 3 / 27 / 0`，九个 `oracle.status` 均为 `PASS`，每个 Case 有三个不同 `runId`，禁止写入案例的 operator 清单不包含 `WRITE` 或 `MIXED`。这是可重复的开发证据，不是 `S0-AC-04 PASS`：它没有绑定发布候选的 Graph/Contract/Dataset/Binding exact refs、运行环境 fingerprint 或部署级 network deny，也没有 Owner 签署。
+
+受治理响应应显示 `DEVELOPMENT_TEST_OWNED / PASSED / NO_GO / 9 / 3 / 3 / 27 / 0`，并严格返回上述三项 `limitations`。如果任一编译、发布、回读或运行不变量失败，响应必须为 `FAILED_CLOSED`，且 `publication`、指纹和 Run 集合均不得伪造。
 
 如果 `caseId` 不属于九个 Canonical Case，服务返回业务 404。production profile 不装配这些端点。不要把 `PAYLOAD_VISIBLE` 当作生产 Payload 授权协议；当前查询参数仅用于非生产演示切片，企业身份授权仍是验收缺口。
 
@@ -202,7 +209,11 @@ curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal-baselin
 
 ![受控数据权限下的完整 Feature DAG 与 Data Lens](assets/capability-studio/capability-studio-gp05-gp06-dag-payload-zh-1440.png)
 
-保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包、Scenario Dataset、Feature Trace 或 9×3 开发基线未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支和 Feature Rehearsal 只在 test/staging 装配。教程分支 head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Tool Run 按钮。服务端已有通用的受治理资产 publisher 与 candidate service：编译 source map 进入 FixtureBundle/TestSuite 内容寻址，注册后必须独立回读，suite aggregate evidence 保存可逆的完整闭包，child evidence 保存紧凑指纹绑定；真实 Spring test profile 已验证一轮 9 Case 同闭包运行。Feature Rehearsal 和页面上的 9×3 基线虽然使用真实 BLOGE Graph、`TestRunService` 和 `TestRunEvidence`，目前仍由非生产演示服务组装运行材料，尚未切换到这条候选链路，因此一轮服务端集成与页面 9×3 均不能单独构成发布候选 `S0-AC-04` 业务证据。
+![Tool 受治理 9 × 3 开发验证与发布双结论](assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png)
+
+![移动端 Tool 受治理验证](assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png)
+
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载、网络或受治理运行失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包、Scenario Dataset、Feature Trace 或 9 × 3 开发基线未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支、Feature Rehearsal 和 Governed Baseline 只在 test/staging 装配。教程分支 head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入。Tool 页已提供开发验证运行按钮：它使用通用受治理 compiler、publisher 与 candidate service，将 source map 纳入内容寻址，注册后独立回读，再以 exact suite 运行 3 轮。但该运行仍固定标记 `DEVELOPMENT_TEST_OWNED / NO_GO`；缺失每 Case 业务结果 fingerprint、候选/环境绑定、部署级 egress 或 Owner 签署时，不能构成发布候选 `S0-AC-04` 业务证据。
 
 ### 3.3 从业务能力资产组合开始
 
@@ -487,7 +498,7 @@ ANEKE 已允许发布。
 
 | 目标 | 启动命令 | 说明 |
 |---|---|---|
-| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包、进程内教程分支保存/预检、Feature Trace 演练与默认 Correctness exact Workspace；Tool Run 和发布验收保持关闭 |
+| 常规完整产品体验 | `./scripts/start-visual-canvas-demo.sh --open` | 七个页面、Capability Studio 黄金数据包、教程分支保存/预检、Feature Trace、Tool 受治理 9 × 3 开发验证与默认 Correctness exact Workspace；发布验收保持 `NO_GO` |
 | 不装配 Capability Studio 样板 | `./scripts/start-visual-canvas-demo.sh --no-capability-studio --open` | 默认打开 legacy 业务镜像；Capability Studio 演示 API 不装配 |
 | 不装配正确性样板 | `./scripts/start-visual-canvas-demo.sh --no-correctness --open` | 保留其余页面并打开 Capability Studio；`correctnessWorkspaceApi=false` |
 | 验证生产装配隔离 | `./scripts/start-visual-canvas-demo.sh --profile production --no-capability-studio --no-correctness` | 两类演示 Authority 均不装配；不能用于演示黄金数据 |

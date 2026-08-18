@@ -1,9 +1,9 @@
 {
   "schemaVersion": "resourceGateway.capabilityStudioAcceptanceBaseline.v1",
   "baselineId": "capability-studio-baseline-cancellation-fee-v1",
-  "revision": 1,
+  "revision": 2,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:a7948bb245b61c0ead3dc12822c803eded5c10a008883bcea7d9e76c960f2e44",
+  "artifactFingerprint": "sha256:d4f66c12d990093f878381f3adc63131ff5d882f54358789cd401a5fd7bdf8b8",
   "planRef": "docs/resource-gateway-capability-studio-product-and-technical-evolution-plan.md",
   "scope": {
     "tenantId": "demo-tenant",
@@ -69,8 +69,8 @@
     { "gpId": "GP-04", "title": "编辑教程超时分支", "primaryAction": "设置补偿历史超时", "expectedOutcome": "Canonical Baseline 不变", "acceptanceState": "DEFINED", "requiredEvidence": ["REVISION", "PREFLIGHT"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "CORRECTNESS_OWNER" },
     { "gpId": "GP-05", "title": "查看 Feature DAG 数据透镜", "primaryAction": "选择超时场景", "expectedOutcome": "节点、边和字段血缘完整可读", "acceptanceState": "DEFINED", "requiredEvidence": ["DOM", "SCREENSHOT", "LINEAGE"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "CANVAS_OWNER" },
     { "gpId": "GP-06", "title": "运行 Feature 场景", "primaryAction": "运行当前场景", "expectedOutcome": "TIMEOUT 安全降级且零真实调用", "acceptanceState": "DEFINED", "requiredEvidence": ["RUN_TRACE", "NETWORK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" },
-    { "gpId": "GP-07", "title": "查看 Tool 契约", "primaryAction": "打开工具承诺", "expectedOutcome": "契约、禁止结果、副作用和依赖完整", "acceptanceState": "DEFINED", "requiredEvidence": ["DOM", "PROTOCOL"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "PRODUCT_QA" },
-    { "gpId": "GP-08", "title": "运行全部九个场景", "primaryAction": "恢复并运行 Baseline", "expectedOutcome": "三次 9/9 语义一致且零真实调用", "acceptanceState": "DEFINED", "requiredEvidence": ["BATCH_RUN", "SEMANTIC_FINGERPRINT", "NETWORK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "RUNTIME_OWNER" },
+    { "gpId": "GP-07", "title": "查看 Tool 契约", "primaryAction": "打开工具承诺", "expectedOutcome": "契约、禁止结果、副作用、精确依赖和 9 × 3 正确性目标完整", "acceptanceState": "IMPLEMENTED", "requiredEvidence": ["DOM", "PROTOCOL", "ACCESSIBILITY"], "currentStatus": "PENDING", "evidenceRefs": [{ "evidenceId": "gp07-governed-tool-desktop", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png", "status": "AVAILABLE", "note": "中文桌面开发证据；不代表正式候选或 Owner 签署" }, { "evidenceId": "gp07-governed-tool-mobile", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png", "status": "AVAILABLE", "note": "中文移动端开发证据；不代表正式候选或 Owner 签署" }], "ownerRole": "PRODUCT_QA" },
+    { "gpId": "GP-08", "title": "运行全部九个场景", "primaryAction": "运行 9 × 3 受治理验证", "expectedOutcome": "3 suite、27 child、9 Case 每轮全部通过，零进程内真实调用，并明示开发通过与发布 NO_GO 双结论", "acceptanceState": "IMPLEMENTED", "requiredEvidence": ["BATCH_RUN", "SEMANTIC_FINGERPRINT", "NETWORK", "PROTOCOL", "TEST_KIT"], "currentStatus": "PENDING", "evidenceRefs": [{ "evidenceId": "gp08-governed-baseline-schema", "kind": "PROTOCOL", "uri": "docs/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v1.schema.json", "status": "AVAILABLE", "note": "严格 9 × 3 开发证据协议；强制 DEVELOPMENT_TEST_OWNED 与 NO_GO" }, { "evidenceId": "gp08-governed-tool-desktop", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png", "status": "AVAILABLE", "note": "真实 Spring 与 Chrome 触发的中文桌面开发证据" }, { "evidenceId": "gp08-governed-tool-mobile", "kind": "SCREENSHOT", "uri": "docs/assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png", "status": "AVAILABLE", "note": "真实 Spring 与 Chrome 触发的中文移动端开发证据" }], "ownerRole": "RUNTIME_OWNER" },
     { "gpId": "GP-09", "title": "查看数据质量和影响", "primaryAction": "打开质量视图", "expectedOutcome": "无孤立 Active Case", "acceptanceState": "DEFINED", "requiredEvidence": ["QUALITY", "IMPACT"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "DATA_OWNER" },
     { "gpId": "GP-10", "title": "查看证据并回到节点", "primaryAction": "打开运行证据", "expectedOutcome": "精确引用闭合且 Deep Link 恢复", "acceptanceState": "DEFINED", "requiredEvidence": ["EVIDENCE", "DEEP_LINK"], "currentStatus": "NOT_RUN", "evidenceRefs": [], "ownerRole": "QA_OWNER" }
   ],
@@ -114,5 +114,5 @@
     { "signoffId": "delivery-owner", "role": "DELIVERY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "待交付验收" }
   ],
   "createdAt": "2026-08-17T12:00:00Z",
-  "updatedAt": "2026-08-17T12:00:00Z"
+  "updatedAt": "2026-08-18T00:00:00Z"
 }

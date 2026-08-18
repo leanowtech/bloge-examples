@@ -26,8 +26,8 @@
 | `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成数据库 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；数据库 CAS/重建/漂移测试；中文实际保存/预检；英文 1024 Chrome；Test Kit 实际 HTTP 互验；真实 axe | `BROWSER_SMOKE_VERIFIED_DURABLE_AUTHORITY` |
 | `GP-05` | Feature DAG + Data Lens | 四 API、聚合、决策、节点状态、边值与 fingerprint 来自同一次 Trace；桌面完整展开，移动端内部滚动 | 结构权限隐藏输入、输出和边值，但保留 topology、状态与 fingerprint；Payload 权限显示受控演示数据 | `data-testid=capability-feature-rehearsal` / `feature-dag`；中英文 1440/1024/390 Chrome；几何、键盘和 axe | `BROWSER_SMOKE_VERIFIED_TRACE_PROJECTION` |
 | `GP-06` | Feature 隔离运行 | 补偿历史为 `TIMEOUT`，聚合与决策被取消，真实调用为 0 | 未知 Case、非法控制计划和 Fixture 未命中均失败关闭；部署级 network deny 尚未证明 | 实际 BLOGE RunTrace、4 API fail-fast connector counter、24 并发、稳定 fingerprint、真实 Chrome | `PARTIAL_TEST_OWNED_RUNTIME` |
-| `GP-07` | Tool 契约 | 输入、输出、错误、禁止结果、副作用和 exact dependency | 依赖 stale 时显示影响和迁移动作 | 契约 DOM、协议闭包 | `PARTIAL_READ_ONLY_SUMMARY` |
-| `GP-08` | 九场景批量运行 | 五轴结论、9/9、三次语义一致、真实调用为 0 | 失败可重试失败项并恢复 Baseline | Batch DOM、RunTrace、语义 fingerprint | `MISSING` |
+| `GP-07` | Tool 契约 | 输入、输出、错误、禁止结果、副作用、exact dependency 和 9 × 3 正确性目标；技术证据默认折叠 | 依赖 stale 时显示影响和迁移动作；运行失败在原位说明影响并可重试 | `data-testid=capability-tool` / `run-governed-baseline`；中文 1440/390 Chrome、axe、无溢出 | `BROWSER_SMOKE_VERIFIED_ZH` |
+| `GP-08` | Tool 受治理 9 × 3 运行 | 9/9、3/3、27/27、0；3 suite、9 × 3 Case 矩阵；“开发验证通过/发布仍不可验收”双结论和三项限制 | 失败时不伪造 publication、Run 或 fingerprint；原位显示恢复动作并允许整批重试 | 受治理 POST、严格 Schema、独立 Test Kit、真实 Spring + Chrome 1440/390、DOM 基数、axe | `PARTIAL_DEVELOPMENT_VERIFIED` |
 | `GP-09` | 数据质量与影响 | 来源、脱敏、新鲜度、覆盖、复用、影响；无孤立 Active Case | stale/quarantined 有明确修复或退役动作 | 质量投影、影响图、DOM | `MISSING` |
 | `GP-10` | Evidence + Deep Link | exact capability/dataset/binding/run 闭包；返回正确节点和场景 | Evidence stale/tampered 时拒绝并显示恢复入口 | Evidence verifier、刷新与返回测试 | `MISSING` |
 
@@ -56,3 +56,5 @@
 | [`capability-studio-gp05-gp06-dag-payload-zh-1440.png`](../../assets/capability-studio/capability-studio-gp05-gp06-dag-payload-zh-1440.png) | 完整 6 节点、5 边 DAG；稳定业务顺序；源节点/边中心对齐；Data Lens 可见 | 更大复杂度 DAG、人工视觉签署、真实业务 Payload |
 | [`capability-studio-gp05-gp06-payload-en-1024.png`](../../assets/capability-studio/capability-studio-gp05-gp06-payload-en-1024.png) | 英文紧凑桌面、键盘切换受控数据、节点与边可读 | 人工读屏、异常状态三视口 |
 | [`capability-studio-gp05-gp06-payload-zh-390.png`](../../assets/capability-studio/capability-studio-gp05-gp06-payload-zh-390.png) | 中文移动端任务和场景选择、页面无横向溢出、DAG 区域内部滚动 | 移动端完整 DAG 阅读效率和人工可用性签署 |
+| [`capability-studio-gp07-gp08-governed-tool-zh-1440.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png) | 中文桌面 Tool 契约、9 × 3 目标、双结论、3 suite、9 × 3 Case 矩阵和三项限制 | 英文/1024、异常恢复、部署级 egress、Owner 签署和正式候选验收 |
+| [`capability-studio-gp07-gp08-governed-tool-zh-390.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png) | 移动端双结论、三轮摘要、三列 Case 结果同时可见且页面无横向溢出 | 移动端人工可用性、读屏和失败恢复矩阵 |

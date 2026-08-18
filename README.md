@@ -113,10 +113,14 @@ can save a timeout behavior and prove an isolated, zero-real-call preflight. Fea
 release acceptance remains `NO_GO`. A test/staging-only Feature Rehearsal development slice
 executes the cancellation graph through BLOGE, projects one real Trace as a 6-node/5-edge Data
 Lens, and exposes structure-only or controlled-payload views with zero HTTP delegate calls. It
-also exposes a payload-free `DEVELOPMENT_TEST_OWNED` 9 Case × 3 round baseline with 27 unique Runs,
-per-Case business Oracles, duplicate idempotency, forbidden-write inspection, timeout causality,
-and zero in-process external calls. Governed same-closure execution, Tool execution, exact release
-bindings, deployment network deny, environment evidence, and Owner sign-off remain unfinished.
+also exposes a payload-free `DEVELOPMENT_TEST_OWNED` 9 Case × 3 round Oracle baseline with
+27 unique Runs, duplicate idempotency, forbidden-write inspection, timeout causality, and zero
+in-process external calls. The Tool page now runs a governed 9 × 3 development verification
+through the existing compiler, registry read-back, and exact-suite runtime. It produces 3 suite
+runs and 27 child runs, is independently verified by the Test Kit, and deliberately keeps the
+release gate `NO_GO`. Per-Case business-result fingerprints on that governed receipt, exact
+candidate and environment binding, deployment network deny/egress evidence, and Owner sign-off
+remain unfinished.
 Correctness Studio is still assembled and its exact deep link is printed. Use `--no-capability-studio` or
 `--no-correctness` to disable either sample. Both opt-outs are required for `production`
 because neither demo authority is assembled there.
@@ -128,7 +132,8 @@ use `--api-only`. Startup becomes ready only after both
 Library, Rehearsal, Correctness, and Showcase pages respond successfully. When the
 Capability Studio sample is enabled, startup also verifies its `4 / 1 / 1 / 9` pack,
 the truthful `NO_GO` acceptance baseline, and the default Feature Trace as 6 nodes, 5 edges,
-`TIMED_OUT`, structure-only, and zero real calls. API-only mode prints API entry points and
+`TIMED_OUT`, structure-only, and zero real calls. The governed 9 × 3 POST is intentionally run
+from the Tool page rather than startup because it creates 30 execution records. API-only mode prints API entry points and
 does not advertise visual URLs.
 `--shadow-jobs` enables the protected durable Shadow queue/lifecycle API;
 `--shadow-scheduler` additionally starts bounded pollers while honestly leaving

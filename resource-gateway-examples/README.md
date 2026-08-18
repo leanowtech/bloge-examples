@@ -111,15 +111,16 @@ wrapped as the canonical Tool binding and executed through the existing
 require both `graphPath` and `nodeId`, remain occurrence-addressable, and the fail-fast HTTP delegates
 still observe zero calls. Its composability manifest declares the four exact Resource dependencies,
 so execution target snapshots can distinguish a declared closure from an opaque or empty registry.
-The
-fixed 9 Case x 3 development baseline also runs nine independent business Oracles. These are
-truthfully marked development evidence: the generic SPIKE-A publication/execution boundary has now
-completed a real Spring test-profile run over the same registered nine-case closure. It registered
-nine fixtures and one suite, produced nine unique passing child runs, observed zero in-process real
-external calls, and kept the reversible suite provenance manifest at 11,863 bytes under the existing
-16,384-byte metadata limit. The browser 9 x 3 baseline has not yet been switched to a release-candidate
-run of those registered assets. Field-level source maps, independently certified nested dependency closure, deployment network
-policy, and release Owner sign-off remain incomplete. To disable the Capability Studio sample and
+The fixed 9 Case x 3 Oracle baseline remains available for detailed business semantics. The Tool page
+now adds a governed 9 x 3 development run over the same compiler, registry, write-after-read verification,
+and exact-suite execution boundary. Its test/staging-only POST endpoint produces three unique suite runs
+and 27 unique passing child runs, keeps publication, provenance, and source-map fingerprints stable, and
+observes zero in-process real external calls. A strict public schema and the independent Test Kit verifier
+reject malformed, incomplete, reordered, or tampered receipts; failed-closed responses do not fabricate
+publication or run evidence. The UI deliberately shows both "development verification passed" and
+"release acceptance remains closed." Per-Case business-result fingerprints, candidate/environment binding,
+deployment-level egress observation, field-level source maps, and release Owner sign-off remain incomplete.
+To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
 ```bash
@@ -199,6 +200,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY` | Run the non-production cancellation Feature through BLOGE and read the payload-free 6-node/5-edge Trace; use `PAYLOAD_VISIBLE` only for controlled demo values |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal-baseline` | Run the fixed 9 Case × 3 round development baseline and read payload-free Oracle, semantic/business fingerprint, operator side-effect, unique Run ID, and zero in-process real-call evidence; strict v1 Schema and independent Test Kit verification; `DEVELOPMENT_TEST_OWNED`, not release acceptance |
+| `POST http://localhost:8080/api/capability-studio/governed-baseline` | Run the Tool page's governed 9 × 3 development verification through the existing compiler, registry, exact-suite runtime, and independent verifier; returns 3 suite/27 child runs and keeps `releaseGateStatus=NO_GO` until business-result fingerprints, deployment egress, candidate/environment binding, and Owner sign-off exist |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |

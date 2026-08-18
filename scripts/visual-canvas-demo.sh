@@ -2124,6 +2124,10 @@ capability_studio_feature_baseline_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/feature-rehearsal-baseline"
 }
 
+capability_studio_governed_baseline_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/governed-baseline"
+}
+
 jar_path() {
     echo "${PROJECT_DIR}/target/${JAR_NAME}"
 }
@@ -2257,6 +2261,7 @@ $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial branch:  %s\n' "$(cap
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial check:   POST %s\n' "$(capability_studio_tutorial_preflight_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Feature trace:    GET  %s\n' "$(capability_studio_feature_rehearsal_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Feature baseline: GET  %s\n' "$(capability_studio_feature_baseline_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Governed 9x3:    POST %s (run from Tool page)\n' "$(capability_studio_governed_baseline_url)")
   Active profile:   ${SPRING_PROFILE}
 
 Integration API templates:
