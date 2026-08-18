@@ -379,6 +379,37 @@ CapabilityStudioStageAcceptanceResultV2Verifier.VerificationResult result =
         verifier.verify(resultJsonBytes);
 ```
 
+## Verify the Stage 0 Browser Matrix Result
+
+`CapabilityStudioBrowserMatrixResultVerifier` verifies the strict, payload-free browser result
+for `S0-AC-01`. The matrix is a protocol invariant rather than a caller-selected sample: it must
+contain exactly `GP-01..GP-10 × zh-CN/en-US × 1440×900/1024×768/390×844`, for 60 uniquely ordered
+cells. Every result binds the tested candidate artifact and source commit, acceptance baseline,
+browser/driver/axe environment, and execution window into one recomputable evidence fingerprint.
+
+```java
+CapabilityStudioBrowserMatrixResultVerifier verifier =
+        new CapabilityStudioBrowserMatrixResultVerifier();
+CapabilityStudioBrowserMatrixResultVerifier.VerificationResult result =
+        verifier.verify(resultJsonBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+The verifier independently rejects missing, duplicate, invented, or reordered cells; actual
+viewport drift; horizontal overflow; serious/critical axe violations; leaked technical IDs or raw
+JSON; incomplete keyboard paths; P0/P1 findings; inconsistent aggregates; dirty candidates reported
+as complete; reversed execution windows; unsorted evidence; and fingerprint tampering. `NOT_RUN`
+and `SKIPPED` must remain explicit cells with no fabricated observations. A valid failed run is
+returned as `verified() == true` with `artifactStatus() == FAILED`: verification means the result
+document is truthful and internally consistent, not that the UI passed. Only a clean-candidate
+`COMPLETE` result with all 60 cells passing can support the automated portion of `S0-AC-01`.
+
+The Test Kit does not establish that the declared build, browser, baseline, or evidence references
+come from an authoritative issuer. CI must obtain them from its candidate and environment
+authorities; product, UX, and QA sign-off remains part of the separate Stage Acceptance Result.
+
 ## Capability Inventory
 
 The JAR packages the versioned authoritative JSON Schemas and provides:

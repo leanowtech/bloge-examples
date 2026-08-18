@@ -12,6 +12,7 @@
 | Acceptance Baseline v1 | [`capability-studio-acceptance-baseline-v1.json`](capability-studio-acceptance-baseline-v1.json) | 冻结 GP、黄金包、Spike、可用性、安全和 NFR 门禁 | `NO_GO` |
 | Stage Acceptance Result v1 Schema | [`capability-studio-stage-acceptance-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v1.schema.json) | 固定 `S*-AC-*` 单条验收结果、五项统一前置条件、证据和签署状态机 | 兼容协议，可消费，不代表任何合同已通过 |
 | Stage Acceptance Result v2 Schema | [`capability-studio-stage-acceptance-result-v2.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v2.schema.json) | 固定 `AC-STD-01..09`、候选执行绑定、签署前证据闭包和正式 Stage 退出状态 | 语义协议已定义，外部 Evidence/签名 Authority 尚未闭合 |
+| Browser Matrix Result v1 Schema | [`capability-studio-browser-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json) | 固定 `GP-01..10 × 中英文 × 3 视口` 的 60 格机器结果、候选/基线/环境/时间窗绑定和证据闭包 | 协议与离线 verifier 已完成；真实 producer、60 格执行和产品/UX/QA 签署未闭合 |
 | Golden Path Manifest Schema | [`capability-studio-golden-path-acceptance-manifest-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-golden-path-acceptance-manifest-v1.schema.json) | 约束发布候选验收证据的机器结构 | 可消费，未证明通过 |
 | Golden Path NO_GO fixture | [`capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json`](capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json) | 提供真实的初始缺证据状态 | `NO_GO` |
 | Governed Baseline Schema | [`capability-studio-governed-baseline-v3.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json) | 固定 GP-07/08 的 9 × 3 矩阵、逐 Case 业务 Oracle、部署候选与 canonical execution intent；失败态强制 `NOT_VERIFIED` | 当前为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO` |
@@ -34,6 +35,7 @@
 - Capability Studio 的 Baseline/Manifest Schema、初始 `NO_GO` fixture 和追踪矩阵。
 - `Stage Acceptance Result v1` 严格 Schema 与独立 Test Kit verifier；它将 `NOT_RUN`、`BLOCKED`、`FAIL`、`PARTIAL`、`PASS` 固定为互斥状态语义，禁止 `PARTIAL` 退出 Stage，并对 `PASS` 的五项前置条件、执行矩阵、证据可用性、P0/P1 阻断和 Owner 签署失败关闭。协议可复验不表示当前 Stage 0 已通过；
 - `Stage Acceptance Result v2` 严格 Schema 与独立 Test Kit 语义 verifier；它只承载正式 `STAGE_EXIT`，要求 `AC-STD-01` 至 `AC-STD-09` 精确集合，并把结果身份、候选执行、完整环境/egress 投影、检查和签署前 Evidence 绑定为可复算闭包。`NOT_RUN` 不允许伪造执行时间；运行前与运行中 `BLOCKED` 使用互斥时间语义；候选、环境、egress、签署投影与 `AC-STD-01/06/09` 必须一致；`PASS` 要求干净候选、完整观测窗口、零真实/被拒外呼尝试和三类 Owner 签署。默认 verifier 不解析外部 Evidence，不验签名公钥、签发者权限或 Owner 身份，因此只能证明结果语义自洽，不能单独把 Stage 0 从 `NO_GO` 改为 `ACCEPTED`；
+- `Browser Matrix Result v1` 严格 Schema 与独立 Test Kit verifier；它把 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 固定为不可缩减的 60 格，并绑定候选制品/source commit、Baseline、浏览器/driver/axe 环境和执行时间窗。Verifier 会重算单元身份、排序、汇总和 evidence closure，拒绝假通过、脏候选 Complete、伪造未执行观测和证据篡改。`verified=true, artifactStatus=FAILED` 只表示失败结果诚实自洽，不表示 UI 通过；当前仍未生成由真实浏览器 producer 和 CI Authority 背书的 60 格完整结果；
 - GP-04 的教程分支业务句式编辑器，用户通过条件、表现和持续时间配置超时，无需编辑 Mock JSON；
 - GP-04 的数据库 head、immutable revision、严格保存协议和隔离预检，以及 409 冲突保留输入、结构化恢复动作和断网分类测试；
 - GP-04 的 SQL 原子 optimistic CAS、同版本并发单赢家、stale 同内容重试幂等、Authority 重建恢复和 Canonical Baseline 漂移失败关闭测试；
