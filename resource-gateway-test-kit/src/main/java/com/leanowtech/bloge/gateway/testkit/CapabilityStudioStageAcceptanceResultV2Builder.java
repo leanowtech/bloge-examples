@@ -245,7 +245,11 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
         }
     }
 
-    /** Alias for producer-oriented callers. */
+    /**
+     * Alias for producer-oriented callers.
+     *
+     * @return strict Stage Acceptance Result v2 artifact
+     */
     public ObjectNode produce() {
         return build();
     }
@@ -379,13 +383,22 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
         }
     }
 
-    /** Candidate build data frozen at construction time. */
+    /**
+     * Candidate build data frozen at construction time.
+     *
+     * @param buildRef build reference
+     * @param revision candidate revision
+     * @param sourceCommit source commit
+     * @param sourceTreeStatus source tree state
+     * @param artifactFingerprint candidate artifact fingerprint
+     */
     public record CandidateBuild(
             String buildRef,
             String revision,
             String sourceCommit,
             SourceTreeStatus sourceTreeStatus,
             String artifactFingerprint) {
+        /** Validates the candidate build binding. */
         public CandidateBuild {
             buildRef = requireSafeRef(buildRef, "candidateBuild.buildRef");
             revision = requireSafeRef(revision, "candidateBuild.revision");
@@ -399,16 +412,29 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
         }
     }
 
-    /** Exact, payload-free coordinate for a baseline, demo pack or other evidence object. */
+    /**
+     * Exact, payload-free coordinate for a baseline, demo pack or other evidence object.
+     *
+     * @param exactRef exact artifact reference
+     * @param fingerprint artifact fingerprint
+     */
     public record ExactRef(String exactRef, String fingerprint) {
+        /** Validates the exact reference. */
         public ExactRef {
             exactRef = requireSafeRef(exactRef, "exactRef");
             fingerprint = requireFingerprint(fingerprint, "fingerprint");
         }
     }
 
-    /** Local evidence coordinate; no payload or arbitrary fields can be supplied. */
+    /**
+     * Local evidence coordinate; no payload or arbitrary fields can be supplied.
+     *
+     * @param evidenceId evidence identity
+     * @param exactRef exact evidence reference
+     * @param fingerprint evidence fingerprint
+     */
     public record EvidenceRef(String evidenceId, String exactRef, String fingerprint) {
+        /** Validates the evidence coordinate. */
         public EvidenceRef {
             evidenceId = requireSafeRef(evidenceId, "evidenceRef.evidenceId");
             exactRef = requireSafeRef(exactRef, "evidenceRef.exactRef");
@@ -416,8 +442,15 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
         }
     }
 
-    /** One local acceptance-check projection. */
+    /**
+     * One local acceptance-check projection.
+     *
+     * @param checkId acceptance check identity
+     * @param status check status
+     * @param evidenceIds referenced evidence identities
+     */
     public record Check(String checkId, CheckStatus status, List<String> evidenceIds) {
+        /** Validates the check projection and evidence references. */
         public Check {
             if (checkId == null || !CHECK_IDS.contains(checkId)) {
                 throw new IllegalArgumentException("checkId is not an AC-STD id");
@@ -441,7 +474,13 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
             }
         }
 
-        /** Creates a check with no attached local evidence. */
+        /**
+         * Creates a check with no attached local evidence.
+         *
+         * @param checkId acceptance check identity
+         * @param status check status
+         * @return check projection
+         */
         public static Check of(String checkId, CheckStatus status) {
             return new Check(checkId, status, List.of());
         }
@@ -449,21 +488,35 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
 
     /** v2 acceptance-check states. */
     public enum CheckStatus {
+        /** Check passed locally. */
         PASS,
+        /** Check failed locally. */
         FAIL,
+        /** Check is blocked by an external authority. */
         BLOCKED,
+        /** Check has not run. */
         NOT_RUN
     }
 
     /** Candidate source-tree state. */
     public enum SourceTreeStatus {
+        /** Candidate source tree is clean. */
         CLEAN,
+        /** Candidate source tree contains uncommitted changes. */
         DIRTY,
+        /** Candidate source tree state is unknown. */
         UNKNOWN
     }
 
-    /** Execution timestamps; start and completion are both null only for pre-execution blocking. */
+    /**
+     * Execution timestamps; start and completion are both null only for pre-execution blocking.
+     *
+     * @param startedAt execution start timestamp
+     * @param evidenceCompletedAt evidence completion timestamp
+     * @param decidedAt result decision timestamp
+     */
     public record ExecutionWindow(String startedAt, String evidenceCompletedAt, String decidedAt) {
+        /** Validates timestamp presence and chronological order. */
         public ExecutionWindow {
             startedAt = normalizeTimestamp(startedAt, "executionStartedAt", true);
             evidenceCompletedAt = normalizeTimestamp(evidenceCompletedAt, "evidenceCompletedAt", true);
@@ -479,13 +532,25 @@ public final class CapabilityStudioStageAcceptanceResultV2Builder {
             }
         }
 
-        /** Creates a completed execution window. */
+        /**
+         * Creates a completed execution window.
+         *
+         * @param startedAt execution start timestamp
+         * @param evidenceCompletedAt evidence completion timestamp
+         * @param decidedAt result decision timestamp
+         * @return completed execution window
+         */
         public static ExecutionWindow completed(
                 String startedAt, String evidenceCompletedAt, String decidedAt) {
             return new ExecutionWindow(startedAt, evidenceCompletedAt, decidedAt);
         }
 
-        /** Creates a pre-execution window for a blocked result. */
+        /**
+         * Creates a pre-execution window for a blocked result.
+         *
+         * @param decidedAt result decision timestamp
+         * @return pre-execution window
+         */
         public static ExecutionWindow notStarted(String decidedAt) {
             return new ExecutionWindow(null, null, decidedAt);
         }
