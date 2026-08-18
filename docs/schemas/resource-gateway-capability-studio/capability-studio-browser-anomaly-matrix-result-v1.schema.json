@@ -1,0 +1,354 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-browser-anomaly-matrix-result-v1.schema.json",
+  "title": "Capability Studio Browser Anomaly Matrix Result v1",
+  "description": "Strict, payload-free browser anomaly result. Fixed obligation identity and cross-field outcome semantics are independently verified.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "resultId",
+    "revision",
+    "contractId",
+    "contractRevision",
+    "candidate",
+    "baselineRef",
+    "environment",
+    "executionWindow",
+    "baseMatrixRef",
+    "resultStatus",
+    "obligations",
+    "summary",
+    "evidenceClosureFingerprint",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.capabilityStudioBrowserAnomalyMatrixResult.v1" },
+    "resultId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^BAMR-[A-Za-z0-9._-]{1,120}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "contractId": { "const": "S0-AC-01" },
+    "contractRevision": { "$ref": "#/$defs/safeRef" },
+    "candidate": { "$ref": "#/$defs/candidate" },
+    "baselineRef": { "$ref": "#/$defs/baselineRef" },
+    "environment": { "$ref": "#/$defs/environment" },
+    "executionWindow": { "$ref": "#/$defs/executionWindow" },
+    "baseMatrixRef": { "$ref": "#/$defs/baseMatrixRef" },
+    "resultStatus": { "enum": ["COMPLETE", "FAILED", "NOT_RUN"] },
+    "obligations": {
+      "type": "array",
+      "minItems": 126,
+      "maxItems": 126,
+      "items": { "$ref": "#/$defs/obligation" }
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "evidenceClosureFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "diagnostics": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildRef",
+        "revision",
+        "artifactFingerprint",
+        "sourceCommit",
+        "sourceTreeStatus"
+      ],
+      "properties": {
+        "buildRef": { "$ref": "#/$defs/safeRef" },
+        "revision": { "$ref": "#/$defs/safeRef" },
+        "artifactFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" },
+        "sourceTreeStatus": { "enum": ["CLEAN", "DIRTY"] }
+      }
+    },
+    "baselineRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "fingerprint"],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeRef" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "environmentFingerprint",
+        "profile",
+        "browserName",
+        "browserVersion",
+        "driverVersion",
+        "axeVersion"
+      ],
+      "properties": {
+        "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "profile": { "$ref": "#/$defs/safeRef" },
+        "browserName": { "$ref": "#/$defs/safeRef" },
+        "browserVersion": { "$ref": "#/$defs/safeRef" },
+        "driverVersion": { "$ref": "#/$defs/safeRef" },
+        "axeVersion": { "$ref": "#/$defs/safeRef" }
+      }
+    },
+    "executionWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["startedAt", "completedAt"],
+      "properties": {
+        "startedAt": { "$ref": "#/$defs/dateTime" },
+        "completedAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "baseMatrixRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint", "resultStatus"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "resultStatus": { "const": "COMPLETE" }
+      }
+    },
+    "goldenPathId": {
+      "enum": [
+        "GP-01", "GP-02", "GP-03", "GP-04", "GP-05",
+        "GP-06", "GP-07", "GP-08", "GP-09", "GP-10"
+      ]
+    },
+    "locale": { "enum": ["zh-CN", "en-US"] },
+    "fixedViewport": {
+      "oneOf": [
+        { "const": { "width": 1440, "height": 900 } },
+        { "const": { "width": 1024, "height": 768 } },
+        { "const": { "width": 390, "height": 844 } }
+      ]
+    },
+    "actualViewport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "height": { "type": "integer", "minimum": 1, "maximum": 10000 }
+      }
+    },
+    "trigger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mechanism",
+        "targetRoute",
+        "observedFailureClass",
+        "observedHttpStatus",
+        "triggered"
+      ],
+      "properties": {
+        "mechanism": {
+          "enum": ["CDP_FETCH_FULFILL", "CDP_FETCH_FAIL", "REAL_HTTP_STALE_REVISION"]
+        },
+        "targetRoute": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/?[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+        },
+        "observedFailureClass": {
+          "enum": ["HTTP_4XX", "HTTP_5XX", "TRANSPORT_FAILURE", "REVISION_CONFLICT"]
+        },
+        "observedHttpStatus": {
+          "anyOf": [
+            { "type": "null" },
+            { "type": "integer", "minimum": 400, "maximum": 599 }
+          ]
+        },
+        "triggered": { "type": "boolean" }
+      }
+    },
+    "axe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["serious", "critical"],
+      "properties": {
+        "serious": { "type": "integer", "minimum": 0 },
+        "critical": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "keyboardPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "steps", "focusLosses"],
+      "properties": {
+        "completed": { "type": "boolean" },
+        "steps": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "focusLosses": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "browserObservations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actualViewport",
+        "pageHorizontalOverflow",
+        "axe",
+        "technicalIdCount",
+        "rawJsonCount",
+        "keyboardPath",
+        "errorVisible",
+        "businessSafeExplanation",
+        "recoveryActionVisible",
+        "recoveryAttempted",
+        "recoveredToReady",
+        "localDraftRetained",
+        "serverRevisionPreserved",
+        "staleGreenPreflightAbsent",
+        "staleErrorAbsent",
+        "staleEvidenceAbsent",
+        "staleSuccessAbsent",
+        "p0Count",
+        "p1Count"
+      ],
+      "properties": {
+        "actualViewport": {
+          "anyOf": [
+            { "$ref": "#/$defs/actualViewport" },
+            { "type": "null" }
+          ]
+        },
+        "pageHorizontalOverflow": { "type": "boolean" },
+        "axe": { "$ref": "#/$defs/axe" },
+        "technicalIdCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "rawJsonCount": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "keyboardPath": { "$ref": "#/$defs/keyboardPath" },
+        "errorVisible": { "type": "boolean" },
+        "businessSafeExplanation": { "type": "boolean" },
+        "recoveryActionVisible": { "type": "boolean" },
+        "recoveryAttempted": { "type": "boolean" },
+        "recoveredToReady": { "type": "boolean" },
+        "localDraftRetained": { "type": "boolean" },
+        "serverRevisionPreserved": { "type": "boolean" },
+        "staleGreenPreflightAbsent": { "type": "boolean" },
+        "staleErrorAbsent": { "type": "boolean" },
+        "staleEvidenceAbsent": { "type": "boolean" },
+        "staleSuccessAbsent": { "type": "boolean" },
+        "p0Count": { "type": "integer", "minimum": 0, "maximum": 100000 },
+        "p1Count": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "obligationId",
+        "stateProfile",
+        "goldenPathId",
+        "locale",
+        "viewport",
+        "status",
+        "trigger",
+        "expectedUiState",
+        "expectedRecoveryAction",
+        "browserObservations",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "obligationId": { "$ref": "#/$defs/safeRef" },
+        "stateProfile": { "enum": ["ERROR", "OFFLINE", "CONFLICT"] },
+        "goldenPathId": { "$ref": "#/$defs/goldenPathId" },
+        "locale": { "$ref": "#/$defs/locale" },
+        "viewport": { "$ref": "#/$defs/fixedViewport" },
+        "status": { "enum": ["PASS", "FAIL", "NOT_RUN"] },
+        "trigger": { "$ref": "#/$defs/trigger" },
+        "expectedUiState": { "$ref": "#/$defs/safeText" },
+        "expectedRecoveryAction": { "$ref": "#/$defs/safeText" },
+        "browserObservations": { "$ref": "#/$defs/browserObservations" },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/evidenceRef" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "PASS" } } },
+          "then": { "properties": { "evidenceRefs": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "expected",
+        "actual",
+        "passed",
+        "failed",
+        "notRun",
+        "errorExpected",
+        "offlineExpected",
+        "conflictExpected"
+      ],
+      "properties": {
+        "expected": { "const": 126 },
+        "actual": { "type": "integer", "minimum": 0, "maximum": 126 },
+        "passed": { "type": "integer", "minimum": 0, "maximum": 126 },
+        "failed": { "type": "integer", "minimum": 0, "maximum": 126 },
+        "notRun": { "type": "integer", "minimum": 0, "maximum": 126 },
+        "errorExpected": { "const": 60 },
+        "offlineExpected": { "const": 60 },
+        "conflictExpected": { "const": 6 }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Z][A-Z0-9_.-]{0,127}$"
+        }
+      }
+    }
+  }
+}
