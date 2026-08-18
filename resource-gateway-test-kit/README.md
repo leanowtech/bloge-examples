@@ -255,9 +255,56 @@ a completed matrix; `BLOCKED` requires a blocked/not-run precondition; `FAIL` re
 precondition or observation. Verification results contain only stable check names and error codes,
 never payloads, paths, or sensitive field values.
 
+`CapabilityStudioStageAcceptanceResultV2Verifier` is the additive v2 protocol. It keeps v1
+available while requiring the formal stage contract identity, the exact `AC-STD-01` through
+`AC-STD-09` set, and one `candidateExecutionBinding` for the candidate build, execution intent,
+baseline, demo pack, and environment fingerprint. A `STAGE_EXIT` result can be `PASS` only when
+all nine checks pass, the payload-free environment attestation is current and covers the complete
+execution/evidence window, deployment egress covers that same window and observes zero real
+external calls or denied attempts, every check evidence ID resolves to the authoritative top-level
+pre-signoff `AVAILABLE` catalog, and the `CORRECTNESS_OWNER`, `RUNTIME_OWNER`, and `QA_OWNER`
+sign-offs approve the same recomputed closure. `PARTIAL` is intentionally absent from v2.
+
+`FAIL`, `BLOCKED`, and `NOT_RUN` are honest closed states. `NOT_RUN` always has null execution
+times; `BLOCKED` is either a pre-execution block with both times null and `RUN_NOT_STARTED`, or an
+in-execution block with both times present and no `RUN_NOT_STARTED`. A pre-execution `BLOCKED`
+result has null environment/egress projections with their unavailable diagnostics. Stable
+payload-free diagnostics must explain unavailable projections and each root state requires its
+matching AC-STD diagnostic. Signoffs may be empty or partial with `SIGNOFFS_UNAVAILABLE` when
+required roles are missing. A non-PASS result can never carry nine passing checks.
+
+The verifier also enforces AC-STD/projection consistency: `AC-STD-01` cannot be `PASS` when the
+candidate tree is not `CLEAN` or the environment attestation is absent; `AC-STD-06` cannot be
+`PASS` without a `PASS` egress observation whose real-call and denied-attempt counts are both zero;
+and `AC-STD-09` cannot be `PASS` when any required owner is missing or not `APPROVED`. Missing
+projections therefore produce honest `NOT_RUN`, `BLOCKED`, or `FAIL` checks rather than a false
+passing projection.
+
+The root `evidenceClosureFingerprint` is recomputed with the Test Kit deterministic canonicalizer
+from exactly: `schemaVersion`, `resultId`, `revision`, `resultKind`, and `status`; `contractId` and
+`contractRevision`; the complete `candidateExecutionBinding`; the complete environment attestation
+and deployment egress observation objects or `null`; the nine checks sorted by `checkId` with each
+`evidenceIds` list sorted; and the complete top-level pre-signoff evidence catalog sorted by
+`evidenceId` with `evidenceId`, `exactRef`, `fingerprint`, and `status`. `decidedAt`, signoffs,
+signature coordinates, diagnostics, and the closure fingerprint itself are excluded. Signature
+coordinates remain strict `{exactRef, fingerprint}` values, but are post-closure signoff data and
+are not resolved through the evidence catalog.
+
+This verifier performs payload-free Schema and semantic closure verification only. It does not
+resolve external evidence, verify public-key signatures, or establish issuer/authority
+permissions; a verified document alone must not be declared formal Stage PASS. Formal acceptance
+remains `NO_GO` until a later authority resolver closes those cryptographic and authority checks.
+
+```java
+CapabilityStudioStageAcceptanceResultV2Verifier verifier =
+        new CapabilityStudioStageAcceptanceResultV2Verifier();
+CapabilityStudioStageAcceptanceResultV2Verifier.VerificationResult result =
+        verifier.verify(resultJsonBytes);
+```
+
 ## Capability Inventory
 
-The JAR packages the authoritative v1 JSON Schema and provides:
+The JAR packages the versioned authoritative JSON Schemas and provides:
 
 - strict runtime-certification Manifest, single-use Authorization, complete 12-scenario Report,
   and self-contained Replay Bundle Schemas plus server-produced fixtures;

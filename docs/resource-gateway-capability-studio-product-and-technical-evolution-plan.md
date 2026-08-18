@@ -180,12 +180,24 @@ decision + decidedBy + decidedAt
 | `AC-STD-03 MATRIX_COMPLETENESS` | 冻结矩阵 100% 执行，`skippedCount=0`；批量运行的 Case、轮次和 Run ID 集合精确相等 | expected/executed matrix、唯一性检查、批量运行收据 | 漏跑、跳过、重复 Run ID、额外 Case 或轮次不足 |
 | `AC-STD-04 BUSINESS_CORRECTNESS` | 每个 Case 的业务 Oracle 通过；同 Case 多轮 semantic fingerprint 一致；高风险分支有专项证明 | Oracle 明细、semantic fingerprint、timeout/duplicate/forbidden-write 证明 | 任一 Oracle 失败、结果漂移、用技术成功替代业务正确 |
 | `AC-STD-05 EXACT_CLOSURE` | Contract、Graph、Dataset、Case、Behavior、Binding、Fixture 和 Suite 全部使用 exact ref，内容指纹可独立复算 | closure manifest、Registry 写后回读、Test Kit verifier | mutable head、跨 Scope、缺失引用、内容与指纹不一致 |
-| `AC-STD-06 ISOLATION` | 进程内 connector counter 与部署级 egress 观测均为 0；未解析依赖在调度前失败 | counter、network deny、egress 日志、生产装配否定测试 | 任一真实外呼、fallback-to-real、生产入口可注入替身 |
+| `AC-STD-06 ISOLATION` | 进程内 connector counter、部署级真实外呼数和被网络策略拒绝的外呼尝试数均为 0；未解析依赖在调度前失败 | counter、network deny、egress 日志、生产装配否定测试 | 任一真实外呼、任一被拒绝的外呼尝试、fallback-to-real、生产入口可注入替身 |
 | `AC-STD-07 FAILURE_SEMANTICS` | timeout、retry、fallback、skip、partial 和 cancel 在 UI、Trace 与 Oracle 中语义一致；失败关闭不生成伪证据 | attempt/final Trace、失败投影 Schema、负向用例 | 超时被当成空数据、原始失败丢失、失败响应携带已验证结论 |
 | `AC-STD-08 UX_ACCESSIBILITY` | 约定语言、视口、权限、页面状态和输入方式矩阵全部完成；主路径无技术 ID/Raw JSON；无 P0/P1 | 真实浏览器、DOM 几何、axe、人工读屏、可用性原始记录 | 遮挡、焦点丢失、仅靠颜色、主持人必须补步骤、无恢复动作 |
 | `AC-STD-09 EVIDENCE_SIGNOFF` | Evidence 可解析、可回放、未过期且 fingerprint 一致；指定 Owner 在证据生成后签署 | 不可变 Evidence URI、Verifier 结果、签署主体与时间 | 证据缺失/过期/不可复算、签署早于证据、Owner 缺席 |
 
-判定顺序固定为：先判断直接失败不变量，再判断前置阻断，再判断矩阵完整性，最后判断签署。命中任一直接失败条件即为 `FAIL`；前置设施不可用且尚未执行为 `BLOCKED`；只有开发证据或部分矩阵时为 `PARTIAL`；九项全部通过后，单条合同才允许为 `PASS`。`DEVELOPMENT_VERIFIED` 只能作为开发台账中的证据级别，不能绕过 `AC-STD-01`、`AC-STD-06`、`AC-STD-08` 或 `AC-STD-09`。
+判定顺序固定为：先判断直接失败不变量，再判断前置阻断，再判断矩阵完整性，最后判断签署。命中任一直接失败条件即为 `FAIL`；前置设施不可用且尚未执行为 `BLOCKED`；尚未开始验收运行时为 `NOT_RUN`；九项全部通过后，单条正式合同才允许为 `PASS`。
+
+`PARTIAL` 只用于开发进度台账和 v1 兼容投影，不属于正式 Stage 退出状态。只有开发证据或部分矩阵时，不得生成“半通过”的 Stage 退出结果：尚未开始正式运行时保持 `NOT_RUN`，前置条件不成立时为 `BLOCKED`，已经观测到不变量失败时为 `FAIL`。`DEVELOPMENT_VERIFIED` 同样只能作为开发证据级别，不能绕过 `AC-STD-01`、`AC-STD-06`、`AC-STD-08` 或 `AC-STD-09`。
+
+#### 0.4.7 Stage 退出结果的机器合同
+
+正式 Stage 退出结果使用 `Stage Acceptance Result v2`。该合同只接收 `STAGE_EXIT`，状态仅允许 `PASS`、`FAIL`、`BLOCKED` 和 `NOT_RUN`，并要求 `AC-STD-01` 至 `AC-STD-09` 恰好各出现一次。`NOT_RUN` 的执行开始与证据完成时间必须为 `null`，不得用相同时间或占位时间伪造“尚未执行”。`BLOCKED` 必须明确区分运行前阻断和运行中阻断：前者的两个执行时间均为 `null` 并携带 `RUN_NOT_STARTED`，后者的两个时间均存在且不得携带该诊断。`PASS` 必须绑定 `CLEAN` 候选、完整执行窗口、覆盖该窗口且未过期的目标环境证明、零真实外呼且零被拒外呼尝试的部署级 egress 观测，以及正确性、Runtime、QA 三类 Owner 签署。
+
+根状态与九项检查不能互相矛盾。候选不干净或缺少环境证明时，`AC-STD-01` 不得为 `PASS`；缺少合格 egress 观测或观测到真实/被拒外呼尝试时，`AC-STD-06` 不得为 `PASS`；三类 Owner 未完整批准时，`AC-STD-09` 不得为 `PASS`。其余检查仍可以保留已经成立的 `PASS`，但每个不可成立的检查必须使用 `FAIL`、`BLOCKED` 或 `NOT_RUN` 如实记录，不能只在根级 `diagnostics` 中补一句说明。
+
+签署前的 `evidenceClosureFingerprint` 必须由以下内容确定性复算：结果身份与 revision、结果类型和状态、合同身份与 revision、完整候选执行绑定、完整环境证明投影或 `null`、完整 egress 投影或 `null`、九项验收检查，以及签署前 Evidence 目录。`decidedAt`、诊断、签署对象和闭包字段自身不参与计算；Owner 签署引用在闭包生成后产生，并绑定同一个闭包指纹。该顺序用于避免“签名指纹又参与被签名内容”的循环依赖。
+
+Test Kit 的默认 v2 verifier 只负责严格 Schema、状态机、时间窗口、引用闭包、指纹复算和签署坐标绑定，不能自行证明外部 Evidence 真实存在，也不能验证签名公钥、签发机构权限或 Owner 身份。正式 `ACCEPTED` 还必须由受信 Evidence Resolver、受信 Key Set/Issuer Policy 和 Owner Authority 完成外部真实性校验。只有默认 verifier 通过时，结论仍是“Stage 退出结果在语义上自洽”，不得据此把当前 Manifest 从 `NO_GO` 改为 `ACCEPTED`。
 
 ## 1. 从技术诉求到产品任务
 
@@ -1360,11 +1372,12 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S0-DEV-GOV-05` | 同一 client request 重试必须返回同一收据；新 request 必须复用同一发布资产并生成新的 suite `runId` | 幂等与新请求测试通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-06` | provenance 缺失、字段不全、指纹篡改、调用方覆盖、闭包漂移或协议体积越界时，不得生成可认证结果 | 编译、执行和候选边界负向测试通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-07` | 受治理基线必须只在 test/staging 装配；成功时严格返回 3 suite/27 child/9 Case/9 Oracle/27 业务断言/0 真实调用；任一不变量失败时必须为 `NOT_VERIFIED`，不得伪造 evidence class、发布、Run 或指纹 | 公开严格 v3 Schema、production profile/property 否定测试、服务失败关闭测试通过 | `PASS`，仅限开发证据 |
-| `S0-DEV-GOV-08` | 独立 Test Kit 必须验证 Schema、固定 Case 集合/顺序、三轮矩阵、唯一 Run、指纹稳定、业务 Oracle/断言闭包、零真实调用、动态限制和失败关闭无假证据 | `CapabilityStudioGovernedBaselineVerifierTest` 覆盖 v1/v2/v3、成功、失败、候选/意图篡改、业务结果指纹/断言/专项证明/evidence class 篡改；Test Kit `clean verify` 的 702 个测试通过 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-08` | 独立 Test Kit 必须验证 Schema、固定 Case 集合/顺序、三轮矩阵、唯一 Run、指纹稳定、业务 Oracle/断言闭包、零真实调用、动态限制和失败关闭无假证据 | `CapabilityStudioGovernedBaselineVerifierTest` 覆盖 v1/v2/v3、成功、失败、候选/意图篡改、业务结果指纹/断言/专项证明/evidence class 篡改；Test Kit `clean verify` 的 784 个测试通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-09` | 用户必须能从 Tool 页触发真实 POST，在桌面和移动端看到 9 × 3 结果与“开发通过/发布不可验收”双结论；五列表格必须完整展示业务场景、Oracle 和三轮断言，页面与结果表均无横向溢出，且无 serious/critical 可访问性问题 | 真实服务与浏览器在 1280 × 720、390 × 844 复验；桌面结果表 `scrollWidth=clientWidth=553`，移动页面/结果表溢出均为 0、轮次计数保持单行；既有 1440 × 1100 与 390 × 844 自动化 Chrome DOM/axe 矩阵通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-10` | 聚合 Suite `PASSED` 不得替代 child 证据；每条 child 必须从授权存储回读完整签名 Evidence，并闭合 run、target、Fixture、证据等级、semantic fingerprint、断言和 Fixture 控制计数；timeout/duplicate/forbidden-write 必须由结构化事实独立判定 | 真实 Spring 9 × 3 与候选边界负向测试通过；Canonical `RETURN` 经 descriptor-backed transport fixture 和真实 Resource Operator 链执行，v3 投影不含 Payload，页面显示 9/9 Oracle、27/27 业务断言、稳定结果指纹、三项专项证明和 `CERTIFIABLE` 证据等级 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-11` | 候选身份只能由部署启动器一次性注入；必须绑定实际 JAR SHA-256、Git commit 和 `CLEAN` source tree；同一绑定必须进入每轮 execution intent，Test Kit 可独立重算 | `CapabilityStudioDeploymentCandidateAuthorityTest`、候选服务漂移负向测试、v3 verifier 候选篡改测试和演示脚本静态检查通过；未配置时如实保留候选未绑定限制 | `PASS`，仅限机制与开发证据 |
 | `S0-DEV-GOV-12` | `CERTIFIABLE` 只能来自可认证运行路径：Resource descriptor 必须存在，transport fixture 必须具备可映射的状态和原始响应，且调用点不得回退为 output-level 替身或真实依赖 | 四个 Canonical descriptor 注册到应用级 Registry；正向集成测试闭合 27 份 `CERTIFIABLE` child evidence；未解析 Resource 在调度前返回稳定错误；output-level 替身保持 `EXPLORATORY`，真实行为不能产生可认证成功证据 | `PASS`，仅限开发机制与 Canonical 样例 |
+| `S0-DEV-GOV-13` | 正式 Stage 结果必须精确覆盖 `AC-STD-01..09`，禁止 `PARTIAL` 和伪造执行窗口；结果身份、状态、候选执行、完整环境/egress 投影、检查和签署前 Evidence 必须形成可复算闭包；候选、环境、egress、签署与 `AC-STD-01/06/09` 不得矛盾 | v2 严格 Schema 与 `CapabilityStudioStageAcceptanceResultV2Verifier` 已随 Test Kit JAR 打包；82 条聚焦测试覆盖成功、关闭态、运行前/中阻断、时间、投影、闭包、签署坐标和篡改；Test Kit 784 条全量测试通过 | `PASS`，仅限语义协议机制；外部 Evidence Resolver、公钥验签、Issuer/Owner Authority 和正式签署仍未闭合 |
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 
@@ -1374,6 +1387,9 @@ mvn -f resource-gateway-examples/pom.xml \
   test
 
 mvn -f resource-gateway-test-kit/pom.xml clean verify
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioStageAcceptanceResultV2VerifierTest test
 
 mvn -f resource-gateway-examples/pom.xml \
   -Dtest=CapabilityStudioBrowserAcceptanceTest#gp07AndGp08RunTheGovernedToolBaselineAndKeepReleaseClosedAcrossViewports \

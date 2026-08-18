@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v2.schema.json",
+  "title": "Capability Studio Stage Acceptance Result v2",
+  "description": "Strict, payload-free Stage Acceptance Result with conditional PASS evidence requirements and an independently recomputed evidence closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "resultId",
+    "revision",
+    "contractId",
+    "contractRevision",
+    "resultKind",
+    "status",
+    "decidedAt",
+    "candidateExecutionBinding",
+    "environmentAttestation",
+    "deploymentEgressObservation",
+    "acceptanceChecks",
+    "evidenceRefs",
+    "evidenceClosureFingerprint",
+    "signoffs",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "bloge.capabilityStudioStageAcceptanceResult.v2" },
+    "resultId": { "type": "string", "pattern": "^SAR-[A-Za-z0-9._-]{1,120}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "contractId": { "$ref": "#/$defs/safeRef" },
+    "contractRevision": { "$ref": "#/$defs/safeRef" },
+    "resultKind": { "const": "STAGE_EXIT" },
+    "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"] },
+    "decidedAt": { "$ref": "#/$defs/dateTime" },
+    "candidateExecutionBinding": { "$ref": "#/$defs/candidateExecutionBinding" },
+    "environmentAttestation": {
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/environmentAttestation" }
+      ]
+    },
+    "deploymentEgressObservation": {
+      "anyOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/deploymentEgressObservation" }
+      ]
+    },
+    "acceptanceChecks": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": { "$ref": "#/$defs/acceptanceCheck" }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4096,
+      "items": { "$ref": "#/$defs/evidenceRef" }
+    },
+    "evidenceClosureFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "signoffs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/signoff" }
+    },
+    "diagnostics": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "PASS" } } },
+      "then": {
+        "properties": {
+          "environmentAttestation": { "$ref": "#/$defs/environmentAttestation" },
+          "deploymentEgressObservation": { "$ref": "#/$defs/deploymentEgressObservation" },
+          "signoffs": { "minItems": 3 },
+          "diagnostics": { "maxItems": 0 }
+        }
+      },
+      "else": {
+        "properties": {
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[A-Fa-f0-9]{64}$"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{7,64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "dateTimeOrNull": {
+      "anyOf": [
+        { "$ref": "#/$defs/dateTime" },
+        { "type": "null" }
+      ]
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "candidateBuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "buildRef",
+        "revision",
+        "sourceCommit",
+        "sourceTreeStatus",
+        "artifactFingerprint"
+      ],
+      "properties": {
+        "buildRef": { "$ref": "#/$defs/safeRef" },
+        "revision": { "$ref": "#/$defs/safeRef" },
+        "sourceCommit": { "$ref": "#/$defs/sourceCommit" },
+        "sourceTreeStatus": { "enum": ["CLEAN", "DIRTY", "UNKNOWN"] },
+        "artifactFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "candidateExecutionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidateBuild",
+        "candidateIntentFingerprint",
+        "baselineRef",
+        "demoPackRef",
+        "environmentFingerprint",
+        "executionStartedAt",
+        "evidenceCompletedAt"
+      ],
+      "properties": {
+        "candidateBuild": { "$ref": "#/$defs/candidateBuild" },
+        "candidateIntentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "baselineRef": { "$ref": "#/$defs/exactRef" },
+        "demoPackRef": { "$ref": "#/$defs/exactRef" },
+        "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "executionStartedAt": { "$ref": "#/$defs/dateTimeOrNull" },
+        "evidenceCompletedAt": { "$ref": "#/$defs/dateTimeOrNull" }
+      }
+    },
+    "environmentAttestation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exactRef",
+        "fingerprint",
+        "environmentFingerprint",
+        "profile",
+        "scope",
+        "issuer",
+        "issuedAt",
+        "expiresAt",
+        "candidateArtifactFingerprint"
+      ],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "profile": { "$ref": "#/$defs/safeRef" },
+        "scope": { "$ref": "#/$defs/safeRef" },
+        "issuer": { "$ref": "#/$defs/safeRef" },
+        "issuedAt": { "$ref": "#/$defs/dateTime" },
+        "expiresAt": { "$ref": "#/$defs/dateTime" },
+        "candidateArtifactFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "deploymentEgressObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exactRef",
+        "fingerprint",
+        "candidateIntentFingerprint",
+        "observationStartedAt",
+        "observationCompletedAt",
+        "networkPolicyRef",
+        "observedExternalCallCount",
+        "deniedAttemptCount",
+        "status"
+      ],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "candidateIntentFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "observationStartedAt": { "$ref": "#/$defs/dateTime" },
+        "observationCompletedAt": { "$ref": "#/$defs/dateTime" },
+        "networkPolicyRef": { "$ref": "#/$defs/safeRef" },
+        "observedExternalCallCount": { "type": "integer", "minimum": 0 },
+        "deniedAttemptCount": { "type": "integer", "minimum": 0 },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"] }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidenceId", "exactRef", "fingerprint", "status"],
+      "properties": {
+        "evidenceId": { "$ref": "#/$defs/safeRef" },
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "status": { "const": "AVAILABLE" }
+      }
+    },
+    "acceptanceCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkId", "status", "evidenceIds"],
+      "properties": {
+        "checkId": {
+          "enum": [
+            "AC-STD-01",
+            "AC-STD-02",
+            "AC-STD-03",
+            "AC-STD-04",
+            "AC-STD-05",
+            "AC-STD-06",
+            "AC-STD-07",
+            "AC-STD-08",
+            "AC-STD-09"
+          ]
+        },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"] },
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/safeRef" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "PASS" } } },
+          "then": { "properties": { "evidenceIds": { "minItems": 1 } } }
+        }
+      ]
+    },
+    "signoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "actorRef",
+        "decision",
+        "signedAt",
+        "signatureRef",
+        "evidenceClosureFingerprint"
+      ],
+      "properties": {
+        "role": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$" },
+        "actorRef": { "$ref": "#/$defs/safeRef" },
+        "decision": { "enum": ["APPROVED", "REJECTED"] },
+        "signedAt": { "$ref": "#/$defs/dateTime" },
+        "signatureRef": { "$ref": "#/$defs/exactRef" },
+        "evidenceClosureFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": {
+          "enum": [
+            "RUN_NOT_STARTED",
+            "ENVIRONMENT_ATTESTATION_UNAVAILABLE",
+            "DEPLOYMENT_EGRESS_UNAVAILABLE",
+            "SIGNOFFS_UNAVAILABLE",
+            "CANDIDATE_NOT_CLEAN",
+            "ACCEPTANCE_CHECK_FAILED",
+            "ACCEPTANCE_CHECK_BLOCKED",
+            "ACCEPTANCE_CHECK_NOT_RUN"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -20,9 +20,9 @@ import java.util.Objects;
  * Projects the verified golden pack into the payload-free Scenario Dataset v1 contract.
  *
  * <p>This is an immutable business projection, not a new execution authority. It deliberately
- * carries no fixture, mock, replay, request, or response material. A later compiler adapter will
- * lower this projection into {@code ScenarioDraftSetV2}; this class does not implement that
- * runtime boundary.</p>
+ * carries no fixture, mock, replay, request, or response material. The separate
+ * {@link CapabilityStudioScenarioDatasetCompiler} lowers this projection into
+ * {@code ScenarioDraftSetV2}; this class does not own that runtime boundary.</p>
  */
 public final class CapabilityStudioScenarioDatasetProjector {
     private static final String SCHEMA_VERSION =
