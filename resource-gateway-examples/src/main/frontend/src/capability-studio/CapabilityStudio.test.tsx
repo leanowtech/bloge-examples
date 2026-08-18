@@ -181,6 +181,10 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(query('[data-testid="capability-quality-impact-error"]')).toBeTruthy();
     expect(document.body.textContent).toContain('Business quality check');
     expect(document.body.textContent).toContain('Quality & impact is unavailable');
+    expect(document.body.textContent).toContain('What happened');
+    expect(document.body.textContent).toContain('Impact');
+    expect(document.body.textContent).toContain('How to continue');
+    expect(document.body.textContent).toContain('Retry quality & impact');
     expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     await act(async () => buttonWithText('Retry quality & impact').click());
     await settle();
@@ -206,7 +210,12 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
-      if (url.endsWith('/scenario-dataset') && attempts++ === 0) return json({ code: 'DATASET_OFFLINE' }, 503);
+      if (url.endsWith('/scenario-dataset') && attempts++ === 0) return json({
+        code: 'RG.CAPABILITY_STUDIO.SCENARIO_DATASET_UNAVAILABLE',
+        whatHappened: 'RG.CAPABILITY_STUDIO.SCENARIO_DATASET_UNAVAILABLE: internal response failure',
+        impact: 'RG.CAPABILITY_STUDIO.INTERNAL_IMPACT',
+        recoveryAction: 'RG.CAPABILITY_STUDIO.INTERNAL_RECOVERY',
+      }, 503);
       if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
       return json({ code: 'NOT_FOUND' }, 404);
     });
@@ -216,6 +225,9 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(query('[data-testid="capability-scenario-error"]')).toBeTruthy();
     expect(document.body.textContent).toContain('What happened');
     expect(document.body.textContent).toContain('Impact');
+    expect(document.body.textContent).toContain('How to continue');
+    expect(document.body.textContent).toContain('Retry scenario dataset');
+    expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     await act(async () => buttonWithText('Retry scenario dataset').click());
     await settle();
     expect(query('[data-testid="capability-scenarios"]')).toBeTruthy();
@@ -276,9 +288,31 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(query('[data-testid="capability-tutorial-error"]')).toBeTruthy();
     expect(document.body.textContent).toContain('The tutorial branch changed in another session.');
     expect(document.body.textContent).toContain('Your unsaved values are still present.');
+    expect(document.body.textContent).toContain('What happened');
+    expect(document.body.textContent).toContain('Current impact');
+    expect(document.body.textContent).toContain('Recovery action');
+    expect(document.body.textContent).toContain('A newer version is available');
     expect(document.body.textContent).toContain('Reload latest revision');
+    expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     expect(duration.value).toBe('5100');
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
+  });
+
+  it('presents a generic tutorial operation failure as a safe validation outcome', async () => {
+    const fetcher = tutorialFetcher({ invalidPreflight: true });
+    await render(fetcher);
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+    await act(async () => buttonWithText('Save and run isolated preflight').click());
+    await settle();
+
+    expect(query('[data-testid="capability-tutorial-error"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('What happened');
+    expect(document.body.textContent).toContain('Current impact');
+    expect(document.body.textContent).toContain('Recovery action');
+    expect(document.body.textContent).toContain('Data validation failed');
+    expect(document.body.textContent).toContain('Reload tutorial branch');
+    expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
   });
 
   it('renders GP-05/06 from one real Trace projection and reveals payload only after permission changes', async () => {
@@ -713,7 +747,10 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('What happened');
     expect(document.body.textContent).toContain('Impact');
     expect(document.body.textContent).toContain('Retry loading');
-    expect(document.body.textContent).toContain('RG.CAPABILITY_STUDIO.DEMO_PACK_UNAVAILABLE');
+    expect(document.body.textContent).toContain('Service temporarily unavailable');
+    expect(document.body.textContent).toContain('How to continue');
+    expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
+    expect(document.querySelector('[data-testid="capability-load-error"] details')).toBeNull();
   });
 
   it('keeps critical labels bilingual when the explicit locale is Chinese', async () => {
@@ -862,7 +899,7 @@ const tutorialBranch = {
   },
 };
 
-function tutorialFetcher(options: { conflict?: boolean } = {}) {
+function tutorialFetcher(options: { conflict?: boolean; invalidPreflight?: boolean } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
@@ -878,6 +915,10 @@ function tutorialFetcher(options: { conflict?: boolean } = {}) {
       const body = JSON.parse(String(init.body));
       return json({ ...tutorialBranch, revision: 2, fingerprint: `sha256:${'2'.repeat(64)}`, behavior: { ...tutorialBranch.behavior, durationMs: body.durationMs } });
     }
+    if (url.endsWith('/preflight') && init?.method === 'POST' && options.invalidPreflight) return json({
+      code: 'RG.CAPABILITY_STUDIO.INVALID_PREFLIGHT_RESPONSE',
+      message: 'RG.CAPABILITY_STUDIO.INVALID_PREFLIGHT_RESPONSE: expected a valid preflight projection',
+    });
     if (url.endsWith('/preflight') && init?.method === 'POST') return json({
       mode: 'ISOLATED',
       unresolvedDependencies: 0,

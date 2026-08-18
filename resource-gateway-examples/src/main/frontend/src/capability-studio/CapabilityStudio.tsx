@@ -519,13 +519,122 @@ function ScenarioEmptyState({ locale, onClear }: { locale: 'en' | 'zh-CN'; onCle
   return <section className="capability-scenario-empty" data-testid="capability-scenario-empty"><ListFilter size={20} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '没有匹配的场景' : 'No matching scenarios'}</strong><p>{locale === 'zh-CN' ? '当前搜索或筛选条件没有结果，Dataset 本身没有被修改。' : 'The current search or filters returned no result; the dataset was not changed.'}</p><button type="button" className="capability-secondary-action" onClick={onClear}>{locale === 'zh-CN' ? '清除筛选' : 'Clear filters'}</button></div></section>;
 }
 
-function ScenarioDatasetError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+type CapabilityStudioErrorKind = 'network' | 'service' | 'validation' | 'conflict' | 'authorization' | 'operation';
+type CapabilityStudioErrorSurface = 'load' | 'scenario' | 'quality' | 'tutorial' | 'governed' | 'evidence' | 'feature';
+interface CapabilityStudioErrorPresentation {
+  category: string;
+  whatHappened: string;
+  impact: string;
+  recoveryAction: string;
+}
+
+const INTERNAL_PROTOCOL_TEXT = [
+  /\bRG(?:\.[A-Z0-9_-]+)+\b/i,
+  /\bHTTP\s*[:=]?\s*\d{3}\b/i,
+  /\b(?:invalid|malformed|expected|required|unknown|missing)\b.*\b(?:response|payload|schema|field|property|projection|JSON)\b/i,
+  /\b(?:response|payload|schema|field|property|projection|protocol)\b.*\b(?:invalid|malformed|expected|required|missing|failed|unavailable)\b/i,
+  /^\s*(?:Error|TypeError|SyntaxError)\b/i,
+  /^\s*[\[{].*[\]}]\s*$/s,
+  /\n\s*at\s+[^\n]+/i,
+];
+
+function isSafeErrorText(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0 && !INTERNAL_PROTOCOL_TEXT.some((pattern) => pattern.test(value));
+}
+
+function safeErrorText(value: unknown, fallback: string): string {
+  return isSafeErrorText(value) ? value.trim() : fallback;
+}
+
+function capabilityStudioErrorKind(error: Error | null | undefined): CapabilityStudioErrorKind {
   const requestError = error instanceof CapabilityStudioRequestError ? error : null;
-  const protocolCode = requestError?.code ?? (isCapabilityStudioProtocolError(error) ? error.code : 'RG.CAPABILITY_STUDIO.SCENARIO_DATASET_UNAVAILABLE');
-  const message = error?.message ?? (locale === 'zh-CN' ? '场景数据集无法加载。' : 'The scenario dataset could not be loaded.');
-  const impact = requestError?.impact ?? (isCapabilityStudioProtocolError(error) ? error.impact : (locale === 'zh-CN' ? '场景列表、业务预期和质量摘要暂时无法展示。' : 'The scenario list, business expectations, and quality summary cannot be shown.'));
-  const recovery = requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认服务端提供严格 Dataset projection 后重试。' : 'Confirm that the server provides the strict dataset projection, then retry.');
-  return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{protocolCode}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{recovery}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
+  const code = requestError?.code ?? (isCapabilityStudioProtocolError(error) ? error.code : '');
+  if (/CONFLICT|REVISION|BASELINE_CHANGED|BINDING_MISMATCH/i.test(code) || requestError?.status === 409) return 'conflict';
+  if (/NETWORK|CONNECTION/i.test(code)) return 'network';
+  if (/AUTH|CLEARANCE|IDENTITY|PURPOSE/i.test(code) || requestError?.status === 401 || requestError?.status === 403) return 'authorization';
+  if (/INVALID|VALIDATION|SCHEMA|MALFORMED|PARSE/i.test(code)) return 'validation';
+  if (/OPERATION_FAILED/i.test(code)) return 'operation';
+  if (requestError?.status === 0) return 'network';
+  return 'service';
+}
+
+function capabilityStudioErrorCategory(kind: CapabilityStudioErrorKind, locale: 'en' | 'zh-CN'): string {
+  const labels: Record<CapabilityStudioErrorKind, { en: string; 'zh-CN': string }> = {
+    network: { en: 'Network connection interrupted', 'zh-CN': '网络连接中断' },
+    service: { en: 'Service temporarily unavailable', 'zh-CN': '服务暂不可用' },
+    validation: { en: 'Data validation failed', 'zh-CN': '数据校验未通过' },
+    conflict: { en: 'A newer version is available', 'zh-CN': '版本已更新' },
+    authorization: { en: 'Authorization required', 'zh-CN': '权限验证未通过' },
+    operation: { en: 'Operation not completed', 'zh-CN': '操作未完成' },
+  };
+  return labels[kind][locale];
+}
+
+function capabilityStudioErrorFallback(surface: CapabilityStudioErrorSurface, kind: CapabilityStudioErrorKind, locale: 'en' | 'zh-CN') {
+  const subject = {
+    load: { en: 'Capability Studio data', 'zh-CN': '能力工作区数据' },
+    scenario: { en: 'Scenario data', 'zh-CN': '场景数据' },
+    quality: { en: 'Quality and impact data', 'zh-CN': '质量与影响数据' },
+    tutorial: { en: 'Tutorial branch operation', 'zh-CN': '教程分支操作' },
+    governed: { en: 'Governed verification', 'zh-CN': '受治理验证' },
+    evidence: { en: 'Exact run evidence', 'zh-CN': '精确运行证据' },
+    feature: { en: 'Feature rehearsal', 'zh-CN': '特征演练' },
+  }[surface][locale];
+  const outcome = {
+    network: { en: `${subject} connection was interrupted.`, 'zh-CN': `与${subject}的连接中断。` },
+    service: { en: `${subject} is temporarily unavailable.`, 'zh-CN': `${subject}暂时不可用。` },
+    validation: { en: `${subject} did not pass validation.`, 'zh-CN': `${subject}校验未通过。` },
+    conflict: { en: `${subject} has a newer version.`, 'zh-CN': `${subject}已有更新版本。` },
+    authorization: { en: `${subject} requires an authorized identity.`, 'zh-CN': `${subject}需要已授权身份。` },
+    operation: { en: `${subject} could not be completed.`, 'zh-CN': `${subject}未能完成。` },
+  }[kind][locale];
+  const impact = {
+    load: { en: 'The overview, contracts, and scenario data cannot be shown yet.', 'zh-CN': '能力总览、契约和场景数据暂时无法展示。' },
+    scenario: { en: 'The scenario list, business expectations, and quality summary remain unavailable.', 'zh-CN': '场景列表、业务预期和质量摘要暂时无法展示。' },
+    quality: { en: 'The quality verdict, blockers, and impact relationships remain unavailable.', 'zh-CN': '质量判定、阻断原因和影响关系暂时无法展示。' },
+    tutorial: { en: 'The tutorial branch was not changed; the canonical baseline remains unchanged.', 'zh-CN': '教程分支未被修改，标准基线保持不变。' },
+    governed: { en: 'No new verification result was created; existing assets remain unchanged.', 'zh-CN': '没有生成新的验证结果，已有资产保持不变。' },
+    evidence: { en: 'The existing baseline result remains unchanged.', 'zh-CN': '已有基线结果保持不变。' },
+    feature: { en: 'The current scenario graph and Data Lens remain unchanged.', 'zh-CN': '当前场景编排图和数据视图保持不变。' },
+  }[surface][locale];
+  const recoveryByKind: Record<CapabilityStudioErrorKind, { en: string; 'zh-CN': string }> = {
+    network: { en: 'Check the connection or local demo service, then retry.', 'zh-CN': '检查网络或本地演示服务后重试。' },
+    service: { en: 'Retry shortly; contact the service owner if the problem persists.', 'zh-CN': '稍后重试；如果问题持续，请联系服务负责人。' },
+    validation: { en: 'Reload the latest data, then try again.', 'zh-CN': '重新加载最新数据后再试。' },
+    conflict: { en: 'Reload the latest version, then try the action again.', 'zh-CN': '重新加载最新版本，然后再次执行操作。' },
+    authorization: { en: 'Reconnect an authorized identity, then retry.', 'zh-CN': '重新连接已授权身份后重试。' },
+    operation: { en: 'Reload the current content, then try the action again.', 'zh-CN': '重新加载当前内容，然后再次执行操作。' },
+  };
+  return { whatHappened: outcome, impact, recoveryAction: recoveryByKind[kind][locale] };
+}
+
+function capabilityStudioErrorPresentation(
+  error: Error | null | undefined,
+  locale: 'en' | 'zh-CN',
+  surface: CapabilityStudioErrorSurface,
+  provided?: Partial<CapabilityStudioErrorPresentation>,
+): CapabilityStudioErrorPresentation {
+  const kind = capabilityStudioErrorKind(error);
+  const fallback = capabilityStudioErrorFallback(surface, kind, locale);
+  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
+  const protocolError = isCapabilityStudioProtocolError(error) ? error : null;
+  const structured = requestError
+    ? { whatHappened: requestError.whatHappened, impact: requestError.impact, recoveryAction: requestError.recoveryAction }
+    : protocolError
+      ? { whatHappened: protocolError.message, impact: protocolError.impact }
+      : undefined;
+  const source = structured ? { ...structured, ...provided } : undefined;
+  return {
+    category: capabilityStudioErrorCategory(kind, locale),
+    whatHappened: safeErrorText(source?.whatHappened, fallback.whatHappened),
+    impact: safeErrorText(source?.impact, fallback.impact),
+    recoveryAction: safeErrorText(source?.recoveryAction, fallback.recoveryAction),
+  };
+}
+
+function ScenarioDatasetError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'scenario');
+  return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
 }
 
 function QualityImpactView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
@@ -599,11 +708,8 @@ function QualityImpactGraphNode({ node, selected, locale }: { node: ScenarioQual
 }
 
 function QualityImpactError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
-  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
-  const message = error?.message ?? (locale === 'zh-CN' ? '质量与影响投影无法加载。' : 'The quality and impact projection could not be loaded.');
-  const impact = requestError?.impact ?? (isCapabilityStudioProtocolError(error) ? error.impact : (locale === 'zh-CN' ? '质量判定、阻断原因和影响关系暂时无法展示。' : 'Quality verdict, blockers, and impact relationships cannot be shown.'));
-  const recovery = requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认服务端提供 GP-09 投影后重试；在此之前不要据此判断数据质量。' : 'Confirm that the server provides the GP-09 projection, then retry; do not infer data quality from this error.');
-  return <div className="capability-view capability-error-state capability-quality-impact-error" data-testid="capability-quality-impact-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{locale === 'zh-CN' ? '业务质量检查' : 'Business quality check'}</p><h3>{locale === 'zh-CN' ? '质量与影响暂时不可用' : 'Quality & impact is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{recovery}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载质量与影响' : 'Retry quality & impact'}</button></div>;
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'quality');
+  return <div className="capability-view capability-error-state capability-quality-impact-error" data-testid="capability-quality-impact-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{locale === 'zh-CN' ? '业务质量检查' : 'Business quality check'} · {presentation.category}</p><h3>{locale === 'zh-CN' ? '质量与影响暂时不可用' : 'Quality & impact is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载质量与影响' : 'Retry quality & impact'}</button></div>;
 }
 
 function displayQualityStatus(value: string, locale: 'en' | 'zh-CN'): string { return value === 'BLOCKED' ? (locale === 'zh-CN' ? '准入阻断' : 'Admission blocked') : value === 'READY' ? (locale === 'zh-CN' ? '可进入准入' : 'Ready for admission') : value === 'STALE' ? (locale === 'zh-CN' ? '质量已过期' : 'Quality stale') : value; }
@@ -716,7 +822,8 @@ function TutorialBranchView({ fetcher, locale }: { fetcher?: CapabilityStudioFet
 }
 
 function TutorialError({ error, locale, onReload }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void }) {
-  return <section className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{error.code}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{error.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{error.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{error.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'tutorial');
+  return <section className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
 }
 
 function asRequestError(error: unknown): CapabilityStudioRequestError {
@@ -803,6 +910,9 @@ function FeatureRehearsalView({ asset, fetcher, text, locale, storedEvidence, st
   };
   const selectedCase = featureRehearsalCases.find((entry) => entry.id === caseId) ?? featureRehearsalCases[5];
   const errorPresentation = error ? featureRehearsalErrorPresentation(error, locale) : null;
+  const safeErrorPresentation = error && errorPresentation
+    ? capabilityStudioErrorPresentation(error, locale, 'feature', errorPresentation)
+    : null;
 
   return <div className="capability-view" data-testid="capability-feature-rehearsal">
     <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={storedEvidenceRequested ? (locale === 'zh-CN' ? '精确证据 · 只读' : 'EXACT EVIDENCE · READ-ONLY') : (locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY')} />
@@ -812,7 +922,7 @@ function FeatureRehearsalView({ asset, fetcher, text, locale, storedEvidence, st
       {storedEvidenceRequested && <button type="button" className="capability-secondary-action capability-return-tool" onClick={onReturnTool}><Wrench size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '返回本次 Tool 证据' : 'Return to Tool evidence'}</button>}
     </section>
     {loading && <div className="capability-feature-state" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={18} aria-hidden="true" /> {locale === 'zh-CN' ? '正在加载特征运行和数据视图...' : 'Loading feature run and data lens...'}</div>}
-    {!loading && error && errorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{storedEvidenceRequested ? (locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read') : (locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load')}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{errorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{errorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{errorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={storedEvidenceRequested ? onRetryExact : () => void load(caseId, permission)}><RefreshCw size={15} aria-hidden="true" /> {storedEvidenceRequested ? (locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence') : (locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario')}</button></div></section>}
+    {!loading && error && safeErrorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{safeErrorPresentation.category}</p><strong>{storedEvidenceRequested ? (locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read') : (locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load')}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{safeErrorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{safeErrorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{safeErrorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={storedEvidenceRequested ? onRetryExact : () => void load(caseId, permission)}><RefreshCw size={15} aria-hidden="true" /> {storedEvidenceRequested ? (locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence') : (locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario')}</button></div></section>}
     {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} focusNodeId={storedEvidence?.focusNodeId} exactEvidence={storedEvidenceRequested} />}
   </div>;
 }
@@ -979,13 +1089,13 @@ function ToolGovernedBaselineView({ asset, text, locale, projection, error, load
 }
 
 function GovernedBaselineError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
-  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
-  return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{requestError?.whatHappened ?? error.message}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{requestError?.impact ?? (locale === 'zh-CN' ? '没有生成新的开发验证结果，已有资产未改变。' : 'No new development result was created; existing assets are unchanged.')}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认演示服务可用后重试。' : 'Confirm the demo service is available and retry.')}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'governed');
+  return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
 }
 
 function GovernedRunEvidenceError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
-  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
-  return <section className="capability-operation-error capability-exact-evidence-error" role="alert" data-testid="governed-run-evidence-error"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{requestError?.whatHappened ?? error.message}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{requestError?.impact ?? (locale === 'zh-CN' ? '原有基线结果保持不变。' : 'The existing baseline result remains unchanged.')}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{requestError?.recoveryAction ?? (locale === 'zh-CN' ? '从矩阵重新选择本次运行。' : 'Choose this run again from the matrix.')}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence'}</button></div></section>;
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'evidence');
+  return <section className="capability-operation-error capability-exact-evidence-error" role="alert" data-testid="governed-run-evidence-error"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence'}</button></div></section>;
 }
 
 function GovernedRunEvidencePanel({ evidence, locale, onOpenGraph }: { evidence: GovernedRunEvidenceProjection; locale: 'en' | 'zh-CN'; onOpenGraph: (evidence: GovernedRunEvidenceProjection) => void }) {
@@ -1139,8 +1249,6 @@ function displayScenarioDependency(id: string, locale: 'en' | 'zh-CN'): string {
 function EmptyEvidence({ locale }: { locale: 'en' | 'zh-CN' }) { return <section className="capability-stage-one-notice"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '契约详情未提供' : 'Contract details were not provided'}</strong><p>{locale === 'zh-CN' ? '服务端没有返回足够的业务契约信息，不能用前端猜测补齐。' : 'The server did not provide enough business contract detail; the frontend will not guess.'}</p></div></section>; }
 
 function LoadError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
-  const protocolCode = isCapabilityStudioProtocolError(error) ? error.code : 'RG.CAPABILITY_STUDIO.DEMO_PACK_UNAVAILABLE';
-  const message = isCapabilityStudioProtocolError(error) ? error.message : (error?.message ?? 'The demo pack could not be loaded.');
-  const impact = isCapabilityStudioProtocolError(error) ? error.impact : (locale === 'zh-CN' ? '能力总览、契约和场景数据暂时无法展示。' : 'The capability overview, contract, and scenario data cannot be shown yet.');
-  return <main className="capability-studio capability-studio-state capability-error-state" data-testid="capability-load-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{protocolCode}</p><h2>{locale === 'zh-CN' ? '能力设计数据暂时不可用' : 'Capability Studio data is unavailable'}</h2><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{locale === 'zh-CN' ? '确认服务端已发布 demo pack 后重试。' : 'Confirm that the server publishes the demo pack, then retry.'}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载' : 'Retry loading'}</button><details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '技术详情' : 'Technical details'}</summary><p>{error?.message ?? 'No additional details.'}</p></details></main>;
+  const presentation = capabilityStudioErrorPresentation(error, locale, 'load');
+  return <main className="capability-studio capability-studio-state capability-error-state" data-testid="capability-load-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h2>{locale === 'zh-CN' ? '能力设计数据暂时不可用' : 'Capability Studio data is unavailable'}</h2><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载' : 'Retry loading'}</button></main>;
 }
