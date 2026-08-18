@@ -520,7 +520,7 @@ class CapabilityStudioStageAcceptanceAuthorityVerifierTest {
         return CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX + suffix;
     }
 
-    private static ObjectNode validStagePass() {
+    static ObjectNode validStagePass() {
         ObjectNode result = JSON.createObjectNode();
         result.put("schemaVersion", "bloge.capabilityStudioStageAcceptanceResult.v2");
         result.put("resultId", "SAR-authority-test");

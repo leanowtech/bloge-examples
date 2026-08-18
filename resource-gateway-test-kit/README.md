@@ -461,6 +461,47 @@ independently governed trust publication. The repository does not ship a product
 enterprise issuer pins, or the organizational `OwnerAuthority`; those remain deployment-owned
 inputs to formal acceptance.
 
+`CapabilityStudioPinnedOwnerAuthority` supplies the strict local implementation of the final Owner
+boundary. Each `TrustedOwnerRole` binds an exact role to an explicit actor allow-list, signature
+issuer and Scope, out-of-band key-set pin, complete key lifecycle snapshot, and maximum signature
+TTL. Verification requires `APPROVED`, `OWNER_SIGNATURE`, exact signature coordinate and signoff
+time, the same candidate, intent, environment, execution/evidence window and pre-signoff closure,
+an eligible non-revoked key, and a valid unexpired Ed25519 signature. The producer signs the exact
+UTF-8 fingerprint contract returned by `canonicalFingerprint(...)`; the canonical message excludes
+the material fingerprint and signature bytes. This class verifies organization-owned signatures;
+it does not create them or decide who should hold an Owner role.
+
+Formal command-line acceptance uses `CapabilityStudioStageAcceptanceCli`. The CLI validates the
+v2 schema and semantic contract first. Invalid or non-`PASS` documents do not load any external
+provider. For a semantic `PASS`, Java `ServiceLoader` must discover exactly one implementation of
+`CapabilityStudioStageAcceptanceAuthorityProvider`; that deployment-owned provider supplies the
+resolver, pinned issuer policy, and organizational Owner authority. The result document cannot
+select its own provider or trust roots.
+
+The provider JAR declares this service file:
+
+```text
+META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider
+```
+
+The file contains the provider implementation's fully qualified class name. Run the verifier with
+the Test Kit and provider on the same classpath:
+
+```bash
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<enterprise-provider.jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceCli \
+  <stage-acceptance-result-v2.json>
+```
+
+Exit `0` means every semantic and external authority gate returned `ACCEPTED`. Exit `3` means the
+document is valid but is `NOT_ACCEPTED`, `BLOCKED`, or `REJECTED`. Exit `2` means usage, bounded
+read, protocol, or Provider configuration is invalid. Output contains only the outcome and stable
+reason code; it never echoes file paths, Evidence coordinates, actors, signatures, keys, or
+exception text. A provider should use `CapabilityStudioAuthorityEvidenceResolver`,
+`CapabilityStudioPinnedEvidenceIssuerPolicy`, and `CapabilityStudioPinnedOwnerAuthority`, but the
+actual storage adapters, trust pins, role directory, and target-environment evidence remain under
+enterprise deployment Authority.
+
 ## Verify the Stage 0 Browser Matrix Result
 
 `CapabilityStudioBrowserMatrixResultVerifier` verifies the strict, payload-free browser result
