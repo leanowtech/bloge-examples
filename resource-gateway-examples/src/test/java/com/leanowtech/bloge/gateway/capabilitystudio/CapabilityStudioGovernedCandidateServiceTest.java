@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuite;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.diagnostic.VisualDiagnostic;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,6 +101,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
                     assertThat(node.operatorRef()).isEqualTo("tool-golden"));
         });
         assertThat(first.receiptFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(first.candidateBuild()).isNull();
 
         ArgumentCaptor<TestSuiteExecutionRequest> request =
                 ArgumentCaptor.forClass(TestSuiteExecutionRequest.class);
@@ -111,6 +113,63 @@ class CapabilityStudioGovernedCandidateServiceTest {
         assertThat(request.getValue().clientRequestId()).isEqualTo("candidate-001");
         assertThat(request.getValue().metadata()).containsEntry(
                 "publicationReceiptFingerprint", PUBLICATION_FINGERPRINT);
+    }
+
+    @Test
+    void bindsDeploymentCandidateIntoTheSignedSuiteIntentFingerprint() {
+        CapabilityStudioGovernedCompilation compilation = compilation(true);
+        CapabilityStudioGovernedAssetPublisher.Receipt publication = publication();
+        CapabilityStudioDeploymentCandidateAuthority.Binding build = candidateBuild();
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
+        when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication);
+        when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
+                .thenAnswer(invocation -> {
+                    TestSuiteExecutionRequest request = invocation.getArgument(1);
+                    Map<String, Object> metadata = new java.util.LinkedHashMap<>(Map.of(
+                            "governedProvenanceFingerprint", PROVENANCE_FINGERPRINT,
+                            "governedSourceMapFingerprint", SOURCE_MAP_FINGERPRINT,
+                            "governedExactRefs", exactRefs()));
+                    metadata.put("requestMetadataFingerprint",
+                            ProtocolFingerprint.of(mapper, request.metadata()));
+                    return response(evidence("candidate-bound", metadata));
+                });
+        when(childExecutions.find("child-run-001", TestExecutionApiRequest.Verbosity.FULL,
+                executionIdentity)).thenReturn(childResponse(childEvidence()));
+
+        CapabilityStudioGovernedCandidateService.CandidateReceipt receipt = service.run(
+                null, null, null, runtimeTarget(), null, "candidate-bound",
+                publicationIdentity, executionIdentity, build);
+
+        assertThat(receipt.candidateBuild()).isEqualTo(build);
+        assertThat(receipt.evidence().candidateIntentFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
+        ArgumentCaptor<TestSuiteExecutionRequest> request =
+                ArgumentCaptor.forClass(TestSuiteExecutionRequest.class);
+        verify(executions).execute(eq("suite-golden"), request.capture(), eq(executionIdentity));
+        assertThat(request.getValue().metadata()).containsEntry("candidateBuild", build);
+        assertThat(ProtocolFingerprint.of(mapper, request.getValue().metadata()))
+                .isEqualTo(receipt.evidence().candidateIntentFingerprint());
+    }
+
+    @Test
+    void rejectsCandidateIntentFingerprintDrift() {
+        CapabilityStudioGovernedCompilation compilation = compilation(true);
+        when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
+        when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
+        when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
+                .thenReturn(response(evidence("candidate-drift", Map.of(
+                        "governedProvenanceFingerprint", PROVENANCE_FINGERPRINT,
+                        "governedSourceMapFingerprint", SOURCE_MAP_FINGERPRINT,
+                        "governedExactRefs", exactRefs(),
+                        "requestMetadataFingerprint", fingerprint('9')))));
+
+        assertThatThrownBy(() -> service.run(
+                null, null, null, runtimeTarget(), null, "candidate-drift",
+                publicationIdentity, executionIdentity, candidateBuild()))
+                .isInstanceOf(CapabilityStudioGovernedCompilationException.class)
+                .extracting("code")
+                .isEqualTo(
+                        "RG.CAPABILITY_STUDIO.GOVERNED_CANDIDATE.CANDIDATE_INTENT_FINGERPRINT_DRIFT");
     }
 
     @Test
@@ -374,6 +433,13 @@ class CapabilityStudioGovernedCandidateServiceTest {
 
     private static TestExecutionApiRequest.Target runtimeTarget() {
         return new TestExecutionApiRequest.Target("OPERATOR", "tool-golden", fingerprint('4'));
+    }
+
+    private static CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild() {
+        return new CapabilityStudioDeploymentCandidateAuthority.Binding(
+                "deployment-launcher", "resource-gateway-local-01",
+                "resource-gateway-examples", "1.0.0", "abcdef0123456789", "CLEAN",
+                fingerprint('8'));
     }
 
     private static TestSuiteExecutionRequest.SuiteRef suiteRef() {

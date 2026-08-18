@@ -1,9 +1,9 @@
 {
   "schemaVersion": "resourceGateway.capabilityStudioGoldenPathAcceptanceManifest.v1",
   "manifestId": "capability-studio-golden-path-initial-no-go",
-  "revision": 3,
+  "revision": 4,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:b58b7a7ced41ca7752e9ecf4b2d40dfd6404f68cc66ac7b141b3bb6901c36a1c",
+  "artifactFingerprint": "sha256:074363346db9443b29972d96662b1974ba94f767490ab7c28a9ed5b719988c72",
   "candidateBuildRef": {
     "kind": "BUILD",
     "id": "working-tree-stage0",
@@ -15,8 +15,8 @@
   "acceptanceBaselineRef": {
     "kind": "ACCEPTANCE_BASELINE",
     "id": "capability-studio-baseline-cancellation-fee-v1",
-    "revision": 3,
-    "fingerprint": "sha256:2b64f97365528ba830d1f2cdd50ae51b52a90db252a474acdc8943eb7c9cc76e",
+    "revision": 4,
+    "fingerprint": "sha256:35c2fe1f3b447d03c0d6abfc021318bc83e6bfa33408b9e0a52ce2d93963606a",
     "authority": "repository",
     "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" }
   },
@@ -48,9 +48,9 @@
     { "gpId": "GP-03", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Stage 0 Dataset 投影、严格协议、独立 Test Kit、中英文三视口、Dataset 键盘路径和 ScenarioDraftSet 适配器已有开发证据；持久化 Authority、governed compile/run、人工读屏和签署待补" },
     { "gpId": "GP-04", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Tutorial Branch 编辑、数据库保存、并发 CAS、Authority 重建恢复、409 恢复、隔离预检和英文紧凑桌面已有开发证据；完整键盘/读屏、异常浏览器和业务签署待补" },
     { "gpId": "GP-05", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "真实 BLOGE Trace 驱动的 6 节点、5 边 Feature DAG、Data Lens 双权限态和中英文三视口已有开发证据；字段级 source map、身份授权、人工视觉签署和发布候选验收待补" },
-    { "gpId": "GP-06", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Feature 超时隔离运行已证明原始依赖尝试 TIMEOUT、fallback 后最终 PASSED、零 HTTP delegate 调用和并发隔离；Tool 受治理闭包已完成 9 × 3 开发运行，但候选/环境绑定和部署级 network deny 待补" },
+    { "gpId": "GP-06", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Feature 超时隔离运行已证明原始依赖尝试 TIMEOUT、fallback 后最终 PASSED、零 HTTP delegate 调用和并发隔离；Tool 受治理闭包已完成 9 × 3 开发运行，部署候选绑定机制已实现，但目标环境认证和部署级 network deny 待补" },
     { "gpId": "GP-07", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Tool 契约、9 × 3 正确性目标与中文桌面/移动端开发证据已形成；未满足 AC-PRE 前置、英文/1024/读屏矩阵和 Owner 签署，正式结果仍为 NOT_RUN" },
-    { "gpId": "GP-08", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "受治理 compiler/Registry/exact-suite runtime 的 3 suite/27 child 开发运行已通过 v2 严格 Schema、独立 Test Kit 和真实浏览器；9/9 Oracle、27/27 业务断言、同 Case 三轮 semantic fingerprint 与 timeout/duplicate/forbidden-write 专项证明已闭合，但证据仍为 EXPLORATORY，候选/环境绑定、部署级 egress 和 Owner 签署未闭合，正式结果仍为 NOT_RUN" },
+    { "gpId": "GP-08", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "受治理 compiler/Registry/exact-suite runtime 的 3 suite/27 child 开发运行已通过 v3 严格 Schema 与独立 Test Kit；9/9 Oracle、27/27 业务断言、同 Case 三轮 semantic fingerprint、候选/执行意图防篡改与 timeout/duplicate/forbidden-write 专项证明已闭合，但证据仍为 EXPLORATORY，目标环境认证、部署级 egress 和 Owner 签署未闭合，正式结果仍为 NOT_RUN" },
     { "gpId": "GP-09", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "质量和影响投影尚未实现" },
     { "gpId": "GP-10", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Evidence exact closure 和 Deep Link 尚未实现" }
   ],
@@ -86,7 +86,7 @@
     { "checkId": "SEC-01", "status": "NOT_RUN", "evidenceRefs": [{ "evidenceId": "sec-01-production-control-guard", "kind": "SECURITY", "uri": "test://ExecutionControlBoundaryGuardFilterTest", "fingerprint": "sha256:cd5ac75d3275270305c4fd25120c499b2c100021f0263088e45c11f812e077a6", "status": "AVAILABLE" }], "notes": "五类入口、字段变体、审计失败关闭和 Payload 不泄漏已有开发证据；发布候选网络面与完整注入 Bean 清单尚未签署" }
   ],
   "knownLimitations": [
-    { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "同一受治理编译资产闭包已注册并完成 9/9 Oracle、27/27 断言和三轮稳定性开发验证，但证据仍为 EXPLORATORY；尚未绑定不可变候选与目标环境，也未接受部署级 network deny/egress 观测", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
+    { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "同一受治理编译资产闭包已注册并完成 9/9 Oracle、27/27 断言和三轮稳定性开发验证，部署候选与 execution intent 绑定机制已经实现；但正式目标环境尚未生成 Candidate attestation，child evidence 仍为 EXPLORATORY，也未接受部署级 network deny/egress 观测", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
     { "limitationId": "capability-studio-browser-evidence-missing", "severity": "P1", "status": "OPEN", "description": "GP-01 至 GP-10 尚无完整真实浏览器证据", "ownerRole": "QA_OWNER", "blocksAcceptance": true }
   ],
   "signOffs": [

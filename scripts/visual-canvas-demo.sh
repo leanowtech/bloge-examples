@@ -118,6 +118,7 @@ Environment:
   RG_TEST_WORKER_QUARANTINE_REQUEST_INDEX_WRITE_MODE  required for staging; staged rollout mode
   RG_RESOURCE_GATEWAY_INSTANCE_ID                  required for staging; exact serving replica id
   RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT         required for staging; sha256 image/JAR identity
+  RG_RESOURCE_GATEWAY_SOURCE_COMMIT                optional immutable source commit; defaults to local Git HEAD
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_ENABLED  optional signed local TLS rotation preview
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_SCOPE_ID  required exact deployment scope
   RG_TEST_CONTROL_PLANE_CERTIFICATE_ROTATION_TRUST_DOMAIN  required external PKI governance domain
@@ -2132,6 +2133,46 @@ jar_path() {
     echo "${PROJECT_DIR}/target/${JAR_NAME}"
 }
 
+packaged_artifact_fingerprint() {
+    local artifact
+    local digest
+    artifact="$(jar_path)"
+    if command -v shasum >/dev/null 2>&1; then
+        digest="$(shasum -a 256 "${artifact}" | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        digest="$(sha256sum "${artifact}" | awk '{print $1}')"
+    else
+        echo "A SHA-256 command is required to bind the packaged candidate." >&2
+        return 1
+    fi
+    if ! printf '%s' "${digest}" | grep -Eq '^[a-f0-9]{64}$'; then
+        echo "The packaged candidate SHA-256 digest is invalid." >&2
+        return 1
+    fi
+    printf 'sha256:%s\n' "${digest}"
+}
+
+candidate_source_commit() {
+    local commit="${RG_RESOURCE_GATEWAY_SOURCE_COMMIT:-}"
+    if [ -z "${commit}" ] && command -v git >/dev/null 2>&1; then
+        commit="$(git -C "${ROOT_DIR}" rev-parse HEAD 2>/dev/null || true)"
+    fi
+    printf '%s\n' "${commit}"
+}
+
+candidate_source_tree_status() {
+    if ! command -v git >/dev/null 2>&1 ||
+        ! git -C "${ROOT_DIR}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        printf 'UNKNOWN\n'
+        return 0
+    fi
+    if [ -z "$(git -C "${ROOT_DIR}" status --porcelain 2>/dev/null)" ]; then
+        printf 'CLEAN\n'
+    else
+        printf 'DIRTY\n'
+    fi
+}
+
 read_pid() {
     if [ ! -f "$(pid_file)" ]; then
         return 1
@@ -2742,6 +2783,34 @@ start_service() {
                 ;;
         esac
         args+=("--gateway.capability-studio.demo.enabled=true")
+        local candidate_fingerprint
+        local candidate_commit
+        local candidate_source_status
+        candidate_fingerprint="$(packaged_artifact_fingerprint)"
+        candidate_commit="$(candidate_source_commit)"
+        candidate_source_status="$(candidate_source_tree_status)"
+        if [ "${SPRING_PROFILE}" = "staging" ] &&
+            [ "${RG_RESOURCE_GATEWAY_ARTIFACT_FINGERPRINT}" != "${candidate_fingerprint}" ]; then
+            echo "The staging Resource Gateway artifact fingerprint does not match the packaged JAR." >&2
+            return 1
+        fi
+        if [ "${candidate_source_status}" = "CLEAN" ] &&
+            printf '%s' "${candidate_commit}" | grep -Eq '^[A-Fa-f0-9]{7,64}$'; then
+            args+=(
+                "--gateway.capability-studio.acceptance.candidate-build.authority=deployment-launcher"
+                "--gateway.capability-studio.acceptance.candidate-build.instance-id=${RG_RESOURCE_GATEWAY_INSTANCE_ID:-local-resource-gateway}"
+                "--gateway.capability-studio.acceptance.candidate-build.build-ref=resource-gateway-examples"
+                "--gateway.capability-studio.acceptance.candidate-build.revision=1.0.0"
+                "--gateway.capability-studio.acceptance.candidate-build.source-commit=${candidate_commit}"
+                "--gateway.capability-studio.acceptance.candidate-build.source-tree-status=CLEAN"
+                "--gateway.capability-studio.acceptance.candidate-build.artifact-fingerprint=${candidate_fingerprint}"
+            )
+        elif [ "${SPRING_PROFILE}" = "staging" ]; then
+            echo "Capability Studio staging requires a clean source tree and immutable source commit." >&2
+            return 1
+        else
+            echo "Capability Studio candidate binding withheld: source tree is ${candidate_source_status}."
+        fi
     fi
     if truthy "${CORRECTNESS_DEMO}"; then
         case ",${SPRING_PROFILE}," in

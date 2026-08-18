@@ -199,7 +199,7 @@ execution, deployment egress denial, environment binding, or Owner sign-off.
 
 `CapabilityStudioGovernedBaselineVerifier` verifies the payload-free receipt returned by
 `POST /api/capability-studio/governed-baseline`. The Test Kit packages the strict
-`resource-gateway.capability-studio.governed-baseline.v2` schema, so this check does not require
+`resource-gateway.capability-studio.governed-baseline.v3` schema, so this check does not require
 the Spring Boot gateway or its implementation classes.
 
 ```java
@@ -216,10 +216,14 @@ For `PASSED`, verification requires the complete 9 Case x 3 round receipt: three
 IDs, nine canonical case IDs, 27 unique child run IDs, rounds `1`, `2`, and `3` for every case,
 `PASSED` throughout, nine passing business Oracles, 27 passing business assertions, stable
 per-Case semantic-result fingerprints, satisfied Fixture controls, the exact timeout/duplicate/
-forbidden-write proofs, zero real external calls, `EXPLORATORY` evidence, and the five declared
-release limitations. For `FAILED_CLOSED`, the receipt must contain zero suite/child/Oracle/
-assertion/call counts, a null evidence class and fingerprints, a null publication, empty
-rounds/cases, and at least one diagnostic. Neither state is
+forbidden-write proofs, zero real external calls, and an honest `EXPLORATORY` or `CERTIFIABLE`
+evidence class. When a deployment candidate is present, the verifier reconstructs the canonical
+execution metadata and independently verifies its intent fingerprint; candidate tampering fails
+closed. Limitations must exactly match the current candidate and evidence state: five when the
+candidate is unbound and evidence is exploratory, four when a candidate is bound, and three when
+bound child evidence is certifiable. For `FAILED_CLOSED`, the receipt must use `NOT_VERIFIED`,
+contain zero suite/child/Oracle/assertion counts, null evidence/call/fingerprint/publication fields,
+empty rounds/cases, and at least one diagnostic. Neither state is
 treated as a production release approval; the receipt remains `DEVELOPMENT_TEST_OWNED` with
 `releaseGateStatus=NO_GO`.
 

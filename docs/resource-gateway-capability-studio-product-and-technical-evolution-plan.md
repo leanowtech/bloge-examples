@@ -169,6 +169,24 @@ decision + decidedBy + decidedAt
 
 可执行矩阵必须精确相等，不接受“至少跑一部分”。`testMatrixExecuted != testMatrixExpected`、`skippedCount > 0`、Evidence 无法解析、指纹无法复算或 Owner 缺席时，不得产生 `PASS`。测试用例数是某次候选的观测值，不是永久产品指标；永久合同是冻结矩阵中的所有义务均被执行且无跳过。
 
+#### 0.4.6 共用可执行验收标准
+
+以下标准是所有 `S*-AC-*` 的强制基线。Stage 合同可以增加约束，但不能降低或省略这些约束。每项标准必须在 Acceptance Result 中记录 `PASS`、`FAIL`、`BLOCKED` 或 `NOT_RUN`，不得只写说明文字。
+
+| 标准 ID | 必须成立的判据 | 机器或人工证据 | 直接失败条件 |
+|---|---|---|---|
+| `AC-STD-01 CANDIDATE_IDENTITY` | 被测对象绑定部署侧冻结的 `buildRef`、revision、Git commit、`CLEAN` source tree 和实际 JAR/镜像 SHA-256；请求方不能覆盖 | Candidate attestation、制品摘要、启动配置快照、负向注入测试 | 部分配置、工作区脏、摘要不匹配、请求可替换候选身份 |
+| `AC-STD-02 EXECUTION_INTENT` | 每次运行把候选、Suite exact ref、publication、compilation 和 source map 绑定为同一 canonical intent fingerprint | `candidateIntentFingerprint`、Test Kit 独立重算、篡改测试 | 任一坐标漂移、指纹不能重算、运行证据未回显同一 intent |
+| `AC-STD-03 MATRIX_COMPLETENESS` | 冻结矩阵 100% 执行，`skippedCount=0`；批量运行的 Case、轮次和 Run ID 集合精确相等 | expected/executed matrix、唯一性检查、批量运行收据 | 漏跑、跳过、重复 Run ID、额外 Case 或轮次不足 |
+| `AC-STD-04 BUSINESS_CORRECTNESS` | 每个 Case 的业务 Oracle 通过；同 Case 多轮 semantic fingerprint 一致；高风险分支有专项证明 | Oracle 明细、semantic fingerprint、timeout/duplicate/forbidden-write 证明 | 任一 Oracle 失败、结果漂移、用技术成功替代业务正确 |
+| `AC-STD-05 EXACT_CLOSURE` | Contract、Graph、Dataset、Case、Behavior、Binding、Fixture 和 Suite 全部使用 exact ref，内容指纹可独立复算 | closure manifest、Registry 写后回读、Test Kit verifier | mutable head、跨 Scope、缺失引用、内容与指纹不一致 |
+| `AC-STD-06 ISOLATION` | 进程内 connector counter 与部署级 egress 观测均为 0；未解析依赖在调度前失败 | counter、network deny、egress 日志、生产装配否定测试 | 任一真实外呼、fallback-to-real、生产入口可注入替身 |
+| `AC-STD-07 FAILURE_SEMANTICS` | timeout、retry、fallback、skip、partial 和 cancel 在 UI、Trace 与 Oracle 中语义一致；失败关闭不生成伪证据 | attempt/final Trace、失败投影 Schema、负向用例 | 超时被当成空数据、原始失败丢失、失败响应携带已验证结论 |
+| `AC-STD-08 UX_ACCESSIBILITY` | 约定语言、视口、权限、页面状态和输入方式矩阵全部完成；主路径无技术 ID/Raw JSON；无 P0/P1 | 真实浏览器、DOM 几何、axe、人工读屏、可用性原始记录 | 遮挡、焦点丢失、仅靠颜色、主持人必须补步骤、无恢复动作 |
+| `AC-STD-09 EVIDENCE_SIGNOFF` | Evidence 可解析、可回放、未过期且 fingerprint 一致；指定 Owner 在证据生成后签署 | 不可变 Evidence URI、Verifier 结果、签署主体与时间 | 证据缺失/过期/不可复算、签署早于证据、Owner 缺席 |
+
+判定顺序固定为：先判断直接失败不变量，再判断前置阻断，再判断矩阵完整性，最后判断签署。命中任一直接失败条件即为 `FAIL`；前置设施不可用且尚未执行为 `BLOCKED`；只有开发证据或部分矩阵时为 `PARTIAL`；九项全部通过后，单条合同才允许为 `PASS`。`DEVELOPMENT_VERIFIED` 只能作为开发台账中的证据级别，不能绕过 `AC-STD-01`、`AC-STD-06`、`AC-STD-08` 或 `AC-STD-09`。
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -811,7 +829,7 @@ DAG 同时调用订单、责任、规则和补偿接口，进行字段标准化�
 | `GP-05` | 打开争议上下文特征 DAG 并选择超时场景 | 四个接口、转换、规则和特征输出完整展示，边上可查看样例值 | 无节点、边标签和数据摘要遮挡；可解释每个输出字段来源 | Canvas DOM、像素检查、lineage assertion |
 | `GP-06` | 运行当前特征场景 | 历史补偿依赖的原始尝试显示 `TIMEOUT`，BLOGE fallback 被明确标识；Feature 最终状态为 `PASSED`，输出 `action=MANUAL_REVIEW`、`informationGap=COMPENSATION_HISTORY_TIMEOUT` | 不能把超时投影为空数据；聚合与决策节点按降级输入继续执行；真实外部调用数为 0；Trace 同时保留失败尝试和恢复后结果 | RunTrace attempt/final 断言、Feature Oracle、Data Lens、mock 标记、network deny |
 | `GP-07` | 打开工具契约 | 显示输入、输出、错误、禁止结果、副作用、精确依赖和“9 场景 × 3 轮”验证目标 | 默认不要求技术 ID 或 Raw JSON；技术坐标默认折叠；主操作唯一且可被键盘触发 | Contract projection、引用闭包、DOM/可访问名称断言 |
-| `GP-08` | 在工具页运行全部 9 个 Canonical Case | 同屏显示 9/9 场景、9/9 业务 Oracle、3/3 轮次、27/27 业务断言、0 进程内真实调用；展示 3 个 suite run、9 × 3 Case 矩阵、同 Case 三轮稳定的业务结果指纹和 timeout/duplicate/forbidden-write 专项证明，并并列“开发验证通过”与“发布仍不可验收” | 严格覆盖固定 9 Case × 3 轮；3 个 suite `runId` 和 27 个 child `runId` 全部唯一；三轮 publication/provenance/source-map 与逐 Case semantic fingerprint 稳定；child evidence 必须经既有授权 API 回读且完整签名可独立验证；当前成功状态必须显式标记 `evidenceClass=EXPLORATORY`，保留候选构建、环境认证、可认证证据、部署级 egress、Owner 签署五项限制且 `releaseGateStatus=NO_GO` | 受治理 Batch API、v2 严格 Schema、独立 Test Kit verifier、Spring 集成、真实 Chrome、axe、桌面/移动截图 |
+| `GP-08` | 在工具页运行全部 9 个 Canonical Case | 同屏显示 9/9 场景、9/9 业务 Oracle、3/3 轮次、27/27 业务断言、0 进程内真实调用；展示 3 个 suite run、9 × 3 Case 矩阵、同 Case 三轮稳定的业务结果指纹和 timeout/duplicate/forbidden-write 专项证明，并并列“开发验证通过”与“发布仍不可验收”；部署已绑定候选时显示候选制品与执行意图 | 严格覆盖固定 9 Case × 3 轮；3 个 suite `runId` 和 27 个 child `runId` 全部唯一；三轮 publication/provenance/source-map、candidate intent 与逐 Case semantic fingerprint 稳定；child evidence 必须经既有授权 API 回读且完整签名可独立验证；成功状态为 `verificationLevel=DEVELOPMENT_VERIFIED`，`evidenceClass` 必须忠实反映 child evidence，当前样例仍为 `EXPLORATORY`；未绑定候选时显示五项限制，绑定后只移除候选限制；始终保持 `releaseGateStatus=NO_GO` | 受治理 Batch API、v3 严格 Schema、独立 Test Kit verifier、候选/意图篡改负向测试、Spring 集成、真实 Chrome、axe、桌面/移动截图 |
 | `GP-09` | 查看场景数据质量与影响 | 显示来源、脱敏、新鲜度、覆盖、复用和受影响资产 | 每个 Active Case 均有 Owner、Oracle 和适用契约；无孤立数据 | Quality projection、impact graph |
 | `GP-10` | 打开运行证据并返回失败节点 | 证据展示 exact capability、dataset、Binding Plan 和 run fingerprint | Deep Link 返回正确 Graph、节点和场景；刷新后上下文保持 | Evidence verifier、Deep Link 浏览器测试 |
 
@@ -1312,7 +1330,7 @@ Stage 1 开工后，新反馈必须先归类：
 | `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录 | 产品、UX、QA 全部签署后 `PASS` |
 | `S0-AC-02` | Golden Demo Pack 固定为 4 API、1 Feature、1 Tool、9 Case；Case 均有 Owner、Source、Oracle、适用契约和精确引用闭包 | Demo Pack Schema 校验、Test Kit verifier、内容 fingerprint、篡改与跨 Scope 负向用例 | 业务 Owner、正确性 Owner `PASS` |
 | `S0-AC-03` | Spike A 无损下沉到既有测试 Runtime；Spike B 来自真实 BLOGE Trace；Spike C 从生产装配和协议移除注入能力 | 三份 Spike 报告与仓库测试；确定性、source map、Data Lens、生产 profile、network deny 和 counter 证据 | 架构、Runtime、画布、安全分别签署，三项均 `PASS` |
-| `S0-AC-04` | 固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 的依赖尝试为 `TIMEOUT`，fallback 后 Feature/Tool 最终 `PASSED` 并输出 `MANUAL_REVIEW` 与 `COMPENSATION_HISTORY_TIMEOUT`；进程内与部署级真实外部调用观测均为 0 | 27 份独立 Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、timeout attempt/final/fallback Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包复算 | 任一 Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写不成立、timeout 原始尝试丢失、fallback 未执行、最终结果不是人工复核、counter 非 0 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
+| `S0-AC-04` | 满足 `AC-STD-01` 至 `AC-STD-07`：不可变候选与执行意图绑定；固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 的依赖尝试为 `TIMEOUT`，fallback 后 Feature/Tool 最终 `PASSED` 并输出 `MANUAL_REVIEW` 与 `COMPENSATION_HISTORY_TIMEOUT`；进程内与部署级真实外部调用观测均为 0 | 候选制品与执行意图指纹、27 份 `CERTIFIABLE` Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、timeout attempt/final/fallback Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包独立复算 | 任一候选/意图漂移、Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写不成立、timeout 原始尝试丢失、fallback 未执行、最终结果不是人工复核、counter 非 0、Evidence 非 `CERTIFIABLE` 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
 | `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
 | `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
 
@@ -1322,8 +1340,8 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 |---|---|---|---|
 | `S0-AC-01` | `PARTIAL` | GP-01 至 GP-08 已有真实 Chrome 开发证据；GP-01 至 GP-06 覆盖中英文、1440/1024/390、Dataset、教程分支、Feature Trace、键盘路径和 axe；GP-07/08 覆盖中文 1440/390、真实 POST 运行、9 × 3 矩阵、双结论、无页面溢出和 axe serious/critical 为 0 | GP-07/08 的英文、1024 和异常恢复浏览器矩阵未闭合；GP-09/10 尚未形成同等纵向切片；人工读屏、产品/UX/QA 签署未闭合 |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在；每个 Case 已投影完整四 API `RUNTIME_CONTROL`，幂等与禁止写入作为独立 `BUSINESS_EXPECTATION` 保留，编译 source map 不再把业务预期误降为 Tool fixture；前后端与独立 Test Kit 均按该语义验证运行闭包 | Dataset 仍为只读投影；受保护 fixture material 仍由开发服务组装；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
-| `S0-AC-03` | `PARTIAL` | Spike A 已实现确定性编译、强类型 exact-ref provenance、内容寻址、通过既有 Registry 发布后逐项回读复算，并仅以确认的 exact suite 进入既有 `TestSuiteExecutionService`；完整闭包以可逆字典清单写入 aggregate evidence，Canonical suite metadata 为 11,863 bytes；真实 Spring test profile 已从同一受治理闭包连续运行 3 个 suite、27 个唯一 child run，全部 `PASSED`且进程内真实外部调用为 0；严格 v1 Schema 与独立 Test Kit verifier 已验证成功、失败关闭和篡改负向样例。同一 Canonical Feature DAG 已包装为 Tool binding 并通过既有 BLOGE nested graph 路径执行；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens；Spike C 已证明生产 profile/property 不装配受治理基线端点，且进程内 connector counter 为 0 | 上述仍是 `DEVELOPMENT_TEST_OWNED`，未绑定不可变发布候选 build 和目标验收环境。Spike B 仍缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 仍缺部署级 network deny/egress 观测和安全签署 |
-| `S0-AC-04` | `PARTIAL` | `POST /api/capability-studio/governed-baseline` 已把页面 9 × 3 切换到同一受治理编译、Registry 回读与 exact-suite 执行链路；真实 Spring 运行产生 3 个唯一 suite `runId`、27 个唯一 child `runId`，九个 Case 在每轮恰好出现一次并全部 `PASSED`。服务端通过既有授权 API 回读每条完整签名 child evidence，逐项核对 target/fixture/run/integrity，导出 payload-free evidence fingerprint、semantic result fingerprint、业务断言与 Fixture 控制计数；同 Case 三轮 semantic fingerprint 一致，9/9 Oracle 与 27/27 业务断言通过，timeout fallback、duplicate 幂等和 forbidden-write 无写入均形成专项证明；publication receipt、suite exact ref、compilation/source-map/provenance fingerprint 三轮一致，进程内真实外部调用为 0。v2 严格 Schema、独立 Test Kit 和真实 Chrome 对成功、失败关闭和篡改互验 | 当前 child evidence 的运行时等级为 `EXPLORATORY`，不是 `CERTIFIABLE`；协议继续强制 `DEVELOPMENT_TEST_OWNED / NO_GO`。另缺不可变候选 build、目标环境认证、部署级 network deny/egress 观测及正确性/Runtime/QA Owner 签署，因此不能 `PASS` |
+| `S0-AC-03` | `PARTIAL` | Spike A 已实现确定性编译、强类型 exact-ref provenance、内容寻址、通过既有 Registry 发布后逐项回读复算，并仅以确认的 exact suite 进入既有 `TestSuiteExecutionService`；完整闭包以可逆字典清单写入 aggregate evidence，Canonical suite metadata 为 11,863 bytes；真实 Spring test profile 已从同一受治理闭包连续运行 3 个 suite、27 个唯一 child run，全部 `PASSED`且进程内真实外部调用为 0；严格 v1 Schema 与独立 Test Kit verifier 已验证成功、失败关闭和篡改负向样例。同一 Canonical Feature DAG 已包装为 Tool binding 并通过既有 BLOGE nested graph 路径执行；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens；Spike C 已证明生产 profile/property 不装配受治理基线端点，且进程内 connector counter 为 0。部署启动器已能用实际 JAR SHA-256、Git commit 与 `CLEAN` source tree 生成不可由请求覆盖的候选绑定 | 上述仍是 `DEVELOPMENT_TEST_OWNED`；候选绑定机制已实现，但尚未形成目标验收环境的正式 Candidate attestation。Spike B 仍缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 仍缺部署级 network deny/egress 观测和安全签署 |
+| `S0-AC-04` | `PARTIAL` | `POST /api/capability-studio/governed-baseline` 已把页面 9 × 3 切换到同一受治理编译、Registry 回读与 exact-suite 执行链路；真实 Spring 运行产生 3 个唯一 suite `runId`、27 个唯一 child `runId`，九个 Case 在每轮恰好出现一次并全部 `PASSED`。服务端通过既有授权 API 回读每条完整签名 child evidence，逐项核对 target/fixture/run/integrity，导出 payload-free evidence fingerprint、semantic result fingerprint、业务断言与 Fixture 控制计数；同 Case 三轮 semantic fingerprint 一致，9/9 Oracle 与 27/27 业务断言通过，timeout fallback、duplicate 幂等和 forbidden-write 无写入均形成专项证明；publication receipt、suite exact ref、compilation/source-map/provenance fingerprint 三轮一致，进程内真实外部调用为 0。v3 严格 Schema 新增 `verificationLevel`、部署候选和 canonical execution intent；独立 Test Kit 会重算 intent 并拒绝候选篡改，失败态固定为 `NOT_VERIFIED` 且不携带运行证据 | 当前 child evidence 的运行时等级为 `EXPLORATORY`，不是 `CERTIFIABLE`；协议继续强制 `DEVELOPMENT_TEST_OWNED / NO_GO`。干净制品由演示启动器运行时可关闭候选未绑定限制，但正式 `PASS` 仍缺目标环境认证、`CERTIFIABLE` child evidence、部署级 network deny/egress 观测及正确性/Runtime/QA Owner 签署 |
 | `S0-AC-05` | `NOT_RUN` | 已有可执行任务界面和黄金演示数据 | 尚未组织 6 名代表性用户测试，也没有 P0/P1 关闭和复验记录 |
 | `S0-AC-06` | `NOT_RUN` | Baseline、ADR、Screen Inventory、追踪矩阵和 `NO_GO` Manifest 已版本化 | ADR 仍为 `Proposed`；Baseline 未批准；Manifest 未接受；七类签署均为空 |
 
@@ -1331,7 +1349,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 
 ##### 当前受治理候选开发验收子结果
 
-以下结果只证明提交 `90978fef6` 至 `fc60882f6` 的受治理控制面、独立 verifier 和浏览器纵向切片达到 `DEVELOPMENT_VERIFIED`。它不是 `S0-AC-03` 或 `S0-AC-04` 的正式 Acceptance Result。
+以下结果只证明当前版本的受治理控制面、独立 verifier 和浏览器纵向切片达到 `DEVELOPMENT_VERIFIED`。它不是 `S0-AC-03` 或 `S0-AC-04` 的正式 Acceptance Result，也不能替代目标环境 Candidate attestation。
 
 | 子合同 | 可执行标准 | 当前观测 | 结论 |
 |---|---|---|---|
@@ -1341,16 +1359,17 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S0-DEV-GOV-04` | 只能执行回读确认的 exact suite；必须产生 9 个互异 child `runId` 和 9 个互异 Fixture ref；全部 Case 终态为 `PASSED`；进程内真实外部调用为 0 | 真实 Spring test profile 一轮执行满足全部条件 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-05` | 同一 client request 重试必须返回同一收据；新 request 必须复用同一发布资产并生成新的 suite `runId` | 幂等与新请求测试通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-06` | provenance 缺失、字段不全、指纹篡改、调用方覆盖、闭包漂移或协议体积越界时，不得生成可认证结果 | 编译、执行和候选边界负向测试通过 | `PASS`，仅限开发证据 |
-| `S0-DEV-GOV-07` | 受治理基线必须只在 test/staging 装配；成功时严格返回 3 suite/27 child/9 Case/9 Oracle/27 业务断言/0 真实调用；任一不变量失败时不得伪造 evidence class、发布、Run 或指纹 | 公开严格 v2 Schema、production profile/property 否定测试、服务失败关闭测试通过 | `PASS`，仅限开发证据 |
-| `S0-DEV-GOV-08` | 独立 Test Kit 必须验证 Schema、固定 Case 集合/顺序、三轮矩阵、唯一 Run、指纹稳定、业务 Oracle/断言闭包、零真实调用、五项限制和失败关闭无假证据 | `CapabilityStudioGovernedBaselineVerifierTest` 覆盖成功、失败、业务结果指纹/断言/专项证明/evidence class 篡改；Test Kit `clean verify` 通过 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-07` | 受治理基线必须只在 test/staging 装配；成功时严格返回 3 suite/27 child/9 Case/9 Oracle/27 业务断言/0 真实调用；任一不变量失败时必须为 `NOT_VERIFIED`，不得伪造 evidence class、发布、Run 或指纹 | 公开严格 v3 Schema、production profile/property 否定测试、服务失败关闭测试通过 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-08` | 独立 Test Kit 必须验证 Schema、固定 Case 集合/顺序、三轮矩阵、唯一 Run、指纹稳定、业务 Oracle/断言闭包、零真实调用、动态限制和失败关闭无假证据 | `CapabilityStudioGovernedBaselineVerifierTest` 覆盖 v1/v2/v3、成功、失败、候选/意图篡改、业务结果指纹/断言/专项证明/evidence class 篡改；Test Kit `clean verify` 的 702 个测试通过 | `PASS`，仅限开发证据 |
 | `S0-DEV-GOV-09` | 用户必须能从 Tool 页触发真实 POST，在桌面和移动端看到 9 × 3 结果与“开发通过/发布不可验收”双结论；五列表格必须完整展示业务场景、Oracle 和三轮断言，页面与结果表均无横向溢出，且无 serious/critical 可访问性问题 | 真实服务与浏览器在 1280 × 720、390 × 844 复验；桌面结果表 `scrollWidth=clientWidth=553`，移动页面/结果表溢出均为 0、轮次计数保持单行；既有 1440 × 1100 与 390 × 844 自动化 Chrome DOM/axe 矩阵通过 | `PASS`，仅限开发证据 |
-| `S0-DEV-GOV-10` | 聚合 Suite `PASSED` 不得替代 child 证据；每条 child 必须从授权存储回读完整签名 Evidence，并闭合 run、target、Fixture、证据等级、semantic fingerprint、断言和 Fixture 控制计数；timeout/duplicate/forbidden-write 必须由结构化事实独立判定 | 真实 Spring 9 × 3 与候选边界负向测试通过；v2 投影不含 Payload，页面显示 9/9 Oracle、27/27 业务断言、稳定结果指纹和三项专项证明，同时标明 `EXPLORATORY` | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-10` | 聚合 Suite `PASSED` 不得替代 child 证据；每条 child 必须从授权存储回读完整签名 Evidence，并闭合 run、target、Fixture、证据等级、semantic fingerprint、断言和 Fixture 控制计数；timeout/duplicate/forbidden-write 必须由结构化事实独立判定 | 真实 Spring 9 × 3 与候选边界负向测试通过；v3 投影不含 Payload，页面显示 9/9 Oracle、27/27 业务断言、稳定结果指纹和三项专项证明，同时标明 `EXPLORATORY` | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-11` | 候选身份只能由部署启动器一次性注入；必须绑定实际 JAR SHA-256、Git commit 和 `CLEAN` source tree；同一绑定必须进入每轮 execution intent，Test Kit 可独立重算 | `CapabilityStudioDeploymentCandidateAuthorityTest`、候选服务漂移负向测试、v3 verifier 候选篡改测试和演示脚本静态检查通过；未配置时如实保留候选未绑定限制 | `PASS`，仅限机制与开发证据 |
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest=ScenarioGovernedCompilerTest,ScenarioGovernedProvenanceMetadataCodecTest,CapabilityStudioGovernedCompilationServiceTest,CapabilityStudioGovernedAssetPublisherTest,CapabilityStudioGovernedCandidateServiceTest,CapabilityStudioGovernedCandidateIntegrationTest,CapabilityStudioGovernedBaselineServiceTest,CapabilityStudioDemoConfigurationTest,CapabilityStudioDemoControllerTest,TestSuiteExecutionServiceTest \
+  -Dtest=ScenarioGovernedCompilerTest,ScenarioGovernedProvenanceMetadataCodecTest,CapabilityStudioGovernedCompilationServiceTest,CapabilityStudioGovernedAssetPublisherTest,CapabilityStudioGovernedCandidateServiceTest,CapabilityStudioGovernedCandidateIntegrationTest,CapabilityStudioGovernedBaselineServiceTest,CapabilityStudioDeploymentCandidateAuthorityTest,CapabilityStudioDemoConfigurationTest,CapabilityStudioDemoControllerTest,TestSuiteExecutionServiceTest \
   test
 
 mvn -f resource-gateway-test-kit/pom.xml clean verify
@@ -1366,7 +1385,7 @@ npm test -- src/capability-studio/CapabilityStudio.test.tsx \
 npm run build
 ```
 
-上述命令是开发复验入口，不是正式签署命令。当前已闭合每 Case 每轮 semantic fingerprint、业务断言和 timeout/duplicate/forbidden-write 开发 Oracle，但 Evidence 仍为 `EXPLORATORY`。正式退出仍需产出 `CERTIFIABLE` Evidence，并补齐运行环境 fingerprint、不可变候选 build 绑定、部署级 network deny/egress 观测和指定 Owner 签署。任一项缺失，Stage 0 仍为 `NO_GO`。
+上述命令是开发复验入口，不是正式签署命令。当前已闭合每 Case 每轮 semantic fingerprint、业务断言和 timeout/duplicate/forbidden-write 开发 Oracle，并完成部署侧候选绑定机制；但正式验收运行尚未在目标环境生成 Candidate attestation，child Evidence 仍为 `EXPLORATORY`。正式退出还需产出 `CERTIFIABLE` Evidence，并补齐目标环境 fingerprint、部署级 network deny/egress 观测和指定 Owner 签署。任一项缺失，Stage 0 仍为 `NO_GO`。
 
 #### Stage 1：业务接口与场景数据
 

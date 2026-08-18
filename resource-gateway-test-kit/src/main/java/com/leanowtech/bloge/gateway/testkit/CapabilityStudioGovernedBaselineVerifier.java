@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Offline verifier for the Capability Studio governed baseline v2 projection.
+ * Offline verifier for the Capability Studio governed baseline v3 projection.
  *
  * <p>The verifier validates the packaged strict schema and the cross-field evidence contract for
  * the payload-free 9 case x 3 round receipt. A {@code FAILED_CLOSED} receipt is accepted only when
@@ -29,7 +29,7 @@ public final class CapabilityStudioGovernedBaselineVerifier {
             "case-policy-revision-regression",
             "case-rider-not-responsible",
             "case-standard-cancellation-fee");
-    /** Limitations that must remain visible on both truthful receipt states, in wire order. */
+    /** Complete limitation vocabulary, retained for compatibility with fixture builders. */
     public static final List<String> LIMITATIONS = List.of(
             "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
             "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
@@ -160,6 +160,7 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                 || projection.path("oraclePassCount").intValue() != 9
                 || projection.path("businessCheckCount").intValue() != 27
                 || projection.path("businessCheckPassCount").intValue() != 27
+                || !projection.path("realExternalCallCount").isInt()
                 || projection.path("realExternalCallCount").intValue() != 0) {
             return semanticFailure(
                     "PASSED_COUNTS_AND_CALLS",
@@ -172,6 +173,10 @@ public final class CapabilityStudioGovernedBaselineVerifier {
         VerificationResult cases = verifyCases(projection.path("cases"));
         if (!cases.verified()) {
             return cases;
+        }
+        VerificationResult candidate = verifyCandidateBinding(projection, true);
+        if (!candidate.verified()) {
+            return candidate;
         }
         VerificationResult limitations = verifyLimitations(projection);
         if (!limitations.verified()) {
@@ -196,6 +201,7 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                 "FIXTURE_CONTROLS",
                 "SEMANTIC_RESULT_STABILITY",
                 "CASE_PROOFS",
+                "CANDIDATE_BUILD_BINDING",
                 "LIMITATIONS",
                 "DIAGNOSTICS_EMPTY");
     }
@@ -363,11 +369,13 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                 || projection.path("oraclePassCount").intValue() != 0
                 || projection.path("businessCheckCount").intValue() != 0
                 || projection.path("businessCheckPassCount").intValue() != 0
-                || projection.path("realExternalCallCount").intValue() != 0
+                || !projection.path("realExternalCallCount").isNull()
+                || !"NOT_VERIFIED".equals(projection.path("verificationLevel").textValue())
                 || !projection.path("evidenceClass").isNull()
                 || !projection.path("compilationFingerprint").isNull()
                 || !projection.path("sourceMapFingerprint").isNull()
                 || !projection.path("provenanceFingerprint").isNull()
+                || !projection.path("candidateIntentFingerprint").isNull()
                 || !projection.path("publication").isNull()
                 || projection.path("rounds").size() != 0
                 || projection.path("cases").size() != 0
@@ -376,28 +384,83 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                     "FAILED_CLOSED_NO_EVIDENCE",
                     "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_FAILED_CLOSED_HAS_EVIDENCE");
         }
+        VerificationResult candidate = verifyCandidateBinding(projection, false);
+        if (!candidate.verified()) {
+            return candidate;
+        }
         VerificationResult limitations = verifyLimitations(projection);
         if (!limitations.verified()) {
             return limitations;
         }
-        return valid("SCHEMA", "BASELINE_IDENTITY", "FAILED_CLOSED_NO_EVIDENCE", "LIMITATIONS");
+        return valid("SCHEMA", "BASELINE_IDENTITY", "FAILED_CLOSED_NO_EVIDENCE",
+                "CANDIDATE_BUILD_BINDING", "LIMITATIONS");
     }
 
     private static VerificationResult verifyLimitations(JsonNode projection) {
-        JsonNode limitations = projection.path("limitations");
-        if (limitations.size() != LIMITATIONS.size()) {
+        List<String> expected = new java.util.ArrayList<>();
+        if (projection.path("candidateBuild").isNull()) {
+            expected.add("IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND");
+        }
+        expected.add("RUNTIME_ENVIRONMENT_NOT_ATTESTED");
+        if (!"CERTIFIABLE".equals(projection.path("evidenceClass").textValue())) {
+            expected.add("CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED");
+        }
+        expected.add("DEPLOYMENT_EGRESS_NOT_OBSERVED");
+        expected.add("OWNER_SIGNOFF_NOT_PRESENT");
+        if (!expected.equals(toStrings(projection.path("limitations")))) {
             return semanticFailure(
                     "LIMITATIONS",
                     "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_LIMITATIONS_INVALID");
         }
-        for (int index = 0; index < LIMITATIONS.size(); index++) {
-            if (!LIMITATIONS.get(index).equals(limitations.get(index).textValue())) {
-                return semanticFailure(
-                        "LIMITATIONS",
-                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_LIMITATIONS_INVALID");
-            }
-        }
         return valid("LIMITATIONS");
+    }
+
+    private static VerificationResult verifyCandidateBinding(
+            JsonNode projection, boolean executionCompleted) {
+        JsonNode candidate = projection.path("candidateBuild");
+        JsonNode intentFingerprint = projection.path("candidateIntentFingerprint");
+        if (candidate.isNull()) {
+            if (!intentFingerprint.isNull()) {
+                return semanticFailure(
+                        "CANDIDATE_BUILD_BINDING",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_UNBOUND_CANDIDATE_HAS_INTENT");
+            }
+            return valid("CANDIDATE_BUILD_BINDING");
+        }
+        if (!executionCompleted) {
+            if (!intentFingerprint.isNull()) {
+                return semanticFailure(
+                        "CANDIDATE_BUILD_BINDING",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_FAILED_CANDIDATE_HAS_INTENT");
+            }
+            return valid("CANDIDATE_BUILD_BINDING");
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode metadata =
+                JSON.mapper.createObjectNode();
+        metadata.put("schemaVersion", "bloge.capabilityStudioGovernedCandidateIntent.v1");
+        metadata.put("compilationFingerprint",
+                projection.path("compilationFingerprint").textValue());
+        metadata.put("sourceMapFingerprint",
+                projection.path("sourceMapFingerprint").textValue());
+        metadata.put("publicationReceiptFingerprint",
+                projection.path("publication").path("receiptFingerprint").textValue());
+        metadata.set("suiteRef", projection.path("publication").path("suiteRef").deepCopy());
+        metadata.set("candidateBuild", candidate.deepCopy());
+        String expected;
+        try {
+            expected = BusinessMirrorCanonical.fingerprint(
+                    metadata,
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CANDIDATE_INTENT_TOO_LARGE",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CANDIDATE_INTENT_INVALID");
+        } catch (IllegalArgumentException failure) {
+            return semanticFailure("CANDIDATE_BUILD_BINDING", failure.getMessage());
+        }
+        if (!expected.equals(intentFingerprint.textValue())) {
+            return semanticFailure(
+                    "CANDIDATE_BUILD_BINDING",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CANDIDATE_INTENT_DRIFT");
+        }
+        return valid("CANDIDATE_BUILD_BINDING");
     }
 
     private static VerificationResult valid(String... checks) {

@@ -148,6 +148,9 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(result.childRunCount).toBe(27);
     expect(result.oraclePassCount).toBe(9);
     expect(result.businessCheckPassCount).toBe(27);
+    expect(result.verificationLevel).toBe('DEVELOPMENT_VERIFIED');
+    expect(result.candidateBuild?.artifactFingerprint).toMatch(/^sha256:/);
+    expect(result.candidateIntentFingerprint).toMatch(/^sha256:/);
     expect(result.publication.suiteRef.kind).toBe('TEST_SUITE');
     expect(new Set(result.rounds.map((round) => round.suiteRunId)).size).toBe(3);
     expect(new Set(result.cases.flatMap((entry) => entry.rounds.map((round) => round.runId))).size).toBe(27);
@@ -161,11 +164,13 @@ describe('Capability Studio governed baseline protocol', () => {
     failed.oraclePassCount = 0;
     failed.businessCheckCount = 0;
     failed.businessCheckPassCount = 0;
+    failed.verificationLevel = 'NOT_VERIFIED';
     failed.evidenceClass = null;
     failed.realExternalCallCount = null;
     failed.compilationFingerprint = null;
     failed.sourceMapFingerprint = null;
     failed.provenanceFingerprint = null;
+    failed.candidateIntentFingerprint = null;
     failed.publication = null;
     failed.rounds = [];
     failed.cases = [];
@@ -222,6 +227,33 @@ describe('Capability Studio governed baseline protocol', () => {
     const wrongCaseOrder = structuredClone(governedBaselineProjectionFixture);
     [wrongCaseOrder.cases[0], wrongCaseOrder.cases[1]] = [wrongCaseOrder.cases[1], wrongCaseOrder.cases[0]];
     expect(() => parseGovernedBaselineProjection(wrongCaseOrder)).toThrow('canonical case order');
+  });
+
+  it('keeps candidate and evidence limitations synchronized with their facts', () => {
+    const unbound = structuredClone(governedBaselineProjectionFixture);
+    unbound.candidateBuild = null as never;
+    unbound.candidateIntentFingerprint = null as never;
+    unbound.limitations = [
+      'IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND',
+      ...unbound.limitations,
+    ];
+    expect(parseGovernedBaselineProjection(unbound)).toMatchObject({ candidateBuild: null });
+
+    const certifiable = structuredClone(governedBaselineProjectionFixture);
+    certifiable.evidenceClass = 'CERTIFIABLE' as never;
+    certifiable.limitations = certifiable.limitations
+      .filter((value) => value !== 'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED');
+    const parsed = parseGovernedBaselineProjection(certifiable);
+    expect(parsed.status === 'PASSED' && parsed.evidenceClass).toBe('CERTIFIABLE');
+
+    const intentWithoutCandidate = structuredClone(governedBaselineProjectionFixture);
+    intentWithoutCandidate.candidateBuild = null as never;
+    intentWithoutCandidate.limitations = [
+      'IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND',
+      ...intentWithoutCandidate.limitations,
+    ];
+    expect(() => parseGovernedBaselineProjection(intentWithoutCandidate))
+      .toThrow('Candidate build and execution intent binding are inconsistent');
   });
 
   it('rejects business Oracle drift and missing high-risk proofs', () => {

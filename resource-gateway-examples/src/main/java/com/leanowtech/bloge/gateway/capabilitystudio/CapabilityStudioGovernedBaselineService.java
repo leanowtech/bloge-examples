@@ -40,10 +40,12 @@ public final class CapabilityStudioGovernedBaselineService {
     private static final String EXECUTE_PURPOSE = "TEST_EXECUTION";
     private static final String WORKLOAD_GROUP = "resource-gateway-test-runtime-operators";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
-    private static final List<String> LIMITATIONS = List.of(
-            "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+    private static final String CANDIDATE_LIMITATION =
+            "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND";
+    private static final String CERTIFIABLE_LIMITATION =
+            "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED";
+    private static final List<String> REMAINING_RELEASE_LIMITATIONS = List.of(
             "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
-            "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
             "DEPLOYMENT_EGRESS_NOT_OBSERVED",
             "OWNER_SIGNOFF_NOT_PRESENT");
 
@@ -54,6 +56,7 @@ public final class CapabilityStudioGovernedBaselineService {
     private final CapabilityStudioScenarioDatasetProjector datasetProjector;
     private final ScenarioGovernedRegistryGateway registry;
     private final CapabilityStudioGovernedCandidateService candidate;
+    private final CapabilityStudioDeploymentCandidateAuthority candidateAuthority;
     private final Supplier<String> batchIdSupplier;
 
     public CapabilityStudioGovernedBaselineService(
@@ -65,7 +68,22 @@ public final class CapabilityStudioGovernedBaselineService {
             ScenarioGovernedRegistryGateway registry,
             CapabilityStudioGovernedCandidateService candidate) {
         this(pack, mapper, operators, rehearsal, datasetProjector, registry, candidate,
+                CapabilityStudioDeploymentCandidateAuthority.unbound(),
                 () -> UUID.randomUUID().toString());
+    }
+
+    /** Creates the demo baseline with a deployment-owned candidate binding authority. */
+    public CapabilityStudioGovernedBaselineService(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper mapper,
+            OperatorRegistry operators,
+            CapabilityStudioFeatureRehearsalService rehearsal,
+            CapabilityStudioScenarioDatasetProjector datasetProjector,
+            ScenarioGovernedRegistryGateway registry,
+            CapabilityStudioGovernedCandidateService candidate,
+            CapabilityStudioDeploymentCandidateAuthority candidateAuthority) {
+        this(pack, mapper, operators, rehearsal, datasetProjector, registry, candidate,
+                candidateAuthority, () -> UUID.randomUUID().toString());
     }
 
     /** Test-only seam for deterministic batch ids; production composition uses UUIDs. */
@@ -77,6 +95,7 @@ public final class CapabilityStudioGovernedBaselineService {
             CapabilityStudioScenarioDatasetProjector datasetProjector,
             ScenarioGovernedRegistryGateway registry,
             CapabilityStudioGovernedCandidateService candidate,
+            CapabilityStudioDeploymentCandidateAuthority candidateAuthority,
             Supplier<String> batchIdSupplier) {
         this.pack = Objects.requireNonNull(pack, "pack");
         this.mapper = Objects.requireNonNull(mapper, "mapper").findAndRegisterModules();
@@ -85,6 +104,7 @@ public final class CapabilityStudioGovernedBaselineService {
         this.datasetProjector = Objects.requireNonNull(datasetProjector, "datasetProjector");
         this.registry = Objects.requireNonNull(registry, "registry");
         this.candidate = Objects.requireNonNull(candidate, "candidate");
+        this.candidateAuthority = Objects.requireNonNull(candidateAuthority, "candidateAuthority");
         this.batchIdSupplier = Objects.requireNonNull(batchIdSupplier, "batchIdSupplier");
     }
 
@@ -140,7 +160,8 @@ public final class CapabilityStudioGovernedBaselineService {
         for (int round = 1; round <= ROUND_COUNT; round++) {
             String clientRequestId = batchId + ":round-" + round;
             receipts.add(candidate.run(null, target.operator(), target.contract(), runtimeTarget,
-                    datasetCompilation, clientRequestId, publicationIdentity, executionIdentity));
+                    datasetCompilation, clientRequestId, publicationIdentity, executionIdentity,
+                    candidateAuthority.current().orElse(null)));
         }
         return projectVerified(receipts, expectedCaseIds, rehearsal.operatorFootprints(),
                 runtimeAsset.realExternalCalls().get());
@@ -167,6 +188,25 @@ public final class CapabilityStudioGovernedBaselineService {
         requireFingerprint(provenanceFingerprint, "PROVENANCE_FINGERPRINT_INVALID");
         require(publication.suiteRef() != null && "TEST_SUITE".equals(publication.suiteRef().kind()),
                 "SUITE_REF_INVALID");
+        CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild =
+                receipts.getFirst().candidateBuild();
+        String candidateIntentFingerprint =
+                receipts.getFirst().evidence().candidateIntentFingerprint();
+        if (candidateBuild == null) {
+            require(candidateIntentFingerprint.isBlank(), "UNBOUND_CANDIDATE_HAS_INTENT");
+        } else {
+            requireFingerprint(candidateIntentFingerprint, "CANDIDATE_INTENT_FINGERPRINT_INVALID");
+        }
+
+        Set<String> evidenceClasses = receipts.stream()
+                .flatMap(receipt -> receipt.evidence().childRuns().stream())
+                .map(CapabilityStudioGovernedCandidateService.ChildRunRef::evidenceClass)
+                .collect(java.util.stream.Collectors.toSet());
+        require(evidenceClasses.size() == 1, "CHILD_EVIDENCE_CLASS_DRIFT");
+        String evidenceClass = evidenceClasses.iterator().next();
+        require(CapabilityStudioGovernedBaselineProjection.EXPLORATORY.equals(evidenceClass)
+                        || CapabilityStudioGovernedBaselineProjection.CERTIFIABLE.equals(evidenceClass),
+                "CHILD_EVIDENCE_CLASS_INVALID");
 
         Map<String, List<CapabilityStudioGovernedBaselineProjection.CaseRound>> caseRounds =
                 new LinkedHashMap<>();
@@ -183,6 +223,10 @@ public final class CapabilityStudioGovernedBaselineService {
                     "SOURCE_MAP_FINGERPRINT_DRIFT");
             require(provenanceFingerprint.equals(evidence.provenanceFingerprint()),
                     "PROVENANCE_FINGERPRINT_DRIFT");
+            require(Objects.equals(candidateBuild, receipt.candidateBuild()),
+                    "CANDIDATE_BUILD_DRIFT");
+            require(candidateIntentFingerprint.equals(evidence.candidateIntentFingerprint()),
+                    "CANDIDATE_INTENT_FINGERPRINT_DRIFT");
             require(suiteRunIds.add(evidence.suiteRunId()), "SUITE_RUN_ID_NOT_UNIQUE");
             require(evidence.status().equals(TestSuiteRunEvidence.Status.PASSED.name()),
                     "SUITE_STATUS_NOT_PASSED");
@@ -221,7 +265,8 @@ public final class CapabilityStudioGovernedBaselineService {
                                 .toList(),
                         receipts,
                         operatorFootprints,
-                        realExternalCallCount))
+                        realExternalCallCount,
+                        evidenceClass))
                 .toList();
         CapabilityStudioGovernedAssetPublisher.ExactRef suite = publication.suiteRef();
         return new CapabilityStudioGovernedBaselineProjection(
@@ -231,7 +276,8 @@ public final class CapabilityStudioGovernedBaselineService {
                 CapabilityStudioGovernedBaselineProjection.PASSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
-                CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS,
+                CapabilityStudioGovernedBaselineProjection.DEVELOPMENT_VERIFIED,
+                evidenceClass,
                 CASE_COUNT,
                 ROUND_COUNT,
                 suiteRunIds.size(),
@@ -243,6 +289,8 @@ public final class CapabilityStudioGovernedBaselineService {
                 compilationFingerprint,
                 sourceMapFingerprint,
                 provenanceFingerprint,
+                candidateBuild(candidateBuild),
+                candidateIntentFingerprint.isBlank() ? null : candidateIntentFingerprint,
                 new CapabilityStudioGovernedBaselineProjection.Publication(
                         publication.receiptFingerprint(),
                         new CapabilityStudioGovernedBaselineProjection.SuiteRef(
@@ -250,7 +298,7 @@ public final class CapabilityStudioGovernedBaselineService {
                         publication.fixtureRefs().size()),
                 rounds,
                 cases,
-                LIMITATIONS,
+                limitations(candidateBuild, evidenceClass),
                 List.of());
     }
 
@@ -262,6 +310,7 @@ public final class CapabilityStudioGovernedBaselineService {
                 CapabilityStudioGovernedBaselineProjection.FAILED_CLOSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
+                CapabilityStudioGovernedBaselineProjection.NOT_VERIFIED,
                 null,
                 CASE_COUNT,
                 ROUND_COUNT,
@@ -274,10 +323,12 @@ public final class CapabilityStudioGovernedBaselineService {
                 null,
                 null,
                 null,
+                candidateBuild(candidateAuthority.current().orElse(null)),
+                null,
                 null,
                 List.of(),
                 List.of(),
-                LIMITATIONS,
+                limitations(candidateAuthority.current().orElse(null), null),
                 List.of(diagnostic));
     }
 
@@ -286,7 +337,8 @@ public final class CapabilityStudioGovernedBaselineService {
             List<CapabilityStudioGovernedBaselineProjection.CaseRound> rounds,
             List<CapabilityStudioGovernedCandidateService.CandidateReceipt> receipts,
             List<CapabilityStudioFeatureRehearsalService.OperatorFootprint> operatorFootprints,
-            int realExternalCallCount) {
+            int realExternalCallCount,
+            String evidenceClass) {
         require(rounds.size() == ROUND_COUNT, "ORACLE_ROUND_COUNT_INVALID");
         String semanticFingerprint = rounds.getFirst().semanticResultFingerprint();
         requireFingerprint(semanticFingerprint, "BUSINESS_RESULT_FINGERPRINT_INVALID");
@@ -308,8 +360,7 @@ public final class CapabilityStudioGovernedBaselineService {
                 .toList();
         require(children.size() == ROUND_COUNT, "ORACLE_CHILD_EVIDENCE_MISSING");
         require(children.stream().allMatch(child ->
-                        CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS.equals(
-                                child.evidenceClass())),
+                        evidenceClass.equals(child.evidenceClass())),
                 "CHILD_EVIDENCE_CLASS_DRIFT");
         List<String> proofs = new ArrayList<>(List.of(
                 "BUSINESS_ASSERTION_PASSED",
@@ -335,7 +386,7 @@ public final class CapabilityStudioGovernedBaselineService {
                 proofs.add("FORBIDDEN_WRITE_EFFECT_ABSENT");
             }
             default -> {
-                // The common governed assertion and stability checks are the complete v2 Oracle.
+                // The common governed assertion and stability checks are the complete v3 Oracle.
             }
         }
         int assertionsEvaluated = rounds.stream()
@@ -422,6 +473,29 @@ public final class CapabilityStudioGovernedBaselineService {
 
     private static String normalized(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static CapabilityStudioGovernedBaselineProjection.CandidateBuild candidateBuild(
+            CapabilityStudioDeploymentCandidateAuthority.Binding value) {
+        return value == null ? null : new CapabilityStudioGovernedBaselineProjection.CandidateBuild(
+                value.authority(), value.instanceId(), value.buildRef(), value.revision(),
+                value.sourceCommit(), value.sourceTreeStatus(), value.artifactFingerprint());
+    }
+
+    private static List<String> limitations(
+            CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild,
+            String evidenceClass) {
+        List<String> result = new ArrayList<>();
+        if (candidateBuild == null) {
+            result.add(CANDIDATE_LIMITATION);
+        }
+        result.add(REMAINING_RELEASE_LIMITATIONS.get(0));
+        if (!CapabilityStudioGovernedBaselineProjection.CERTIFIABLE.equals(evidenceClass)) {
+            result.add(CERTIFIABLE_LIMITATION);
+        }
+        result.add(REMAINING_RELEASE_LIMITATIONS.get(1));
+        result.add(REMAINING_RELEASE_LIMITATIONS.get(2));
+        return List.copyOf(result);
     }
 
     private static final class BaselineFailure extends RuntimeException {

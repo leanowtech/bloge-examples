@@ -14,10 +14,12 @@ class CapabilityStudioGovernedBaselineVerifierTest {
             new CapabilityStudioGovernedBaselineVerifier();
 
     @Test
-    void packagesBothGovernedBaselineSchemaVersions() {
+    void packagesAllGovernedBaselineSchemaVersions() {
         assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_V1_RESOURCE))
                 .isNotNull();
         assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_V2_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_V3_RESOURCE))
                 .isNotNull();
     }
 
@@ -30,7 +32,22 @@ class CapabilityStudioGovernedBaselineVerifierTest {
         assertThat(result.checks()).contains(
                 "SCHEMA", "UNIQUE_SUITE_RUN_IDS", "UNIQUE_CASE_IDS", "UNIQUE_CHILD_RUN_IDS",
                 "CASE_ORACLES", "CASE_ASSERTIONS", "FIXTURE_CONTROLS",
-                "SEMANTIC_RESULT_STABILITY", "CASE_PROOFS", "LIMITATIONS");
+                "SEMANTIC_RESULT_STABILITY", "CASE_PROOFS", "CANDIDATE_BUILD_BINDING",
+                "LIMITATIONS");
+    }
+
+    @Test
+    void verifiesAnUnboundExploratoryDevelopmentReceiptWithoutPromotingIt() {
+        ObjectNode projection = passedProjection();
+        projection.putNull("candidateBuild");
+        projection.putNull("candidateIntentFingerprint");
+        projection.put("evidenceClass", "EXPLORATORY");
+        addLimitationsAndDiagnostics(projection);
+
+        CapabilityStudioGovernedBaselineVerifier.VerificationResult result =
+                VERIFIER.verify(projection);
+
+        assertThat(result.verified()).withFailMessage("verification result: %s", result).isTrue();
     }
 
     @Test
@@ -40,7 +57,8 @@ class CapabilityStudioGovernedBaselineVerifierTest {
 
         assertThat(result.verified()).isTrue();
         assertThat(result.checks()).containsExactlyInAnyOrder(
-                "SCHEMA", "BASELINE_IDENTITY", "FAILED_CLOSED_NO_EVIDENCE", "LIMITATIONS");
+                "SCHEMA", "BASELINE_IDENTITY", "FAILED_CLOSED_NO_EVIDENCE",
+                "CANDIDATE_BUILD_BINDING", "LIMITATIONS");
     }
 
     @Test
@@ -107,10 +125,29 @@ class CapabilityStudioGovernedBaselineVerifierTest {
     @Test
     void rejectsTamperedEvidenceClassAtTheSchemaBoundary() {
         ObjectNode projection = passedProjection();
-        projection.put("evidenceClass", "CERTIFIABLE");
+        projection.put("evidenceClass", "SELF_ATTESTED");
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
+    }
+
+    @Test
+    void rejectsAnUnknownRealCallCountForAPassedReceipt() {
+        ObjectNode projection = passedProjection();
+        projection.putNull("realExternalCallCount");
+
+        assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
+                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
+    }
+
+    @Test
+    void rejectsAValidLookingCandidateBuildThatNoLongerMatchesTheSignedIntent() {
+        ObjectNode projection = passedProjection();
+        ((ObjectNode) projection.path("candidateBuild"))
+                .put("artifactFingerprint", fingerprint('9'));
+
+        assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SEMANTIC,
+                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CANDIDATE_INTENT_DRIFT");
     }
 
     @Test
@@ -157,13 +194,14 @@ class CapabilityStudioGovernedBaselineVerifierTest {
 
     private static ObjectNode passedProjection() {
         ObjectNode result = JSON.createObjectNode()
-                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v2")
+                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v3")
                 .put("evidenceKind", "DEVELOPMENT_TEST_OWNED")
                 .put("baselineId", "capability-studio-governed-9x3-v1")
                 .put("status", "PASSED")
                 .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES")
                 .put("releaseGateStatus", "NO_GO")
-                .put("evidenceClass", "EXPLORATORY")
+                .put("verificationLevel", "DEVELOPMENT_VERIFIED")
+                .put("evidenceClass", "CERTIFIABLE")
                 .put("caseCount", 9)
                 .put("roundCount", 3)
                 .put("suiteRunCount", 3)
@@ -175,6 +213,7 @@ class CapabilityStudioGovernedBaselineVerifierTest {
                 .put("compilationFingerprint", fingerprint('a'))
                 .put("sourceMapFingerprint", fingerprint('b'))
                 .put("provenanceFingerprint", fingerprint('c'));
+        result.set("candidateBuild", candidateBuild());
         ObjectNode suiteRef = JSON.createObjectNode()
                 .put("kind", "TEST_SUITE")
                 .put("id", "governed-suite")
@@ -185,6 +224,7 @@ class CapabilityStudioGovernedBaselineVerifierTest {
                 .put("fixtureCount", 9);
         publication.set("suiteRef", suiteRef);
         result.set("publication", publication);
+        result.put("candidateIntentFingerprint", candidateIntentFingerprint(result));
         ArrayNode rounds = result.putArray("rounds");
         for (int round = 1; round <= 3; round++) {
             rounds.add(round(round));
@@ -201,12 +241,13 @@ class CapabilityStudioGovernedBaselineVerifierTest {
 
     private static ObjectNode failedClosedProjection() {
         ObjectNode result = JSON.createObjectNode()
-                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v2")
+                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v3")
                 .put("evidenceKind", "DEVELOPMENT_TEST_OWNED")
                 .put("baselineId", "capability-studio-governed-9x3-v1")
                 .put("status", "FAILED_CLOSED")
                 .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES")
                 .put("releaseGateStatus", "NO_GO")
+                .put("verificationLevel", "NOT_VERIFIED")
                 .putNull("evidenceClass")
                 .put("caseCount", 9)
                 .put("roundCount", 3)
@@ -215,10 +256,12 @@ class CapabilityStudioGovernedBaselineVerifierTest {
                 .put("oraclePassCount", 0)
                 .put("businessCheckCount", 0)
                 .put("businessCheckPassCount", 0)
-                .put("realExternalCallCount", 0)
+                .putNull("realExternalCallCount")
                 .putNull("compilationFingerprint")
                 .putNull("sourceMapFingerprint")
                 .putNull("provenanceFingerprint")
+                .putNull("candidateBuild")
+                .putNull("candidateIntentFingerprint")
                 .putNull("publication");
         result.putArray("rounds");
         result.putArray("cases");
@@ -281,9 +324,44 @@ class CapabilityStudioGovernedBaselineVerifierTest {
     }
 
     private static void addLimitationsAndDiagnostics(ObjectNode result) {
+        result.remove("limitations");
+        result.remove("diagnostics");
         ArrayNode limitations = result.putArray("limitations");
-        CapabilityStudioGovernedBaselineVerifier.LIMITATIONS.forEach(limitations::add);
+        if (result.path("candidateBuild").isNull()) {
+            limitations.add("IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND");
+        }
+        limitations.add("RUNTIME_ENVIRONMENT_NOT_ATTESTED");
+        if (!"CERTIFIABLE".equals(result.path("evidenceClass").textValue())) {
+            limitations.add("CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED");
+        }
+        limitations.add("DEPLOYMENT_EGRESS_NOT_OBSERVED");
+        limitations.add("OWNER_SIGNOFF_NOT_PRESENT");
         result.putArray("diagnostics");
+    }
+
+    private static ObjectNode candidateBuild() {
+        return JSON.createObjectNode()
+                .put("authority", "deployment-launcher")
+                .put("instanceId", "resource-gateway-local-01")
+                .put("buildRef", "resource-gateway-examples")
+                .put("revision", "1.0.0")
+                .put("sourceCommit", "abcdef0123456789")
+                .put("sourceTreeStatus", "CLEAN")
+                .put("artifactFingerprint", fingerprint('8'));
+    }
+
+    private static String candidateIntentFingerprint(ObjectNode projection) {
+        ObjectNode metadata = JSON.createObjectNode();
+        metadata.put("schemaVersion", "bloge.capabilityStudioGovernedCandidateIntent.v1");
+        metadata.put("compilationFingerprint",
+                projection.path("compilationFingerprint").textValue());
+        metadata.put("sourceMapFingerprint",
+                projection.path("sourceMapFingerprint").textValue());
+        metadata.put("publicationReceiptFingerprint",
+                projection.path("publication").path("receiptFingerprint").textValue());
+        metadata.set("suiteRef", projection.path("publication").path("suiteRef").deepCopy());
+        metadata.set("candidateBuild", projection.path("candidateBuild").deepCopy());
+        return BusinessMirrorCanonical.fingerprint(metadata, "TOO_LARGE", "INVALID");
     }
 
     private static String fingerprint(char fill) {

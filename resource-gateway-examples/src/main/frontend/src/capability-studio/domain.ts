@@ -168,23 +168,37 @@ export interface GovernedBaselineCase {
   rounds: GovernedBaselineCaseRound[];
 }
 
+export interface GovernedBaselineCandidateBuild {
+  authority: string;
+  instanceId: string;
+  buildRef: string;
+  revision: string;
+  sourceCommit: string;
+  sourceTreeStatus: 'CLEAN';
+  artifactFingerprint: string;
+}
+
 interface GovernedBaselineProjectionBase {
-  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v2';
+  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v3';
   evidenceKind: 'DEVELOPMENT_TEST_OWNED';
   baselineId: string;
   verificationScope: 'GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES';
   releaseGateStatus: 'NO_GO';
+  verificationLevel: 'NOT_VERIFIED' | 'DEVELOPMENT_VERIFIED';
   caseCount: 9;
   roundCount: 3;
   limitations: string[];
   diagnostics: string[];
+  candidateBuild: GovernedBaselineCandidateBuild | null;
+  candidateIntentFingerprint: string | null;
 }
 
 export interface GovernedBaselineSuccessProjection extends GovernedBaselineProjectionBase {
   status: 'PASSED';
+  verificationLevel: 'DEVELOPMENT_VERIFIED';
   suiteRunCount: 3;
   childRunCount: 27;
-  evidenceClass: 'EXPLORATORY';
+  evidenceClass: 'EXPLORATORY' | 'CERTIFIABLE';
   oraclePassCount: 9;
   businessCheckCount: 27;
   businessCheckPassCount: 27;
@@ -213,6 +227,7 @@ export interface GovernedBaselineSuccessProjection extends GovernedBaselineProje
 
 export interface GovernedBaselineFailureProjection extends GovernedBaselineProjectionBase {
   status: 'FAILED_CLOSED';
+  verificationLevel: 'NOT_VERIFIED';
   suiteRunCount: 0;
   childRunCount: 0;
   evidenceClass: null;
@@ -1392,20 +1407,22 @@ function requireGovernedCaseRoundSequence(rounds: GovernedBaselineCaseRound[], p
 export function parseGovernedBaselineProjection(payload: unknown): GovernedBaselineProjection {
   const root = governedObject(payload, 'governedBaseline', [
     'schemaVersion', 'evidenceKind', 'baselineId', 'status', 'verificationScope',
-    'releaseGateStatus', 'evidenceClass', 'caseCount', 'roundCount', 'suiteRunCount', 'childRunCount',
+    'releaseGateStatus', 'verificationLevel', 'evidenceClass', 'caseCount', 'roundCount', 'suiteRunCount', 'childRunCount',
     'oraclePassCount', 'businessCheckCount', 'businessCheckPassCount',
     'realExternalCallCount', 'compilationFingerprint', 'sourceMapFingerprint',
-    'provenanceFingerprint', 'publication', 'rounds', 'cases', 'limitations', 'diagnostics',
+    'provenanceFingerprint', 'candidateBuild', 'candidateIntentFingerprint', 'publication',
+    'rounds', 'cases', 'limitations', 'diagnostics',
   ]);
   const schemaVersion = governedEnum(
     root.schemaVersion,
-    ['resource-gateway.capability-studio.governed-baseline.v2'],
+    ['resource-gateway.capability-studio.governed-baseline.v3'],
     'governedBaseline.schemaVersion',
   );
   const evidenceKind = governedEnum(root.evidenceKind, ['DEVELOPMENT_TEST_OWNED'], 'governedBaseline.evidenceKind');
   const status = governedEnum(root.status, ['PASSED', 'FAILED_CLOSED'], 'governedBaseline.status');
   const verificationScope = governedEnum(root.verificationScope, ['GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES'], 'governedBaseline.verificationScope');
   const releaseGateStatus = governedEnum(root.releaseGateStatus, ['NO_GO'], 'governedBaseline.releaseGateStatus');
+  const verificationLevel = governedEnum(root.verificationLevel, ['NOT_VERIFIED', 'DEVELOPMENT_VERIFIED'], 'governedBaseline.verificationLevel');
   const baselineId = governedString(root.baselineId, 'governedBaseline.baselineId');
   const caseCount = governedInteger(root.caseCount, 'governedBaseline.caseCount');
   const roundCount = governedInteger(root.roundCount, 'governedBaseline.roundCount');
@@ -1416,11 +1433,22 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
   const businessCheckPassCount = governedInteger(root.businessCheckPassCount, 'governedBaseline.businessCheckPassCount');
   const limitations = governedStringArray(root.limitations, 'governedBaseline.limitations');
   const diagnostics = governedStringArray(root.diagnostics, 'governedBaseline.diagnostics');
+  const candidateBuild = parseGovernedCandidateBuild(root.candidateBuild);
+  const candidateIntentFingerprint = root.candidateIntentFingerprint === null
+    ? null
+    : governedFingerprint(root.candidateIntentFingerprint, 'governedBaseline.candidateIntentFingerprint');
 
   if (caseCount !== 9) throw invalidGovernedBaseline('Case count is not nine.');
   if (roundCount !== 3) throw invalidGovernedBaseline('Round count is not three.');
-  if (limitations.length !== governedBaselineRequiredLimitations.length
-    || governedBaselineRequiredLimitations.some((limitation, index) => limitations[index] !== limitation)) {
+  const expectedLimitations = [
+    ...(candidateBuild === null ? [governedBaselineRequiredLimitations[0]] : []),
+    governedBaselineRequiredLimitations[1],
+    ...(root.evidenceClass === 'CERTIFIABLE' ? [] : [governedBaselineRequiredLimitations[2]]),
+    governedBaselineRequiredLimitations[3],
+    governedBaselineRequiredLimitations[4],
+  ];
+  if (limitations.length !== expectedLimitations.length
+    || expectedLimitations.some((limitation, index) => limitations[index] !== limitation)) {
     throw invalidGovernedBaseline('Required governed baseline limitation is missing.');
   }
   if (status === 'FAILED_CLOSED') {
@@ -1428,11 +1456,13 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
     const cases = governedArray(root.cases, 'governedBaseline.cases', 0);
     if (suiteRunCount !== 0 || childRunCount !== 0 || oraclePassCount !== 0
       || businessCheckCount !== 0 || businessCheckPassCount !== 0
+      || verificationLevel !== 'NOT_VERIFIED'
       || root.evidenceClass !== null
       || root.realExternalCallCount !== null
       || root.compilationFingerprint !== null
       || root.sourceMapFingerprint !== null
       || root.provenanceFingerprint !== null
+      || candidateIntentFingerprint !== null
       || root.publication !== null
       || diagnostics.length === 0) {
       throw invalidGovernedBaseline('A failed-closed baseline contains fabricated or incomplete failure evidence.');
@@ -1444,6 +1474,7 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
       status,
       verificationScope,
       releaseGateStatus,
+      verificationLevel: 'NOT_VERIFIED',
       caseCount: 9,
       roundCount: 3,
       suiteRunCount: 0,
@@ -1456,6 +1487,8 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
       compilationFingerprint: null,
       sourceMapFingerprint: null,
       provenanceFingerprint: null,
+      candidateBuild,
+      candidateIntentFingerprint: null,
       publication: null,
       rounds: rounds as [],
       cases: cases as [],
@@ -1465,7 +1498,11 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
   }
 
   const realExternalCallCount = governedInteger(root.realExternalCallCount, 'governedBaseline.realExternalCallCount');
-  const evidenceClass = governedEnum(root.evidenceClass, ['EXPLORATORY'], 'governedBaseline.evidenceClass');
+  if (verificationLevel !== 'DEVELOPMENT_VERIFIED') throw invalidGovernedBaseline('A passed baseline is not development verified.');
+  const evidenceClass = governedEnum(root.evidenceClass, ['EXPLORATORY', 'CERTIFIABLE'], 'governedBaseline.evidenceClass');
+  if ((candidateBuild === null) !== (candidateIntentFingerprint === null)) {
+    throw invalidGovernedBaseline('Candidate build and execution intent binding are inconsistent.');
+  }
   const compilationFingerprint = governedFingerprint(root.compilationFingerprint, 'governedBaseline.compilationFingerprint');
   const sourceMapFingerprint = governedFingerprint(root.sourceMapFingerprint, 'governedBaseline.sourceMapFingerprint');
   const provenanceFingerprint = governedFingerprint(root.provenanceFingerprint, 'governedBaseline.provenanceFingerprint');
@@ -1521,6 +1558,7 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
     status: 'PASSED',
     verificationScope,
     releaseGateStatus,
+    verificationLevel: 'DEVELOPMENT_VERIFIED',
     caseCount: 9,
     roundCount: 3,
     suiteRunCount: 3,
@@ -1533,10 +1571,31 @@ export function parseGovernedBaselineProjection(payload: unknown): GovernedBasel
     compilationFingerprint,
     sourceMapFingerprint,
     provenanceFingerprint,
+    candidateBuild,
+    candidateIntentFingerprint,
     publication: { receiptFingerprint, suiteRef, fixtureCount: 9 },
     rounds: rounds as GovernedBaselineSuccessProjection['rounds'],
     cases: cases as GovernedBaselineSuccessProjection['cases'],
     limitations,
     diagnostics,
+  };
+}
+
+function parseGovernedCandidateBuild(value: unknown): GovernedBaselineCandidateBuild | null {
+  if (value === null) return null;
+  const candidate = governedObject(value, 'governedBaseline.candidateBuild', [
+    'authority', 'instanceId', 'buildRef', 'revision', 'sourceCommit',
+    'sourceTreeStatus', 'artifactFingerprint',
+  ]);
+  const sourceCommit = governedString(candidate.sourceCommit, 'governedBaseline.candidateBuild.sourceCommit').toLowerCase();
+  if (!/^[a-f0-9]{7,64}$/.test(sourceCommit)) throw invalidGovernedBaseline('Candidate source commit is invalid.');
+  return {
+    authority: governedString(candidate.authority, 'governedBaseline.candidateBuild.authority'),
+    instanceId: governedString(candidate.instanceId, 'governedBaseline.candidateBuild.instanceId'),
+    buildRef: governedString(candidate.buildRef, 'governedBaseline.candidateBuild.buildRef'),
+    revision: governedString(candidate.revision, 'governedBaseline.candidateBuild.revision'),
+    sourceCommit,
+    sourceTreeStatus: governedEnum(candidate.sourceTreeStatus, ['CLEAN'], 'governedBaseline.candidateBuild.sourceTreeStatus'),
+    artifactFingerprint: governedFingerprint(candidate.artifactFingerprint, 'governedBaseline.candidateBuild.artifactFingerprint'),
   };
 }

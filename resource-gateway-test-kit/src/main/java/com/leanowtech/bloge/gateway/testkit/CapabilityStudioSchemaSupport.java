@@ -49,8 +49,11 @@ final class CapabilityStudioSchemaSupport {
     static final String GOVERNED_BASELINE_V2_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-governed-baseline-v2.schema.json";
+    static final String GOVERNED_BASELINE_V3_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-governed-baseline-v3.schema.json";
     /** Default governed-baseline contract for current callers. */
-    static final String GOVERNED_BASELINE_RESOURCE = GOVERNED_BASELINE_V2_RESOURCE;
+    static final String GOVERNED_BASELINE_RESOURCE = GOVERNED_BASELINE_V3_RESOURCE;
     static final String STAGE_ACCEPTANCE_RESULT_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-stage-acceptance-result-v1.schema.json";

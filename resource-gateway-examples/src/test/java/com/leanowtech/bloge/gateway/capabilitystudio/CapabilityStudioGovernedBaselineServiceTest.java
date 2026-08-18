@@ -20,12 +20,15 @@ class CapabilityStudioGovernedBaselineServiceTest {
                 mock(CapabilityStudioScenarioDatasetProjector.class),
                 mock(ScenarioGovernedRegistryGateway.class),
                 mock(CapabilityStudioGovernedCandidateService.class),
+                CapabilityStudioDeploymentCandidateAuthority.unbound(),
                 () -> "  ");
 
         CapabilityStudioGovernedBaselineProjection result = service.run();
 
         assertThat(result.status())
                 .isEqualTo(CapabilityStudioGovernedBaselineProjection.FAILED_CLOSED);
+        assertThat(result.verificationLevel())
+                .isEqualTo(CapabilityStudioGovernedBaselineProjection.NOT_VERIFIED);
         assertThat(result.suiteRunCount()).isZero();
         assertThat(result.childRunCount()).isZero();
         assertThat(result.oraclePassCount()).isZero();
@@ -36,6 +39,8 @@ class CapabilityStudioGovernedBaselineServiceTest {
         assertThat(result.compilationFingerprint()).isNull();
         assertThat(result.sourceMapFingerprint()).isNull();
         assertThat(result.provenanceFingerprint()).isNull();
+        assertThat(result.candidateBuild()).isNull();
+        assertThat(result.candidateIntentFingerprint()).isNull();
         assertThat(result.publication()).isNull();
         assertThat(result.rounds()).isEmpty();
         assertThat(result.cases()).isEmpty();

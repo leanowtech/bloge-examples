@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -82,6 +83,24 @@ public final class CapabilityStudioGovernedCandidateService {
             String clientRequestId,
             IntegrationRequestContext publicationIdentity,
             IntegrationRequestContext executionIdentity) {
+        return run(graph, operator, contract, runtimeTarget, datasetCompilation, clientRequestId,
+                publicationIdentity, executionIdentity, null);
+    }
+
+    /**
+     * Executes an exact candidate and binds a deployment-owned build identity into the signed
+     * aggregate request-metadata fingerprint.
+     */
+    public CandidateReceipt run(
+            GraphDraft graph,
+            OperatorDefinition operator,
+            ContractDraft contract,
+            TestExecutionApiRequest.Target runtimeTarget,
+            CapabilityStudioScenarioDatasetCompilation datasetCompilation,
+            String clientRequestId,
+            IntegrationRequestContext publicationIdentity,
+            IntegrationRequestContext executionIdentity,
+            CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild) {
         String normalizedRequestId = normalized(clientRequestId);
         require(!normalizedRequestId.isBlank(), "CLIENT_REQUEST_ID_MISSING", "/clientRequestId");
 
@@ -97,6 +116,12 @@ public final class CapabilityStudioGovernedCandidateService {
         requestMetadata.put("sourceMapFingerprint", publication.sourceMapFingerprint());
         requestMetadata.put("publicationReceiptFingerprint", publication.receiptFingerprint());
         requestMetadata.put("suiteRef", publication.suiteRef());
+        if (candidateBuild != null) {
+            requestMetadata.put("candidateBuild", candidateBuild);
+        }
+        String candidateIntentFingerprint = candidateBuild == null
+                ? ""
+                : ProtocolFingerprint.of(mapper, requestMetadata);
         TestSuiteExecutionRequest request = new TestSuiteExecutionRequest(
                 TestSuiteExecutionRequest.SCHEMA_VERSION,
                 new TestSuiteExecutionRequest.SuiteRef(
@@ -109,12 +134,13 @@ public final class CapabilityStudioGovernedCandidateService {
         TestSuiteExecutionResponse response = suiteExecutions.execute(
                 publication.suiteRef().id(), request, executionIdentity);
         CandidateEvidence evidence = verifiedEvidence(compilation, publication, response,
-                normalizedRequestId, runtimeTarget, executionIdentity);
+                normalizedRequestId, runtimeTarget, executionIdentity,
+                candidateIntentFingerprint);
         String receiptFingerprint = VisualBundleFingerprint.fromCanonicalValue(
                 mapper,
-                new CandidateMaterial(publication, evidence),
+                new CandidateMaterial(publication, evidence, candidateBuild),
                 MAX_PROTOCOL_BYTES);
-        return new CandidateReceipt(publication, evidence, receiptFingerprint);
+        return new CandidateReceipt(publication, evidence, candidateBuild, receiptFingerprint);
     }
 
     private CandidateEvidence verifiedEvidence(
@@ -123,7 +149,8 @@ public final class CapabilityStudioGovernedCandidateService {
             TestSuiteExecutionResponse response,
             String clientRequestId,
             TestExecutionApiRequest.Target runtimeTarget,
-            IntegrationRequestContext executionIdentity) {
+            IntegrationRequestContext executionIdentity,
+            String candidateIntentFingerprint) {
         require(response != null && response.evidence() != null,
                 "EVIDENCE_MISSING", "/response/evidence");
         TestSuiteRunEvidenceProtocol evidence = response.evidence();
@@ -146,6 +173,12 @@ public final class CapabilityStudioGovernedCandidateService {
 
         Map<String, Object> expectedMetadata = compilation.plan().suite().testSuite().metadata();
         Map<String, Object> actualMetadata = evidence.metadata();
+        if (!candidateIntentFingerprint.isBlank()) {
+            require(candidateIntentFingerprint.equals(stringValue(
+                            actualMetadata.get("requestMetadataFingerprint"))),
+                    "CANDIDATE_INTENT_FINGERPRINT_DRIFT",
+                    "/response/evidence/metadata/requestMetadataFingerprint");
+        }
         String expectedProvenance = stringValue(
                 expectedMetadata.get("governedProvenanceFingerprint"));
         String actualProvenance = stringValue(
@@ -177,7 +210,8 @@ public final class CapabilityStudioGovernedCandidateService {
                 .toList();
         return new CandidateEvidence(
                 response.suiteRunId(), response.evidenceFingerprint(), evidence.status().name(),
-                actualProvenance, publication.sourceMapFingerprint(), childRuns);
+                actualProvenance, publication.sourceMapFingerprint(),
+                candidateIntentFingerprint, childRuns);
     }
 
     private ChildRunRef verifiedChild(
@@ -325,6 +359,7 @@ public final class CapabilityStudioGovernedCandidateService {
             String status,
             String provenanceFingerprint,
             String sourceMapFingerprint,
+            String candidateIntentFingerprint,
             List<ChildRunRef> childRuns) {
         public CandidateEvidence {
             suiteRunId = normalized(suiteRunId);
@@ -332,6 +367,7 @@ public final class CapabilityStudioGovernedCandidateService {
             status = normalized(status);
             provenanceFingerprint = normalized(provenanceFingerprint);
             sourceMapFingerprint = normalized(sourceMapFingerprint);
+            candidateIntentFingerprint = normalized(candidateIntentFingerprint);
             childRuns = childRuns == null ? List.of() : List.copyOf(childRuns);
         }
     }
@@ -340,6 +376,7 @@ public final class CapabilityStudioGovernedCandidateService {
     public record CandidateReceipt(
             CapabilityStudioGovernedAssetPublisher.Receipt publication,
             CandidateEvidence evidence,
+            CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild,
             String receiptFingerprint) {
         public CandidateReceipt {
             Objects.requireNonNull(publication, "publication");
@@ -350,6 +387,7 @@ public final class CapabilityStudioGovernedCandidateService {
 
     private record CandidateMaterial(
             CapabilityStudioGovernedAssetPublisher.Receipt publication,
-            CandidateEvidence evidence) {
+            CandidateEvidence evidence,
+            CapabilityStudioDeploymentCandidateAuthority.Binding candidateBuild) {
     }
 }

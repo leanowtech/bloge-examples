@@ -81,9 +81,10 @@ class CapabilityStudioDemoControllerTest {
         String response = governedMvc.perform(post("/api/capability-studio/governed-baseline"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value(
-                        "resource-gateway.capability-studio.governed-baseline.v2"))
+                        "resource-gateway.capability-studio.governed-baseline.v3"))
                 .andExpect(jsonPath("$.evidenceKind").value("DEVELOPMENT_TEST_OWNED"))
                 .andExpect(jsonPath("$.evidenceClass").value("EXPLORATORY"))
+                .andExpect(jsonPath("$.verificationLevel").value("DEVELOPMENT_VERIFIED"))
                 .andExpect(jsonPath("$.status").value("PASSED"))
                 .andExpect(jsonPath("$.caseCount").value(9))
                 .andExpect(jsonPath("$.roundCount").value(3))
@@ -147,9 +148,12 @@ class CapabilityStudioDemoControllerTest {
                 CapabilityStudioGovernedBaselineProjection.PASSED,
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
-                CapabilityStudioGovernedBaselineProjection.EVIDENCE_CLASS,
+                CapabilityStudioGovernedBaselineProjection.DEVELOPMENT_VERIFIED,
+                CapabilityStudioGovernedBaselineProjection.EXPLORATORY,
                 9, 3, 3, 27, 9, 27, 27, 0,
                 fingerprintA, fingerprintB, fingerprintC,
+                null,
+                null,
                 new CapabilityStudioGovernedBaselineProjection.Publication(
                         fingerprintA,
                         new CapabilityStudioGovernedBaselineProjection.SuiteRef(

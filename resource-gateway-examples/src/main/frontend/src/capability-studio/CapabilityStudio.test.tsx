@@ -254,6 +254,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     );
     expect(query('[data-testid="governed-baseline-result"]')).toBeTruthy();
     expect(document.body.textContent).toContain('All 27 business checks passed');
+    expect(document.body.textContent).toContain('candidate build bound');
     expect(document.body.textContent).toContain('Still not accepted');
     expect(document.body.textContent).toContain('27 / 27');
     expect(document.querySelectorAll('.capability-governed-case-table tbody tr')).toHaveLength(9);
@@ -264,6 +265,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('No write operator, write trace, or real call observed');
     expect(document.querySelectorAll('.capability-governed-case-table tbody td')).toHaveLength(36);
     expect(document.body.textContent).toContain('Deployment-level network denial');
+    expect(document.body.textContent).not.toContain('not bound to an immutable release candidate');
     expect(document.body.textContent).not.toContain('NO_GO');
     expect(document.body.textContent).not.toContain('DEVELOPMENT_TEST_OWNED');
     expect(document.querySelector('.capability-governed-result details[open]')).toBeNull();

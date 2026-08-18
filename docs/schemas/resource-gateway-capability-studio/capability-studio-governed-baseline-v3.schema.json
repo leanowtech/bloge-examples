@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json",
+  "title": "Resource Gateway Capability Studio Governed Baseline v3",
+  "description": "Strict payload-free 9 case x 3 round governed baseline receipt with business oracles, certifiable evidence classification, and deployment-owned candidate binding.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "baselineId",
+    "status",
+    "verificationScope",
+    "releaseGateStatus",
+    "verificationLevel",
+    "evidenceClass",
+    "caseCount",
+    "roundCount",
+    "suiteRunCount",
+    "childRunCount",
+    "oraclePassCount",
+    "businessCheckCount",
+    "businessCheckPassCount",
+    "realExternalCallCount",
+    "compilationFingerprint",
+    "sourceMapFingerprint",
+    "provenanceFingerprint",
+    "candidateBuild",
+    "candidateIntentFingerprint",
+    "publication",
+    "rounds",
+    "cases",
+    "limitations",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.governed-baseline.v3" },
+    "evidenceKind": { "const": "DEVELOPMENT_TEST_OWNED" },
+    "baselineId": { "const": "capability-studio-governed-9x3-v1" },
+    "status": { "enum": ["PASSED", "FAILED_CLOSED"] },
+    "verificationScope": { "const": "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES" },
+    "releaseGateStatus": { "const": "NO_GO" },
+    "verificationLevel": { "enum": ["NOT_VERIFIED", "DEVELOPMENT_VERIFIED"] },
+    "evidenceClass": { "oneOf": [{ "enum": ["EXPLORATORY", "CERTIFIABLE"] }, { "type": "null" }] },
+    "caseCount": { "const": 9 },
+    "roundCount": { "const": 3 },
+    "suiteRunCount": { "type": "integer", "minimum": 0 },
+    "childRunCount": { "type": "integer", "minimum": 0 },
+    "oraclePassCount": { "type": "integer", "minimum": 0 },
+    "businessCheckCount": { "type": "integer", "minimum": 0 },
+    "businessCheckPassCount": { "type": "integer", "minimum": 0 },
+    "realExternalCallCount": { "oneOf": [{ "type": "integer", "minimum": 0 }, { "type": "null" }] },
+    "compilationFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "sourceMapFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "provenanceFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "candidateBuild": { "oneOf": [{ "$ref": "#/$defs/candidateBuild" }, { "type": "null" }] },
+    "candidateIntentFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "publication": { "oneOf": [{ "$ref": "#/$defs/publication" }, { "type": "null" }] },
+    "rounds": { "type": "array", "maxItems": 3 },
+    "cases": { "type": "array", "maxItems": 9 },
+    "limitations": { "$ref": "#/$defs/limitations" },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/code" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "PASSED" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "verificationLevel": { "const": "DEVELOPMENT_VERIFIED" },
+          "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+          "suiteRunCount": { "const": 3 },
+          "childRunCount": { "const": 27 },
+          "oraclePassCount": { "const": 9 },
+          "businessCheckCount": { "const": 27 },
+          "businessCheckPassCount": { "const": 27 },
+          "realExternalCallCount": { "const": 0 },
+          "compilationFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "sourceMapFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "provenanceFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "publication": { "$ref": "#/$defs/publication" },
+          "rounds": { "$ref": "#/$defs/successRounds" },
+          "cases": { "$ref": "#/$defs/successCases" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      },
+      "else": {
+        "properties": {
+          "verificationLevel": { "const": "NOT_VERIFIED" },
+          "evidenceClass": { "type": "null" },
+          "suiteRunCount": { "const": 0 },
+          "childRunCount": { "const": 0 },
+          "oraclePassCount": { "const": 0 },
+          "businessCheckCount": { "const": 0 },
+          "businessCheckPassCount": { "const": 0 },
+          "realExternalCallCount": { "type": "null" },
+          "compilationFingerprint": { "type": "null" },
+          "sourceMapFingerprint": { "type": "null" },
+          "provenanceFingerprint": { "type": "null" },
+          "candidateIntentFingerprint": { "type": "null" },
+          "publication": { "type": "null" },
+          "rounds": { "maxItems": 0 },
+          "cases": { "maxItems": 0 },
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "candidateBuild": { "type": "null" } },
+        "required": ["candidateBuild"]
+      },
+      "then": {
+        "properties": { "candidateIntentFingerprint": { "type": "null" } }
+      },
+      "else": {
+        "if": {
+          "properties": { "status": { "const": "PASSED" } },
+          "required": ["status"]
+        },
+        "then": {
+          "properties": { "candidateIntentFingerprint": { "$ref": "#/$defs/fingerprint" } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]*$"
+    },
+    "suiteRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "TEST_SUITE" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptFingerprint", "suiteRef", "fixtureCount"],
+      "properties": {
+        "receiptFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "suiteRef": { "$ref": "#/$defs/suiteRef" },
+        "fixtureCount": { "const": 9 }
+      }
+    },
+    "candidateBuild": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "authority", "instanceId", "buildRef", "revision", "sourceCommit",
+        "sourceTreeStatus", "artifactFingerprint"
+      ],
+      "properties": {
+        "authority": { "$ref": "#/$defs/identifier" },
+        "instanceId": { "$ref": "#/$defs/identifier" },
+        "buildRef": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/identifier" },
+        "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" },
+        "sourceTreeStatus": { "const": "CLEAN" },
+        "artifactFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "round": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "suiteRunId", "evidenceFingerprint", "status", "childRunCount"],
+      "properties": {
+        "round": { "enum": [1, 2, 3] },
+        "suiteRunId": { "$ref": "#/$defs/identifier" },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "status": { "const": "PASSED" },
+        "childRunCount": { "const": 9 }
+      }
+    },
+    "caseRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "round", "runId", "status", "fixtureBundleId", "fixtureRevision", "fixtureFingerprint",
+        "evidenceFingerprint", "semanticResultFingerprint", "assertionsEvaluated", "assertionsPassed",
+        "fixtureControlsEvaluated", "fixtureControlsSatisfied"
+      ],
+      "properties": {
+        "round": { "enum": [1, 2, 3] },
+        "runId": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "PASSED" },
+        "fixtureBundleId": { "$ref": "#/$defs/identifier" },
+        "fixtureRevision": { "type": "integer", "minimum": 1 },
+        "fixtureFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "semanticResultFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "assertionsEvaluated": { "const": 1 },
+        "assertionsPassed": { "const": 1 },
+        "fixtureControlsEvaluated": { "type": "integer", "minimum": 1 },
+        "fixtureControlsSatisfied": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "commonProofs": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "const": "BUSINESS_ASSERTION_PASSED" },
+        { "const": "SEMANTIC_RESULT_STABLE" },
+        { "const": "FIXTURE_CONTROL_SATISFIED" },
+        { "const": "ZERO_REAL_EXTERNAL_CALLS" }
+      ],
+      "items": false
+    },
+    "timeoutProofs": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "const": "BUSINESS_ASSERTION_PASSED" },
+        { "const": "SEMANTIC_RESULT_STABLE" },
+        { "const": "FIXTURE_CONTROL_SATISFIED" },
+        { "const": "ZERO_REAL_EXTERNAL_CALLS" },
+        { "const": "TIMEOUT_FALLBACK_CONFIRMED" }
+      ],
+      "items": false
+    },
+    "duplicateProofs": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "const": "BUSINESS_ASSERTION_PASSED" },
+        { "const": "SEMANTIC_RESULT_STABLE" },
+        { "const": "FIXTURE_CONTROL_SATISFIED" },
+        { "const": "ZERO_REAL_EXTERNAL_CALLS" },
+        { "const": "DUPLICATE_IDEMPOTENCY_CONFIRMED" }
+      ],
+      "items": false
+    },
+    "forbiddenWriteProofs": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        { "const": "BUSINESS_ASSERTION_PASSED" },
+        { "const": "SEMANTIC_RESULT_STABLE" },
+        { "const": "FIXTURE_CONTROL_SATISFIED" },
+        { "const": "ZERO_REAL_EXTERNAL_CALLS" },
+        { "const": "FORBIDDEN_WRITE_EFFECT_ABSENT" }
+      ],
+      "items": false
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId", "oracleId", "oracleStatus", "semanticResultFingerprint", "assertionsEvaluated",
+        "assertionsPassed", "fixtureControlsEvaluated", "fixtureControlsSatisfied", "proofs", "rounds"
+      ],
+      "properties": {
+        "caseId": { "enum": [
+          "case-city-policy-missing",
+          "case-compensation-history-empty",
+          "case-compensation-history-timeout",
+          "case-driver-responsible",
+          "case-duplicate-cancellation",
+          "case-forbidden-write-effect",
+          "case-policy-revision-regression",
+          "case-rider-not-responsible",
+          "case-standard-cancellation-fee"
+        ] },
+        "oracleId": { "type": "string", "pattern": "^oracle-[a-z0-9-]+$" },
+        "oracleStatus": { "const": "PASS" },
+        "semanticResultFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "assertionsEvaluated": { "const": 3 },
+        "assertionsPassed": { "const": 3 },
+        "fixtureControlsEvaluated": { "type": "integer", "minimum": 1 },
+        "fixtureControlsSatisfied": { "type": "integer", "minimum": 1 },
+        "proofs": { "type": "array" },
+        "rounds": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "$ref": "#/$defs/caseRound" },
+            { "$ref": "#/$defs/caseRound" },
+            { "$ref": "#/$defs/caseRound" }
+          ],
+          "items": false
+        }
+      }
+    },
+    "commonCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "proofs": { "$ref": "#/$defs/commonProofs" } } }
+      ]
+    },
+    "timeoutCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-compensation-history-timeout" }, "proofs": { "$ref": "#/$defs/timeoutProofs" } } }
+      ]
+    },
+    "duplicateCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-duplicate-cancellation" }, "proofs": { "$ref": "#/$defs/duplicateProofs" } } }
+      ]
+    },
+    "forbiddenWriteCase": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-forbidden-write-effect" }, "proofs": { "$ref": "#/$defs/forbiddenWriteProofs" } } }
+      ]
+    },
+    "cityPolicyCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-city-policy-missing" } } }
+      ]
+    },
+    "compensationEmptyCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-compensation-history-empty" } } }
+      ]
+    },
+    "driverCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-driver-responsible" } } }
+      ]
+    },
+    "policyRevisionCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-policy-revision-regression" } } }
+      ]
+    },
+    "riderCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-rider-not-responsible" } } }
+      ]
+    },
+    "standardCase": {
+      "allOf": [
+        { "$ref": "#/$defs/commonCase" },
+        { "properties": { "caseId": { "const": "case-standard-cancellation-fee" } } }
+      ]
+    },
+    "successRounds": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 1 } } }] },
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 2 } } }] },
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 3 } } }] }
+      ],
+      "items": false
+    },
+    "successCases": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "prefixItems": [
+        { "$ref": "#/$defs/cityPolicyCase" },
+        { "$ref": "#/$defs/compensationEmptyCase" },
+        { "$ref": "#/$defs/timeoutCase" },
+        { "$ref": "#/$defs/driverCase" },
+        { "$ref": "#/$defs/duplicateCase" },
+        { "$ref": "#/$defs/forbiddenWriteCase" },
+        { "$ref": "#/$defs/policyRevisionCase" },
+        { "$ref": "#/$defs/riderCase" },
+        { "$ref": "#/$defs/standardCase" }
+      ],
+      "items": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+          "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
+          "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
+          "DEPLOYMENT_EGRESS_NOT_OBSERVED",
+          "OWNER_SIGNOFF_NOT_PRESENT"
+        ]
+      }
+    }
+  }
+}

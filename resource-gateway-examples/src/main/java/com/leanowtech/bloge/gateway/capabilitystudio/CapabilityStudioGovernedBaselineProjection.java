@@ -15,6 +15,7 @@ public record CapabilityStudioGovernedBaselineProjection(
         String status,
         String verificationScope,
         String releaseGateStatus,
+        String verificationLevel,
         String evidenceClass,
         int caseCount,
         int roundCount,
@@ -27,6 +28,8 @@ public record CapabilityStudioGovernedBaselineProjection(
         String compilationFingerprint,
         String sourceMapFingerprint,
         String provenanceFingerprint,
+        CandidateBuild candidateBuild,
+        String candidateIntentFingerprint,
         Publication publication,
         List<Round> rounds,
         List<CaseProjection> cases,
@@ -34,12 +37,15 @@ public record CapabilityStudioGovernedBaselineProjection(
         List<String> diagnostics) {
 
     public static final String SCHEMA_VERSION =
-            "resource-gateway.capability-studio.governed-baseline.v2";
+            "resource-gateway.capability-studio.governed-baseline.v3";
     public static final String EVIDENCE_KIND = "DEVELOPMENT_TEST_OWNED";
     public static final String VERIFICATION_SCOPE =
             "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES";
     public static final String RELEASE_GATE_STATUS = "NO_GO";
-    public static final String EVIDENCE_CLASS = "EXPLORATORY";
+    public static final String DEVELOPMENT_VERIFIED = "DEVELOPMENT_VERIFIED";
+    public static final String NOT_VERIFIED = "NOT_VERIFIED";
+    public static final String EXPLORATORY = "EXPLORATORY";
+    public static final String CERTIFIABLE = "CERTIFIABLE";
     public static final String PASSED = "PASSED";
     public static final String FAILED_CLOSED = "FAILED_CLOSED";
 
@@ -54,6 +60,17 @@ public record CapabilityStudioGovernedBaselineProjection(
             String receiptFingerprint,
             SuiteRef suiteRef,
             int fixtureCount) {
+    }
+
+    /** Immutable deployment-owned build coordinates bound to every suite execution intent. */
+    public record CandidateBuild(
+            String authority,
+            String instanceId,
+            String buildRef,
+            String revision,
+            String sourceCommit,
+            String sourceTreeStatus,
+            String artifactFingerprint) {
     }
 
     public record SuiteRef(

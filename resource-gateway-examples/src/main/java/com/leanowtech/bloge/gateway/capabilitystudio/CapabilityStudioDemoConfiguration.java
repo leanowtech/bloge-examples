@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryG
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import org.springframework.beans.factory.BeanCreationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +21,27 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Profile("!production & (test | staging)")
 @ConditionalOnProperty(prefix = "gateway.capability-studio.demo", name = "enabled", havingValue = "true")
 public class CapabilityStudioDemoConfiguration {
+
+    @Bean
+    CapabilityStudioDeploymentCandidateAuthority capabilityStudioDeploymentCandidateAuthority(
+            @Value("${gateway.capability-studio.acceptance.candidate-build.authority:}")
+            String authority,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.instance-id:}")
+            String instanceId,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.build-ref:}")
+            String buildRef,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.revision:}")
+            String revision,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.source-commit:}")
+            String sourceCommit,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.source-tree-status:}")
+            String sourceTreeStatus,
+            @Value("${gateway.capability-studio.acceptance.candidate-build.artifact-fingerprint:}")
+            String artifactFingerprint) {
+        return new CapabilityStudioDeploymentCandidateAuthority(
+                authority, instanceId, buildRef, revision, sourceCommit, sourceTreeStatus,
+                artifactFingerprint);
+    }
 
     @Bean
     CapabilityStudioGoldenDemoPack capabilityStudioGoldenDemoPack(ObjectMapper mapper) {
@@ -114,9 +136,11 @@ public class CapabilityStudioDemoConfiguration {
             CapabilityStudioFeatureRehearsalService rehearsal,
             CapabilityStudioScenarioDatasetProjector datasetProjector,
             ScenarioGovernedRegistryGateway registry,
-            CapabilityStudioGovernedCandidateService candidate) {
+            CapabilityStudioGovernedCandidateService candidate,
+            CapabilityStudioDeploymentCandidateAuthority candidateAuthority) {
         // This bean is deliberately composed only in the test/staging demo configuration.
         return new CapabilityStudioGovernedBaselineService(
-                pack, mapper, operators, rehearsal, datasetProjector, registry, candidate);
+                pack, mapper, operators, rehearsal, datasetProjector, registry, candidate,
+                candidateAuthority);
     }
 }

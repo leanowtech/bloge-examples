@@ -223,12 +223,13 @@ function featureRehearsalCasesFixtureName(caseId: string): string {
 const governedBaselineFingerprint = (seed: string) => `sha256:${seed.repeat(64).slice(0, 64)}`;
 
 export const governedBaselineProjectionFixture = {
-  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v2',
+  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v3',
   evidenceKind: 'DEVELOPMENT_TEST_OWNED',
   baselineId: 'capability-studio-governed-baseline-cancellation-fee-v1',
   status: 'PASSED',
   verificationScope: 'GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES',
   releaseGateStatus: 'NO_GO',
+  verificationLevel: 'DEVELOPMENT_VERIFIED',
   evidenceClass: 'EXPLORATORY',
   caseCount: 9,
   roundCount: 3,
@@ -241,6 +242,16 @@ export const governedBaselineProjectionFixture = {
   compilationFingerprint: governedBaselineFingerprint('a'),
   sourceMapFingerprint: governedBaselineFingerprint('b'),
   provenanceFingerprint: governedBaselineFingerprint('c'),
+  candidateBuild: {
+    authority: 'deployment-launcher',
+    instanceId: 'resource-gateway-local-01',
+    buildRef: 'resource-gateway-examples',
+    revision: '1.0.0',
+    sourceCommit: 'abcdef0123456789',
+    sourceTreeStatus: 'CLEAN',
+    artifactFingerprint: governedBaselineFingerprint('8'),
+  },
+  candidateIntentFingerprint: governedBaselineFingerprint('9'),
   publication: {
     receiptFingerprint: governedBaselineFingerprint('d'),
     suiteRef: {
@@ -310,7 +321,6 @@ export const governedBaselineProjectionFixture = {
     })),
   })),
   limitations: [
-    'IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND',
     'RUNTIME_ENVIRONMENT_NOT_ATTESTED',
     'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
     'DEPLOYMENT_EGRESS_NOT_OBSERVED',
