@@ -5,6 +5,7 @@ import {
   parseFeatureRehearsalProjection,
   parseGovernedBaselineProjection,
   parseScenarioDatasetProjection,
+  projectCapabilityStudioSummaryStatus,
 } from './domain';
 import {
   featureRehearsalProjectionFixture,
@@ -137,6 +138,14 @@ describe('Capability Studio backend projection adapter', () => {
 });
 
 describe('Capability Studio governed baseline protocol', () => {
+  it('projects governed run states over the design readiness without implying release acceptance', () => {
+    expect(projectCapabilityStudioSummaryStatus('METADATA_READY_RUNTIME_EVIDENCE_PENDING')).toBe('METADATA_READY_RUNTIME_EVIDENCE_PENDING');
+    expect(projectCapabilityStudioSummaryStatus('METADATA_READY_RUNTIME_EVIDENCE_PENDING', { loading: true })).toBe('RUNNING');
+    expect(projectCapabilityStudioSummaryStatus('METADATA_READY_RUNTIME_EVIDENCE_PENDING', { governedBaselineStatus: 'PASSED' })).toBe('DEVELOPMENT_VERIFIED');
+    expect(projectCapabilityStudioSummaryStatus('METADATA_READY_RUNTIME_EVIDENCE_PENDING', { failed: true })).toBe('RUN_FAILED');
+    expect(projectCapabilityStudioSummaryStatus('METADATA_READY_RUNTIME_EVIDENCE_PENDING', { loading: true, failed: true })).toBe('RUNNING');
+  });
+
   it('parses the complete nine-case, three-round governed evidence projection', () => {
     const result = parseGovernedBaselineProjection(governedBaselineProjectionFixture);
 

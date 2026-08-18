@@ -104,6 +104,10 @@ export interface FeatureRehearsalProjection {
 }
 
 export type GovernedBaselineStatus = 'PASSED' | 'FAILED_CLOSED';
+export type CapabilityStudioSummaryStatus =
+  | 'RUNNING'
+  | 'DEVELOPMENT_VERIFIED'
+  | 'RUN_FAILED';
 export type GovernedBaselineRoundStatus =
   | 'PASSED'
   | 'FAILED_CLOSED'
@@ -429,6 +433,20 @@ export function localized(value: LocalizedValue | undefined, locale: 'en' | 'zh-
   if (typeof value === 'string') return value;
   if (!value) return '';
   return value[locale] ?? value.en ?? value['zh-CN'] ?? value.zh ?? '';
+}
+
+export function projectCapabilityStudioSummaryStatus(
+  readiness: string,
+  options: {
+    governedBaselineStatus?: GovernedBaselineStatus | null;
+    loading?: boolean;
+    failed?: boolean;
+  } = {},
+): string | CapabilityStudioSummaryStatus {
+  if (options.loading) return 'RUNNING';
+  if (options.governedBaselineStatus === 'PASSED') return 'DEVELOPMENT_VERIFIED';
+  if (options.failed) return 'RUN_FAILED';
+  return readiness;
 }
 
 export function isCapabilityStudioProtocolError(error: unknown): error is CapabilityStudioProtocolError {

@@ -4,6 +4,9 @@ type LocalizedMessage = Record<Locale, string>;
 
 export const MESSAGE_CATALOG = {
   'app.capabilityStudio': { en: 'Capability Studio', 'zh-CN': '能力设计' },
+  'capabilityStudio.status.developmentVerified': { en: 'DEVELOPMENT VERIFIED', 'zh-CN': '开发验证已通过' },
+  'capabilityStudio.status.runFailed': { en: 'RUN FAILED · RETRY AVAILABLE', 'zh-CN': '本次运行失败 · 可重试' },
+  'capabilityStudio.status.running': { en: 'RUNNING', 'zh-CN': '运行中' },
   'author.command.run': { en: 'Run & Compare', 'zh-CN': '运行并比较' },
   'author.command.rerun': { en: 'Rerun & Compare', 'zh-CN': '重新运行并比较' },
   'author.command.running': { en: 'Running...', 'zh-CN': '正在运行...' },

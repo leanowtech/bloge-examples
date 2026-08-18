@@ -253,6 +253,8 @@ describe('Capability Studio Stage 0 read-only slice', () => {
       expect.objectContaining({ method: 'POST' }),
     );
     expect(query('[data-testid="governed-baseline-result"]')).toBeTruthy();
+    expect(query('[data-testid="capability-summary-status"]').textContent).toContain('DEVELOPMENT VERIFIED');
+    expect(document.body.textContent).not.toContain('Design ready, runtime evidence pending');
     expect(document.body.textContent).toContain('All 27 business checks passed');
     expect(document.body.textContent).toContain('certifiable runtime evidence');
     expect(document.body.textContent).toContain('candidate build bound');
@@ -301,10 +303,13 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('Impact');
     expect(document.body.textContent).toContain('Recovery');
     expect(document.querySelector('[data-testid="governed-baseline-result"]')).toBeNull();
+    expect(query('[data-testid="capability-summary-status"]').textContent).toContain('RUN FAILED · RETRY AVAILABLE');
+    expect(document.body.textContent).not.toContain('Design ready, runtime evidence pending');
 
     await act(async () => buttonWithText('Run again').click());
     await settle();
     expect(query('[data-testid="governed-baseline-result"]')).toBeTruthy();
+    expect(query('[data-testid="capability-summary-status"]').textContent).toContain('DEVELOPMENT VERIFIED');
   });
 
   it('has no serious or critical automated accessibility violations across NFR-02 states', async () => {

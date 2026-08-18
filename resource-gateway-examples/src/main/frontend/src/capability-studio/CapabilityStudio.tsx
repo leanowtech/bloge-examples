@@ -41,7 +41,9 @@ import {
 import {
   isCapabilityStudioProtocolError,
   localized,
+  projectCapabilityStudioSummaryStatus,
   type CapabilityAssetSummary,
+  type CapabilityStudioSummaryStatus,
   type CapabilityStudioModel,
   type ContractSummary,
   type ScenarioCase,
@@ -62,7 +64,7 @@ export interface CapabilityStudioProps {
 }
 
 export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
-  const { locale } = useI18n();
+  const { locale, m } = useI18n();
   const [model, setModel] = useState<CapabilityStudioModel | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,6 +116,11 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   const selectedFeature = model.assets.features[0];
   const selectedTool = model.assets.tools[0];
   const currentAsset = task === 'contract' ? selectedApi : task === 'feature' ? selectedFeature : task === 'tool' ? selectedTool : undefined;
+  const summaryStatus = projectCapabilityStudioSummaryStatus(text(model.capability.readiness), {
+    governedBaselineStatus: governedBaseline?.status,
+    loading: governedBaselineLoading,
+    failed: governedBaselineError !== null,
+  });
   const openApi = (index: number) => {
     setSelectedApiIndex(index);
     setTask('contract');
@@ -128,7 +135,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           <p className="capability-summary">{text(model.capability.summary)}</p>
         </div>
         <div className="capability-heading-meta">
-          <span className="capability-status"><Clock3 size={15} aria-hidden="true" /> {displayProtocolStatus(text(model.capability.readiness), locale)}</span>
+          <span className="capability-status" data-testid="capability-summary-status"><Clock3 size={15} aria-hidden="true" /> {displayCapabilityStudioSummaryStatus(summaryStatus, locale, m)}</span>
           <span>{locale === 'zh-CN' ? '负责人' : 'Owner'} · {text(model.capability.owner)}</span>
         </div>
       </header>
@@ -614,8 +621,14 @@ function shortFingerprint(value: string): string { return !value ? '—' : value
 function formatPayload(value: unknown): string { return typeof value === 'string' ? value : JSON.stringify(value) ?? 'null'; }
 
 function ToolGovernedBaselineView({ asset, text, locale, projection, error, loading, onRun }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; projection: GovernedBaselineSuccessProjection | null; error: Error | null; loading: boolean; onRun: () => void }) {
+  const { m } = useI18n();
+  const status = projectCapabilityStudioSummaryStatus(text(asset.readiness), {
+    governedBaselineStatus: projection?.status,
+    loading,
+    failed: error !== null,
+  });
   return <div className="capability-view" data-testid="capability-tool">
-    <ViewHeading kicker="GP-07 / GP-08" title={text(asset.name)} description={locale === 'zh-CN' ? '用同一份受治理场景数据连续验证工具，不连接真实业务接口。' : 'Verify the Tool repeatedly with one governed scenario dataset and no real business API calls.'} status={projection?.status === 'PASSED' ? (locale === 'zh-CN' ? '开发验证通过' : 'DEVELOPMENT VERIFIED') : displayProtocolStatus(text(asset.readiness), locale)} />
+    <ViewHeading kicker="GP-07 / GP-08" title={text(asset.name)} description={locale === 'zh-CN' ? '用同一份受治理场景数据连续验证工具，不连接真实业务接口。' : 'Verify the Tool repeatedly with one governed scenario dataset and no real business API calls.'} status={displayCapabilityStudioSummaryStatus(status, locale, m)} />
     <section className="capability-section capability-governed-intro">
       <SectionTitle icon={<ShieldCheck size={17} />} title={locale === 'zh-CN' ? '业务正确性验证' : 'Business correctness verification'} subtitle={locale === 'zh-CN' ? '固定场景分母、重复运行和完整证据闭包由服务端统一控制。' : 'The server controls the scenario denominator, repeated execution, and evidence closure.'} />
       <p className="capability-large-copy">{locale === 'zh-CN' ? '系统会发布 9 份隔离数据和 1 份测试套件，再将同一套件运行 3 轮。每轮都核对业务断言和结果指纹；任何真实外部调用、结果漂移或证据缺失都会使本次验证失败。' : 'The system publishes nine isolated fixtures and one test suite, then runs that exact suite three times. Every round verifies the business assertion and result fingerprint; any real call, result drift, or missing evidence fails the verification.'}</p>
@@ -666,16 +679,23 @@ function governedLimitationLabel(value: string, locale: 'en' | 'zh-CN'): string 
 function ViewHeading({ kicker, title, description, status }: { kicker: string; title: string; description: string; status: string }) { return <div className="capability-view-heading"><div><p className="capability-kicker">{kicker}</p><h3>{title}</h3><p>{description}</p></div><span className="capability-readonly">{status}</span></div>; }
 
 function ReadinessPanel({ model, text, locale, task, governedBaseline, governedBaselineError, governedBaselineLoading, onNextAction }: { model: CapabilityStudioModel; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; task: Task; governedBaseline: GovernedBaselineSuccessProjection | null; governedBaselineError: Error | null; governedBaselineLoading: boolean; onNextAction: () => void }) {
+  const { m } = useI18n();
   const missing = locale === 'zh-CN' ? '未提供' : 'Not supplied';
   const baseline = displayBranch(model.baseline, text, locale);
   const tutorial = displayBranch(model.tutorialBranch, text, locale);
-  const runtimeStatus = governedBaselineLoading ? (locale === 'zh-CN' ? '运行中' : 'RUNNING') : governedBaseline?.status === 'PASSED' ? (locale === 'zh-CN' ? '开发验证通过' : 'DEVELOPMENT VERIFIED') : governedBaselineError ? (locale === 'zh-CN' ? '本次运行失败' : 'RUN FAILED') : (locale === 'zh-CN' ? '未运行' : 'NOT RUN');
+  const runtimeStatus = governedBaselineLoading
+    ? 'RUNNING'
+    : governedBaseline?.status === 'PASSED'
+      ? 'DEVELOPMENT_VERIFIED'
+      : governedBaselineError
+        ? 'RUN_FAILED'
+        : 'NOT_RUN';
   const readinessCopy = task === 'tool' && governedBaseline?.status === 'PASSED'
     ? governedBaseline.candidateBuild
       ? (locale === 'zh-CN' ? '候选构建与运行意图已经绑定；环境认证、部署出口观测和责任人签署仍阻断发布。' : 'The candidate build and execution intent are bound; environment certification, deployment egress observation, and owner sign-off still block release.')
       : (locale === 'zh-CN' ? '9 项业务判定与 27 项业务断言已通过；候选构建、环境证明和签署仍阻断发布。' : 'Nine business Oracles and 27 business assertions passed; candidate build, environment attestation, and sign-off still block release.')
     : (locale === 'zh-CN' ? '设计资产已加载；发布验收证据尚未闭合。' : 'Design assets are loaded; release acceptance evidence is incomplete.');
-  return <aside className="capability-readiness-panel"><div className="capability-panel-heading"><ShieldCheck size={17} aria-hidden="true" /><h3>{locale === 'zh-CN' ? '验收与就绪' : 'Acceptance and readiness'}</h3></div><div className="capability-readiness-callout capability-readiness-warning"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{displayProtocolStatus(text(model.acceptanceStatus), locale)}</strong><p>{readinessCopy}</p></div></div><dl className="capability-readiness-list"><div><dt>{locale === 'zh-CN' ? '当前基线' : 'Canonical baseline'}</dt><dd>{baseline.name}</dd></div><div><dt>{locale === 'zh-CN' ? '教程分支' : 'Tutorial branch'}</dt><dd>{tutorial.name}</dd></div><div><dt>{locale === 'zh-CN' ? '场景分母' : 'Scenario denominator'}</dt><dd>{model.scenarios.length} {locale === 'zh-CN' ? '条' : 'scenarios'}</dd></div><div><dt>{locale === 'zh-CN' ? '运行证据' : 'Runtime evidence'}</dt><dd className={governedBaseline?.status === 'PASSED' ? 'capability-runtime-verified' : 'capability-not-run'}>{runtimeStatus}</dd></div></dl><div className="capability-next-panel"><small>{locale === 'zh-CN' ? '下一步' : 'Next action'}</small><strong>{task === 'overview' ? (locale === 'zh-CN' ? '先确认订单查询契约' : 'Review the order lookup contract') : task === 'tool' ? (locale === 'zh-CN' ? '运行并检查 9 × 3 正确性验证' : 'Run and inspect the 9 x 3 verification') : (locale === 'zh-CN' ? '浏览九条场景数据' : 'Review the nine scenarios')}</strong><button type="button" disabled={task === 'tool' && governedBaselineLoading} onClick={onNextAction}>{locale === 'zh-CN' ? '继续' : 'Continue'} <ArrowRight size={15} aria-hidden="true" /></button></div><details className="capability-technical-details capability-panel-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '资产技术引用' : 'Asset technical references'}</summary><dl><div><dt>Capability ref</dt><dd>{model.capability.technicalRef ?? missing}</dd></div><div><dt>Protocol</dt><dd>{model.protocolVersion ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{model.capability.fingerprint ?? missing}</dd></div></dl></details></aside>;
+  return <aside className="capability-readiness-panel"><div className="capability-panel-heading"><ShieldCheck size={17} aria-hidden="true" /><h3>{locale === 'zh-CN' ? '验收与就绪' : 'Acceptance and readiness'}</h3></div><div className="capability-readiness-callout capability-readiness-warning"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{displayProtocolStatus(text(model.acceptanceStatus), locale)}</strong><p>{readinessCopy}</p></div></div><dl className="capability-readiness-list"><div><dt>{locale === 'zh-CN' ? '当前基线' : 'Canonical baseline'}</dt><dd>{baseline.name}</dd></div><div><dt>{locale === 'zh-CN' ? '教程分支' : 'Tutorial branch'}</dt><dd>{tutorial.name}</dd></div><div><dt>{locale === 'zh-CN' ? '场景分母' : 'Scenario denominator'}</dt><dd>{model.scenarios.length} {locale === 'zh-CN' ? '条' : 'scenarios'}</dd></div><div><dt>{locale === 'zh-CN' ? '运行证据' : 'Runtime evidence'}</dt><dd className={governedBaseline?.status === 'PASSED' ? 'capability-runtime-verified' : 'capability-not-run'}>{displayCapabilityStudioSummaryStatus(runtimeStatus, locale, m)}</dd></div></dl><div className="capability-next-panel"><small>{locale === 'zh-CN' ? '下一步' : 'Next action'}</small><strong>{task === 'overview' ? (locale === 'zh-CN' ? '先确认订单查询契约' : 'Review the order lookup contract') : task === 'tool' ? (locale === 'zh-CN' ? '运行并检查 9 × 3 正确性验证' : 'Run and inspect the 9 x 3 verification') : (locale === 'zh-CN' ? '浏览九条场景数据' : 'Review the nine scenarios')}</strong><button type="button" disabled={task === 'tool' && governedBaselineLoading} onClick={onNextAction}>{locale === 'zh-CN' ? '继续' : 'Continue'} <ArrowRight size={15} aria-hidden="true" /></button></div><details className="capability-technical-details capability-panel-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '资产技术引用' : 'Asset technical references'}</summary><dl><div><dt>Capability ref</dt><dd>{model.capability.technicalRef ?? missing}</dd></div><div><dt>Protocol</dt><dd>{model.protocolVersion ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{model.capability.fingerprint ?? missing}</dd></div></dl></details></aside>;
 }
 
 function displayAssetKind(kind: CapabilityAssetSummary['kind'], locale: 'en' | 'zh-CN'): string {
@@ -698,6 +718,17 @@ function displayProtocolStatus(status: string, locale: 'en' | 'zh-CN'): string {
     ISOLATED_NOT_RUN: { en: 'Isolated, not run', 'zh-CN': '已隔离，未运行' },
   };
   return translations[status]?.[locale] ?? status;
+}
+
+function displayCapabilityStudioSummaryStatus(
+  status: string | CapabilityStudioSummaryStatus,
+  locale: 'en' | 'zh-CN',
+  message: ReturnType<typeof useI18n>['m'],
+): string {
+  if (status === 'DEVELOPMENT_VERIFIED') return message('capabilityStudio.status.developmentVerified');
+  if (status === 'RUN_FAILED') return message('capabilityStudio.status.runFailed');
+  if (status === 'RUNNING') return message('capabilityStudio.status.running');
+  return displayProtocolStatus(status, locale);
 }
 
 function displayBranch(branch: CapabilityStudioModel['baseline'], text: (value: Parameters<typeof localized>[0]) => string, locale: 'en' | 'zh-CN'): { name: string; purpose: string } {
