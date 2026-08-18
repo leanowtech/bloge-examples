@@ -63,7 +63,7 @@
 - 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
 - GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，以及 GP-05/06 英文 1024×768 证据；覆盖 Dataset 的 Tab/Enter/Space 键盘路径、Feature 权限切换、六种组件状态和真实浏览器完整 axe-core 检查。真实 axe 曾检出并推动修复选中场景辅助文字对比度和 DAG 滚动区焦点问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、可信 freshness/review Authority、Active 生命周期与审批入口、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-07 至 GP-10 的英文与 1024 视口、GP-09 完整异常/仅键盘矩阵和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、可信 freshness/review Authority、Active 生命周期与审批入口、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵，以及 GP-07 至 GP-10 尚未覆盖的中文 1024、英文 1440/390 和异常状态其余视口。GP-07 至 GP-10 的英文 1024 开发切片、GP-09 仅键盘主路径与真实 503/Retry 恢复已经闭合，但固定 60 格尚未形成由 CI Candidate/Environment Authority 背书的完整结果，六人可用性签署也未执行。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
@@ -88,10 +88,14 @@
 | 390×844 | GP-05/06 移动端任务选择、场景选择和有界 DAG 滚动入口 | [`capability-studio-gp05-gp06-payload-zh-390.png`](../../assets/capability-studio/capability-studio-gp05-gp06-payload-zh-390.png) |
 | 1440×1100 | GP-07/08 Tool 契约、受治理 9 × 3 开发验证、双结论、3 轮与 9 × 3 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-1440.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png) |
 | 390×844 | GP-07/08 移动端双结论、三轮摘要和完整 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-390.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png) |
+| 1024×768 | 英文 GP-07/08 Tool 业务正确性说明、9 × 3 结果、双结论与完整 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-en-1024.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-en-1024.png) |
 | 1440×1100 | GP-09 五项 100%、9/0/0 准入事实、两个阻断、Payload 边界与 Case 影响入口 | [`capability-studio-gp09-quality-admission-zh-1440.png`](../../assets/capability-studio/capability-studio-gp09-quality-admission-zh-1440.png) |
 | 1440×1100 | GP-09 选择超时 Case 后的 Owner、Source、Oracle、Contract、四依赖、Target 与 9 节点/8 边高亮闭包 | [`capability-studio-gp09-case-impact-zh-1440.png`](../../assets/capability-studio/capability-studio-gp09-case-impact-zh-1440.png) |
 | 390×844 | GP-09 移动端准入首屏与无横向溢出 | [`capability-studio-gp09-quality-admission-zh-390.png`](../../assets/capability-studio/capability-studio-gp09-quality-admission-zh-390.png) |
 | 390×844 | GP-09 移动端 Case 详情与可读影响关系列表 | [`capability-studio-gp09-case-impact-zh-390.png`](../../assets/capability-studio/capability-studio-gp09-case-impact-zh-390.png) |
+| 1024×768 | 英文 GP-09 仅键盘选择第二条 Case 后的 9 节点/8 边影响闭包 | [`capability-studio-gp09-quality-keyboard-en-1024.png`](../../assets/capability-studio/capability-studio-gp09-quality-keyboard-en-1024.png) |
+| 1024×768 | 英文 GP-09 真实 503 的业务化错误说明和单一恢复动作；无内部协议码 | [`capability-studio-gp09-quality-error-en-1024.png`](../../assets/capability-studio/capability-studio-gp09-quality-error-en-1024.png) |
+| 1024×768 | 英文 GP-09 Retry 后恢复真实质量与影响投影 | [`capability-studio-gp09-quality-recovered-en-1024.png`](../../assets/capability-studio/capability-studio-gp09-quality-recovered-en-1024.png) |
 | 1440×1100 | GP-10 从 Tool Case 打开的原运行精确证据与完整 exact-ref 闭包 | [`capability-studio-gp10-exact-evidence-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-1440.png) |
 | 1440×1100 | GP-10 从精确证据进入当前 Feature DAG，保持原 `runId`、Case 和焦点节点 | [`capability-studio-gp10-exact-dag-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-dag-zh-1440.png) |
 | 1440×1100 | GP-10 返回 Tool 后仍保持同一原运行和精确证据 | [`capability-studio-gp10-exact-evidence-return-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-return-zh-1440.png) |
@@ -99,8 +103,10 @@
 | 1440×900 | GP-10 Deep Link 上下文、当前 6 节点 Feature 子图和完整 7 节点结构级 Data Lens | [`capability-studio-gp10-exact-graph-context-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-1440.png) |
 | 390×844 | GP-10 移动端精确证据，原运行与引用闭包可读且页面无横向溢出 | [`capability-studio-gp10-exact-evidence-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-390.png) |
 | 390×844 | GP-10 移动端焦点节点、Feature 子图与完整 Data Lens 的边界 | [`capability-studio-gp10-exact-graph-context-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-390.png) |
+| 1024×768 | 英文 GP-10 原 child run 精确证据、同一 Case 和完整引用闭包 | [`capability-studio-gp10-exact-evidence-en-1024.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-en-1024.png) |
+| 1024×768 | 英文 GP-10 从精确证据进入保持同一 Run/Case/Node 的 Feature DAG | [`capability-studio-gp10-exact-dag-en-1024.png`](../../assets/capability-studio/capability-studio-gp10-exact-dag-en-1024.png) |
 
-这些证据关闭了所列中英文开发状态、Dataset 键盘路径、Feature 权限切换、Tool 受治理开发验证和自动 axe 检查，但不覆盖契约/Tutorial 全键盘、人工屏幕阅读器、异常状态三视口、GP-07/08 英文和 1024 视口、不可变发布候选运行证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
+这些证据关闭了所列中英文开发状态、Dataset 与 GP-09 键盘路径、Feature 权限切换、Tool 受治理开发验证、GP-09 503/Retry 和自动 axe 检查，但不覆盖契约/Tutorial 全键盘、人工屏幕阅读器、异常状态三视口、固定 60 格其余单元、不可变发布候选运行证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
 
 ## 3. 更新流程
 

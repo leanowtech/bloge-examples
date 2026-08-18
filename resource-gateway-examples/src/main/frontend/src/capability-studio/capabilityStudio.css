@@ -328,6 +328,7 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
 .capability-feature-state { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 240px; color: var(--cap-muted); }
 .capability-feature-error { margin-top: 14px; }
 .capability-exact-feature-context { border-color: #9ebbd3; background: var(--cap-blue-soft); }
+.capability-exact-feature-context .capability-feature-context-main p { color: #40566d; }
 .capability-exact-context-label { color: var(--cap-blue); font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
 .capability-exact-feature-context strong { overflow-wrap: anywhere; font-size: 14px; }
 .capability-exact-feature-context .capability-return-tool { align-self: center; white-space: nowrap; }

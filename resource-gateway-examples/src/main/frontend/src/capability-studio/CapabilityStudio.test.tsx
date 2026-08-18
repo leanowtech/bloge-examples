@@ -137,6 +137,33 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.querySelectorAll('.capability-quality-graph-node strong').length).toBeGreaterThan(1);
   });
 
+  it('presents a recoverable GP-09 failure without exposing protocol codes', async () => {
+    let attempts = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/scenario-dataset/quality-impact') && attempts++ === 0) return json({
+        code: 'RG.CAPABILITY_STUDIO.QUALITY_IMPACT_TEMPORARILY_UNAVAILABLE',
+        whatHappened: 'The quality projection service is temporarily unavailable.',
+        impact: 'The quality projection was not loaded or changed.',
+        recoveryAction: 'Retry quality and impact.',
+      }, 503);
+      if (url.endsWith('/scenario-dataset/quality-impact')) return json(scenarioQualityImpactProjectionFixture());
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+    await render(fetcher);
+    await act(async () => buttonWithText('Quality & impact').click());
+    await settle();
+
+    expect(query('[data-testid="capability-quality-impact-error"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('Business quality check');
+    expect(document.body.textContent).toContain('Quality & impact is unavailable');
+    expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
+    await act(async () => buttonWithText('Retry quality & impact').click());
+    await settle();
+    expect(query('[data-testid="capability-quality-impact"]')).toBeTruthy();
+  });
+
   it('shows an empty filtered state without changing the Dataset', async () => {
     await render();
     await act(async () => buttonWithText('Scenario data').click());

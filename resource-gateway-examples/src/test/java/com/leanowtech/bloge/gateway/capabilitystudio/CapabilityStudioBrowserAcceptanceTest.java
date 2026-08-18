@@ -16,6 +16,11 @@ import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.devtools.DevTools;
+import org.openqa.selenium.devtools.v149.fetch.Fetch;
+import org.openqa.selenium.devtools.v149.fetch.model.HeaderEntry;
+import org.openqa.selenium.devtools.v149.fetch.model.RequestPattern;
+import org.openqa.selenium.devtools.v149.fetch.model.RequestStage;
 import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
@@ -24,12 +29,15 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -359,6 +367,46 @@ class CapabilityStudioBrowserAcceptanceTest {
     }
 
     @Test
+    void gp07AndGp08EnglishUsAt1024RunTheGovernedToolBaseline() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1024, 768);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.get(url("/capabilities/?lang=en-US&task=tool"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tool']")));
+        assertThat(driver.findElement(By.tagName("html")).getAttribute("lang")).isEqualTo("en");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("Business correctness verification", "Fixed scenarios", "Rounds",
+                        "Expected checks", "Real APIs", "Run governed 9 x 3 verification")
+                .doesNotContain("NO_GO", "DEVELOPMENT_TEST_OWNED", "RG.CAPABILITY_STUDIO.");
+        driver.findElement(By.cssSelector("[data-testid='run-governed-baseline']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='governed-baseline-result']")));
+
+        WebElement result = driver.findElement(By.cssSelector(
+                "[data-testid='governed-baseline-result']"));
+        assertThat(result.getText())
+                .contains("All 27 business checks passed", "Still not accepted", "9 / 9", "27 / 27",
+                        "Stable result", "What still blocks release acceptance")
+                .doesNotContain("NO_GO", "DEVELOPMENT_TEST_OWNED");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table tbody tr"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table .capability-oracle-cell"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table .capability-evidence-matrix-button"))).hasSize(27);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-rounds > div"))).hasSize(3);
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});", result);
+        capture("capability-studio-gp07-gp08-governed-tool-en-1024.png");
+    }
+
+    @Test
     void gp09ExposesFalsifiableQualityAdmissionAndCaseImpactAcrossViewports()
             throws IOException {
         assumeFrontendBundlePresent();
@@ -436,6 +484,99 @@ class CapabilityStudioBrowserAcceptanceTest {
                 driver.findElement(By.cssSelector(
                         "[data-testid='capability-quality-case-details']")));
         capture("capability-studio-gp09-case-impact-zh-390.png");
+    }
+
+    @Test
+    void gp09EnglishUsAt1024SupportsKeyboardQualityCaseImpactPath() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1024, 768);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en-US"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        WebElement qualityTask = tabUntilActive(By.cssSelector(
+                "[data-testid='capability-task-quality']"));
+        assertThat(driver.switchTo().activeElement()).isEqualTo(qualityTask);
+        qualityTask.sendKeys(Keys.ENTER);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-quality-impact']")));
+        assertThat(driver.findElement(By.tagName("html")).getAttribute("lang")).isEqualTo("en");
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("Quality & impact", "Five quality dimensions", "Explicit blockers",
+                        "9 cases", "Draft", "Active", "Orphan cases")
+                .doesNotContain("NO_GO", "RG.CAPABILITY_STUDIO.");
+
+        String initialImpact = selectedQualityNodeIds();
+        WebElement firstCase = tabUntilActive(By.cssSelector(
+                ".capability-quality-case-item"));
+        assertThat(driver.switchTo().activeElement()).isEqualTo(firstCase);
+        firstCase.sendKeys(Keys.TAB);
+        WebElement secondCase = driver.switchTo().activeElement();
+        assertThat(secondCase.getAttribute("class")).contains("capability-quality-case-item");
+        String secondCaseName = secondCase.findElement(By.cssSelector("strong")).getText();
+        secondCase.sendKeys(Keys.ENTER);
+        wait.until(webDriver -> "true".equals(webDriver.findElements(
+                By.cssSelector(".capability-quality-case-item")).get(1).getAttribute("aria-pressed")));
+        wait.until(webDriver -> !selectedQualityNodeIds().equals(initialImpact));
+
+        assertThat(secondCase.getAttribute("aria-pressed")).isEqualTo("true");
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='capability-quality-case-details'] h4")).getText())
+                .isEqualTo(secondCaseName);
+        assertThat(selectedQualityNodeIds()).isNotEqualTo(initialImpact);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-graph-node.selected"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-edge.selected"))).hasSize(8);
+        assertNoBrowserErrorState();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp09-quality-keyboard-en-1024.png");
+    }
+
+    @Test
+    void gp09RealApiFailureAt1024ShowsRecoverableQualityState() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1024, 768);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en-US"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        DevTools devTools = enableQualityApi503();
+        try {
+            driver.findElement(By.cssSelector("[data-testid='capability-task-quality']")).click();
+            wait.until(ExpectedConditions.visibilityOfElementLocated(
+                    By.cssSelector("[data-testid='capability-quality-impact-error']")));
+            WebElement error = driver.findElement(By.cssSelector(
+                    "[data-testid='capability-quality-impact-error']"));
+            assertThat(error.getText())
+                    .contains("Quality & impact is unavailable", "What happened", "Impact",
+                            "How to continue", "Retry quality & impact")
+                    .doesNotContain("Request failed: 404", "RG.CAPABILITY_STUDIO.");
+            assertThat(driver.findElements(By.cssSelector(
+                    "[data-testid='capability-quality-impact']"))).isEmpty();
+            assertNoPageOverflow();
+            assertNoInternalStatusLeakage();
+            assertNoSeriousOrCriticalAxeViolations();
+            capture("capability-studio-gp09-quality-error-en-1024.png");
+
+            devTools.send(Fetch.disable());
+            error.findElement(By.cssSelector("button")).click();
+            wait.until(ExpectedConditions.visibilityOfElementLocated(
+                    By.cssSelector("[data-testid='capability-quality-impact']")));
+            assertNoBrowserErrorState();
+            assertThat(driver.findElements(By.cssSelector(
+                    ".capability-quality-case-item"))).hasSize(9);
+            assertThat(driver.findElements(By.cssSelector(
+                    ".capability-quality-graph-node"))).hasSize(37);
+            assertNoPageOverflow();
+            assertNoSeriousOrCriticalAxeViolations();
+            capture("capability-studio-gp09-quality-recovered-en-1024.png");
+        } finally {
+            devTools.send(Fetch.disable());
+            devTools.close();
+        }
     }
 
     @Test
@@ -546,6 +687,67 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertNoBrowserErrorState();
         assertNoInternalStatusLeakage();
         capture("capability-studio-gp10-exact-evidence-return-zh-1440.png");
+    }
+
+    @Test
+    void gp10EnglishUsAt1024ReplaysExactEvidenceAndGraphContext() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1024, 768);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.get(url("/capabilities/?lang=en-US&task=tool"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tool']")));
+        driver.findElement(By.cssSelector("[data-testid='run-governed-baseline']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='governed-baseline-result']")));
+        WebElement timeoutRound = driver.findElement(By.cssSelector(
+                "[data-testid='governed-evidence-case-compensation-history-timeout-1']"));
+        timeoutRound.click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='governed-run-evidence-panel']")));
+
+        String runId = queryParam("runId");
+        String scenarioId = queryParam("scenarioId");
+        assertThat(queryParam("task")).isEqualTo("tool");
+        assertThat(runId).isNotBlank();
+        assertThat(scenarioId).isEqualTo("case-compensation-history-timeout");
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel']")).getText())
+                .contains("Exact run evidence", "Read from the original run; nothing was re-executed.",
+                        runId, "case-compensation-history-timeout")
+                .doesNotContain("404", "Request failed");
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        capture("capability-studio-gp10-exact-evidence-en-1024.png");
+
+        driver.findElement(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel'] .capability-exact-actions button"))
+                .click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".feature-dag-node.feature-node-focus")));
+        String nodeId = queryParam("nodeId");
+        assertThat(queryParam("task")).isEqualTo("feature");
+        assertThat(queryParam("runId")).isEqualTo(runId);
+        assertThat(queryParam("scenarioId")).isEqualTo(scenarioId);
+        assertThat(nodeId).isNotBlank();
+        assertThat(driver.findElement(By.cssSelector(".feature-dag-node.feature-node-focus"))
+                .getAttribute("data-node-id")).isEqualTo(nodeId);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-feature-rehearsal']"))
+                .getText())
+                .contains("EXACT EVIDENCE · READ-ONLY", "original governed run exact evidence",
+                        "nothing was re-executed", "Feature processing DAG")
+                .doesNotContain("404", "Request failed");
+        assertDesktopDagFitsAndEdgesAlign();
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        capture("capability-studio-gp10-exact-dag-en-1024.png");
+        assertNoSeriousOrCriticalAxeViolations();
     }
 
     @Test
@@ -750,6 +952,38 @@ class CapabilityStudioBrowserAcceptanceTest {
     private String queryParam(String name) {
         return (String) ((JavascriptExecutor) driver).executeScript(
                 "return new URL(window.location.href).searchParams.get(arguments[0]);", name);
+    }
+
+    private String selectedQualityNodeIds() {
+        return (String) ((JavascriptExecutor) driver).executeScript("""
+                return [...document.querySelectorAll('.capability-quality-graph-node.selected')]
+                  .map(node => node.dataset.nodeId)
+                  .sort()
+                  .join('|');
+                """);
+    }
+
+    private DevTools enableQualityApi503() {
+        assertThat(driver).as("Chrome DevTools browser").isInstanceOf(ChromeDriver.class);
+        DevTools devTools = ((ChromeDriver) driver).getDevTools();
+        devTools.createSession();
+        devTools.addListener(Fetch.requestPaused(), event -> {
+            String body = Base64.getEncoder().encodeToString("""
+                    {"code":"RG.CAPABILITY_STUDIO.QUALITY_IMPACT_TEMPORARILY_UNAVAILABLE",
+                     "whatHappened":"The quality and impact projection service is temporarily unavailable.",
+                     "impact":"The quality projection was not loaded or changed.",
+                     "recoveryAction":"Retry quality and impact."}
+                    """.getBytes(StandardCharsets.UTF_8));
+            devTools.send(Fetch.fulfillRequest(
+                    event.getRequestId(), 503,
+                    Optional.of(List.of(new HeaderEntry("Content-Type", "application/json"))),
+                    Optional.empty(), Optional.of(body), Optional.of("Service Unavailable")));
+        });
+        devTools.send(Fetch.enable(Optional.of(List.of(new RequestPattern(
+                Optional.of("http://localhost:" + port
+                        + "/api/capability-studio/scenario-dataset/quality-impact*"),
+                Optional.empty(), Optional.of(RequestStage.REQUEST)))), Optional.empty()));
+        return devTools;
     }
 
     private void assertNoInternalStatusLeakage() {
