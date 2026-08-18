@@ -556,8 +556,19 @@ function isSafeErrorText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0 && !INTERNAL_PROTOCOL_TEXT.some((pattern) => pattern.test(value));
 }
 
-function safeErrorText(value: unknown, fallback: string): string {
-  return isSafeErrorText(value) ? value.trim() : fallback;
+const HAN_TEXT = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
+const LATIN_WORD = /[A-Za-z]{2,}/;
+
+function isLocaleCompatibleErrorText(value: unknown, locale: 'en' | 'zh-CN'): value is string {
+  if (!isSafeErrorText(value)) return false;
+  const text = value.trim();
+  if (locale === 'en') return !HAN_TEXT.test(text);
+  // Chinese copy may include technical names such as API, but an English-only sentence is not safe to surface.
+  return HAN_TEXT.test(text) || !LATIN_WORD.test(text);
+}
+
+function safeErrorText(value: unknown, fallback: string, locale: 'en' | 'zh-CN'): string {
+  return isLocaleCompatibleErrorText(value, locale) ? value.trim() : fallback;
 }
 
 function capabilityStudioErrorKind(error: Error | null | undefined): CapabilityStudioErrorKind {
@@ -640,9 +651,9 @@ function capabilityStudioErrorPresentation(
   const source = structured ? { ...structured, ...provided } : undefined;
   return {
     category: capabilityStudioErrorCategory(kind, locale),
-    whatHappened: safeErrorText(source?.whatHappened, fallback.whatHappened),
-    impact: safeErrorText(source?.impact, fallback.impact),
-    recoveryAction: safeErrorText(source?.recoveryAction, fallback.recoveryAction),
+    whatHappened: safeErrorText(source?.whatHappened, fallback.whatHappened, locale),
+    impact: safeErrorText(source?.impact, fallback.impact, locale),
+    recoveryAction: safeErrorText(source?.recoveryAction, fallback.recoveryAction, locale),
   };
 }
 

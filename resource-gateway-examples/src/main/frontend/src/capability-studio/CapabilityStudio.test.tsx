@@ -305,6 +305,37 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.activeElement).toBe(query<HTMLButtonElement>('[data-testid="capability-tutorial-error"] button'));
   });
 
+  it('falls back to Chinese conflict copy when the server sends English error text', async () => {
+    window.history.pushState({}, '', '/capabilities/?lang=zh-CN');
+    await render(tutorialFetcher({ conflict: true }));
+    await act(async () => buttonWithText('隔离演练配置').click());
+    await settle();
+    await act(async () => buttonWithText('保存并隔离预检').click());
+    await settle();
+
+    const error = query('[data-testid="capability-tutorial-error"]');
+    expect(error.textContent).toContain('教程分支操作已有更新版本。');
+    expect(error.textContent).toContain('教程分支未被修改，标准基线保持不变。');
+    expect(error.textContent).toContain('重新加载最新版本，然后再次执行操作。');
+    expect(error.textContent).not.toContain('The tutorial branch changed in another session.');
+    expect(error.textContent).not.toContain('Your unsaved values are still present.');
+  });
+
+  it('falls back to English conflict copy when the server sends Han text', async () => {
+    await render(tutorialFetcher({ conflict: true, conflictLanguage: 'zh-CN' }));
+    await act(async () => buttonWithText('Isolated rehearsal setup').click());
+    await settle();
+    await act(async () => buttonWithText('Save and run isolated preflight').click());
+    await settle();
+
+    const error = query('[data-testid="capability-tutorial-error"]');
+    expect(error.textContent).toContain('Tutorial branch operation has a newer version.');
+    expect(error.textContent).toContain('The tutorial branch was not changed; the canonical baseline remains unchanged.');
+    expect(error.textContent).toContain('Reload the latest version, then try the action again.');
+    expect(error.textContent).not.toContain('教程分支在另一个会话中发生了变化。');
+    expect(error.textContent).not.toContain('未保存的值仍然保留。');
+  });
+
   it('presents a generic tutorial operation failure as a safe validation outcome', async () => {
     const fetcher = tutorialFetcher({ invalidPreflight: true });
     await render(fetcher);
@@ -929,13 +960,19 @@ const tutorialBranch = {
   },
 };
 
-function tutorialFetcher(options: { conflict?: boolean; invalidPreflight?: boolean } = {}) {
+function tutorialFetcher(options: { conflict?: boolean; conflictLanguage?: 'en' | 'zh-CN'; invalidPreflight?: boolean } = {}) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
     if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
     if (url.endsWith('/behaviors/compensation-history') && init?.method === 'PUT') {
-      if (options.conflict) return json({
+      if (options.conflict) return json(options.conflictLanguage === 'zh-CN' ? {
+        code: 'RG.CAPABILITY_STUDIO.REVISION_CONFLICT',
+        whatHappened: '教程分支在另一个会话中发生了变化。',
+        impact: '未保存的值仍然保留。',
+        recoveryAction: '重新加载最新版本后再保存。',
+        field: 'expectedRevision',
+      } : {
         code: 'RG.CAPABILITY_STUDIO.REVISION_CONFLICT',
         whatHappened: 'The tutorial branch changed in another session.',
         impact: 'Your unsaved values are still present.',

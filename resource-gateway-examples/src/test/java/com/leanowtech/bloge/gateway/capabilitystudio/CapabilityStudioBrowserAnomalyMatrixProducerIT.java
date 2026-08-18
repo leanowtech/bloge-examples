@@ -247,8 +247,7 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
                         .as("GP-10 exact evidence uses demo bearer and X-Purpose")
                         .isTrue();
                 errorVisible = visibleError();
-                String errorText = driver.findElement(By.tagName("body")).getText();
-                businessSafe = safeBusinessError(errorText);
+                businessSafe = safeBusinessError(visibleErrorSurfaceText(), locale);
                 recoveryVisible = recoveryActionVisible();
                 staleGreenAbsent = driver.findElements(By.cssSelector(
                         "[data-testid='capability-preflight-success']")).isEmpty();
@@ -500,12 +499,11 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
                     && preservedHead.at("/behavior/durationMs").asLong() == serverDuration
                     && preservedHead.at("/behavior/condition").asText()
                     .equals(serverCondition);
-            String errorText = driver.findElement(By.tagName("body")).getText();
             boolean recoveryVisible = recoveryActionVisible();
             capture("CONFLICT-GP-04-" + locale + "-" + viewport.coordinate() + "-error.png");
             return new ConflictState(conflictObservation.realPut409Observed(),
                     conflictObservation.observedStatus(), localDraft,
-                    serverPreserved, visibleError(), safeBusinessError(errorText), recoveryVisible);
+                    serverPreserved, visibleError(), safeBusinessError(visibleErrorSurfaceText(), locale), recoveryVisible);
         } finally {
             try { devTools.send(Network.disable()); } catch (RuntimeException ignored) { }
             try { devTools.close(); } catch (RuntimeException ignored) { }
@@ -732,11 +730,25 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
         return JSON.readTree(response.body());
     }
 
-    private static boolean safeBusinessError(String text) {
+    private String visibleErrorSurfaceText() {
+        return driver.findElements(By.cssSelector(
+                        ".capability-error-state, .capability-operation-error")).stream()
+                .filter(this::intersectsViewport)
+                .map(WebElement::getText)
+                .filter(text -> text != null && !text.isBlank())
+                .findFirst()
+                .orElse("");
+    }
+
+    static boolean safeBusinessError(String text, String locale) {
         String lower = text.toLowerCase(Locale.ROOT);
+        boolean localeCompatible = "zh-CN".equals(locale)
+                ? text.matches("(?s).*[㐀-䶿一-鿿豈-﫿].*")
+                : !text.matches("(?s).*[㐀-䶿一-鿿豈-﫿].*");
         return (lower.contains("what happened") || text.contains("发生了什么"))
                 && (lower.contains("impact") || text.contains("影响"))
                 && (lower.contains("recovery") || lower.contains("retry") || text.contains("恢复") || text.contains("重试"))
+                && localeCompatible
                 && !text.matches("(?s).*\\bRG\\.[A-Z0-9_.-]+\\b.*")
                 && !text.matches("(?s).*\\{.*\\}.*");
     }
