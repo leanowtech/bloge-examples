@@ -1,9 +1,9 @@
 {
   "schemaVersion": "resourceGateway.capabilityStudioGoldenPathAcceptanceManifest.v1",
   "manifestId": "capability-studio-golden-path-initial-no-go",
-  "revision": 5,
+  "revision": 6,
   "status": "NO_GO",
-  "artifactFingerprint": "sha256:f376181aefe67479a8bda2c968424188746e050e808704dcff74c911d43dc947",
+  "artifactFingerprint": "sha256:97cc11457a3bbbbcc045e716d7ffb3891bb164d37cd48f4c1ad611d134b40065",
   "candidateBuildRef": {
     "kind": "BUILD",
     "id": "working-tree-stage0",
@@ -15,8 +15,8 @@
   "acceptanceBaselineRef": {
     "kind": "ACCEPTANCE_BASELINE",
     "id": "capability-studio-baseline-cancellation-fee-v1",
-    "revision": 5,
-    "fingerprint": "sha256:7b7035de1ae8a523d25869c5b393a0c27554d84338d9aeb451a7842ada9aa36c",
+    "revision": 6,
+    "fingerprint": "sha256:21b0e0282bcd52f7052bb51623b9ff7613dbce22402b356ed79eea75641d89b5",
     "authority": "repository",
     "scope": { "tenantId": "demo-tenant", "organizationId": "customer-service", "projectId": "capability-studio", "environmentId": "test", "region": "local" }
   },
@@ -51,8 +51,8 @@
     { "gpId": "GP-06", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Feature 超时隔离运行已证明原始依赖尝试 TIMEOUT、fallback 后最终 PASSED、零 HTTP delegate 调用和并发隔离；Tool 受治理闭包已完成 9 × 3 开发运行，部署候选绑定机制已实现，但目标环境认证和部署级 network deny 待补" },
     { "gpId": "GP-07", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Tool 契约、9 × 3 正确性目标与中文桌面/移动端开发证据已形成；未满足 AC-PRE 前置、英文/1024/读屏矩阵和 Owner 签署，正式结果仍为 NOT_RUN" },
     { "gpId": "GP-08", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "受治理 compiler、应用级 Resource Registry、真实 Resource Operator 和 exact-suite runtime 的 3 suite/27 child 开发运行已通过 v3 严格 Schema 与独立 Test Kit；9/9 Oracle、27/27 业务断言、同 Case 三轮 semantic fingerprint、CERTIFIABLE child evidence、候选/执行意图防篡改与 timeout/duplicate/forbidden-write 专项证明已闭合，但目标环境认证、部署级 egress 和 Owner 签署未闭合，正式结果仍为 NOT_RUN" },
-    { "gpId": "GP-09", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "质量和影响投影尚未实现" },
-    { "gpId": "GP-10", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "Evidence exact closure 和 Deep Link 尚未实现" }
+    { "gpId": "GP-09", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "质量与影响开发切片已闭合 9 DRAFT、0 ACTIVE、五项覆盖 100%、两个准入阻断、37 节点/81 边和 Case 影响路径，并通过严格 Schema、Test Kit 与中文 1440/390 浏览器复验；正式矩阵、Dataset Authority、Data Owner 签署和 AC-PRE 前置仍未闭合，所以正式结果保持 NOT_RUN" },
+    { "gpId": "GP-10", "status": "NOT_RUN", "startedAt": null, "completedAt": null, "evidenceRefs": [], "failureCode": null, "notes": "原 child run 精确证据、完整 exact-ref 闭包、Evidence 到 Feature DAG Deep Link、刷新和返回上下文保持已有开发证据；正式语言/视口/异常矩阵、目标环境认证、部署级 egress 与 QA/Integration 签署未闭合，所以正式结果保持 NOT_RUN" }
   ],
   "scenarioResults": [
     { "scenarioId": "CASE-01", "caseType": "GOLDEN", "branch": "CANONICAL_BASELINE", "status": "NOT_RUN", "runId": null, "semanticFingerprint": null, "assertionStatus": "NOT_RUN", "realCallCount": null, "evidenceRefs": [], "notes": "未运行" },
@@ -87,7 +87,7 @@
   ],
   "knownLimitations": [
     { "limitationId": "capability-studio-runtime-missing", "severity": "P0", "status": "OPEN", "description": "同一受治理编译资产闭包已通过应用级 Resource Registry 和真实 Resource Operator 生成 CERTIFIABLE child evidence，完成 9/9 Oracle、27/27 断言和三轮稳定性开发验证，部署候选与 execution intent 绑定机制也已实现；但正式目标环境尚未生成 Candidate attestation，也未接受部署级 network deny/egress 观测", "ownerRole": "RUNTIME_OWNER", "blocksAcceptance": true },
-    { "limitationId": "capability-studio-browser-evidence-missing", "severity": "P1", "status": "OPEN", "description": "GP-01 至 GP-10 尚无完整真实浏览器证据", "ownerRole": "QA_OWNER", "blocksAcceptance": true }
+    { "limitationId": "capability-studio-browser-evidence-missing", "severity": "P1", "status": "OPEN", "description": "GP-01 至 GP-10 均已有部分真实浏览器开发证据，但固定的 10 GP × 2 语言 × 3 视口、异常、键盘、人工读屏和六人可用性矩阵仍未完整执行", "ownerRole": "QA_OWNER", "blocksAcceptance": true }
   ],
   "signOffs": [
     { "signoffId": "product-owner", "role": "PRODUCT_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
@@ -98,5 +98,5 @@
     { "signoffId": "qa-owner", "role": "QA_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" },
     { "signoffId": "delivery-owner", "role": "DELIVERY_OWNER", "status": "PENDING", "actorRef": null, "signedAt": null, "signatureRef": null, "comment": "未签署" }
   ],
-  "generatedAt": "2026-08-18T04:25:08Z"
+  "generatedAt": "2026-08-18T13:30:00Z"
 }
