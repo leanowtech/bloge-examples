@@ -69,6 +69,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
                         .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
                         .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedRunEvidenceService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -87,6 +88,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
                         .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
                         .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedRunEvidenceService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -108,6 +110,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
                         .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
                         .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedRunEvidenceService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -129,6 +132,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
                         .hasSingleBean(CapabilityStudioGovernedBaselineService.class)
+                        .hasSingleBean(CapabilityStudioGovernedRunEvidenceService.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioDemoController.class));
@@ -148,7 +152,8 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioGovernedCompilationService.class)
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
-                        .hasSingleBean(CapabilityStudioGovernedBaselineService.class));
+                        .hasSingleBean(CapabilityStudioGovernedBaselineService.class)
+                        .hasSingleBean(CapabilityStudioGovernedRunEvidenceService.class));
     }
 
     @Test

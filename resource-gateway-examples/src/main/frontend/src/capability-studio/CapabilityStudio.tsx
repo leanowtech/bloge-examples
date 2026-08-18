@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -29,6 +29,7 @@ import {
   CapabilityStudioRequestError,
   fetchCapabilityStudioDemoPack,
   fetchFeatureRehearsal,
+  fetchGovernedRunEvidence,
   fetchScenarioDataset,
   fetchTutorialBranch,
   preflightTutorialBranch,
@@ -54,11 +55,54 @@ import {
   type FeatureRehearsalPermission,
   type FeatureRehearsalProjection,
   type GovernedBaselineSuccessProjection,
+  type GovernedRunEvidenceProjection,
 } from './domain';
 import { featureRehearsalErrorPresentation } from './featureRehearsalErrorPresentation';
 import './capabilityStudio.css';
 
 type Task = 'overview' | 'contract' | 'scenarios' | 'tutorial' | 'feature' | 'tool';
+
+interface CapabilityStudioDeepLink {
+  task: Task | null;
+  runId: string | null;
+  scenarioId: string | null;
+  nodeId: string | null;
+}
+
+function readCapabilityStudioDeepLink(): CapabilityStudioDeepLink {
+  const params = new URL(window.location.href).searchParams;
+  const task = params.get('task');
+  const exactTask = task === 'tool' || task === 'feature';
+  const runId = exactTask ? params.get('runId') : null;
+  const scenarioId = exactTask ? params.get('scenarioId') : null;
+  return {
+    task: exactTask ? task : null,
+    runId: runId && scenarioId ? runId : null,
+    scenarioId: runId && scenarioId ? scenarioId : null,
+    nodeId: runId && scenarioId ? params.get('nodeId') : null,
+  };
+}
+
+function writeCapabilityStudioDeepLink(next: Partial<CapabilityStudioDeepLink>, replace = false): CapabilityStudioDeepLink {
+  const url = new URL(window.location.href);
+  const current = readCapabilityStudioDeepLink();
+  const valueFor = (key: keyof CapabilityStudioDeepLink) => (
+    Object.prototype.hasOwnProperty.call(next, key) ? next[key] : current[key]
+  );
+  const values = {
+    task: valueFor('task'),
+    runId: valueFor('runId'),
+    scenarioId: valueFor('scenarioId'),
+    nodeId: valueFor('nodeId'),
+  };
+  for (const [key, value] of Object.entries(values)) {
+    if (value) url.searchParams.set(key, value);
+    else url.searchParams.delete(key);
+  }
+  const write = replace ? window.history.replaceState : window.history.pushState;
+  write.call(window.history, {}, '', `${url.pathname}${url.search}${url.hash}`);
+  return readCapabilityStudioDeepLink();
+}
 
 export interface CapabilityStudioProps {
   fetcher?: CapabilityStudioFetcher;
@@ -69,11 +113,17 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   const [model, setModel] = useState<CapabilityStudioModel | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
-  const [task, setTask] = useState<Task>('overview');
+  const [deepLink, setDeepLink] = useState<CapabilityStudioDeepLink>(() => readCapabilityStudioDeepLink());
+  const [task, setTask] = useState<Task>(() => readCapabilityStudioDeepLink().task ?? 'overview');
   const [selectedApiIndex, setSelectedApiIndex] = useState(0);
   const [governedBaseline, setGovernedBaseline] = useState<GovernedBaselineSuccessProjection | null>(null);
   const [governedBaselineError, setGovernedBaselineError] = useState<Error | null>(null);
   const [governedBaselineLoading, setGovernedBaselineLoading] = useState(false);
+  const [exactEvidence, setExactEvidence] = useState<GovernedRunEvidenceProjection | null>(null);
+  const [exactEvidenceError, setExactEvidenceError] = useState<Error | null>(null);
+  const [exactEvidenceLoading, setExactEvidenceLoading] = useState(false);
+  const exactEvidenceRequestKey = useRef<string | null>(null);
+  const [exactEvidenceRequestVersion, setExactEvidenceRequestVersion] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -89,6 +139,50 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   }, [fetcher]);
 
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const next = readCapabilityStudioDeepLink();
+      setDeepLink(next);
+      if (next.task) setTask(next.task);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  const readExactEvidence = useCallback(async (runId: string, scenarioId: string) => {
+    const requestKey = `${runId}\u0000${scenarioId}`;
+    exactEvidenceRequestKey.current = requestKey;
+    setExactEvidenceLoading(true);
+    setExactEvidenceError(null);
+    try {
+      const nextEvidence = await fetchGovernedRunEvidence(runId, scenarioId, fetcher);
+      const current = readCapabilityStudioDeepLink();
+      if (exactEvidenceRequestKey.current !== requestKey
+        || current.runId !== runId
+        || current.scenarioId !== scenarioId
+        || (current.task !== 'tool' && current.task !== 'feature')) return;
+      setExactEvidence(nextEvidence);
+      if (current.nodeId !== nextEvidence.focusNodeId) {
+        const next = writeCapabilityStudioDeepLink({ task: current.task, runId, scenarioId, nodeId: nextEvidence.focusNodeId }, true);
+        setDeepLink(next);
+      }
+    } catch (nextError) {
+      if (exactEvidenceRequestKey.current === requestKey) {
+        setExactEvidenceError(nextError instanceof Error ? nextError : new Error('The exact governed run evidence could not be loaded.'));
+      }
+    } finally {
+      if (exactEvidenceRequestKey.current === requestKey) setExactEvidenceLoading(false);
+    }
+  }, [fetcher]);
+
+  useEffect(() => {
+    if ((deepLink.task !== 'tool' && deepLink.task !== 'feature') || !deepLink.runId || !deepLink.scenarioId) return;
+    if (exactEvidence?.run.runId === deepLink.runId && exactEvidence.scenario.caseId === deepLink.scenarioId) return;
+    const requestKey = `${deepLink.runId}\u0000${deepLink.scenarioId}`;
+    if (exactEvidenceRequestKey.current === requestKey) return;
+    void readExactEvidence(deepLink.runId, deepLink.scenarioId);
+  }, [deepLink.task, deepLink.runId, deepLink.scenarioId, exactEvidence, exactEvidenceRequestVersion, readExactEvidence]);
 
   const executeGovernedBaseline = useCallback(async () => {
     setGovernedBaselineLoading(true);
@@ -122,9 +216,49 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
     loading: governedBaselineLoading,
     failed: governedBaselineError !== null,
   });
+  const clearExactEvidence = () => {
+    exactEvidenceRequestKey.current = null;
+    setExactEvidence(null);
+    setExactEvidenceError(null);
+    setExactEvidenceLoading(false);
+  };
+  const navigateTask = (nextTask: Task) => {
+    const current = readCapabilityStudioDeepLink();
+    if (current.runId || current.scenarioId || current.nodeId) {
+      const next = writeCapabilityStudioDeepLink({ task: null, runId: null, scenarioId: null, nodeId: null }, true);
+      setDeepLink(next);
+      clearExactEvidence();
+    }
+    setTask(nextTask);
+  };
   const openApi = (index: number) => {
     setSelectedApiIndex(index);
-    setTask('contract');
+    navigateTask('contract');
+  };
+  const openExactEvidence = (runId: string, scenarioId: string) => {
+    const next = writeCapabilityStudioDeepLink({ task: 'tool', runId, scenarioId, nodeId: null });
+    exactEvidenceRequestKey.current = null;
+    setExactEvidence(null);
+    setExactEvidenceError(null);
+    setExactEvidenceRequestVersion((version) => version + 1);
+    setTask('tool');
+    setDeepLink(next);
+  };
+  const openExactGraph = (evidence: GovernedRunEvidenceProjection) => {
+    const next = writeCapabilityStudioDeepLink({ task: 'feature', runId: evidence.run.runId, scenarioId: evidence.scenario.caseId, nodeId: evidence.focusNodeId });
+    setTask('feature');
+    setDeepLink(next);
+  };
+  const returnToExactTool = () => {
+    const current = readCapabilityStudioDeepLink();
+    if (!current.runId || !current.scenarioId) return;
+    const next = writeCapabilityStudioDeepLink({ task: 'tool', runId: current.runId, scenarioId: current.scenarioId, nodeId: current.nodeId });
+    setTask('tool');
+    setDeepLink(next);
+  };
+  const retryExactEvidence = () => {
+    const current = readCapabilityStudioDeepLink();
+    if (current.runId && current.scenarioId) void readExactEvidence(current.runId, current.scenarioId);
   };
 
   return (
@@ -143,7 +277,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
 
       <div className="capability-mobile-task-switcher">
         <label htmlFor="capability-task-select">{locale === 'zh-CN' ? '当前任务' : 'Current task'}</label>
-        <select id="capability-task-select" value={task} onChange={(event) => setTask(event.target.value as Task)}>
+        <select id="capability-task-select" value={task} onChange={(event) => navigateTask(event.target.value as Task)}>
           <option value="overview">{locale === 'zh-CN' ? '能力总览' : 'Capability overview'}</option>
           <option value="contract">{locale === 'zh-CN' ? '订单查询契约' : 'Order lookup contract'}</option>
           <option value="scenarios">{locale === 'zh-CN' ? '场景数据' : 'Scenario data'}</option>
@@ -156,26 +290,26 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
       <div className="capability-layout">
         <aside className="capability-sidebar" aria-label={locale === 'zh-CN' ? '能力资产任务导航' : 'Capability asset task navigation'}>
           <div className="capability-sidebar-heading"><BriefcaseBusiness size={17} aria-hidden="true" /><span>{locale === 'zh-CN' ? '能力资产' : 'Capability assets'}</span></div>
-          <TaskButton active={task === 'overview'} icon={<LayoutDashboard size={16} />} label={locale === 'zh-CN' ? '能力总览' : 'Overview'} onClick={() => setTask('overview')} />
+          <TaskButton active={task === 'overview'} icon={<LayoutDashboard size={16} />} label={locale === 'zh-CN' ? '能力总览' : 'Overview'} onClick={() => navigateTask('overview')} />
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '可复用接口' : 'Reusable APIs'} <span>{model.assets.apis.length}</span></div>
           {model.assets.apis.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'contract' && index === selectedApiIndex} icon={<FileText size={16} />} label={text(asset.name)} onClick={() => openApi(index)} />)}
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '业务能力' : 'Business assets'} <span>2</span></div>
-          {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => setTask('feature')} testId="capability-task-feature" />)}
-          {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => setTask('tool')} testId="capability-task-tool" />)}
-          <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => setTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
-          <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => setTask('tutorial')} testId="capability-task-tutorial" />
+          {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => navigateTask('feature')} testId="capability-task-feature" />)}
+          {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => navigateTask('tool')} testId="capability-task-tool" />)}
+          <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => navigateTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
+          <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => navigateTask('tutorial')} testId="capability-task-tutorial" />
         </aside>
 
         <section className="capability-main" aria-live="polite">
-          {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => setTask('scenarios')} onOpenTutorial={() => setTask('tutorial')} />}
+          {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => navigateTask('scenarios')} onOpenTutorial={() => navigateTask('tutorial')} />}
           {task === 'contract' && currentAsset && <ContractView asset={currentAsset} text={text} locale={locale} />}
           {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} />}
           {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
-          {task === 'feature' && selectedFeature && <FeatureRehearsalView asset={selectedFeature} fetcher={fetcher} text={text} locale={locale} />}
-          {task === 'tool' && selectedTool && <ToolGovernedBaselineView asset={selectedTool} text={text} locale={locale} projection={governedBaseline} error={governedBaselineError} loading={governedBaselineLoading} onRun={() => void executeGovernedBaseline()} />}
+          {task === 'feature' && selectedFeature && <FeatureRehearsalView asset={selectedFeature} fetcher={fetcher} text={text} locale={locale} storedEvidence={exactEvidence} storedEvidenceRequested={Boolean(deepLink.task === 'feature' && deepLink.runId && deepLink.scenarioId)} storedEvidenceLoading={exactEvidenceLoading} storedEvidenceError={exactEvidenceError} onReturnTool={returnToExactTool} onRetryExact={retryExactEvidence} />}
+          {task === 'tool' && selectedTool && <ToolGovernedBaselineView asset={selectedTool} text={text} locale={locale} projection={governedBaseline} error={governedBaselineError} loading={governedBaselineLoading} onRun={() => void executeGovernedBaseline()} exactEvidence={exactEvidence} exactEvidenceError={exactEvidenceError} exactEvidenceLoading={exactEvidenceLoading} onViewEvidence={openExactEvidence} onOpenGraph={openExactGraph} onRetryExact={retryExactEvidence} />}
         </section>
 
-        <ReadinessPanel model={model} text={text} locale={locale} task={task} governedBaseline={governedBaseline} governedBaselineError={governedBaselineError} governedBaselineLoading={governedBaselineLoading} onNextAction={() => task === 'overview' ? openApi(0) : task === 'tool' ? void executeGovernedBaseline() : setTask('scenarios')} />
+        <ReadinessPanel model={model} text={text} locale={locale} task={task} governedBaseline={governedBaseline} governedBaselineError={governedBaselineError} governedBaselineLoading={governedBaselineLoading} onNextAction={() => task === 'overview' ? openApi(0) : task === 'tool' ? void executeGovernedBaseline() : navigateTask('scenarios')} />
       </div>
     </main>
   );
@@ -491,14 +625,14 @@ const featureRehearsalCases = [
   { id: 'case-policy-revision-regression', name: { en: 'Policy revision regression', 'zh-CN': '政策版本回归' } },
 ] as const;
 
-function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: CapabilityAssetSummary; fetcher?: CapabilityStudioFetcher; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN' }) {
+function FeatureRehearsalView({ asset, fetcher, text, locale, storedEvidence, storedEvidenceRequested, storedEvidenceLoading, storedEvidenceError, onReturnTool, onRetryExact }: { asset: CapabilityAssetSummary; fetcher?: CapabilityStudioFetcher; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; storedEvidence: GovernedRunEvidenceProjection | null; storedEvidenceRequested: boolean; storedEvidenceLoading: boolean; storedEvidenceError: Error | null; onReturnTool: () => void; onRetryExact: () => void }) {
   const [caseId, setCaseId] = useState('case-compensation-history-timeout');
   const [permission, setPermission] = useState<FeatureRehearsalPermission>('STRUCTURE_ONLY');
   const [projection, setProjection] = useState<FeatureRehearsalProjection | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
-  const load = useCallback(async (nextCaseId = caseId, nextPermission = permission) => {
+  const load = useCallback(async (nextCaseId: string, nextPermission: FeatureRehearsalPermission) => {
     setLoading(true);
     setError(null);
     try {
@@ -510,9 +644,25 @@ function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: Capabil
     } finally {
       setLoading(false);
     }
-  }, [caseId, fetcher, permission]);
+  }, [fetcher]);
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!storedEvidenceRequested) void load(caseId, permission);
+  }, [load, storedEvidenceRequested]);
+
+  useEffect(() => {
+    if (!storedEvidenceRequested) return;
+    if (storedEvidence) {
+      setCaseId(storedEvidence.scenario.caseId);
+      setProjection(toFeatureRehearsalProjection(storedEvidence));
+      setPermission('STRUCTURE_ONLY');
+      setError(null);
+      setLoading(false);
+    } else {
+      setError(storedEvidenceError);
+      setLoading(storedEvidenceLoading);
+    }
+  }, [storedEvidence, storedEvidenceError, storedEvidenceLoading, storedEvidenceRequested]);
 
   const changeCase = (nextCaseId: string) => {
     setCaseId(nextCaseId);
@@ -525,19 +675,44 @@ function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: Capabil
   const errorPresentation = error ? featureRehearsalErrorPresentation(error, locale) : null;
 
   return <div className="capability-view" data-testid="capability-feature-rehearsal">
-    <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY'} />
-    <section className="capability-feature-context capability-section">
-      <div className="capability-feature-context-main"><label htmlFor="feature-rehearsal-case">{locale === 'zh-CN' ? '演示场景' : 'Rehearsal scenario'}</label><select id="feature-rehearsal-case" value={caseId} onChange={(event) => changeCase(event.target.value)}>{featureRehearsalCases.map((entry) => <option key={entry.id} value={entry.id}>{text(entry.name)}</option>)}</select><p>{locale === 'zh-CN' ? '选择业务问题，系统会加载对应的脱离真实接口的特征演练结果。' : 'Choose a business problem to load its isolated feature rehearsal result.'}</p></div>
-      <div className="capability-feature-permission" role="group" aria-label={locale === 'zh-CN' ? '数据可见权限' : 'Data visibility permission'}><span>{locale === 'zh-CN' ? '数据查看' : 'Data view'}</span><div className="capability-segmented-control"><button type="button" aria-pressed={permission === 'STRUCTURE_ONLY'} className={permission === 'STRUCTURE_ONLY' ? 'active' : ''} onClick={() => changePermission('STRUCTURE_ONLY')}><EyeOff size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '结构' : 'Structure'}</button><button type="button" aria-pressed={permission === 'PAYLOAD_VISIBLE'} className={permission === 'PAYLOAD_VISIBLE' ? 'active' : ''} onClick={() => changePermission('PAYLOAD_VISIBLE')}><Eye size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '受控数据' : 'Payload'}</button></div><small>{permission === 'STRUCTURE_ONLY' ? (locale === 'zh-CN' ? '仅显示摘要与指纹，不显示值。' : 'Summaries and fingerprints only; values stay hidden.') : (locale === 'zh-CN' ? '仅展示演示数据，不代表真实业务载荷。' : 'Controlled demo values only; never real business payloads.')}</small></div>
+    <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={storedEvidenceRequested ? (locale === 'zh-CN' ? '精确证据 · 只读' : 'EXACT EVIDENCE · READ-ONLY') : (locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY')} />
+    <section className={`capability-feature-context capability-section${storedEvidenceRequested ? ' capability-exact-feature-context' : ''}`}>
+      {storedEvidenceRequested ? <div className="capability-feature-context-main"><span className="capability-exact-context-label">{locale === 'zh-CN' ? '精确 Case' : 'Exact case'}</span><strong>{storedEvidence?.scenario.name ?? (locale === 'zh-CN' ? '正在读取原运行...' : 'Reading the original run...')}</strong><p>{locale === 'zh-CN' ? '当前图来自原 governed run 的 exact evidence，没有重新执行。' : 'This graph is loaded from the original governed run exact evidence; nothing was re-executed.'}</p></div> : <div className="capability-feature-context-main"><label htmlFor="feature-rehearsal-case">{locale === 'zh-CN' ? '演示场景' : 'Rehearsal scenario'}</label><select id="feature-rehearsal-case" value={caseId} onChange={(event) => changeCase(event.target.value)}>{featureRehearsalCases.map((entry) => <option key={entry.id} value={entry.id}>{text(entry.name)}</option>)}</select><p>{locale === 'zh-CN' ? '选择业务问题，系统会加载对应的脱离真实接口的特征演练结果。' : 'Choose a business problem to load its isolated feature rehearsal result.'}</p></div>}
+      {!storedEvidenceRequested && <div className="capability-feature-permission" role="group" aria-label={locale === 'zh-CN' ? '数据可见权限' : 'Data visibility permission'}><span>{locale === 'zh-CN' ? '数据查看' : 'Data view'}</span><div className="capability-segmented-control"><button type="button" aria-pressed={permission === 'STRUCTURE_ONLY'} className={permission === 'STRUCTURE_ONLY' ? 'active' : ''} onClick={() => changePermission('STRUCTURE_ONLY')}><EyeOff size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '结构' : 'Structure'}</button><button type="button" aria-pressed={permission === 'PAYLOAD_VISIBLE'} className={permission === 'PAYLOAD_VISIBLE' ? 'active' : ''} onClick={() => changePermission('PAYLOAD_VISIBLE')}><Eye size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '受控数据' : 'Payload'}</button></div><small>{permission === 'STRUCTURE_ONLY' ? (locale === 'zh-CN' ? '仅显示摘要与指纹，不显示值。' : 'Summaries and fingerprints only; values stay hidden.') : (locale === 'zh-CN' ? '仅展示演示数据，不代表真实业务载荷。' : 'Controlled demo values only; never real business payloads.')}</small></div>}
+      {storedEvidenceRequested && <button type="button" className="capability-secondary-action capability-return-tool" onClick={onReturnTool}><Wrench size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '返回本次 Tool 证据' : 'Return to Tool evidence'}</button>}
     </section>
     {loading && <div className="capability-feature-state" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={18} aria-hidden="true" /> {locale === 'zh-CN' ? '正在加载特征运行和数据视图...' : 'Loading feature run and data lens...'}</div>}
-    {!loading && error && errorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load'}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{errorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{errorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{errorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={() => void load()}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario'}</button></div></section>}
-    {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} />}
+    {!loading && error && errorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{storedEvidenceRequested ? (locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read') : (locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load')}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{errorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{errorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{errorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={storedEvidenceRequested ? onRetryExact : () => void load(caseId, permission)}><RefreshCw size={15} aria-hidden="true" /> {storedEvidenceRequested ? (locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence') : (locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario')}</button></div></section>}
+    {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} focusNodeId={storedEvidence?.focusNodeId} exactEvidence={storedEvidenceRequested} />}
   </div>;
 }
 
-function FeatureRehearsalContent({ projection, selectedCase, locale, text }: { projection: FeatureRehearsalProjection; selectedCase: typeof featureRehearsalCases[number]; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string }) {
+function FeatureRehearsalContent({ projection, selectedCase, locale, text, focusNodeId, exactEvidence }: { projection: FeatureRehearsalProjection; selectedCase: typeof featureRehearsalCases[number]; locale: 'en' | 'zh-CN'; text: (value: Parameters<typeof localized>[0]) => string; focusNodeId?: string; exactEvidence: boolean }) {
   const { run, dataLens } = projection;
+  const focusGraphPath = exactEvidence
+    ? dataLens.nodes.find((node) => node.nodeId === focusNodeId)?.graphPath
+    : null;
+  const dagNodes = exactEvidence
+    ? dataLens.nodes.filter((node) => node.graphPath === focusGraphPath)
+    : dataLens.nodes;
+  const dagInvocationSites = new Set(dagNodes.map((node) => node.invocationSite));
+  const dagEdges = exactEvidence
+    ? dataLens.edges.filter((edge) => edge.graphPath === focusGraphPath
+      && dagInvocationSites.has(edge.fromInvocationSite)
+      && dagInvocationSites.has(edge.toInvocationSite))
+    : dataLens.edges;
+  useEffect(() => {
+    if (!focusNodeId) return;
+    const target = Array.from(document.querySelectorAll<HTMLElement>('[data-node-id]'))
+      .find((element) => element.dataset.nodeId === focusNodeId);
+    if (!target) return;
+    document.querySelectorAll<HTMLElement>('[data-node-id].feature-node-focus')
+      .forEach((element) => element.classList.remove('feature-node-focus'));
+    target.classList.add('feature-node-focus');
+    target.setAttribute('tabindex', '-1');
+    target.scrollIntoView?.({ block: 'center', inline: 'center' });
+    target.focus({ preventScroll: true });
+  }, [focusNodeId, dataLens.nodes.length]);
   return <>
     <section className="capability-feature-run-strip" aria-label={locale === 'zh-CN' ? '运行摘要' : 'Run summary'}>
       <div><span>{locale === 'zh-CN' ? '场景' : 'Scenario'}</span><strong>{text(selectedCase.name)}</strong></div>
@@ -545,9 +720,9 @@ function FeatureRehearsalContent({ projection, selectedCase, locale, text }: { p
       <div><span>{locale === 'zh-CN' ? '绑定方式' : 'Binding'}</span><strong>{locale === 'zh-CN' ? '隔离 Fixture 控制' : 'Isolated fixture control'}</strong></div>
       <div><span>{locale === 'zh-CN' ? '真实调用' : 'Real calls'}</span><strong>{run.realExternalCallCount}</strong></div>
     </section>
-    <section className="capability-section capability-feature-dag-section" aria-labelledby="feature-dag-heading"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '特征加工 DAG' : 'Feature processing DAG'} subtitle={locale === 'zh-CN' ? '4 个业务接口并行取数，汇聚为取消费事实，再进入决策。节点和边均来自同一次运行 Trace。' : 'Four business APIs feed cancellation facts and then a decision. Every node and edge comes from the same run trace.'} /><div className="capability-feature-dag" data-testid="feature-dag" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '特征加工 DAG 图，可横向滚动' : 'Feature processing DAG diagram, horizontally scrollable'}><div className="feature-dag-column feature-dag-inputs">{featureNodesOfKind(dataLens.nodes, 'API').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dataLens.edges, 'API')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dataLens.nodes, 'AGGREGATOR').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dataLens.edges, 'AGGREGATOR')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dataLens.nodes, 'DECISION').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div></div></section>
+    <section className="capability-section capability-feature-dag-section" aria-labelledby="feature-dag-heading"><SectionTitle icon={<GitBranch size={17} />} title={locale === 'zh-CN' ? '特征加工 DAG' : 'Feature processing DAG'} subtitle={locale === 'zh-CN' ? '4 个业务接口并行取数，汇聚为取消费事实，再进入决策。节点和边均来自同一次运行 Trace。' : 'Four business APIs feed cancellation facts and then a decision. Every node and edge comes from the same run trace.'} /><div className="capability-feature-dag" data-testid="feature-dag" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '特征加工 DAG 图，可横向滚动' : 'Feature processing DAG diagram, horizontally scrollable'}><div className="feature-dag-column feature-dag-inputs">{featureNodesOfKind(dagNodes, 'API').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dagEdges, 'API')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dagNodes, 'AGGREGATOR').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div><FeatureEdgeColumn edges={featureEdgesFromKind(dagEdges, 'AGGREGATOR')} locale={locale} text={text} /><div className="feature-dag-column">{featureNodesOfKind(dagNodes, 'DECISION').map((node) => <FeatureNodeCard key={node.nodeId} node={node} locale={locale} text={text} />)}</div></div></section>
     <section className="capability-section capability-data-lens" aria-labelledby="feature-lens-heading"><SectionTitle icon={<Database size={17} />} title={locale === 'zh-CN' ? 'Data Lens · 数据流检查' : 'Data Lens · Data flow inspection'} subtitle={locale === 'zh-CN' ? '按节点和数据边查看同一运行中的输入、输出和稳定指纹。' : 'Inspect inputs, outputs, and stable fingerprints from the same run by node and edge.'} /><div className="capability-lens-grid"><div><h4>{locale === 'zh-CN' ? '节点数据' : 'Node data'}</h4><div className="capability-lens-node-list">{dataLens.nodes.map((node) => <FeatureLensNode key={node.invocationSite} node={node} permission={dataLens.permissionMode} locale={locale} text={text} />)}</div></div><div><h4>{locale === 'zh-CN' ? '运行数据边' : 'Runtime data edges'}</h4><div className="capability-lens-edge-list">{dataLens.edges.map((edge) => <FeatureLensEdge key={edge.edgeId} edge={edge} permission={dataLens.permissionMode} locale={locale} />)}</div></div></div>{dataLens.firstDifference && <div className="capability-first-difference" role="status"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '首个断言差异已定位' : 'First assertion difference located'}</strong><p>{dataLens.firstDifference.scope || dataLens.firstDifference.source}</p><dl><div><dt>{locale === 'zh-CN' ? '位置' : 'Location'}</dt><dd>{dataLens.firstDifference.locator} · {dataLens.firstDifference.path || '/'}</dd></div><div><dt>{locale === 'zh-CN' ? '期望' : 'Expected'}</dt><dd>{dataLens.permissionMode === 'PAYLOAD_VISIBLE' ? formatPayload(dataLens.firstDifference.expected) : shortFingerprint(dataLens.firstDifference.expectedFingerprint)}</dd></div><div><dt>{locale === 'zh-CN' ? '实际' : 'Actual'}</dt><dd>{dataLens.permissionMode === 'PAYLOAD_VISIBLE' ? formatPayload(dataLens.firstDifference.actual) : shortFingerprint(dataLens.firstDifference.actualFingerprint)}</dd></div></dl></div></div>}{isFeatureLensTruncated(dataLens.truncation) && <div className="capability-feature-truncation" role="status"><Filter size={16} aria-hidden="true" /><span>{locale === 'zh-CN' ? `数据视图已截断：省略 ${dataLens.truncation.omittedNodes} 个节点、${dataLens.truncation.omittedEdges} 条边和 ${dataLens.truncation.omittedAttempts} 次尝试。` : `Data Lens truncated: ${dataLens.truncation.omittedNodes} nodes, ${dataLens.truncation.omittedEdges} edges, and ${dataLens.truncation.omittedAttempts} attempts omitted.`}</span></div>}</section>
-    <p className="capability-feature-integrity"><ShieldCheck size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '本页展示的是一次隔离演练结果，不代表业务验收通过。运行状态、真实调用次数和绑定方式均为证据字段。' : 'This is an isolated rehearsal result, not an acceptance decision. Run status, real-call count, and binding mode are evidence fields.'}</p>
+    <p className="capability-feature-integrity"><ShieldCheck size={15} aria-hidden="true" /> {exactEvidence ? (locale === 'zh-CN' ? '本页读取原 run 的只读 exact evidence，未重跑；运行状态、真实调用次数和绑定方式均为证据字段。' : 'This page reads the original run as read-only exact evidence; it was not re-run. Run status, real-call count, and binding mode are evidence fields.') : (locale === 'zh-CN' ? '本页展示的是一次隔离演练结果，不代表业务验收通过。运行状态、真实调用次数和绑定方式均为证据字段。' : 'This is an isolated rehearsal result, not an acceptance decision. Run status, real-call count, and binding mode are evidence fields.')}</p>
   </>;
 }
 
@@ -623,7 +798,27 @@ function isFeatureLensTruncated(value: FeatureRehearsalProjection['dataLens']['t
 function shortFingerprint(value: string): string { return !value ? '—' : value.length > 18 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value; }
 function formatPayload(value: unknown): string { return typeof value === 'string' ? value : JSON.stringify(value) ?? 'null'; }
 
-function ToolGovernedBaselineView({ asset, text, locale, projection, error, loading, onRun }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; projection: GovernedBaselineSuccessProjection | null; error: Error | null; loading: boolean; onRun: () => void }) {
+function toFeatureRehearsalProjection(evidence: GovernedRunEvidenceProjection): FeatureRehearsalProjection {
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.feature-rehearsal.v1',
+    scenario: {
+      id: evidence.scenario.caseId,
+      name: evidence.scenario.name,
+      expectedResult: evidence.scenario.businessIntent,
+    },
+    graph: { id: evidence.graphRef.id, fingerprint: evidence.graphRef.fingerprint },
+    run: {
+      runId: evidence.run.runId,
+      status: evidence.run.status,
+      semanticFingerprint: evidence.run.semanticResultFingerprint,
+      realExternalCallCount: 0,
+      bindingMode: 'FIXTURE_CONTROLLED_NON_PRODUCTION',
+    },
+    dataLens: evidence.dataLens,
+  };
+}
+
+function ToolGovernedBaselineView({ asset, text, locale, projection, error, loading, onRun, exactEvidence, exactEvidenceError, exactEvidenceLoading, onViewEvidence, onOpenGraph, onRetryExact }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; projection: GovernedBaselineSuccessProjection | null; error: Error | null; loading: boolean; onRun: () => void; exactEvidence: GovernedRunEvidenceProjection | null; exactEvidenceError: Error | null; exactEvidenceLoading: boolean; onViewEvidence: (runId: string, caseId: string) => void; onOpenGraph: (evidence: GovernedRunEvidenceProjection) => void; onRetryExact: () => void }) {
   const { m } = useI18n();
   const status = projectCapabilityStudioSummaryStatus(text(asset.readiness), {
     governedBaselineStatus: projection?.status,
@@ -645,7 +840,10 @@ function ToolGovernedBaselineView({ asset, text, locale, projection, error, load
     </section>
     {loading && <div className="capability-governed-running" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={20} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '正在准备隔离资产并逐轮验证' : 'Preparing isolated assets and running each round'}</strong><p>{locale === 'zh-CN' ? '页面会在 3 轮全部结束后一次性展示可复验结果。' : 'The page shows the verifiable result after all three rounds finish.'}</p></div></div>}
     {error && !loading && <GovernedBaselineError error={error} locale={locale} onRetry={onRun} />}
-    {projection && !loading && <GovernedBaselineResult projection={projection} locale={locale} />}
+    {projection && !loading && <GovernedBaselineResult projection={projection} locale={locale} onViewEvidence={onViewEvidence} />}
+    {exactEvidenceLoading && <div className="capability-exact-evidence-loading" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={17} aria-hidden="true" /> {locale === 'zh-CN' ? '正在按原 run 读取精确运行证据...' : 'Reading exact evidence from the original run...'}</div>}
+    {exactEvidenceError && !exactEvidenceLoading && <GovernedRunEvidenceError error={exactEvidenceError} locale={locale} onRetry={onRetryExact} />}
+    {exactEvidence && <GovernedRunEvidencePanel evidence={exactEvidence} locale={locale} onOpenGraph={onOpenGraph} />}
     <TechnicalDetails asset={asset} locale={locale} />
   </div>;
 }
@@ -655,7 +853,26 @@ function GovernedBaselineError({ error, locale, onRetry }: { error: Error; local
   return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{requestError?.whatHappened ?? error.message}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{requestError?.impact ?? (locale === 'zh-CN' ? '没有生成新的开发验证结果，已有资产未改变。' : 'No new development result was created; existing assets are unchanged.')}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认演示服务可用后重试。' : 'Confirm the demo service is available and retry.')}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
 }
 
-function GovernedBaselineResult({ projection, locale }: { projection: GovernedBaselineSuccessProjection; locale: 'en' | 'zh-CN' }) {
+function GovernedRunEvidenceError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
+  return <section className="capability-operation-error capability-exact-evidence-error" role="alert" data-testid="governed-run-evidence-error"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{requestError?.whatHappened ?? error.message}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{requestError?.impact ?? (locale === 'zh-CN' ? '原有基线结果保持不变。' : 'The existing baseline result remains unchanged.')}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{requestError?.recoveryAction ?? (locale === 'zh-CN' ? '从矩阵重新选择本次运行。' : 'Choose this run again from the matrix.')}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence'}</button></div></section>;
+}
+
+function GovernedRunEvidencePanel({ evidence, locale, onOpenGraph }: { evidence: GovernedRunEvidenceProjection; locale: 'en' | 'zh-CN'; onOpenGraph: (evidence: GovernedRunEvidenceProjection) => void }) {
+  return <section className="capability-exact-evidence" data-testid="governed-run-evidence-panel" aria-labelledby="governed-run-evidence-heading">
+    <div className="capability-exact-evidence-heading"><div><p className="capability-kicker">GP-10</p><h4 id="governed-run-evidence-heading">{locale === 'zh-CN' ? '精确运行证据' : 'Exact run evidence'}</h4><p>{locale === 'zh-CN' ? '按原运行读取，没有重新执行。' : 'Read from the original run; nothing was re-executed.'}</p></div><span className="capability-exact-badge"><ShieldCheck size={15} aria-hidden="true" /> {locale === 'zh-CN' ? 'EXACT VERIFIED' : 'EXACT VERIFIED'}</span></div>
+    <div className="capability-exact-summary"><div><span>{locale === 'zh-CN' ? '业务 Case' : 'Business case'}</span><strong>{evidence.scenario.name}</strong><small>{evidence.scenario.businessIntent}</small></div><div><span>{locale === 'zh-CN' ? '原 runId' : 'Original runId'}</span><strong>{evidence.run.runId}</strong><small>{evidence.run.status} · {evidence.run.evidenceClass}</small></div><div><span>{locale === 'zh-CN' ? '焦点节点' : 'Focus node'}</span><strong>{evidence.focusNodeId}</strong><small>{locale === 'zh-CN' ? '来自 exact Data Lens' : 'From the exact Data Lens'}</small></div></div>
+    <dl className="capability-exact-reference-grid"><div><dt>{locale === 'zh-CN' ? 'Tool' : 'Tool'}</dt><dd>{formatGovernedEvidenceRef(evidence.capabilityRef)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Contract' : 'Contract'}</dt><dd>{formatGovernedEvidenceRef(evidence.contractRef)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Dataset' : 'Dataset'}</dt><dd>{formatGovernedEvidenceRef(evidence.datasetRef)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Case' : 'Case'}</dt><dd>{formatGovernedEvidenceRef(evidence.caseRef)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Binding Plan' : 'Binding Plan'}</dt><dd>{formatGovernedEvidenceRef(evidence.bindingPlan.ref)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Fixture' : 'Fixture'}</dt><dd>{formatGovernedEvidenceRef(evidence.bindingPlan.fixtureBundleRef)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Effective Plan' : 'Effective Plan'}</dt><dd>{shortFingerprint(evidence.bindingPlan.effectiveExecutionPlanFingerprint)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Source map' : 'Source map'}</dt><dd>{shortFingerprint(evidence.bindingPlan.sourceMapFingerprint)}</dd></div><div><dt>{locale === 'zh-CN' ? 'Provenance' : 'Provenance'}</dt><dd>{shortFingerprint(evidence.bindingPlan.provenanceFingerprint)}</dd></div></dl>
+    <div className="capability-exact-actions"><button type="button" className="capability-primary-action" onClick={() => onOpenGraph(evidence)}><GitBranch size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '回到本次运行的编排图' : 'Back to this run\'s orchestration graph'}</button></div>
+    <details className="capability-technical-details capability-exact-fingerprints"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '技术 fingerprint 与来源' : 'Technical fingerprints and provenance'}</summary><dl><div><dt>Projection</dt><dd>{evidence.projectionFingerprint}</dd></div><div><dt>Graph</dt><dd>{formatGovernedEvidenceRef(evidence.graphRef)}</dd></div><div><dt>Run evidence</dt><dd>{evidence.run.evidenceFingerprint}</dd></div><div><dt>Semantic result</dt><dd>{evidence.run.semanticResultFingerprint}</dd></div><div><dt>Data Lens</dt><dd>{evidence.dataLens.fingerprint}</dd></div><div><dt>Runtime target</dt><dd>{evidence.runtimeTarget.kind}:{evidence.runtimeTarget.id}@{evidence.runtimeTarget.fingerprint}</dd></div></dl></details>
+  </section>;
+}
+
+function formatGovernedEvidenceRef(ref: GovernedRunEvidenceProjection['capabilityRef']): string {
+  return `${ref.kind}:${ref.id}@${ref.revision}`;
+}
+
+function GovernedBaselineResult({ projection, locale, onViewEvidence }: { projection: GovernedBaselineSuccessProjection; locale: 'en' | 'zh-CN'; onViewEvidence: (runId: string, caseId: string) => void }) {
   const highRiskCases = projection.cases.filter((caseResult) => caseResult.proofs.length > 4);
   const evidenceLabel = projection.evidenceClass === 'CERTIFIABLE'
     ? (locale === 'zh-CN' ? '可认证运行证据' : 'certifiable runtime evidence')
@@ -667,7 +884,7 @@ function GovernedBaselineResult({ projection, locale }: { projection: GovernedBa
     <div className="capability-governed-result-heading"><div><CheckCircle2 size={22} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? `开发验证 · ${evidenceLabel} · ${candidateLabel}` : `Development verification · ${evidenceLabel} · ${candidateLabel}`}</small><strong id="governed-result-heading">{locale === 'zh-CN' ? '27 项业务检查全部通过' : 'All 27 business checks passed'}</strong></span></div><div className="capability-governed-gate"><AlertTriangle size={17} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? '发布门禁' : 'Release gate'}</small><strong>{locale === 'zh-CN' ? '仍不可验收' : 'Still not accepted'}</strong></span></div></div>
     <div className="capability-governed-metrics"><div><span>{locale === 'zh-CN' ? '业务场景' : 'Business cases'}</span><strong>{projection.caseCount} / 9</strong></div><div><span>{locale === 'zh-CN' ? '业务判定' : 'Business Oracles'}</span><strong>{projection.oraclePassCount} / 9</strong></div><div><span>{locale === 'zh-CN' ? '业务断言' : 'Business assertions'}</span><strong>{projection.businessCheckPassCount} / {projection.businessCheckCount}</strong></div><div><span>{locale === 'zh-CN' ? '真实调用' : 'Real calls'}</span><strong>{projection.realExternalCallCount}</strong></div></div>
     <div className="capability-governed-rounds" aria-label={locale === 'zh-CN' ? '三轮套件运行' : 'Three suite rounds'}>{projection.rounds.map((round) => <div key={round.round}><span>{locale === 'zh-CN' ? `第 ${round.round} 轮` : `Round ${round.round}`}</span><strong>{round.childRunCount} / 9</strong><em className={round.status === 'PASSED' ? 'passed' : 'failed'}>{displayGovernedStatus(round.status, locale)}</em></div>)}</div>
-    <div className="capability-governed-case-table-wrap" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '九个场景的三轮业务结果' : 'Three-round business results for nine scenarios'}><table className="capability-governed-case-table"><thead><tr><th>{locale === 'zh-CN' ? '业务场景' : 'Business scenario'}</th><th>{locale === 'zh-CN' ? '业务判定' : 'Oracle'}</th><th>{locale === 'zh-CN' ? '第 1 轮' : 'Round 1'}</th><th>{locale === 'zh-CN' ? '第 2 轮' : 'Round 2'}</th><th>{locale === 'zh-CN' ? '第 3 轮' : 'Round 3'}</th></tr></thead><tbody>{projection.cases.map((caseResult) => <tr key={caseResult.caseId}><th scope="row">{governedCaseName(caseResult.caseId, locale)}<small>{shortFingerprint(caseResult.semanticResultFingerprint)}</small></th><td className="capability-oracle-cell"><ShieldCheck size={14} aria-hidden="true" /><span>{locale === 'zh-CN' ? '结果稳定' : 'Stable result'}</span></td>{caseResult.rounds.map((round) => <td key={round.round}><CheckCircle2 size={14} aria-hidden="true" /><span>{round.assertionsPassed} / {round.assertionsEvaluated}</span></td>)}</tr>)}</tbody></table></div>
+    <div className="capability-governed-case-table-wrap" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '九个场景的三轮业务结果' : 'Three-round business results for nine scenarios'}><table className="capability-governed-case-table"><thead><tr><th>{locale === 'zh-CN' ? '业务场景' : 'Business scenario'}</th><th>{locale === 'zh-CN' ? '业务判定' : 'Oracle'}</th><th>{locale === 'zh-CN' ? '第 1 轮' : 'Round 1'}</th><th>{locale === 'zh-CN' ? '第 2 轮' : 'Round 2'}</th><th>{locale === 'zh-CN' ? '第 3 轮' : 'Round 3'}</th></tr></thead><tbody>{projection.cases.map((caseResult) => <tr key={caseResult.caseId}><th scope="row">{governedCaseName(caseResult.caseId, locale)}<small>{shortFingerprint(caseResult.semanticResultFingerprint)}</small></th><td className="capability-oracle-cell"><ShieldCheck size={14} aria-hidden="true" /><span>{locale === 'zh-CN' ? '结果稳定' : 'Stable result'}</span></td>{caseResult.rounds.map((round) => <td key={round.round}><button type="button" className="capability-evidence-matrix-button" title={locale === 'zh-CN' ? '查看本次运行的精确证据' : 'View exact evidence for this run'} aria-label={locale === 'zh-CN' ? `${governedCaseName(caseResult.caseId, locale)}，第 ${round.round} 轮，查看本次运行的精确证据` : `${governedCaseName(caseResult.caseId, locale)}, round ${round.round}, view exact evidence for this run`} onClick={() => onViewEvidence(round.runId, caseResult.caseId)} data-testid={`governed-evidence-${caseResult.caseId}-${round.round}`}><Eye size={14} aria-hidden="true" /><span>{round.assertionsPassed} / {round.assertionsEvaluated}</span></button></td>)}</tr>)}</tbody></table></div>
     <div className="capability-governed-oracle-proofs" aria-label={locale === 'zh-CN' ? '高风险场景专项证明' : 'High-risk case proofs'}>{highRiskCases.map((caseResult) => <div key={caseResult.caseId}><ShieldCheck size={16} aria-hidden="true" /><span><strong>{governedCaseName(caseResult.caseId, locale)}</strong><small>{governedProofLabel(caseResult.proofs[caseResult.proofs.length - 1] ?? '', locale)}</small></span></div>)}</div>
     <div className="capability-governed-limitations"><div><AlertTriangle size={18} aria-hidden="true" /><span><strong>{locale === 'zh-CN' ? '距离发布验收还差什么' : 'What still blocks release acceptance'}</strong><small>{locale === 'zh-CN' ? '这些缺口不会被本次绿色结果自动关闭。' : 'These gaps are not closed by the green development result.'}</small></span></div><ul>{projection.limitations.map((limitation) => <li key={limitation}>{governedLimitationLabel(limitation, locale)}</li>)}</ul></div>
     <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '验证技术证据' : 'Verification technical evidence'}</summary><dl>{projection.candidateBuild && <><div><dt>Candidate</dt><dd>{projection.candidateBuild.buildRef}@{projection.candidateBuild.revision}</dd></div><div><dt>Artifact fingerprint</dt><dd>{projection.candidateBuild.artifactFingerprint}</dd></div><div><dt>Source commit</dt><dd>{projection.candidateBuild.sourceCommit}</dd></div><div><dt>Execution intent</dt><dd>{projection.candidateIntentFingerprint}</dd></div></>}<div><dt>Suite</dt><dd>{projection.publication.suiteRef.id}@{projection.publication.suiteRef.revision}</dd></div><div><dt>Suite fingerprint</dt><dd>{projection.publication.suiteRef.fingerprint}</dd></div><div><dt>Compilation</dt><dd>{projection.compilationFingerprint}</dd></div><div><dt>Source map</dt><dd>{projection.sourceMapFingerprint}</dd></div><div><dt>Provenance</dt><dd>{projection.provenanceFingerprint}</dd></div>{projection.rounds.map((round) => <div key={round.round}><dt>Round {round.round}</dt><dd>{round.suiteRunId} · {round.evidenceFingerprint}</dd></div>)}{projection.cases.map((caseResult) => <div key={caseResult.caseId}><dt>{caseResult.oracleId}</dt><dd>{caseResult.semanticResultFingerprint}</dd></div>)}</dl></details>

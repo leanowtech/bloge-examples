@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,14 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /** Real governed Stage 0 proof over the existing testing control-plane authorities. */
 @SpringBootTest(
@@ -87,6 +96,12 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
 
     @Autowired
     private CapabilityStudioGovernedBaselineService governedBaseline;
+
+    @Autowired
+    private CapabilityStudioScenarioDatasetProjector datasetProjector;
+
+    @Autowired
+    private CapabilityStudioGovernedCompilationService governedCompilationService;
 
     private IntegrationRequestContext publicationIdentity;
     private IntegrationRequestContext executionIdentity;
@@ -278,6 +293,100 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
     }
 
     @Test
+    void readsTheOriginalTimeoutChildRunWithExactStructureOnlyEvidenceAndNoExecution() throws Exception {
+        CapabilityStudioGovernedBaselineProjection baseline = governedBaseline.run();
+        CapabilityStudioGovernedBaselineProjection.CaseProjection timeoutCase = baseline.cases().stream()
+                .filter(value -> value.caseId().equals("case-compensation-history-timeout"))
+                .findFirst().orElseThrow();
+        String originalRunId = timeoutCase.rounds().getFirst().runId();
+
+        TestExecutionApiService readExecutions = spy(childExecutions);
+        clearInvocations(readExecutions);
+        CapabilityStudioGovernedRunEvidenceService evidenceService =
+                new CapabilityStudioGovernedRunEvidenceService(
+                        pack, mapper, datasetProjector, registryGateway,
+                        governedCompilationService, readExecutions);
+
+        CapabilityStudioGovernedRunEvidenceProjection first = evidenceService.read(
+                originalRunId, timeoutCase.caseId(), executionIdentity);
+        CapabilityStudioGovernedRunEvidenceProjection second = evidenceService.read(
+                originalRunId, timeoutCase.caseId(), executionIdentity);
+
+        assertThat(first).isEqualTo(second);
+        assertThat(mapper.writeValueAsString(first)).isEqualTo(mapper.writeValueAsString(second));
+        assertThat(first.schemaVersion())
+                .isEqualTo(CapabilityStudioGovernedRunEvidenceProjection.SCHEMA_VERSION);
+        assertThat(first.verificationStatus())
+                .isEqualTo(CapabilityStudioGovernedRunEvidenceProjection.EXACT_VERIFIED);
+        assertThat(first.scenario().caseId()).isEqualTo(timeoutCase.caseId());
+        assertThat(first.caseRef()).isEqualTo(first.scenario().caseRef());
+        assertThat(first.run().runId()).isEqualTo(originalRunId);
+        assertThat(first.dataLens().runId()).isEqualTo(originalRunId);
+        assertThat(first.dataLens().runStatus()).isEqualTo(first.run().status());
+        assertThat(first.dataLens().schemaVersion())
+                .isEqualTo(CapabilityStudioDataLensProjection.SCHEMA_VERSION);
+        assertThat(first.run().status()).isEqualTo("PASSED");
+        assertThat(first.run().evidenceClass()).isEqualTo("CERTIFIABLE");
+        assertExactRef(first.graphRef(), "FEATURE");
+        assertThat(first.graphRef().id()).isEqualTo(pack.featureCapabilities().getFirst().ref().id());
+        assertExactRef(first.capabilityRef(), "TOOL");
+        assertThat(first.capabilityRef().id()).isEqualTo(target.operator().operatorRef());
+        assertExactRef(first.contractRef(), "CONTRACT");
+        assertThat(first.contractRef().id()).isEqualTo(CapabilityStudioGoldenGovernedTarget.CONTRACT_ID);
+        assertThat(first.scenario().applicableContractRefs()).contains(first.contractRef());
+        assertThat(first.scenario().applicableContractRefs())
+                .containsAll(CapabilityStudioGoldenGovernedTarget.retarget(
+                                datasetProjector.project(), target).cases().stream()
+                        .filter(value -> value.caseRef().id().equals(timeoutCase.caseId()))
+                        .findFirst().orElseThrow().applicableContractRefs().stream()
+                        .map(value -> new CapabilityStudioGovernedRunEvidenceProjection.ExactRef(
+                                value.kind(), value.id(), value.revision(), value.fingerprint()))
+                        .toList());
+        assertThat(first.scenario().applicableContractRefs())
+                .extracting(CapabilityStudioGovernedRunEvidenceProjection.ExactRef::id)
+                .containsExactly(
+                        CapabilityStudioGoldenGovernedTarget.CONTRACT_ID,
+                        "contract-compensation-history");
+        assertExactRef(first.datasetRef(), "DATASET");
+        assertThat(first.datasetRef().id()).isEqualTo(datasetProjector.project().datasetRef().id());
+        assertExactRef(first.caseRef(), "DATA_CASE");
+        assertThat(first.caseRef().id()).isEqualTo(timeoutCase.caseId());
+        assertExactRef(first.bindingPlan().fixtureBundleRef(), "FIXTURE_BUNDLE");
+        assertThat(first.bindingPlan().fallbackToReal()).isFalse();
+        assertThat(first.bindingPlan().sourceMapFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(first.bindingPlan().provenanceFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(first.bindingPlan().ref().fingerprint())
+                .isEqualTo(VisualBundleFingerprint.fromCanonicalValue(
+                        mapper, first.bindingPlan().fingerprintMaterial(), 16 * 1_048_576));
+        assertThat(first.dataLens().permissionMode())
+                .isEqualTo(CapabilityStudioDataLensProjection.PermissionMode.STRUCTURE_ONLY);
+        assertThat(first.dataLens().fingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(first.dataLens().firstDifference()).isNull();
+        assertThat(first.dataLens().nodes()).isNotEmpty().allSatisfy(node -> {
+            assertThat(node.input()).isNull();
+            assertThat(node.output()).isNull();
+            assertThat(node.attempts()).allSatisfy(attempt -> {
+                assertThat(attempt.input()).isNull();
+                assertThat(attempt.output()).isNull();
+            });
+        });
+        assertThat(first.dataLens().edges()).allSatisfy(edge -> assertThat(edge.value()).isNull());
+        assertThat(first.focusNodeId()).isNotBlank();
+        assertThat(first.dataLens().nodes())
+                .filteredOn(node -> node.nodeId().equals(first.focusNodeId()))
+                .singleElement()
+                .satisfies(node -> assertThat(node.attempts()).anySatisfy(attempt ->
+                        assertThat(attempt.status()).isIn("TIMEOUT", "FAILED")));
+
+        verify(readExecutions, times(2)).find(
+                eq(originalRunId), eq(TestExecutionApiRequest.Verbosity.FULL), any());
+        verify(readExecutions, times(2)).preflightOperator(anyString(), any(), any());
+        verify(readExecutions, never()).execute(any(TestExecutionApiRequest.class), any());
+        verify(readExecutions, never()).executeOperator(anyString(), any(), any());
+        verify(readExecutions, never()).executeBatch(any(), any());
+    }
+
+    @Test
     void unresolvedResourceCannotBePromotedByAStoredTransportFixture() {
         assertThat(resources.contains("api-order-lookup")).isTrue();
         assertThat(resources.contains("api-resource-does-not-exist")).isFalse();
@@ -396,6 +505,15 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
             // Rejection before evidence publication is also fail-closed.
             assertThat(rejected).isNotNull();
         }
+    }
+
+    private static void assertExactRef(
+            CapabilityStudioGovernedRunEvidenceProjection.ExactRef ref, String kind) {
+        assertThat(ref).isNotNull();
+        assertThat(ref.kind()).isEqualTo(kind);
+        assertThat(ref.id()).isNotBlank();
+        assertThat(ref.revision()).isPositive();
+        assertThat(ref.fingerprint()).matches("sha256:[a-f0-9]{64}");
     }
 
     private static IntegrationRequestContext identity(String purpose, String actor) {

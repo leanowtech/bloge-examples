@@ -7,7 +7,9 @@ import {
   type FeatureRehearsalPermission,
   type FeatureRehearsalProjection,
   parseGovernedBaselineProjection,
+  parseGovernedRunEvidenceProjection,
   type GovernedBaselineSuccessProjection,
+  type GovernedRunEvidenceProjection,
   type ScenarioDataset,
 } from './domain';
 import { integrationRequestHeaders } from '../api';
@@ -48,6 +50,64 @@ export async function fetchFeatureRehearsal(
   } catch (error) {
     if (isCapabilityStudioProtocolError(error)) {
       throw new CapabilityStudioRequestError(error.code, error.message, error.impact, 'Choose the scenario again and retry the rehearsal.', 200);
+    }
+    throw error;
+  }
+}
+
+export async function fetchGovernedRunEvidence(
+  runId: string,
+  expectedCaseId: string,
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<GovernedRunEvidenceProjection> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$/.test(runId)) {
+    throw new CapabilityStudioRequestError(
+      'RG.CAPABILITY_STUDIO.INVALID_RUN_ID',
+      'The requested governed run is not valid.',
+      'The exact run evidence was not loaded or changed.',
+      'Choose evidence from the governed run matrix and retry.',
+      0,
+      'runId',
+    );
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$/.test(expectedCaseId)) {
+    throw new CapabilityStudioRequestError(
+      'RG.CAPABILITY_STUDIO.INVALID_CASE_ID',
+      'The expected scenario case is not valid.',
+      'The exact run evidence was not loaded or changed.',
+      'Choose evidence from the governed run matrix and retry.',
+      0,
+      'expectedCaseId',
+    );
+  }
+  const query = new URLSearchParams({ expectedCaseId });
+  const payload = await requestJson<unknown>(
+    fetcher,
+    `/api/capability-studio/governed-runs/${encodeURIComponent(runId)}/evidence?${query.toString()}`,
+    { headers: integrationRequestHeaders('CAPABILITY_STUDIO_REHEARSAL') },
+    governedRunEvidenceRequestContext,
+  );
+  try {
+    const projection = parseGovernedRunEvidenceProjection(payload);
+    if (projection.run.runId !== runId || projection.scenario.caseId !== expectedCaseId) {
+      throw new CapabilityStudioRequestError(
+        'RG.CAPABILITY_STUDIO.EXACT_EVIDENCE_IDENTITY_DRIFT',
+        'The exact evidence response does not match the requested run and case.',
+        governedRunEvidenceRequestContext.invalidImpact,
+        governedRunEvidenceRequestContext.invalidRecovery,
+        200,
+      );
+    }
+    return projection;
+  } catch (error) {
+    if (isCapabilityStudioProtocolError(error)) {
+      throw new CapabilityStudioRequestError(
+        error.code,
+        error.message,
+        error.impact,
+        governedRunEvidenceRequestContext.invalidRecovery,
+        200,
+      );
     }
     throw error;
   }
@@ -291,6 +351,12 @@ const governedBaselineRequestContext: RequestErrorContext = {
   unchangedImpact: 'Development validation was not established; existing Capability Studio assets were not changed.',
   invalidImpact: 'Development validation was not established; existing Capability Studio assets were not changed.',
   invalidRecovery: 'Retry the governed baseline request.',
+};
+
+const governedRunEvidenceRequestContext: RequestErrorContext = {
+  unchangedImpact: 'The exact governed run evidence was not loaded or changed.',
+  invalidImpact: 'The exact governed run evidence cannot be trusted or displayed.',
+  invalidRecovery: 'Return to the governed run matrix and retry reading this exact run.',
 };
 
 async function parseResponseBody(response: Response): Promise<unknown> {

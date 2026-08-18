@@ -8,6 +8,7 @@ import {
 import {
   CapabilityStudioRequestError,
   fetchFeatureRehearsal,
+  fetchGovernedRunEvidence,
   fetchScenarioDataset,
   preflightTutorialBranch,
   runGovernedBaseline,
@@ -238,6 +239,47 @@ describe('Capability Studio Feature rehearsal API', () => {
   });
 });
 
+describe('Capability Studio exact governed evidence API', () => {
+  it('reads one exact run with the governed evidence endpoint and fixed read purpose', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
+      expect(String(input)).toBe('/api/capability-studio/governed-runs/child-run-1-1/evidence?expectedCaseId=case-standard-cancellation-fee');
+      expect(init?.method).toBeUndefined();
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Accept')).toBe('application/json');
+      expect(headers.get('Authorization')).toBe('Bearer bloge-aneke-demo-token');
+      expect(headers.get('X-Purpose')).toBe('CAPABILITY_STUDIO_REHEARSAL');
+      return json(governedRunEvidencePayload('child-run-1-1', 'case-standard-cancellation-fee'));
+    });
+
+    const result = await fetchGovernedRunEvidence('child-run-1-1', 'case-standard-cancellation-fee', fetcher);
+
+    expect(result.verificationStatus).toBe('EXACT_VERIFIED');
+    expect(result.run.runId).toBe('child-run-1-1');
+    expect(result.scenario.caseId).toBe('case-standard-cancellation-fee');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects unsafe exact identities before issuing a GET', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>();
+
+    await expect(fetchGovernedRunEvidence('../run', 'case-standard-cancellation-fee', fetcher))
+      .rejects.toMatchObject({ code: 'RG.CAPABILITY_STUDIO.INVALID_RUN_ID', field: 'runId' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('rejects a valid-shaped response whose run identity drifts from the requested URL', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(
+      governedRunEvidencePayload('different-run', 'case-standard-cancellation-fee'),
+    ));
+
+    await expect(fetchGovernedRunEvidence('child-run-1-1', 'case-standard-cancellation-fee', fetcher))
+      .rejects.toMatchObject({
+        code: 'RG.CAPABILITY_STUDIO.EXACT_EVIDENCE_IDENTITY_DRIFT',
+        status: 200,
+      });
+  });
+});
+
 describe('Capability Studio governed baseline API', () => {
   it('runs the governed baseline with POST and no request body', async () => {
     const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
@@ -354,4 +396,66 @@ describe('Capability Studio governed baseline API', () => {
 
 function json(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+function governedRunEvidencePayload(runId: string, caseId: string) {
+  const dataLens = structuredClone(featureRehearsalProjectionFixture().dataLens);
+  dataLens.runId = runId;
+  const ref = (kind: string, id: string, seed: string) => ({
+    kind,
+    id,
+    revision: 1,
+    fingerprint: `sha256:${seed.repeat(64).slice(0, 64)}`,
+  });
+  const caseRef = ref('DATA_CASE', caseId, '1');
+  const contractRef = ref('CONTRACT', 'contract-cancellation-fee', '2');
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.governed-run-evidence.v1',
+    verificationStatus: 'EXACT_VERIFIED',
+    baselineId: 'capability-studio-governed-9x3-v1',
+    projectionFingerprint: `sha256:${'3'.repeat(64)}`,
+    scenario: {
+      caseId,
+      name: 'Standard cancellation fee',
+      businessIntent: 'Return an explainable fee decision.',
+      category: 'GOLDEN',
+      lifecycle: 'ACTIVE',
+      qualityState: 'READY',
+      owner: { id: 'customer-service-platform', name: 'Customer Service Platform' },
+      scenarioRef: ref('SCENARIO', caseId, '4'),
+      caseRef,
+      sourceRef: ref('SOURCE', 'source-cancellation-fee', '5'),
+      oracleRef: ref('ORACLE', 'oracle-cancellation-fee', '6'),
+      applicableContractRefs: [contractRef],
+    },
+    graphRef: ref('FEATURE', 'feature-cancellation-dispute-context', '7'),
+    capabilityRef: ref('TOOL', 'tool-cancellation-resolution', '8'),
+    contractRef,
+    datasetRef: ref('DATASET', 'cancellation-fee-scenarios', '9'),
+    caseRef,
+    runtimeTarget: { kind: 'OPERATOR', id: 'tool-cancellation-resolution', fingerprint: `sha256:${'a'.repeat(64)}` },
+    bindingPlan: {
+      ref: ref('BINDING_PLAN', 'binding-cancellation-fee', 'b'),
+      fixtureBundleRef: ref('FIXTURE_BUNDLE', 'fixture-cancellation-fee', 'c'),
+      effectiveExecutionPlanFingerprint: `sha256:${'d'.repeat(64)}`,
+      behaviorRefs: [ref('BEHAVIOR_PROFILE', 'behavior-cancellation-fee', 'e')],
+      dependencyRefs: [ref('API', 'api-order-lookup', 'f')],
+      fallbackToReal: false,
+      sourceMapFingerprint: `sha256:${'1'.repeat(64)}`,
+      provenanceFingerprint: `sha256:${'2'.repeat(64)}`,
+    },
+    run: {
+      runId,
+      status: 'TIMED_OUT',
+      evidenceClass: 'CERTIFIABLE',
+      evidenceFingerprint: `sha256:${'4'.repeat(64)}`,
+      semanticResultFingerprint: `sha256:${'5'.repeat(64)}`,
+      assertionsEvaluated: 1,
+      assertionsPassed: 1,
+      fixtureControlsEvaluated: 1,
+      fixtureControlsSatisfied: 1,
+    },
+    focusNodeId: 'compensationHistoryLookup',
+    dataLens,
+  };
 }

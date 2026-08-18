@@ -195,6 +195,33 @@ Verification confirms internal consistency of the development projection. It int
 not upgrade `DEVELOPMENT_TEST_OWNED` to release acceptance and does not prove governed same-closure
 execution, deployment egress denial, environment binding, or Owner sign-off.
 
+## Verify Governed Run Evidence
+
+`CapabilityStudioGovernedRunEvidenceVerifier` verifies the payload-free
+`resource-gateway.capability-studio.governed-run-evidence.v1` projection independently from the
+Gateway server. It applies the packaged strict Draft 2020-12 schema, a 16 MiB raw wire limit,
+trailing-token rejection, structure-only payload redaction, run/Data Lens and case-reference
+closure, fixture-control counts, and canonical binding-plan and projection fingerprints.
+
+Retrieve those bytes from
+`GET /api/capability-studio/governed-runs/{runId}/evidence?expectedCaseId={caseId}` with the
+authenticated `CAPABILITY_STUDIO_REHEARSAL` purpose. The endpoint reads the original persisted child
+run; it does not create a replacement run. Verification additionally requires the complete exact
+Tool/Contract/Dataset/Case/runtime/Binding/Fixture/Behavior/dependency/source-map/provenance closure,
+focus-node closure, invocation-site closure, stable Data Lens identity, and zero structure-only
+payload values. A verified result proves internal wire consistency, not target-environment identity,
+deployment-level egress denial, enterprise ABAC, external Evidence storage, or Owner approval.
+
+```java
+CapabilityStudioGovernedRunEvidenceVerifier verifier =
+        new CapabilityStudioGovernedRunEvidenceVerifier();
+CapabilityStudioGovernedRunEvidenceVerifier.VerificationResult result =
+        verifier.verify(responseBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
 ## Verify the Governed Baseline Receipt
 
 `CapabilityStudioGovernedBaselineVerifier` verifies the payload-free receipt returned by

@@ -2,7 +2,7 @@
 
 > 当前状态：`NO_GO`
 >
-> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-08 已形成 Stage 0 开发切片，Canonical 运行证据已达到 `CERTIFIABLE`；GP-09/10、目标环境候选认证、部署级 egress 和人工签署仍未闭合。任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
+> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-08 与 GP-10 已形成 Stage 0 开发切片，Canonical 运行证据已达到 `CERTIFIABLE`；GP-09、目标环境候选认证、部署级 egress 和人工签署仍未闭合。任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
 
 ## 1. 制品清单
 
@@ -15,7 +15,8 @@
 | Golden Path Manifest Schema | [`capability-studio-golden-path-acceptance-manifest-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-golden-path-acceptance-manifest-v1.schema.json) | 约束发布候选验收证据的机器结构 | 可消费，未证明通过 |
 | Golden Path NO_GO fixture | [`capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json`](capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json) | 提供真实的初始缺证据状态 | `NO_GO` |
 | Governed Baseline Schema | [`capability-studio-governed-baseline-v3.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json) | 固定 GP-07/08 的 9 × 3 矩阵、逐 Case 业务 Oracle、部署候选与 canonical execution intent；失败态强制 `NOT_VERIFIED` | 当前为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO` |
-| Screen State Inventory v1 | [`screen-state-inventory-v1.md`](screen-state-inventory-v1.md) | 逐个 GP 固化页面状态和恢复动作 | GP-01 至 GP-08 已有开发证据；GP-09/10 仍缺失 |
+| Governed Run Evidence Schema | [`capability-studio-governed-run-evidence-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-run-evidence-v1.schema.json) | 固定 GP-10 的原运行读取、完整引用闭包、结构级 Data Lens 和确定性指纹 | 开发证据已互验，不代表目标环境验收通过 |
+| Screen State Inventory v1 | [`screen-state-inventory-v1.md`](screen-state-inventory-v1.md) | 逐个 GP 固化页面状态和恢复动作 | GP-01 至 GP-08 与 GP-10 已有开发证据；GP-09 仍缺失 |
 | Requirement Traceability v1 | [`requirement-to-evidence-traceability-matrix-v1.md`](requirement-to-evidence-traceability-matrix-v1.md) | 把 GP、Spike、安全和 NFR 绑定到证据与责任人 | 缺口已显式列出 |
 
 跨工具 JSON Schema 位于 [`docs/schemas/resource-gateway-capability-studio/`](../../schemas/resource-gateway-capability-studio/)，因为它们是稳定协议，而不是某一个验收运行的私有 fixture。
@@ -50,19 +51,20 @@
 - `GET /api/capability-studio/feature-rehearsal-baseline` 已提供 payload-free 的开发基线：固定 9 个 Case 各运行 3 次，共产生 27 个唯一 `runId`。独立业务 Oracle 覆盖标准结论、乘客无责、司机责任、政策缺失、空历史、预期超时、重复幂等、禁止写入和政策版本回归；超时 Case 保留依赖原始 `TIMEOUT` 尝试，BLOGE fallback 后最终 `PASSED` 并输出 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`。两批并发运行仍保持 54 个唯一 `runId`，进程内真实调用计数为 0。严格 v1 Schema 与独立 Test Kit verifier 已对真实响应校验 Case/Oracle/Run/状态/fingerprint/operator/诊断闭包。该投影强制标记为 `DEVELOPMENT_TEST_OWNED`，不是 `S0-AC-04 PASS`；
 - `POST /api/capability-studio/governed-baseline` 已成为 GP-07/08 Tool 页的真实运行入口。该 test/staging-only 端点无调用方 payload 和身份覆盖，复用上述受治理 compiler/Registry/suite runtime，严格要求 3 个唯一 suite run、27 个唯一 child run、9 个 Case 每轮恰好一次、全部通过、三轮 publication/provenance/source-map 不漂移且进程内真实调用为 0。Suite 完成后，服务端通过既有授权 API 回读每条完整签名 child evidence，校验 run/target/Fixture/integrity，导出 payload-free evidence fingerprint、semantic result fingerprint、断言与 Fixture 控制计数；同 Case 三轮结果指纹必须一致，timeout/duplicate/forbidden-write 由结构化事实形成专项证明。v3 新增部署侧候选绑定和 canonical execution intent：启动器只在实际 JAR SHA-256、Git commit 与 `CLEAN` source tree 同时成立时注入候选，调用方不能覆盖；Test Kit 会独立重算 intent 并拒绝篡改。成功投影固定 `verificationLevel=DEVELOPMENT_VERIFIED`、`DEVELOPMENT_TEST_OWNED / NO_GO`，Evidence 等级按 child evidence 如实投影；失败关闭固定为 `NOT_VERIFIED`，不伪造 evidence class、publication、Run 或 fingerprint；
 - GP-07/08 已在 Tool 页上提供“运行 9 × 3 受治理验证”主操作。运行中、原位失败恢复、开发通过/发布不可验收双结论、3 轮 suite 摘要、9 × 3 Case 矩阵、9/9 业务 Oracle、27/27 业务断言、三项专项证明、`CERTIFIABLE` 等级和折叠技术证据已实现。四个 Canonical Resource descriptor 使用应用级 `ResourceRegistry`，`RETURN` 数据以 transport-level 响应经过真实 `HttpResourceOperator` 映射链；未解析 Resource 在调度前失败，output-level 替身保持 `EXPLORATORY`。候选已绑定时显示制品、source commit 和 execution intent，并只保留目标环境认证、部署级 egress 和 Owner 签署三项限制；未绑定时额外保留候选未绑定限制。既有真实浏览器覆盖中文桌面/移动端，无页面横向溢出，axe serious/critical 为 0；
+- GP-10 已提供 test/staging-only 精确证据读取端点 `GET /api/capability-studio/governed-runs/{runId}/evidence?expectedCaseId=...`。服务只读取已持久化 child run，不重跑 Graph；重复读取的响应 bytes 与 projection fingerprint 保持一致。投影闭合 Tool、Contract、Dataset、Case、runtime target、Binding Plan、Fixture、Behavior、依赖、source map、provenance 和同一次 Run/Data Lens 身份，并以 `STRUCTURE_ONLY` 保留完整 7 节点运行证据而隐藏 Payload。前端从 Tool 的 9 × 3 Case 矩阵打开精确证据，使用 `task/runId/scenarioId/nodeId` 保持刷新、返回和焦点；Feature 画布只呈现当前 graph path 的 6 个业务节点，完整 Data Lens 仍保留外层 Tool `subject`。独立 Test Kit verifier 已用真实 wire bytes 复算 Schema、引用闭包、两类内容指纹、焦点和 Payload 边界；合同漂移、篡改、错误 Case、缺少权限和未知 Run 均失败关闭；
 - Feature 工作区提供 9 个 Canonical Case 选择、结构/受控数据双权限态、运行状态、隔离绑定和真实调用计数。桌面 DAG 按稳定业务顺序完整展开，源节点与边中心对齐；移动端使用可聚焦的内部横向滚动区；
 - Canonical Feature DAG 已可包装为真实 Tool binding，并经既有 `OperatorMicroGraphRunner -> TestRunService -> BLOGE nested graph` 路径执行；Tool 微图的 nested fixture selector 命中完整 6 节点子图，真实 HTTP delegate 调用为 0。Tool composability manifest 已声明四个 exact Resource 依赖，通用执行目标快照会在运行证据未证明闭包时拒绝认证；仍缺同一 Canonical 注册资产的独立认证结果；
 - GP-05/06 的中文真实 Chrome 验收覆盖 1440×900、1440×1100、1024×768 和 390×844；英文覆盖 1024×768。自动化检查 6 节点、5 条边、稳定排序、桌面零横向截断、边对齐、移动端内部滚动、键盘权限切换、页面无横向溢出和 axe serious/critical 为 0；
 - 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
 - GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，以及 GP-05/06 英文 1024×768 证据；覆盖 Dataset 的 Tab/Enter/Space 键盘路径、Feature 权限切换、六种组件状态和真实浏览器完整 axe-core 检查。真实 axe 曾检出并推动修复选中场景辅助文字对比度和 DAG 滚动区焦点问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-07/08 的英文与 1024 视口、GP-09/10 的开发切片和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-07/08/10 的英文与 1024 视口、GP-09 开发切片和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
 ### 2.1 当前浏览器证据
 
-以下截图由 `CapabilityStudioBrowserAcceptanceTest` 启动真实 Spring Boot 服务，并通过 headless Chrome 执行 GP-01 至 GP-08 后生成。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏、GP-04 实际保存与隔离预检、GP-05/06 Trace 与权限态、GP-07/08 真实受治理 POST 与 9 × 3 矩阵，以及页面级无横向溢出。
+以下截图由 `CapabilityStudioBrowserAcceptanceTest` 或同源真实浏览器会话连接实际 Spring Boot 服务后生成，覆盖 GP-01 至 GP-08 和 GP-10。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏、GP-04 实际保存与隔离预检、GP-05/06 Trace 与权限态、GP-07/08 真实受治理 POST 与 9 × 3 矩阵、GP-10 原运行读取与 Deep Link，以及页面级无横向溢出。
 
 | 视口 | 覆盖内容 | 证据 |
 |---|---|---|
@@ -81,6 +83,10 @@
 | 390×844 | GP-05/06 移动端任务选择、场景选择和有界 DAG 滚动入口 | [`capability-studio-gp05-gp06-payload-zh-390.png`](../../assets/capability-studio/capability-studio-gp05-gp06-payload-zh-390.png) |
 | 1440×1100 | GP-07/08 Tool 契约、受治理 9 × 3 开发验证、双结论、3 轮与 9 × 3 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-1440.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png) |
 | 390×844 | GP-07/08 移动端双结论、三轮摘要和完整 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-390.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png) |
+| 1280×720 | GP-10 Tool Case 精确运行证据、原 `runId`、焦点节点和完整受治理引用闭包 | [`capability-studio-gp10-exact-evidence-zh-1280.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-1280.png) |
+| 1440×900 | GP-10 Deep Link 上下文、当前 6 节点 Feature 子图和完整 7 节点结构级 Data Lens | [`capability-studio-gp10-exact-graph-context-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-1440.png) |
+| 390×844 | GP-10 移动端精确证据，原运行与引用闭包可读且页面无横向溢出 | [`capability-studio-gp10-exact-evidence-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-390.png) |
+| 390×844 | GP-10 移动端焦点节点、Feature 子图与完整 Data Lens 的边界 | [`capability-studio-gp10-exact-graph-context-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-390.png) |
 
 这些证据关闭了所列中英文开发状态、Dataset 键盘路径、Feature 权限切换、Tool 受治理开发验证和自动 axe 检查，但不覆盖契约/Tutorial 全键盘、人工屏幕阅读器、异常状态三视口、GP-07/08 英文和 1024 视口、不可变发布候选运行证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
 
@@ -113,7 +119,7 @@
 
 所有制品都使用 UTF-8 JSON 或 UTF-8 Markdown。JSON 的 fingerprint 计算使用项目统一的 RFC 8785 JCS canonical bytes，并将自身 `artifactFingerprint` 字段归一化为 `null` 后计算 `sha256:<64 位小写十六进制>`。签署信息仍然参与指纹；只有自身 fingerprint 字段被排除，避免循环引用。
 
-Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-03 Dataset 投影的根、Case 与 Behavior Profile 已使用内容指纹，Test Kit 可独立重算根指纹并校验 Scope、引用闭包和质量统计，但 Source、Oracle、Contract 等引用仍继承 Stage 0 坐标摘要，且没有持久化 Dataset Authority。GP-04 Tutorial Branch 已使用 test/staging 数据库 Authority：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；head 只做 SQL 原子 CAS，revision 只追加，Test Kit 会从 before/after 投影重算并校验 digest。GP-05/06 返回实际 Feature Graph 内容 fingerprint、Run ID、semantic fingerprint 和 Data Lens fingerprint。GP-07/08 现在从受治理 compiler 产生内容寻址 Fixture/Suite，通过既有 Registry 写后回读，再以确认的 exact suite 生成 3 suite/27 child 开发证据；Canonical `RETURN` 以 descriptor-backed transport fixture 经过应用级 Resource Registry 和真实 Resource Operator 链，child Evidence 为 `CERTIFIABLE`。v3 协议进一步将部署候选、publication、Suite、compilation 和 source map 归一化为 `candidateIntentFingerprint`，由 Test Kit 独立重算，同时闭合每 Case 三轮 semantic fingerprint、业务断言和三类专项 Oracle。但目标环境认证、部署级 egress 和 Owner 签署闭包仍缺失，因此 Manifest 继续保持 `NO_GO`。
+Stage 0 Golden Demo Pack 的 `packFingerprint` 绑定整个 payload-free 投影内容。包内尚未物化的子引用仍使用可复算坐标摘要 `sha256("capability-studio-demo-v1|kind|id|revision")`。GP-03 Dataset 投影的根、Case 与 Behavior Profile 已使用内容指纹，Test Kit 可独立重算根指纹并校验 Scope、引用闭包和质量统计，但 Source、Oracle、Contract 等引用仍继承 Stage 0 坐标摘要，且没有持久化 Dataset Authority。GP-04 Tutorial Branch 已使用 test/staging 数据库 Authority：分支 fingerprint 绑定 `schemaVersion`、`branchId`、Canonical Baseline fingerprint、`dependencyId`、condition、behavior 和 duration；head 只做 SQL 原子 CAS，revision 只追加，Test Kit 会从 before/after 投影重算并校验 digest。GP-05/06 返回实际 Feature Graph 内容 fingerprint、Run ID、semantic fingerprint 和 Data Lens fingerprint。GP-07/08 现在从受治理 compiler 产生内容寻址 Fixture/Suite，通过既有 Registry 写后回读，再以确认的 exact suite 生成 3 suite/27 child 开发证据；Canonical `RETURN` 以 descriptor-backed transport fixture 经过应用级 Resource Registry 和真实 Resource Operator 链，child Evidence 为 `CERTIFIABLE`。v3 协议进一步将部署候选、publication、Suite、compilation 和 source map 归一化为 `candidateIntentFingerprint`，由 Test Kit 独立重算，同时闭合每 Case 三轮 semantic fingerprint、业务断言和三类专项 Oracle。GP-10 再从持久化 child evidence 确定性生成内容寻址 Binding Plan、结构级 Data Lens 和总 projection fingerprint；同一原 `runId` 重读不得改变 bytes 或 fingerprint，也不得触发新运行。但目标环境认证、部署级 egress 和 Owner 签署闭包仍缺失，因此 Manifest 继续保持 `NO_GO`。
 
 `resource-gateway-test-kit` 已提供 `CapabilityStudioAcceptanceVerifier`。它使用随 JAR 打包的两份权威 Schema 校验结构，并检查 GP/Case 精确集合、Case 类型映射、证据闭包、零真实外呼和签署绑定。运行回归：
 验证器还会将自身 `artifactFingerprint` 归一化为 `null`，递归排序对象 key 后独立复算内容地址；仅修改说明、时间或状态而不更新指纹也会失败关闭。
@@ -133,6 +139,9 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioGovernedBaselineVerifierTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioGovernedRunEvidenceVerifierTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioStageAcceptanceResultVerifierTest test

@@ -1,0 +1,414 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-run-evidence-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Governed Run Evidence v1",
+  "description": "Strict payload-free projection for one exactly verified governed Capability Studio child run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "verificationStatus",
+    "baselineId",
+    "projectionFingerprint",
+    "scenario",
+    "graphRef",
+    "capabilityRef",
+    "contractRef",
+    "datasetRef",
+    "caseRef",
+    "runtimeTarget",
+    "bindingPlan",
+    "run",
+    "focusNodeId",
+    "dataLens"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.governed-run-evidence.v1" },
+    "verificationStatus": { "const": "EXACT_VERIFIED" },
+    "baselineId": { "const": "capability-studio-governed-9x3-v1" },
+    "projectionFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scenario": { "$ref": "#/$defs/scenario" },
+    "graphRef": {
+      "allOf": [
+        { "$ref": "#/$defs/exactRef" },
+        { "properties": { "kind": { "const": "FEATURE" } } }
+      ]
+    },
+    "capabilityRef": {
+      "allOf": [
+        { "$ref": "#/$defs/exactRef" },
+        { "properties": { "kind": { "const": "TOOL" } } }
+      ]
+    },
+    "contractRef": {
+      "allOf": [
+        { "$ref": "#/$defs/exactRef" },
+        { "properties": { "kind": { "const": "CONTRACT" } } }
+      ]
+    },
+    "datasetRef": {
+      "allOf": [
+        { "$ref": "#/$defs/exactRef" },
+        { "properties": { "kind": { "const": "DATASET" } } }
+      ]
+    },
+    "caseRef": {
+      "allOf": [
+        { "$ref": "#/$defs/exactRef" },
+        { "properties": { "kind": { "const": "DATA_CASE" } } }
+      ]
+    },
+    "runtimeTarget": { "$ref": "#/$defs/runtimeTarget" },
+    "bindingPlan": { "$ref": "#/$defs/bindingPlan" },
+    "run": { "$ref": "#/$defs/run" },
+    "focusNodeId": { "$ref": "#/$defs/identifier" },
+    "dataLens": { "$ref": "#/$defs/dataLens" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$"
+    },
+    "traceIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 256,
+      "pattern": "^/[A-Za-z0-9][A-Za-z0-9._:/#@><~-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "optionalFingerprint": {
+      "anyOf": [
+        { "const": "" },
+        { "$ref": "#/$defs/fingerprint" }
+      ]
+    },
+    "boundedString": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "jsonPointer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^/[A-Za-z0-9._~:/#@><-]*$"
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "SCENARIO", "FEATURE", "TOOL", "CONTRACT", "DATASET", "DATA_CASE",
+            "SOURCE", "ORACLE", "FIXTURE_BUNDLE", "BEHAVIOR_PROFILE", "BINDING_PLAN",
+            "API"
+          ]
+        },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/nonEmptyString" }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "caseId", "name", "businessIntent", "category", "lifecycle", "qualityState",
+        "owner", "scenarioRef", "caseRef", "sourceRef", "oracleRef", "applicableContractRefs"
+      ],
+      "properties": {
+        "caseId": { "$ref": "#/$defs/identifier" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "businessIntent": { "$ref": "#/$defs/nonEmptyString" },
+        "category": { "enum": ["GOLDEN", "NEGATIVE", "BOUNDARY", "FAULT", "REGRESSION", "SECURITY"] },
+        "lifecycle": { "enum": ["DRAFT", "ACTIVE", "STALE", "RETIRED"] },
+        "qualityState": { "enum": ["DESIGNED_NOT_RUN", "READY", "STALE", "BLOCKED"] },
+        "owner": { "$ref": "#/$defs/owner" },
+        "scenarioRef": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "SCENARIO" } } }
+          ]
+        },
+        "caseRef": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "DATA_CASE" } } }
+          ]
+        },
+        "sourceRef": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "SOURCE" } } }
+          ]
+        },
+        "oracleRef": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "ORACLE" } } }
+          ]
+        },
+        "applicableContractRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/exactRef" },
+              { "properties": { "kind": { "const": "CONTRACT" } } }
+            ]
+          }
+        }
+      }
+    },
+    "runtimeTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "fingerprint"],
+      "properties": {
+        "kind": { "const": "OPERATOR" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "bindingPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ref", "fixtureBundleRef", "effectiveExecutionPlanFingerprint", "behaviorRefs",
+        "dependencyRefs", "fallbackToReal", "sourceMapFingerprint", "provenanceFingerprint"
+      ],
+      "properties": {
+        "ref": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "BINDING_PLAN" } } }
+          ]
+        },
+        "fixtureBundleRef": {
+          "allOf": [
+            { "$ref": "#/$defs/exactRef" },
+            { "properties": { "kind": { "const": "FIXTURE_BUNDLE" } } }
+          ]
+        },
+        "effectiveExecutionPlanFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "behaviorRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/exactRef" },
+              { "properties": { "kind": { "const": "BEHAVIOR_PROFILE" } } }
+            ]
+          }
+        },
+        "dependencyRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 500,
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/exactRef" },
+              { "properties": { "kind": { "enum": ["API", "TOOL"] } } }
+            ]
+          }
+        },
+        "fallbackToReal": { "const": false },
+        "sourceMapFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "provenanceFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId", "status", "evidenceClass", "evidenceFingerprint", "semanticResultFingerprint",
+        "assertionsEvaluated", "assertionsPassed", "fixtureControlsEvaluated", "fixtureControlsSatisfied"
+      ],
+      "properties": {
+        "runId": { "$ref": "#/$defs/identifier" },
+        "status": { "$ref": "#/$defs/runStatus" },
+        "evidenceClass": { "enum": ["EXPLORATORY", "CERTIFIABLE"] },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "semanticResultFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "assertionsEvaluated": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "assertionsPassed": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "fixtureControlsEvaluated": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "fixtureControlsSatisfied": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+      }
+    },
+    "runStatus": {
+      "enum": [
+        "PASSED", "ASSERTION_FAILED", "EXECUTION_FAILED", "CONTROL_PLAN_REJECTED",
+        "FIXTURE_UNMATCHED", "FIXTURE_UNUSED", "CONTROL_PLAN_UNAVAILABLE", "EVIDENCE_INCOMPLETE",
+        "CANCELLED", "TIMED_OUT"
+      ]
+    },
+    "dataLens": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion", "runId", "runStatus", "permissionMode", "nodes", "edges",
+        "firstDifference", "truncation", "fingerprint"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "resource-gateway.capability-studio.data-lens.v1" },
+        "runId": { "$ref": "#/$defs/identifier" },
+        "runStatus": { "$ref": "#/$defs/runStatus" },
+        "permissionMode": { "const": "STRUCTURE_ONLY" },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": { "$ref": "#/$defs/node" }
+        },
+        "edges": {
+          "type": "array",
+          "maxItems": 512,
+          "items": { "$ref": "#/$defs/edge" }
+        },
+        "firstDifference": {
+          "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/firstDifference" }]
+        },
+        "truncation": { "$ref": "#/$defs/truncation" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodeId", "operatorRef", "status", "fidelity", "graphPath", "invocationSite",
+        "correlation", "occurrence", "graphOccurrence", "input", "inputFingerprint", "output",
+        "outputFingerprint", "errorCode", "durationMs", "attempts", "retryCount", "fallbackStatus"
+      ],
+      "properties": {
+        "nodeId": { "$ref": "#/$defs/identifier" },
+        "operatorRef": { "$ref": "#/$defs/identifier" },
+        "status": { "$ref": "#/$defs/nodeStatus" },
+        "fidelity": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+        "graphPath": { "$ref": "#/$defs/path" },
+        "invocationSite": { "$ref": "#/$defs/path" },
+        "correlation": { "$ref": "#/$defs/boundedString" },
+        "occurrence": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "graphOccurrence": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "input": { "type": "null" },
+        "inputFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "output": { "type": "null" },
+        "outputFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "errorCode": { "type": "string", "maxLength": 128, "pattern": "^(?:[A-Z][A-Z0-9_.-]{0,127})?$" },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+        "attempts": {
+          "type": "array",
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/attempt" }
+        },
+        "retryCount": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "fallbackStatus": { "anyOf": [{ "type": "null" }, { "const": "FALLBACK" }] }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempt", "status", "fidelity", "input", "inputFingerprint", "output",
+        "outputFingerprint", "errorCode", "durationMs"
+      ],
+      "properties": {
+        "attempt": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "status": { "$ref": "#/$defs/nodeStatus" },
+        "fidelity": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$" },
+        "input": { "type": "null" },
+        "inputFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "output": { "type": "null" },
+        "outputFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "errorCode": { "type": "string", "maxLength": 128, "pattern": "^(?:[A-Z][A-Z0-9_.-]{0,127})?$" },
+        "durationMs": { "type": "integer", "minimum": 0, "maximum": 86400000 }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "edgeId", "status", "graphPath", "correlation", "graphOccurrence", "fromInvocationSite",
+        "toInvocationSite", "value", "valueFingerprint"
+      ],
+      "properties": {
+        "edgeId": { "$ref": "#/$defs/traceIdentifier" },
+        "status": { "enum": ["TRANSFERRED", "SKIPPED", "NOT_TRANSFERRED"] },
+        "graphPath": { "$ref": "#/$defs/path" },
+        "correlation": { "$ref": "#/$defs/boundedString" },
+        "graphOccurrence": { "type": "integer", "minimum": 0, "maximum": 1000000 },
+        "fromInvocationSite": { "$ref": "#/$defs/path" },
+        "toInvocationSite": { "$ref": "#/$defs/path" },
+        "value": { "type": "null" },
+        "valueFingerprint": { "$ref": "#/$defs/optionalFingerprint" }
+      }
+    },
+    "firstDifference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source", "locator", "scope", "path", "expected", "expectedFingerprint",
+        "actual", "actualFingerprint"
+      ],
+      "properties": {
+        "source": { "const": "ASSERTION" },
+        "locator": { "$ref": "#/$defs/path" },
+        "scope": { "$ref": "#/$defs/nonEmptyString" },
+        "path": { "$ref": "#/$defs/jsonPointer" },
+        "expected": { "type": "null" },
+        "expectedFingerprint": { "$ref": "#/$defs/optionalFingerprint" },
+        "actual": { "type": "null" },
+        "actualFingerprint": { "$ref": "#/$defs/optionalFingerprint" }
+      }
+    },
+    "truncation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "nodesTruncated", "omittedNodes", "edgesTruncated", "omittedEdges",
+        "attemptsTruncated", "omittedAttempts"
+      ],
+      "properties": {
+        "nodesTruncated": { "type": "boolean" },
+        "omittedNodes": { "type": "integer", "minimum": 0, "maximum": 256 },
+        "edgesTruncated": { "type": "boolean" },
+        "omittedEdges": { "type": "integer", "minimum": 0, "maximum": 512 },
+        "attemptsTruncated": { "type": "boolean" },
+        "omittedAttempts": { "type": "integer", "minimum": 0, "maximum": 4096 }
+      }
+    },
+    "nodeStatus": {
+      "enum": ["SUCCESS", "FAILED", "TIMEOUT", "SKIPPED", "PARTIAL", "MOCKED", "CANCELLED", "FALLBACK", "NOT_INVOKED"]
+    }
+  }
+}

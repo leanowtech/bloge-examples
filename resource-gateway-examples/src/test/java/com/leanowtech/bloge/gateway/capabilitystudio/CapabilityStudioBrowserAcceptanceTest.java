@@ -355,6 +355,116 @@ class CapabilityStudioBrowserAcceptanceTest {
     }
 
     @Test
+    void gp10ReplaysExactTimeoutEvidenceAcrossToolGraphRefreshAndReturn() throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 1100);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.get(url("/capabilities/?lang=zh-CN"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.findElement(By.cssSelector("[data-testid='capability-task-tool']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tool']")));
+        driver.findElement(By.cssSelector("[data-testid='run-governed-baseline']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='governed-baseline-result']")));
+        assertNoBrowserErrorState();
+
+        // Select a named business case and an explicit round. The child runId is discovered
+        // from the rendered matrix, so this test does not depend on allocation order.
+        By timeoutRound = By.cssSelector(
+                "[data-testid='governed-evidence-case-compensation-history-timeout-1']");
+        wait.until(ExpectedConditions.elementToBeClickable(timeoutRound)).click();
+        wait.until(webDriver -> !webDriver.findElements(By.cssSelector(
+                        "[data-testid='governed-run-evidence-panel'], "
+                                + "[data-testid='governed-run-evidence-error']")).isEmpty());
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel']")))
+                .withFailMessage("GP-10 exact evidence was not established:%nURL: %s%n%s",
+                        driver.getCurrentUrl(), driver.findElement(By.tagName("body")).getText())
+                .hasSize(1);
+
+        WebElement evidence = driver.findElement(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel']"));
+        String runId = queryParam("runId");
+        String scenarioId = queryParam("scenarioId");
+        assertThat(queryParam("task")).isEqualTo("tool");
+        assertThat(runId).isNotBlank();
+        assertThat(scenarioId).isEqualTo("case-compensation-history-timeout");
+        assertThat(evidence.getText())
+                .contains("精确运行证据", "按原运行读取，没有重新执行", runId,
+                        "补偿历史超时")
+                .doesNotContain("404", "Request failed");
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        capture("capability-studio-gp10-exact-evidence-zh-1440.png");
+
+        driver.findElement(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel'] .capability-exact-actions button"))
+                .click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".feature-dag-node.feature-node-focus")));
+
+        String nodeId = queryParam("nodeId");
+        assertThat(queryParam("task")).isEqualTo("feature");
+        assertThat(queryParam("runId")).isEqualTo(runId);
+        assertThat(queryParam("scenarioId")).isEqualTo(scenarioId);
+        assertThat(nodeId).isNotBlank();
+        WebElement focusNode = driver.findElement(By.cssSelector(
+                ".feature-dag-node.feature-node-focus"));
+        assertThat(focusNode.getAttribute("data-node-id")).isEqualTo(nodeId);
+        assertThat(focusNode.isDisplayed()).isTrue();
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-feature-rehearsal']"))
+                .getText())
+                .contains("精确证据 · 只读", "当前图来自原 governed run 的 exact evidence，没有重新执行",
+                        "本页读取原 run 的只读 exact evidence，未重跑")
+                .doesNotContain("404", "Request failed");
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        capture("capability-studio-gp10-exact-dag-zh-1440.png");
+
+        driver.navigate().refresh();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']")));
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='capability-feature-rehearsal']"), "未重跑"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector(".feature-dag-node.feature-node-focus")));
+        assertThat(queryParam("task")).isEqualTo("feature");
+        assertThat(queryParam("runId")).isEqualTo(runId);
+        assertThat(queryParam("scenarioId")).isEqualTo(scenarioId);
+        assertThat(queryParam("nodeId")).isEqualTo(nodeId);
+        assertThat(driver.findElement(By.cssSelector(".feature-dag-node.feature-node-focus"))
+                .getAttribute("data-node-id")).isEqualTo(nodeId);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='capability-feature-rehearsal']"))
+                .getText())
+                .contains("未重跑", "只读")
+                .doesNotContain("404", "Request failed");
+        assertNoBrowserErrorState();
+
+        driver.findElement(By.cssSelector(
+                "[data-testid='capability-feature-rehearsal'] .capability-return-tool"))
+                .click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='governed-run-evidence-panel']")));
+        assertThat(queryParam("task")).isEqualTo("tool");
+        assertThat(queryParam("runId")).isEqualTo(runId);
+        assertThat(queryParam("scenarioId")).isEqualTo(scenarioId);
+        assertThat(queryParam("nodeId")).isEqualTo(nodeId);
+        assertThat(driver.findElement(By.cssSelector(
+                "[data-testid='governed-run-evidence-panel']")).getText())
+                .contains("精确运行证据", "按原运行读取，没有重新执行", runId)
+                .doesNotContain("404", "Request failed");
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        capture("capability-studio-gp10-exact-evidence-return-zh-1440.png");
+    }
+
+    @Test
     void englishNfr02CoversOverviewDatasetAndTutorialAcrossThreeViewports() throws IOException {
         assumeFrontendBundlePresent();
         driver = newChromeDriverOrSkip(1440, 900);
@@ -520,6 +630,21 @@ class CapabilityStudioBrowserAcceptanceTest {
                 return Math.max(0, root.scrollWidth - window.innerWidth);
                 """);
         assertThat(overflow.doubleValue()).isLessThanOrEqualTo(2.0);
+    }
+
+    private void assertNoBrowserErrorState() {
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='capability-load-error'], [data-testid='governed-run-evidence-error'], "
+                        + ".capability-governed-error, .capability-feature-error, [role='alert']")))
+                .as("Capability Studio browser error state")
+                .isEmpty();
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .doesNotContain("404", "Request failed", "RG.CAPABILITY_STUDIO.");
+    }
+
+    private String queryParam(String name) {
+        return (String) ((JavascriptExecutor) driver).executeScript(
+                "return new URL(window.location.href).searchParams.get(arguments[0]);", name);
     }
 
     private void assertNoInternalStatusLeakage() {

@@ -161,4 +161,17 @@ public class CapabilityStudioDemoConfiguration {
                 pack, mapper, operators, rehearsal, datasetProjector, registry, candidate,
                 candidateAuthority);
     }
+
+    @Bean
+    CapabilityStudioGovernedRunEvidenceService capabilityStudioGovernedRunEvidenceService(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper mapper,
+            CapabilityStudioScenarioDatasetProjector datasetProjector,
+            ScenarioGovernedRegistryGateway registry,
+            CapabilityStudioGovernedCompilationService governedCompilation,
+            TestExecutionApiService executions) {
+        // Evidence reads are deliberately available only with the non-production demo authority.
+        return new CapabilityStudioGovernedRunEvidenceService(
+                pack, mapper, datasetProjector, registry, governedCompilation, executions);
+    }
 }

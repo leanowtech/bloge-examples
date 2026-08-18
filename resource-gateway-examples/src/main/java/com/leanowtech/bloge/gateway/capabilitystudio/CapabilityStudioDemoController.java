@@ -15,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -40,6 +41,7 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline;
     private final IntegrationRequestAuthenticator authenticator;
     private CapabilityStudioGovernedBaselineService governedBaseline;
+    private CapabilityStudioGovernedRunEvidenceService governedRunEvidence;
 
     /** Creates the projection controller from injected validated authorities and projector. */
     @Autowired
@@ -50,6 +52,7 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioFeatureRehearsalService featureRehearsal,
             CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
             CapabilityStudioGovernedBaselineService governedBaseline,
+            CapabilityStudioGovernedRunEvidenceService governedRunEvidence,
             IntegrationRequestAuthenticator authenticator) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
@@ -57,7 +60,21 @@ public final class CapabilityStudioDemoController {
         this.featureRehearsal = featureRehearsal;
         this.featureRehearsalBaseline = featureRehearsalBaseline;
         this.governedBaseline = governedBaseline;
+        this.governedRunEvidence = governedRunEvidence;
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
+    }
+
+    /** Standalone composition retained for feature and baseline controller tests. */
+    public CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            CapabilityStudioScenarioDatasetProjector scenarioDataset,
+            CapabilityStudioFeatureRehearsalService featureRehearsal,
+            CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
+            CapabilityStudioGovernedBaselineService governedBaseline,
+            IntegrationRequestAuthenticator authenticator) {
+        this(pack, tutorialBranch, scenarioDataset, featureRehearsal, featureRehearsalBaseline,
+                governedBaseline, null, authenticator);
     }
 
     /**
@@ -78,6 +95,7 @@ public final class CapabilityStudioDemoController {
         this.featureRehearsalBaseline = new CapabilityStudioFeatureRehearsalBaselineService(
                 pack, this.featureRehearsal, new CapabilityStudioFeatureRehearsalOracle(mapper));
         this.governedBaseline = null;
+        this.governedRunEvidence = null;
         this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
     }
 
@@ -89,6 +107,27 @@ public final class CapabilityStudioDemoController {
             IntegrationRequestAuthenticator authenticator) {
         this(pack, tutorialBranch, authenticator);
         this.governedBaseline = governedBaseline;
+    }
+
+    /** Standalone test composition for the governed evidence read endpoint. */
+    CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            CapabilityStudioGovernedRunEvidenceService governedRunEvidence,
+            IntegrationRequestAuthenticator authenticator) {
+        this(pack, tutorialBranch, authenticator);
+        this.governedRunEvidence = governedRunEvidence;
+    }
+
+    /** Standalone test composition for both governed endpoints. */
+    CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            CapabilityStudioGovernedBaselineService governedBaseline,
+            CapabilityStudioGovernedRunEvidenceService governedRunEvidence,
+            IntegrationRequestAuthenticator authenticator) {
+        this(pack, tutorialBranch, governedBaseline, authenticator);
+        this.governedRunEvidence = governedRunEvidence;
     }
 
     /** Returns a real BLOGE test-run evidence rehearsal for one canonical feature scenario. */
@@ -128,6 +167,20 @@ public final class CapabilityStudioDemoController {
             throw new IllegalStateException("Governed baseline service is unavailable in standalone mode");
         }
         return governedBaseline.run();
+    }
+
+    /** Reads one persisted governed child run without entering the execution path. */
+    @GetMapping("/governed-runs/{runId}/evidence")
+    public CapabilityStudioGovernedRunEvidenceProjection governedRunEvidence(
+            @PathVariable String runId,
+            @RequestParam(required = false) String expectedCaseId,
+            @RequestHeader HttpHeaders headers) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.CAPABILITY_STUDIO_EVIDENCE_READ);
+        if (governedRunEvidence == null) {
+            throw new IllegalStateException("Governed run evidence service is unavailable in standalone mode");
+        }
+        return governedRunEvidence.read(runId, expectedCaseId, context);
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */

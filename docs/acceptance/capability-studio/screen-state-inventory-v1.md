@@ -29,7 +29,7 @@
 | `GP-07` | Tool 契约 | 输入、输出、错误、禁止结果、副作用、exact dependency 和 9 × 3 正确性目标；技术证据默认折叠 | 依赖 stale 时显示影响和迁移动作；运行失败在原位说明影响并可重试 | `data-testid=capability-tool` / `run-governed-baseline`；中文 1440/390 Chrome、axe、无溢出 | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-08` | Tool 受治理 9 × 3 运行 | 9/9 场景、9/9 Oracle、3/3 轮次、27/27 业务断言、0；3 suite、9 × 3 Case 矩阵、稳定业务指纹、三项专项证明；“开发验证通过/发布仍不可验收”双结论和 `CERTIFIABLE` 等级；候选已绑定时显示制品、source commit 与 execution intent，并保留目标环境、部署级 egress、Owner 签署三项阻断 | child evidence 缺失/漂移、Resource descriptor 未解析、候选 intent 篡改、Oracle 失败或真实调用均失败关闭；失败态为 `NOT_VERIFIED`，不伪造 evidence class、publication、Run 或 fingerprint；原位显示恢复动作并允许整批重试 | 受治理 POST、v3 严格 Schema、独立 Test Kit、真实 Spring + Chrome、DOM 基数、axe | `PARTIAL_DEVELOPMENT_VERIFIED` |
 | `GP-09` | 数据质量与影响 | 来源、脱敏、新鲜度、覆盖、复用、影响；无孤立 Active Case | stale/quarantined 有明确修复或退役动作 | 质量投影、影响图、DOM | `MISSING` |
-| `GP-10` | Evidence + Deep Link | exact capability/dataset/binding/run 闭包；返回正确节点和场景 | Evidence stale/tampered 时拒绝并显示恢复入口 | Evidence verifier、刷新与返回测试 | `MISSING` |
+| `GP-10` | Tool 精确证据 + Feature Deep Link | 从 9 × 3 矩阵读取原 child run，不重跑；展示 Tool、Contract、Dataset、Case、runtime target、Binding Plan、Fixture、Behavior、依赖、source map、provenance 和结构级 Data Lens；进入 Feature 后聚焦原节点，刷新与返回保持同一 Run/Case/Node | 未知 Run/Case 返回可恢复 404；合同漂移、指纹篡改、引用缺失或越权时失败关闭，不展示部分可信结果 | `data-testid=capability-governed-run-evidence` / `feature-dag`；严格 v1 Schema、独立 Test Kit、真实 Spring + Chrome；中文 1440/1280/390，无页面横向溢出 | `PARTIAL_DEVELOPMENT_VERIFIED_EXACT_READ` |
 
 ## 视觉与可访问性基线
 
@@ -60,3 +60,7 @@
 | [`capability-studio-gp08-business-oracles-v2-zh-1280.png`](../../assets/capability-studio/capability-studio-gp08-business-oracles-v2-zh-1280.png) | 九个 Case 的业务结果指纹、业务判定和三轮 `1/1` 断言完整可见；结果表 `scrollWidth=clientWidth=553` | 业务 Owner 对 Oracle 语义的人工签署 |
 | [`capability-studio-gp08-release-blockers-v2-zh-1280.png`](../../assets/capability-studio/capability-studio-gp08-release-blockers-v2-zh-1280.png) | timeout、duplicate、forbidden-write 三项专项证明与五项发布阻断同时可见 | 候选、环境、可认证证据、部署级 egress 和 Owner 签署本身 |
 | [`capability-studio-gp08-governed-tool-v2-zh-390.png`](../../assets/capability-studio/capability-studio-gp08-governed-tool-v2-zh-390.png) | 390 × 844 真实 Chrome 下双结论、三轮摘要、五列表格和稳定结果完整可读；页面与结果表横向溢出均为 0 | 移动端人工可用性、读屏和失败恢复矩阵 |
+| [`capability-studio-gp10-exact-evidence-zh-1280.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-1280.png) | 原 `runId`、timeout 焦点节点和完整受治理引用闭包同屏可见；明确标注未重跑 | 目标环境、Payload replay、外部 Evidence Authority 和签署 |
+| [`capability-studio-gp10-exact-graph-context-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-1440.png) | Deep Link 上下文保持；Feature DAG 只呈现同一 graph path 的 6 个业务节点，完整 7 节点 Data Lens 保留外层 Tool 运行 | 英文/1024、人工视觉签署和更复杂嵌套图 |
+| [`capability-studio-gp10-exact-evidence-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-390.png) | 移动端原运行证据、焦点与引用闭包可读，页面横向溢出为 0 | 移动端读屏和异常恢复矩阵 |
+| [`capability-studio-gp10-exact-graph-context-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-390.png) | 移动端 Feature 子图和完整 Data Lens 的信息边界可见 | 移动端 DAG 阅读效率的六人可用性签署 |

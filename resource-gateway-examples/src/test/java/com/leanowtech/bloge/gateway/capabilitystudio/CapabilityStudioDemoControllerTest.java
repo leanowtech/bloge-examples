@@ -1,6 +1,9 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemHandler;
@@ -34,6 +37,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -132,6 +139,97 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.cases", hasSize(9)))
                 .andReturn().getResponse().getContentAsString();
         assertThat(response).doesNotContain("payload", "input", "output", "secret");
+    }
+
+    @Test
+    void authenticatesBeforePassingTheExactCallerContextToEvidenceService() throws Exception {
+        CapabilityStudioGovernedRunEvidenceService evidence =
+                mock(CapabilityStudioGovernedRunEvidenceService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        com.leanowtech.bloge.gateway.integration.IntegrationRequestContext caller =
+                new com.leanowtech.bloge.gateway.integration.IntegrationRequestContext(
+                        "tenant", "org", "project", "test", "local", "WORKLOAD", "caller",
+                        "", "CAPABILITY_STUDIO_REHEARSAL", "corr", Set.of(), "PUBLIC", "");
+        when(authenticator.authenticate(any(), eq(IntegrationOperation.CAPABILITY_STUDIO_EVIDENCE_READ)))
+                .thenReturn(caller);
+        when(evidence.read("run-1", "case-1", caller)).thenReturn(emptyEvidenceProjection());
+
+        evidenceMvc(evidence, authenticator).perform(get(
+                        "/api/capability-studio/governed-runs/run-1/evidence")
+                .queryParam("expectedCaseId", "case-1")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer ignored")
+                .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isOk());
+
+        verify(authenticator).authenticate(any(), eq(IntegrationOperation.CAPABILITY_STUDIO_EVIDENCE_READ));
+        verify(evidence).read("run-1", "case-1", caller);
+    }
+
+    @Test
+    void missingOrInvalidAuthAndPurposeAreRejectedBeforeEvidenceService() throws Exception {
+        CapabilityStudioGovernedRunEvidenceService evidence =
+                mock(CapabilityStudioGovernedRunEvidenceService.class);
+
+        mvcForEvidence(evidence, authenticator("confidential-token", "CONFIDENTIAL"))
+                .perform(get("/api/capability-studio/governed-runs/run-1/evidence")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(evidence);
+
+        mvcForEvidence(evidence, authenticator("confidential-token", "CONFIDENTIAL"))
+                .perform(get("/api/capability-studio/governed-runs/run-1/evidence")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer confidential-token")
+                        .header("X-Purpose", "TEST_EXECUTION"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(evidence);
+    }
+
+    @Test
+    void preservesExpectedCaseConflictAndOriginal404FromEvidenceService() throws Exception {
+        CapabilityStudioGovernedRunEvidenceService evidence =
+                mock(CapabilityStudioGovernedRunEvidenceService.class);
+        when(evidence.read(any(), any(), any())).thenThrow(
+                new IntegrationProblemException(IntegrationProblem.conflict(
+                        "RG.CAPABILITY_STUDIO.GOVERNED_RUN.EXPECTED_CASE_MISMATCH",
+                        "mismatch", "corr", java.util.Map.of())));
+        mvcForEvidence(evidence, authenticator("confidential-token", "CONFIDENTIAL"))
+                .perform(get("/api/capability-studio/governed-runs/run-1/evidence")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer confidential-token")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.GOVERNED_RUN.EXPECTED_CASE_MISMATCH"));
+
+        doThrow(new IntegrationProblemException(IntegrationProblem.notFound(
+                        "RG.TEST.RUN_NOT_FOUND", "missing", "corr", java.util.Map.of())))
+                .when(evidence).read(any(), any(), any());
+        mvcForEvidence(evidence, authenticator("confidential-token", "CONFIDENTIAL"))
+                .perform(get("/api/capability-studio/governed-runs/missing/evidence")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer confidential-token")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RG.TEST.RUN_NOT_FOUND"));
+    }
+
+    private MockMvc evidenceMvc(CapabilityStudioGovernedRunEvidenceService evidence,
+                                IntegrationRequestAuthenticator authenticator) {
+        return MockMvcBuilders.standaloneSetup(new CapabilityStudioDemoController(
+                        pack, authority, evidence, authenticator))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+    }
+
+    private MockMvc mvcForEvidence(CapabilityStudioGovernedRunEvidenceService evidence,
+                                   IntegrationRequestAuthenticator authenticator) {
+        return evidenceMvc(evidence, authenticator);
+    }
+
+    private static CapabilityStudioGovernedRunEvidenceProjection emptyEvidenceProjection() {
+        return new CapabilityStudioGovernedRunEvidenceProjection(
+                CapabilityStudioGovernedRunEvidenceProjection.SCHEMA_VERSION,
+                CapabilityStudioGovernedRunEvidenceProjection.EXACT_VERIFIED,
+                "baseline", "sha256:" + "a".repeat(64), null, null, null, null, null, null,
+                null, null, null, null, null);
     }
 
     private static CapabilityStudioGovernedBaselineProjection passedGovernedBaseline() {

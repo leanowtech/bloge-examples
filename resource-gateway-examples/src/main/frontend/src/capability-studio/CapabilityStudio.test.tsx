@@ -227,6 +227,41 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(buttonWithText('Payload').getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('issues one ordinary rehearsal request per scenario or permission action', async () => {
+    let rehearsalCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.includes('/feature-rehearsal?')) {
+        rehearsalCalls += 1;
+        const query = new URL(url, 'http://capability-studio.local').searchParams;
+        return json(featureRehearsalProjectionFixture(
+          query.get('permission') === 'PAYLOAD_VISIBLE' ? 'PAYLOAD_VISIBLE' : 'STRUCTURE_ONLY',
+          query.get('caseId') ?? 'case-compensation-history-timeout',
+        ));
+      }
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await act(async () => buttonWithText('Cancellation dispute feature').click());
+    await settle();
+    expect(rehearsalCalls).toBe(1);
+
+    const scenario = query<HTMLSelectElement>('#feature-rehearsal-case');
+    await act(async () => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+      setValue?.call(scenario, 'case-standard-cancellation-fee');
+      scenario.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await settle();
+    expect(rehearsalCalls).toBe(2);
+
+    await act(async () => buttonWithText('Payload').click());
+    await settle();
+    expect(rehearsalCalls).toBe(3);
+  });
+
   it('keeps authorization impact and recovery visible when Data Lens access is denied', async () => {
     window.history.pushState({}, '', '/capabilities/?lang=zh-CN');
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
@@ -355,6 +390,189 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(query('[data-testid="capability-summary-status"]').textContent).toContain('DEVELOPMENT VERIFIED');
   });
 
+  it('reads matrix evidence exactly once, keeps the run/case/node through graph and return navigation, and clears it on exit', async () => {
+    const expectedRunId = governedBaselineProjectionFixture.cases.find((entry) => entry.caseId === 'case-standard-cancellation-fee')?.rounds[0].runId;
+    if (!expectedRunId) throw new Error('Missing standard cancellation fee run fixture.');
+    let evidenceCalls = 0;
+    let featureCalls = 0;
+    let baselinePosts = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/governed-baseline') && init?.method === 'POST') {
+        baselinePosts += 1;
+        return json(governedBaselineProjectionFixture);
+      }
+      if (url.includes('/governed-runs/') && url.endsWith('/evidence?expectedCaseId=case-standard-cancellation-fee')) {
+        evidenceCalls += 1;
+        const runId = decodeURIComponent(url.split('/governed-runs/')[1].split('/evidence')[0]);
+        return json(governedRunEvidencePayload(runId, 'case-standard-cancellation-fee'));
+      }
+      if (url.includes('/feature-rehearsal?')) {
+        featureCalls += 1;
+        return json(featureRehearsalProjectionFixture());
+      }
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await act(async () => query<HTMLButtonElement>('[data-testid="capability-task-tool"]').click());
+    await act(async () => query<HTMLButtonElement>('[data-testid="run-governed-baseline"]').click());
+    await settle();
+
+    const pushState = vi.spyOn(window.history, 'pushState');
+    const replaceState = vi.spyOn(window.history, 'replaceState');
+    await act(async () => query<HTMLButtonElement>('[data-testid="governed-evidence-case-standard-cancellation-fee-1"]').click());
+    await settle();
+
+    expect(evidenceCalls).toBe(1);
+    expect(featureCalls).toBe(0);
+    expect(baselinePosts).toBe(1);
+    expect(pushState).toHaveBeenCalledTimes(1);
+    expect(replaceState).toHaveBeenCalledTimes(1);
+    const evidenceUrl = new URL(window.location.href);
+    expect(evidenceUrl.searchParams.get('task')).toBe('tool');
+    expect(evidenceUrl.searchParams.get('runId')).toBe(expectedRunId);
+    expect(evidenceUrl.searchParams.get('scenarioId')).toBe('case-standard-cancellation-fee');
+    expect(evidenceUrl.searchParams.get('nodeId')).toBe('compensationHistoryLookup');
+    expect(query('[data-testid="governed-run-evidence-panel"]')).toBeTruthy();
+
+    await act(async () => query<HTMLButtonElement>('[data-testid="governed-evidence-case-standard-cancellation-fee-1"]').click());
+    await settle();
+    expect(evidenceCalls).toBe(2);
+    expect(featureCalls).toBe(0);
+    expect(baselinePosts).toBe(1);
+
+    await act(async () => buttonWithText("Back to this run's orchestration graph").click());
+    await settle();
+    const graphUrl = new URL(window.location.href);
+    expect(graphUrl.searchParams.get('task')).toBe('feature');
+    expect(graphUrl.searchParams.get('runId')).toBe(expectedRunId);
+    expect(graphUrl.searchParams.get('scenarioId')).toBe('case-standard-cancellation-fee');
+    expect(graphUrl.searchParams.get('nodeId')).toBe('compensationHistoryLookup');
+    expect(query('[data-testid="capability-feature-rehearsal"]')).toBeTruthy();
+    expect(document.querySelector('#feature-rehearsal-case')).toBeNull();
+    expect([...document.querySelectorAll('button')].some((button) => button.textContent?.includes('Payload'))).toBe(false);
+    expect(document.querySelector('.capability-segmented-control')).toBeNull();
+    const exactDag = query('[data-testid="feature-dag"]');
+    expect(exactDag.querySelectorAll('.feature-dag-node')).toHaveLength(6);
+    expect(exactDag.querySelector('[data-node-id="subject"]')).toBeNull();
+    expect(exactDag.querySelectorAll('.feature-node-decision')).toHaveLength(1);
+    expect(query('[data-node-id="compensationHistoryLookup"]').classList.contains('feature-node-focus')).toBe(true);
+    expect(document.activeElement).toBe(query('[data-node-id="compensationHistoryLookup"]'));
+    const exactLensNodes = document.querySelectorAll('.capability-lens-node-list .feature-lens-row');
+    expect(exactLensNodes).toHaveLength(7);
+    expect([...exactLensNodes].some((row) => row.querySelector('strong')?.textContent === 'subject')).toBe(true);
+    expect(evidenceCalls).toBe(2);
+    expect(featureCalls).toBe(0);
+    expect(baselinePosts).toBe(1);
+
+    await act(async () => buttonWithText('Return to Tool evidence').click());
+    await settle();
+    const returnUrl = new URL(window.location.href);
+    expect(returnUrl.searchParams.get('task')).toBe('tool');
+    expect(returnUrl.searchParams.get('runId')).toBe(expectedRunId);
+    expect(returnUrl.searchParams.get('scenarioId')).toBe('case-standard-cancellation-fee');
+    expect(returnUrl.searchParams.get('nodeId')).toBe('compensationHistoryLookup');
+    expect(query('[data-testid="governed-run-evidence-panel"]')).toBeTruthy();
+
+    await act(async () => buttonWithText('Overview').click());
+    const clearedUrl = new URL(window.location.href);
+    expect(clearedUrl.searchParams.get('runId')).toBeNull();
+    expect(clearedUrl.searchParams.get('scenarioId')).toBeNull();
+    expect(clearedUrl.searchParams.get('nodeId')).toBeNull();
+  });
+
+  it('initializes an exact Feature URL from the same run without ordinary rehearsal or POST', async () => {
+    window.history.pushState({}, '', '/capabilities/?task=feature&runId=child-run-1-1&scenarioId=case-standard-cancellation-fee');
+    let evidenceCalls = 0;
+    let featureCalls = 0;
+    let postCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.includes('/governed-runs/') && url.includes('/evidence?')) {
+        evidenceCalls += 1;
+        return json(governedRunEvidencePayload('child-run-1-1', 'case-standard-cancellation-fee'));
+      }
+      if (url.includes('/feature-rehearsal?')) {
+        featureCalls += 1;
+        return json(featureRehearsalProjectionFixture());
+      }
+      if (init?.method === 'POST') postCalls += 1;
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await settle();
+
+    expect(evidenceCalls).toBe(1);
+    expect(featureCalls).toBe(0);
+    expect(postCalls).toBe(0);
+    expect(document.querySelector('#feature-rehearsal-case')).toBeNull();
+    expect(document.querySelector('.capability-segmented-control')).toBeNull();
+    expect(query('[data-node-id="compensationHistoryLookup"]').classList.contains('feature-node-focus')).toBe(true);
+    expect(new URL(window.location.href).searchParams.get('nodeId')).toBe('compensationHistoryLookup');
+  });
+
+  it('does not treat stale run parameters under a non-exact task as an exact request', async () => {
+    window.history.pushState({}, '', '/capabilities/?task=overview&runId=stale-run&scenarioId=case-standard-cancellation-fee');
+    let evidenceCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.includes('/governed-runs/')) evidenceCalls += 1;
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await settle();
+
+    expect(evidenceCalls).toBe(0);
+    expect(document.querySelector('[data-testid="capability-overview"]')).toBeTruthy();
+  });
+
+  it('recovers an exact Feature error with only the exact GET or return-to-Tool action', async () => {
+    window.history.pushState({}, '', '/capabilities/?task=feature&runId=child-run-1-1&scenarioId=case-standard-cancellation-fee');
+    let evidenceCalls = 0;
+    let featureCalls = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.includes('/governed-runs/') && url.includes('/evidence?')) {
+        evidenceCalls += 1;
+        if (evidenceCalls === 1) return json({ code: 'RG.CAPABILITY_STUDIO.EVIDENCE_UNAVAILABLE', recoveryAction: 'Retry exact evidence.' }, 503);
+        return json(governedRunEvidencePayload('child-run-1-1', 'case-standard-cancellation-fee'));
+      }
+      if (url.includes('/feature-rehearsal?')) {
+        featureCalls += 1;
+        return json(featureRehearsalProjectionFixture());
+      }
+      if (init?.method === 'POST') throw new Error('exact Feature must not POST');
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await settle();
+    expect(query('.capability-feature-error')).toBeTruthy();
+    expect(document.querySelector('#feature-rehearsal-case')).toBeNull();
+
+    await act(async () => buttonWithText('Return to Tool evidence').click());
+    await settle();
+    expect(new URL(window.location.href).searchParams.get('task')).toBe('tool');
+    expect(new URL(window.location.href).searchParams.get('runId')).toBe('child-run-1-1');
+    expect(new URL(window.location.href).searchParams.get('scenarioId')).toBe('case-standard-cancellation-fee');
+    expect(query('[data-testid="governed-run-evidence-error"]')).toBeTruthy();
+    expect(evidenceCalls).toBe(1);
+
+    await act(async () => buttonWithText('Retry exact evidence').click());
+    await settle();
+
+    expect(evidenceCalls).toBe(2);
+    expect(featureCalls).toBe(0);
+    expect(query('[data-testid="governed-run-evidence-panel"]')).toBeTruthy();
+  });
+
   it('has no serious or critical automated accessibility violations across NFR-02 states', async () => {
     await render();
     await expectNoSevereAccessibilityViolations('overview');
@@ -467,6 +685,41 @@ function defaultFetcher(): CapabilityStudioFetcher {
       ));
     }
     return json(capabilityStudioDemoPackFixture);
+  };
+}
+
+function governedRunEvidencePayload(runId: string, caseId: string) {
+  const dataLens = structuredClone(featureRehearsalProjectionFixture().dataLens);
+  dataLens.runId = runId;
+  const featureGraphPath = '/root/subject/feature-cancellation-dispute-context';
+  dataLens.nodes.forEach((node) => {
+    node.graphPath = featureGraphPath;
+    node.invocationSite = `${featureGraphPath}/${node.nodeId}#PRIMARY`;
+  });
+  dataLens.edges.forEach((edge) => {
+    edge.graphPath = featureGraphPath;
+    edge.edgeId = `${featureGraphPath}/${edge.edgeId}`;
+    edge.fromInvocationSite = edge.fromInvocationSite.replace('/root/', `${featureGraphPath}/`);
+    edge.toInvocationSite = edge.toInvocationSite.replace('/root/', `${featureGraphPath}/`);
+  });
+  dataLens.nodes.unshift({
+    ...structuredClone(dataLens.nodes[dataLens.nodes.length - 1]),
+    nodeId: 'subject',
+    operatorRef: 'tool-cancellation-resolution',
+    graphPath: '/root',
+    invocationSite: '/root/subject#PRIMARY',
+  });
+  const ref = (kind: string, id: string, seed: string) => ({ kind, id, revision: 1, fingerprint: `sha256:${seed.repeat(64).slice(0, 64)}` });
+  const caseRef = ref('DATA_CASE', caseId, '1');
+  const contractRef = ref('CONTRACT', 'contract-cancellation-fee', '2');
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.governed-run-evidence.v1', verificationStatus: 'EXACT_VERIFIED', baselineId: 'capability-studio-governed-9x3-v1', projectionFingerprint: `sha256:${'3'.repeat(64)}`,
+    scenario: { caseId, name: 'Standard cancellation fee', businessIntent: 'Return an explainable fee decision.', category: 'GOLDEN', lifecycle: 'ACTIVE', qualityState: 'READY', owner: { id: 'customer-service-platform', name: 'Customer Service Platform' }, scenarioRef: ref('SCENARIO', caseId, '4'), caseRef, sourceRef: ref('SOURCE', 'source-cancellation-fee', '5'), oracleRef: ref('ORACLE', 'oracle-cancellation-fee', '6'), applicableContractRefs: [contractRef] },
+    graphRef: ref('FEATURE', 'feature-cancellation-dispute-context', '7'), capabilityRef: ref('TOOL', 'tool-cancellation-resolution', '8'), contractRef, datasetRef: ref('DATASET', 'cancellation-fee-scenarios', '9'), caseRef,
+    runtimeTarget: { kind: 'OPERATOR', id: 'tool-cancellation-resolution', fingerprint: `sha256:${'a'.repeat(64)}` },
+    bindingPlan: { ref: ref('BINDING_PLAN', 'binding-cancellation-fee', 'b'), fixtureBundleRef: ref('FIXTURE_BUNDLE', 'fixture-cancellation-fee', 'c'), effectiveExecutionPlanFingerprint: `sha256:${'d'.repeat(64)}`, behaviorRefs: [ref('BEHAVIOR_PROFILE', 'behavior-cancellation-fee', 'e')], dependencyRefs: [ref('API', 'api-order-lookup', 'f')], fallbackToReal: false, sourceMapFingerprint: `sha256:${'1'.repeat(64)}`, provenanceFingerprint: `sha256:${'2'.repeat(64)}` },
+    run: { runId, status: 'TIMED_OUT', evidenceClass: 'CERTIFIABLE', evidenceFingerprint: `sha256:${'4'.repeat(64)}`, semanticResultFingerprint: `sha256:${'5'.repeat(64)}`, assertionsEvaluated: 1, assertionsPassed: 1, fixtureControlsEvaluated: 1, fixtureControlsSatisfied: 1 },
+    focusNodeId: 'compensationHistoryLookup', dataLens,
   };
 }
 

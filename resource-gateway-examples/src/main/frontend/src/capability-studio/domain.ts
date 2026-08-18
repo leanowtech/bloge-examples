@@ -1028,9 +1028,17 @@ function featureIdentifier(value: unknown, path: string): string {
   return parsed;
 }
 
+function featureTraceId(value: unknown, path: string): string {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 256
+      || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  }
+  return value;
+}
+
 function featureCoordinate(value: unknown, path: string): string {
   const parsed = featureString(value, path, 256);
-  if (!/^\/[A-Za-z0-9][A-Za-z0-9._:/#@><-]*$/.test(parsed)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
+  if (!/^\/[A-Za-z0-9][A-Za-z0-9._~:/#@><-]*$/.test(parsed)) throw invalidFeatureRehearsal(`Invalid ${path}.`);
   return parsed;
 }
 
@@ -1129,7 +1137,7 @@ function parseFeatureRehearsalEdge(value: unknown, path: string): FeatureRehears
     'fromInvocationSite', 'toInvocationSite', 'value', 'valueFingerprint',
   ]);
   return {
-    edgeId: featureIdentifier(source.edgeId, `${path}.edgeId`),
+    edgeId: featureTraceId(source.edgeId, `${path}.edgeId`),
     status: featureEnum(source.status, featureEdgeStatuses, `${path}.status`),
     graphPath: featureCoordinate(source.graphPath, `${path}.graphPath`),
     correlation: featureOptionalString(source.correlation, `${path}.correlation`, 256),
@@ -1215,6 +1223,377 @@ export function parseFeatureRehearsalProjection(payload: unknown): FeatureRehear
     if (nodePayloadVisible || edgePayloadVisible || differencePayloadVisible) throw invalidFeatureRehearsal('STRUCTURE_ONLY cannot contain payload values.');
   }
   return parsed;
+}
+
+export interface GovernedRunEvidenceRef {
+  kind: string;
+  id: string;
+  revision: number;
+  fingerprint: string;
+}
+
+export interface GovernedRunEvidenceProjection {
+  schemaVersion: 'resource-gateway.capability-studio.governed-run-evidence.v1';
+  verificationStatus: 'EXACT_VERIFIED';
+  baselineId: string;
+  projectionFingerprint: string;
+  scenario: {
+    caseId: string;
+    name: string;
+    businessIntent: string;
+    category: string;
+    lifecycle: string;
+    qualityState: string;
+    owner: { id: string; name: string };
+    scenarioRef: GovernedRunEvidenceRef;
+    caseRef: GovernedRunEvidenceRef;
+    sourceRef: GovernedRunEvidenceRef;
+    oracleRef: GovernedRunEvidenceRef;
+    applicableContractRefs: GovernedRunEvidenceRef[];
+  };
+  graphRef: GovernedRunEvidenceRef;
+  capabilityRef: GovernedRunEvidenceRef;
+  contractRef: GovernedRunEvidenceRef;
+  datasetRef: GovernedRunEvidenceRef;
+  caseRef: GovernedRunEvidenceRef;
+  runtimeTarget: { kind: string; id: string; fingerprint: string };
+  bindingPlan: {
+    ref: GovernedRunEvidenceRef;
+    fixtureBundleRef: GovernedRunEvidenceRef;
+    effectiveExecutionPlanFingerprint: string;
+    behaviorRefs: GovernedRunEvidenceRef[];
+    dependencyRefs: GovernedRunEvidenceRef[];
+    fallbackToReal: false;
+    sourceMapFingerprint: string;
+    provenanceFingerprint: string;
+  };
+  run: {
+    runId: string;
+    status: FeatureRehearsalRunStatus;
+    evidenceClass: 'EXPLORATORY' | 'CERTIFIABLE';
+    evidenceFingerprint: string;
+    semanticResultFingerprint: string;
+    assertionsEvaluated: number;
+    assertionsPassed: number;
+    fixtureControlsEvaluated: number;
+    fixtureControlsSatisfied: number;
+  };
+  focusNodeId: string;
+  dataLens: FeatureRehearsalProjection['dataLens'];
+}
+
+const governedEvidenceRefKinds = new Set([
+  'SCENARIO', 'FEATURE', 'TOOL', 'CONTRACT', 'DATASET', 'DATA_CASE',
+  'SOURCE', 'ORACLE', 'BINDING_PLAN', 'FIXTURE_BUNDLE', 'BEHAVIOR_PROFILE',
+  'API',
+]);
+const governedEvidenceScenarioCategories = ['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'FAULT', 'REGRESSION', 'SECURITY'] as const;
+const governedEvidenceScenarioLifecycles = ['DRAFT', 'ACTIVE', 'STALE', 'RETIRED'] as const;
+const governedEvidenceScenarioQualityStates = ['DESIGNED_NOT_RUN', 'READY', 'STALE', 'BLOCKED'] as const;
+
+function invalidGovernedRunEvidence(message: string): CapabilityStudioProtocolError {
+  return new CapabilityStudioProtocolError(
+    'RG.CAPABILITY_STUDIO.INVALID_GOVERNED_RUN_EVIDENCE',
+    `[RG.CAPABILITY_STUDIO.INVALID_GOVERNED_RUN_EVIDENCE] ${message}`,
+    'The exact governed run evidence cannot be trusted or displayed.',
+  );
+}
+
+function governedEvidenceObject(value: unknown, path: string, fields: string[]): JsonObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw invalidGovernedRunEvidence(`Expected an object at ${path}.`);
+  }
+  const source = value as JsonObject;
+  const allowed = new Set(fields);
+  const unknown = Object.keys(source).find((key) => !allowed.has(key));
+  if (unknown) throw invalidGovernedRunEvidence(`Unknown field ${path}.${unknown}.`);
+  return source;
+}
+
+function governedEvidenceArray(value: unknown, path: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): unknown[] {
+  if (!Array.isArray(value) || value.length < minimum || value.length > maximum) {
+    throw invalidGovernedRunEvidence(`Expected ${minimum}..${maximum} entries at ${path}.`);
+  }
+  return value;
+}
+
+function governedEvidenceString(value: unknown, path: string, maximum = 4000): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > maximum) {
+    throw invalidGovernedRunEvidence(`Invalid ${path}.`);
+  }
+  return value;
+}
+
+function governedEvidenceFingerprint(value: unknown, path: string): string {
+  const parsed = governedEvidenceString(value, path, 80);
+  if (!/^sha256:[a-f0-9]{64}$/.test(parsed)) throw invalidGovernedRunEvidence(`Invalid ${path}.`);
+  return parsed;
+}
+
+function governedEvidenceInteger(value: unknown, path: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) {
+    throw invalidGovernedRunEvidence(`Invalid ${path}.`);
+  }
+  return value as number;
+}
+
+function governedEvidenceEnum<T extends string>(value: unknown, values: readonly T[], path: string): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    throw invalidGovernedRunEvidence(`Invalid ${path}.`);
+  }
+  return value as T;
+}
+
+function governedEvidenceBoolean(value: unknown, path: string): boolean {
+  if (typeof value !== 'boolean') throw invalidGovernedRunEvidence(`Invalid ${path}.`);
+  return value;
+}
+
+function parseGovernedRunEvidenceRef(value: unknown, path: string, expectedKind?: string): GovernedRunEvidenceRef {
+  const source = governedEvidenceObject(value, path, ['kind', 'id', 'revision', 'fingerprint']);
+  const kind = governedEvidenceString(source.kind, `${path}.kind`, 64);
+  if (!governedEvidenceRefKinds.has(kind) || (expectedKind && kind !== expectedKind)) {
+    throw invalidGovernedRunEvidence(`Invalid ${path}.kind; expected ${expectedKind ?? 'a governed reference kind'}.`);
+  }
+  return {
+    kind,
+    id: governedEvidenceString(source.id, `${path}.id`, 256),
+    revision: governedEvidenceInteger(source.revision, `${path}.revision`, 1, 2_147_483_647),
+    fingerprint: governedEvidenceFingerprint(source.fingerprint, `${path}.fingerprint`),
+  };
+}
+
+function sameGovernedEvidenceRef(left: GovernedRunEvidenceRef, right: GovernedRunEvidenceRef): boolean {
+  return left.kind === right.kind && left.id === right.id
+    && left.revision === right.revision && left.fingerprint === right.fingerprint;
+}
+
+function parseGovernedRunEvidenceOwner(value: unknown, path: string): { id: string; name: string } {
+  const source = governedEvidenceObject(value, path, ['id', 'name']);
+  return {
+    id: governedEvidenceString(source.id, `${path}.id`, 256),
+    name: governedEvidenceString(source.name, `${path}.name`, 256),
+  };
+}
+
+function parseGovernedRunEvidenceDataLens(value: unknown): FeatureRehearsalProjection['dataLens'] {
+  const path = 'governedRunEvidence.dataLens';
+  const source = governedEvidenceObject(value, path, [
+    'schemaVersion', 'runId', 'runStatus', 'permissionMode', 'nodes', 'edges',
+    'firstDifference', 'truncation', 'fingerprint',
+  ]);
+  if (source.schemaVersion !== 'resource-gateway.capability-studio.data-lens.v1') {
+    throw invalidGovernedRunEvidence(`Invalid ${path}.schemaVersion.`);
+  }
+  if (source.permissionMode !== 'STRUCTURE_ONLY') {
+    throw invalidGovernedRunEvidence(`${path}.permissionMode must be STRUCTURE_ONLY.`);
+  }
+  const nodes = governedEvidenceArray(source.nodes, `${path}.nodes`, 1, 256)
+    .map((entry, index) => parseFeatureRehearsalNode(entry, `${path}.nodes[${index}]`));
+  const edges = governedEvidenceArray(source.edges, `${path}.edges`, 0, 512)
+    .map((entry, index) => parseFeatureRehearsalEdge(entry, `${path}.edges[${index}]`));
+  const nodeIds = new Set<string>();
+  const invocationSiteGraphPaths = new Map<string, string>();
+  nodes.forEach((node) => {
+    if (nodeIds.has(node.nodeId)) throw invalidGovernedRunEvidence(`Duplicate nodeId ${node.nodeId}.`);
+    if (invocationSiteGraphPaths.has(node.invocationSite)) {
+      throw invalidGovernedRunEvidence(`Duplicate invocationSite ${node.invocationSite}.`);
+    }
+    if (!node.invocationSite.startsWith(`${node.graphPath}/`)) {
+      throw invalidGovernedRunEvidence(`Node ${node.nodeId} invocationSite is outside its graphPath.`);
+    }
+    if (node.attempts.length > 16) throw invalidGovernedRunEvidence(`Node ${node.nodeId} has too many attempts.`);
+    const attemptNumbers = new Set<number>();
+    node.attempts.forEach((attempt) => {
+      if (attemptNumbers.has(attempt.attempt)) {
+        throw invalidGovernedRunEvidence(`Node ${node.nodeId} has duplicate attempt ${attempt.attempt}.`);
+      }
+      attemptNumbers.add(attempt.attempt);
+    });
+    nodeIds.add(node.nodeId);
+    invocationSiteGraphPaths.set(node.invocationSite, node.graphPath);
+    if (node.input !== null || node.output !== null || node.attempts.some((attempt) => attempt.input !== null || attempt.output !== null)) {
+      throw invalidGovernedRunEvidence('STRUCTURE_ONLY cannot contain payload values.');
+    }
+  });
+  const edgeIds = new Set<string>();
+  edges.forEach((edge) => {
+    if (edgeIds.has(edge.edgeId)) throw invalidGovernedRunEvidence(`Duplicate edgeId ${edge.edgeId}.`);
+    const fromGraphPath = invocationSiteGraphPaths.get(edge.fromInvocationSite);
+    const toGraphPath = invocationSiteGraphPaths.get(edge.toInvocationSite);
+    if (!fromGraphPath || !toGraphPath) {
+      throw invalidGovernedRunEvidence(`Edge ${edge.edgeId} references an unknown invocation site.`);
+    }
+    if (fromGraphPath !== edge.graphPath || toGraphPath !== edge.graphPath) {
+      throw invalidGovernedRunEvidence(`Edge ${edge.edgeId} crosses its graphPath boundary.`);
+    }
+    if (edge.value !== null) throw invalidGovernedRunEvidence('STRUCTURE_ONLY cannot contain edge payload values.');
+    edgeIds.add(edge.edgeId);
+  });
+  const truncation = governedEvidenceObject(source.truncation, `${path}.truncation`, [
+    'nodesTruncated', 'omittedNodes', 'edgesTruncated', 'omittedEdges', 'attemptsTruncated', 'omittedAttempts',
+  ]);
+  const firstDifference = parseFeatureFirstDifference(source.firstDifference, `${path}.firstDifference`);
+  if (firstDifference && (firstDifference.expected !== null || firstDifference.actual !== null)) {
+    throw invalidGovernedRunEvidence('STRUCTURE_ONLY cannot contain first-difference payload values.');
+  }
+  const parsedTruncation = {
+    nodesTruncated: governedEvidenceBoolean(truncation.nodesTruncated, `${path}.truncation.nodesTruncated`),
+    omittedNodes: governedEvidenceInteger(truncation.omittedNodes, `${path}.truncation.omittedNodes`, 0, 256),
+    edgesTruncated: governedEvidenceBoolean(truncation.edgesTruncated, `${path}.truncation.edgesTruncated`),
+    omittedEdges: governedEvidenceInteger(truncation.omittedEdges, `${path}.truncation.omittedEdges`, 0, 512),
+    attemptsTruncated: governedEvidenceBoolean(truncation.attemptsTruncated, `${path}.truncation.attemptsTruncated`),
+    omittedAttempts: governedEvidenceInteger(truncation.omittedAttempts, `${path}.truncation.omittedAttempts`, 0, 4096),
+  };
+  if (parsedTruncation.nodesTruncated !== (parsedTruncation.omittedNodes > 0)
+      || parsedTruncation.edgesTruncated !== (parsedTruncation.omittedEdges > 0)
+      || parsedTruncation.attemptsTruncated !== (parsedTruncation.omittedAttempts > 0)) {
+    throw invalidGovernedRunEvidence('Data Lens truncation flags do not match omitted counts.');
+  }
+  return {
+    schemaVersion: source.schemaVersion,
+    runId: governedEvidenceString(source.runId, `${path}.runId`, 256),
+    runStatus: featureEnum(source.runStatus, featureRunStatuses, `${path}.runStatus`),
+    permissionMode: 'STRUCTURE_ONLY',
+    nodes,
+    edges,
+    firstDifference,
+    truncation: parsedTruncation,
+    fingerprint: governedEvidenceFingerprint(source.fingerprint, `${path}.fingerprint`),
+  };
+}
+
+export function parseGovernedRunEvidenceProjection(payload: unknown): GovernedRunEvidenceProjection {
+  try {
+    const root = governedEvidenceObject(payload, 'governedRunEvidence', [
+      'schemaVersion', 'verificationStatus', 'baselineId', 'projectionFingerprint', 'scenario',
+      'graphRef', 'capabilityRef', 'contractRef', 'datasetRef', 'caseRef', 'runtimeTarget',
+      'bindingPlan', 'run', 'focusNodeId', 'dataLens',
+    ]);
+    if (root.schemaVersion !== 'resource-gateway.capability-studio.governed-run-evidence.v1') {
+      throw invalidGovernedRunEvidence('Invalid governedRunEvidence.schemaVersion.');
+    }
+    if (root.verificationStatus !== 'EXACT_VERIFIED') {
+      throw invalidGovernedRunEvidence('Invalid governedRunEvidence.verificationStatus.');
+    }
+    if (root.baselineId !== 'capability-studio-governed-9x3-v1') {
+      throw invalidGovernedRunEvidence('Invalid governedRunEvidence.baselineId.');
+    }
+    const scenarioSource = governedEvidenceObject(root.scenario, 'governedRunEvidence.scenario', [
+      'caseId', 'name', 'businessIntent', 'category', 'lifecycle', 'qualityState', 'owner',
+      'scenarioRef', 'caseRef', 'sourceRef', 'oracleRef', 'applicableContractRefs',
+    ]);
+    const scenarioCaseId = governedEvidenceString(scenarioSource.caseId, 'governedRunEvidence.scenario.caseId', 256);
+    const scenarioRef = parseGovernedRunEvidenceRef(scenarioSource.scenarioRef, 'governedRunEvidence.scenario.scenarioRef', 'SCENARIO');
+    const scenarioCaseRef = parseGovernedRunEvidenceRef(scenarioSource.caseRef, 'governedRunEvidence.scenario.caseRef', 'DATA_CASE');
+    const sourceRef = parseGovernedRunEvidenceRef(scenarioSource.sourceRef, 'governedRunEvidence.scenario.sourceRef', 'SOURCE');
+    const oracleRef = parseGovernedRunEvidenceRef(scenarioSource.oracleRef, 'governedRunEvidence.scenario.oracleRef', 'ORACLE');
+    const applicableContractRefs = governedEvidenceArray(scenarioSource.applicableContractRefs, 'governedRunEvidence.scenario.applicableContractRefs', 1, 500)
+      .map((entry, index) => parseGovernedRunEvidenceRef(entry, `governedRunEvidence.scenario.applicableContractRefs[${index}]`, 'CONTRACT'));
+    const graphRef = parseGovernedRunEvidenceRef(root.graphRef, 'governedRunEvidence.graphRef', 'FEATURE');
+    const capabilityRef = parseGovernedRunEvidenceRef(root.capabilityRef, 'governedRunEvidence.capabilityRef', 'TOOL');
+    const contractRef = parseGovernedRunEvidenceRef(root.contractRef, 'governedRunEvidence.contractRef', 'CONTRACT');
+    const datasetRef = parseGovernedRunEvidenceRef(root.datasetRef, 'governedRunEvidence.datasetRef', 'DATASET');
+    const caseRef = parseGovernedRunEvidenceRef(root.caseRef, 'governedRunEvidence.caseRef', 'DATA_CASE');
+    if (scenarioCaseId !== caseRef.id || scenarioCaseRef.id !== caseRef.id || !sameGovernedEvidenceRef(scenarioCaseRef, caseRef)) {
+      throw invalidGovernedRunEvidence('Scenario and case reference identity do not match.');
+    }
+    if (scenarioRef.id !== scenarioCaseId) throw invalidGovernedRunEvidence('Scenario reference identity does not match caseId.');
+    if (!applicableContractRefs.some((ref) => sameGovernedEvidenceRef(ref, contractRef))) {
+      throw invalidGovernedRunEvidence('Contract reference is not closed by the scenario.');
+    }
+    const runtimeTargetSource = governedEvidenceObject(root.runtimeTarget, 'governedRunEvidence.runtimeTarget', ['kind', 'id', 'fingerprint']);
+    const runtimeTarget = {
+      kind: governedEvidenceString(runtimeTargetSource.kind, 'governedRunEvidence.runtimeTarget.kind', 64),
+      id: governedEvidenceString(runtimeTargetSource.id, 'governedRunEvidence.runtimeTarget.id', 256),
+      fingerprint: governedEvidenceFingerprint(runtimeTargetSource.fingerprint, 'governedRunEvidence.runtimeTarget.fingerprint'),
+    };
+    if (runtimeTarget.kind !== 'OPERATOR') throw invalidGovernedRunEvidence('Runtime target must be an OPERATOR.');
+    if (runtimeTarget.id !== capabilityRef.id) throw invalidGovernedRunEvidence('Runtime target and capability reference identity do not match.');
+    const bindingSource = governedEvidenceObject(root.bindingPlan, 'governedRunEvidence.bindingPlan', [
+      'ref', 'fixtureBundleRef', 'effectiveExecutionPlanFingerprint', 'behaviorRefs', 'dependencyRefs',
+      'fallbackToReal', 'sourceMapFingerprint', 'provenanceFingerprint',
+    ]);
+    const bindingPlan = {
+      ref: parseGovernedRunEvidenceRef(bindingSource.ref, 'governedRunEvidence.bindingPlan.ref', 'BINDING_PLAN'),
+      fixtureBundleRef: parseGovernedRunEvidenceRef(bindingSource.fixtureBundleRef, 'governedRunEvidence.bindingPlan.fixtureBundleRef', 'FIXTURE_BUNDLE'),
+      effectiveExecutionPlanFingerprint: governedEvidenceFingerprint(bindingSource.effectiveExecutionPlanFingerprint, 'governedRunEvidence.bindingPlan.effectiveExecutionPlanFingerprint'),
+      behaviorRefs: governedEvidenceArray(bindingSource.behaviorRefs, 'governedRunEvidence.bindingPlan.behaviorRefs', 1, 500).map((entry, index) => parseGovernedRunEvidenceRef(entry, `governedRunEvidence.bindingPlan.behaviorRefs[${index}]`, 'BEHAVIOR_PROFILE')),
+      dependencyRefs: governedEvidenceArray(bindingSource.dependencyRefs, 'governedRunEvidence.bindingPlan.dependencyRefs', 1, 500).map((entry, index) => {
+        const ref = parseGovernedRunEvidenceRef(entry, `governedRunEvidence.bindingPlan.dependencyRefs[${index}]`);
+        if (ref.kind !== 'API' && ref.kind !== 'TOOL') {
+          throw invalidGovernedRunEvidence(`Invalid governedRunEvidence.bindingPlan.dependencyRefs[${index}].kind.`);
+        }
+        return ref;
+      }),
+      fallbackToReal: governedEvidenceBoolean(bindingSource.fallbackToReal, 'governedRunEvidence.bindingPlan.fallbackToReal'),
+      sourceMapFingerprint: governedEvidenceFingerprint(bindingSource.sourceMapFingerprint, 'governedRunEvidence.bindingPlan.sourceMapFingerprint'),
+      provenanceFingerprint: governedEvidenceFingerprint(bindingSource.provenanceFingerprint, 'governedRunEvidence.bindingPlan.provenanceFingerprint'),
+    };
+    if (bindingPlan.fallbackToReal) throw invalidGovernedRunEvidence('Binding plan cannot fall back to real calls.');
+    const runSource = governedEvidenceObject(root.run, 'governedRunEvidence.run', [
+      'runId', 'status', 'evidenceClass', 'evidenceFingerprint', 'semanticResultFingerprint',
+      'assertionsEvaluated', 'assertionsPassed', 'fixtureControlsEvaluated', 'fixtureControlsSatisfied',
+    ]);
+    const run = {
+      runId: governedEvidenceString(runSource.runId, 'governedRunEvidence.run.runId', 256),
+      status: featureEnum(runSource.status, featureRunStatuses, 'governedRunEvidence.run.status'),
+      evidenceClass: featureEnum(runSource.evidenceClass, ['EXPLORATORY', 'CERTIFIABLE'], 'governedRunEvidence.run.evidenceClass'),
+      evidenceFingerprint: governedEvidenceFingerprint(runSource.evidenceFingerprint, 'governedRunEvidence.run.evidenceFingerprint'),
+      semanticResultFingerprint: governedEvidenceFingerprint(runSource.semanticResultFingerprint, 'governedRunEvidence.run.semanticResultFingerprint'),
+      assertionsEvaluated: governedEvidenceInteger(runSource.assertionsEvaluated, 'governedRunEvidence.run.assertionsEvaluated', 0, 1_000_000),
+      assertionsPassed: governedEvidenceInteger(runSource.assertionsPassed, 'governedRunEvidence.run.assertionsPassed', 0, 1_000_000),
+      fixtureControlsEvaluated: governedEvidenceInteger(runSource.fixtureControlsEvaluated, 'governedRunEvidence.run.fixtureControlsEvaluated', 0, 1_000_000),
+      fixtureControlsSatisfied: governedEvidenceInteger(runSource.fixtureControlsSatisfied, 'governedRunEvidence.run.fixtureControlsSatisfied', 0, 1_000_000),
+    };
+    if (run.assertionsPassed > run.assertionsEvaluated || run.fixtureControlsSatisfied > run.fixtureControlsEvaluated) {
+      throw invalidGovernedRunEvidence('Run count closure is invalid.');
+    }
+    if (run.status === 'PASSED' && (run.assertionsEvaluated < 1
+      || run.assertionsPassed !== run.assertionsEvaluated
+      || run.fixtureControlsEvaluated < 1
+      || run.fixtureControlsSatisfied !== run.fixtureControlsEvaluated)) {
+      throw invalidGovernedRunEvidence('PASSED run requires complete assertion and fixture-control closure.');
+    }
+    const dataLens = parseGovernedRunEvidenceDataLens(root.dataLens);
+    const focusNodeId = governedEvidenceString(root.focusNodeId, 'governedRunEvidence.focusNodeId', 256);
+    const projection = {
+      schemaVersion: root.schemaVersion,
+      verificationStatus: root.verificationStatus,
+      baselineId: root.baselineId,
+      projectionFingerprint: governedEvidenceFingerprint(root.projectionFingerprint, 'governedRunEvidence.projectionFingerprint'),
+      scenario: {
+        caseId: scenarioCaseId,
+        name: governedEvidenceString(scenarioSource.name, 'governedRunEvidence.scenario.name'),
+        businessIntent: governedEvidenceString(scenarioSource.businessIntent, 'governedRunEvidence.scenario.businessIntent'),
+        category: governedEvidenceEnum(scenarioSource.category, governedEvidenceScenarioCategories, 'governedRunEvidence.scenario.category'),
+        lifecycle: governedEvidenceEnum(scenarioSource.lifecycle, governedEvidenceScenarioLifecycles, 'governedRunEvidence.scenario.lifecycle'),
+        qualityState: governedEvidenceEnum(scenarioSource.qualityState, governedEvidenceScenarioQualityStates, 'governedRunEvidence.scenario.qualityState'),
+        owner: parseGovernedRunEvidenceOwner(scenarioSource.owner, 'governedRunEvidence.scenario.owner'),
+        scenarioRef,
+        caseRef: scenarioCaseRef,
+        sourceRef,
+        oracleRef,
+        applicableContractRefs,
+      },
+      graphRef,
+      capabilityRef,
+      contractRef,
+      datasetRef,
+      caseRef,
+      runtimeTarget,
+      bindingPlan,
+      run,
+      focusNodeId,
+      dataLens,
+    } as GovernedRunEvidenceProjection;
+    if (run.runId !== dataLens.runId || run.status !== dataLens.runStatus) throw invalidGovernedRunEvidence('Run and Data Lens identity do not match.');
+    if (!dataLens.nodes.some((node) => node.nodeId === focusNodeId)) throw invalidGovernedRunEvidence('focusNodeId does not exist in Data Lens.');
+    return projection;
+  } catch (error) {
+    if (error instanceof CapabilityStudioProtocolError && error.code === 'RG.CAPABILITY_STUDIO.INVALID_GOVERNED_RUN_EVIDENCE') throw error;
+    throw invalidGovernedRunEvidence(error instanceof Error ? error.message : 'The response was not valid exact evidence.');
+  }
 }
 
 const governedBaselineRoundStatuses: GovernedBaselineRoundStatus[] = [

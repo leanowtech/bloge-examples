@@ -4,6 +4,7 @@ import {
   parseCapabilityStudioDemoPack,
   parseFeatureRehearsalProjection,
   parseGovernedBaselineProjection,
+  parseGovernedRunEvidenceProjection,
   parseScenarioDatasetProjection,
   projectCapabilityStudioSummaryStatus,
 } from './domain';
@@ -134,6 +135,191 @@ describe('Capability Studio backend projection adapter', () => {
     const brokenEdge = structuredClone(featureRehearsalProjectionFixture());
     brokenEdge.dataLens.edges[0].toInvocationSite = '/root/unknown#PRIMARY';
     expect(() => parseFeatureRehearsalProjection(brokenEdge)).toThrow('unknown invocation site');
+  });
+
+  it('rejects exact evidence payload leakage and run/case/focus identity drift', () => {
+    const valid = governedRunEvidencePayload();
+    expect(parseGovernedRunEvidenceProjection(valid)).toMatchObject({
+      verificationStatus: 'EXACT_VERIFIED',
+      run: { runId: 'child-run-1-1' },
+      scenario: { caseId: 'case-standard-cancellation-fee' },
+      focusNodeId: 'compensationHistoryLookup',
+    });
+
+    const registryFingerprintDifference = structuredClone(valid);
+    registryFingerprintDifference.runtimeTarget.fingerprint = `sha256:${'f'.repeat(64)}`;
+    expect(parseGovernedRunEvidenceProjection(registryFingerprintDifference)).toMatchObject({
+      runtimeTarget: { id: 'tool-cancellation-resolution', fingerprint: `sha256:${'f'.repeat(64)}` },
+    });
+
+    const runtimeIdDrift = structuredClone(valid);
+    runtimeIdDrift.runtimeTarget.id = 'another-tool';
+    expect(() => parseGovernedRunEvidenceProjection(runtimeIdDrift)).toThrow('Runtime target and capability reference identity do not match');
+
+    const payloadDrift = structuredClone(valid);
+    payloadDrift.dataLens.nodes[0].input = { orderId: 'secret' };
+    expect(() => parseGovernedRunEvidenceProjection(payloadDrift)).toThrow('STRUCTURE_ONLY cannot contain payload values');
+
+    const runDrift = structuredClone(valid);
+    runDrift.dataLens.runId = 'different-run';
+    expect(() => parseGovernedRunEvidenceProjection(runDrift)).toThrow('Run and Data Lens identity do not match');
+
+    const caseDrift = structuredClone(valid);
+    caseDrift.scenario.caseId = 'case-other';
+    expect(() => parseGovernedRunEvidenceProjection(caseDrift)).toThrow('Scenario and case reference identity do not match');
+
+    const focusDrift = structuredClone(valid);
+    focusDrift.focusNodeId = 'missing-node';
+    expect(() => parseGovernedRunEvidenceProjection(focusDrift)).toThrow('focusNodeId does not exist in Data Lens');
+  });
+
+  it('accepts real nested edge trace ids and BLOGE-escaped graph coordinates', () => {
+    const nestedEdgeId = '/root/subject/feature-cancellation-dispute-context/orderLookup->aggregateCancellationContext';
+    const nestedEdge = governedRunEvidencePayload();
+    nestedEdge.dataLens.edges[0].edgeId = nestedEdgeId;
+    expect(parseGovernedRunEvidenceProjection(nestedEdge).dataLens.edges[0].edgeId).toBe(nestedEdgeId);
+
+    const escapedGraph = governedRunEvidencePayload();
+    const escapedGraphPath = '/root/subject/feature~1cancellation-dispute-context';
+    escapedGraph.dataLens.nodes.forEach((node) => {
+      node.graphPath = escapedGraphPath;
+      node.invocationSite = node.invocationSite.replace('/root/', `${escapedGraphPath}/`);
+    });
+    escapedGraph.dataLens.edges.forEach((edge) => {
+      edge.graphPath = escapedGraphPath;
+      edge.fromInvocationSite = edge.fromInvocationSite.replace('/root/', `${escapedGraphPath}/`);
+      edge.toInvocationSite = edge.toInvocationSite.replace('/root/', `${escapedGraphPath}/`);
+    });
+    expect(parseGovernedRunEvidenceProjection(escapedGraph).dataLens.nodes[0].graphPath).toBe(escapedGraphPath);
+  });
+
+  it('rejects empty, control-character, and oversized edge trace ids', () => {
+    ['', 'orderLookup\u0000->aggregateCancellationContext', 'e'.repeat(257)].forEach((edgeId) => {
+      const invalidTraceId = governedRunEvidencePayload();
+      invalidTraceId.dataLens.edges[0].edgeId = edgeId;
+      expect(() => parseGovernedRunEvidenceProjection(invalidTraceId)).toThrow('dataLens.edges[0].edgeId');
+    });
+  });
+
+  it('enforces governed baseline metadata, exact-ref revisions, enums, and schema ref kinds', () => {
+    const maximumRevision = governedRunEvidencePayload();
+    maximumRevision.graphRef.revision = 2_147_483_647;
+    expect(parseGovernedRunEvidenceProjection(maximumRevision).graphRef.revision).toBe(2_147_483_647);
+
+    const baselineDrift = governedRunEvidencePayload();
+    baselineDrift.baselineId = 'another-baseline';
+    expect(() => parseGovernedRunEvidenceProjection(baselineDrift)).toThrow('governedRunEvidence.baselineId');
+
+    const zeroRevision = governedRunEvidencePayload();
+    zeroRevision.graphRef.revision = 0;
+    expect(() => parseGovernedRunEvidenceProjection(zeroRevision)).toThrow('governedRunEvidence.graphRef.revision');
+
+    const overflowRevision = governedRunEvidencePayload();
+    overflowRevision.graphRef.revision = 2_147_483_648;
+    expect(() => parseGovernedRunEvidenceProjection(overflowRevision)).toThrow('governedRunEvidence.graphRef.revision');
+
+    const categoryDrift = governedRunEvidencePayload();
+    categoryDrift.scenario.category = 'CANARY';
+    expect(() => parseGovernedRunEvidenceProjection(categoryDrift)).toThrow('governedRunEvidence.scenario.category');
+
+    const lifecycleDrift = governedRunEvidencePayload();
+    lifecycleDrift.scenario.lifecycle = 'ARCHIVED';
+    expect(() => parseGovernedRunEvidenceProjection(lifecycleDrift)).toThrow('governedRunEvidence.scenario.lifecycle');
+
+    const qualityStateDrift = governedRunEvidencePayload();
+    qualityStateDrift.scenario.qualityState = 'VERIFIED';
+    expect(() => parseGovernedRunEvidenceProjection(qualityStateDrift)).toThrow('governedRunEvidence.scenario.qualityState');
+
+    const unsupportedRefKind = governedRunEvidencePayload();
+    unsupportedRefKind.bindingPlan.dependencyRefs[0].kind = 'EVIDENCE';
+    expect(() => parseGovernedRunEvidenceProjection(unsupportedRefKind)).toThrow('expected a governed reference kind');
+  });
+
+  it('enforces exact Data Lens cardinality and truncation closure', () => {
+    const tooManyNodes = governedRunEvidencePayload();
+    tooManyNodes.dataLens.nodes = Array.from(
+      { length: 257 },
+      () => structuredClone(tooManyNodes.dataLens.nodes[0]),
+    );
+    expect(() => parseGovernedRunEvidenceProjection(tooManyNodes)).toThrow('1..256 entries');
+
+    const tooManyEdges = governedRunEvidencePayload();
+    tooManyEdges.dataLens.edges = Array.from(
+      { length: 513 },
+      () => structuredClone(tooManyEdges.dataLens.edges[0]),
+    );
+    expect(() => parseGovernedRunEvidenceProjection(tooManyEdges)).toThrow('0..512 entries');
+
+    const tooManyAttempts = governedRunEvidencePayload();
+    (tooManyAttempts.dataLens.nodes[0] as unknown as { attempts: GovernedAttemptFixture[] }).attempts =
+      Array.from({ length: 17 }, (_, attempt) => governedAttemptFixture(attempt));
+    expect(() => parseGovernedRunEvidenceProjection(tooManyAttempts)).toThrow('too many attempts');
+
+    const omittedNodesOverflow = governedRunEvidencePayload();
+    omittedNodesOverflow.dataLens.truncation.omittedNodes = 257;
+    expect(() => parseGovernedRunEvidenceProjection(omittedNodesOverflow)).toThrow('truncation.omittedNodes');
+
+    const omittedEdgesOverflow = governedRunEvidencePayload();
+    omittedEdgesOverflow.dataLens.truncation.omittedEdges = 513;
+    expect(() => parseGovernedRunEvidenceProjection(omittedEdgesOverflow)).toThrow('truncation.omittedEdges');
+
+    const omittedAttemptsOverflow = governedRunEvidencePayload();
+    omittedAttemptsOverflow.dataLens.truncation.omittedAttempts = 4097;
+    expect(() => parseGovernedRunEvidenceProjection(omittedAttemptsOverflow)).toThrow('truncation.omittedAttempts');
+
+    const omittedWithoutFlag = governedRunEvidencePayload();
+    omittedWithoutFlag.dataLens.truncation.omittedNodes = 1;
+    expect(() => parseGovernedRunEvidenceProjection(omittedWithoutFlag)).toThrow('truncation flags do not match omitted counts');
+
+    const flagWithoutOmitted = governedRunEvidencePayload();
+    flagWithoutOmitted.dataLens.truncation.edgesTruncated = true;
+    expect(() => parseGovernedRunEvidenceProjection(flagWithoutOmitted)).toThrow('truncation flags do not match omitted counts');
+  });
+
+  it('rejects ambiguous exact invocation topology and duplicate attempt numbers', () => {
+    const duplicateInvocationSite = governedRunEvidencePayload();
+    duplicateInvocationSite.dataLens.nodes[1].invocationSite = duplicateInvocationSite.dataLens.nodes[0].invocationSite;
+    expect(() => parseGovernedRunEvidenceProjection(duplicateInvocationSite)).toThrow('Duplicate invocationSite');
+
+    const nodeOutsideGraph = governedRunEvidencePayload();
+    nodeOutsideGraph.dataLens.nodes[0].graphPath = '/nested';
+    expect(() => parseGovernedRunEvidenceProjection(nodeOutsideGraph)).toThrow('invocationSite is outside its graphPath');
+
+    const edgeOutsideGraph = governedRunEvidencePayload();
+    edgeOutsideGraph.dataLens.edges[0].graphPath = '/nested';
+    expect(() => parseGovernedRunEvidenceProjection(edgeOutsideGraph)).toThrow('crosses its graphPath boundary');
+
+    const duplicateAttempt = governedRunEvidencePayload();
+    (duplicateAttempt.dataLens.nodes[0] as unknown as { attempts: GovernedAttemptFixture[] }).attempts = [
+      governedAttemptFixture(1),
+      governedAttemptFixture(1),
+    ];
+    expect(() => parseGovernedRunEvidenceProjection(duplicateAttempt)).toThrow('duplicate attempt 1');
+  });
+
+  it('requires non-empty, fully satisfied assertion and fixture closure for PASSED exact runs', () => {
+    const passed = governedRunEvidencePayload();
+    passed.run.status = 'PASSED';
+    passed.dataLens.runStatus = 'PASSED';
+    expect(parseGovernedRunEvidenceProjection(passed).run.status).toBe('PASSED');
+
+    const noAssertions = structuredClone(passed);
+    noAssertions.run.assertionsEvaluated = 0;
+    noAssertions.run.assertionsPassed = 0;
+    expect(() => parseGovernedRunEvidenceProjection(noAssertions)).toThrow('PASSED run requires complete');
+
+    const failedAssertion = structuredClone(passed);
+    failedAssertion.run.assertionsPassed = 0;
+    expect(() => parseGovernedRunEvidenceProjection(failedAssertion)).toThrow('PASSED run requires complete');
+
+    const noFixtureControls = structuredClone(passed);
+    noFixtureControls.run.fixtureControlsEvaluated = 0;
+    noFixtureControls.run.fixtureControlsSatisfied = 0;
+    expect(() => parseGovernedRunEvidenceProjection(noFixtureControls)).toThrow('PASSED run requires complete');
+
+    const unsatisfiedFixtureControl = structuredClone(passed);
+    unsatisfiedFixtureControl.run.fixtureControlsSatisfied = 0;
+    expect(() => parseGovernedRunEvidenceProjection(unsatisfiedFixtureControl)).toThrow('PASSED run requires complete');
   });
 });
 
@@ -290,6 +476,94 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(() => parseGovernedBaselineProjection(timeoutProofMissing)).toThrow('business Oracle proofs');
   });
 });
+
+function governedRunEvidencePayload() {
+  const dataLens = structuredClone(featureRehearsalProjectionFixture().dataLens);
+  dataLens.runId = 'child-run-1-1';
+  const ref = (kind: string, id: string, seed: string) => ({
+    kind,
+    id,
+    revision: 1,
+    fingerprint: `sha256:${seed.repeat(64).slice(0, 64)}`,
+  });
+  const caseRef = ref('DATA_CASE', 'case-standard-cancellation-fee', '1');
+  const contractRef = ref('CONTRACT', 'contract-cancellation-fee', '2');
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.governed-run-evidence.v1',
+    verificationStatus: 'EXACT_VERIFIED',
+    baselineId: 'capability-studio-governed-9x3-v1',
+    projectionFingerprint: `sha256:${'3'.repeat(64)}`,
+    scenario: {
+      caseId: 'case-standard-cancellation-fee',
+      name: 'Standard cancellation fee',
+      businessIntent: 'Return an explainable fee decision.',
+      category: 'GOLDEN',
+      lifecycle: 'ACTIVE',
+      qualityState: 'READY',
+      owner: { id: 'customer-service-platform', name: 'Customer Service Platform' },
+      scenarioRef: ref('SCENARIO', 'case-standard-cancellation-fee', '4'),
+      caseRef,
+      sourceRef: ref('SOURCE', 'source-cancellation-fee', '5'),
+      oracleRef: ref('ORACLE', 'oracle-cancellation-fee', '6'),
+      applicableContractRefs: [contractRef],
+    },
+    graphRef: ref('FEATURE', 'feature-cancellation-dispute-context', '7'),
+    capabilityRef: ref('TOOL', 'tool-cancellation-resolution', '8'),
+    contractRef,
+    datasetRef: ref('DATASET', 'cancellation-fee-scenarios', '9'),
+    caseRef,
+    runtimeTarget: { kind: 'OPERATOR', id: 'tool-cancellation-resolution', fingerprint: `sha256:${'a'.repeat(64)}` },
+    bindingPlan: {
+      ref: ref('BINDING_PLAN', 'binding-cancellation-fee', 'b'),
+      fixtureBundleRef: ref('FIXTURE_BUNDLE', 'fixture-cancellation-fee', 'c'),
+      effectiveExecutionPlanFingerprint: `sha256:${'d'.repeat(64)}`,
+      behaviorRefs: [ref('BEHAVIOR_PROFILE', 'behavior-cancellation-fee', 'e')],
+      dependencyRefs: [ref('API', 'api-order-lookup', 'f')],
+      fallbackToReal: false,
+      sourceMapFingerprint: `sha256:${'1'.repeat(64)}`,
+      provenanceFingerprint: `sha256:${'2'.repeat(64)}`,
+    },
+    run: {
+      runId: 'child-run-1-1',
+      status: 'TIMED_OUT',
+      evidenceClass: 'CERTIFIABLE',
+      evidenceFingerprint: `sha256:${'4'.repeat(64)}`,
+      semanticResultFingerprint: `sha256:${'5'.repeat(64)}`,
+      assertionsEvaluated: 1,
+      assertionsPassed: 1,
+      fixtureControlsEvaluated: 1,
+      fixtureControlsSatisfied: 1,
+    },
+    focusNodeId: 'compensationHistoryLookup',
+    dataLens,
+  };
+}
+
+interface GovernedAttemptFixture {
+  attempt: number;
+  status: string;
+  fidelity: string;
+  input: null;
+  inputFingerprint: string;
+  output: null;
+  outputFingerprint: string;
+  errorCode: string;
+  durationMs: number;
+}
+
+function governedAttemptFixture(attempt: number): GovernedAttemptFixture {
+  return {
+    attempt,
+    status: 'TIMEOUT',
+    fidelity: 'OUTPUT_LEVEL',
+    input: null,
+    inputFingerprint: '',
+    output: null,
+    outputFingerprint: '',
+    errorCode: 'UPSTREAM_TIMEOUT',
+    durationMs: 10,
+  };
+}
 
 function backendProjection() {
   const owner = { id: 'customer-service-platform', name: '客服技术平台' };

@@ -135,6 +135,20 @@ transport-level responses through the real `HttpResourceOperator` mapping path. 
 `EXPLORATORY`. Demo descriptor registration is idempotent and fails startup on a same-ID content conflict
 instead of overwriting an existing enterprise descriptor. Target-environment attestation, deployment-level egress observation, field-level source maps,
 and release Owner sign-off remain incomplete, so the release gate stays `NO_GO`.
+
+To inspect one exact Tool result without rerunning it:
+
+1. Open `/capabilities/` and select **Tool**.
+2. Run the governed `9 × 3` verification.
+3. Select one round cell in the Case matrix. The exact-evidence panel reads that persisted child `runId`,
+   shows the complete Tool/Contract/Dataset/Case/Binding/Fixture closure, and states that no rerun occurred.
+4. Open the Feature graph from the evidence panel. The URL retains `runId`, `scenarioId`, and `nodeId`;
+   refresh the page or return to Tool to confirm that the same run and focused node are preserved.
+
+The Feature canvas intentionally shows only the focused graph path's six business nodes. The structure-only
+Data Lens remains the full seven-node runtime trace, including the outer Tool `subject`. This keeps the diagram
+readable without weakening the audit record. The exact-read API is test/staging-only, requires the demo Bearer
+credential and `X-Purpose: CAPABILITY_STUDIO_REHEARSAL`, and never accepts payload or rerun controls.
 To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
@@ -216,6 +230,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY` | Run the non-production cancellation Feature through BLOGE and read the payload-free 6-node/5-edge Trace; use `PAYLOAD_VISIBLE` only for controlled demo values |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal-baseline` | Run the fixed 9 Case × 3 round development baseline and read payload-free Oracle, semantic/business fingerprint, operator side-effect, unique Run ID, and zero in-process real-call evidence; strict v1 Schema and independent Test Kit verification; `DEVELOPMENT_TEST_OWNED`, not release acceptance |
 | `POST http://localhost:8080/api/capability-studio/governed-baseline` | Run the Tool page's governed 9 × 3 development verification through the existing compiler, application Resource Registry, real Resource Operator mapping, exact-suite runtime, signed child-evidence readback, and independent v3 verifier; returns 3 suite/27 child runs, 9/9 business Oracles, 27/27 assertions, stable semantic results, three high-risk proofs, and `CERTIFIABLE` child evidence; a clean script-launched artifact also exposes its candidate build and execution-intent fingerprint, while `NO_GO` remains until target-environment attestation, deployment egress, and Owner sign-off exist |
+| `GET http://localhost:8080/api/capability-studio/governed-runs/{runId}/evidence?expectedCaseId={caseId}` | Read one persisted child run without rerunning it; returns the strict v1 structure-only exact Tool/Contract/Dataset/Case/runtime/Binding/Fixture/Behavior/source-map/provenance closure, focus node, full Data Lens, and deterministic fingerprints; requires Bearer authentication plus `X-Purpose: CAPABILITY_STUDIO_REHEARSAL` and is independently verifiable with `CapabilityStudioGovernedRunEvidenceVerifier` |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |
