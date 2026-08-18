@@ -862,6 +862,21 @@ DAG 同时调用订单、责任、规则和补偿接口，进行字段标准化�
 | 批量运行 | 9 Case × 3 轮 | 3 个 suite Run、27 个 child Run 唯一；无跳过；业务 Oracle 和隔离不变量全部成立 |
 | 可访问性 | 自动 axe + 人工读屏 | serious/critical 为 0；主路径语义、错误和双结论可被正确读出 |
 
+#### 9.6.2 Data Lens 身份与 Payload 授权验收合同
+
+「结构」与「受控数据」是用户申请的视图，不是用户可以自我授予的权限。服务端必须先用可验证的 workload credential 解析出 Scope、purpose 和 clearance，再决定是否执行演练以及返回哪种投影。`permission`、`X-Clearance` 或其他客户端字段只能表达请求，不得成为授权事实。
+
+| 场景 | 请求条件 | 必须结果 | 直接失败条件 | 必须证据 |
+|---|---|---|---|---|
+| 结构查看 | 有效 Bearer、`X-Purpose=CAPABILITY_STUDIO_REHEARSAL`、受信身份 clearance 至少为 `PUBLIC`、请求 `STRUCTURE_ONLY` | HTTP 200；保留 topology、状态和 fingerprint；节点输入输出、边值和差异明文为 `null`；响应回显 `STRUCTURE_ONLY` | 明文进入响应、DOM、URL、错误、日志或 Evidence | Controller 正向测试、严格 Schema/Test Kit、真实浏览器 DOM 与泄漏扫描、允许审计记录 |
+| 受控数据查看 | 有效 Bearer、专用 purpose、受信 clearance 至少为 `CONFIDENTIAL`、请求 `PAYLOAD_VISIBLE` | HTTP 200；只返回当次隔离演练允许的受控值；响应中的值与 fingerprint 可独立互验 | 低于阈值的身份获得任何 Payload；返回超出当次 Run 和 Scope 的数据 | clearance 边界测试、响应/fingerprint 互验、数据分类与 Scope 断言、允许审计记录 |
+| 未认证 | 无 Bearer、格式错误、token 无效/过期 | HTTP 401 与稳定问题码；提供可操作恢复说明；不执行 Feature DAG | 先执行再拒绝、返回部分 Trace/Payload、静默降级为有权视图 | 未认证 Controller 测试、Run/connector counter 不增长、拒绝审计、UI 恢复态 |
+| purpose 或 clearance 不足 | 身份有效，但 purpose 不允许；或请求 Payload 时 clearance 低于 `CONFIDENTIAL` | HTTP 403 与稳定问题码；明确说明本次数据未展示及如何申请授权；不执行 Feature DAG | 用查询参数提权、默认回退为 Payload、错误体泄露值或敏感身份声明 | 低权限/purpose 负向测试、零运行副作用断言、拒绝审计、中英文 UI 恢复态 |
+| 伪造身份声明 | 有效 token，但 `X-Clearance`、Tenant、Project 或 Environment 等客户端提示与受信身份不一致 | HTTP 403，稳定问题码指向 identity claim mismatch；不执行 Feature DAG | 客户端提示覆盖受信身份；通过伪造 `X-Clearance=CONFIDENTIAL` 获得 Payload | 全部声明篡改测试、拒绝审计、Payload/Trace 泄漏扫描 |
+| 非演示环境 | production profile 或 demo 开关关闭 | 端点不装配，不存在「仅靠权限即可激活」的隐藏路径 | production 中返回任何演示 Trace 或 Payload | production 装配否定测试、路由扫描、部署配置快照 |
+
+上表的 401/403 不能只验证 HTTP 状态。还必须证明认证/授权发生在 Graph 执行之前，拒绝记录写入失败时整个请求失败关闭，且错误投影、前端恢复态和服务日志都不携带 Payload。
+
 ## 10. 技术架构
 
 ![能力设计工作台技术架构](assets/resource-gateway-capability-studio-technical-architecture.svg)
@@ -1419,7 +1434,7 @@ npm run build
 | ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
 |---|---|---|---|
 | `S2-AC-01` | 用户通过 Picker 和字段映射组装取消费争议 Feature，不手填引用；Graph Contract、节点端口和边映射闭合 | Graph/Contract/Binding 编译测试、引用闭包和 Schema 传播证据 | Feature Owner、画布、架构 `PASS` |
-| `S2-AC-02` | 选择超时场景后，画布可解释每个字段的来源、节点输入输出、边值、状态和首个差异；无 Payload 权限时只显示结构与 fingerprint | BLOGE RunTrace 投影、权限双态、lineage 与首差异断言 | 画布、Runtime、数据安全 `PASS` |
+| `S2-AC-02` | 选择超时场景后，画布可解释每个字段的来源、节点输入输出、边值、状态和首个差异；无 Payload 权限时只显示结构与 fingerprint；视图参数与伪造身份头无法提权，认证/授权在 Graph 执行前完成 | BLOGE RunTrace 投影、权限双态、lineage 与首差异断言；Data Lens 身份权限矩阵、声明篡改、零运行副作用、审计失败关闭与泄漏扫描 | 画布、Runtime、数据安全 `PASS` |
 | `S2-AC-03` | 1440 和 1024 视口 Auto Layout 后节点、端口、边标签和数据摘要均无遮挡；缩略图可判断整体拓扑 | DOM 几何断言、canvas pixel 检查、真实浏览器截图和人工视觉签署 | UX、画布、QA `PASS` |
 | `S2-AC-04` | timeout、retry、skip、fallback、partial 的 UI、Trace 和 Oracle 语义一致；证据绑定 exact Graph/Contract/Dataset/Binding | 五类运行证据、漂移失效和 Deep Link 回图测试 | Feature Owner、正确性 Owner `PASS` |
 
