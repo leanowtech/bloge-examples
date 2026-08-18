@@ -103,6 +103,113 @@ export interface FeatureRehearsalProjection {
   };
 }
 
+export type GovernedBaselineStatus = 'PASSED' | 'FAILED_CLOSED';
+export type GovernedBaselineRoundStatus =
+  | 'PASSED'
+  | 'FAILED_CLOSED'
+  | 'COMPLETED_WITH_FAILURES'
+  | 'PARTIAL'
+  | 'EVIDENCE_INCOMPLETE';
+export type GovernedBaselineCaseStatus =
+  | 'PASSED'
+  | 'FAILED'
+  | 'FAILED_CLOSED'
+  | 'ASSERTION_FAILED'
+  | 'EXECUTION_FAILED'
+  | 'CONTROL_PLAN_REJECTED'
+  | 'FIXTURE_UNMATCHED'
+  | 'FIXTURE_UNUSED'
+  | 'CONTROL_PLAN_UNAVAILABLE'
+  | 'EVIDENCE_INCOMPLETE'
+  | 'CANCELLED'
+  | 'TIMED_OUT'
+  | 'NOT_SCHEDULED';
+
+export interface GovernedBaselineSuiteRef {
+  kind: 'TEST_SUITE';
+  id: string;
+  revision: number;
+  fingerprint: string;
+}
+
+export interface GovernedBaselineRound {
+  round: number;
+  suiteRunId: string;
+  evidenceFingerprint: string;
+  status: GovernedBaselineRoundStatus;
+  childRunCount: number;
+}
+
+export interface GovernedBaselineCaseRound {
+  round: number;
+  runId: string;
+  status: GovernedBaselineCaseStatus;
+  fixtureBundleId: string;
+  fixtureRevision: number;
+  fixtureFingerprint: string;
+}
+
+export interface GovernedBaselineCase {
+  caseId: string;
+  rounds: GovernedBaselineCaseRound[];
+}
+
+interface GovernedBaselineProjectionBase {
+  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v1';
+  evidenceKind: 'DEVELOPMENT_TEST_OWNED';
+  baselineId: string;
+  verificationScope: 'GOVERNED_SUITE_ASSERTIONS';
+  releaseGateStatus: 'NO_GO';
+  caseCount: 9;
+  roundCount: 3;
+  limitations: string[];
+  diagnostics: string[];
+}
+
+export interface GovernedBaselineSuccessProjection extends GovernedBaselineProjectionBase {
+  status: 'PASSED';
+  suiteRunCount: 3;
+  childRunCount: 27;
+  realExternalCallCount: number;
+  compilationFingerprint: string;
+  sourceMapFingerprint: string;
+  provenanceFingerprint: string;
+  publication: {
+    receiptFingerprint: string;
+    suiteRef: GovernedBaselineSuiteRef;
+    fixtureCount: 9;
+  };
+  rounds: [GovernedBaselineRound, GovernedBaselineRound, GovernedBaselineRound];
+  cases: [
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase,
+    GovernedBaselineCase
+  ];
+}
+
+export interface GovernedBaselineFailureProjection extends GovernedBaselineProjectionBase {
+  status: 'FAILED_CLOSED';
+  suiteRunCount: 0;
+  childRunCount: 0;
+  realExternalCallCount: null;
+  compilationFingerprint: null;
+  sourceMapFingerprint: null;
+  provenanceFingerprint: null;
+  publication: null;
+  rounds: [];
+  cases: [];
+}
+
+export type GovernedBaselineProjection =
+  | GovernedBaselineSuccessProjection
+  | GovernedBaselineFailureProjection;
+
 export interface CapabilityAssetSummary {
   kind: CapabilityAssetKind;
   name: LocalizedValue;
@@ -376,6 +483,14 @@ function invalidFeatureRehearsal(message: string): CapabilityStudioProtocolError
     'RG.CAPABILITY_STUDIO.INVALID_FEATURE_REHEARSAL',
     `[RG.CAPABILITY_STUDIO.INVALID_FEATURE_REHEARSAL] ${message}`,
     'The Feature rehearsal response cannot be trusted or displayed.',
+  );
+}
+
+function invalidGovernedBaseline(message: string): CapabilityStudioProtocolError {
+  return new CapabilityStudioProtocolError(
+    'RG.CAPABILITY_STUDIO.INVALID_GOVERNED_BASELINE',
+    `[RG.CAPABILITY_STUDIO.INVALID_GOVERNED_BASELINE] ${message}`,
+    'The governed baseline cannot be trusted, development validation was not established, and existing assets remain unchanged.',
   );
 }
 
@@ -1045,4 +1160,269 @@ export function parseFeatureRehearsalProjection(payload: unknown): FeatureRehear
     if (nodePayloadVisible || edgePayloadVisible || differencePayloadVisible) throw invalidFeatureRehearsal('STRUCTURE_ONLY cannot contain payload values.');
   }
   return parsed;
+}
+
+const governedBaselineRoundStatuses: GovernedBaselineRoundStatus[] = [
+  'PASSED', 'FAILED_CLOSED', 'COMPLETED_WITH_FAILURES', 'PARTIAL', 'EVIDENCE_INCOMPLETE',
+];
+const governedBaselineCaseStatuses: GovernedBaselineCaseStatus[] = [
+  'PASSED', 'FAILED', 'FAILED_CLOSED', 'ASSERTION_FAILED', 'EXECUTION_FAILED',
+  'CONTROL_PLAN_REJECTED', 'FIXTURE_UNMATCHED', 'FIXTURE_UNUSED',
+  'CONTROL_PLAN_UNAVAILABLE', 'EVIDENCE_INCOMPLETE', 'CANCELLED', 'TIMED_OUT',
+  'NOT_SCHEDULED',
+];
+const governedBaselineRequiredLimitations = [
+  'BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED',
+  'DEPLOYMENT_EGRESS_NOT_OBSERVED',
+  'OWNER_SIGNOFF_NOT_PRESENT',
+] as const;
+const governedBaselineCanonicalCaseIds = [
+  'case-city-policy-missing',
+  'case-compensation-history-empty',
+  'case-compensation-history-timeout',
+  'case-driver-responsible',
+  'case-duplicate-cancellation',
+  'case-forbidden-write-effect',
+  'case-policy-revision-regression',
+  'case-rider-not-responsible',
+  'case-standard-cancellation-fee',
+] as const;
+
+function governedObject(value: unknown, path: string, fields: string[]): JsonObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw invalidGovernedBaseline(`Expected an object at ${path}.`);
+  }
+  const source = value as JsonObject;
+  const allowed = new Set(fields);
+  const unknown = Object.keys(source).find((key) => !allowed.has(key));
+  if (unknown) throw invalidGovernedBaseline(`Unknown field ${path}.${unknown}.`);
+  return source;
+}
+
+function governedArray(value: unknown, path: string, expectedLength?: number): unknown[] {
+  if (!Array.isArray(value) || (expectedLength !== undefined && value.length !== expectedLength)) {
+    throw invalidGovernedBaseline(`Invalid ${path}.`);
+  }
+  return value;
+}
+
+function governedString(value: unknown, path: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    throw invalidGovernedBaseline(`Invalid ${path}.`);
+  }
+  return value;
+}
+
+function governedFingerprint(value: unknown, path: string): string {
+  const parsed = governedString(value, path);
+  if (!/^sha256:[0-9a-f]{64}$/.test(parsed)) throw invalidGovernedBaseline(`Invalid ${path}.`);
+  return parsed;
+}
+
+function governedInteger(value: unknown, path: string, minimum = 0): number {
+  if (!Number.isInteger(value) || (value as number) < minimum) {
+    throw invalidGovernedBaseline(`Invalid ${path}.`);
+  }
+  return value as number;
+}
+
+function governedEnum<T extends string>(value: unknown, values: readonly T[], path: string): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) {
+    throw invalidGovernedBaseline(`Invalid ${path}.`);
+  }
+  return value as T;
+}
+
+function governedStringArray(value: unknown, path: string): string[] {
+  return governedArray(value, path).map((entry, index) => governedString(entry, `${path}[${index}]`));
+}
+
+function parseGovernedBaselineSuiteRef(value: unknown, path: string): GovernedBaselineSuiteRef {
+  const source = governedObject(value, path, ['kind', 'id', 'revision', 'fingerprint']);
+  return {
+    kind: governedEnum(source.kind, ['TEST_SUITE'], `${path}.kind`),
+    id: governedString(source.id, `${path}.id`),
+    revision: governedInteger(source.revision, `${path}.revision`, 1),
+    fingerprint: governedFingerprint(source.fingerprint, `${path}.fingerprint`),
+  };
+}
+
+function parseGovernedBaselineRound(value: unknown, path: string): GovernedBaselineRound {
+  const source = governedObject(value, path, [
+    'round', 'suiteRunId', 'evidenceFingerprint', 'status', 'childRunCount',
+  ]);
+  return {
+    round: governedInteger(source.round, `${path}.round`, 1),
+    suiteRunId: governedString(source.suiteRunId, `${path}.suiteRunId`),
+    evidenceFingerprint: governedFingerprint(source.evidenceFingerprint, `${path}.evidenceFingerprint`),
+    status: governedEnum(source.status, governedBaselineRoundStatuses, `${path}.status`),
+    childRunCount: governedInteger(source.childRunCount, `${path}.childRunCount`),
+  };
+}
+
+function parseGovernedBaselineCaseRound(value: unknown, path: string): GovernedBaselineCaseRound {
+  const source = governedObject(value, path, [
+    'round', 'runId', 'status', 'fixtureBundleId', 'fixtureRevision', 'fixtureFingerprint',
+  ]);
+  return {
+    round: governedInteger(source.round, `${path}.round`, 1),
+    runId: governedString(source.runId, `${path}.runId`),
+    status: governedEnum(source.status, governedBaselineCaseStatuses, `${path}.status`),
+    fixtureBundleId: governedString(source.fixtureBundleId, `${path}.fixtureBundleId`),
+    fixtureRevision: governedInteger(source.fixtureRevision, `${path}.fixtureRevision`, 1),
+    fixtureFingerprint: governedFingerprint(source.fixtureFingerprint, `${path}.fixtureFingerprint`),
+  };
+}
+
+function parseGovernedBaselineCase(value: unknown, path: string): GovernedBaselineCase {
+  const source = governedObject(value, path, ['caseId', 'rounds']);
+  return {
+    caseId: governedString(source.caseId, `${path}.caseId`),
+    rounds: governedArray(source.rounds, `${path}.rounds`, 3)
+      .map((entry, index) => parseGovernedBaselineCaseRound(entry, `${path}.rounds[${index}]`)),
+  };
+}
+
+function requireGovernedRoundSequence(rounds: GovernedBaselineRound[], path: string): void {
+  const numbers = rounds.map((round) => round.round);
+  if (numbers.join(',') !== '1,2,3') throw invalidGovernedBaseline(`Invalid ${path} round sequence.`);
+  if (new Set(rounds.map((round) => round.suiteRunId)).size !== 3) {
+    throw invalidGovernedBaseline(`Duplicate ${path} suiteRunId.`);
+  }
+}
+
+function requireGovernedCaseRoundSequence(rounds: GovernedBaselineCaseRound[], path: string): void {
+  const numbers = rounds.map((round) => round.round);
+  if (numbers.join(',') !== '1,2,3') throw invalidGovernedBaseline(`Invalid ${path} round sequence.`);
+}
+
+export function parseGovernedBaselineProjection(payload: unknown): GovernedBaselineProjection {
+  const root = governedObject(payload, 'governedBaseline', [
+    'schemaVersion', 'evidenceKind', 'baselineId', 'status', 'verificationScope',
+    'releaseGateStatus', 'caseCount', 'roundCount', 'suiteRunCount', 'childRunCount',
+    'realExternalCallCount', 'compilationFingerprint', 'sourceMapFingerprint',
+    'provenanceFingerprint', 'publication', 'rounds', 'cases', 'limitations', 'diagnostics',
+  ]);
+  const schemaVersion = governedEnum(
+    root.schemaVersion,
+    ['resource-gateway.capability-studio.governed-baseline.v1'],
+    'governedBaseline.schemaVersion',
+  );
+  const evidenceKind = governedEnum(root.evidenceKind, ['DEVELOPMENT_TEST_OWNED'], 'governedBaseline.evidenceKind');
+  const status = governedEnum(root.status, ['PASSED', 'FAILED_CLOSED'], 'governedBaseline.status');
+  const verificationScope = governedEnum(root.verificationScope, ['GOVERNED_SUITE_ASSERTIONS'], 'governedBaseline.verificationScope');
+  const releaseGateStatus = governedEnum(root.releaseGateStatus, ['NO_GO'], 'governedBaseline.releaseGateStatus');
+  const baselineId = governedString(root.baselineId, 'governedBaseline.baselineId');
+  const caseCount = governedInteger(root.caseCount, 'governedBaseline.caseCount');
+  const roundCount = governedInteger(root.roundCount, 'governedBaseline.roundCount');
+  const suiteRunCount = governedInteger(root.suiteRunCount, 'governedBaseline.suiteRunCount');
+  const childRunCount = governedInteger(root.childRunCount, 'governedBaseline.childRunCount');
+  const limitations = governedStringArray(root.limitations, 'governedBaseline.limitations');
+  const diagnostics = governedStringArray(root.diagnostics, 'governedBaseline.diagnostics');
+
+  if (caseCount !== 9) throw invalidGovernedBaseline('Case count is not nine.');
+  if (roundCount !== 3) throw invalidGovernedBaseline('Round count is not three.');
+  if (limitations.length !== governedBaselineRequiredLimitations.length
+    || governedBaselineRequiredLimitations.some((limitation, index) => limitations[index] !== limitation)) {
+    throw invalidGovernedBaseline('Required governed baseline limitation is missing.');
+  }
+  if (status === 'FAILED_CLOSED') {
+    const rounds = governedArray(root.rounds, 'governedBaseline.rounds', 0);
+    const cases = governedArray(root.cases, 'governedBaseline.cases', 0);
+    if (suiteRunCount !== 0 || childRunCount !== 0
+      || root.realExternalCallCount !== null
+      || root.compilationFingerprint !== null
+      || root.sourceMapFingerprint !== null
+      || root.provenanceFingerprint !== null
+      || root.publication !== null
+      || diagnostics.length === 0) {
+      throw invalidGovernedBaseline('A failed-closed baseline contains fabricated or incomplete failure evidence.');
+    }
+    return {
+      schemaVersion,
+      evidenceKind,
+      baselineId,
+      status,
+      verificationScope,
+      releaseGateStatus,
+      caseCount: 9,
+      roundCount: 3,
+      suiteRunCount: 0,
+      childRunCount: 0,
+      realExternalCallCount: null,
+      compilationFingerprint: null,
+      sourceMapFingerprint: null,
+      provenanceFingerprint: null,
+      publication: null,
+      rounds: rounds as [],
+      cases: cases as [],
+      limitations,
+      diagnostics,
+    };
+  }
+
+  const realExternalCallCount = governedInteger(root.realExternalCallCount, 'governedBaseline.realExternalCallCount');
+  const compilationFingerprint = governedFingerprint(root.compilationFingerprint, 'governedBaseline.compilationFingerprint');
+  const sourceMapFingerprint = governedFingerprint(root.sourceMapFingerprint, 'governedBaseline.sourceMapFingerprint');
+  const provenanceFingerprint = governedFingerprint(root.provenanceFingerprint, 'governedBaseline.provenanceFingerprint');
+  const publication = governedObject(root.publication, 'governedBaseline.publication', [
+    'receiptFingerprint', 'suiteRef', 'fixtureCount',
+  ]);
+  const receiptFingerprint = governedFingerprint(publication.receiptFingerprint, 'governedBaseline.publication.receiptFingerprint');
+  const suiteRef = parseGovernedBaselineSuiteRef(publication.suiteRef, 'governedBaseline.publication.suiteRef');
+  const fixtureCount = governedInteger(publication.fixtureCount, 'governedBaseline.publication.fixtureCount');
+  const rounds = governedArray(root.rounds, 'governedBaseline.rounds', 3)
+    .map((entry, index) => parseGovernedBaselineRound(entry, `governedBaseline.rounds[${index}]`));
+  const cases = governedArray(root.cases, 'governedBaseline.cases', 9)
+    .map((entry, index) => parseGovernedBaselineCase(entry, `governedBaseline.cases[${index}]`));
+
+  if (cases.length !== caseCount) throw invalidGovernedBaseline('Case count is not nine.');
+  if (rounds.length !== roundCount) throw invalidGovernedBaseline('Round count is not three.');
+  if (suiteRunCount !== rounds.length) throw invalidGovernedBaseline('Suite run count does not match rounds.');
+  if (childRunCount !== 27 || rounds.reduce((total, round) => total + round.childRunCount, 0) !== childRunCount) {
+    throw invalidGovernedBaseline('Child run count does not close over rounds.');
+  }
+  if (fixtureCount !== 9) throw invalidGovernedBaseline('Fixture count is not nine.');
+  requireGovernedRoundSequence(rounds, 'governedBaseline.rounds');
+  const caseIds = new Set(cases.map((entry) => entry.caseId));
+  if (caseIds.size !== cases.length) throw invalidGovernedBaseline('Duplicate governed baseline caseId.');
+  if (cases.some((entry, index) => entry.caseId !== governedBaselineCanonicalCaseIds[index])) {
+    throw invalidGovernedBaseline('Governed baseline canonical case order does not match.');
+  }
+  const runIds = new Set<string>();
+  cases.forEach((entry, caseIndex) => {
+    requireGovernedCaseRoundSequence(entry.rounds, `governedBaseline.cases[${caseIndex}].rounds`);
+    entry.rounds.forEach((round) => {
+      if (runIds.has(round.runId)) throw invalidGovernedBaseline(`Duplicate governed baseline runId ${round.runId}.`);
+      runIds.add(round.runId);
+    });
+  });
+  if (runIds.size !== childRunCount) throw invalidGovernedBaseline('Child run identity count does not close.');
+  if (diagnostics.length !== 0 || realExternalCallCount !== 0
+    || rounds.some((round) => round.status !== 'PASSED')
+    || cases.some((entry) => entry.rounds.some((round) => round.status !== 'PASSED'))) {
+    throw invalidGovernedBaseline('A passed governed baseline has incomplete or failed evidence.');
+  }
+
+  return {
+    schemaVersion,
+    evidenceKind,
+    baselineId,
+    status: 'PASSED',
+    verificationScope,
+    releaseGateStatus,
+    caseCount: 9,
+    roundCount: 3,
+    suiteRunCount: 3,
+    childRunCount: 27,
+    realExternalCallCount,
+    compilationFingerprint,
+    sourceMapFingerprint,
+    provenanceFingerprint,
+    publication: { receiptFingerprint, suiteRef, fixtureCount: 9 },
+    rounds: rounds as GovernedBaselineSuccessProjection['rounds'],
+    cases: cases as GovernedBaselineSuccessProjection['cases'],
+    limitations,
+    diagnostics,
+  };
 }

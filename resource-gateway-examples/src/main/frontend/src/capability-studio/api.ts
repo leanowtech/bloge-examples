@@ -6,6 +6,8 @@ import {
   parseFeatureRehearsalProjection,
   type FeatureRehearsalPermission,
   type FeatureRehearsalProjection,
+  parseGovernedBaselineProjection,
+  type GovernedBaselineSuccessProjection,
   type ScenarioDataset,
 } from './domain';
 
@@ -45,6 +47,41 @@ export async function fetchFeatureRehearsal(
   } catch (error) {
     if (isCapabilityStudioProtocolError(error)) {
       throw new CapabilityStudioRequestError(error.code, error.message, error.impact, 'Choose the scenario again and retry the rehearsal.', 200);
+    }
+    throw error;
+  }
+}
+
+export async function runGovernedBaseline(
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<GovernedBaselineSuccessProjection> {
+  const payload = await requestJson<unknown>(
+    fetcher,
+    '/api/capability-studio/governed-baseline',
+    { method: 'POST' },
+    governedBaselineRequestContext,
+  );
+  try {
+    const projection = parseGovernedBaselineProjection(payload);
+    if (projection.status === 'FAILED_CLOSED') {
+      throw new CapabilityStudioRequestError(
+        'RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_FAILED_CLOSED',
+        `The governed baseline failed closed (${projection.diagnostics.join(', ')}).`,
+        governedBaselineRequestContext.invalidImpact,
+        governedBaselineRequestContext.invalidRecovery,
+        200,
+      );
+    }
+    return projection;
+  } catch (error) {
+    if (isCapabilityStudioProtocolError(error)) {
+      throw new CapabilityStudioRequestError(
+        error.code,
+        error.message,
+        governedBaselineRequestContext.invalidImpact,
+        governedBaselineRequestContext.invalidRecovery,
+        200,
+      );
     }
     throw error;
   }
@@ -204,7 +241,7 @@ async function requestJson<T>(
       stringField(error.code) ?? `RG.CAPABILITY_STUDIO.HTTP_${response.status}`,
       stringField(error.whatHappened) ?? `Capability Studio rejected the request with HTTP ${response.status}.`,
       stringField(error.impact) ?? context.unchangedImpact,
-      stringField(error.recoveryAction) ?? 'Review the highlighted value and retry.',
+      stringField(error.recoveryAction) ?? context.invalidRecovery,
       response.status,
       stringField(error.field),
     );
@@ -231,6 +268,12 @@ const tutorialBranchRequestContext: RequestErrorContext = {
   unchangedImpact: 'The tutorial branch was not changed.',
   invalidImpact: 'The result cannot be trusted or displayed.',
   invalidRecovery: 'Reload the tutorial branch before continuing.',
+};
+
+const governedBaselineRequestContext: RequestErrorContext = {
+  unchangedImpact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+  invalidImpact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+  invalidRecovery: 'Retry the governed baseline request.',
 };
 
 async function parseResponseBody(response: Response): Promise<unknown> {

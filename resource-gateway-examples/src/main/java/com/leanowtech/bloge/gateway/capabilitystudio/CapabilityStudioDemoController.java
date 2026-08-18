@@ -29,6 +29,7 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
     private final CapabilityStudioFeatureRehearsalService featureRehearsal;
     private final CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline;
+    private CapabilityStudioGovernedBaselineService governedBaseline;
 
     /** Creates the projection controller from injected validated authorities and projector. */
     @Autowired
@@ -37,12 +38,14 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioTutorialBranchAuthority tutorialBranch,
             CapabilityStudioScenarioDatasetProjector scenarioDataset,
             CapabilityStudioFeatureRehearsalService featureRehearsal,
-            CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline) {
+            CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
+            CapabilityStudioGovernedBaselineService governedBaseline) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = scenarioDataset;
         this.featureRehearsal = featureRehearsal;
         this.featureRehearsalBaseline = featureRehearsalBaseline;
+        this.governedBaseline = governedBaseline;
     }
 
     /**
@@ -61,6 +64,16 @@ public final class CapabilityStudioDemoController {
                 pack, mapper, new com.leanowtech.bloge.core.spi.DefaultOperatorRegistry());
         this.featureRehearsalBaseline = new CapabilityStudioFeatureRehearsalBaselineService(
                 pack, this.featureRehearsal, new CapabilityStudioFeatureRehearsalOracle(mapper));
+        this.governedBaseline = null;
+    }
+
+    /** Standalone test composition that exposes the governed baseline without Spring assembly. */
+    CapabilityStudioDemoController(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            CapabilityStudioGovernedBaselineService governedBaseline) {
+        this(pack, tutorialBranch);
+        this.governedBaseline = governedBaseline;
     }
 
     /** Returns a real BLOGE test-run evidence rehearsal for one canonical feature scenario. */
@@ -81,6 +94,15 @@ public final class CapabilityStudioDemoController {
     @GetMapping("/feature-rehearsal-baseline")
     public CapabilityStudioFeatureRehearsalBaselineProjection featureRehearsalBaseline() {
         return featureRehearsalBaseline.run();
+    }
+
+    /** Runs the server-owned governed 9-case x 3-round baseline without accepting caller data. */
+    @PostMapping("/governed-baseline")
+    public CapabilityStudioGovernedBaselineProjection governedBaseline() {
+        if (governedBaseline == null) {
+            throw new IllegalStateException("Governed baseline service is unavailable in standalone mode");
+        }
+        return governedBaseline.run();
     }
 
     /** Returns names, references, behavior summaries, and counts without fixture material. */

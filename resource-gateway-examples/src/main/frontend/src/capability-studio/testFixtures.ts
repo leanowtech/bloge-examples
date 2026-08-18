@@ -219,3 +219,68 @@ function featureRehearsalCasesFixtureName(caseId: string): string {
   };
   return names[caseId] ?? names['case-compensation-history-timeout'];
 }
+
+const governedBaselineFingerprint = (seed: string) => `sha256:${seed.repeat(64).slice(0, 64)}`;
+
+export const governedBaselineProjectionFixture = {
+  schemaVersion: 'resource-gateway.capability-studio.governed-baseline.v1',
+  evidenceKind: 'DEVELOPMENT_TEST_OWNED',
+  baselineId: 'capability-studio-governed-baseline-cancellation-fee-v1',
+  status: 'PASSED',
+  verificationScope: 'GOVERNED_SUITE_ASSERTIONS',
+  releaseGateStatus: 'NO_GO',
+  caseCount: 9,
+  roundCount: 3,
+  suiteRunCount: 3,
+  childRunCount: 27,
+  realExternalCallCount: 0,
+  compilationFingerprint: governedBaselineFingerprint('a'),
+  sourceMapFingerprint: governedBaselineFingerprint('b'),
+  provenanceFingerprint: governedBaselineFingerprint('c'),
+  publication: {
+    receiptFingerprint: governedBaselineFingerprint('d'),
+    suiteRef: {
+      kind: 'TEST_SUITE',
+      id: 'suite-cancellation-fee-governed-v1',
+      revision: 1,
+      fingerprint: governedBaselineFingerprint('e'),
+    },
+    fixtureCount: 9,
+  },
+  rounds: Array.from({ length: 3 }, (_, roundIndex) => ({
+    round: roundIndex + 1,
+    suiteRunId: `suite-run-cancellation-fee-${roundIndex + 1}`,
+    evidenceFingerprint: governedBaselineFingerprint(String(roundIndex + 1)),
+    status: 'PASSED',
+    childRunCount: 9,
+  })),
+  cases: [
+    'case-city-policy-missing',
+    'case-compensation-history-empty',
+    'case-compensation-history-timeout',
+    'case-driver-responsible',
+    'case-duplicate-cancellation',
+    'case-forbidden-write-effect',
+    'case-policy-revision-regression',
+    'case-rider-not-responsible',
+    'case-standard-cancellation-fee',
+  ].map((caseId, caseIndex) => ({
+    caseId,
+    rounds: Array.from({ length: 3 }, (_, roundIndex) => ({
+      round: roundIndex + 1,
+      runId: `child-run-cancellation-fee-${caseIndex + 1}-${roundIndex + 1}`,
+      status: 'PASSED',
+      fixtureBundleId: `fixture-bundle-cancellation-fee-${caseIndex + 1}`,
+      fixtureRevision: 1,
+      fixtureFingerprint: governedBaselineFingerprint(
+        `${(caseIndex + 1).toString(16)}${(roundIndex + 1).toString(16)}`,
+      ),
+    })),
+  })),
+  limitations: [
+    'BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED',
+    'DEPLOYMENT_EGRESS_NOT_OBSERVED',
+    'OWNER_SIGNOFF_NOT_PRESENT',
+  ],
+  diagnostics: [] as string[],
+};

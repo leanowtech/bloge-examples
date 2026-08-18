@@ -2,6 +2,9 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -75,5 +78,42 @@ public class CapabilityStudioDemoConfiguration {
             CapabilityStudioFeatureRehearsalService rehearsal,
             CapabilityStudioFeatureRehearsalOracle oracle) {
         return new CapabilityStudioFeatureRehearsalBaselineService(pack, rehearsal, oracle);
+    }
+
+    @Bean
+    CapabilityStudioGovernedCompilationService capabilityStudioGovernedCompilationService(
+            ObjectMapper mapper,
+            ScenarioGovernedCompiler compiler) {
+        return new CapabilityStudioGovernedCompilationService(mapper, compiler);
+    }
+
+    @Bean
+    CapabilityStudioGovernedAssetPublisher capabilityStudioGovernedAssetPublisher(
+            ObjectMapper mapper,
+            ScenarioGovernedRegistryGateway registry) {
+        return new CapabilityStudioGovernedAssetPublisher(mapper, registry);
+    }
+
+    @Bean
+    CapabilityStudioGovernedCandidateService capabilityStudioGovernedCandidateService(
+            ObjectMapper mapper,
+            CapabilityStudioGovernedCompilationService compiler,
+            CapabilityStudioGovernedAssetPublisher publisher,
+            TestSuiteExecutionService executions) {
+        return new CapabilityStudioGovernedCandidateService(mapper, compiler, publisher, executions);
+    }
+
+    @Bean
+    CapabilityStudioGovernedBaselineService capabilityStudioGovernedBaselineService(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper mapper,
+            OperatorRegistry operators,
+            CapabilityStudioFeatureRehearsalService rehearsal,
+            CapabilityStudioScenarioDatasetProjector datasetProjector,
+            ScenarioGovernedRegistryGateway registry,
+            CapabilityStudioGovernedCandidateService candidate) {
+        // This bean is deliberately composed only in the test/staging demo configuration.
+        return new CapabilityStudioGovernedBaselineService(
+                pack, mapper, operators, rehearsal, datasetProjector, registry, candidate);
     }
 }

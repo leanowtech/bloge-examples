@@ -43,6 +43,9 @@ final class CapabilityStudioSchemaSupport {
     static final String FEATURE_REHEARSAL_BASELINE_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-feature-rehearsal-baseline-v1.schema.json";
+    static final String GOVERNED_BASELINE_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-governed-baseline-v1.schema.json";
     static final String STAGE_ACCEPTANCE_RESULT_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-stage-acceptance-result-v1.schema.json";

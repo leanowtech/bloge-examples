@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,12 +16,17 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class CapabilityStudioDemoConfigurationTest {
     private final JdbcDataSource dataSource = dataSource();
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
             .withBean(OperatorRegistry.class, DefaultOperatorRegistry::new)
+            .withBean(ScenarioGovernedCompiler.class, () -> mock(ScenarioGovernedCompiler.class))
+            .withBean(ScenarioGovernedRegistryGateway.class,
+                    () -> mock(ScenarioGovernedRegistryGateway.class))
+            .withBean(TestSuiteExecutionService.class, () -> mock(TestSuiteExecutionService.class))
             .withBean(JdbcDataSource.class, () -> dataSource)
             .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
             .withBean(PlatformTransactionManager.class, () -> new DataSourceTransactionManager(dataSource))
@@ -41,6 +49,10 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCompilationService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -55,6 +67,10 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCompilationService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -72,6 +88,10 @@ class CapabilityStudioDemoConfigurationTest {
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalService.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalOracle.class)
                         .doesNotHaveBean(CapabilityStudioFeatureRehearsalBaselineService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCompilationService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedCandidateService.class)
+                        .doesNotHaveBean(CapabilityStudioGovernedBaselineService.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchRepository.class)
                         .doesNotHaveBean(CapabilityStudioTutorialBranchAuthority.class)
                         .doesNotHaveBean(CapabilityStudioDemoController.class));
@@ -89,6 +109,10 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioFeatureRehearsalService.class)
                         .hasSingleBean(CapabilityStudioFeatureRehearsalOracle.class)
                         .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class)
+                        .hasSingleBean(CapabilityStudioGovernedCompilationService.class)
+                        .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
+                        .hasSingleBean(CapabilityStudioGovernedBaselineService.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchRepository.class)
                         .hasSingleBean(CapabilityStudioTutorialBranchAuthority.class)
                         .hasSingleBean(CapabilityStudioDemoController.class));
@@ -104,6 +128,10 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioScenarioDatasetProjector.class)
                         .hasSingleBean(CapabilityStudioFeatureRehearsalService.class)
                         .hasSingleBean(CapabilityStudioFeatureRehearsalOracle.class)
-                        .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class));
+                        .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class)
+                        .hasSingleBean(CapabilityStudioGovernedCompilationService.class)
+                        .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
+                        .hasSingleBean(CapabilityStudioGovernedBaselineService.class));
     }
 }

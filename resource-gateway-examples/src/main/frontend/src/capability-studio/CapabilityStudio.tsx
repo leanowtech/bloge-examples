@@ -15,6 +15,7 @@ import {
   EyeOff,
   LayoutDashboard,
   ListFilter,
+  PlayCircle,
   RefreshCw,
   Save,
   Search,
@@ -31,6 +32,7 @@ import {
   fetchScenarioDataset,
   fetchTutorialBranch,
   preflightTutorialBranch,
+  runGovernedBaseline,
   saveTutorialBehavior,
   type CapabilityStudioFetcher,
   type TutorialBranchPreflight,
@@ -49,6 +51,7 @@ import {
   type FeatureRehearsalNode,
   type FeatureRehearsalPermission,
   type FeatureRehearsalProjection,
+  type GovernedBaselineSuccessProjection,
 } from './domain';
 import './capabilityStudio.css';
 
@@ -65,6 +68,9 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   const [loading, setLoading] = useState(true);
   const [task, setTask] = useState<Task>('overview');
   const [selectedApiIndex, setSelectedApiIndex] = useState(0);
+  const [governedBaseline, setGovernedBaseline] = useState<GovernedBaselineSuccessProjection | null>(null);
+  const [governedBaselineError, setGovernedBaselineError] = useState<Error | null>(null);
+  const [governedBaselineLoading, setGovernedBaselineLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -80,6 +86,19 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
   }, [fetcher]);
 
   useEffect(() => { void load(); }, [load]);
+
+  const executeGovernedBaseline = useCallback(async () => {
+    setGovernedBaselineLoading(true);
+    setGovernedBaselineError(null);
+    try {
+      setGovernedBaseline(await runGovernedBaseline(fetcher));
+    } catch (nextError) {
+      setGovernedBaseline(null);
+      setGovernedBaselineError(nextError instanceof Error ? nextError : new Error('The governed verification could not be completed.'));
+    } finally {
+      setGovernedBaselineLoading(false);
+    }
+  }, [fetcher]);
 
   const text = useCallback((value: Parameters<typeof localized>[0]) => localized(value, locale), [locale]);
 
@@ -134,7 +153,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           {model.assets.apis.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'contract' && index === selectedApiIndex} icon={<FileText size={16} />} label={text(asset.name)} onClick={() => openApi(index)} />)}
           <div className="capability-sidebar-group-label">{locale === 'zh-CN' ? '业务能力' : 'Business assets'} <span>2</span></div>
           {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => setTask('feature')} testId="capability-task-feature" />)}
-          {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => setTask('tool')} />)}
+          {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => setTask('tool')} testId="capability-task-tool" />)}
           <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => setTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
           <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => setTask('tutorial')} testId="capability-task-tutorial" />
         </aside>
@@ -145,10 +164,10 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} />}
           {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
           {task === 'feature' && selectedFeature && <FeatureRehearsalView asset={selectedFeature} fetcher={fetcher} text={text} locale={locale} />}
-          {task === 'tool' && selectedTool && <StageOneView asset={selectedTool} text={text} locale={locale} kind="tool" />}
+          {task === 'tool' && selectedTool && <ToolGovernedBaselineView asset={selectedTool} text={text} locale={locale} projection={governedBaseline} error={governedBaselineError} loading={governedBaselineLoading} onRun={() => void executeGovernedBaseline()} />}
         </section>
 
-        <ReadinessPanel model={model} text={text} locale={locale} task={task} onNextAction={() => task === 'overview' ? openApi(0) : setTask('scenarios')} />
+        <ReadinessPanel model={model} text={text} locale={locale} task={task} governedBaseline={governedBaseline} governedBaselineError={governedBaselineError} governedBaselineLoading={governedBaselineLoading} onNextAction={() => task === 'overview' ? openApi(0) : task === 'tool' ? void executeGovernedBaseline() : setTask('scenarios')} />
       </div>
     </main>
   );
@@ -594,17 +613,56 @@ function isFeatureLensTruncated(value: FeatureRehearsalProjection['dataLens']['t
 function shortFingerprint(value: string): string { return !value ? '—' : value.length > 18 ? `${value.slice(0, 12)}…${value.slice(-6)}` : value; }
 function formatPayload(value: unknown): string { return typeof value === 'string' ? value : JSON.stringify(value) ?? 'null'; }
 
-function StageOneView({ asset, text, locale, kind }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; kind: 'feature' | 'tool' }) {
-  return <div className="capability-view" data-testid={`capability-${kind}`}><ViewHeading kicker={displayAssetKind(kind === 'feature' ? 'FEATURE' : 'TOOL', locale)} title={text(asset.name)} description={text(asset.summary)} status={displayProtocolStatus(text(asset.readiness), locale)} /><section className="capability-section"><SectionTitle icon={kind === 'feature' ? <GitBranch size={17} /> : <Wrench size={17} />} title={locale === 'zh-CN' ? '业务摘要' : 'Business summary'} subtitle={locale === 'zh-CN' ? '这里只展示服务端已经提供的事实。' : 'Only server-provided facts are shown here.'} /><p className="capability-large-copy">{text(asset.summary)}</p></section><section className="capability-stage-one-notice"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '阶段 1：运行证据尚未接入' : 'Stage 1: runtime evidence is not connected'}</strong><p>{locale === 'zh-CN' ? '运行证据和结果尚未生成；本页面不会把设计摘要误报为验证通过。' : 'Runtime evidence and results have not been generated; design summaries are not reported as verified.'}</p></div><span>{locale === 'zh-CN' ? '未运行' : 'NOT RUN'}</span></section><TechnicalDetails asset={asset} locale={locale} /></div>;
+function ToolGovernedBaselineView({ asset, text, locale, projection, error, loading, onRun }: { asset: CapabilityAssetSummary; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; projection: GovernedBaselineSuccessProjection | null; error: Error | null; loading: boolean; onRun: () => void }) {
+  return <div className="capability-view" data-testid="capability-tool">
+    <ViewHeading kicker="GP-07 / GP-08" title={text(asset.name)} description={locale === 'zh-CN' ? '用同一份受治理场景数据连续验证工具，不连接真实业务接口。' : 'Verify the Tool repeatedly with one governed scenario dataset and no real business API calls.'} status={projection?.status === 'PASSED' ? (locale === 'zh-CN' ? '开发验证通过' : 'DEVELOPMENT VERIFIED') : displayProtocolStatus(text(asset.readiness), locale)} />
+    <section className="capability-section capability-governed-intro">
+      <SectionTitle icon={<ShieldCheck size={17} />} title={locale === 'zh-CN' ? '业务正确性验证' : 'Business correctness verification'} subtitle={locale === 'zh-CN' ? '固定场景分母、重复运行和完整证据闭包由服务端统一控制。' : 'The server controls the scenario denominator, repeated execution, and evidence closure.'} />
+      <p className="capability-large-copy">{locale === 'zh-CN' ? '系统会发布 9 份隔离数据和 1 份测试套件，再将同一套件运行 3 轮。每个接口依赖只读取受控数据；任何真实外部调用都会使本次验证失败。' : 'The system publishes nine isolated fixtures and one test suite, then runs that exact suite three times. Every API dependency uses controlled data; any real external call fails the verification.'}</p>
+      <div className="capability-governed-target" aria-label={locale === 'zh-CN' ? '验证目标' : 'Verification target'}>
+        <div><span>{locale === 'zh-CN' ? '固定场景' : 'Fixed scenarios'}</span><strong>9</strong></div>
+        <div><span>{locale === 'zh-CN' ? '重复轮次' : 'Rounds'}</span><strong>3</strong></div>
+        <div><span>{locale === 'zh-CN' ? '预期检查' : 'Expected checks'}</span><strong>27</strong></div>
+        <div><span>{locale === 'zh-CN' ? '真实接口' : 'Real APIs'}</span><strong>0</strong></div>
+      </div>
+      <div className="capability-governed-action"><div><strong>{locale === 'zh-CN' ? '运行不会修改标准基线' : 'The canonical baseline remains unchanged'}</strong><span>{locale === 'zh-CN' ? '结果只标记为开发验证，不自动通过发布门禁。' : 'Results are development evidence and never approve the release gate.'}</span></div><button type="button" className="capability-primary-action" disabled={loading} onClick={onRun} data-testid="run-governed-baseline">{loading ? <RefreshCw className="capability-spin" size={16} aria-hidden="true" /> : <PlayCircle size={16} aria-hidden="true" />} {loading ? (locale === 'zh-CN' ? '正在运行 27 项检查...' : 'Running 27 checks...') : projection ? (locale === 'zh-CN' ? '重新运行验证' : 'Run verification again') : (locale === 'zh-CN' ? '运行 9 × 3 受治理验证' : 'Run governed 9 x 3 verification')}</button></div>
+    </section>
+    {loading && <div className="capability-governed-running" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={20} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '正在准备隔离资产并逐轮验证' : 'Preparing isolated assets and running each round'}</strong><p>{locale === 'zh-CN' ? '页面会在 3 轮全部结束后一次性展示可复验结果。' : 'The page shows the verifiable result after all three rounds finish.'}</p></div></div>}
+    {error && !loading && <GovernedBaselineError error={error} locale={locale} onRetry={onRun} />}
+    {projection && !loading && <GovernedBaselineResult projection={projection} locale={locale} />}
+    <TechnicalDetails asset={asset} locale={locale} />
+  </div>;
 }
+
+function GovernedBaselineError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
+  return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{requestError?.whatHappened ?? error.message}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{requestError?.impact ?? (locale === 'zh-CN' ? '没有生成新的开发验证结果，已有资产未改变。' : 'No new development result was created; existing assets are unchanged.')}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认演示服务可用后重试。' : 'Confirm the demo service is available and retry.')}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
+}
+
+function GovernedBaselineResult({ projection, locale }: { projection: GovernedBaselineSuccessProjection; locale: 'en' | 'zh-CN' }) {
+  return <section className="capability-governed-result" data-testid="governed-baseline-result" aria-labelledby="governed-result-heading">
+    <div className="capability-governed-result-heading"><div><CheckCircle2 size={22} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? '开发验证' : 'Development verification'}</small><strong id="governed-result-heading">{locale === 'zh-CN' ? '27 项检查全部通过' : 'All 27 checks passed'}</strong></span></div><div className="capability-governed-gate"><AlertTriangle size={17} aria-hidden="true" /><span><small>{locale === 'zh-CN' ? '发布门禁' : 'Release gate'}</small><strong>{locale === 'zh-CN' ? '仍不可验收' : 'Still not accepted'}</strong></span></div></div>
+    <div className="capability-governed-metrics"><div><span>{locale === 'zh-CN' ? '场景' : 'Cases'}</span><strong>{projection.caseCount} / 9</strong></div><div><span>{locale === 'zh-CN' ? '套件轮次' : 'Suite rounds'}</span><strong>{projection.suiteRunCount} / 3</strong></div><div><span>{locale === 'zh-CN' ? '独立运行' : 'Child runs'}</span><strong>{projection.childRunCount} / 27</strong></div><div><span>{locale === 'zh-CN' ? '真实调用' : 'Real calls'}</span><strong>{projection.realExternalCallCount}</strong></div></div>
+    <div className="capability-governed-rounds" aria-label={locale === 'zh-CN' ? '三轮套件运行' : 'Three suite rounds'}>{projection.rounds.map((round) => <div key={round.round}><span>{locale === 'zh-CN' ? `第 ${round.round} 轮` : `Round ${round.round}`}</span><strong>{round.childRunCount} / 9</strong><em className={round.status === 'PASSED' ? 'passed' : 'failed'}>{displayGovernedStatus(round.status, locale)}</em></div>)}</div>
+    <div className="capability-governed-case-table-wrap" role="region" tabIndex={0} aria-label={locale === 'zh-CN' ? '九个场景的三轮结果' : 'Three-round results for nine scenarios'}><table className="capability-governed-case-table"><thead><tr><th>{locale === 'zh-CN' ? '业务场景' : 'Business scenario'}</th><th>{locale === 'zh-CN' ? '第 1 轮' : 'Round 1'}</th><th>{locale === 'zh-CN' ? '第 2 轮' : 'Round 2'}</th><th>{locale === 'zh-CN' ? '第 3 轮' : 'Round 3'}</th></tr></thead><tbody>{projection.cases.map((caseResult) => <tr key={caseResult.caseId}><th scope="row">{governedCaseName(caseResult.caseId, locale)}</th>{caseResult.rounds.map((round) => <td key={round.round}><CheckCircle2 size={14} aria-hidden="true" /><span>{displayGovernedStatus(round.status, locale)}</span></td>)}</tr>)}</tbody></table></div>
+    <div className="capability-governed-limitations"><div><AlertTriangle size={18} aria-hidden="true" /><span><strong>{locale === 'zh-CN' ? '距离发布验收还差什么' : 'What still blocks release acceptance'}</strong><small>{locale === 'zh-CN' ? '这些缺口不会被本次绿色结果自动关闭。' : 'These gaps are not closed by the green development result.'}</small></span></div><ul>{projection.limitations.map((limitation) => <li key={limitation}>{governedLimitationLabel(limitation, locale)}</li>)}</ul></div>
+    <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '验证技术证据' : 'Verification technical evidence'}</summary><dl><div><dt>Suite</dt><dd>{projection.publication.suiteRef.id}@{projection.publication.suiteRef.revision}</dd></div><div><dt>Suite fingerprint</dt><dd>{projection.publication.suiteRef.fingerprint}</dd></div><div><dt>Compilation</dt><dd>{projection.compilationFingerprint}</dd></div><div><dt>Source map</dt><dd>{projection.sourceMapFingerprint}</dd></div><div><dt>Provenance</dt><dd>{projection.provenanceFingerprint}</dd></div>{projection.rounds.map((round) => <div key={round.round}><dt>Round {round.round}</dt><dd>{round.suiteRunId} · {round.evidenceFingerprint}</dd></div>)}</dl></details>
+  </section>;
+}
+
+function displayGovernedStatus(status: string, locale: 'en' | 'zh-CN'): string { return status === 'PASSED' ? (locale === 'zh-CN' ? '通过' : 'Passed') : status === 'FAILED_CLOSED' ? (locale === 'zh-CN' ? '失败关闭' : 'Failed closed') : status; }
+function governedCaseName(caseId: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { 'case-standard-cancellation-fee': { en: 'Standard cancellation fee', 'zh-CN': '标准取消费' }, 'case-rider-not-responsible': { en: 'Rider not responsible', 'zh-CN': '乘客无责' }, 'case-driver-responsible': { en: 'Driver responsible', 'zh-CN': '司机责任' }, 'case-city-policy-missing': { en: 'City policy missing', 'zh-CN': '城市规则缺失' }, 'case-compensation-history-empty': { en: 'No compensation history', 'zh-CN': '无历史补偿' }, 'case-compensation-history-timeout': { en: 'Compensation history timeout', 'zh-CN': '补偿历史超时' }, 'case-duplicate-cancellation': { en: 'Duplicate cancellation', 'zh-CN': '重复取消' }, 'case-forbidden-write-effect': { en: 'Forbidden write effect', 'zh-CN': '禁止写入' }, 'case-policy-revision-regression': { en: 'Policy revision regression', 'zh-CN': '政策版本回归' } }; return labels[caseId]?.[locale] ?? caseId; }
+function governedLimitationLabel(value: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED: { en: 'Business-result fingerprints are not yet exported for each round.', 'zh-CN': '每轮业务结果指纹尚未导出，不能证明业务输出三轮稳定。' }, DEPLOYMENT_EGRESS_NOT_OBSERVED: { en: 'Deployment-level network denial and egress observation are still missing.', 'zh-CN': '尚缺部署级断网与出口观测，当前只证明进程内真实调用为 0。' }, OWNER_SIGNOFF_NOT_PRESENT: { en: 'Correctness, Runtime, and QA owners have not signed off.', 'zh-CN': '正确性、Runtime 与 QA 负责人尚未签署。' } }; return labels[value]?.[locale] ?? value; }
 
 function ViewHeading({ kicker, title, description, status }: { kicker: string; title: string; description: string; status: string }) { return <div className="capability-view-heading"><div><p className="capability-kicker">{kicker}</p><h3>{title}</h3><p>{description}</p></div><span className="capability-readonly">{status}</span></div>; }
 
-function ReadinessPanel({ model, text, locale, task, onNextAction }: { model: CapabilityStudioModel; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; task: Task; onNextAction: () => void }) {
+function ReadinessPanel({ model, text, locale, task, governedBaseline, governedBaselineError, governedBaselineLoading, onNextAction }: { model: CapabilityStudioModel; text: (value: Parameters<typeof localized>[0]) => string; locale: 'en' | 'zh-CN'; task: Task; governedBaseline: GovernedBaselineSuccessProjection | null; governedBaselineError: Error | null; governedBaselineLoading: boolean; onNextAction: () => void }) {
   const missing = locale === 'zh-CN' ? '未提供' : 'Not supplied';
   const baseline = displayBranch(model.baseline, text, locale);
   const tutorial = displayBranch(model.tutorialBranch, text, locale);
-  return <aside className="capability-readiness-panel"><div className="capability-panel-heading"><ShieldCheck size={17} aria-hidden="true" /><h3>{locale === 'zh-CN' ? '验收与就绪' : 'Acceptance and readiness'}</h3></div><div className="capability-readiness-callout capability-readiness-warning"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{displayProtocolStatus(text(model.acceptanceStatus), locale)}</strong><p>{locale === 'zh-CN' ? '设计资产已加载；运行证据尚未建立。' : 'Design assets are loaded; runtime evidence is not established.'}</p></div></div><dl className="capability-readiness-list"><div><dt>{locale === 'zh-CN' ? '当前基线' : 'Canonical baseline'}</dt><dd>{baseline.name}</dd></div><div><dt>{locale === 'zh-CN' ? '教程分支' : 'Tutorial branch'}</dt><dd>{tutorial.name}</dd></div><div><dt>{locale === 'zh-CN' ? '场景分母' : 'Scenario denominator'}</dt><dd>{model.scenarios.length} {locale === 'zh-CN' ? '条' : 'scenarios'}</dd></div><div><dt>{locale === 'zh-CN' ? '运行证据' : 'Runtime evidence'}</dt><dd className="capability-not-run">{locale === 'zh-CN' ? '未运行' : 'NOT RUN'}</dd></div></dl><div className="capability-next-panel"><small>{locale === 'zh-CN' ? '下一步' : 'Next action'}</small><strong>{task === 'overview' ? (locale === 'zh-CN' ? '先确认订单查询契约' : 'Review the order lookup contract') : (locale === 'zh-CN' ? '浏览九条场景数据' : 'Review the nine scenarios')}</strong><button type="button" onClick={onNextAction}>{locale === 'zh-CN' ? '继续' : 'Continue'} <ArrowRight size={15} aria-hidden="true" /></button></div><details className="capability-technical-details capability-panel-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '资产技术引用' : 'Asset technical references'}</summary><dl><div><dt>Capability ref</dt><dd>{model.capability.technicalRef ?? missing}</dd></div><div><dt>Protocol</dt><dd>{model.protocolVersion ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{model.capability.fingerprint ?? missing}</dd></div></dl></details></aside>;
+  const runtimeStatus = governedBaselineLoading ? (locale === 'zh-CN' ? '运行中' : 'RUNNING') : governedBaseline?.status === 'PASSED' ? (locale === 'zh-CN' ? '开发验证通过' : 'DEVELOPMENT VERIFIED') : governedBaselineError ? (locale === 'zh-CN' ? '本次运行失败' : 'RUN FAILED') : (locale === 'zh-CN' ? '未运行' : 'NOT RUN');
+  const readinessCopy = task === 'tool' && governedBaseline?.status === 'PASSED' ? (locale === 'zh-CN' ? '27 项开发检查已通过；发布门禁仍缺独立证据和签署。' : 'All 27 development checks passed; independent evidence and sign-off still block release.') : (locale === 'zh-CN' ? '设计资产已加载；发布验收证据尚未闭合。' : 'Design assets are loaded; release acceptance evidence is incomplete.');
+  return <aside className="capability-readiness-panel"><div className="capability-panel-heading"><ShieldCheck size={17} aria-hidden="true" /><h3>{locale === 'zh-CN' ? '验收与就绪' : 'Acceptance and readiness'}</h3></div><div className="capability-readiness-callout capability-readiness-warning"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{displayProtocolStatus(text(model.acceptanceStatus), locale)}</strong><p>{readinessCopy}</p></div></div><dl className="capability-readiness-list"><div><dt>{locale === 'zh-CN' ? '当前基线' : 'Canonical baseline'}</dt><dd>{baseline.name}</dd></div><div><dt>{locale === 'zh-CN' ? '教程分支' : 'Tutorial branch'}</dt><dd>{tutorial.name}</dd></div><div><dt>{locale === 'zh-CN' ? '场景分母' : 'Scenario denominator'}</dt><dd>{model.scenarios.length} {locale === 'zh-CN' ? '条' : 'scenarios'}</dd></div><div><dt>{locale === 'zh-CN' ? '运行证据' : 'Runtime evidence'}</dt><dd className={governedBaseline?.status === 'PASSED' ? 'capability-runtime-verified' : 'capability-not-run'}>{runtimeStatus}</dd></div></dl><div className="capability-next-panel"><small>{locale === 'zh-CN' ? '下一步' : 'Next action'}</small><strong>{task === 'overview' ? (locale === 'zh-CN' ? '先确认订单查询契约' : 'Review the order lookup contract') : task === 'tool' ? (locale === 'zh-CN' ? '运行并检查 9 × 3 正确性验证' : 'Run and inspect the 9 x 3 verification') : (locale === 'zh-CN' ? '浏览九条场景数据' : 'Review the nine scenarios')}</strong><button type="button" disabled={task === 'tool' && governedBaselineLoading} onClick={onNextAction}>{locale === 'zh-CN' ? '继续' : 'Continue'} <ArrowRight size={15} aria-hidden="true" /></button></div><details className="capability-technical-details capability-panel-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '资产技术引用' : 'Asset technical references'}</summary><dl><div><dt>Capability ref</dt><dd>{model.capability.technicalRef ?? missing}</dd></div><div><dt>Protocol</dt><dd>{model.protocolVersion ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{model.capability.fingerprint ?? missing}</dd></div></dl></details></aside>;
 }
 
 function displayAssetKind(kind: CapabilityAssetSummary['kind'], locale: 'en' | 'zh-CN'): string {

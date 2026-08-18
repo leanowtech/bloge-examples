@@ -1,7 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseCapabilityStudioDemoPack, parseFeatureRehearsalProjection, parseScenarioDatasetProjection } from './domain';
-import { featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
+import {
+  parseCapabilityStudioDemoPack,
+  parseFeatureRehearsalProjection,
+  parseGovernedBaselineProjection,
+  parseScenarioDatasetProjection,
+} from './domain';
+import {
+  featureRehearsalProjectionFixture,
+  governedBaselineProjectionFixture,
+  scenarioDatasetProjectionFixture,
+} from './testFixtures';
 
 describe('Capability Studio backend projection adapter', () => {
   it('adapts exact refs, business contract summaries, and governed scenario metadata', () => {
@@ -124,6 +133,89 @@ describe('Capability Studio backend projection adapter', () => {
     const brokenEdge = structuredClone(featureRehearsalProjectionFixture());
     brokenEdge.dataLens.edges[0].toInvocationSite = '/root/unknown#PRIMARY';
     expect(() => parseFeatureRehearsalProjection(brokenEdge)).toThrow('unknown invocation site');
+  });
+});
+
+describe('Capability Studio governed baseline protocol', () => {
+  it('parses the complete nine-case, three-round governed evidence projection', () => {
+    const result = parseGovernedBaselineProjection(governedBaselineProjectionFixture);
+
+    expect(result.status).toBe('PASSED');
+    if (result.status !== 'PASSED') throw new Error('Expected a passed governed baseline fixture.');
+    expect(result.caseCount).toBe(9);
+    expect(result.roundCount).toBe(3);
+    expect(result.suiteRunCount).toBe(3);
+    expect(result.childRunCount).toBe(27);
+    expect(result.publication.suiteRef.kind).toBe('TEST_SUITE');
+    expect(new Set(result.rounds.map((round) => round.suiteRunId)).size).toBe(3);
+    expect(new Set(result.cases.flatMap((entry) => entry.rounds.map((round) => round.runId))).size).toBe(27);
+  });
+
+  it('accepts a closed failure while preserving the required limitations', () => {
+    const failed = structuredClone(governedBaselineProjectionFixture) as Record<string, unknown>;
+    failed.status = 'FAILED_CLOSED';
+    failed.suiteRunCount = 0;
+    failed.childRunCount = 0;
+    failed.realExternalCallCount = null;
+    failed.compilationFingerprint = null;
+    failed.sourceMapFingerprint = null;
+    failed.provenanceFingerprint = null;
+    failed.publication = null;
+    failed.rounds = [];
+    failed.cases = [];
+    failed.diagnostics = ['suite assertion failed'];
+
+    expect(parseGovernedBaselineProjection(failed)).toMatchObject({
+      status: 'FAILED_CLOSED',
+      diagnostics: ['suite assertion failed'],
+      realExternalCallCount: null,
+    });
+  });
+
+  it('rejects schema drift, tampered fingerprints, duplicate identities, and count drift', () => {
+    const unknown = structuredClone(governedBaselineProjectionFixture);
+    (unknown as Record<string, unknown>).unexpected = true;
+    expect(() => parseGovernedBaselineProjection(unknown)).toThrow('Unknown field');
+
+    const tampered = structuredClone(governedBaselineProjectionFixture);
+    tampered.publication.receiptFingerprint = `sha256:${'z'.repeat(64)}`;
+    expect(() => parseGovernedBaselineProjection(tampered)).toThrow('Invalid governedBaseline.publication.receiptFingerprint');
+
+    const duplicateRun = structuredClone(governedBaselineProjectionFixture);
+    duplicateRun.cases[1].rounds[0].runId = duplicateRun.cases[0].rounds[0].runId;
+    expect(() => parseGovernedBaselineProjection(duplicateRun)).toThrow('Duplicate governed baseline runId');
+
+    const wrongCount = structuredClone(governedBaselineProjectionFixture);
+    wrongCount.childRunCount = 26;
+    expect(() => parseGovernedBaselineProjection(wrongCount)).toThrow('Child run count does not close');
+  });
+
+  it('rejects incomplete PASSED evidence instead of silently downgrading it', () => {
+    const failedCase = structuredClone(governedBaselineProjectionFixture);
+    failedCase.cases[0].rounds[0].status = 'FAILED';
+    expect(() => parseGovernedBaselineProjection(failedCase)).toThrow('passed governed baseline');
+
+    const diagnostic = structuredClone(governedBaselineProjectionFixture);
+    diagnostic.diagnostics = ['validation was not established'];
+    expect(() => parseGovernedBaselineProjection(diagnostic)).toThrow('passed governed baseline');
+
+    const duplicateSuiteRun = structuredClone(governedBaselineProjectionFixture);
+    duplicateSuiteRun.rounds[2].suiteRunId = duplicateSuiteRun.rounds[0].suiteRunId;
+    expect(() => parseGovernedBaselineProjection(duplicateSuiteRun)).toThrow('Duplicate governedBaseline.rounds suiteRunId');
+  });
+
+  it('requires all three required limitations and exact round sequences', () => {
+    const missingLimitation = structuredClone(governedBaselineProjectionFixture);
+    missingLimitation.limitations = ['BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED'];
+    expect(() => parseGovernedBaselineProjection(missingLimitation)).toThrow('Required governed baseline limitation');
+
+    const brokenSequence = structuredClone(governedBaselineProjectionFixture);
+    brokenSequence.cases[0].rounds[2].round = 2;
+    expect(() => parseGovernedBaselineProjection(brokenSequence)).toThrow('Invalid governedBaseline.cases[0].rounds round sequence');
+
+    const wrongCaseOrder = structuredClone(governedBaselineProjectionFixture);
+    [wrongCaseOrder.cases[0], wrongCaseOrder.cases[1]] = [wrongCaseOrder.cases[1], wrongCaseOrder.cases[0]];
+    expect(() => parseGovernedBaselineProjection(wrongCaseOrder)).toThrow('canonical case order');
   });
 });
 

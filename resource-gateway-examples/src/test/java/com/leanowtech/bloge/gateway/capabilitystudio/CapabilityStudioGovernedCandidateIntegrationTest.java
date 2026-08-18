@@ -66,6 +66,9 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
     @Autowired
     private TestSuiteExecutionService suiteExecutions;
 
+    @Autowired
+    private CapabilityStudioGovernedBaselineService governedBaseline;
+
     private IntegrationRequestContext publicationIdentity;
     private IntegrationRequestContext executionIdentity;
     private CapabilityStudioGoldenGovernedTarget.Target target;
@@ -150,6 +153,57 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
                 .isEqualTo(first.evidence().provenanceFingerprint());
         assertThat(second.evidence().sourceMapFingerprint())
                 .isEqualTo(first.evidence().sourceMapFingerprint());
+    }
+
+    @Test
+    void runsTheBrowserVisibleNineByThreeBaselineThroughTheRealGovernedControlPlane() {
+        CapabilityStudioGovernedBaselineProjection projection = governedBaseline.run();
+
+        assertThat(projection.status())
+                .withFailMessage("Governed baseline failed closed: %s", projection.diagnostics())
+                .isEqualTo(CapabilityStudioGovernedBaselineProjection.PASSED);
+        assertThat(projection.caseCount()).isEqualTo(9);
+        assertThat(projection.roundCount()).isEqualTo(3);
+        assertThat(projection.suiteRunCount()).isEqualTo(3);
+        assertThat(projection.childRunCount()).isEqualTo(27);
+        assertThat(projection.realExternalCallCount()).isZero();
+        assertThat(projection.publication()).isNotNull();
+        assertThat(projection.publication().fixtureCount()).isEqualTo(9);
+        assertThat(projection.rounds()).hasSize(3)
+                .extracting(CapabilityStudioGovernedBaselineProjection.Round::suiteRunId)
+                .doesNotHaveDuplicates();
+        assertThat(projection.rounds()).allSatisfy(round -> {
+            assertThat(round.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
+            assertThat(round.childRunCount()).isEqualTo(9);
+        });
+        assertThat(projection.cases())
+                .extracting(CapabilityStudioGovernedBaselineProjection.CaseProjection::caseId)
+                .containsExactly(
+                        "case-city-policy-missing",
+                        "case-compensation-history-empty",
+                        "case-compensation-history-timeout",
+                        "case-driver-responsible",
+                        "case-duplicate-cancellation",
+                        "case-forbidden-write-effect",
+                        "case-policy-revision-regression",
+                        "case-rider-not-responsible",
+                        "case-standard-cancellation-fee");
+        assertThat(projection.cases()).hasSize(9).allSatisfy(caseProjection -> {
+            assertThat(caseProjection.rounds()).hasSize(3)
+                    .extracting(CapabilityStudioGovernedBaselineProjection.CaseRound::runId)
+                    .doesNotHaveDuplicates();
+            assertThat(caseProjection.rounds()).allSatisfy(round ->
+                    assertThat(round.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name()));
+        });
+        assertThat(projection.cases().stream()
+                .flatMap(caseProjection -> caseProjection.rounds().stream())
+                .map(CapabilityStudioGovernedBaselineProjection.CaseRound::runId))
+                .doesNotHaveDuplicates();
+        assertThat(projection.limitations()).containsExactly(
+                "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+                "DEPLOYMENT_EGRESS_NOT_OBSERVED",
+                "OWNER_SIGNOFF_NOT_PRESENT");
+        assertThat(projection.diagnostics()).isEmpty();
     }
 
     private CapabilityStudioGovernedCandidateService.CandidateReceipt run(String requestId) {

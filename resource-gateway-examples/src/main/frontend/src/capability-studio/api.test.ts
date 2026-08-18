@@ -5,10 +5,15 @@ import {
   fetchFeatureRehearsal,
   fetchScenarioDataset,
   preflightTutorialBranch,
+  runGovernedBaseline,
   saveTutorialBehavior,
   type CapabilityStudioFetcher,
 } from './api';
-import { featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
+import {
+  featureRehearsalProjectionFixture,
+  governedBaselineProjectionFixture,
+  scenarioDatasetProjectionFixture,
+} from './testFixtures';
 
 describe('Capability Studio tutorial branch API', () => {
   it('sends only the business behavior fields required by GP-04', async () => {
@@ -175,6 +180,108 @@ describe('Capability Studio Feature rehearsal API', () => {
     await expect(fetchFeatureRehearsal('../unsafe case', 'STRUCTURE_ONLY', fetcher))
       .rejects.toMatchObject({ code: 'RG.CAPABILITY_STUDIO.INVALID_CASE_ID', field: 'caseId' });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+});
+
+describe('Capability Studio governed baseline API', () => {
+  it('runs the governed baseline with POST and no request body', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
+      expect(String(input)).toBe('/api/capability-studio/governed-baseline');
+      expect(init?.method).toBe('POST');
+      expect(init?.body).toBeUndefined();
+      expect(init?.headers).toEqual({ Accept: 'application/json' });
+      return json(governedBaselineProjectionFixture);
+    });
+
+    const result = await runGovernedBaseline(fetcher);
+
+    expect(result).toMatchObject({
+      status: 'PASSED',
+      caseCount: 9,
+      roundCount: 3,
+      childRunCount: 27,
+      realExternalCallCount: 0,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves retryable HTTP context without implying that assets changed', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json({
+      code: 'RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_UNAVAILABLE',
+      whatHappened: 'The governed baseline runner is unavailable.',
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Retry the governed baseline request.',
+    }, 503));
+
+    await expect(runGovernedBaseline(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_UNAVAILABLE',
+      status: 503,
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Retry the governed baseline request.',
+    });
+  });
+
+  it('turns a valid failed-closed receipt into a recoverable operation error', async () => {
+    const failed = {
+      ...structuredClone(governedBaselineProjectionFixture),
+      status: 'FAILED_CLOSED',
+      suiteRunCount: 0,
+      childRunCount: 0,
+      realExternalCallCount: null,
+      compilationFingerprint: null,
+      sourceMapFingerprint: null,
+      provenanceFingerprint: null,
+      publication: null,
+      rounds: [],
+      cases: [],
+      diagnostics: ['REAL_EXTERNAL_CALL_FORBIDDEN'],
+    };
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(failed));
+
+    await expect(runGovernedBaseline(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_FAILED_CLOSED',
+      status: 200,
+      whatHappened: 'The governed baseline failed closed (REAL_EXTERNAL_CALL_FORBIDDEN).',
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Retry the governed baseline request.',
+    });
+  });
+
+  it('classifies a transport failure as retryable and does not invent evidence', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => {
+      throw new TypeError('connection refused');
+    });
+
+    await expect(runGovernedBaseline(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.NETWORK_UNAVAILABLE',
+      status: 0,
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Check that the local demo service is running, then retry.',
+    });
+  });
+
+  it('rejects an invalid or tampered successful response as untrusted evidence', async () => {
+    const tampered = structuredClone(governedBaselineProjectionFixture);
+    tampered.cases[0].rounds[0].runId = tampered.cases[1].rounds[0].runId;
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(tampered));
+
+    await expect(runGovernedBaseline(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.INVALID_GOVERNED_BASELINE',
+      status: 200,
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Retry the governed baseline request.',
+    });
+  });
+
+  it('uses the same governed recovery context for a non-object 404 response', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(['not', 'a', 'baseline'], 404));
+
+    await expect(runGovernedBaseline(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.HTTP_404',
+      status: 404,
+      impact: 'Development validation was not established; existing Capability Studio assets were not changed.',
+      recoveryAction: 'Retry the governed baseline request.',
+    });
   });
 });
 

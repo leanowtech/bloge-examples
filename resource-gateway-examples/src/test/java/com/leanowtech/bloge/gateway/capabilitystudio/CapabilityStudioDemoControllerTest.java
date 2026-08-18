@@ -20,10 +20,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CapabilityStudioDemoControllerTest {
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
     private final CapabilityStudioGoldenDemoPack pack = new CapabilityStudioGoldenDemoPackLoader().load(mapper);
+    private CapabilityStudioTutorialBranchAuthority authority;
     private MockMvc mvc;
 
     @BeforeEach
@@ -35,8 +38,7 @@ class CapabilityStudioDemoControllerTest {
         CapabilityStudioTutorialBranchRepository repository =
                 new CapabilityStudioTutorialBranchRepository(jdbc);
         repository.init();
-        CapabilityStudioTutorialBranchAuthority authority =
-                new CapabilityStudioTutorialBranchAuthority(
+        authority = new CapabilityStudioTutorialBranchAuthority(
                         repository, pack, mapper,
                         new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
         mvc = MockMvcBuilders
@@ -65,6 +67,85 @@ class CapabilityStudioDemoControllerTest {
                 .getContentAsString();
 
         assertThat(response).doesNotContain("payload", "fixture", "secret", "customerName", "phoneNumber");
+    }
+
+    @Test
+    void postsPayloadFreeGovernedBaselineProjection() throws Exception {
+        CapabilityStudioGovernedBaselineService baseline =
+                mock(CapabilityStudioGovernedBaselineService.class);
+        when(baseline.run()).thenReturn(passedGovernedBaseline());
+        MockMvc governedMvc = MockMvcBuilders
+                .standaloneSetup(new CapabilityStudioDemoController(pack, authority, baseline))
+                .build();
+
+        String response = governedMvc.perform(post("/api/capability-studio/governed-baseline"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.schemaVersion").value(
+                        "resource-gateway.capability-studio.governed-baseline.v1"))
+                .andExpect(jsonPath("$.evidenceKind").value("DEVELOPMENT_TEST_OWNED"))
+                .andExpect(jsonPath("$.status").value("PASSED"))
+                .andExpect(jsonPath("$.caseCount").value(9))
+                .andExpect(jsonPath("$.roundCount").value(3))
+                .andExpect(jsonPath("$.suiteRunCount").value(3))
+                .andExpect(jsonPath("$.childRunCount").value(27))
+                .andExpect(jsonPath("$.realExternalCallCount").value(0))
+                .andExpect(jsonPath("$.rounds", hasSize(3)))
+                .andExpect(jsonPath("$.cases", hasSize(9)))
+                .andReturn().getResponse().getContentAsString();
+        assertThat(response).doesNotContain("payload", "input", "output", "secret");
+    }
+
+    private static CapabilityStudioGovernedBaselineProjection passedGovernedBaseline() {
+        String fingerprintA = "sha256:" + "a".repeat(64);
+        String fingerprintB = "sha256:" + "b".repeat(64);
+        String fingerprintC = "sha256:" + "c".repeat(64);
+        java.util.List<CapabilityStudioGovernedBaselineProjection.Round> rounds =
+                java.util.stream.IntStream.rangeClosed(1, 3)
+                        .mapToObj(round -> new CapabilityStudioGovernedBaselineProjection.Round(
+                                round, "suite-run-" + round, fingerprintA, "PASSED", 9))
+                        .toList();
+        java.util.List<String> caseIds = java.util.List.of(
+                "case-city-policy-missing",
+                "case-compensation-history-empty",
+                "case-compensation-history-timeout",
+                "case-driver-responsible",
+                "case-duplicate-cancellation",
+                "case-forbidden-write-effect",
+                "case-policy-revision-regression",
+                "case-rider-not-responsible",
+                "case-standard-cancellation-fee");
+        java.util.List<CapabilityStudioGovernedBaselineProjection.CaseProjection> cases =
+                java.util.stream.IntStream.range(0, caseIds.size())
+                        .mapToObj(caseIndex -> new CapabilityStudioGovernedBaselineProjection.CaseProjection(
+                                caseIds.get(caseIndex),
+                                java.util.stream.IntStream.rangeClosed(1, 3)
+                                        .mapToObj(round -> new CapabilityStudioGovernedBaselineProjection.CaseRound(
+                                                round, "child-run-" + caseIndex + "-" + round,
+                                                "PASSED", "fixture-bundle-" + caseIndex, 1,
+                                                fingerprintB))
+                                        .toList()))
+                        .toList();
+        return new CapabilityStudioGovernedBaselineProjection(
+                CapabilityStudioGovernedBaselineProjection.SCHEMA_VERSION,
+                CapabilityStudioGovernedBaselineProjection.EVIDENCE_KIND,
+                "capability-studio-governed-9x3-v1",
+                CapabilityStudioGovernedBaselineProjection.PASSED,
+                CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
+                CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
+                9, 3, 3, 27, 0,
+                fingerprintA, fingerprintB, fingerprintC,
+                new CapabilityStudioGovernedBaselineProjection.Publication(
+                        fingerprintA,
+                        new CapabilityStudioGovernedBaselineProjection.SuiteRef(
+                                "TEST_SUITE", "suite-demo", 1, fingerprintB),
+                        9),
+                rounds,
+                cases,
+                java.util.List.of(
+                        "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+                        "DEPLOYMENT_EGRESS_NOT_OBSERVED",
+                        "OWNER_SIGNOFF_NOT_PRESENT"),
+                java.util.List.of());
     }
 
     @Test

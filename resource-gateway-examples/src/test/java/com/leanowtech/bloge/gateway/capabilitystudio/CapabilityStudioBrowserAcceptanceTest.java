@@ -1,6 +1,5 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 
 import org.junit.jupiter.api.AfterEach;
@@ -22,9 +21,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.IOException;
@@ -37,16 +34,24 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Real-browser acceptance skeleton for Capability Studio GP-01 through GP-06. */
+/** Real-browser acceptance for Capability Studio GP-01 through GP-08. */
 @SpringBootTest(
-        classes = {
-                ResourceGatewayApplication.class,
-                CapabilityStudioBrowserAcceptanceTest.BrowserFixtureConfiguration.class
-        },
+        classes = ResourceGatewayApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
-                "gateway.seed-descriptors=false",
-                "spring.datasource.url=jdbc:h2:mem:capability-studio-browser;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
+                "spring.profiles.active=test",
+                "gateway.capability-studio.demo.enabled=true",
+                "gateway.seed-descriptors=true",
+                "gateway.base-url=http://127.0.0.1:1",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.active-key-id=browser-test-v1",
+                "gateway.testing.durable.worker-quarantines.claim-token-protection.key-ring=browser-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.active-key-id=browser-request-index-v1",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.key-ring=browser-request-index-v1=HyAdHBsaGRgXFhUUExIREA8ODQwLCgkIBwYFBAMCAQA=",
+                "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode=KEYED_ONLY",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id=browser-replica-a",
+                "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "spring.datasource.url=jdbc:h2:mem:capability-studio-browser;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
+                "gateway.testing.store.jdbc-url=jdbc:h2:mem:capability-studio-browser-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
 @Timeout(60)
@@ -62,38 +67,6 @@ class CapabilityStudioBrowserAcceptanceTest {
 
     private WebDriver driver;
     private ChromeDriverService driverService;
-
-    @TestConfiguration(proxyBeanMethods = false)
-    static class BrowserFixtureConfiguration {
-        @Bean
-        CapabilityStudioGoldenDemoPack browserGoldenDemoPack(ObjectMapper mapper) {
-            return new CapabilityStudioGoldenDemoPackLoader().load(mapper);
-        }
-
-        @Bean
-        CapabilityStudioTutorialBranchRepository browserTutorialBranchRepository(
-                org.springframework.jdbc.core.JdbcTemplate jdbc) {
-            return new CapabilityStudioTutorialBranchRepository(jdbc);
-        }
-
-        @Bean
-        CapabilityStudioTutorialBranchAuthority browserTutorialBranchAuthority(
-                CapabilityStudioTutorialBranchRepository repository,
-                CapabilityStudioGoldenDemoPack pack,
-                ObjectMapper mapper,
-                org.springframework.transaction.PlatformTransactionManager transactionManager) {
-            return new CapabilityStudioTutorialBranchAuthority(
-                    repository, pack, mapper,
-                    new org.springframework.transaction.support.TransactionTemplate(transactionManager));
-        }
-
-        @Bean
-        CapabilityStudioDemoController browserCapabilityStudioDemoController(
-                CapabilityStudioGoldenDemoPack pack,
-                CapabilityStudioTutorialBranchAuthority authority) {
-            return new CapabilityStudioDemoController(pack, authority);
-        }
-    }
 
     @AfterEach
     void closeBrowser() {
@@ -316,6 +289,69 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertNoPageOverflow();
         assertNoSeriousOrCriticalAxeViolations();
         capture("capability-studio-gp05-gp06-payload-en-1024.png");
+    }
+
+    @Test
+    void gp07AndGp08RunTheGovernedToolBaselineAndKeepReleaseClosedAcrossViewports()
+            throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 1100);
+        WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(20));
+        driver.get(url("/capabilities/?lang=zh-CN"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.findElement(By.cssSelector("[data-testid='capability-task-tool']")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-tool']")));
+        assertThat(driver.findElement(By.tagName("body")).getText())
+                .contains("业务正确性验证", "固定场景", "重复轮次", "预期检查", "真实接口")
+                .contains("运行 9 × 3 受治理验证", "结果只标记为开发验证，不自动通过发布门禁")
+                .doesNotContain("NO_GO", "DEVELOPMENT_TEST_OWNED");
+
+        driver.findElement(By.cssSelector("[data-testid='run-governed-baseline']")).click();
+        wait.until(webDriver -> !webDriver.findElements(By.cssSelector(
+                        "[data-testid='governed-baseline-result']")).isEmpty()
+                || !webDriver.findElements(By.cssSelector(
+                        ".capability-governed-error")).isEmpty());
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='governed-baseline-result']")))
+                .withFailMessage("Governed browser result was not established:%n%s",
+                        driver.findElement(By.tagName("body")).getText())
+                .hasSize(1);
+
+        WebElement result = driver.findElement(By.cssSelector(
+                "[data-testid='governed-baseline-result']"));
+        assertThat(result.getText())
+                .contains("27 项检查全部通过", "仍不可验收", "9 / 9", "3 / 3", "27 / 27")
+                .contains("每轮业务结果指纹尚未导出", "尚缺部署级断网与出口观测", "负责人尚未签署");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table tbody tr"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table tbody td"))).hasSize(27);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-rounds > div"))).hasSize(3);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-result details[open]"))).isEmpty();
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});", result);
+        capture("capability-studio-gp07-gp08-governed-tool-zh-1440.png");
+
+        driver.manage().window().setSize(new Dimension(390, 844));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        assertThat(new Select(driver.findElement(By.id("capability-task-select")))
+                .getFirstSelectedOption().getAttribute("value")).isEqualTo("tool");
+        assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-case-table tbody tr"))).hasSize(9);
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});", result);
+        capture("capability-studio-gp07-gp08-governed-tool-zh-390.png");
     }
 
     @Test

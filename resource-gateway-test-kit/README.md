@@ -190,6 +190,31 @@ Verification confirms internal consistency of the development projection. It int
 not upgrade `DEVELOPMENT_TEST_OWNED` to release acceptance and does not prove governed same-closure
 execution, deployment egress denial, environment binding, or Owner sign-off.
 
+## Verify the Governed Baseline Receipt
+
+`CapabilityStudioGovernedBaselineVerifier` verifies the payload-free receipt returned by
+`POST /api/capability-studio/governed-baseline`. The Test Kit packages the strict
+`resource-gateway.capability-studio.governed-baseline.v1` schema, so this check does not require
+the Spring Boot gateway or its implementation classes.
+
+```java
+CapabilityStudioGovernedBaselineVerifier verifier =
+        new CapabilityStudioGovernedBaselineVerifier();
+CapabilityStudioGovernedBaselineVerifier.VerificationResult result =
+        verifier.verify(responseBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+For `PASSED`, verification requires the complete 9 Case x 3 round receipt: three unique suite run
+IDs, nine canonical case IDs, 27 unique child run IDs, rounds `1`, `2`, and `3` for every case,
+`PASSED` throughout, zero real external calls, and the three declared limitations. For
+`FAILED_CLOSED`, the receipt must contain zero suite/child run counts, null call and fingerprint
+fields, a null publication, empty rounds/cases, and at least one diagnostic. Neither state is
+treated as a production release approval; the receipt remains `DEVELOPMENT_TEST_OWNED` with
+`releaseGateStatus=NO_GO`.
+
 ## Verify a Stage Acceptance Result
 
 `CapabilityStudioStageAcceptanceResultVerifier` verifies the strict, payload-free Stage Acceptance

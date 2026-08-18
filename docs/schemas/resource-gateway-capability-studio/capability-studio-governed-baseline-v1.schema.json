@@ -1,0 +1,281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Governed Baseline v1",
+  "description": "Strict payload-free 9 Case x 3 round governed baseline receipt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "baselineId",
+    "status",
+    "verificationScope",
+    "releaseGateStatus",
+    "caseCount",
+    "roundCount",
+    "suiteRunCount",
+    "childRunCount",
+    "realExternalCallCount",
+    "compilationFingerprint",
+    "sourceMapFingerprint",
+    "provenanceFingerprint",
+    "publication",
+    "rounds",
+    "cases",
+    "limitations",
+    "diagnostics"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.governed-baseline.v1" },
+    "evidenceKind": { "const": "DEVELOPMENT_TEST_OWNED" },
+    "baselineId": { "const": "capability-studio-governed-9x3-v1" },
+    "status": { "enum": ["PASSED", "FAILED_CLOSED"] },
+    "verificationScope": { "const": "GOVERNED_SUITE_ASSERTIONS" },
+    "releaseGateStatus": { "const": "NO_GO" },
+    "caseCount": { "const": 9 },
+    "roundCount": { "const": 3 },
+    "suiteRunCount": { "type": "integer", "minimum": 0 },
+    "childRunCount": { "type": "integer", "minimum": 0 },
+    "realExternalCallCount": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0 },
+        { "type": "null" }
+      ]
+    },
+    "compilationFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "sourceMapFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "provenanceFingerprint": { "oneOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }] },
+    "publication": { "oneOf": [{ "$ref": "#/$defs/publication" }, { "type": "null" }] },
+    "rounds": { "type": "array", "maxItems": 3 },
+    "cases": { "type": "array", "maxItems": 9 },
+    "limitations": { "$ref": "#/$defs/limitations" },
+    "diagnostics": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/code" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "PASSED" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "suiteRunCount": { "const": 3 },
+          "childRunCount": { "const": 27 },
+          "realExternalCallCount": { "const": 0 },
+          "compilationFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "sourceMapFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "provenanceFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "publication": { "$ref": "#/$defs/publication" },
+          "rounds": { "$ref": "#/$defs/successRounds" },
+          "cases": { "$ref": "#/$defs/successCases" },
+          "diagnostics": { "maxItems": 0 }
+        }
+      },
+      "else": {
+        "properties": {
+          "suiteRunCount": { "const": 0 },
+          "childRunCount": { "const": 0 },
+          "realExternalCallCount": { "type": "null" },
+          "compilationFingerprint": { "type": "null" },
+          "sourceMapFingerprint": { "type": "null" },
+          "provenanceFingerprint": { "type": "null" },
+          "publication": { "type": "null" },
+          "rounds": { "maxItems": 0 },
+          "cases": { "maxItems": 0 },
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Z][A-Z0-9_.-]*$"
+    },
+    "suiteRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint"],
+      "properties": {
+        "kind": { "const": "TEST_SUITE" },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "publication": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receiptFingerprint", "suiteRef", "fixtureCount"],
+      "properties": {
+        "receiptFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "suiteRef": { "$ref": "#/$defs/suiteRef" },
+        "fixtureCount": { "const": 9 }
+      }
+    },
+    "round": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "suiteRunId", "evidenceFingerprint", "status", "childRunCount"],
+      "properties": {
+        "round": { "enum": [1, 2, 3] },
+        "suiteRunId": { "$ref": "#/$defs/identifier" },
+        "evidenceFingerprint": { "$ref": "#/$defs/fingerprint" },
+        "status": { "const": "PASSED" },
+        "childRunCount": { "const": 9 }
+      }
+    },
+    "caseRound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["round", "runId", "status", "fixtureBundleId", "fixtureRevision", "fixtureFingerprint"],
+      "properties": {
+        "round": { "enum": [1, 2, 3] },
+        "runId": { "$ref": "#/$defs/identifier" },
+        "status": { "const": "PASSED" },
+        "fixtureBundleId": { "$ref": "#/$defs/identifier" },
+        "fixtureRevision": { "type": "integer", "minimum": 1 },
+        "fixtureFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "rounds"],
+      "properties": {
+        "caseId": { "enum": [
+          "case-compensation-history-empty",
+          "case-compensation-history-timeout",
+          "case-city-policy-missing",
+          "case-driver-responsible",
+          "case-duplicate-cancellation",
+          "case-forbidden-write-effect",
+          "case-policy-revision-regression",
+          "case-rider-not-responsible",
+          "case-standard-cancellation-fee"
+        ] },
+        "rounds": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            { "$ref": "#/$defs/caseRound" },
+            { "$ref": "#/$defs/caseRound" },
+            { "$ref": "#/$defs/caseRound" }
+          ],
+          "items": false
+        }
+      }
+    },
+    "caseWithExpectedId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-compensation-history-empty" } } }
+      ]
+    },
+    "caseWithTimeoutId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-compensation-history-timeout" } } }
+      ]
+    },
+    "caseWithCityPolicyId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-city-policy-missing" } } }
+      ]
+    },
+    "caseWithDriverId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-driver-responsible" } } }
+      ]
+    },
+    "caseWithDuplicateId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-duplicate-cancellation" } } }
+      ]
+    },
+    "caseWithForbiddenWriteId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-forbidden-write-effect" } } }
+      ]
+    },
+    "caseWithPolicyRevisionId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-policy-revision-regression" } } }
+      ]
+    },
+    "caseWithRiderId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-rider-not-responsible" } } }
+      ]
+    },
+    "caseWithStandardId": {
+      "allOf": [
+        { "$ref": "#/$defs/case" },
+        { "properties": { "caseId": { "const": "case-standard-cancellation-fee" } } }
+      ]
+    },
+    "successRounds": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 1 } } }] },
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 2 } } }] },
+        { "allOf": [{ "$ref": "#/$defs/round" }, { "properties": { "round": { "const": 3 } } }] }
+      ],
+      "items": false
+    },
+    "successCases": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "prefixItems": [
+        { "$ref": "#/$defs/caseWithCityPolicyId" },
+        { "$ref": "#/$defs/caseWithExpectedId" },
+        { "$ref": "#/$defs/caseWithTimeoutId" },
+        { "$ref": "#/$defs/caseWithDriverId" },
+        { "$ref": "#/$defs/caseWithDuplicateId" },
+        { "$ref": "#/$defs/caseWithForbiddenWriteId" },
+        { "$ref": "#/$defs/caseWithPolicyRevisionId" },
+        { "$ref": "#/$defs/caseWithRiderId" },
+        { "$ref": "#/$defs/caseWithStandardId" }
+      ],
+      "items": false
+    },
+    "limitations": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        { "const": "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED" },
+        { "const": "DEPLOYMENT_EGRESS_NOT_OBSERVED" },
+        { "const": "OWNER_SIGNOFF_NOT_PRESENT" }
+      ],
+      "items": false
+    }
+  }
+}

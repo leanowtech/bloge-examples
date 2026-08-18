@@ -8,7 +8,12 @@ import I18nProvider from '../i18n/I18nProvider';
 import CapabilityStudio from './CapabilityStudio';
 import type { CapabilityStudioFetcher } from './api';
 import { parseCapabilityStudioDemoPack } from './domain';
-import { capabilityStudioDemoPackFixture, featureRehearsalProjectionFixture, scenarioDatasetProjectionFixture } from './testFixtures';
+import {
+  capabilityStudioDemoPackFixture,
+  featureRehearsalProjectionFixture,
+  governedBaselineProjectionFixture,
+  scenarioDatasetProjectionFixture,
+} from './testFixtures';
 
 describe('Capability Studio Stage 0 read-only slice', () => {
   let host: HTMLDivElement;
@@ -220,6 +225,77 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     await settle();
     expect(document.body.textContent).toContain('DEMO-ORDER-20260818-001');
     expect(buttonWithText('Payload').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('runs GP-07/08 through the governed endpoint and keeps release acceptance visibly closed', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/governed-baseline') && init?.method === 'POST') {
+        return json(governedBaselineProjectionFixture);
+      }
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+    await render(fetcher);
+    await act(async () => query<HTMLButtonElement>('[data-testid="capability-task-tool"]').click());
+
+    expect(query('[data-testid="capability-tool"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('9');
+    expect(document.body.textContent).toContain('27');
+    expect(document.body.textContent).toContain('0');
+    expect(document.body.textContent).toContain('The canonical baseline remains unchanged');
+
+    await act(async () => query<HTMLButtonElement>('[data-testid="run-governed-baseline"]').click());
+    await settle();
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/capability-studio/governed-baseline',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(query('[data-testid="governed-baseline-result"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('All 27 checks passed');
+    expect(document.body.textContent).toContain('Still not accepted');
+    expect(document.body.textContent).toContain('27 / 27');
+    expect(document.querySelectorAll('.capability-governed-case-table tbody tr')).toHaveLength(9);
+    expect(document.querySelectorAll('.capability-governed-case-table tbody td')).toHaveLength(27);
+    expect(document.body.textContent).toContain('Deployment-level network denial');
+    expect(document.body.textContent).not.toContain('NO_GO');
+    expect(document.body.textContent).not.toContain('DEVELOPMENT_TEST_OWNED');
+    expect(document.querySelector('.capability-governed-result details[open]')).toBeNull();
+  });
+
+  it('explains a governed run failure and offers an in-place retry without stale green evidence', async () => {
+    let attempts = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/governed-baseline') && init?.method === 'POST' && attempts++ === 0) {
+        return json({
+          code: 'RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_FAILED',
+          whatHappened: 'The governed suite could not establish complete evidence.',
+          impact: 'No new development verification was established; existing assets are unchanged.',
+          recoveryAction: 'Review the diagnostic and run the governed baseline again.',
+        }, 503);
+      }
+      if (url.endsWith('/governed-baseline') && init?.method === 'POST') {
+        return json(governedBaselineProjectionFixture);
+      }
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+    await render(fetcher);
+    await act(async () => query<HTMLButtonElement>('[data-testid="capability-task-tool"]').click());
+    await act(async () => query<HTMLButtonElement>('[data-testid="run-governed-baseline"]').click());
+    await settle();
+
+    expect(document.body.textContent).toContain('The governed verification did not complete');
+    expect(document.body.textContent).toContain('What happened');
+    expect(document.body.textContent).toContain('Impact');
+    expect(document.body.textContent).toContain('Recovery');
+    expect(document.querySelector('[data-testid="governed-baseline-result"]')).toBeNull();
+
+    await act(async () => buttonWithText('Run again').click());
+    await settle();
+    expect(query('[data-testid="governed-baseline-result"]')).toBeTruthy();
   });
 
   it('has no serious or critical automated accessibility violations across NFR-02 states', async () => {
