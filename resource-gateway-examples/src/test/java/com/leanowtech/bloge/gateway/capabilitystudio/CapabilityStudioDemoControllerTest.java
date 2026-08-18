@@ -1,17 +1,30 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
+import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemHandler;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
+import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import javax.sql.DataSource;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -21,6 +34,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class CapabilityStudioDemoControllerTest {
@@ -28,6 +42,7 @@ class CapabilityStudioDemoControllerTest {
     private final CapabilityStudioGoldenDemoPack pack = new CapabilityStudioGoldenDemoPackLoader().load(mapper);
     private CapabilityStudioTutorialBranchAuthority authority;
     private MockMvc mvc;
+    private MockMvc publicMvc;
 
     @BeforeEach
     void setUp() {
@@ -42,8 +57,24 @@ class CapabilityStudioDemoControllerTest {
                         repository, pack, mapper,
                         new TransactionTemplate(new DataSourceTransactionManager(dataSource)));
         mvc = MockMvcBuilders
-                .standaloneSetup(new CapabilityStudioDemoController(pack, authority))
+                .standaloneSetup(new CapabilityStudioDemoController(
+                        pack, authority, authenticator("confidential-token", "CONFIDENTIAL")))
+                .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
+        publicMvc = MockMvcBuilders
+                .standaloneSetup(new CapabilityStudioDemoController(
+                        pack, authority, authenticator("public-token", "PUBLIC")))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+    }
+
+    @Test
+    void sharedIntegrationProblemAdviceIncludesCapabilityStudioController() {
+        RestControllerAdvice advice = IntegrationProblemHandler.class
+                .getAnnotation(RestControllerAdvice.class);
+
+        assertThat(advice).isNotNull();
+        assertThat(advice.assignableTypes()).contains(CapabilityStudioDemoController.class);
     }
 
     @Test
@@ -75,7 +106,10 @@ class CapabilityStudioDemoControllerTest {
                 mock(CapabilityStudioGovernedBaselineService.class);
         when(baseline.run()).thenReturn(passedGovernedBaseline());
         MockMvc governedMvc = MockMvcBuilders
-                .standaloneSetup(new CapabilityStudioDemoController(pack, authority, baseline))
+                .standaloneSetup(new CapabilityStudioDemoController(
+                        pack, authority, baseline,
+                        authenticator("confidential-token", "CONFIDENTIAL")))
+                .setControllerAdvice(new IntegrationProblemHandler())
                 .build();
 
         String response = governedMvc.perform(post("/api/capability-studio/governed-baseline"))
@@ -216,8 +250,8 @@ class CapabilityStudioDemoControllerTest {
 
     @Test
     void exposesTimeoutFeatureRehearsalFromTheRealTraceWithoutPayloadByDefault() throws Exception {
-        String response = mvc.perform(get("/api/capability-studio/feature-rehearsal")
-                        .queryParam("caseId", "case-compensation-history-timeout"))
+        String response = mvc.perform(authenticatedFeatureRehearsal(
+                        "case-compensation-history-timeout"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.schemaVersion").value(
                         "resource-gateway.capability-studio.feature-rehearsal.v1"))
@@ -247,8 +281,7 @@ class CapabilityStudioDemoControllerTest {
                 .doesNotContain("DEMO-ORDER-20260818-001", "fallbackToReal")
                 .contains("sha256:");
 
-        mvc.perform(get("/api/capability-studio/feature-rehearsal")
-                        .queryParam("caseId", "case-compensation-history-timeout")
+        mvc.perform(authenticatedFeatureRehearsal("case-compensation-history-timeout")
                         .queryParam("permission", "PAYLOAD_VISIBLE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.run.status").value("PASSED"))
@@ -260,8 +293,7 @@ class CapabilityStudioDemoControllerTest {
 
     @Test
     void revealsOnlyControlledDemoPayloadWhenTheExplicitPermissionIsRequested() throws Exception {
-        mvc.perform(get("/api/capability-studio/feature-rehearsal")
-                        .queryParam("caseId", "case-standard-cancellation-fee")
+        mvc.perform(authenticatedFeatureRehearsal("case-standard-cancellation-fee")
                         .queryParam("permission", "PAYLOAD_VISIBLE"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.run.status").value("PASSED"))
@@ -269,6 +301,120 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.dataLens.permissionMode").value("PAYLOAD_VISIBLE"))
                 .andExpect(jsonPath("$.dataLens.nodes[?(@.nodeId == 'orderLookup')].input.params.orderId")
                         .value("DEMO-ORDER-20260818-001"));
+    }
+
+    @Test
+    void payloadQueryAndForgedClearanceCannotAuthorizeWithoutBearerAuthentication() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-standard-cancellation-fee")
+                        .queryParam("permission", "PAYLOAD_VISIBLE")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL")
+                        .header("X-Clearance", "CONFIDENTIAL"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.AUTHENTICATION_REQUIRED"))
+                .andExpect(jsonPath("$.title").isNotEmpty())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string(HttpHeaders.WWW_AUTHENTICATE,
+                                "Bearer realm=\"resource-gateway-integration\""))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string(HttpHeaders.CACHE_CONTROL,
+                                org.hamcrest.Matchers.containsString("no-store")));
+    }
+
+    @Test
+    void missingAuthenticationFailsClosedForStructureOnly() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-standard-cancellation-fee")
+                        .queryParam("permission", "STRUCTURE_ONLY")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.AUTHENTICATION_REQUIRED"));
+    }
+
+    @Test
+    void invalidBearerFailsClosed() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-standard-cancellation-fee")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token")
+                        .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.AUTHENTICATION_FAILED"));
+    }
+
+    @Test
+    void missingPurposeFailsClosedForAuthenticatedIdentity() throws Exception {
+        mvc.perform(get("/api/capability-studio/feature-rehearsal")
+                        .queryParam("caseId", "case-standard-cancellation-fee")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer confidential-token"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.PURPOSE_REQUIRED"));
+    }
+
+    @Test
+    void publicIdentityCanUseStructureOnlyWithoutPayloadValues() throws Exception {
+        String response = publicMvc.perform(publicFeatureRehearsal("STRUCTURE_ONLY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dataLens.permissionMode").value("STRUCTURE_ONLY"))
+                .andExpect(jsonPath("$.dataLens.nodes[0].input").isEmpty())
+                .andExpect(jsonPath("$.dataLens.nodes[0].output").isEmpty())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain("DEMO-ORDER-20260818-001");
+    }
+
+    @Test
+    void publicIdentityReceivesExplicitForbiddenForPayloadView() throws Exception {
+        publicMvc.perform(publicFeatureRehearsal("PAYLOAD_VISIBLE"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED"))
+                .andExpect(jsonPath("$.details.requiredClearance").value("CONFIDENTIAL"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header().string(HttpHeaders.CACHE_CONTROL,
+                                org.hamcrest.Matchers.containsString("no-store")));
+    }
+
+    @Test
+    void forgedClearanceCannotElevatePublicIdentity() throws Exception {
+        publicMvc.perform(publicFeatureRehearsal("PAYLOAD_VISIBLE")
+                        .header("X-Clearance", "CONFIDENTIAL"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RG.INTEGRATION.IDENTITY_CLAIM_MISMATCH"))
+                .andExpect(jsonPath("$.details.X-Clearance").value(
+                        "does-not-match-verified-identity"));
+    }
+
+    @Test
+    void insufficientPayloadClearanceIsRejectedBeforeTheFeatureGraphRuns() throws Exception {
+        CapabilityStudioFeatureRehearsalService rehearsal =
+                mock(CapabilityStudioFeatureRehearsalService.class);
+        MockMvc guardedMvc = guardedFeatureMvc(
+                rehearsal, authenticator("public-token", "PUBLIC"));
+
+        guardedMvc.perform(publicFeatureRehearsal("PAYLOAD_VISIBLE"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED"));
+
+        verifyNoInteractions(rehearsal);
+    }
+
+    @Test
+    void unavailableSecurityAuditFailsClosedBeforeTheFeatureGraphRuns() throws Exception {
+        CapabilityStudioFeatureRehearsalService rehearsal =
+                mock(CapabilityStudioFeatureRehearsalService.class);
+        IntegrationRequestAuthenticator authenticator = new IntegrationRequestAuthenticator(
+                new StaticBearerIntegrationIdentityResolver(
+                        "confidential-token", identity("CONFIDENTIAL"), true),
+                new FailingAudit());
+        MockMvc guardedMvc = guardedFeatureMvc(rehearsal, authenticator);
+
+        guardedMvc.perform(authenticatedFeatureRehearsal("case-standard-cancellation-fee"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value(
+                        "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE"));
+
+        verifyNoInteractions(rehearsal);
     }
 
     @Test
@@ -295,13 +441,85 @@ class CapabilityStudioDemoControllerTest {
 
     @Test
     void rejectsUnknownFeatureScenarioWithARecoverableBusiness404() throws Exception {
-        mvc.perform(get("/api/capability-studio/feature-rehearsal")
-                        .queryParam("caseId", "case-does-not-exist"))
+        mvc.perform(authenticatedFeatureRehearsal("case-does-not-exist"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(
                         "RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_NOT_FOUND"))
                 .andExpect(jsonPath("$.field").value("caseId"))
                 .andExpect(jsonPath("$.recoveryAction").isNotEmpty());
+    }
+
+    private static IntegrationRequestAuthenticator authenticator(
+            String token, String clearance) {
+        return new IntegrationRequestAuthenticator(
+                new StaticBearerIntegrationIdentityResolver(token, identity(clearance), true),
+                new RecordingAudit());
+    }
+
+    private static IntegrationWorkloadIdentity identity(String clearance) {
+        return new IntegrationWorkloadIdentity(
+                "capability-studio-test", "tenant-a", "org-a", "project-a", "test", "local",
+                "WORKLOAD", "capability-studio-test", "",
+                Set.of("CAPABILITY_STUDIO_REHEARSAL"), Instant.MAX, true,
+                Set.of(), clearance, "", Instant.MAX);
+    }
+
+    private MockMvc guardedFeatureMvc(
+            CapabilityStudioFeatureRehearsalService rehearsal,
+            IntegrationRequestAuthenticator authenticator) {
+        return MockMvcBuilders.standaloneSetup(new CapabilityStudioDemoController(
+                        pack,
+                        authority,
+                        new CapabilityStudioScenarioDatasetProjector(pack),
+                        rehearsal,
+                        mock(CapabilityStudioFeatureRehearsalBaselineService.class),
+                        mock(CapabilityStudioGovernedBaselineService.class),
+                        authenticator))
+                .setControllerAdvice(new IntegrationProblemHandler())
+                .build();
+    }
+
+    private static MockHttpServletRequestBuilder authenticatedFeatureRehearsal(String caseId) {
+        return get("/api/capability-studio/feature-rehearsal")
+                .queryParam("caseId", caseId)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer confidential-token")
+                .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL");
+    }
+
+    private static MockHttpServletRequestBuilder publicFeatureRehearsal(String permission) {
+        return get("/api/capability-studio/feature-rehearsal")
+                .queryParam("caseId", "case-standard-cancellation-fee")
+                .queryParam("permission", permission)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer public-token")
+                .header("X-Purpose", "CAPABILITY_STUDIO_REHEARSAL");
+    }
+
+    private static final class RecordingAudit implements IntegrationAccessAuditRepository {
+        private final List<IntegrationAccessAuditRecord> records = new ArrayList<>();
+
+        @Override
+        public IntegrationAccessAuditRecord append(IntegrationAccessAuditRecord record) {
+            IntegrationAccessAuditRecord stored = record.withSequence(records.size() + 1L);
+            records.add(stored);
+            return stored;
+        }
+
+        @Override
+        public List<IntegrationAccessAuditRecord> recent(int limit) {
+            return List.copyOf(records);
+        }
+    }
+
+    private static final class FailingAudit implements IntegrationAccessAuditRepository {
+        @Override
+        public IntegrationAccessAuditRecord append(IntegrationAccessAuditRecord record) {
+            throw new IllegalStateException("audit unavailable");
+        }
+
+        @Override
+        public List<IntegrationAccessAuditRecord> recent(int limit) {
+            return List.of();
+        }
     }
 
     @Test

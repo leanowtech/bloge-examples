@@ -227,6 +227,49 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(buttonWithText('Payload').getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('keeps authorization impact and recovery visible when Data Lens access is denied', async () => {
+    window.history.pushState({}, '', '/capabilities/?lang=zh-CN');
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.includes('/feature-rehearsal?')) {
+        const permission = new URL(url, 'http://capability-studio.local')
+          .searchParams.get('permission');
+        if (permission === 'PAYLOAD_VISIBLE') return json({
+          schemaVersion: 'toolStudio.resourceGateway.problem.v1',
+          title: 'The verified identity cannot view this Data Lens.',
+          status: 403,
+          code: 'RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED',
+          details: {
+            requiredClearance: 'CONFIDENTIAL',
+          },
+        }, 403);
+        return json(featureRehearsalProjectionFixture('STRUCTURE_ONLY'));
+      }
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+
+    await render(fetcher);
+    await act(async () => buttonWithText('取消费争议特征').click());
+    await settle();
+    await act(async () => buttonWithText('受控数据').click());
+    await settle();
+
+    expect(document.body.textContent).toContain(
+      '已验证身份不具备查看受控数据所需的 CONFIDENTIAL 权限。',
+    );
+    expect(document.body.textContent).toContain(
+      '现有结构视图继续可见且保持不变。',
+    );
+    expect(document.body.textContent).toContain(
+      '保持使用结构视图，或重新连接具备 CONFIDENTIAL 权限的身份后重试。',
+    );
+    expect(buttonWithText('结构').getAttribute('aria-pressed')).toBe('true');
+    expect(buttonWithText('受控数据').getAttribute('aria-pressed')).toBe('false');
+    expect(document.querySelectorAll('.feature-dag-node')).toHaveLength(6);
+    expect(document.body.textContent).not.toContain('DEMO-ORDER-20260818-001');
+  });
+
   it('runs GP-07/08 through the governed endpoint and keeps release acceptance visibly closed', async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

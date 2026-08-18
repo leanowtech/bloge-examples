@@ -252,6 +252,19 @@ export function resetOperatorTestHeadersProvider(): void {
   operatorTestHeadersProvider = defaultOperatorTestHeadersProvider;
 }
 
+/** Builds authenticated integration headers while keeping purpose server-contract owned. */
+export function integrationRequestHeaders(
+  purpose: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    ...operatorTestHeadersProvider(),
+    ...extra,
+    'X-Purpose': purpose,
+  };
+}
+
 /**
  * Installs role-separated, short-lived credentials for reviewed remediation.
  *

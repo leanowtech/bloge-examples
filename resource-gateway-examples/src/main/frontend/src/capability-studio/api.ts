@@ -10,6 +10,7 @@ import {
   type GovernedBaselineSuccessProjection,
   type ScenarioDataset,
 } from './domain';
+import { integrationRequestHeaders } from '../api';
 
 export type CapabilityStudioFetcher = (
   input: RequestInfo | URL,
@@ -35,7 +36,7 @@ export async function fetchFeatureRehearsal(
   const payload = await requestJson<unknown>(
     fetcher,
     `/api/capability-studio/feature-rehearsal?${query.toString()}`,
-    undefined,
+    { headers: integrationRequestHeaders('CAPABILITY_STUDIO_REHEARSAL') },
     {
       unchangedImpact: 'The Feature rehearsal was not changed.',
       invalidImpact: 'The Feature rehearsal response cannot be trusted or displayed.',
@@ -237,13 +238,19 @@ async function requestJson<T>(
   const payload = await parseResponseBody(response);
   if (!response.ok) {
     const error = isObject(payload) ? payload : {};
+    const details = isObject(error.details) ? error.details : {};
     throw new CapabilityStudioRequestError(
       stringField(error.code) ?? `RG.CAPABILITY_STUDIO.HTTP_${response.status}`,
-      stringField(error.whatHappened) ?? `Capability Studio rejected the request with HTTP ${response.status}.`,
-      stringField(error.impact) ?? context.unchangedImpact,
-      stringField(error.recoveryAction) ?? context.invalidRecovery,
+      stringField(error.whatHappened)
+        ?? stringField(error.title)
+        ?? stringField(details.whatHappened)
+        ?? `Capability Studio rejected the request with HTTP ${response.status}.`,
+      stringField(error.impact) ?? stringField(details.impact) ?? context.unchangedImpact,
+      stringField(error.recoveryAction)
+        ?? stringField(details.recoveryAction)
+        ?? authorizationRecovery(response.status, context.invalidRecovery),
       response.status,
-      stringField(error.field),
+      stringField(error.field) ?? stringField(details.field),
     );
   }
   if (!isObject(payload)) {
@@ -256,6 +263,16 @@ async function requestJson<T>(
     );
   }
   return payload as T;
+}
+
+function authorizationRecovery(status: number, fallback: string): string {
+  if (status === 401) {
+    return 'Restore an authenticated host credential or the local demo credential, then retry.';
+  }
+  if (status === 403) {
+    return 'Use an identity authorized for this Capability Studio action, or choose an allowed view.';
+  }
+  return fallback;
 }
 
 interface RequestErrorContext {

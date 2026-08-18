@@ -134,7 +134,7 @@ Owner 冻结的正确性分母和预期。
 
 脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
 黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线、严格
-Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针固定检查默认超时场景为 6 个节点、5 条边：补偿历史节点保留原始 `TIMEOUT` 尝试，BLOGE fallback 后运行终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`，结构权限下不返回 payload 且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针使用本地演示身份和专用 `CAPABILITY_STUDIO_REHEARSAL` purpose，固定检查默认超时场景为 6 个节点、5 条边：补偿历史节点保留原始 `TIMEOUT` 尝试，BLOGE fallback 后运行终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`，结构视图不返回 Payload 且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
 较长；已有完整 JAR 时可使用 `--no-build`。
 
 需要省略 Capability Studio 样板并直接打开业务镜像时使用：
@@ -164,19 +164,24 @@ Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面�
 3. 检查五项质量摘要：Owner、来源、Oracle、契约与依赖行为均为 100% 闭合；总体仍显示「已阻断」，因为九条 Case 尚未运行并形成证据。100% 元数据覆盖不等于业务验收通过。
 4. 按黄金、反向、边界、故障、回归和安全分类筛选九条 Case。选择「补偿历史超时」，检查业务目标、预期/Oracle、来源、适用契约、超时表现和按需展开的精确引用。
 5. 选择「特征编排」。页面默认加载「历史补偿记录查询超时」。先保持「结构」权限，确认 DAG 有 4 个接口节点、1 个聚合节点和 1 个决策节点；历史补偿查询为「超时」，聚合与决策为「已取消」，真实调用为 `0`。
-6. 选择「受控数据」。系统重新读取同一个 Case 的 Payload 权限投影。检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。
+6. 选择「受控数据」。该操作只表达请求的视图，不会自我授予权限。服务端先验证 Bearer credential、专用 purpose 和受信身份的 clearance；只有 `CONFIDENTIAL` 及以上身份才能取得受控值。默认本地演示身份满足该条件。授权通过后，检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。授权失败时，页面保留原结构视图，并显示原因、影响和恢复动作。
 7. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
 8. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
 9. 选择「业务工具」，在「业务正确性验证」中先确认目标为 `9 个固定场景 / 3 轮重复 / 27 项预期检查 / 0 个真实接口`，再选择「运行 9 × 3 受治理验证」。
 10. 运行完成后检查四组信息：顶部是 `9/9` 业务场景、`9/9` 业务判定、`27/27` 业务断言和 `0` 真实调用；中部是 3 个 suite run 和 9 × 3 Case 矩阵，每个 Case 显示三轮一致的业务结果指纹；其下是超时安全降级、重复输入幂等和禁止写入三项专项证明；底部列出候选构建、环境认证、可认证证据、部署级出网观测和负责人签署五项阻断。页面应并列呈现「27 项业务检查全部通过」和「仍不可验收」，这是正确结论，不是冲突。
 11. 查看「验收状态」。正式结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支、Feature Trace，以及同一受治理 compiler、应用级 Resource Registry、真实 Resource Operator 和 exact-suite runtime 下的 3 suite/27 child 运行、9/9 Oracle、27/27 业务断言和三类高风险场景；Canonical child Evidence 已达到 `CERTIFIABLE`，干净制品也可绑定实际 JAR SHA-256、Git commit 和执行意图。Dataset 写入 Authority、字段级 source map、目标环境 Candidate attestation、部署级 network deny/egress 和 Owner 签署仍未完成，因此 `CERTIFIABLE` 不能替代正式 `PASS`。
 
-需要直接检查 Feature Trace 协议时，使用以下请求。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只返回 Canonical Demo Pack 的受控演示值。两个权限态必须引用同一次 Case 语义和同一 Graph fingerprint。
+需要直接检查 Feature Trace 协议时，使用以下请求。调用方必须提供 Bearer credential 和 `X-Purpose: CAPABILITY_STUDIO_REHEARSAL`。`permission` 只表示请求的视图；服务端根据已验证身份决定是否允许。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只向 `CONFIDENTIAL` 及以上身份返回 Canonical Demo Pack 的受控演示值。两个视图必须引用同一次 Case 语义和同一 Graph fingerprint。
 
 ```bash
-curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY' | jq
+AUTH=(-H 'Authorization: Bearer bloge-aneke-demo-token' \
+  -H 'X-Purpose: CAPABILITY_STUDIO_REHEARSAL')
 
-curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=PAYLOAD_VISIBLE' | jq
+curl -fsS "${AUTH[@]}" \
+  'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY' | jq
+
+curl -fsS "${AUTH[@]}" \
+  'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=PAYLOAD_VISIBLE' | jq
 
 curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal-baseline' | \
   jq '{evidenceKind,status,caseCount,roundCount,runCount,realExternalCallCount,cases,operators,diagnostics}'
@@ -189,7 +194,9 @@ curl -fsS -X POST 'http://localhost:8080/api/capability-studio/governed-baseline
 
 受治理响应应显示 `DEVELOPMENT_TEST_OWNED / EXPLORATORY / PASSED / NO_GO / 9 / 9 / 27 / 0`，并严格返回上述五项 `limitations`。如果任一编译、发布、回读、业务 Oracle 或运行不变量失败，响应必须为 `FAILED_CLOSED`，且 `evidenceClass`、`publication`、指纹和 Run 集合均不得伪造。
 
-如果 `caseId` 不属于九个 Canonical Case，服务返回业务 404。production profile 不装配这些端点。不要把 `PAYLOAD_VISIBLE` 当作生产 Payload 授权协议；当前查询参数仅用于非生产演示切片，企业身份授权仍是验收缺口。
+如果 `caseId` 不属于九个 Canonical Case，服务返回业务 404。缺少或无效 credential 时返回 401；purpose 不允许、受信 clearance 不足或自报身份字段与已验证身份冲突时返回 403。认证、授权和安全审计均发生在 Feature Graph 执行之前；安全审计无法写入时返回 503，并且不执行 Graph。production profile 不装配这些端点。
+
+浏览器演示默认使用前端内置的本地 token `bloge-aneke-demo-token`。VS Code 或企业宿主应通过 `setOperatorTestHeadersProvider` 注入短期凭证。只修改服务端 `RG_INTEGRATION_DEMO_TOKEN` 不会把新 token 自动注入已构建的浏览器代码；采用自定义 token 时，需要由宿主同时提供前端凭证。当前实现证明的是 test/staging 演示切片的可信身份与 clearance 裁决，不等于客户生产环境的 ABAC、数据分类和跨 Scope Payload Authority 已完成。
 
 需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 的整体工作区证据覆盖英文 1440×900、1024×768 和 390×844；Dataset 使用 Tab、Enter、Space 完成选择路径，Feature 在 1024×768 使用键盘切换权限。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
 

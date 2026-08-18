@@ -55,6 +55,7 @@ import {
   type FeatureRehearsalProjection,
   type GovernedBaselineSuccessProjection,
 } from './domain';
+import { featureRehearsalErrorPresentation } from './featureRehearsalErrorPresentation';
 import './capabilityStudio.css';
 
 type Task = 'overview' | 'contract' | 'scenarios' | 'tutorial' | 'feature' | 'tool';
@@ -501,7 +502,9 @@ function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: Capabil
     setLoading(true);
     setError(null);
     try {
-      setProjection(await fetchFeatureRehearsal(nextCaseId, nextPermission, fetcher));
+      const nextProjection = await fetchFeatureRehearsal(nextCaseId, nextPermission, fetcher);
+      setProjection(nextProjection);
+      setPermission(nextProjection.dataLens.permissionMode);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError : new Error('The Feature rehearsal could not be loaded.'));
     } finally {
@@ -516,10 +519,10 @@ function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: Capabil
     void load(nextCaseId, permission);
   };
   const changePermission = (nextPermission: FeatureRehearsalPermission) => {
-    setPermission(nextPermission);
     void load(caseId, nextPermission);
   };
   const selectedCase = featureRehearsalCases.find((entry) => entry.id === caseId) ?? featureRehearsalCases[5];
+  const errorPresentation = error ? featureRehearsalErrorPresentation(error, locale) : null;
 
   return <div className="capability-view" data-testid="capability-feature-rehearsal">
     <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY'} />
@@ -528,7 +531,7 @@ function FeatureRehearsalView({ asset, fetcher, text, locale }: { asset: Capabil
       <div className="capability-feature-permission" role="group" aria-label={locale === 'zh-CN' ? '数据可见权限' : 'Data visibility permission'}><span>{locale === 'zh-CN' ? '数据查看' : 'Data view'}</span><div className="capability-segmented-control"><button type="button" aria-pressed={permission === 'STRUCTURE_ONLY'} className={permission === 'STRUCTURE_ONLY' ? 'active' : ''} onClick={() => changePermission('STRUCTURE_ONLY')}><EyeOff size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '结构' : 'Structure'}</button><button type="button" aria-pressed={permission === 'PAYLOAD_VISIBLE'} className={permission === 'PAYLOAD_VISIBLE' ? 'active' : ''} onClick={() => changePermission('PAYLOAD_VISIBLE')}><Eye size={14} aria-hidden="true" /> {locale === 'zh-CN' ? '受控数据' : 'Payload'}</button></div><small>{permission === 'STRUCTURE_ONLY' ? (locale === 'zh-CN' ? '仅显示摘要与指纹，不显示值。' : 'Summaries and fingerprints only; values stay hidden.') : (locale === 'zh-CN' ? '仅展示演示数据，不代表真实业务载荷。' : 'Controlled demo values only; never real business payloads.')}</small></div>
     </section>
     {loading && <div className="capability-feature-state" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={18} aria-hidden="true" /> {locale === 'zh-CN' ? '正在加载特征运行和数据视图...' : 'Loading feature run and data lens...'}</div>}
-    {!loading && error && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load'}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{error.message}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{locale === 'zh-CN' ? '当前场景的 DAG 和 Data Lens 保持不变。' : 'The current scenario DAG and Data Lens remain unchanged.'}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{locale === 'zh-CN' ? '保持场景选择不变，重试加载。' : 'Keep the scenario selected and retry the load.'}</p></div></div><button type="button" className="capability-secondary-action" onClick={() => void load()}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario'}</button></div></section>}
+    {!loading && error && errorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load'}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{errorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{errorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{errorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={() => void load()}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario'}</button></div></section>}
     {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} />}
   </div>;
 }

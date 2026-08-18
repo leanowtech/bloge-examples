@@ -99,7 +99,12 @@ aggregate evidence retains the full exact-ref closure, while each child run carr
 reference plus compact provenance and source-map fingerprints so it remains below the 16 KiB child
 request metadata boundary. Legacy Scenario compilation omits this metadata and retains its previous
 content-addressed output. A Data Lens read model also projects the existing
-`TestRunEvidence` in structure-only or payload-visible modes. The test/staging-only Feature
+`TestRunEvidence` in structure-only or payload-visible modes. The requested mode is not an
+authorization claim: the Feature endpoint first authenticates the workload with the dedicated
+`CAPABILITY_STUDIO_REHEARSAL` purpose, and payload-visible projection additionally requires the
+server-resolved identity to have `CONFIDENTIAL` clearance. Missing credentials, forbidden purposes,
+insufficient clearance, forged identity headers, and an unavailable security-audit sink fail closed
+before the graph runs. The test/staging-only Feature
 Rehearsal endpoint now executes an actual BLOGE graph with four `HttpResourceOperator` nodes,
 one pure aggregator, and one pure decision; Capability Studio renders the same Trace as a stable
 6-node/5-edge DAG and Data Lens. In the default timeout Case, the compensation-history attempt is

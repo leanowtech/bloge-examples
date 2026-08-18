@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  resetOperatorTestHeadersProvider,
+  setOperatorTestHeadersProvider,
+} from '../api';
 
 import {
   CapabilityStudioRequestError,
@@ -14,6 +19,10 @@ import {
   governedBaselineProjectionFixture,
   scenarioDatasetProjectionFixture,
 } from './testFixtures';
+
+afterEach(() => {
+  resetOperatorTestHeadersProvider();
+});
 
 describe('Capability Studio tutorial branch API', () => {
   it('sends only the business behavior fields required by GP-04', async () => {
@@ -143,7 +152,10 @@ describe('Capability Studio Feature rehearsal API', () => {
   it('loads one exact canonical case and permission projection', async () => {
     const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
       expect(String(input)).toBe('/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY');
-      expect(init?.headers).toMatchObject({ Accept: 'application/json' });
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Accept')).toBe('application/json');
+      expect(headers.get('Authorization')).toBe('Bearer bloge-aneke-demo-token');
+      expect(headers.get('X-Purpose')).toBe('CAPABILITY_STUDIO_REHEARSAL');
       return json(featureRehearsalProjectionFixture());
     });
 
@@ -180,6 +192,49 @@ describe('Capability Studio Feature rehearsal API', () => {
     await expect(fetchFeatureRehearsal('../unsafe case', 'STRUCTURE_ONLY', fetcher))
       .rejects.toMatchObject({ code: 'RG.CAPABILITY_STUDIO.INVALID_CASE_ID', field: 'caseId' });
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('uses host-provided credentials while keeping the server purpose fixed', async () => {
+    setOperatorTestHeadersProvider(() => ({
+      Authorization: 'Bearer host-capability-token',
+      'X-Clearance': 'CONFIDENTIAL',
+      'X-Purpose': 'CALLER_CANNOT_OVERRIDE_PURPOSE',
+    }));
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Authorization')).toBe('Bearer host-capability-token');
+      expect(headers.get('X-Clearance')).toBe('CONFIDENTIAL');
+      expect(headers.get('X-Purpose')).toBe('CAPABILITY_STUDIO_REHEARSAL');
+      return json(featureRehearsalProjectionFixture('PAYLOAD_VISIBLE'));
+    });
+
+    await fetchFeatureRehearsal(
+      'case-compensation-history-timeout', 'PAYLOAD_VISIBLE', fetcher,
+    );
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves the real integration problem title and adds useful authorization recovery', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json({
+      schemaVersion: 'toolStudio.resourceGateway.problem.v1',
+      title: 'The verified identity cannot view rehearsal payloads.',
+      status: 403,
+      code: 'RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED',
+      details: {
+        requiredClearance: 'CONFIDENTIAL',
+      },
+    }, 403));
+
+    await expect(fetchFeatureRehearsal(
+      'case-compensation-history-timeout', 'PAYLOAD_VISIBLE', fetcher,
+    )).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED',
+      whatHappened: 'The verified identity cannot view rehearsal payloads.',
+      impact: 'The Feature rehearsal was not changed.',
+      recoveryAction: 'Use an identity authorized for this Capability Studio action, or choose an allowed view.',
+      status: 403,
+    });
   });
 });
 

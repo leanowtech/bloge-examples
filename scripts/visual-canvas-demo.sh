@@ -27,6 +27,7 @@ SHADOW_DETACHED_DATA_PLANE="${BLOGE_VISUAL_CANVAS_SHADOW_DETACHED_DATA_PLANE:-0}
 OUTCOME_CONTINUOUS_ASSESSMENT="${BLOGE_VISUAL_CANVAS_OUTCOME_CONTINUOUS_ASSESSMENT:-${RG_MIRROR_OUTCOME_CONTINUOUS_ASSESSMENT_SCHEDULER_ENABLED:-0}}"
 CORRECTNESS_DEMO="${BLOGE_VISUAL_CANVAS_CORRECTNESS_DEMO:-1}"
 CAPABILITY_STUDIO_DEMO="${BLOGE_VISUAL_CANVAS_CAPABILITY_STUDIO_DEMO:-1}"
+CAPABILITY_STUDIO_REHEARSAL_TOKEN="${RG_INTEGRATION_DEMO_TOKEN:-bloge-aneke-demo-token}"
 STATEFUL_KEY_FILE="${BLOGE_VISUAL_CANVAS_STATEFUL_KEY_FILE:-${ROOT_DIR}/target/example-state/mirror-aes256.key}"
 
 if [ -z "${MVN:-}" ]; then
@@ -2410,6 +2411,8 @@ wait_for_ready() {
                     ! capability_studio_preflight="$(curl -fsS -X POST \
                     "$(capability_studio_tutorial_preflight_url)" 2>/dev/null)" ||
                     ! capability_studio_feature_rehearsal="$(curl -fsS \
+                    -H "Authorization: Bearer ${CAPABILITY_STUDIO_REHEARSAL_TOKEN}" \
+                    -H 'X-Purpose: CAPABILITY_STUDIO_REHEARSAL' \
                     "$(capability_studio_feature_rehearsal_url)" 2>/dev/null)" ||
                     ! capability_studio_feature_baseline="$(curl -fsS \
                     "$(capability_studio_feature_baseline_url)" 2>/dev/null)"; then

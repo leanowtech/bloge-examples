@@ -1,22 +1,31 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.annotation.Profile;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Profile;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 /** HTTP projection and isolated tutorial-branch authoring surface for Capability Studio. */
 @RestController
@@ -29,6 +38,7 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
     private final CapabilityStudioFeatureRehearsalService featureRehearsal;
     private final CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline;
+    private final IntegrationRequestAuthenticator authenticator;
     private CapabilityStudioGovernedBaselineService governedBaseline;
 
     /** Creates the projection controller from injected validated authorities and projector. */
@@ -39,13 +49,15 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioScenarioDatasetProjector scenarioDataset,
             CapabilityStudioFeatureRehearsalService featureRehearsal,
             CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
-            CapabilityStudioGovernedBaselineService governedBaseline) {
+            CapabilityStudioGovernedBaselineService governedBaseline,
+            IntegrationRequestAuthenticator authenticator) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = scenarioDataset;
         this.featureRehearsal = featureRehearsal;
         this.featureRehearsalBaseline = featureRehearsalBaseline;
         this.governedBaseline = governedBaseline;
+        this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
     }
 
     /**
@@ -54,7 +66,8 @@ public final class CapabilityStudioDemoController {
      */
     public CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
-            CapabilityStudioTutorialBranchAuthority tutorialBranch) {
+            CapabilityStudioTutorialBranchAuthority tutorialBranch,
+            IntegrationRequestAuthenticator authenticator) {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = new CapabilityStudioScenarioDatasetProjector(pack);
@@ -65,27 +78,39 @@ public final class CapabilityStudioDemoController {
         this.featureRehearsalBaseline = new CapabilityStudioFeatureRehearsalBaselineService(
                 pack, this.featureRehearsal, new CapabilityStudioFeatureRehearsalOracle(mapper));
         this.governedBaseline = null;
+        this.authenticator = Objects.requireNonNull(authenticator, "authenticator");
     }
 
     /** Standalone test composition that exposes the governed baseline without Spring assembly. */
     CapabilityStudioDemoController(
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch,
-            CapabilityStudioGovernedBaselineService governedBaseline) {
-        this(pack, tutorialBranch);
+            CapabilityStudioGovernedBaselineService governedBaseline,
+            IntegrationRequestAuthenticator authenticator) {
+        this(pack, tutorialBranch, authenticator);
         this.governedBaseline = governedBaseline;
     }
 
     /** Returns a real BLOGE test-run evidence rehearsal for one canonical feature scenario. */
     @GetMapping("/feature-rehearsal")
     public CapabilityStudioFeatureRehearsalProjection featureRehearsal(
+            @RequestHeader HttpHeaders headers,
             @RequestParam String caseId,
             @RequestParam(defaultValue = "STRUCTURE_ONLY") String permission) {
+        IntegrationRequestContext context = authenticator.authenticate(
+                headers, IntegrationOperation.CAPABILITY_STUDIO_REHEARSAL);
         CapabilityStudioDataLensProjection.PermissionMode mode;
         try {
             mode = CapabilityStudioDataLensProjection.PermissionMode.valueOf(permission.trim());
         } catch (RuntimeException failure) {
             throw new IllegalArgumentException("permission must be STRUCTURE_ONLY or PAYLOAD_VISIBLE");
+        }
+        if (mode == CapabilityStudioDataLensProjection.PermissionMode.PAYLOAD_VISIBLE
+                && !context.hasClearanceAtLeast("CONFIDENTIAL")) {
+            throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                    "RG.CAPABILITY_STUDIO.PAYLOAD_CLEARANCE_REQUIRED",
+                    "The verified workload identity cannot view Capability Studio rehearsal payloads.",
+                    context.correlationId(), Map.of("requiredClearance", "CONFIDENTIAL")));
         }
         return featureRehearsal.rehearse(caseId, mode);
     }

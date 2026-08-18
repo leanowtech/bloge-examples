@@ -7,6 +7,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.TableSuiteRunController;
 import com.leanowtech.bloge.gateway.businessmirror.authoring.DomainCapabilityPackageController;
 import com.leanowtech.bloge.gateway.businessmirror.migration.LegacyGraphPackageController;
 import com.leanowtech.bloge.gateway.businessmirror.transport.PackageCompilationController;
+import com.leanowtech.bloge.gateway.capabilitystudio.CapabilityStudioDemoController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringDraftController;
 import com.leanowtech.bloge.gateway.visual.authoring.transport.VisualLibraryAuthoringTestController;
 import com.leanowtech.bloge.gateway.testing.correctness.workspace.CorrectnessWorkspaceController;
@@ -74,7 +75,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         CorrectnessGovernanceController.class,
         ReferenceCandidateController.class,
         CorrectnessDefinitionCandidateController.class,
-        AuthoringLinkResolverController.class
+        AuthoringLinkResolverController.class,
+        CapabilityStudioDemoController.class
 })
 public class IntegrationProblemHandler {
 

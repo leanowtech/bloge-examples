@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
@@ -18,12 +19,18 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class CapabilityStudioDemoConfigurationTest {
+    private static final Path RESOURCES = Path.of("src", "main", "resources");
     private final JdbcDataSource dataSource = dataSource();
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
@@ -33,6 +40,8 @@ class CapabilityStudioDemoConfigurationTest {
                     () -> mock(ScenarioGovernedRegistryGateway.class))
             .withBean(TestSuiteExecutionService.class, () -> mock(TestSuiteExecutionService.class))
             .withBean(TestExecutionApiService.class, () -> mock(TestExecutionApiService.class))
+            .withBean(IntegrationRequestAuthenticator.class,
+                    () -> mock(IntegrationRequestAuthenticator.class))
             .withBean(WritableResourceRegistry.class, () -> mock(WritableResourceRegistry.class))
             .withBean(JdbcDataSource.class, () -> dataSource)
             .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
@@ -140,6 +149,27 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
                         .hasSingleBean(CapabilityStudioGovernedBaselineService.class));
+    }
+
+    @Test
+    void demoIdentityProfilesAuthorizeConfidentialCapabilityStudioRehearsal() throws IOException {
+        String defaults = Files.readString(
+                RESOURCES.resolve("application.yml"), StandardCharsets.UTF_8);
+        String test = Files.readString(
+                RESOURCES.resolve("application-test.yml"), StandardCharsets.UTF_8);
+        String staging = Files.readString(
+                RESOURCES.resolve("application-staging.yml"), StandardCharsets.UTF_8);
+
+        assertThat(defaults).contains(
+                "demo-token: ${RG_INTEGRATION_DEMO_TOKEN:bloge-aneke-demo-token}",
+                "clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}",
+                "CAPABILITY_STUDIO_REHEARSAL");
+        assertThat(test).contains(
+                "clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}",
+                "CAPABILITY_STUDIO_REHEARSAL");
+        assertThat(staging).contains(
+                "clearance: ${RG_INTEGRATION_CLEARANCE:CONFIDENTIAL}",
+                "CAPABILITY_STUDIO_REHEARSAL");
     }
 
     @Test
