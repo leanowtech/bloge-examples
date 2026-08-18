@@ -11,6 +11,7 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.TakesScreenshot;
+import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -48,6 +49,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -450,9 +452,8 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
         assertThat(advanced.path("revision").asLong()).isGreaterThan(revision);
         assertThat(advanced.at("/behavior/durationMs").asLong()).isEqualTo(serverDuration);
 
-        AtomicBoolean putSeen = new AtomicBoolean();
-        AtomicBoolean responseSeen = new AtomicBoolean();
-        AtomicInteger observedStatus = new AtomicInteger();
+        String conflictKey = "CONFLICT-GP-04-" + locale + "-" + viewport.coordinate();
+        ConflictObservationTracker conflictObservation = new ConflictObservationTracker();
         DevTools devTools = driver.getDevTools();
         devTools.createSession();
         devTools.send(Network.enable(Optional.empty(), Optional.empty(), Optional.empty(),
@@ -460,20 +461,37 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
         devTools.addListener(Network.requestWillBeSent(), event -> {
             if (sameRoute(event.getRequest().getUrl(), targetRoute("GP-04"))
                     && "PUT".equals(event.getRequest().getMethod())) {
-                putSeen.set(true);
+                String requestId = event.getRequestId().toString();
+                conflictObservation.requestSent(requestId);
+                logConflictObservation(conflictKey, conflictObservation, requestId);
             }
         });
         devTools.addListener(Network.responseReceived(), event -> {
-            if (sameRoute(event.getResponse().getUrl(), targetRoute("GP-04"))
-                    && event.getResponse().getStatus().intValue() == 409 && putSeen.get()) {
-                responseSeen.set(true);
-                observedStatus.set(409);
+            if (sameRoute(event.getResponse().getUrl(), targetRoute("GP-04"))) {
+                String requestId = event.getRequestId().toString();
+                conflictObservation.responseReceived(requestId,
+                        event.getResponse().getStatus().intValue());
+                logConflictObservation(conflictKey, conflictObservation, requestId);
             }
         });
         try {
             keyboard.activate(By.cssSelector(".capability-editor-actions button"), Keys.ENTER);
             waitFor(By.cssSelector("[data-testid='capability-tutorial-error']"));
-            new WebDriverWait(driver, WAIT_TIMEOUT).until(ignored -> responseSeen.get());
+            try {
+                new WebDriverWait(driver, WAIT_TIMEOUT)
+                        .until(ignored -> conflictObservation.realPut409Observed());
+            } catch (TimeoutException failure) {
+                System.out.printf("[browser-anomaly] conflict observation timeout key=%s "
+                                + "elapsed=%dms phase=%s putRequests=%d responses=%d statuses=%s%n",
+                        conflictKey, conflictObservation.elapsedMillis(), conflictObservation.phase(),
+                        conflictObservation.putRequestCount(), conflictObservation.responseCount(),
+                        conflictObservation.responseStatuses());
+                throw failure;
+            }
+            assertThat(conflictObservation.putRequestCount())
+                    .as("real browser PUT observed for %s", conflictKey).isPositive();
+            assertThat(conflictObservation.observedStatus())
+                    .as("real browser PUT returned 409 for %s", conflictKey).isEqualTo(409);
             boolean localDraft = String.valueOf(localDuration).equals(driver.findElement(By.cssSelector(
                     ".capability-duration-input input")).getAttribute("value"));
             JsonNode preservedHead = readTutorialBranch();
@@ -485,12 +503,22 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
             String errorText = driver.findElement(By.tagName("body")).getText();
             boolean recoveryVisible = recoveryActionVisible();
             capture("CONFLICT-GP-04-" + locale + "-" + viewport.coordinate() + "-error.png");
-            return new ConflictState(responseSeen.get(), observedStatus.get(), localDraft,
+            return new ConflictState(conflictObservation.realPut409Observed(),
+                    conflictObservation.observedStatus(), localDraft,
                     serverPreserved, visibleError(), safeBusinessError(errorText), recoveryVisible);
         } finally {
             try { devTools.send(Network.disable()); } catch (RuntimeException ignored) { }
             try { devTools.close(); } catch (RuntimeException ignored) { }
         }
+    }
+
+    private void logConflictObservation(String key, ConflictObservationTracker observation,
+                                        String requestId) {
+        System.out.printf("[browser-anomaly] conflict observation key=%s phase=%s "
+                        + "elapsed=%dms requestId=%s putRequests=%d responses=%d statuses=%s%n",
+                key, observation.phase(), observation.elapsedMillis(), requestId,
+                observation.putRequestCount(), observation.responseCount(),
+                observation.responseStatuses());
     }
 
     private void editTutorial(KeyboardJourney keyboard, String value) {
@@ -1000,6 +1028,66 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
                     serverRevision, staleGreen, staleError, staleEvidence, staleSuccess, p0, p1);
         }
     }
+
+    /** Correlates CDP request/response callbacks without depending on callback arrival order. */
+    static final class ConflictObservationTracker {
+        private final long startedAt = System.nanoTime();
+        private final Set<String> putRequestIds = ConcurrentHashMap.newKeySet();
+        private final Map<String, Integer> responseStatuses = new ConcurrentHashMap<>();
+        private final AtomicBoolean realPut409Observed = new AtomicBoolean();
+        private final AtomicInteger observedStatus = new AtomicInteger();
+        private volatile String phase = "LISTENERS_READY";
+
+        void requestSent(String requestId) {
+            putRequestIds.add(requestId);
+            phase = "PUT_REQUEST_OBSERVED";
+            correlate(requestId);
+        }
+
+        void responseReceived(String requestId, int status) {
+            responseStatuses.put(requestId, status);
+            phase = status == 409 ? "409_RESPONSE_OBSERVED" : "RESPONSE_OBSERVED";
+            correlate(requestId);
+        }
+
+        boolean realPut409Observed() {
+            return realPut409Observed.get();
+        }
+
+        int observedStatus() {
+            return observedStatus.get();
+        }
+
+        String phase() {
+            return phase;
+        }
+
+        long elapsedMillis() {
+            return Duration.ofNanos(System.nanoTime() - startedAt).toMillis();
+        }
+
+        int putRequestCount() {
+            return putRequestIds.size();
+        }
+
+        int responseCount() {
+            return responseStatuses.size();
+        }
+
+        Map<String, Integer> responseStatuses() {
+            return Map.copyOf(responseStatuses);
+        }
+
+        private void correlate(String requestId) {
+            Integer status = responseStatuses.get(requestId);
+            if (putRequestIds.contains(requestId) && status != null && status == 409) {
+                observedStatus.set(status);
+                realPut409Observed.set(true);
+                phase = "REAL_PUT_409_CORRELATED";
+            }
+        }
+    }
+
     private record ConflictState(
             boolean triggered,
             int status,
