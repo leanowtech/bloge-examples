@@ -6,7 +6,7 @@
 
 | Requirement | 当前实现 / 数据 | 自动化证据 | 仍缺证据 | Owner | Gate |
 |---|---|---|---|---|---|
-| `GP-01` | `/capabilities/`；4/1/1/9 Demo Pack | 组件、Loader/Controller；本地干净候选固定 60 格真实 Chrome 矩阵覆盖中英文 1440/1024/390，页面级无横向溢出和内部状态泄漏 | 目标 186 格中的服务错误 60 格、目标请求断网 60 格和 GP-04 真实保存冲突 6 格尚未实现；CI Candidate/Environment Authority、产品签署未闭合；英文演示数据仍保留中文权威业务名称 | Product + QA | `PARTIAL` |
+| `GP-01` | `/capabilities/`；4/1/1/9 Demo Pack | 组件、Loader/Controller；本地干净候选固定 60 格真实 Chrome 矩阵覆盖中英文 1440/1024/390，页面级无横向溢出和内部状态泄漏；异常态 126 格已有严格 Schema、构造器、独立 verifier/CLI 和负向测试 | 异常态真实浏览器 producer 尚未完成服务错误 60 格、目标请求断网 60 格和 GP-04 真实保存冲突 6 格，实际执行仍为 0/126；CI Candidate/Environment Authority、产品签署未闭合；英文演示数据仍保留中文权威业务名称 | Product + QA | `PARTIAL` |
 | `GP-02` | 四个可独立选择的业务契约投影 | 前端选择/契约测试、后端投影；本地干净候选固定 60 格覆盖中英文三视口及桌面/移动键盘任务路径 | Schema round-trip、人工读屏、CI Authority 和 Product/API Owner 签署 | Product + API Owner | `PARTIAL` |
 | `GP-03` | Golden Pack 确定性 Scenario Dataset 投影；根/Case/Behavior 内容指纹；Dataset 摘要、五项质量覆盖、搜索筛选和 Case 主从详情 | 严格 Schema；独立 Test Kit 指纹/Scope/引用闭包/质量/Active readiness；前后端语义 fail-closed 测试；中英文三视口 Chrome；真实 Tab/Space 选择 Case；Dataset 经适配器进入既有 `ScenarioGovernedCompiler`，确定性生成 FixtureBundle/TestSuite 与 payload-free source map | 持久化 Dataset Authority、权限投影、注册与执行编译产物、完整读屏、Correctness Owner 签署 | Correctness Owner | `PARTIAL` |
 | `GP-04` | Tutorial Branch 业务句式编辑器；数据库 head 与 immutable revision；保存与隔离预检闭环 | 组件/API/Controller；SQL 原子 CAS、同版本并发单赢家、stale retry 幂等、Authority 重建恢复、Baseline 漂移失败关闭；本地干净候选固定 60 格覆盖中英文三视口正常路径；Test Kit 严格 Schema、内容指纹重算、revision/baseline/preflight exact binding；真实 HTTP 三制品互验 | 人工读屏、409/断网真实浏览器、并发浏览器、业务签署 | Correctness Owner | `PARTIAL` |
@@ -40,7 +40,7 @@
 | Requirement | 阈值 | 当前证据 | 缺口 | Owner | Gate |
 |---|---|---|---|---|---|
 | `NFR-01` | 黄金样例离线可读取和运行 | Pack 为本地资源；Feature Rehearsal 和 Tool 受治理 9 × 3 均用本地受控 material 运行，后者通过同一 compiler/Registry/exact-suite runtime，页面不请求真实 API | 启动探针尚未对受治理 POST 做轻量协议发现；发布候选环境、部署级 egress 与签署未接入 | Delivery | `PARTIAL` |
-| `NFR-02` | 双语、三视口、完整键盘路径 | 双语组件测试；本地干净候选固定正常态 60 格全部执行，真实 Chrome 记录每格实际视口、键盘完成度、页面溢出、axe serious/critical、技术 ID/Raw JSON 泄漏和 P0/P1；60/60 通过、0 跳过、0 P0/P1 | 计划中的服务错误 60 格、目标请求断网 60 格、GP-04 真实保存冲突 6 格、人工屏幕阅读器和 CI Candidate/Environment Authority 未闭合；当前为 60/186；业务资产内容未本地化 | UX + QA | `PARTIAL` |
+| `NFR-02` | 双语、三视口、完整键盘路径 | 双语组件测试；本地干净候选固定正常态 60 格全部执行，真实 Chrome 记录每格实际视口、键盘完成度、页面溢出、axe serious/critical、技术 ID/Raw JSON 泄漏和 P0/P1；60/60 通过、0 跳过、0 P0/P1；异常态 126 格的固定分母、故障类别、恢复不变量和 exact base binding 已形成可独立复验协议 | 服务错误、目标请求断网和真实保存冲突的浏览器全量执行仍为 0/126；人工屏幕阅读器和 CI Candidate/Environment Authority 未闭合；当前为 60/186；业务资产内容未本地化 | UX + QA | `PARTIAL` |
 | `NFR-03` | 三次运行语义 fingerprint 一致 | 受治理 Tool v3 基线产生 3 suite/27 child 唯一 Run，publication/provenance/source-map/candidate intent 三轮一致；每 Case 三轮 `semanticResultFingerprint` 一致并由独立 Test Kit 复验；child Evidence 为 `CERTIFIABLE` | 仍缺目标环境认证、部署级 egress 和 Owner 签署，不能从开发确定性直接推导发布确定性 | Runtime | `PARTIAL` |
 | `NFR-04` | 无手工 ID、无 Raw JSON | 默认视图折叠技术引用 | 六人可用性测试 | UX | `PENDING` |
 | `NFR-05` | 404/400/409 有恢复动作且不丢内容 | Demo Pack 加载重试；GP-04 冲突保留输入；服务端统一返回原因、影响、恢复动作和可选字段；传输失败单独分类；Authority 重建恢复已自动化证明 | 冲突/断网真实浏览器矩阵 | Frontend + API | `PARTIAL` |

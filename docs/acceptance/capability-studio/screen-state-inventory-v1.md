@@ -10,7 +10,7 @@
 |---|---|---|---|
 | `LOADING` | 当前正在读取的业务对象 | 允许取消或返回 | `aria-busy`、DOM |
 | `EMPTY` | 为什么为空、需要什么前置资产 | 创建或选择推荐样例 | DOM、协议 |
-| `ERROR` | 稳定错误码、影响、恢复动作 | 原地重试，不丢草稿 | DOM、失败协议 |
+| `ERROR` | 面向业务的错误类别、发生原因、影响和恢复动作；内部错误码与原始响应默认不展示 | 原地重试，不丢草稿；恢复后清除陈旧错误和成功状态 | DOM、失败协议、技术信息不泄漏断言 |
 | `FORBIDDEN` | 缺少的权限与可申请范围 | 发起申请或返回 | DOM、安全审计 |
 | `CONFLICT` | 本地与服务端 revision 差异 | 比较、重载、另存分支 | DOM、并发协议 |
 | `STALE` | 漂移来源和受影响资产 | 重新编译或迁移 | DOM、影响报告 |
@@ -20,7 +20,7 @@
 
 | GP | 路由 / 主视图 | READY 验收信号 | 重点异常与恢复 | DOM / 视觉证据 | 当前状态 |
 |---|---|---|---|---|---|
-| `GP-01` | `/capabilities/` 能力总览 | 4 API、1 Feature、1 Tool、9 Case；主要动作是查看订单查询契约 | Demo Pack 不可用时显示错误码、影响和重试 | `data-testid=capability-overview`；中文与英文 1440/1024/390 Chrome | `BROWSER_SMOKE_VERIFIED_READY` |
+| `GP-01` | `/capabilities/` 能力总览 | 4 API、1 Feature、1 Tool、9 Case；主要动作是查看订单查询契约 | Demo Pack 不可用时显示业务化原因、影响和重试，不泄漏内部协议码 | `data-testid=capability-overview`；中文与英文 1440/1024/390 Chrome | `BROWSER_SMOKE_VERIFIED_READY` |
 | `GP-02` | 订单信息查询契约 | 输入、成功结果、错误、副作用、Owner、SLA、敏感度 | 契约不完整时拒绝猜测，返回总览 | `data-testid=capability-contract`；中文 1440 Chrome API 选择 | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-03` | 场景数据中心 | Dataset 分母、生命周期、分类、Owner、九条 Case、五项质量覆盖；选择 Case 后显示业务目标、来源、Oracle、适用契约、依赖表现与精确引用 | 空筛选可清除；网络、Schema、跨 Scope、重复引用、契约闭包、质量漂移或 Active readiness 失败时 fail closed 并提供重试 | `data-testid=capability-scenarios` / `capability-scenario-details`；严格前后端协议与 Test Kit；中英文三视口 Chrome；Tab/Space 键盘选择；真实 axe | `BROWSER_SMOKE_VERIFIED_STAGE0_PROJECTION` |
 | `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成数据库 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；数据库 CAS/重建/漂移测试；中文实际保存/预检；英文 1024 Chrome；Test Kit 实际 HTTP 互验；真实 axe | `BROWSER_SMOKE_VERIFIED_DURABLE_AUTHORITY` |
