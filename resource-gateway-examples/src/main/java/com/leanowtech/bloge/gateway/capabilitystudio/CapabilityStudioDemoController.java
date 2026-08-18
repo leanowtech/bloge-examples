@@ -37,6 +37,7 @@ public final class CapabilityStudioDemoController {
     private final CapabilityStudioGoldenDemoPack pack;
     private final CapabilityStudioTutorialBranchAuthority tutorialBranch;
     private final CapabilityStudioScenarioDatasetProjector scenarioDataset;
+    private final CapabilityStudioScenarioQualityImpactProjection scenarioQualityImpact;
     private final CapabilityStudioFeatureRehearsalService featureRehearsal;
     private final CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline;
     private final IntegrationRequestAuthenticator authenticator;
@@ -49,6 +50,7 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioGoldenDemoPack pack,
             CapabilityStudioTutorialBranchAuthority tutorialBranch,
             CapabilityStudioScenarioDatasetProjector scenarioDataset,
+            CapabilityStudioScenarioQualityImpactProjection scenarioQualityImpact,
             CapabilityStudioFeatureRehearsalService featureRehearsal,
             CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
             CapabilityStudioGovernedBaselineService governedBaseline,
@@ -57,6 +59,7 @@ public final class CapabilityStudioDemoController {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = scenarioDataset;
+        this.scenarioQualityImpact = scenarioQualityImpact;
         this.featureRehearsal = featureRehearsal;
         this.featureRehearsalBaseline = featureRehearsalBaseline;
         this.governedBaseline = governedBaseline;
@@ -73,7 +76,9 @@ public final class CapabilityStudioDemoController {
             CapabilityStudioFeatureRehearsalBaselineService featureRehearsalBaseline,
             CapabilityStudioGovernedBaselineService governedBaseline,
             IntegrationRequestAuthenticator authenticator) {
-        this(pack, tutorialBranch, scenarioDataset, featureRehearsal, featureRehearsalBaseline,
+        this(pack, tutorialBranch, scenarioDataset,
+                new CapabilityStudioScenarioQualityImpactProjection(pack, scenarioDataset),
+                featureRehearsal, featureRehearsalBaseline,
                 governedBaseline, null, authenticator);
     }
 
@@ -88,6 +93,8 @@ public final class CapabilityStudioDemoController {
         this.pack = pack;
         this.tutorialBranch = tutorialBranch;
         this.scenarioDataset = new CapabilityStudioScenarioDatasetProjector(pack);
+        this.scenarioQualityImpact = new CapabilityStudioScenarioQualityImpactProjection(
+                pack, this.scenarioDataset);
         com.fasterxml.jackson.databind.ObjectMapper mapper =
                 new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules();
         this.featureRehearsal = new CapabilityStudioFeatureRehearsalService(
@@ -199,6 +206,19 @@ public final class CapabilityStudioDemoController {
     @GetMapping("/scenario-dataset")
     public CapabilityStudioScenarioDatasetProjector.ScenarioDatasetProjection scenarioDataset() {
         return scenarioDataset.project();
+    }
+
+    /** Returns the fail-closed quality admission and payload-free impact graph for the dataset. */
+    @GetMapping("/scenario-dataset/quality-impact")
+    public CapabilityStudioScenarioQualityImpactProjection.ScenarioQualityImpactProjection
+            scenarioDatasetQualityImpact(@RequestHeader HttpHeaders headers) {
+        authenticator.authenticate(
+                headers, IntegrationOperation.CAPABILITY_STUDIO_SCENARIO_QUALITY_READ);
+        if (scenarioQualityImpact == null) {
+            throw new IllegalStateException(
+                    "Scenario quality impact projection is unavailable in standalone mode");
+        }
+        return scenarioQualityImpact.project();
     }
 
     /** Returns the current business-shaped dependency behavior for the fixed tutorial branch. */

@@ -105,6 +105,38 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.querySelectorAll('.capability-scenario-list-item')).toHaveLength(1);
   });
 
+  it('opens GP-09 from Scenario data, explains blocked admission, and highlights the selected impact closure', async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/demo-pack')) return json(capabilityStudioDemoPackFixture);
+      if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
+      if (url.endsWith('/scenario-dataset/quality-impact')) return json(scenarioQualityImpactProjectionFixture());
+      return json({ code: 'NOT_FOUND' }, 404);
+    });
+    await render(fetcher);
+    await act(async () => buttonWithText('Scenario data').click());
+    await settle();
+    await act(async () => buttonWithText('Review quality & impact').click());
+    await settle();
+
+    expect(new URL(window.location.href).searchParams.get('task')).toBe('quality');
+    expect(query('[data-testid="capability-quality-impact"]')).toBeTruthy();
+    expect(document.body.textContent).toContain('All five coverage dimensions are 100%');
+    expect(document.body.textContent).toContain('admission remains blocked');
+    expect(document.body.textContent).toContain('Draft');
+    expect(document.body.textContent).toContain('Orphan cases');
+    expect(document.body.textContent).toContain('This view does not export request/response content');
+    expect(document.body.textContent).toContain('Business content not exported');
+    expect(document.body.textContent).not.toContain('PAYLOAD_NOT_EXPORTED');
+    expect([...document.querySelectorAll('.capability-quality-case-item strong, .capability-quality-graph-node strong')].map((node) => node.textContent).join(' ')).not.toContain('case-standard-cancellation-fee');
+    expect(document.querySelectorAll('.capability-quality-case-item')).toHaveLength(9);
+    expect(document.querySelectorAll('.capability-quality-graph-node.selected').length).toBeGreaterThan(1);
+    await act(async () => buttonWithText('Compensation history times out').click());
+    expect(document.querySelector('.capability-quality-case-item.selected')?.textContent).toContain('Compensation history times out');
+    expect(document.querySelectorAll('.capability-quality-graph-node.selected').length).toBeGreaterThan(1);
+    expect(document.querySelectorAll('.capability-quality-graph-node strong').length).toBeGreaterThan(1);
+  });
+
   it('shows an empty filtered state without changing the Dataset', async () => {
     await render();
     await act(async () => buttonWithText('Scenario data').click());
@@ -677,6 +709,7 @@ function defaultFetcher(): CapabilityStudioFetcher {
   return async (input) => {
     const url = String(input);
     if (url.endsWith('/scenario-dataset')) return json(scenarioDatasetProjectionFixture);
+    if (url.endsWith('/scenario-dataset/quality-impact')) return json(scenarioQualityImpactProjectionFixture());
     if (url.includes('/feature-rehearsal?')) {
       const query = new URL(url, 'http://capability-studio.local').searchParams;
       return json(featureRehearsalProjectionFixture(
@@ -685,6 +718,48 @@ function defaultFetcher(): CapabilityStudioFetcher {
       ));
     }
     return json(capabilityStudioDemoPackFixture);
+  };
+}
+
+function scenarioQualityImpactProjectionFixture() {
+  const dataset = structuredClone(scenarioDatasetProjectionFixture);
+  const nodes = new Map<string, { id: string; kind: string; label: string; ref: typeof dataset.datasetRef; status: string }>();
+  const edges: Array<{ id: string; source: string; target: string; relation: string }> = [];
+  const compare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+  const key = (ref: typeof dataset.datasetRef) => `${ref.kind}|${ref.id}|${ref.revision}|${ref.fingerprint}|${ref.authority}`;
+  const addNode = (kind: string, ref: typeof dataset.datasetRef, label: string, status: string) => nodes.set(key(ref), { id: `${kind}:${ref.id}`, kind, label, ref, status });
+  addNode('DATASET', dataset.datasetRef, dataset.name, 'BLOCKED');
+  addNode('TARGET', dataset.targetRef, 'Cancellation resolution tool', 'DRAFT');
+  dataset.cases.forEach((scenario) => {
+    addNode('DATA_CASE', scenario.caseRef, scenario.name, scenario.lifecycle);
+    if (scenario.sourceRef && scenario.source) addNode('SOURCE', scenario.sourceRef, scenario.source.displayName, 'BLOCKED');
+    if (scenario.oracleRef && scenario.oracle) addNode('ORACLE', scenario.oracleRef, scenario.oracle.displayName, 'DRAFT');
+    scenario.applicableContractRefs.forEach((ref) => addNode('CONTRACT', ref, `Contract ${ref.id}`, 'DRAFT'));
+    scenario.behaviorProfiles.filter((profile) => profile.purpose === 'RUNTIME_CONTROL').forEach((profile) => addNode('DEPENDENCY', profile.dependencyRef, `Dependency ${profile.dependencyRef.id}`, 'DRAFT'));
+  });
+  const nodeId = (ref: typeof dataset.datasetRef, kind: string) => nodes.get(key(ref))?.id ?? `${kind}:${ref.id}`;
+  dataset.cases.forEach((scenario) => {
+    const caseNode = nodeId(scenario.caseRef, 'DATA_CASE');
+    edges.push({ id: `edge-${caseNode}-dataset`, source: nodes.get(key(dataset.datasetRef))!.id, target: caseNode, relation: 'CONTAINS' });
+    if (scenario.sourceRef) edges.push({ id: `edge-${caseNode}-source-${scenario.sourceRef.id}`, source: caseNode, target: nodeId(scenario.sourceRef, 'SOURCE'), relation: 'SOURCED_BY' });
+    if (scenario.oracleRef) edges.push({ id: `edge-${caseNode}-oracle-${scenario.oracleRef.id}`, source: caseNode, target: nodeId(scenario.oracleRef, 'ORACLE'), relation: 'CHECKED_BY' });
+    scenario.applicableContractRefs.forEach((ref) => edges.push({ id: `edge-${caseNode}-contract-${ref.id}`, source: caseNode, target: nodeId(ref, 'CONTRACT'), relation: 'VALIDATES' }));
+    scenario.behaviorProfiles.filter((profile) => profile.purpose === 'RUNTIME_CONTROL').forEach((profile) => edges.push({ id: `edge-${caseNode}-dependency-${profile.dependencyRef.id}`, source: caseNode, target: nodeId(profile.dependencyRef, 'DEPENDENCY'), relation: 'CONTROLS' }));
+    edges.push({ id: `edge-${caseNode}-target`, source: caseNode, target: nodeId(dataset.targetRef, 'TARGET'), relation: 'VALIDATES_TARGET' });
+  });
+  const cases = dataset.cases.map((scenario) => {
+    const dependencyRefs = scenario.behaviorProfiles.filter((profile) => profile.purpose === 'RUNTIME_CONTROL').map((profile) => profile.dependencyRef).sort((a, b) => key(a).localeCompare(key(b)));
+    const impacted = new Set([...scenario.applicableContractRefs.map(key), ...dependencyRefs.map(key), key(dataset.targetRef)]);
+    return { caseRef: scenario.caseRef, name: scenario.name, lifecycle: scenario.lifecycle, qualityState: scenario.qualityState, owner: scenario.owner, sourceRef: scenario.sourceRef, source: scenario.source, oracleRef: scenario.oracleRef, oracle: scenario.oracle, contractRefs: scenario.applicableContractRefs, dependencyRefs, freshnessStatus: 'UNVERIFIED', maskingStatus: 'PAYLOAD_NOT_EXPORTED', impactedAssetCount: impacted.size };
+  });
+  const sortedNodes = [...nodes.values()].sort((a, b) => compare(a.kind, b.kind) || compare(a.id, b.id));
+  const sortedEdges = edges.sort((a, b) => compare(a.source, b.source) || compare(a.target, b.target) || compare(a.relation, b.relation) || compare(a.id, b.id));
+  return {
+    schemaVersion: 'resource-gateway.capability-studio.scenario-quality-impact.v1', datasetRef: dataset.datasetRef, targetRef: dataset.targetRef, projectionFingerprint: `sha256:${'e'.repeat(64)}`,
+    admission: { status: 'BLOCKED', activeCaseCount: dataset.cases.filter((scenario) => scenario.lifecycle === 'ACTIVE').length, draftCaseCount: dataset.cases.filter((scenario) => scenario.lifecycle === 'DRAFT').length, staleCaseCount: dataset.cases.filter((scenario) => (scenario.lifecycle as string) === 'STALE').length, blockers: [{ code: 'FRESHNESS_EVIDENCE_MISSING', message: 'Add freshness evidence before admission.' }, { code: 'NO_ACTIVE_CASES', message: 'Activate at least one case before admission.' }] },
+    quality: { status: 'BLOCKED', ownerCoveragePercent: dataset.quality.ownerCoveragePercent, sourceCoveragePercent: dataset.quality.sourceCoveragePercent, oracleCoveragePercent: dataset.quality.oracleCoveragePercent, contractCoveragePercent: dataset.quality.contractCoveragePercent, behaviorClosurePercent: dataset.quality.behaviorClosurePercent, freshnessStatus: 'UNVERIFIED', payloadExposure: 'NONE', maskingStatus: 'PAYLOAD_NOT_EXPORTED' },
+    summary: { caseCount: cases.length, sourceCount: sortedNodes.filter((node) => node.kind === 'SOURCE').length, oracleCount: sortedNodes.filter((node) => node.kind === 'ORACLE').length, contractCount: sortedNodes.filter((node) => node.kind === 'CONTRACT').length, dependencyCount: sortedNodes.filter((node) => node.kind === 'DEPENDENCY').length, targetCount: 1, impactedAssetCount: sortedNodes.filter((node) => node.kind === 'CONTRACT' || node.kind === 'DEPENDENCY' || node.kind === 'TARGET').length, orphanCaseCount: 0 },
+    cases, impactGraph: { nodes: sortedNodes, edges: sortedEdges },
   };
 }
 

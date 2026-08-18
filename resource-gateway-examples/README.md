@@ -92,7 +92,17 @@ incomplete exact references, or unsupported lowerings. The governed adapter dele
 `ScenarioGovernedCompiler` and deterministically produces FixtureBundle/TestSuite registration
 plans with a payload-free source map. The source map is now lowered into a typed, sorted exact-ref
 provenance closure that participates in FixtureBundle and TestSuite content addressing. The
-governed asset publisher registers those plans only through the existing testing registry, ignores
+**Quality & impact** task turns that same Dataset into a strict, payload-free GP-09 admission and
+impact projection. The demo truth is intentionally falsifiable: `9 DRAFT / 0 ACTIVE / 0 STALE`, five
+definition-coverage metrics at `100%`, freshness `UNVERIFIED`, admission `BLOCKED`, and exactly two
+blockers (`FRESHNESS_EVIDENCE_MISSING`, `NO_ACTIVE_CASES`). Selecting one Case highlights its Source,
+Oracle, applicable Contract, four runtime dependencies, and target; the complete projection contains
+37 exact-reference nodes and 81 semantic edges with no orphan Case. `PAYLOAD_NOT_EXPORTED` proves only
+that this projection carries no request/response content; it does not claim that source payloads have
+been semantically de-identified. The startup probe, JSON Schema, Test Kit verifier, and real-browser
+acceptance all enforce these facts independently.
+
+The governed asset publisher registers those plans only through the existing testing registry, ignores
 write receipts, and independently re-reads and re-fingerprints every fixture and suite. The
 candidate service then executes that exact suite through the existing `TestSuiteExecutionService`;
 aggregate evidence retains the full exact-ref closure, while each child run carries the exact suite
@@ -213,6 +223,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | --- | --- |
 | `http://localhost:8080/` | Open the default Capability Studio and inspect the cancellation-fee capability pack |
 | `http://localhost:8080/capabilities/` | Inspect 4 API capabilities, 1 Feature, 1 Tool, 9 scenarios, exact refs, contracts, and the truthful acceptance state |
+| `http://localhost:8080/capabilities/?lang=zh-CN&task=quality` | Inspect GP-09 quality coverage, admission blockers, the payload boundary, and each Case's exact impact closure |
 | `http://localhost:8080/business-mirror/` | Open the legacy Business Mirror Portfolio, import a legacy Graph as a Package, complete guided business fields, and compile readiness |
 | `http://localhost:8080/author/` | Build a schema-constrained graph on the visual canvas |
 | `http://localhost:8080/libraries/` | Resume durable exact revisions from status queues, discover existing DSL/API/runtime assets, create libraries, infer schemas, run exact-draft tests, and commit |
@@ -224,6 +235,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `http://localhost:8080/api/capability-studio/demo-pack` | Read the test/staging-only payload-free golden demo projection when the Capability Studio sample is enabled |
 | `http://localhost:8080/api/capability-studio/acceptance-baseline` | Read the truthful Stage 0 `NO_GO`/`NOT_RUN` acceptance projection; this is not runtime evidence |
 | `GET http://localhost:8080/api/capability-studio/scenario-dataset` | Read the strict payload-free nine-Case Dataset projection with exact refs, business quality, source, Oracle, Contract, and behavior metadata |
+| `GET http://localhost:8080/api/capability-studio/scenario-dataset/quality-impact` | Read the strict GP-09 quality/admission/impact projection; requires Bearer authentication plus `X-Purpose: CAPABILITY_STUDIO_REHEARSAL` and is independently verifiable with `CapabilityStudioScenarioQualityImpactVerifier` |
 | `GET http://localhost:8080/api/capability-studio/tutorial-branch` | Read the durable tutorial head revision and content fingerprint |
 | `PUT http://localhost:8080/api/capability-studio/tutorial-branch/behaviors/compensation-history` | Save a strict business-shaped timeout behavior with optimistic revision control; test/staging only |
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |

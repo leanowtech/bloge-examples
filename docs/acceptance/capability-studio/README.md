@@ -2,7 +2,7 @@
 
 > 当前状态：`NO_GO`
 >
-> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-08 与 GP-10 已形成 Stage 0 开发切片，Canonical 运行证据已达到 `CERTIFIABLE`；GP-09、目标环境候选认证、部署级 egress 和人工签署仍未闭合。任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
+> 本目录记录 Capability Studio 的治理边界、验收合同、证据追踪和未通过实例。GP-01 至 GP-10 已形成 Stage 0 开发切片，Canonical 运行证据已达到 `CERTIFIABLE`；目标环境候选认证、部署级 egress、客户级 Dataset/Payload Authority、完整 UX 矩阵和人工签署仍未闭合。任何局部完成都不表示整体产品验收通过，也不替代产品与架构签署。
 
 ## 1. 制品清单
 
@@ -16,7 +16,8 @@
 | Golden Path NO_GO fixture | [`capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json`](capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json) | 提供真实的初始缺证据状态 | `NO_GO` |
 | Governed Baseline Schema | [`capability-studio-governed-baseline-v3.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json) | 固定 GP-07/08 的 9 × 3 矩阵、逐 Case 业务 Oracle、部署候选与 canonical execution intent；失败态强制 `NOT_VERIFIED` | 当前为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO` |
 | Governed Run Evidence Schema | [`capability-studio-governed-run-evidence-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-run-evidence-v1.schema.json) | 固定 GP-10 的原运行读取、完整引用闭包、结构级 Data Lens 和确定性指纹 | 开发证据已互验，不代表目标环境验收通过 |
-| Screen State Inventory v1 | [`screen-state-inventory-v1.md`](screen-state-inventory-v1.md) | 逐个 GP 固化页面状态和恢复动作 | GP-01 至 GP-08 与 GP-10 已有开发证据；GP-09 仍缺失 |
+| Scenario Quality & Impact Schema | [`capability-studio-scenario-quality-impact-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-scenario-quality-impact-v1.schema.json) | 固定 GP-09 的准入事实、质量覆盖、exact-ref 影响闭包、确定性指纹和 Payload 边界 | test/staging 开发证据已互验，正式数据准入仍为 `BLOCKED` |
+| Screen State Inventory v1 | [`screen-state-inventory-v1.md`](screen-state-inventory-v1.md) | 逐个 GP 固化页面状态和恢复动作 | GP-01 至 GP-10 均有开发证据；完整候选与人工矩阵未闭合 |
 | Requirement Traceability v1 | [`requirement-to-evidence-traceability-matrix-v1.md`](requirement-to-evidence-traceability-matrix-v1.md) | 把 GP、Spike、安全和 NFR 绑定到证据与责任人 | 缺口已显式列出 |
 
 跨工具 JSON Schema 位于 [`docs/schemas/resource-gateway-capability-studio/`](../../schemas/resource-gateway-capability-studio/)，因为它们是稳定协议，而不是某一个验收运行的私有 fixture。
@@ -42,6 +43,8 @@
 - GP-03 已从静态九行表切换为真实 Dataset master-detail 视图，显示 Dataset 分母、生命周期、分类、Owner、五项质量覆盖、Case 业务目标、来源、Oracle、适用契约、依赖表现与精确引用；协议、网络或语义校验失败时拒绝展示并提供恢复动作；
 - GP-03 Case 详情已把原有混合的「依赖表现」拆成「隔离运行依赖」与「业务正确性要求」：前者展示四个被控制的 API 及其表现，后者展示幂等、禁止写入等 Oracle 义务；无额外义务时明确说明由 Oracle 校验业务结果；
 - GP-03 中文 1440×900 与 390×844 真实 Chrome 烟测，覆盖 Dataset 摘要、质量状态、九条 Case、超时案例详情、移动端筛选与无横向溢出。
+- GP-09 已新增 test/staging-only `GET /api/capability-studio/scenario-dataset/quality-impact`。严格 v1 投影如实固定 9 `DRAFT`、0 `ACTIVE`、0 `STALE`、五项覆盖 100%、新鲜度 `UNVERIFIED`、准入 `BLOCKED` 和两个稳定 blocker；根级 `targetRef` 独立锚定被验证能力，37 个 exact-ref 节点与 81 条语义边闭合 Dataset、Case、Source、Oracle、Contract、四个 runtime dependency 和同一 Target，每 Case 的 6 个影响资产可独立复算。投影只输出关系，不输出业务 Payload，也明确不把该边界冒充语义脱敏证明；
+- `CapabilityStudioScenarioQualityImpactVerifier` 已作为独立 Test Kit 边界，验证公开 Schema、投影 fingerprint、稳定排序、Scope 闭包、多 Authority、节点/边语义、汇总基数、准入状态机与递归 Payload 字段拒绝。真实 wire bytes 已通过 verifier；前端直接用认证请求消费同一响应，真实 Chrome 覆盖中文 1440×1100 与 390×844、Case 切换后的 9 节点/8 边高亮、页面无横向溢出和 axe serious/critical 为 0；
 - Dataset 经确定性适配器进入既有 `ScenarioDraftSet`，再委托既有 `ScenarioGovernedCompiler` 生成 FixtureBundle/TestSuite 注册计划；Canonical 9 Case、RETURN/ERROR/TIMEOUT/顺序消费/`MUST_NOT_CALL`、rule source map、exact target/contract/Scope/Authority、三次确定性和 fail-closed 负向语义已有自动化证据。source map 现已转换为强类型、稳定排序的 exact-ref provenance，并参与 FixtureBundle/TestSuite 内容寻址；`CapabilityStudioGovernedAssetPublisher` 只通过既有 Registry 注册，写后独立回读并复算内容；`CapabilityStudioGovernedCandidateService` 再以同一 exact suite 调用既有 `TestSuiteExecutionService`。完整闭包以可逆字典清单进入 aggregate evidence，Canonical suite metadata 为 11,863 bytes，低于 16,384 bytes 协议上限；child evidence 使用 suite ref 与 provenance/source-map fingerprint 做紧凑绑定。真实 Spring test profile 已完成同一注册闭包的 3 轮 9 Case 执行：3 个 suite run、27 个唯一 child run 全部通过，进程内真实外部调用为 0；旧 Scenario 编译路径不注入这些字段，内容寻址保持兼容；
 - Data Lens 后端窄切片直接投影既有 `TestRunEvidence.nodeTrace/edgeTrace`，支持 structure-only 与 payload-visible 视图、稳定执行坐标、值 fingerprint、重试/回退、首个运行时差异和高基数截断；该投影已接入 GP-05/06 Feature API 与工作区。视图参数只表达请求：服务端先验证 credential 与 `CAPABILITY_STUDIO_REHEARSAL` purpose，再以受信 clearance 裁决 Payload；PUBLIC 身份可看结构，`CONFIDENTIAL` 及以上身份才可看受控数据；query、伪造 `X-Clearance` 和审计故障不能越过该边界；
 - zero-egress 窄 Spike 已让 9 个 Canonical Case metadata 通过真实 `TestRunService` 与 `HttpResourceOperator` delegate 边界运行；任何真实 delegate 调用都会计数并 fail-fast，当前 connector counter 为 0，fallback-to-real 在执行前拒绝。该证据使用 test-owned runtime material，只证明进程内控制反转，不等同于部署级 network deny，也不构成 9/9 业务 Oracle 验收；
@@ -58,13 +61,13 @@
 - 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
 - GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，以及 GP-05/06 英文 1024×768 证据；覆盖 Dataset 的 Tab/Enter/Space 键盘路径、Feature 权限切换、六种组件状态和真实浏览器完整 axe-core 检查。真实 axe 曾检出并推动修复选中场景辅助文字对比度和 DAG 滚动区焦点问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-07/08/10 的英文与 1024 视口、GP-09 开发切片和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、可信 freshness/review Authority、Active 生命周期与审批入口、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵、GP-07 至 GP-10 的英文与 1024 视口、GP-09 完整异常/仅键盘矩阵和六人可用性签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
 ### 2.1 当前浏览器证据
 
-以下截图由 `CapabilityStudioBrowserAcceptanceTest` 或同源真实浏览器会话连接实际 Spring Boot 服务后生成，覆盖 GP-01 至 GP-08 和 GP-10。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏、GP-04 实际保存与隔离预检、GP-05/06 Trace 与权限态、GP-07/08 真实受治理 POST 与 9 × 3 矩阵、GP-10 原运行读取与 Deep Link，以及页面级无横向溢出。
+以下截图由 `CapabilityStudioBrowserAcceptanceTest` 或同源真实浏览器会话连接实际 Spring Boot 服务后生成，覆盖 GP-01 至 GP-10。自动化同时断言资产数量、API 选择、九行场景、中文业务状态文案、内部状态码不泄漏、GP-04 实际保存与隔离预检、GP-05/06 Trace 与权限态、GP-07/08 真实受治理 POST 与 9 × 3 矩阵、GP-09 质量准入与影响闭包、GP-10 原运行读取与 Deep Link，以及页面级无横向溢出。自动化截图使用 CDP 设置精确 viewport，并在截图前断言实际 `window.innerWidth/innerHeight`；表中的 1440、1024 和 390 是已执行尺寸，不是文件名约定。
 
 | 视口 | 覆盖内容 | 证据 |
 |---|---|---|
@@ -83,6 +86,13 @@
 | 390×844 | GP-05/06 移动端任务选择、场景选择和有界 DAG 滚动入口 | [`capability-studio-gp05-gp06-payload-zh-390.png`](../../assets/capability-studio/capability-studio-gp05-gp06-payload-zh-390.png) |
 | 1440×1100 | GP-07/08 Tool 契约、受治理 9 × 3 开发验证、双结论、3 轮与 9 × 3 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-1440.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-1440.png) |
 | 390×844 | GP-07/08 移动端双结论、三轮摘要和完整 Case 矩阵 | [`capability-studio-gp07-gp08-governed-tool-zh-390.png`](../../assets/capability-studio/capability-studio-gp07-gp08-governed-tool-zh-390.png) |
+| 1440×1100 | GP-09 五项 100%、9/0/0 准入事实、两个阻断、Payload 边界与 Case 影响入口 | [`capability-studio-gp09-quality-admission-zh-1440.png`](../../assets/capability-studio/capability-studio-gp09-quality-admission-zh-1440.png) |
+| 1440×1100 | GP-09 选择超时 Case 后的 Owner、Source、Oracle、Contract、四依赖、Target 与 9 节点/8 边高亮闭包 | [`capability-studio-gp09-case-impact-zh-1440.png`](../../assets/capability-studio/capability-studio-gp09-case-impact-zh-1440.png) |
+| 390×844 | GP-09 移动端准入首屏与无横向溢出 | [`capability-studio-gp09-quality-admission-zh-390.png`](../../assets/capability-studio/capability-studio-gp09-quality-admission-zh-390.png) |
+| 390×844 | GP-09 移动端 Case 详情与可读影响关系列表 | [`capability-studio-gp09-case-impact-zh-390.png`](../../assets/capability-studio/capability-studio-gp09-case-impact-zh-390.png) |
+| 1440×1100 | GP-10 从 Tool Case 打开的原运行精确证据与完整 exact-ref 闭包 | [`capability-studio-gp10-exact-evidence-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-1440.png) |
+| 1440×1100 | GP-10 从精确证据进入当前 Feature DAG，保持原 `runId`、Case 和焦点节点 | [`capability-studio-gp10-exact-dag-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-dag-zh-1440.png) |
+| 1440×1100 | GP-10 返回 Tool 后仍保持同一原运行和精确证据 | [`capability-studio-gp10-exact-evidence-return-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-return-zh-1440.png) |
 | 1280×720 | GP-10 Tool Case 精确运行证据、原 `runId`、焦点节点和完整受治理引用闭包 | [`capability-studio-gp10-exact-evidence-zh-1280.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-1280.png) |
 | 1440×900 | GP-10 Deep Link 上下文、当前 6 节点 Feature 子图和完整 7 节点结构级 Data Lens | [`capability-studio-gp10-exact-graph-context-zh-1440.png`](../../assets/capability-studio/capability-studio-gp10-exact-graph-context-zh-1440.png) |
 | 390×844 | GP-10 移动端精确证据，原运行与引用闭包可读且页面无横向溢出 | [`capability-studio-gp10-exact-evidence-zh-390.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-zh-390.png) |
@@ -142,6 +152,9 @@ mvn -f resource-gateway-test-kit/pom.xml \
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioGovernedRunEvidenceVerifierTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioScenarioQualityImpactVerifierTest test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioStageAcceptanceResultVerifierTest test

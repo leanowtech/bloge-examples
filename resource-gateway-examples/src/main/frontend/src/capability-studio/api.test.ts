@@ -10,6 +10,7 @@ import {
   fetchFeatureRehearsal,
   fetchGovernedRunEvidence,
   fetchScenarioDataset,
+  fetchScenarioQualityImpact,
   preflightTutorialBranch,
   runGovernedBaseline,
   saveTutorialBehavior,
@@ -100,6 +101,22 @@ describe('Capability Studio tutorial branch API', () => {
 });
 
 describe('Capability Studio Scenario Dataset API', () => {
+  it('uses the dedicated GP-09 quality-impact endpoint and fails closed on a malformed projection', async () => {
+    const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
+      expect(String(input)).toBe('/api/capability-studio/scenario-dataset/quality-impact');
+      const headers = new Headers(init?.headers);
+      expect(headers.get('Accept')).toBe('application/json');
+      expect(headers.get('Authorization')).toBe('Bearer bloge-aneke-demo-token');
+      expect(headers.get('X-Purpose')).toBe('CAPABILITY_STUDIO_REHEARSAL');
+      return json({ schemaVersion: 'wrong' });
+    });
+
+    await expect(fetchScenarioQualityImpact(fetcher)).rejects.toMatchObject({
+      code: 'RG.CAPABILITY_STUDIO.INVALID_SCENARIO_QUALITY_IMPACT',
+      impact: 'The scenario quality and impact projection cannot be trusted or displayed.',
+    });
+  });
+
   it('loads and strictly parses the dedicated scenario-dataset endpoint', async () => {
     const fetcher = vi.fn<CapabilityStudioFetcher>(async (input, init) => {
       expect(String(input)).toBe('/api/capability-studio/scenario-dataset');

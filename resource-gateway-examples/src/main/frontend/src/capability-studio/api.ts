@@ -11,6 +11,8 @@ import {
   type GovernedBaselineSuccessProjection,
   type GovernedRunEvidenceProjection,
   type ScenarioDataset,
+  parseScenarioQualityImpactProjection,
+  type ScenarioQualityImpactProjection,
 } from './domain';
 import { integrationRequestHeaders } from '../api';
 
@@ -247,6 +249,35 @@ export async function fetchScenarioDataset(
   }
 }
 
+export async function fetchScenarioQualityImpact(
+  fetcher: CapabilityStudioFetcher = fetch,
+): Promise<ScenarioQualityImpactProjection> {
+  const payload = await requestJson<unknown>(
+    fetcher,
+    '/api/capability-studio/scenario-dataset/quality-impact',
+    { headers: integrationRequestHeaders('CAPABILITY_STUDIO_REHEARSAL') },
+    {
+      unchangedImpact: 'The scenario quality and impact view was not loaded or changed.',
+      invalidImpact: 'The scenario quality and impact projection cannot be trusted or displayed.',
+      invalidRecovery: 'Reload the quality and impact projection before continuing.',
+    },
+  );
+  try {
+    return parseScenarioQualityImpactProjection(payload);
+  } catch (error) {
+    if (isCapabilityStudioProtocolError(error)) {
+      throw new CapabilityStudioRequestError(
+        error.code,
+        error.message,
+        error.impact,
+        'Reload the quality and impact projection and retry.',
+        200,
+      );
+    }
+    throw error;
+  }
+}
+
 export async function fetchTutorialBranch(
   fetcher: CapabilityStudioFetcher = fetch,
 ): Promise<TutorialBranchProjection> {
@@ -352,6 +383,7 @@ const governedBaselineRequestContext: RequestErrorContext = {
   invalidImpact: 'Development validation was not established; existing Capability Studio assets were not changed.',
   invalidRecovery: 'Retry the governed baseline request.',
 };
+
 
 const governedRunEvidenceRequestContext: RequestErrorContext = {
   unchangedImpact: 'The exact governed run evidence was not loaded or changed.',

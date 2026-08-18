@@ -1,6 +1,6 @@
 # Resource Gateway 产品手册
 
-> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-08 开发切片（含 Scenario Dataset v1、Feature Trace Data Lens 与 Tool 受治理 9 × 3 验证）
+> 版本基线：2026-08-18，覆盖仓库内 RG-BM-001 至 RG-BM-015 与 Capability Studio GP-01 至 GP-10 开发切片（含 Scenario Dataset、质量与影响、Feature Trace Data Lens、Tool 受治理 9 × 3 验证与原运行精确证据）
 >
 > 默认入口：`http://localhost:8080/capabilities/`
 >
@@ -21,7 +21,7 @@ ANEKE 仍分别负责真实业务事实、资产治理与发布门禁。
 
 | 页面 | 地址 | 主要用户 | 解决的问题 |
 |---|---|---|---|
-| 能力设计工作台 | `/capabilities/` | 业务设计人员、正确性负责人 | 查看接口契约和场景数据，并在隔离教程分支中用业务句式配置超时表现、保存和预检 |
+| 能力设计工作台 | `/capabilities/` | 业务设计人员、正确性负责人 | 查看接口契约和场景数据，判断质量准入与影响范围，并在隔离教程分支中配置、预检和验证依赖表现 |
 | 业务镜像 | `/business-mirror/` | 业务负责人、服务设计人员 | 把客户问题经营为有负责人、有正确性定义、有场景分母、有证据的能力包 |
 | 编排 | `/author/` | 流程作者、算子开发者 | 在 Schema 约束下编排 Graph，定义输入输出、上下文绑定和测试场景 |
 | 算子库 | `/libraries/` | 平台开发者、领域专家 | 用向导、发现和推断方式定义 Operator 与 built-in function 库 |
@@ -134,7 +134,7 @@ Owner 冻结的正确性分母和预期。
 
 脚本会构建七个 React 工作区和 Spring Boot JAR，使用 `test` profile 启动，默认装配 Capability Studio
 黄金数据包和只读 Correctness Studio 样板，并等待 capability probe、黄金数据包、验收基线、严格
-Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面就绪。Feature Trace 探针使用本地演示身份和专用 `CAPABILITY_STUDIO_REHEARSAL` purpose，固定检查默认超时场景为 6 个节点、5 条边：补偿历史节点保留原始 `TIMEOUT` 尝试，BLOGE fallback 后运行终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`，结构视图不返回 Payload 且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
+Scenario Dataset、GP-09 质量/准入/影响闭包、教程分支、隔离预检、Feature Trace 和全部页面就绪。GP-09 探针固定验证 9 `DRAFT` / 0 `ACTIVE` / 0 `STALE`、五项覆盖 100%、两个 blocker、37 节点/81 边、0 孤立 Case 和不导出 Payload 的边界。Feature Trace 探针使用本地演示身份和专用 `CAPABILITY_STUDIO_REHEARSAL` purpose，固定检查默认超时场景为 6 个节点、5 条边：补偿历史节点保留原始 `TIMEOUT` 尝试，BLOGE fallback 后运行终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`，结构视图不返回 Payload 且真实调用为 0。`--open` 默认打开 Capability Studio；业务镜像和正确性工作台仍可从全局导航进入。首次构建耗时
 较长；已有完整 JAR 时可使用 `--no-build`。
 
 需要省略 Capability Studio 样板并直接打开业务镜像时使用：
@@ -161,21 +161,27 @@ Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面�
 
 1. 在左侧选择「订单信息查询」，查看业务输入、成功结果、错误、副作用、SLA 和 Owner。
 2. 选择「场景数据」，先检查 Dataset 的业务验证分母、生命周期、版本、分类和 Owner。当前黄金包投影为「待评审」，不是已发布生产数据集。
-3. 检查五项质量摘要：Owner、来源、Oracle、契约与依赖行为均为 100% 闭合；总体仍显示「已阻断」，因为九条 Case 尚未运行并形成证据。100% 元数据覆盖不等于业务验收通过。
+3. 检查 Dataset 的五项质量摘要：Owner、来源、Oracle、契约与依赖行为均为 100% 闭合。它表示定义完整，不表示数据可准入或业务验收通过。
 4. 按黄金、反向、边界、故障、回归和安全分类筛选九条 Case。选择「补偿历史超时」，检查业务目标、预期/Oracle、来源、适用契约、超时表现和按需展开的精确引用。
-5. 选择「特征编排」。页面默认加载「历史补偿记录查询超时」。先保持「结构」权限，确认 DAG 有 4 个接口节点、1 个聚合节点和 1 个决策节点；历史补偿查询为「超时」，聚合与决策为「已取消」，真实调用为 `0`。
-6. 选择「受控数据」。该操作只表达请求的视图，不会自我授予权限。服务端先验证 Bearer credential、专用 purpose 和受信身份的 clearance；只有 `CONFIDENTIAL` 及以上身份才能取得受控值。默认本地演示身份满足该条件。授权通过后，检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。授权失败时，页面保留原结构视图，并显示原因、影响和恢复动作。
-7. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
-8. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-9. 选择「业务工具」，在「业务正确性验证」中先确认目标为 `9 个固定场景 / 3 轮重复 / 27 项预期检查 / 0 个真实接口`，再选择「运行 9 × 3 受治理验证」。
-10. 运行完成后检查四组信息：顶部是 `9/9` 业务场景、`9/9` 业务判定、`27/27` 业务断言和 `0` 真实调用；中部是 3 个 suite run 和 9 × 3 Case 矩阵，每个 Case 显示三轮一致的业务结果指纹；其下是超时安全降级、重复输入幂等和禁止写入三项专项证明；底部列出候选构建、环境认证、可认证证据、部署级出网观测和负责人签署五项阻断。页面应并列呈现「27 项业务检查全部通过」和「仍不可验收」，这是正确结论，不是冲突。
-11. 查看「验收状态」。正式结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支、Feature Trace，以及同一受治理 compiler、应用级 Resource Registry、真实 Resource Operator 和 exact-suite runtime 下的 3 suite/27 child 运行、9/9 Oracle、27/27 业务断言和三类高风险场景；Canonical child Evidence 已达到 `CERTIFIABLE`，干净制品也可绑定实际 JAR SHA-256、Git commit 和执行意图。Dataset 写入 Authority、字段级 source map、目标环境 Candidate attestation、部署级 network deny/egress 和 Owner 签署仍未完成，因此 `CERTIFIABLE` 不能替代正式 `PASS`。
+5. 选择「质量与影响」。首屏应同时显示五项覆盖均为 100%，以及 `9 条草稿 / 0 条使用中 / 0 条孤立 Case`；准入必须仍为「阻断」，原因是「缺少新鲜度证据」和「没有使用中的 Case」。这证明系统不会把定义完整度误报成可运行准入。
+6. 在 Case 列表选择「补偿历史超时」。详情应显示 Owner、Source、Oracle、1 个适用契约、4 个运行依赖、目标工具和 6 个影响资产；影响关系高亮该 Case 的 9 个节点。数据边界必须写明「当前视图不导出请求/响应内容」，并明确这不证明源数据已语义脱敏。
+7. 选择「特征编排」。页面默认加载「历史补偿记录查询超时」。先保持「结构」权限，确认 DAG 有 4 个接口节点、1 个聚合节点和 1 个决策节点；历史补偿查询为「超时」，聚合与决策为「已取消」，真实调用为 `0`。
+8. 选择「受控数据」。该操作只表达请求的视图，不会自我授予权限。服务端先验证 Bearer credential、专用 purpose 和受信身份的 clearance；只有 `CONFIDENTIAL` 及以上身份才能取得受控值。默认本地演示身份满足该条件。授权通过后，检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。授权失败时，页面保留原结构视图，并显示原因、影响和恢复动作。
+9. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
+10. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
+11. 选择「业务工具」，在「业务正确性验证」中先确认目标为 `9 个固定场景 / 3 轮重复 / 27 项预期检查 / 0 个真实接口`，再选择「运行 9 × 3 受治理验证」。
+12. 运行完成后检查四组信息：顶部是 `9/9` 业务场景、`9/9` 业务判定、`27/27` 业务断言和 `0` 真实调用；中部是 3 个 suite run 和 9 × 3 Case 矩阵，每个 Case 显示三轮一致的业务结果指纹；其下是超时安全降级、重复输入幂等和禁止写入三项专项证明；底部列出候选构建、环境认证、可认证证据、部署级出网观测和负责人签署五项阻断。页面应并列呈现「27 项业务检查全部通过」和「仍不可验收」，这是正确结论，不是冲突。
+13. 查看「验收状态」。正式结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、质量与影响闭包、test/staging 教程分支、Feature Trace，以及同一受治理 compiler、应用级 Resource Registry、真实 Resource Operator 和 exact-suite runtime 下的 3 suite/27 child 运行、9/9 Oracle、27/27 业务断言和三类高风险场景；Canonical child Evidence 已达到 `CERTIFIABLE`，干净制品也可绑定实际 JAR SHA-256、Git commit 和执行意图。Dataset/freshness Authority、字段级 source map、目标环境 Candidate attestation、部署级 network deny/egress 和 Owner 签署仍未完成，因此 `CERTIFIABLE` 不能替代正式 `PASS`。
 
 需要直接检查 Feature Trace 协议时，使用以下请求。调用方必须提供 Bearer credential 和 `X-Purpose: CAPABILITY_STUDIO_REHEARSAL`。`permission` 只表示请求的视图；服务端根据已验证身份决定是否允许。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只向 `CONFIDENTIAL` 及以上身份返回 Canonical Demo Pack 的受控演示值。两个视图必须引用同一次 Case 语义和同一 Graph fingerprint。
 
 ```bash
 AUTH=(-H 'Authorization: Bearer bloge-aneke-demo-token' \
   -H 'X-Purpose: CAPABILITY_STUDIO_REHEARSAL')
+
+curl -fsS "${AUTH[@]}" \
+  'http://localhost:8080/api/capability-studio/scenario-dataset/quality-impact' | \
+  jq '{admission,quality,summary,caseCount:(.cases|length),nodeCount:(.impactGraph.nodes|length),edgeCount:(.impactGraph.edges|length)}'
 
 curl -fsS "${AUTH[@]}" \
   'http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY' | jq
@@ -201,6 +207,10 @@ curl -fsS -X POST 'http://localhost:8080/api/capability-studio/governed-baseline
 需要检查英文界面时，选择全局导航右侧的 `EN`，或直接访问 `/capabilities/?lang=en`。产品导航、任务、状态、筛选、字段标签和恢复文案会切换为英文；Canonical Demo Pack 中的能力名称和业务说明仍是权威中文数据，不会被界面层擅自翻译。当前真实 Chrome 的整体工作区证据覆盖英文 1440×900、1024×768 和 390×844；Dataset 使用 Tab、Enter、Space 完成选择路径，Feature 在 1024×768 使用键盘切换权限。组件六种状态和真实 Chrome 的完整 axe-core 检查均为 serious/critical 0；人工屏幕阅读器以及契约、Tutorial 的完整键盘路径仍待验收。
 
 ![Scenario Dataset 分母、质量与 Case 详情](assets/capability-studio/capability-studio-gp01-gp03-zh-1440.png)
+
+![质量覆盖、准入阻断与数据边界](assets/capability-studio/capability-studio-gp09-quality-admission-zh-1440.png)
+
+![单条 Case 的影响闭包](assets/capability-studio/capability-studio-gp09-case-impact-zh-1440.png)
 
 移动端先显示 Dataset 摘要；继续向下可查看五项质量、搜索、筛选和有界 Case 列表。列表使用独立滚动区域，避免九条 Case 把当前详情推到页面末尾。
 

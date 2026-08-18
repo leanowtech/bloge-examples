@@ -6,6 +6,8 @@ import {
   parseGovernedBaselineProjection,
   parseGovernedRunEvidenceProjection,
   parseScenarioDatasetProjection,
+  parseScenarioQualityImpactProjection,
+  selectScenarioQualityImpact,
   projectCapabilityStudioSummaryStatus,
 } from './domain';
 import {
@@ -14,7 +16,186 @@ import {
   scenarioDatasetProjectionFixture,
 } from './testFixtures';
 
+const qualityScope = { tenantId: 'tenant-demo', organizationId: 'customer-service', projectId: 'capability-studio', environmentId: 'test', region: 'local' };
+const qualityRef = (kind: string, id: string, seed: string) => ({ kind, id, revision: 1, fingerprint: `sha256:${seed.repeat(64).slice(0, 64)}`, authority: 'quality-test', scope: qualityScope });
+const compareText = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+const sortQualityNodes = <T extends { kind: string; id: string }>(nodes: T[]) => nodes.sort((left, right) => compareText(left.kind, right.kind) || compareText(left.id, right.id));
+const sortQualityEdges = <T extends { source: string; target: string; relation: string; id: string }>(edges: T[]) => edges.sort((left, right) => compareText(left.source, right.source) || compareText(left.target, right.target) || compareText(left.relation, right.relation) || compareText(left.id, right.id));
+const scenarioQualityImpactFixture = {
+  schemaVersion: 'resource-gateway.capability-studio.scenario-quality-impact.v1',
+  datasetRef: qualityRef('DATASET', 'dataset-1', '1'),
+  targetRef: qualityRef('TOOL', 'target-1', '7'),
+  projectionFingerprint: `sha256:${'f'.repeat(64)}`,
+  admission: { status: 'BLOCKED', activeCaseCount: 0, draftCaseCount: 1, staleCaseCount: 0, blockers: [{ code: 'FRESHNESS_EVIDENCE_MISSING', message: 'Add freshness evidence before admission.' }, { code: 'NO_ACTIVE_CASES', message: 'Activate at least one case before admission.' }] },
+  quality: { status: 'BLOCKED', ownerCoveragePercent: 100, sourceCoveragePercent: 100, oracleCoveragePercent: 100, contractCoveragePercent: 100, behaviorClosurePercent: 100, freshnessStatus: 'UNVERIFIED', payloadExposure: 'NONE', maskingStatus: 'PAYLOAD_NOT_EXPORTED' },
+  summary: { caseCount: 1, sourceCount: 1, oracleCount: 1, contractCount: 1, dependencyCount: 1, targetCount: 1, impactedAssetCount: 3, orphanCaseCount: 0 },
+  cases: [{ caseRef: qualityRef('DATA_CASE', 'case-1', '2'), name: 'Standard cancellation fee', lifecycle: 'DRAFT', qualityState: 'BLOCKED', owner: { id: 'owner-1', name: '客服技术平台' }, sourceRef: qualityRef('SOURCE', 'source-1', '3'), source: { displayName: '取消费用业务规则', type: 'FIXTURE_SET' }, oracleRef: qualityRef('ORACLE', 'oracle-1', '4'), oracle: { displayName: '费用结论校验', summary: '校验费用结论与业务规则一致。' }, contractRefs: [qualityRef('CONTRACT', 'contract-1', '5')], dependencyRefs: [qualityRef('API', 'dependency-1', '6')], freshnessStatus: 'UNVERIFIED', maskingStatus: 'PAYLOAD_NOT_EXPORTED', impactedAssetCount: 3 }],
+  impactGraph: {
+    nodes: sortQualityNodes([
+      { id: 'DATA_CASE:case-1', kind: 'DATA_CASE', label: '标准取消费', ref: qualityRef('DATA_CASE', 'case-1', '2'), status: 'DRAFT' },
+      { id: 'CONTRACT:contract-1', kind: 'CONTRACT', label: '费用决策契约', ref: qualityRef('CONTRACT', 'contract-1', '5'), status: 'DRAFT' },
+      { id: 'DATASET:dataset-1', kind: 'DATASET', label: '取消费用场景集', ref: qualityRef('DATASET', 'dataset-1', '1'), status: 'BLOCKED' },
+      { id: 'DEPENDENCY:dependency-1', kind: 'DEPENDENCY', label: '订单查询服务', ref: qualityRef('API', 'dependency-1', '6'), status: 'DRAFT' },
+      { id: 'ORACLE:oracle-1', kind: 'ORACLE', label: '费用结论校验', ref: qualityRef('ORACLE', 'oracle-1', '4'), status: 'DRAFT' },
+      { id: 'SOURCE:source-1', kind: 'SOURCE', label: '取消费用业务规则', ref: qualityRef('SOURCE', 'source-1', '3'), status: 'BLOCKED' },
+      { id: 'TARGET:target-1', kind: 'TARGET', label: '取消费用处理工具', ref: qualityRef('TOOL', 'target-1', '7'), status: 'DRAFT' },
+    ]),
+    edges: sortQualityEdges([
+      { id: 'e-case-contract', source: 'DATA_CASE:case-1', target: 'CONTRACT:contract-1', relation: 'VALIDATES' },
+      { id: 'e-case-dependency', source: 'DATA_CASE:case-1', target: 'DEPENDENCY:dependency-1', relation: 'CONTROLS' },
+      { id: 'e-case-oracle', source: 'DATA_CASE:case-1', target: 'ORACLE:oracle-1', relation: 'CHECKED_BY' },
+      { id: 'e-case-source', source: 'DATA_CASE:case-1', target: 'SOURCE:source-1', relation: 'SOURCED_BY' },
+      { id: 'e-case-target', source: 'DATA_CASE:case-1', target: 'TARGET:target-1', relation: 'VALIDATES_TARGET' },
+      { id: 'e-dataset-case', source: 'DATASET:dataset-1', target: 'DATA_CASE:case-1', relation: 'CONTAINS' },
+    ]),
+  },
+};
+
 describe('Capability Studio backend projection adapter', () => {
+  it('strictly validates GP-09 quality closure and selects only the chosen case impact path', () => {
+    const projection = parseScenarioQualityImpactProjection(scenarioQualityImpactFixture);
+    expect(projection.cases[0].name).toBe('Standard cancellation fee');
+    expect(projection.summary).toMatchObject({ caseCount: 1, impactedAssetCount: 3, orphanCaseCount: 0 });
+    const selection = selectScenarioQualityImpact(projection, 'case-1');
+    expect(selection.nodeIds).toEqual(new Set(['CONTRACT:contract-1', 'DATA_CASE:case-1', 'DEPENDENCY:dependency-1', 'ORACLE:oracle-1', 'SOURCE:source-1', 'TARGET:target-1']));
+    expect(selection.edgeIds).toEqual(new Set(['e-case-contract', 'e-case-dependency', 'e-case-oracle', 'e-case-source', 'e-case-target']));
+  });
+
+  it('rejects unknown fields, cross-scope references, orphan nodes, and metric drift', () => {
+    expect(() => parseScenarioQualityImpactProjection({ ...scenarioQualityImpactFixture, unexpected: true })).toThrow('INVALID_SCENARIO_QUALITY_IMPACT');
+    const crossScope = structuredClone(scenarioQualityImpactFixture);
+    crossScope.cases[0].sourceRef.scope = { ...crossScope.cases[0].sourceRef.scope, region: 'production' };
+    expect(() => parseScenarioQualityImpactProjection(crossScope)).toThrow('outside the case closure');
+    const orphan = structuredClone(scenarioQualityImpactFixture);
+    orphan.impactGraph.nodes.push({ id: 'TARGET:zz-orphan', kind: 'TARGET', label: 'Orphan target', ref: qualityRef('TOOL', 'zz-orphan', '8'), status: 'ORPHANED' });
+    expect(() => parseScenarioQualityImpactProjection(orphan)).toThrow('orphan node');
+    const drift = structuredClone(scenarioQualityImpactFixture);
+    drift.quality.ownerCoveragePercent = 0;
+    expect(() => parseScenarioQualityImpactProjection(drift)).toThrow('Quality coverage');
+  });
+
+  it('allows independently governed references while keeping the dataset scope closed', () => {
+    const federated = structuredClone(scenarioQualityImpactFixture);
+    federated.cases[0].sourceRef.authority = 'business-fixture-registry';
+    federated.cases[0].oracleRef.authority = 'correctness-workbook';
+    federated.cases[0].contractRefs[0].authority = 'contract-registry';
+    federated.cases[0].dependencyRefs[0].authority = 'operator-library';
+    federated.impactGraph.nodes.forEach((node) => {
+      if (node.kind === 'SOURCE') node.ref.authority = federated.cases[0].sourceRef.authority;
+      if (node.kind === 'ORACLE') node.ref.authority = federated.cases[0].oracleRef.authority;
+      if (node.kind === 'CONTRACT') node.ref.authority = federated.cases[0].contractRefs[0].authority;
+      if (node.kind === 'DEPENDENCY') node.ref.authority = federated.cases[0].dependencyRefs[0].authority;
+    });
+    expect(parseScenarioQualityImpactProjection(federated).cases[0].contractRefs[0].authority).toBe('contract-registry');
+  });
+
+  it('enforces stable node and edge tuple ordering', () => {
+    const nodes = structuredClone(scenarioQualityImpactFixture);
+    [nodes.impactGraph.nodes[0], nodes.impactGraph.nodes[1]] = [nodes.impactGraph.nodes[1], nodes.impactGraph.nodes[0]];
+    expect(() => parseScenarioQualityImpactProjection(nodes)).toThrow('nodes must be sorted by kind then id');
+    const edges = structuredClone(scenarioQualityImpactFixture);
+    [edges.impactGraph.edges[0], edges.impactGraph.edges[1]] = [edges.impactGraph.edges[1], edges.impactGraph.edges[0]];
+    edges.impactGraph.edges.forEach((edge, index) => { edge.id = `e-${index}`; });
+    expect(() => parseScenarioQualityImpactProjection(edges)).toThrow('edges must be sorted by source, target, relation, then id');
+  });
+
+  it('accepts canonical relationship edge ids and rejects unsupported edge-id characters', () => {
+    const canonical = structuredClone(scenarioQualityImpactFixture);
+    canonical.impactGraph.edges.forEach((edge) => {
+      edge.id = `${edge.source}->${edge.relation}->${edge.target}`;
+    });
+    sortQualityEdges(canonical.impactGraph.edges);
+    expect(parseScenarioQualityImpactProjection(canonical).impactGraph.edges[0].id).toContain('->');
+
+    const invalid = structuredClone(canonical);
+    invalid.impactGraph.edges[0].id = 'DATASET:dataset-1=>DATA_CASE:case-1';
+    expect(() => parseScenarioQualityImpactProjection(invalid)).toThrow('impactGraph.edges[0].id');
+  });
+
+  it('rejects invalid node statuses, node ids, and node/ref kind mappings', () => {
+    const status = structuredClone(scenarioQualityImpactFixture);
+    status.impactGraph.nodes[0].status = 'DECLARED';
+    expect(() => parseScenarioQualityImpactProjection(status)).toThrow('impactGraph.nodes[0].status');
+    const id = structuredClone(scenarioQualityImpactFixture);
+    id.impactGraph.nodes[0].id = 'CONTRACT:wrong-id';
+    expect(() => parseScenarioQualityImpactProjection(id)).toThrow('node id');
+    const dependency = structuredClone(scenarioQualityImpactFixture);
+    dependency.impactGraph.nodes.find((node) => node.kind === 'DEPENDENCY')!.ref.kind = 'DEPENDENCY';
+    expect(() => parseScenarioQualityImpactProjection(dependency)).toThrow('node/ref kind mapping');
+    const target = structuredClone(scenarioQualityImpactFixture);
+    target.impactGraph.nodes.find((node) => node.kind === 'TARGET')!.ref.kind = 'TARGET';
+    expect(() => parseScenarioQualityImpactProjection(target)).toThrow('node/ref kind mapping');
+    const semanticStatus = structuredClone(scenarioQualityImpactFixture);
+    semanticStatus.impactGraph.nodes.find((node) => node.kind === 'SOURCE')!.status = 'DRAFT';
+    expect(() => parseScenarioQualityImpactProjection(semanticStatus)).toThrow('node status does not match');
+  });
+
+  it('anchors the graph to the declared root target exact ref', () => {
+    const invalidKind = structuredClone(scenarioQualityImpactFixture);
+    invalidKind.targetRef.kind = 'API';
+    expect(() => parseScenarioQualityImpactProjection(invalidKind)).toThrow('targetRef.kind');
+
+    const differentTarget = structuredClone(scenarioQualityImpactFixture);
+    differentTarget.targetRef.id = 'target-other';
+    expect(() => parseScenarioQualityImpactProjection(differentTarget)).toThrow('outside the case closure');
+  });
+
+  it('rejects relation-kind mismatches, missing closure edges, extra closure edges, and incorrect impact counts', () => {
+    const relation = structuredClone(scenarioQualityImpactFixture);
+    relation.impactGraph.edges.find((edge) => edge.relation === 'CONTAINS')!.target = 'CONTRACT:contract-1';
+    sortQualityEdges(relation.impactGraph.edges);
+    expect(() => parseScenarioQualityImpactProjection(relation)).toThrow('relation does not match');
+    const missing = structuredClone(scenarioQualityImpactFixture);
+    missing.impactGraph.edges = missing.impactGraph.edges.filter((edge) => edge.relation !== 'CONTROLS');
+    expect(() => parseScenarioQualityImpactProjection(missing)).toThrow('orphan node');
+    const multipleTargets = structuredClone(scenarioQualityImpactFixture);
+    multipleTargets.impactGraph.nodes.push({ id: 'TARGET:target-2', kind: 'TARGET', label: 'Fallback tool', ref: qualityRef('FEATURE', 'target-2', '9'), status: 'READY' });
+    sortQualityNodes(multipleTargets.impactGraph.nodes);
+    multipleTargets.impactGraph.edges.push({ id: 'e-case-target-2', source: 'DATA_CASE:case-1', target: 'TARGET:target-2', relation: 'VALIDATES_TARGET' });
+    sortQualityEdges(multipleTargets.impactGraph.edges);
+    expect(() => parseScenarioQualityImpactProjection(multipleTargets)).toThrow('outside the case closure');
+    const extra = structuredClone(scenarioQualityImpactFixture);
+    extra.impactGraph.edges.push({ id: 'e-dataset-contract', source: 'DATASET:dataset-1', target: 'CONTRACT:contract-1', relation: 'CONTAINS' });
+    sortQualityEdges(extra.impactGraph.edges);
+    expect(() => parseScenarioQualityImpactProjection(extra)).toThrow('relation does not match');
+    const globalCount = structuredClone(scenarioQualityImpactFixture);
+    globalCount.summary.impactedAssetCount = 5;
+    expect(() => parseScenarioQualityImpactProjection(globalCount)).toThrow('summary');
+    const caseCount = structuredClone(scenarioQualityImpactFixture);
+    caseCount.cases[0].impactedAssetCount = 5;
+    expect(() => parseScenarioQualityImpactProjection(caseCount)).toThrow('Case impact closure');
+  });
+
+  it('rejects contradictory admission, freshness, and quality state', () => {
+    const ready = structuredClone(scenarioQualityImpactFixture);
+    ready.admission = { status: 'READY', activeCaseCount: 1, draftCaseCount: 0, staleCaseCount: 0, blockers: [] };
+    ready.quality.status = 'READY';
+    ready.quality.freshnessStatus = 'CURRENT';
+    ready.cases[0].lifecycle = 'ACTIVE';
+    ready.cases[0].freshnessStatus = 'CURRENT';
+    ready.impactGraph.nodes.find((node) => node.kind === 'DATA_CASE')!.status = 'ACTIVE';
+    expect(parseScenarioQualityImpactProjection(ready).admission.status).toBe('READY');
+    const statusMismatch = structuredClone(scenarioQualityImpactFixture);
+    statusMismatch.quality.status = 'READY';
+    expect(() => parseScenarioQualityImpactProjection(statusMismatch)).toThrow('status must match');
+    const unknownQualityStatus = structuredClone(scenarioQualityImpactFixture);
+    unknownQualityStatus.quality.status = 'STALE';
+    expect(() => parseScenarioQualityImpactProjection(unknownQualityStatus)).toThrow('quality.status');
+    const blockedWithoutReason = structuredClone(scenarioQualityImpactFixture);
+    blockedWithoutReason.admission.blockers = [];
+    expect(() => parseScenarioQualityImpactProjection(blockedWithoutReason)).toThrow('BLOCKED admission requires');
+    const freshness = structuredClone(scenarioQualityImpactFixture);
+    freshness.admission.blockers = freshness.admission.blockers.filter((blocker) => blocker.code !== 'FRESHNESS_EVIDENCE_MISSING');
+    expect(() => parseScenarioQualityImpactProjection(freshness)).toThrow('UNVERIFIED freshness requires');
+    const noActive = structuredClone(scenarioQualityImpactFixture);
+    noActive.admission.blockers = noActive.admission.blockers.filter((blocker) => blocker.code !== 'NO_ACTIVE_CASES');
+    expect(() => parseScenarioQualityImpactProjection(noActive)).toThrow('Zero active cases require');
+    const contradictoryReady = structuredClone(scenarioQualityImpactFixture);
+    contradictoryReady.admission.status = 'READY';
+    contradictoryReady.quality.status = 'READY';
+    contradictoryReady.admission.blockers = [];
+    expect(() => parseScenarioQualityImpactProjection(contradictoryReady)).toThrow('READY admission contradicts');
+  });
   it('adapts exact refs, business contract summaries, and governed scenario metadata', () => {
     const result = parseCapabilityStudioDemoPack(backendProjection());
 

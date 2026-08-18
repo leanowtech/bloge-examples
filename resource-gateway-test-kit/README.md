@@ -143,6 +143,56 @@ The projection carries metadata references and business summaries only. Fixture,
 Replay, and protected payload material remain in their existing authorities and cannot be
 embedded in the Dataset document. Errors expose only stable codes and check names.
 
+## Verify GP-09 Scenario Quality and Impact
+
+`CapabilityStudioScenarioQualityImpactVerifier` is the independent verifier for the strict
+`resource-gateway.capability-studio.scenario-quality-impact.v1` projection. It is the public
+Test Kit boundary for the GP-09 quality and impact view; it does not depend on Spring Boot or
+Resource Gateway implementation classes.
+
+```java
+CapabilityStudioScenarioQualityImpactVerifier verifier =
+        new CapabilityStudioScenarioQualityImpactVerifier();
+CapabilityStudioScenarioQualityImpactVerifier.VerificationResult result =
+        verifier.verify(qualityImpactJsonBytes);
+if (!result.verified()) {
+    throw new IllegalStateException(result.errorCode());
+}
+```
+
+The verifier applies the packaged strict Draft 2020-12 schema and an 8 MiB wire/canonical
+limit, then recomputes `projectionFingerprint` with the existing recursive JCS-compatible
+canonicalizer after normalizing the projection's own fingerprint to `null`. It enforces:
+
+- complete root `datasetRef` and `targetRef` anchors plus one shared enterprise Scope across
+  Dataset, Case and graph assets. Every graph Case must reach the one exact root Target. Each
+  ref retains its own Authority: the Dataset may be owned by `capability-studio-stage0` while
+  referenced pack assets are owned by `capability-studio-demo-pack`;
+- unique Case, reference, blocker, node and edge identities. Cases sort by Case ID, refs by
+  kind/ID/revision/fingerprint, nodes by kind then ID, and edges by
+  source/target/relation/ID;
+- canonical `${kind}:${ref.id}` node IDs, exact declared-ref closure, prefixed edge endpoints, and
+  the wire mappings SOURCE→SOURCE, ORACLE→ORACLE, DEPENDENCY→API and
+  TARGET→TOOL/FEATURE;
+- canonical node states: Dataset and Source are `BLOCKED`, Target/Oracle/Contract/Dependency are
+  `DRAFT`, and each Data Case node uses the Case lifecycle;
+- graph endpoint existence, allowed relation direction, no invented nodes, and complete Case
+  evidence/dependency/target closure;
+- independently recomputed Case, Source, Oracle, Contract, Dependency, Target and orphan counts.
+  Impacted assets are the unique union of Contract, Dependency and reached Target exact refs,
+  both per Case and across the projection;
+- honest `READY`/`BLOCKED` semantics, including active-case presence, five 100% quality
+  coverages, `CURRENT` freshness, blocker presence, and the required
+  `FRESHNESS_EVIDENCE_MISSING` blocker for `UNVERIFIED` freshness;
+- recursive rejection of payload/request/response/body/fixture/mock/replay and secret-bearing
+  field names, while allowing the protocol metadata fields `payloadExposure` and `maskingStatus`.
+
+The projection is deliberately metadata-only. `payloadExposure=NONE` and
+`maskingStatus=PAYLOAD_NOT_EXPORTED` prove that this projection does not export payload material;
+they do not prove that source data is semantically desensitized, that an upstream Dataset
+Authority is correctly classified, or that an external execution environment is isolated.
+Those claims require separate data classification, access-control, and runtime evidence gates.
+
 ## Verify Capability Studio Feature Rehearsal
 
 `CapabilityStudioFeatureRehearsalVerifier` verifies the strict v1 wire projection returned by

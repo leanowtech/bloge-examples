@@ -2066,6 +2066,10 @@ capability_studio_url() {
     echo "http://localhost:$(configured_port)/capabilities/?lang=zh-CN"
 }
 
+capability_studio_quality_url() {
+    echo "http://localhost:$(configured_port)/capabilities/?lang=zh-CN&task=quality"
+}
+
 business_mirror_url() {
     echo "http://localhost:$(configured_port)/business-mirror/"
 }
@@ -2108,6 +2112,10 @@ capability_studio_acceptance_url() {
 
 capability_studio_dataset_url() {
     echo "http://localhost:$(configured_port)/api/capability-studio/scenario-dataset"
+}
+
+capability_studio_quality_impact_url() {
+    echo "http://localhost:$(configured_port)/api/capability-studio/scenario-dataset/quality-impact"
 }
 
 capability_studio_tutorial_branch_url() {
@@ -2283,6 +2291,7 @@ print_urls() {
     if truthy "${BUILD_FRONTEND}" && artifact_has_visual_frontend; then
         cat <<EOF
   Capability Studio: $(capability_studio_url)
+  Quality & impact:  $(capability_studio_quality_url)
   Business Mirror: $(business_mirror_url)
 $(truthy "${CORRECTNESS_DEMO}" && printf '  Correctness:     %s\n' "$(correctness_url)")
   Author canvas:   $(author_url)
@@ -2299,6 +2308,7 @@ EOF
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Golden demo pack: %s\n' "$(capability_studio_demo_pack_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Acceptance base:  %s\n' "$(capability_studio_acceptance_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Scenario dataset: %s\n' "$(capability_studio_dataset_url)")
+$(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Quality & impact:  GET  %s\n' "$(capability_studio_quality_impact_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial branch:  %s\n' "$(capability_studio_tutorial_branch_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Tutorial check:   POST %s\n' "$(capability_studio_tutorial_preflight_url)")
 $(truthy "${CAPABILITY_STUDIO_DEMO}" && printf '  Feature trace:    GET  %s\n' "$(capability_studio_feature_rehearsal_url)")
@@ -2396,6 +2406,7 @@ wait_for_ready() {
                 local capability_studio_pack
                 local capability_studio_acceptance
                 local capability_studio_dataset
+                local capability_studio_quality_impact
                 local capability_studio_branch
                 local capability_studio_preflight
                 local capability_studio_feature_rehearsal
@@ -2406,6 +2417,10 @@ wait_for_ready() {
                     "$(capability_studio_acceptance_url)" 2>/dev/null)" ||
                     ! capability_studio_dataset="$(curl -fsS \
                     "$(capability_studio_dataset_url)" 2>/dev/null)" ||
+                    ! capability_studio_quality_impact="$(curl -fsS \
+                    -H "Authorization: Bearer ${CAPABILITY_STUDIO_REHEARSAL_TOKEN}" \
+                    -H 'X-Purpose: CAPABILITY_STUDIO_REHEARSAL' \
+                    "$(capability_studio_quality_impact_url)" 2>/dev/null)" ||
                     ! capability_studio_branch="$(curl -fsS \
                     "$(capability_studio_tutorial_branch_url)" 2>/dev/null)" ||
                     ! capability_studio_preflight="$(curl -fsS -X POST \
@@ -2444,6 +2459,32 @@ wait_for_ready() {
                         and ([.cases[].sourceRef] | all(. != null))
                         and ([.cases[].oracleRef] | all(. != null))
                         and ([.cases[].applicableContractRefs | length] | all(. > 0))
+                    ' >/dev/null 2>&1 ||
+                        ! printf '%s' "${capability_studio_quality_impact}" | jq -e '
+                        (.schemaVersion == "resource-gateway.capability-studio.scenario-quality-impact.v1")
+                        and (.targetRef.kind == "TOOL")
+                        and (.targetRef.id == "tool-cancellation-fee-dispute-handling")
+                        and (.targetRef.fingerprint | test("^sha256:[0-9a-f]{64}$"))
+                        and (.admission.status == "BLOCKED")
+                        and (.admission.activeCaseCount == 0)
+                        and (.admission.draftCaseCount == 9)
+                        and (.admission.staleCaseCount == 0)
+                        and ([.admission.blockers[].code] == ["FRESHNESS_EVIDENCE_MISSING", "NO_ACTIVE_CASES"])
+                        and (.quality.ownerCoveragePercent == 100)
+                        and (.quality.sourceCoveragePercent == 100)
+                        and (.quality.oracleCoveragePercent == 100)
+                        and (.quality.contractCoveragePercent == 100)
+                        and (.quality.behaviorClosurePercent == 100)
+                        and (.quality.freshnessStatus == "UNVERIFIED")
+                        and (.quality.payloadExposure == "NONE")
+                        and (.quality.maskingStatus == "PAYLOAD_NOT_EXPORTED")
+                        and (.summary.caseCount == 9)
+                        and (.summary.impactedAssetCount == 9)
+                        and (.summary.orphanCaseCount == 0)
+                        and ((.cases | length) == 9)
+                        and ([.cases[].impactedAssetCount] | all(. == 6))
+                        and ((.impactGraph.nodes | length) == 37)
+                        and ((.impactGraph.edges | length) == 81)
                     ' >/dev/null 2>&1 ||
                         ! jq -n -e \
                         --argjson branch "${capability_studio_branch}" \
@@ -2509,6 +2550,16 @@ wait_for_ready() {
                     grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*"resource-gateway.capability-studio.scenario-dataset.v1"' ||
                     ! printf '%s' "${capability_studio_dataset}" |
                     grep -Eq '"totalCaseCount"[[:space:]]*:[[:space:]]*9' ||
+                    ! printf '%s' "${capability_studio_quality_impact}" |
+                    grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*"resource-gateway.capability-studio.scenario-quality-impact.v1"' ||
+                    ! printf '%s' "${capability_studio_quality_impact}" |
+                    grep -Eq '"draftCaseCount"[[:space:]]*:[[:space:]]*9' ||
+                    ! printf '%s' "${capability_studio_quality_impact}" |
+                    grep -Eq '"activeCaseCount"[[:space:]]*:[[:space:]]*0' ||
+                    ! printf '%s' "${capability_studio_quality_impact}" |
+                    grep -Eq '"orphanCaseCount"[[:space:]]*:[[:space:]]*0' ||
+                    ! printf '%s' "${capability_studio_quality_impact}" |
+                    grep -Eq '"maskingStatus"[[:space:]]*:[[:space:]]*"PAYLOAD_NOT_EXPORTED"' ||
                     ! printf '%s' "${capability_studio_preflight}" |
                     grep -Eq '"mode"[[:space:]]*:[[:space:]]*"ISOLATED"' ||
                     ! printf '%s' "${capability_studio_preflight}" |
@@ -2707,7 +2758,7 @@ wait_for_ready() {
                 return 0
             fi
             if truthy "${CAPABILITY_STUDIO_DEMO}"; then
-                echo "Demo service ready; Capability Studio 4/1/1/9 pack, Scenario Dataset, isolated tutorial preflight, 9x3 development baseline, and visual probes passed${visual_readiness}: ${url}"
+                echo "Demo service ready; Capability Studio 4/1/1/9 pack, Scenario Dataset, GP09 quality/admission/impact closure, isolated tutorial preflight, 9x3 development baseline, and visual probes passed${visual_readiness}: ${url}"
                 return 0
             fi
             if truthy "${CORRECTNESS_DEMO}"; then

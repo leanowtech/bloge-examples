@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-scenario-quality-impact-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Scenario Quality and Impact Projection v1",
+  "description": "Strict metadata-only GP-09 projection. Payload, request, response, fixture, mock and replay material are outside this contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "datasetRef", "targetRef", "projectionFingerprint", "admission", "quality", "summary", "cases", "impactGraph"],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.scenario-quality-impact.v1" },
+    "datasetRef": {
+      "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "DATASET" } } }]
+    },
+    "targetRef": {
+      "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "enum": ["FEATURE", "TOOL"] } } }]
+    },
+    "projectionFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "admission": { "$ref": "#/$defs/admission" },
+    "quality": { "$ref": "#/$defs/quality" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "cases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5000,
+      "items": { "$ref": "#/$defs/case" }
+    },
+    "impactGraph": { "$ref": "#/$defs/impactGraph" }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "nodeIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 320,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$"
+    },
+    "edgeIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/#@>\\-]*$"
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenantId", "organizationId", "projectId", "environmentId", "region"],
+      "properties": {
+        "tenantId": { "$ref": "#/$defs/identifier" },
+        "organizationId": { "$ref": "#/$defs/identifier" },
+        "projectId": { "$ref": "#/$defs/identifier" },
+        "environmentId": { "$ref": "#/$defs/identifier" },
+        "region": { "$ref": "#/$defs/identifier" }
+      }
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "revision", "fingerprint", "authority", "scope"],
+      "properties": {
+        "kind": { "enum": ["API", "FEATURE", "TOOL", "GRAPH_DRAFT", "CONTRACT", "DATASET", "DATA_CASE", "BEHAVIOR_PROFILE", "BINDING_PLAN", "CAPABILITY_SNAPSHOT", "SOURCE", "ORACLE", "FIXTURE_BUNDLE", "TEST_SUITE", "MIRROR_PLAN", "EVIDENCE", "DEPENDENCY", "TARGET"] },
+        "id": { "$ref": "#/$defs/identifier" },
+        "revision": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "authority": { "$ref": "#/$defs/identifier" },
+        "scope": { "$ref": "#/$defs/scope" }
+      }
+    },
+    "owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "nullableOwner": {
+      "oneOf": [{ "$ref": "#/$defs/owner" }, { "type": "null" }]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName", "type"],
+      "properties": {
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "type": { "type": "string", "minLength": 1, "maxLength": 128 }
+      }
+    },
+    "nullableSource": {
+      "oneOf": [{ "$ref": "#/$defs/source" }, { "type": "null" }]
+    },
+    "oracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["displayName", "summary"],
+      "properties": {
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "summary": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      }
+    },
+    "nullableOracle": {
+      "oneOf": [{ "$ref": "#/$defs/oracle" }, { "type": "null" }]
+    },
+    "blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Z][A-Z0-9_.-]*$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 1000 }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "activeCaseCount", "draftCaseCount", "staleCaseCount", "blockers"],
+      "properties": {
+        "status": { "enum": ["BLOCKED", "READY"] },
+        "activeCaseCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "draftCaseCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "staleCaseCount": { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "blockers": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/blocker" } }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "ownerCoveragePercent", "sourceCoveragePercent", "oracleCoveragePercent", "contractCoveragePercent", "behaviorClosurePercent", "freshnessStatus", "payloadExposure", "maskingStatus"],
+      "properties": {
+        "status": { "enum": ["BLOCKED", "READY"] },
+        "ownerCoveragePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "sourceCoveragePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "oracleCoveragePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "contractCoveragePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "behaviorClosurePercent": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "freshnessStatus": { "enum": ["UNVERIFIED", "CURRENT", "STALE"] },
+        "payloadExposure": { "const": "NONE" },
+        "maskingStatus": { "const": "PAYLOAD_NOT_EXPORTED" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseCount", "sourceCount", "oracleCount", "contractCount", "dependencyCount", "targetCount", "impactedAssetCount", "orphanCaseCount"],
+      "properties": {
+        "caseCount": { "type": "integer", "minimum": 1, "maximum": 5000 },
+        "sourceCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "oracleCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "contractCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "dependencyCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "targetCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "impactedAssetCount": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "orphanCaseCount": { "type": "integer", "minimum": 0, "maximum": 5000 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseRef", "name", "lifecycle", "qualityState", "owner", "sourceRef", "source", "oracleRef", "oracle", "contractRefs", "dependencyRefs", "freshnessStatus", "maskingStatus", "impactedAssetCount"],
+      "properties": {
+        "caseRef": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "DATA_CASE" } } }] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "lifecycle": { "enum": ["DRAFT", "ACTIVE", "STALE"] },
+        "qualityState": { "enum": ["DESIGNED_NOT_RUN", "READY", "STALE", "BLOCKED"] },
+        "owner": { "$ref": "#/$defs/nullableOwner" },
+        "sourceRef": {
+          "oneOf": [
+            { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "SOURCE" } } }] },
+            { "type": "null" }
+          ]
+        },
+        "source": { "$ref": "#/$defs/nullableSource" },
+        "oracleRef": {
+          "oneOf": [
+            { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "ORACLE" } } }] },
+            { "type": "null" }
+          ]
+        },
+        "oracle": { "$ref": "#/$defs/nullableOracle" },
+        "contractRefs": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "CONTRACT" } } }] }
+        },
+        "dependencyRefs": {
+          "type": "array",
+          "maxItems": 500,
+          "items": { "allOf": [{ "$ref": "#/$defs/exactRef" }, { "properties": { "kind": { "const": "API" } } }] }
+        },
+        "freshnessStatus": { "enum": ["UNVERIFIED", "CURRENT", "STALE"] },
+        "maskingStatus": { "const": "PAYLOAD_NOT_EXPORTED" },
+        "impactedAssetCount": { "type": "integer", "minimum": 0, "maximum": 10000 }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind", "label", "ref", "status"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nodeIdentifier" },
+        "kind": { "enum": ["DATASET", "DATA_CASE", "SOURCE", "ORACLE", "CONTRACT", "DEPENDENCY", "TARGET"] },
+        "label": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "ref": { "$ref": "#/$defs/exactRef" },
+        "status": { "enum": ["ACTIVE", "DRAFT", "STALE", "READY", "BLOCKED", "ORPHANED", "RETIRED"] }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "target", "relation"],
+      "properties": {
+        "id": { "$ref": "#/$defs/edgeIdentifier" },
+        "source": { "$ref": "#/$defs/nodeIdentifier" },
+        "target": { "$ref": "#/$defs/nodeIdentifier" },
+        "relation": { "enum": ["CONTAINS", "SOURCED_BY", "CHECKED_BY", "VALIDATES", "CONTROLS", "VALIDATES_TARGET"] }
+      }
+    },
+    "impactGraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": { "type": "array", "minItems": 1, "maxItems": 10000, "items": { "$ref": "#/$defs/node" } },
+        "edges": { "type": "array", "maxItems": 20000, "items": { "$ref": "#/$defs/edge" } }
+      }
+    }
+  }
+}

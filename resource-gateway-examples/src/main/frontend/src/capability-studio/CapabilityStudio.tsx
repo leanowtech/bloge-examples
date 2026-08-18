@@ -31,6 +31,7 @@ import {
   fetchFeatureRehearsal,
   fetchGovernedRunEvidence,
   fetchScenarioDataset,
+  fetchScenarioQualityImpact,
   fetchTutorialBranch,
   preflightTutorialBranch,
   runGovernedBaseline,
@@ -49,6 +50,10 @@ import {
   type ContractSummary,
   type ScenarioCase,
   type ScenarioDataset,
+  selectScenarioQualityImpact,
+  type ScenarioQualityImpactProjection,
+  type ScenarioQualityImpactCase,
+  type ScenarioQualityImpactGraphNode,
   type ScenarioRow,
   type FeatureRehearsalEdge,
   type FeatureRehearsalNode,
@@ -60,7 +65,7 @@ import {
 import { featureRehearsalErrorPresentation } from './featureRehearsalErrorPresentation';
 import './capabilityStudio.css';
 
-type Task = 'overview' | 'contract' | 'scenarios' | 'tutorial' | 'feature' | 'tool';
+type Task = 'overview' | 'contract' | 'scenarios' | 'quality' | 'tutorial' | 'feature' | 'tool';
 
 interface CapabilityStudioDeepLink {
   task: Task | null;
@@ -72,11 +77,12 @@ interface CapabilityStudioDeepLink {
 function readCapabilityStudioDeepLink(): CapabilityStudioDeepLink {
   const params = new URL(window.location.href).searchParams;
   const task = params.get('task');
+  const validTask = task === 'overview' || task === 'contract' || task === 'scenarios' || task === 'quality' || task === 'tutorial' || task === 'feature' || task === 'tool';
   const exactTask = task === 'tool' || task === 'feature';
   const runId = exactTask ? params.get('runId') : null;
   const scenarioId = exactTask ? params.get('scenarioId') : null;
   return {
-    task: exactTask ? task : null,
+    task: validTask ? task as Task : null,
     runId: runId && scenarioId ? runId : null,
     scenarioId: runId && scenarioId ? scenarioId : null,
     nodeId: runId && scenarioId ? params.get('nodeId') : null,
@@ -229,6 +235,8 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
       setDeepLink(next);
       clearExactEvidence();
     }
+    const next = writeCapabilityStudioDeepLink({ task: nextTask, runId: null, scenarioId: null, nodeId: null });
+    setDeepLink(next);
     setTask(nextTask);
   };
   const openApi = (index: number) => {
@@ -281,6 +289,7 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           <option value="overview">{locale === 'zh-CN' ? '能力总览' : 'Capability overview'}</option>
           <option value="contract">{locale === 'zh-CN' ? '订单查询契约' : 'Order lookup contract'}</option>
           <option value="scenarios">{locale === 'zh-CN' ? '场景数据' : 'Scenario data'}</option>
+          <option value="quality">{locale === 'zh-CN' ? '质量与影响' : 'Quality & impact'}</option>
           <option value="tutorial">{locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'}</option>
           <option value="feature">{locale === 'zh-CN' ? '特征编排' : 'Feature orchestration'}</option>
           <option value="tool">{locale === 'zh-CN' ? '工具契约' : 'Tool contract'}</option>
@@ -297,13 +306,15 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
           {model.assets.features.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'feature'} icon={<GitBranch size={16} />} label={text(asset.name)} onClick={() => navigateTask('feature')} testId="capability-task-feature" />)}
           {model.assets.tools.map((asset, index) => <TaskButton key={asset.technicalRef ?? index} active={task === 'tool'} icon={<Wrench size={16} />} label={text(asset.name)} onClick={() => navigateTask('tool')} testId="capability-task-tool" />)}
           <TaskButton active={task === 'scenarios'} icon={<Database size={16} />} label={locale === 'zh-CN' ? '场景数据' : 'Scenario data'} onClick={() => navigateTask('scenarios')} badge={model.scenarios.length} testId="capability-task-scenarios" />
+          <TaskButton active={task === 'quality'} icon={<ShieldCheck size={16} />} label={locale === 'zh-CN' ? '质量与影响' : 'Quality & impact'} onClick={() => navigateTask('quality')} testId="capability-task-quality" />
           <TaskButton active={task === 'tutorial'} icon={<Beaker size={16} />} label={locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'} onClick={() => navigateTask('tutorial')} testId="capability-task-tutorial" />
         </aside>
 
         <section className="capability-main" aria-live="polite">
           {task === 'overview' && <OverviewView model={model} text={text} locale={locale} onOpenContract={openApi} onOpenScenarios={() => navigateTask('scenarios')} onOpenTutorial={() => navigateTask('tutorial')} />}
           {task === 'contract' && currentAsset && <ContractView asset={currentAsset} text={text} locale={locale} />}
-          {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} />}
+          {task === 'scenarios' && <ScenarioView fetcher={fetcher} locale={locale} onOpenQuality={() => navigateTask('quality')} />}
+          {task === 'quality' && <QualityImpactView fetcher={fetcher} locale={locale} />}
           {task === 'tutorial' && <TutorialBranchView fetcher={fetcher} locale={locale} />}
           {task === 'feature' && selectedFeature && <FeatureRehearsalView asset={selectedFeature} fetcher={fetcher} text={text} locale={locale} storedEvidence={exactEvidence} storedEvidenceRequested={Boolean(deepLink.task === 'feature' && deepLink.runId && deepLink.scenarioId)} storedEvidenceLoading={exactEvidenceLoading} storedEvidenceError={exactEvidenceError} onReturnTool={returnToExactTool} onRetryExact={retryExactEvidence} />}
           {task === 'tool' && selectedTool && <ToolGovernedBaselineView asset={selectedTool} text={text} locale={locale} projection={governedBaseline} error={governedBaselineError} loading={governedBaselineLoading} onRun={() => void executeGovernedBaseline()} exactEvidence={exactEvidence} exactEvidenceError={exactEvidenceError} exactEvidenceLoading={exactEvidenceLoading} onViewEvidence={openExactEvidence} onOpenGraph={openExactGraph} onRetryExact={retryExactEvidence} />}
@@ -392,7 +403,7 @@ function TechnicalDetails({ asset, locale }: { asset: CapabilityAssetSummary; lo
   return <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '技术引用（按需展开）' : 'Technical references (expand when needed)'}</summary><dl><div><dt>Ref</dt><dd>{asset.technicalRef ?? missing}</dd></div><div><dt>Fingerprint</dt><dd>{asset.fingerprint ?? missing}</dd></div></dl></details>;
 }
 
-function ScenarioView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
+function ScenarioView({ fetcher, locale, onOpenQuality }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN'; onOpenQuality: () => void }) {
   const [dataset, setDataset] = useState<ScenarioDataset | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [loading, setLoading] = useState(true);
@@ -446,6 +457,7 @@ function ScenarioView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; 
 
   return <div className="capability-view" data-testid="capability-scenarios">
     <ViewHeading kicker="GP-03" title={locale === 'zh-CN' ? '场景数据中心' : 'Scenario data center'} description={dataset.description} status={`${visible.length}/${dataset.cases.length}`} />
+    <div className="capability-scenario-quality-action"><div><strong>{locale === 'zh-CN' ? '想知道这些场景能否进入下一步？' : 'Need to know whether these cases can move forward?'}</strong><span>{locale === 'zh-CN' ? '查看五项质量覆盖、准入阻断原因，以及每条 case 会影响哪些业务资产。' : 'Review five coverage dimensions, admission blockers, and the business assets impacted by each case.'}</span></div><button type="button" className="capability-secondary-action" onClick={onOpenQuality}><ShieldCheck size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '查看质量与影响' : 'Review quality & impact'} <ArrowRight size={15} aria-hidden="true" /></button></div>
     <section className="capability-scenario-dataset-header" aria-label={locale === 'zh-CN' ? '数据集摘要' : 'Dataset summary'}>
       <div className="capability-scenario-dataset-title"><Database size={19} aria-hidden="true" /><div><strong>{dataset.name}</strong><span>{locale === 'zh-CN' ? '业务验证分母' : 'Business validation denominator'} · {dataset.cases.length} {locale === 'zh-CN' ? '条 case' : 'cases'}</span></div></div>
       <dl className="capability-scenario-metadata"><div><dt>{locale === 'zh-CN' ? '生命周期' : 'Lifecycle'}</dt><dd>{displayScenarioValue(dataset.lifecycle, locale)}</dd></div><div><dt>{locale === 'zh-CN' ? '版本' : 'Revision'}</dt><dd>{dataset.datasetRef.revision}</dd></div><div><dt>{locale === 'zh-CN' ? '分类' : 'Classification'}</dt><dd>{displayScenarioValue(dataset.classification, locale)}</dd></div><div><dt>{locale === 'zh-CN' ? '负责人' : 'Owner'}</dt><dd>{dataset.owner.name}</dd></div></dl>
@@ -483,6 +495,93 @@ function ScenarioDatasetError({ error, locale, onRetry }: { error: Error | null;
   const recovery = requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认服务端提供严格 Dataset projection 后重试。' : 'Confirm that the server provides the strict dataset projection, then retry.');
   return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{protocolCode}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{recovery}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
 }
+
+function QualityImpactView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
+  const [projection, setProjection] = useState<ScenarioQualityImpactProjection | null>(null);
+  const [error, setError] = useState<Error | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedCaseId, setSelectedCaseId] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const next = await fetchScenarioQualityImpact(fetcher);
+      setProjection(next);
+      setSelectedCaseId(next.cases[0]?.caseRef.id ?? '');
+    } catch (nextError) {
+      setProjection(null);
+      setError(nextError instanceof Error ? nextError : new Error('The quality and impact projection could not be loaded.'));
+    } finally {
+      setLoading(false);
+    }
+  }, [fetcher]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  if (loading) {
+    return <div className="capability-view capability-quality-impact-state" data-testid="capability-quality-impact-loading" aria-busy="true"><ViewHeading kicker="GP-09" title={locale === 'zh-CN' ? '质量与影响' : 'Quality & impact'} description={locale === 'zh-CN' ? '正在读取质量准入与资产影响闭包…' : 'Loading quality admission and asset impact closure...'} status={locale === 'zh-CN' ? '加载中' : 'Loading'} /><p className="capability-inline-state">{locale === 'zh-CN' ? '正在验证投影版本、引用范围、图连接和数据边界。' : 'Verifying projection version, reference scope, graph closure, and data boundary.'}</p></div>;
+  }
+  if (error || !projection) return <QualityImpactError error={error} locale={locale} onRetry={() => void load()} />;
+
+  const selected = projection.cases.find((value) => value.caseRef.id === selectedCaseId) ?? projection.cases[0];
+  const selection = selected ? selectScenarioQualityImpact(projection, selected.caseRef.id) : { nodeIds: new Set<string>(), edgeIds: new Set<string>() };
+  const allCoverage = [projection.quality.ownerCoveragePercent, projection.quality.sourceCoveragePercent, projection.quality.oracleCoveragePercent, projection.quality.contractCoveragePercent, projection.quality.behaviorClosurePercent].every((value) => value === 100);
+  const explanation = projection.admission.status === 'BLOCKED' && allCoverage
+    ? (locale === 'zh-CN'
+      ? `五项覆盖率均为 100%，但准入仍被阻断：${projection.admission.draftCaseCount} 条 case 仍是草稿，且缺少新鲜度证据。`
+      : `All five coverage dimensions are 100%, but admission remains blocked because ${projection.admission.draftCaseCount} cases are still Draft and freshness evidence is absent.`)
+    : projection.admission.status === 'READY'
+      ? (locale === 'zh-CN' ? '五项覆盖率已完成，当前投影已满足质量准入。' : 'All five coverage dimensions are complete and this projection meets quality admission.')
+      : (locale === 'zh-CN' ? '覆盖率与准入判定是两件事；请先处理下方明确列出的阻断原因。' : 'Coverage and admission are separate facts; address the explicit blockers below first.');
+
+  return <div className="capability-view capability-quality-impact" data-testid="capability-quality-impact">
+    <ViewHeading kicker="GP-09" title={locale === 'zh-CN' ? '质量与影响' : 'Quality & impact'} description={locale === 'zh-CN' ? '把“数据是否齐全”和“是否允许进入运行”拆开看，并追踪每条 case 的业务影响范围。' : 'Separate data coverage from runtime admission, then trace the business impact of each case.'} status={displayQualityStatus(projection.admission.status, locale)} />
+    <section className={`capability-quality-verdict capability-quality-verdict-${projection.admission.status.toLowerCase()}`} aria-label={locale === 'zh-CN' ? '准入判定' : 'Admission verdict'}>
+      <div className="capability-quality-verdict-heading"><ShieldCheck size={21} aria-hidden="true" /><div><p className="capability-kicker">{locale === 'zh-CN' ? '当前判定' : 'Current verdict'}</p><h4>{displayQualityStatus(projection.admission.status, locale)}</h4></div><span>{projection.quality.freshnessStatus === 'UNVERIFIED' ? (locale === 'zh-CN' ? '新鲜度未验证' : 'Freshness unverified') : displayQualityFreshness(projection.quality.freshnessStatus, locale)}</span></div>
+      <p className="capability-quality-verdict-explanation">{explanation}</p>
+      <div className="capability-quality-blockers"><strong>{locale === 'zh-CN' ? '明确阻断原因' : 'Explicit blockers'}</strong><ul>{projection.admission.blockers.map((blocker) => <li key={blocker.code}><b>{displayQualityBlocker(blocker.code, locale)}</b><span>{blocker.message}</span></li>)}</ul></div>
+    </section>
+    <section className="capability-quality-first-viewport" aria-label={locale === 'zh-CN' ? '质量首屏摘要' : 'Quality first viewport summary'}>
+      <div className="capability-quality-coverage"><div className="capability-quality-section-heading"><ShieldCheck size={17} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '五项质量覆盖' : 'Five quality dimensions'}</strong><span>{locale === 'zh-CN' ? '衡量定义完整度，不等同于可运行准入。' : 'Measures definition completeness, not runtime admission.'}</span></div></div><div className="capability-quality-impact-metrics"><QualityMetric label={locale === 'zh-CN' ? '负责人覆盖' : 'Owner coverage'} value={projection.quality.ownerCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '来源覆盖' : 'Source coverage'} value={projection.quality.sourceCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? 'Oracle 覆盖' : 'Oracle coverage'} value={projection.quality.oracleCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '契约覆盖' : 'Contract coverage'} value={projection.quality.contractCoveragePercent} /><QualityMetric label={locale === 'zh-CN' ? '行为闭包' : 'Behavior closure'} value={projection.quality.behaviorClosurePercent} /></div></div>
+      <div className="capability-quality-counts"><div><strong>{projection.admission.draftCaseCount}</strong><span>{locale === 'zh-CN' ? '条草稿' : 'Draft'}</span></div><div><strong>{projection.admission.activeCaseCount}</strong><span>{locale === 'zh-CN' ? '条使用中' : 'Active'}</span></div><div><strong>{projection.summary.orphanCaseCount}</strong><span>{locale === 'zh-CN' ? '条孤儿 case' : 'Orphan cases'}</span></div></div>
+    </section>
+    <section className="capability-quality-boundary" aria-label={locale === 'zh-CN' ? '数据边界' : 'Data boundary'}><EyeOff size={18} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '当前视图不导出请求/响应内容' : 'This view does not export request/response content'}</strong><p>{locale === 'zh-CN' ? '这里只展示来源、Oracle、契约和依赖的关系。这个边界不代表源数据已经完成语义脱敏；是否脱敏仍需由数据源治理证明。' : 'Only relationships between sources, Oracles, contracts, and dependencies are shown. This boundary does not prove that source data has been semantically de-identified; that remains a source-governance responsibility.'}</p></div><span>{displayQualityMasking(projection.quality.maskingStatus, locale)}</span></section>
+    <div className="capability-quality-master-detail"><section className="capability-quality-case-list" aria-label={locale === 'zh-CN' ? '质量 case 列表' : 'Quality case list'}><div className="capability-quality-section-heading"><ListFilter size={17} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '逐条查看影响' : 'Inspect case impact'}</strong><span>{locale === 'zh-CN' ? `${projection.summary.caseCount} 条 case，按 case id 稳定排序` : `${projection.summary.caseCount} cases, stably sorted by exact case id`}</span></div></div>{projection.cases.map((scenario) => <QualityImpactCaseItem key={scenario.caseRef.id} scenario={scenario} selected={scenario.caseRef.id === selected?.caseRef.id} locale={locale} onClick={() => setSelectedCaseId(scenario.caseRef.id)} />)}</section>{selected && <QualityImpactCaseDetails scenario={selected} projection={projection} selection={selection} locale={locale} />}</div>
+  </div>;
+}
+
+function QualityImpactCaseItem({ scenario, selected, locale, onClick }: { scenario: ScenarioQualityImpactCase; selected: boolean; locale: 'en' | 'zh-CN'; onClick: () => void }) {
+  return <button type="button" className={`capability-quality-case-item${selected ? ' selected' : ''}`} aria-pressed={selected} onClick={onClick}><span><strong>{scenario.name}</strong><small>{displayScenarioValue(scenario.lifecycle, locale)} · {displayScenarioValue(scenario.qualityState, locale)}</small></span><b>{scenario.impactedAssetCount} {locale === 'zh-CN' ? '个影响资产' : 'impacted assets'}</b></button>;
+}
+
+function QualityImpactCaseDetails({ scenario, projection, selection, locale }: { scenario: ScenarioQualityImpactCase; projection: ScenarioQualityImpactProjection; selection: { nodeIds: Set<string>; edgeIds: Set<string> }; locale: 'en' | 'zh-CN' }) {
+  const graphNodes = projection.impactGraph.nodes;
+  const graphEdges = projection.impactGraph.edges;
+  const selectedNodes = graphNodes.filter((node) => selection.nodeIds.has(node.id));
+  return <section className="capability-quality-case-details" data-testid="capability-quality-case-details"><div className="capability-quality-case-heading"><div><p className="capability-kicker">{displayScenarioValue(scenario.lifecycle, locale)}</p><h4>{scenario.name}</h4></div><span className="capability-quality-status capability-quality-blocked">{displayQualityFreshness(scenario.freshnessStatus, locale)}</span></div><div className="capability-quality-case-summary"><div><span>{locale === 'zh-CN' ? '负责人' : 'Owner'}</span><strong>{scenario.owner?.name ?? (locale === 'zh-CN' ? '未声明' : 'Not declared')}</strong></div><div><span>{locale === 'zh-CN' ? '影响资产' : 'Impacted assets'}</span><strong>{scenario.impactedAssetCount}</strong></div><div><span>{locale === 'zh-CN' ? '数据边界' : 'Payload boundary'}</span><strong>{locale === 'zh-CN' ? '仅关系，不含内容' : 'Relations only'}</strong></div></div><dl className="capability-quality-reference-summary"><div><dt>{locale === 'zh-CN' ? '来源' : 'Source'}</dt><dd>{scenario.source?.displayName ?? (locale === 'zh-CN' ? '未声明' : 'Not declared')}</dd></div><div><dt>{locale === 'zh-CN' ? 'Oracle' : 'Oracle'}</dt><dd>{scenario.oracle?.displayName ?? (locale === 'zh-CN' ? '未声明' : 'Not declared')}</dd></div><div><dt>{locale === 'zh-CN' ? '契约' : 'Contracts'}</dt><dd>{scenario.contractRefs.length} {locale === 'zh-CN' ? '个适用契约' : 'applicable contracts'}</dd></div><div><dt>{locale === 'zh-CN' ? '运行依赖' : 'Runtime dependencies'}</dt><dd>{scenario.dependencyRefs.length} {locale === 'zh-CN' ? '个依赖' : 'dependencies'}</dd></div></dl><div className="capability-quality-graph-heading"><div><GitBranch size={17} aria-hidden="true" /><strong>{locale === 'zh-CN' ? '影响关系' : 'Impact relationships'}</strong><span>{locale === 'zh-CN' ? '已高亮当前 case 的来源、Oracle、契约、依赖和目标。' : 'The selected case highlights its source, Oracle, contracts, dependencies, and target.'}</span></div><span>{selectedNodes.length} / {graphNodes.length} {locale === 'zh-CN' ? '个节点' : 'nodes'}</span></div><div className="capability-quality-graph-list" role="list">{graphNodes.map((node) => <QualityImpactGraphNode key={node.id} node={node} selected={selection.nodeIds.has(node.id)} locale={locale} />)}</div><div className="capability-quality-edge-list" aria-label={locale === 'zh-CN' ? '影响关系边' : 'Impact relationships'}>{graphEdges.map((edge) => <div key={edge.id} className={`capability-quality-edge${selection.edgeIds.has(edge.id) ? ' selected' : ''}`}><span>{graphNodes.find((node) => node.id === edge.source)?.label ?? edge.source}</span><ArrowRight size={14} aria-hidden="true" /><b>{displayQualityRelation(edge.relation, locale)}</b><ArrowRight size={14} aria-hidden="true" /><span>{graphNodes.find((node) => node.id === edge.target)?.label ?? edge.target}</span></div>)}</div><details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '查看精确引用（按需展开）' : 'View exact references (expand when needed)'}</summary><dl><div><dt>Case</dt><dd>{formatScenarioRef(scenario.caseRef)}</dd></div><div><dt>Source / Oracle</dt><dd>{scenario.sourceRef ? formatScenarioRef(scenario.sourceRef) : 'null'} / {scenario.oracleRef ? formatScenarioRef(scenario.oracleRef) : 'null'}</dd></div><div><dt>Contracts</dt><dd>{scenario.contractRefs.map(formatScenarioRef).join(', ') || 'none'}</dd></div><div><dt>Dependencies</dt><dd>{scenario.dependencyRefs.map(formatScenarioRef).join(', ') || 'none'}</dd></div></dl></details></section>;
+}
+
+function QualityImpactGraphNode({ node, selected, locale }: { node: ScenarioQualityImpactGraphNode; selected: boolean; locale: 'en' | 'zh-CN' }) {
+  return <div role="listitem" className={`capability-quality-graph-node${selected ? ' selected' : ' dimmed'}`} data-node-id={node.id}><span className="capability-quality-graph-node-kind">{displayQualityNodeKind(node.kind, locale)}</span><strong>{node.label}</strong><small>{displayQualityNodeStatus(node.status, locale)}</small></div>;
+}
+
+function QualityImpactError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
+  const requestError = error instanceof CapabilityStudioRequestError ? error : null;
+  const protocolCode = requestError?.code ?? (isCapabilityStudioProtocolError(error) ? error.code : 'RG.CAPABILITY_STUDIO.SCENARIO_QUALITY_IMPACT_UNAVAILABLE');
+  const message = error?.message ?? (locale === 'zh-CN' ? '质量与影响投影无法加载。' : 'The quality and impact projection could not be loaded.');
+  const impact = requestError?.impact ?? (isCapabilityStudioProtocolError(error) ? error.impact : (locale === 'zh-CN' ? '质量判定、阻断原因和影响关系暂时无法展示。' : 'Quality verdict, blockers, and impact relationships cannot be shown.'));
+  const recovery = requestError?.recoveryAction ?? (locale === 'zh-CN' ? '确认服务端提供 GP-09 投影后重试；在此之前不要据此判断数据质量。' : 'Confirm that the server provides the GP-09 projection, then retry; do not infer data quality from this error.');
+  return <div className="capability-view capability-error-state capability-quality-impact-error" data-testid="capability-quality-impact-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{protocolCode}</p><h3>{locale === 'zh-CN' ? '质量与影响暂时不可用' : 'Quality & impact is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{message}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{recovery}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载质量与影响' : 'Retry quality & impact'}</button></div>;
+}
+
+function displayQualityStatus(value: string, locale: 'en' | 'zh-CN'): string { return value === 'BLOCKED' ? (locale === 'zh-CN' ? '准入阻断' : 'Admission blocked') : value === 'READY' ? (locale === 'zh-CN' ? '可进入准入' : 'Ready for admission') : value === 'STALE' ? (locale === 'zh-CN' ? '质量已过期' : 'Quality stale') : value; }
+function displayQualityFreshness(value: string, locale: 'en' | 'zh-CN'): string { return value === 'UNVERIFIED' ? (locale === 'zh-CN' ? '未验证新鲜度' : 'Freshness unverified') : value === 'CURRENT' ? (locale === 'zh-CN' ? '新鲜度当前' : 'Freshness current') : value === 'STALE' ? (locale === 'zh-CN' ? '新鲜度过期' : 'Freshness stale') : value; }
+function displayQualityBlocker(value: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { DRAFT_CASES_PRESENT: { en: 'Draft cases present', 'zh-CN': '存在草稿 case' }, FRESHNESS_EVIDENCE_MISSING: { en: 'Freshness evidence missing', 'zh-CN': '缺少新鲜度证据' }, NO_ACTIVE_CASES: { en: 'No active cases', 'zh-CN': '没有使用中的 case' } }; return labels[value]?.[locale] ?? value; }
+function displayQualityNodeKind(value: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { DATASET: { en: 'Dataset', 'zh-CN': '数据集' }, DATA_CASE: { en: 'Case', 'zh-CN': '业务场景' }, SOURCE: { en: 'Source', 'zh-CN': '来源' }, ORACLE: { en: 'Oracle', 'zh-CN': '业务判定' }, CONTRACT: { en: 'Contract', 'zh-CN': '契约' }, DEPENDENCY: { en: 'Dependency', 'zh-CN': '运行依赖' }, TARGET: { en: 'Target', 'zh-CN': '目标工具' } }; return labels[value]?.[locale] ?? value; }
+function displayQualityNodeStatus(value: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { ACTIVE: { en: 'Active', 'zh-CN': '使用中' }, DRAFT: { en: 'Draft', 'zh-CN': '草稿' }, STALE: { en: 'Stale', 'zh-CN': '已过期' }, READY: { en: 'Ready', 'zh-CN': '就绪' }, BLOCKED: { en: 'Blocked', 'zh-CN': '已阻断' }, ORPHANED: { en: 'Orphaned', 'zh-CN': '未关联' }, RETIRED: { en: 'Retired', 'zh-CN': '已退役' } }; return labels[value]?.[locale] ?? value; }
+function displayQualityRelation(value: string, locale: 'en' | 'zh-CN'): string { const labels: Record<string, { en: string; 'zh-CN': string }> = { CONTAINS: { en: 'contains', 'zh-CN': '包含' }, SOURCED_BY: { en: 'sourced by', 'zh-CN': '来源于' }, CHECKED_BY: { en: 'checked by', 'zh-CN': '由…判定' }, VALIDATES: { en: 'validates', 'zh-CN': '验证' }, CONTROLS: { en: 'controls', 'zh-CN': '控制' }, VALIDATES_TARGET: { en: 'validates target', 'zh-CN': '验证目标' } }; return labels[value]?.[locale] ?? value; }
+function displayQualityMasking(_value: string, locale: 'en' | 'zh-CN'): string { return locale === 'zh-CN' ? '不导出业务内容' : 'Business content not exported'; }
 
 function formatScenarioRef(ref: { kind: string; id: string; revision: number }): string {
   return `${ref.kind}:${ref.id}@${ref.revision}`;

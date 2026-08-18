@@ -199,6 +199,20 @@ decision + decidedBy + decidedAt
 
 Test Kit 的默认 v2 verifier 只负责严格 Schema、状态机、时间窗口、引用闭包、指纹复算和签署坐标绑定，不能自行证明外部 Evidence 真实存在，也不能验证签名公钥、签发机构权限或 Owner 身份。正式 `ACCEPTED` 还必须由受信 Evidence Resolver、受信 Key Set/Issuer Policy 和 Owner Authority 完成外部真实性校验。只有默认 verifier 通过时，结论仍是“Stage 退出结果在语义上自洽”，不得据此把当前 Manifest 从 `NO_GO` 改为 `ACCEPTED`。
 
+#### 0.4.8 线协议到真实界面的闭环验收
+
+后端对象测试、JSON Schema、独立 Test Kit 和前端静态 fixture 测试分别通过，仍不能证明产品可用。每个进入黄金路径的读模型必须增加一条 **Wire-to-UI Acceptance**：使用实际 Spring 服务生成的原始响应字节，由生产前端通过真实认证头和 purpose 读取，再由真实浏览器完成解析、渲染、交互、几何与可访问性验证。禁止用手工复制 JSON、前端本地常量或测试专用 adapter 代替这条链路。
+
+| 闭环步骤 | 明确通过标准 | 直接失败条件 | 证据 |
+|---|---|---|---|
+| 服务端出线 | 实际 Controller 响应通过公开 Schema；内容 fingerprint、稳定排序和跨字段不变量可由 Test Kit 从原始 bytes 独立复算 | 只验证 Java 对象、序列化后字段漂移、Schema 与实现使用不同字符集或基数规则 | HTTP 集成响应、Schema 结果、Test Kit 结果 |
+| 前端入线 | 生产 API client 携带与部署一致的 credential/purpose；严格 parser 直接接受真实响应，并拒绝未知字段、非法关系和跨 Scope 引用 | 漏认证头、前端 fixture 与真实响应不同、把多 Authority 误判为跨 Scope、合法边 ID 无法解析 | API client 测试、真实网络请求、parser 正负用例 |
+| 用户结果 | 页面显示合同规定的业务事实；主操作改变精确选择与影响闭包，刷新或恢复不产生近似本地结论 | 页面只“加载成功”但关键数量/阻断/边界不符；选择后路径不变；API 失败后用常量补图 | DOM 业务断言、交互后节点/边集合、错误态断言 |
+| 视觉与无障碍 | 冻结视口无页面横向溢出、无遮挡；axe serious/critical 为 0；状态主次不以降低文字可读性实现 | 用整体 opacity 弱化导致文字对比度失败；移动端信息被裁切；仅靠颜色表达选中或阻断 | DOM 几何、axe、真实 Chrome 截图、人工视觉复核 |
+| 证据落盘 | 测试命令、候选指纹、响应/截图路径和精确观察值进入追踪矩阵；失败结果保留并关联修复 | 只留口头结论或成功截图；无法知道截图对应哪个候选和响应 | Acceptance Result、Evidence ref/fingerprint、失败记录 |
+
+Wire-to-UI 通过只允许把该纵向切片标为 `DEVELOPMENT_VERIFIED`。目标环境、部署级隔离、人工可用性和 Owner 签署未闭合时，仍不得生成 `CANDIDATE_VERIFIED` 或 `ACCEPTED`。
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -1382,7 +1396,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 
 | ID | 当前状态 | 已有可复验证据 | 阻止 `PASS` 的缺口 |
 |---|---|---|---|
-| `S0-AC-01` | `PARTIAL` | GP-01 至 GP-08 与 GP-10 已有真实 Chrome 开发证据；GP-01 至 GP-06 覆盖中英文、1440/1024/390、Dataset、教程分支、Feature Trace、键盘路径和 axe；GP-07/08 覆盖中文 1440/390、真实 POST 运行、9 × 3 矩阵、双结论、无页面溢出和 axe serious/critical 为 0；GP-10 覆盖原 child run 精确读取、完整引用闭包、Feature 节点焦点以及刷新和返回上下文保持 | GP-07/08/10 的英文、1024 和异常恢复浏览器矩阵未闭合；GP-09 尚未形成同等纵向切片；人工读屏、产品/UX/QA 签署未闭合 |
+| `S0-AC-01` | `PARTIAL` | GP-01 至 GP-10 均已有真实 Chrome 开发切片；GP-01 至 GP-06 覆盖中英文、1440/1024/390、Dataset、教程分支、Feature Trace、键盘路径和 axe；GP-07/08 覆盖中文 1440/390、真实 POST 运行、9 × 3 矩阵、双结论、无页面溢出和 axe serious/critical 为 0；GP-09 以真实认证请求闭合 9/0/0 准入事实、五项 100%、两个阻断、37 节点/81 边、Case 选择后的 9 节点/8 边路径，并覆盖中文 1440/390、无溢出和 axe；GP-10 覆盖原 child run 精确读取、完整引用闭包、Feature 节点焦点以及刷新和返回上下文保持 | GP-07 至 GP-10 的英文、1024 和完整异常恢复浏览器矩阵未闭合；GP-09 仍缺仅键盘与人工读屏；产品/UX/QA 签署未闭合 |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在；每个 Case 已投影完整四 API `RUNTIME_CONTROL`，幂等与禁止写入作为独立 `BUSINESS_EXPECTATION` 保留，编译 source map 不再把业务预期误降为 Tool fixture；前后端与独立 Test Kit 均按该语义验证运行闭包 | Dataset 仍为只读投影；受保护 fixture material 仍由开发服务组装；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
 | `S0-AC-03` | `PARTIAL` | Spike A 已实现确定性编译、强类型 exact-ref provenance、内容寻址、通过既有 Registry 发布后逐项回读复算，并仅以确认的 exact suite 进入既有 `TestSuiteExecutionService`；完整闭包以可逆字典清单写入 aggregate evidence，Canonical suite metadata 为 11,863 bytes；真实 Spring test profile 已从同一受治理闭包连续运行 3 个 suite、27 个唯一 child run，全部 `PASSED` 且进程内真实外部调用为 0。四个 Canonical API descriptor 已幂等进入应用级 `ResourceRegistry`，同名异构 descriptor 会使 Demo 装配失败而不会覆盖已有资产；Canonical `RETURN` 以 transport-level 原始响应经过真实 `HttpResourceOperator` 的状态、协议和输出映射链，合格 child evidence 为 `CERTIFIABLE`；未解析 descriptor 在调度前以稳定错误失败，output-level 替身仍只能产生 `EXPLORATORY` 证据。严格 Schema 与独立 Test Kit verifier 已验证成功、失败关闭和篡改负向样例。同一 Canonical Feature DAG 已包装为 Tool binding 并通过既有 BLOGE nested graph 路径执行；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens，并用服务端可信身份、专用 purpose 和 clearance 取代查询参数授权；Spike C 已证明 production profile/property 不装配受治理基线端点，且进程内 connector counter 为 0。部署启动器已能用实际 JAR SHA-256、Git commit 与 `CLEAN` source tree 生成不可由请求覆盖的候选绑定 | 上述仍是 `DEVELOPMENT_TEST_OWNED`；候选绑定机制已实现，但尚未形成目标验收环境的正式 Candidate attestation。Spike B 仍缺字段级 source map、客户级数据分类/ABAC/Scope Authority 和可信 Graph/semantic fingerprint 来源；Spike C 仍缺部署级 network deny/egress 观测和安全签署 |
 | `S0-AC-04` | `PARTIAL` | `POST /api/capability-studio/governed-baseline` 已把页面 9 × 3 切换到同一受治理编译、应用级 `ResourceRegistry`、真实 `HttpResourceOperator`、Registry 回读与 exact-suite 执行链路；真实 Spring 运行产生 3 个唯一 suite `runId`、27 个唯一 child `runId`，九个 Case 在每轮恰好出现一次并全部 `PASSED`。服务端通过既有授权 API 回读每条完整签名 child evidence，逐项核对 target/fixture/run/integrity，导出 payload-free evidence fingerprint、semantic result fingerprint、业务断言与 Fixture 控制计数；同 Case 三轮 semantic fingerprint 一致，9/9 Oracle 与 27/27 业务断言通过，timeout fallback、duplicate 幂等和 forbidden-write 无写入均形成专项证明；publication receipt、suite exact ref、compilation/source-map/provenance fingerprint 三轮一致，进程内真实外部调用为 0。Canonical `RETURN` 使用 descriptor-backed transport fixture，child evidence 为 `CERTIFIABLE`；未解析 Resource 在调度前失败，output-level 替身保持 `EXPLORATORY`。v3 严格 Schema 新增 `verificationLevel`、部署候选和 canonical execution intent；独立 Test Kit 会重算 intent 并拒绝候选篡改，失败态固定为 `NOT_VERIFIED` 且不携带运行证据 | 协议继续强制 `DEVELOPMENT_TEST_OWNED / NO_GO`。干净制品由演示启动器运行时可关闭候选未绑定限制，但正式 `PASS` 仍缺目标环境 Candidate attestation、部署级 network deny/egress 观测及正确性/Runtime/QA Owner 签署；缺少任一项都不能用 `CERTIFIABLE` 证据替代发布验收 |
@@ -1393,7 +1407,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 
 ##### 当前受治理候选开发验收子结果
 
-以下结果只证明当前版本的受治理控制面、独立 verifier 和浏览器纵向切片达到 `DEVELOPMENT_VERIFIED`。它不是 `S0-AC-03` 或 `S0-AC-04` 的正式 Acceptance Result，也不能替代目标环境 Candidate attestation。
+以下结果只证明当前版本的受治理控制面、独立 verifier 和浏览器纵向切片达到 `DEVELOPMENT_VERIFIED`。它不是 `S0-AC-03` 或 `S0-AC-04` 的正式 Acceptance Result，也不能替代目标环境 Candidate attestation。各子合同中的测试数量保留该切片完成时的历史观测，最新候选的回归总量以表中最后一条候选记录为准；数量本身不是永久门槛，永久门槛是冻结矩阵精确执行、无跳过且全部义务成立。
 
 | 子合同 | 可执行标准 | 当前观测 | 结论 |
 |---|---|---|---|
@@ -1412,6 +1426,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S0-DEV-GOV-13` | 正式 Stage 结果必须精确覆盖 `AC-STD-01..09`，禁止 `PARTIAL` 和伪造执行窗口；结果身份、状态、候选执行、完整环境/egress 投影、检查和签署前 Evidence 必须形成可复算闭包；候选、环境、egress、签署与 `AC-STD-01/06/09` 不得矛盾 | v2 严格 Schema 与 `CapabilityStudioStageAcceptanceResultV2Verifier` 已随 Test Kit JAR 打包；82 条聚焦测试覆盖成功、关闭态、运行前/中阻断、时间、投影、闭包、签署坐标和篡改；Test Kit 798 条全量测试通过 | `PASS`，仅限语义协议机制；外部 Evidence Resolver、公钥验签、Issuer/Owner Authority 和正式签署仍未闭合 |
 | `S0-DEV-GOV-14` | Data Lens 的视图参数不得成为授权事实；服务端必须先验证 credential 与专用 purpose，再以受信 clearance 裁决 Payload；401/403 和安全审计不可用必须在 Feature Graph 执行前失败关闭；伪造 `X-Clearance` 不得提权 | Controller 覆盖缺少/无效 credential、缺少 purpose、PUBLIC 结构查看、PUBLIC Payload 拒绝、伪造 clearance、CONFIDENTIAL Payload、审计不可用；两个零交互测试证明拒绝和审计故障发生在 rehearsal service 之前；前端覆盖 host credential、固定 purpose、中英文恢复文案和拒绝后回到实际结构视图；启动脚本使用认证探针。2026-08-18 真实浏览器再以 `CONFIDENTIAL` 与 `PUBLIC` 两个独立 test 实例复验中文桌面和 `390×844`：允许态闭合 6 节点、5 条边、0 真实调用及同一 Trace Payload，拒绝态回到结构投影、保留 6/5 拓扑且 DOM 无 Payload | `PASS`，仅限 test/staging 演示切片；英文拒绝态、客户级 ABAC、数据分类、跨 Scope Payload Authority 和正式安全签署仍未闭合 |
 | `S0-DEV-GOV-15` | 精确证据必须读取原持久化 child run，禁止隐式重跑；同一 Run/Case 重读必须字节级稳定。投影必须闭合 Tool、所有适用 Contract、Dataset、Case、runtime target、Binding Plan、Fixture、Behavior、依赖、source map、provenance、断言和同一 Run/Data Lens；完整结构证据与当前 graph-path DAG 必须分别验收。`STRUCTURE_ONLY` 不得携带 Payload；嵌套 edge/path 坐标必须无损；只有显式 `ALLOW_REAL`/`FALLBACK_TO_REAL` 才可令 `fallbackToReal=true`。URL 必须保持 `task/runId/scenarioId/nodeId`，刷新、返回和重复点击不得创建新 Run | 服务端单元/集成测试覆盖原 Run、零执行、字节/指纹确定性、7 节点完整 Data Lens、6 节点当前子图、timeout 焦点、Contract union、嵌套 edge/path、错误 Case、未知 Run、合同/Fixture/plan/evidence 漂移、授权与篡改失败关闭；前端 66 条聚焦测试覆盖严格解析、同格单 GET、错误恢复、URL 刷新/返回和子图过滤；独立 Test Kit 用真实响应 bytes 通过 Schema、exact closure、焦点、Payload 边界及三类 fingerprint 复算；真实 Spring + Chrome 从 Tool timeout cell 进入证据、Feature、刷新并返回，原 Run/Case/Node 不变；中文 1440/1280/390 页面无横向溢出，Feature DAG 无 `subject`，完整 Data Lens 保留 `subject`；Test Kit 798 条和 Resource Gateway 6687 条全量测试均为 0 失败、0 错误 | `PASS`，仅限 test/staging 开发证据；目标环境 Candidate attestation、部署级 egress、客户级 ABAC/Scope Authority、英文/1024/异常恢复、人工读屏与 QA/Integration Owner 签署仍未闭合，正式 Stage 0 保持 `NO_GO` |
+| `S0-DEV-GOV-16` | GP-09 必须从同一 Dataset 产生严格、确定、payload-free 的质量与影响投影；根级 `targetRef` 必须独立锚定唯一被验证的 Feature/Tool，图不能自声明目标后自证闭包。固定黄金事实为 9 `DRAFT`、0 `ACTIVE`、0 `STALE`、五项覆盖 100%、新鲜度 `UNVERIFIED`、准入 `BLOCKED`，且 blocker 精确为 `FRESHNESS_EVIDENCE_MISSING`、`NO_ACTIVE_CASES`。图必须为 37 节点/81 边、无孤立 Case；每 Case 闭合 Source、Oracle、1 Contract、4 runtime dependency 和同一 Target，影响资产计数为 6；`PAYLOAD_NOT_EXPORTED` 不得被解释为源数据已语义脱敏 | 公开严格 v1 Schema；服务端确定性、基数、排序、授权和配置装配测试；独立 Test Kit 从真实 wire bytes 重算 projection fingerprint、根级 Target exact-ref/Scope/关系/准入/汇总与 Payload 边界；前端严格 parser、认证 purpose、选择和错误恢复测试；真实 Spring + Chrome 在中文 1440/390 断言 9 Case、37/81 图、所选 Case 9 节点/8 边、五项 100%、两个业务阻断、无页面横向溢出和 axe serious/critical 为 0；启动脚本必须以根级 `targetRef=TOOL/tool-cancellation-fee-dispute-handling` 复验同一协议真相，旧 ID、缺失认证或任一基数漂移都不得报告 ready。当前候选 Test Kit 819 条、Resource Gateway 6694 条全量测试均为 0 失败、0 错误；另有 23 条环境条件测试按既有规则跳过，不计入正式 Stage 退出矩阵。带完整前端制品的 Capability Studio 浏览器类另行执行 10 条、0 跳过并全部通过；测试使用 CDP 精确设置并断言 `innerWidth/innerHeight`，截图像素与 1440/1024/390 合同一致 | `PASS`，仅限 test/staging 开发证据；当前 Dataset 仍是只读 Golden Authority，缺可信 freshness Authority、Active 生命周期变更、客户级数据分类/语义脱敏证明、英文/1024/仅键盘/异常矩阵、人工读屏与 Data Owner 签署，正式准入继续为 `BLOCKED`，Stage 0 继续为 `NO_GO` |
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 
@@ -1425,8 +1440,15 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioStageAcceptanceResultV2VerifierTest test
 
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioScenarioQualityImpactVerifierTest test
+
 mvn -f resource-gateway-examples/pom.xml \
   -Dtest=CapabilityStudioBrowserAcceptanceTest#gp07AndGp08RunTheGovernedToolBaselineAndKeepReleaseClosedAcrossViewports \
+  test
+
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=CapabilityStudioBrowserAcceptanceTest#gp09ExposesFalsifiableQualityAdmissionAndCaseImpactAcrossViewports \
   test
 
 cd resource-gateway-examples/src/main/frontend

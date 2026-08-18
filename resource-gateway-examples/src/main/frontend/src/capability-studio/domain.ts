@@ -313,7 +313,7 @@ export interface ScenarioScope {
   region: string;
 }
 
-export type ScenarioRefKind = 'API' | 'FEATURE' | 'TOOL' | 'GRAPH_DRAFT' | 'CONTRACT' | 'DATASET' | 'DATA_CASE' | 'BEHAVIOR_PROFILE' | 'BINDING_PLAN' | 'CAPABILITY_SNAPSHOT' | 'SOURCE' | 'ORACLE' | 'FIXTURE_BUNDLE' | 'TEST_SUITE' | 'MIRROR_PLAN' | 'EVIDENCE';
+export type ScenarioRefKind = 'API' | 'FEATURE' | 'TOOL' | 'GRAPH_DRAFT' | 'CONTRACT' | 'DATASET' | 'DATA_CASE' | 'BEHAVIOR_PROFILE' | 'BINDING_PLAN' | 'CAPABILITY_SNAPSHOT' | 'SOURCE' | 'ORACLE' | 'FIXTURE_BUNDLE' | 'TEST_SUITE' | 'MIRROR_PLAN' | 'EVIDENCE' | 'DEPENDENCY' | 'TARGET';
 
 export interface ScenarioExactRef {
   kind: ScenarioRefKind;
@@ -387,6 +387,95 @@ export interface ScenarioDataset {
   contractRefs: ScenarioExactRef[];
   cases: ScenarioCase[];
   quality: ScenarioDatasetQuality;
+}
+
+export type ScenarioQualityImpactFreshnessStatus = 'UNVERIFIED' | 'CURRENT' | 'STALE';
+export type ScenarioQualityImpactMaskingStatus = 'PAYLOAD_NOT_EXPORTED';
+export type ScenarioQualityImpactNodeKind = 'DATASET' | 'DATA_CASE' | 'SOURCE' | 'ORACLE' | 'CONTRACT' | 'DEPENDENCY' | 'TARGET';
+export type ScenarioQualityImpactNodeStatus = 'ACTIVE' | 'DRAFT' | 'STALE' | 'READY' | 'BLOCKED' | 'ORPHANED' | 'RETIRED';
+export type ScenarioQualityImpactRelation = 'CONTAINS' | 'SOURCED_BY' | 'CHECKED_BY' | 'VALIDATES' | 'CONTROLS' | 'VALIDATES_TARGET';
+
+export interface ScenarioQualityImpactCase {
+  caseRef: ScenarioExactRef;
+  name: string;
+  lifecycle: ScenarioCaseLifecycle;
+  qualityState: ScenarioCaseQualityState;
+  owner: ScenarioOwner | null;
+  sourceRef: ScenarioExactRef | null;
+  source: ScenarioSource | null;
+  oracleRef: ScenarioExactRef | null;
+  oracle: ScenarioOracle | null;
+  contractRefs: ScenarioExactRef[];
+  dependencyRefs: ScenarioExactRef[];
+  freshnessStatus: ScenarioQualityImpactFreshnessStatus;
+  maskingStatus: ScenarioQualityImpactMaskingStatus;
+  impactedAssetCount: number;
+}
+
+export interface ScenarioQualityImpactAdmission {
+  status: 'BLOCKED' | 'READY';
+  activeCaseCount: number;
+  draftCaseCount: number;
+  staleCaseCount: number;
+  blockers: Array<{ code: string; message: string }>;
+}
+
+export interface ScenarioQualityImpactQuality {
+  status: 'BLOCKED' | 'READY';
+  ownerCoveragePercent: number;
+  sourceCoveragePercent: number;
+  oracleCoveragePercent: number;
+  contractCoveragePercent: number;
+  behaviorClosurePercent: number;
+  freshnessStatus: ScenarioQualityImpactFreshnessStatus;
+  payloadExposure: 'NONE';
+  maskingStatus: ScenarioQualityImpactMaskingStatus;
+}
+
+export interface ScenarioQualityImpactSummary {
+  caseCount: number;
+  sourceCount: number;
+  oracleCount: number;
+  contractCount: number;
+  dependencyCount: number;
+  targetCount: number;
+  impactedAssetCount: number;
+  orphanCaseCount: number;
+}
+
+export interface ScenarioQualityImpactGraphNode {
+  id: string;
+  kind: ScenarioQualityImpactNodeKind;
+  label: string;
+  ref: ScenarioExactRef;
+  status: ScenarioQualityImpactNodeStatus;
+}
+
+export interface ScenarioQualityImpactGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: ScenarioQualityImpactRelation;
+}
+
+export interface ScenarioQualityImpactProjection {
+  schemaVersion: 'resource-gateway.capability-studio.scenario-quality-impact.v1';
+  datasetRef: ScenarioExactRef;
+  targetRef: ScenarioExactRef;
+  projectionFingerprint: string;
+  admission: ScenarioQualityImpactAdmission;
+  quality: ScenarioQualityImpactQuality;
+  summary: ScenarioQualityImpactSummary;
+  cases: ScenarioQualityImpactCase[];
+  impactGraph: {
+    nodes: ScenarioQualityImpactGraphNode[];
+    edges: ScenarioQualityImpactGraphEdge[];
+  };
+}
+
+export interface ScenarioQualityImpactSelection {
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
 }
 
 export interface BranchSummary {
@@ -530,6 +619,14 @@ function invalidScenarioDataset(message: string): CapabilityStudioProtocolError 
     'RG.CAPABILITY_STUDIO.INVALID_SCENARIO_DATASET',
     `[RG.CAPABILITY_STUDIO.INVALID_SCENARIO_DATASET] ${message}`,
     'The scenario dataset cannot be trusted or displayed, so GP-03 remains unavailable.',
+  );
+}
+
+function invalidScenarioQualityImpact(message: string): CapabilityStudioProtocolError {
+  return new CapabilityStudioProtocolError(
+    'RG.CAPABILITY_STUDIO.INVALID_SCENARIO_QUALITY_IMPACT',
+    `[RG.CAPABILITY_STUDIO.INVALID_SCENARIO_QUALITY_IMPACT] ${message}`,
+    'The scenario quality and impact projection cannot be trusted or displayed.',
   );
 }
 
@@ -701,7 +798,7 @@ export function parseCapabilityStudioDemoPack(payload: unknown): CapabilityStudi
 
 const scenarioRefKinds: ScenarioRefKind[] = [
   'API', 'FEATURE', 'TOOL', 'GRAPH_DRAFT', 'CONTRACT', 'DATASET', 'DATA_CASE', 'BEHAVIOR_PROFILE',
-  'BINDING_PLAN', 'CAPABILITY_SNAPSHOT', 'SOURCE', 'ORACLE', 'FIXTURE_BUNDLE', 'TEST_SUITE', 'MIRROR_PLAN', 'EVIDENCE',
+  'BINDING_PLAN', 'CAPABILITY_SNAPSHOT', 'SOURCE', 'ORACLE', 'FIXTURE_BUNDLE', 'TEST_SUITE', 'MIRROR_PLAN', 'EVIDENCE', 'DEPENDENCY', 'TARGET',
 ];
 
 const scenarioCategories: ScenarioCaseCategory[] = ['GOLDEN', 'NEGATIVE', 'BOUNDARY', 'FAULT', 'REGRESSION', 'SECURITY'];
@@ -971,6 +1068,390 @@ function validateScenarioDatasetSemantics(dataset: ScenarioDataset): void {
   )) {
     throw invalidScenarioDataset('Active Scenario Dataset is not ready.');
   }
+}
+
+const qualityImpactNodeKinds: ScenarioQualityImpactNodeKind[] = ['DATASET', 'DATA_CASE', 'SOURCE', 'ORACLE', 'CONTRACT', 'DEPENDENCY', 'TARGET'];
+const qualityImpactNodeStatuses: ScenarioQualityImpactNodeStatus[] = ['ACTIVE', 'DRAFT', 'STALE', 'READY', 'BLOCKED', 'ORPHANED', 'RETIRED'];
+const qualityImpactRelations: ScenarioQualityImpactRelation[] = ['CONTAINS', 'SOURCED_BY', 'CHECKED_BY', 'VALIDATES', 'CONTROLS', 'VALIDATES_TARGET'];
+const qualityImpactFreshnessStatuses: ScenarioQualityImpactFreshnessStatus[] = ['UNVERIFIED', 'CURRENT', 'STALE'];
+const qualityImpactCaseLifecycles: ScenarioCaseLifecycle[] = ['DRAFT', 'ACTIVE', 'STALE'];
+const qualityImpactRefKindsByNode: Record<ScenarioQualityImpactNodeKind, readonly ScenarioRefKind[]> = {
+  DATASET: ['DATASET'],
+  DATA_CASE: ['DATA_CASE'],
+  SOURCE: ['SOURCE'],
+  ORACLE: ['ORACLE'],
+  CONTRACT: ['CONTRACT'],
+  DEPENDENCY: ['API'],
+  TARGET: ['TOOL', 'FEATURE'],
+};
+
+function compareQualityText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function compareQualityNodes(left: ScenarioQualityImpactGraphNode, right: ScenarioQualityImpactGraphNode): number {
+  return compareQualityText(left.kind, right.kind) || compareQualityText(left.id, right.id);
+}
+
+function compareQualityEdges(left: ScenarioQualityImpactGraphEdge, right: ScenarioQualityImpactGraphEdge): number {
+  return compareQualityText(left.source, right.source)
+    || compareQualityText(left.target, right.target)
+    || compareQualityText(left.relation, right.relation)
+    || compareQualityText(left.id, right.id);
+}
+
+function qualityEdgeIdentity(edge: Pick<ScenarioQualityImpactGraphEdge, 'source' | 'target' | 'relation'>): string {
+  return `${edge.source}|${edge.target}|${edge.relation}`;
+}
+
+function validQualityRelation(source: ScenarioQualityImpactNodeKind, target: ScenarioQualityImpactNodeKind, relation: ScenarioQualityImpactRelation): boolean {
+  return relation === 'CONTAINS' ? source === 'DATASET' && target === 'DATA_CASE'
+    : relation === 'SOURCED_BY' ? source === 'DATA_CASE' && target === 'SOURCE'
+      : relation === 'CHECKED_BY' ? source === 'DATA_CASE' && target === 'ORACLE'
+        : relation === 'VALIDATES' ? source === 'DATA_CASE' && target === 'CONTRACT'
+          : relation === 'CONTROLS' ? source === 'DATA_CASE' && target === 'DEPENDENCY'
+            : source === 'DATA_CASE' && target === 'TARGET';
+}
+
+function qualityObject(value: unknown, path: string, fields: string[]): JsonObject {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw invalidScenarioQualityImpact(`Expected an object at ${path}.`);
+  const source = value as JsonObject;
+  const allowed = new Set(fields);
+  const unknown = Object.keys(source).find((key) => !allowed.has(key));
+  if (unknown) throw invalidScenarioQualityImpact(`Unknown field ${path}.${unknown}.`);
+  return source;
+}
+
+function qualityArray(value: unknown, path: string, minimum = 0): unknown[] {
+  if (!Array.isArray(value) || value.length < minimum) throw invalidScenarioQualityImpact(`Expected at least ${minimum} entries at ${path}.`);
+  return value;
+}
+
+function qualityString(value: unknown, path: string, maximum = 4000): string {
+  if (typeof value !== 'string' || value.trim().length === 0 || value.length > maximum) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return value;
+}
+
+function qualityIdentifier(value: unknown, path: string): string {
+  const parsed = qualityString(value, path, 256);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$/.test(parsed)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return parsed;
+}
+
+function qualityNodeIdentifier(value: unknown, path: string): string {
+  const parsed = qualityString(value, path, 320);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@-]*$/.test(parsed)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return parsed;
+}
+
+function qualityBlockerCode(value: unknown, path: string): string {
+  const parsed = qualityString(value, path, 128);
+  if (!/^[A-Z][A-Z0-9_.-]*$/.test(parsed)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return parsed;
+}
+
+function qualityEdgeIdentifier(value: unknown, path: string): string {
+  const parsed = qualityString(value, path, 1024);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:/#@>\-]*$/.test(parsed)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return parsed;
+}
+
+function qualityEnum<T extends string>(value: unknown, values: readonly T[], path: string): T {
+  if (typeof value !== 'string' || !values.includes(value as T)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return value as T;
+}
+
+function qualityInteger(value: unknown, path: string, minimum = 0, maximum = Number.MAX_SAFE_INTEGER): number {
+  if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return value as number;
+}
+
+function qualityFingerprint(value: unknown, path: string): string {
+  const parsed = qualityString(value, path, 80);
+  if (!/^sha256:[a-f0-9]{64}$/.test(parsed)) throw invalidScenarioQualityImpact(`Invalid ${path}.`);
+  return parsed;
+}
+
+function qualityScope(value: unknown, path: string): ScenarioScope {
+  const source = qualityObject(value, path, ['tenantId', 'organizationId', 'projectId', 'environmentId', 'region']);
+  return {
+    tenantId: qualityIdentifier(source.tenantId, `${path}.tenantId`),
+    organizationId: qualityIdentifier(source.organizationId, `${path}.organizationId`),
+    projectId: qualityIdentifier(source.projectId, `${path}.projectId`),
+    environmentId: qualityIdentifier(source.environmentId, `${path}.environmentId`),
+    region: qualityIdentifier(source.region, `${path}.region`),
+  };
+}
+
+function qualityRef(value: unknown, path: string, expectedKind?: ScenarioRefKind): ScenarioExactRef {
+  const source = qualityObject(value, path, ['kind', 'id', 'revision', 'fingerprint', 'authority', 'scope']);
+  const kind = qualityEnum(source.kind, scenarioRefKinds, `${path}.kind`);
+  if (expectedKind && kind !== expectedKind) throw invalidScenarioQualityImpact(`Invalid ${path}.kind.`);
+  return {
+    kind,
+    id: qualityIdentifier(source.id, `${path}.id`),
+    revision: qualityInteger(source.revision, `${path}.revision`, 1),
+    fingerprint: qualityFingerprint(source.fingerprint, `${path}.fingerprint`),
+    authority: qualityIdentifier(source.authority, `${path}.authority`),
+    scope: qualityScope(source.scope, `${path}.scope`),
+  };
+}
+
+function qualityNullableRef(value: unknown, path: string, kinds: ScenarioRefKind[]): ScenarioExactRef | null {
+  if (value === null) return null;
+  const ref = qualityRef(value, path);
+  if (!kinds.includes(ref.kind)) throw invalidScenarioQualityImpact(`Invalid ${path}.kind.`);
+  return ref;
+}
+
+function qualityOwner(value: unknown, path: string): ScenarioOwner | null {
+  if (value === null) return null;
+  const source = qualityObject(value, path, ['id', 'name']);
+  return { id: qualityIdentifier(source.id, `${path}.id`), name: qualityString(source.name, `${path}.name`) };
+}
+
+function qualitySource(value: unknown, path: string): ScenarioSource | null {
+  if (value === null) return null;
+  const source = qualityObject(value, path, ['displayName', 'type']);
+  return { displayName: qualityString(source.displayName, `${path}.displayName`), type: qualityString(source.type, `${path}.type`, 128) };
+}
+
+function qualityOracle(value: unknown, path: string): ScenarioOracle | null {
+  if (value === null) return null;
+  const source = qualityObject(value, path, ['displayName', 'summary']);
+  return { displayName: qualityString(source.displayName, `${path}.displayName`), summary: qualityString(source.summary, `${path}.summary`) };
+}
+
+function qualityRefIdentity(ref: ScenarioExactRef): string {
+  return `${ref.kind}|${ref.id}|${ref.revision}|${ref.fingerprint}|${ref.authority}|${scenarioScopeIdentity(ref.scope)}`;
+}
+
+function requireQualityRefOrder(refs: ScenarioExactRef[], path: string): void {
+  const identities = refs.map(qualityRefIdentity);
+  if (new Set(identities).size !== identities.length) throw invalidScenarioQualityImpact(`Duplicate reference at ${path}.`);
+  if (identities.some((value, index) => index > 0 && value.localeCompare(identities[index - 1]) < 0)) {
+    throw invalidScenarioQualityImpact(`Unstable reference ordering at ${path}.`);
+  }
+}
+
+function parseScenarioQualityImpactCase(value: unknown, path: string): ScenarioQualityImpactCase {
+  const source = qualityObject(value, path, [
+    'caseRef', 'name', 'lifecycle', 'qualityState', 'owner', 'sourceRef', 'source', 'oracleRef', 'oracle',
+    'contractRefs', 'dependencyRefs', 'freshnessStatus', 'maskingStatus', 'impactedAssetCount',
+  ]);
+  const caseRef = qualityRef(source.caseRef, `${path}.caseRef`, 'DATA_CASE');
+  const sourceRef = qualityNullableRef(source.sourceRef, `${path}.sourceRef`, ['SOURCE']);
+  const oracleRef = qualityNullableRef(source.oracleRef, `${path}.oracleRef`, ['ORACLE']);
+  const contractRefs = qualityArray(source.contractRefs, `${path}.contractRefs`).map((entry, index) => qualityRef(entry, `${path}.contractRefs[${index}]`, 'CONTRACT'));
+  const dependencyRefs = qualityArray(source.dependencyRefs, `${path}.dependencyRefs`).map((entry, index) => qualityRef(entry, `${path}.dependencyRefs[${index}]`, 'API'));
+  requireQualityRefOrder(contractRefs, `${path}.contractRefs`);
+  requireQualityRefOrder(dependencyRefs, `${path}.dependencyRefs`);
+  const parsed: ScenarioQualityImpactCase = {
+    caseRef,
+    name: qualityString(source.name, `${path}.name`),
+    lifecycle: qualityEnum(source.lifecycle, qualityImpactCaseLifecycles, `${path}.lifecycle`),
+    qualityState: qualityEnum(source.qualityState, scenarioQualityStates, `${path}.qualityState`),
+    owner: qualityOwner(source.owner, `${path}.owner`),
+    sourceRef,
+    source: qualitySource(source.source, `${path}.source`),
+    oracleRef,
+    oracle: qualityOracle(source.oracle, `${path}.oracle`),
+    contractRefs,
+    dependencyRefs,
+    freshnessStatus: qualityEnum(source.freshnessStatus, qualityImpactFreshnessStatuses, `${path}.freshnessStatus`),
+    maskingStatus: qualityEnum(source.maskingStatus, ['PAYLOAD_NOT_EXPORTED'], `${path}.maskingStatus`),
+    impactedAssetCount: qualityInteger(source.impactedAssetCount, `${path}.impactedAssetCount`),
+  };
+  if ((sourceRef === null) !== (parsed.source === null) || (oracleRef === null) !== (parsed.oracle === null)) {
+    throw invalidScenarioQualityImpact(`Reference and display data must agree at ${path}.`);
+  }
+  if (parsed.lifecycle === 'STALE' && parsed.freshnessStatus !== 'STALE') {
+    throw invalidScenarioQualityImpact(`STALE lifecycle requires STALE freshness at ${path}.`);
+  }
+  return parsed;
+}
+
+export function parseScenarioQualityImpactProjection(payload: unknown): ScenarioQualityImpactProjection {
+  const root = qualityObject(payload, 'scenarioQualityImpact', ['schemaVersion', 'datasetRef', 'targetRef', 'projectionFingerprint', 'admission', 'quality', 'summary', 'cases', 'impactGraph']);
+  if (root.schemaVersion !== 'resource-gateway.capability-studio.scenario-quality-impact.v1') throw invalidScenarioQualityImpact('Invalid scenarioQualityImpact.schemaVersion.');
+  const datasetRef = qualityRef(root.datasetRef, 'scenarioQualityImpact.datasetRef', 'DATASET');
+  const targetRef = qualityRef(root.targetRef, 'scenarioQualityImpact.targetRef');
+  if (targetRef.kind !== 'FEATURE' && targetRef.kind !== 'TOOL') throw invalidScenarioQualityImpact('Invalid scenarioQualityImpact.targetRef.kind.');
+  const projectionFingerprint = qualityFingerprint(root.projectionFingerprint, 'scenarioQualityImpact.projectionFingerprint');
+  const admissionSource = qualityObject(root.admission, 'scenarioQualityImpact.admission', ['status', 'activeCaseCount', 'draftCaseCount', 'staleCaseCount', 'blockers']);
+  const blockers = qualityArray(admissionSource.blockers, 'scenarioQualityImpact.admission.blockers').map((entry, index) => {
+    const blocker = qualityObject(entry, `scenarioQualityImpact.admission.blockers[${index}]`, ['code', 'message']);
+    return { code: qualityBlockerCode(blocker.code, `scenarioQualityImpact.admission.blockers[${index}].code`), message: qualityString(blocker.message, `scenarioQualityImpact.admission.blockers[${index}].message`) };
+  });
+  if (new Set(blockers.map((value) => value.code)).size !== blockers.length) throw invalidScenarioQualityImpact('Admission blockers must have unique codes.');
+  if (blockers.some((value, index) => index > 0 && compareQualityText(blockers[index - 1].code, value.code) > 0)) throw invalidScenarioQualityImpact('Blockers must be sorted by code.');
+  const admission: ScenarioQualityImpactAdmission = {
+    status: qualityEnum(admissionSource.status, ['BLOCKED', 'READY'], 'scenarioQualityImpact.admission.status'),
+    activeCaseCount: qualityInteger(admissionSource.activeCaseCount, 'scenarioQualityImpact.admission.activeCaseCount'),
+    draftCaseCount: qualityInteger(admissionSource.draftCaseCount, 'scenarioQualityImpact.admission.draftCaseCount'),
+    staleCaseCount: qualityInteger(admissionSource.staleCaseCount, 'scenarioQualityImpact.admission.staleCaseCount'),
+    blockers,
+  };
+  const qualitySourceValue = qualityObject(root.quality, 'scenarioQualityImpact.quality', ['status', 'ownerCoveragePercent', 'sourceCoveragePercent', 'oracleCoveragePercent', 'contractCoveragePercent', 'behaviorClosurePercent', 'freshnessStatus', 'payloadExposure', 'maskingStatus']);
+  const quality: ScenarioQualityImpactQuality = {
+    status: qualityEnum(qualitySourceValue.status, ['BLOCKED', 'READY'], 'scenarioQualityImpact.quality.status'),
+    ownerCoveragePercent: qualityInteger(qualitySourceValue.ownerCoveragePercent, 'scenarioQualityImpact.quality.ownerCoveragePercent', 0, 100),
+    sourceCoveragePercent: qualityInteger(qualitySourceValue.sourceCoveragePercent, 'scenarioQualityImpact.quality.sourceCoveragePercent', 0, 100),
+    oracleCoveragePercent: qualityInteger(qualitySourceValue.oracleCoveragePercent, 'scenarioQualityImpact.quality.oracleCoveragePercent', 0, 100),
+    contractCoveragePercent: qualityInteger(qualitySourceValue.contractCoveragePercent, 'scenarioQualityImpact.quality.contractCoveragePercent', 0, 100),
+    behaviorClosurePercent: qualityInteger(qualitySourceValue.behaviorClosurePercent, 'scenarioQualityImpact.quality.behaviorClosurePercent', 0, 100),
+    freshnessStatus: qualityEnum(qualitySourceValue.freshnessStatus, qualityImpactFreshnessStatuses, 'scenarioQualityImpact.quality.freshnessStatus'),
+    payloadExposure: qualityEnum(qualitySourceValue.payloadExposure, ['NONE'], 'scenarioQualityImpact.quality.payloadExposure'),
+    maskingStatus: qualityEnum(qualitySourceValue.maskingStatus, ['PAYLOAD_NOT_EXPORTED'], 'scenarioQualityImpact.quality.maskingStatus'),
+  };
+  const summarySource = qualityObject(root.summary, 'scenarioQualityImpact.summary', ['caseCount', 'sourceCount', 'oracleCount', 'contractCount', 'dependencyCount', 'targetCount', 'impactedAssetCount', 'orphanCaseCount']);
+  const summary: ScenarioQualityImpactSummary = {
+    caseCount: qualityInteger(summarySource.caseCount, 'scenarioQualityImpact.summary.caseCount'),
+    sourceCount: qualityInteger(summarySource.sourceCount, 'scenarioQualityImpact.summary.sourceCount'),
+    oracleCount: qualityInteger(summarySource.oracleCount, 'scenarioQualityImpact.summary.oracleCount'),
+    contractCount: qualityInteger(summarySource.contractCount, 'scenarioQualityImpact.summary.contractCount'),
+    dependencyCount: qualityInteger(summarySource.dependencyCount, 'scenarioQualityImpact.summary.dependencyCount'),
+    targetCount: qualityInteger(summarySource.targetCount, 'scenarioQualityImpact.summary.targetCount'),
+    impactedAssetCount: qualityInteger(summarySource.impactedAssetCount, 'scenarioQualityImpact.summary.impactedAssetCount'),
+    orphanCaseCount: qualityInteger(summarySource.orphanCaseCount, 'scenarioQualityImpact.summary.orphanCaseCount'),
+  };
+  const cases = qualityArray(root.cases, 'scenarioQualityImpact.cases', 1).map((entry, index) => parseScenarioQualityImpactCase(entry, `scenarioQualityImpact.cases[${index}]`));
+  if (cases.some((value, index) => index > 0 && compareQualityText(cases[index - 1].caseRef.id, value.caseRef.id) > 0)) throw invalidScenarioQualityImpact('Cases must be sorted by exact case id.');
+  if (new Set(cases.map((value) => value.caseRef.id)).size !== cases.length) throw invalidScenarioQualityImpact('Duplicate case id.');
+  const graphSource = qualityObject(root.impactGraph, 'scenarioQualityImpact.impactGraph', ['nodes', 'edges']);
+  const nodes: ScenarioQualityImpactGraphNode[] = qualityArray(graphSource.nodes, 'scenarioQualityImpact.impactGraph.nodes', 1).map((entry, index) => {
+    const node = qualityObject(entry, `scenarioQualityImpact.impactGraph.nodes[${index}]`, ['id', 'kind', 'label', 'ref', 'status']);
+    const id = qualityNodeIdentifier(node.id, `scenarioQualityImpact.impactGraph.nodes[${index}].id`);
+    const kind = qualityEnum(node.kind, qualityImpactNodeKinds, `scenarioQualityImpact.impactGraph.nodes[${index}].kind`);
+    const ref = qualityRef(node.ref, `scenarioQualityImpact.impactGraph.nodes[${index}].ref`);
+    if (id !== `${kind}:${ref.id}`) throw invalidScenarioQualityImpact(`Impact graph node id must equal kind:ref.id at scenarioQualityImpact.impactGraph.nodes[${index}].`);
+    if (!qualityImpactRefKindsByNode[kind].includes(ref.kind)) throw invalidScenarioQualityImpact(`Impact graph node/ref kind mapping is invalid at scenarioQualityImpact.impactGraph.nodes[${index}].`);
+    return {
+      id,
+      kind,
+      label: qualityString(node.label, `scenarioQualityImpact.impactGraph.nodes[${index}].label`),
+      ref,
+      status: qualityEnum(node.status, qualityImpactNodeStatuses, `scenarioQualityImpact.impactGraph.nodes[${index}].status`),
+    };
+  });
+  if (new Set(nodes.map((node) => node.id)).size !== nodes.length) throw invalidScenarioQualityImpact('Impact graph contains duplicate node ids.');
+  if (nodes.some((node, index) => index > 0 && compareQualityNodes(nodes[index - 1], node) > 0)) throw invalidScenarioQualityImpact('Impact graph nodes must be sorted by kind then id.');
+  if (new Set(nodes.map((node) => qualityRefIdentity(node.ref))).size !== nodes.length) throw invalidScenarioQualityImpact('Impact graph contains duplicate exact references.');
+  const edges: ScenarioQualityImpactGraphEdge[] = qualityArray(graphSource.edges, 'scenarioQualityImpact.impactGraph.edges', 1).map((entry, index) => {
+    const edge = qualityObject(entry, `scenarioQualityImpact.impactGraph.edges[${index}]`, ['id', 'source', 'target', 'relation']);
+    return {
+      id: qualityEdgeIdentifier(edge.id, `scenarioQualityImpact.impactGraph.edges[${index}].id`),
+      source: qualityNodeIdentifier(edge.source, `scenarioQualityImpact.impactGraph.edges[${index}].source`),
+      target: qualityNodeIdentifier(edge.target, `scenarioQualityImpact.impactGraph.edges[${index}].target`),
+      relation: qualityEnum(edge.relation, qualityImpactRelations, `scenarioQualityImpact.impactGraph.edges[${index}].relation`),
+    };
+  });
+  if (new Set(edges.map((edge) => edge.id)).size !== edges.length) throw invalidScenarioQualityImpact('Impact graph contains duplicate edge ids.');
+  if (edges.some((edge, index) => index > 0 && compareQualityEdges(edges[index - 1], edge) > 0)) throw invalidScenarioQualityImpact('Impact graph edges must be sorted by source, target, relation, then id.');
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
+  if (edges.some((edge) => !nodesById.has(edge.source) || !nodesById.has(edge.target))) throw invalidScenarioQualityImpact('Impact graph contains an edge with an unknown endpoint.');
+  if (new Set(edges.map(qualityEdgeIdentity)).size !== edges.length) throw invalidScenarioQualityImpact('Impact graph contains duplicate semantic edges.');
+  edges.forEach((edge) => {
+    const source = nodesById.get(edge.source)!;
+    const target = nodesById.get(edge.target)!;
+    if (!validQualityRelation(source.kind, target.kind, edge.relation)) throw invalidScenarioQualityImpact(`Impact graph relation does not match node kinds at ${edge.id}.`);
+  });
+  const degree = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  if (nodes.some((node) => !degree.has(node.id))) throw invalidScenarioQualityImpact('Impact graph contains an orphan node.');
+  const expectedRefs = new Map<string, ScenarioExactRef>();
+  const addExpected = (ref: ScenarioExactRef) => expectedRefs.set(qualityRefIdentity(ref), ref);
+  addExpected(datasetRef);
+  addExpected(targetRef);
+  cases.forEach((scenario) => {
+    addExpected(scenario.caseRef);
+    if (scenario.sourceRef) addExpected(scenario.sourceRef);
+    if (scenario.oracleRef) addExpected(scenario.oracleRef);
+    scenario.contractRefs.forEach(addExpected);
+    scenario.dependencyRefs.forEach(addExpected);
+  });
+  nodes.forEach((node) => {
+    if (!expectedRefs.has(qualityRefIdentity(node.ref))) throw invalidScenarioQualityImpact('Impact graph contains a reference outside the case closure.');
+  });
+  if (expectedRefs.size !== nodes.length) throw invalidScenarioQualityImpact('Impact graph cardinality does not match the case closure.');
+  const scope = scenarioScopeIdentity(datasetRef.scope);
+  if ([...expectedRefs.values()].some((ref) => scenarioScopeIdentity(ref.scope) !== scope)) throw invalidScenarioQualityImpact('Scenario quality impact contains a cross-scope reference.');
+  const nodesByRef = new Map(nodes.map((node) => [qualityRefIdentity(node.ref), node]));
+  const nodeForRef = (ref: ScenarioExactRef) => nodesByRef.get(qualityRefIdentity(ref));
+  const datasetNode = nodeForRef(datasetRef);
+  if (!datasetNode || datasetNode.kind !== 'DATASET') throw invalidScenarioQualityImpact('Impact graph is missing the exact Dataset node.');
+  const targetNode = nodeForRef(targetRef);
+  if (!targetNode || targetNode.kind !== 'TARGET') throw invalidScenarioQualityImpact('Impact graph is missing the exact Target node.');
+  nodes.forEach((node) => {
+    const expectedStatus = node.kind === 'DATASET' || node.kind === 'SOURCE'
+      ? 'BLOCKED'
+      : node.kind === 'DATA_CASE'
+        ? cases.find((scenario) => qualityRefIdentity(scenario.caseRef) === qualityRefIdentity(node.ref))?.lifecycle
+        : 'DRAFT';
+    if (!expectedStatus || node.status !== expectedStatus) {
+      throw invalidScenarioQualityImpact(`Impact graph node status does not match its declared asset at ${node.id}.`);
+    }
+  });
+  const expectedEdgeIdentities = new Set<string>();
+  const requireEdge = (source: string, target: string, relation: ScenarioQualityImpactRelation) => expectedEdgeIdentities.add(qualityEdgeIdentity({ source, target, relation }));
+  cases.forEach((scenario) => {
+    const caseNode = nodeForRef(scenario.caseRef);
+    if (!caseNode || caseNode.kind !== 'DATA_CASE') throw invalidScenarioQualityImpact(`Case impact closure does not match ${scenario.caseRef.id}.`);
+    requireEdge(datasetNode.id, caseNode.id, 'CONTAINS');
+    if (scenario.sourceRef) requireEdge(caseNode.id, nodeForRef(scenario.sourceRef)!.id, 'SOURCED_BY');
+    if (scenario.oracleRef) requireEdge(caseNode.id, nodeForRef(scenario.oracleRef)!.id, 'CHECKED_BY');
+    scenario.contractRefs.forEach((ref) => requireEdge(caseNode.id, nodeForRef(ref)!.id, 'VALIDATES'));
+    scenario.dependencyRefs.forEach((ref) => requireEdge(caseNode.id, nodeForRef(ref)!.id, 'CONTROLS'));
+    const targetEdges = edges.filter((edge) => edge.source === caseNode.id && edge.relation === 'VALIDATES_TARGET' && edge.target === targetNode.id);
+    if (targetEdges.length !== 1) throw invalidScenarioQualityImpact(`Each case must have exactly one Target in its exact case closure: ${scenario.caseRef.id}.`);
+    requireEdge(caseNode.id, targetEdges[0].target, 'VALIDATES_TARGET');
+    const impactedNodeIds = new Set([
+      ...scenario.contractRefs.map((ref) => nodeForRef(ref)!.id),
+      ...scenario.dependencyRefs.map((ref) => nodeForRef(ref)!.id),
+      targetEdges[0].target,
+    ]);
+    if (scenario.impactedAssetCount !== impactedNodeIds.size) throw invalidScenarioQualityImpact(`Case impact closure does not match ${scenario.caseRef.id}.`);
+  });
+  if (edges.length !== expectedEdgeIdentities.size || edges.some((edge) => !expectedEdgeIdentities.has(qualityEdgeIdentity(edge)))) {
+    throw invalidScenarioQualityImpact('Impact graph edges do not match the exact case closure.');
+  }
+  const expectedByKind = (kind: ScenarioQualityImpactNodeKind) => nodes.filter((node) => node.kind === kind).length;
+  const impactedAssetCount = nodes.filter((node) => node.kind === 'CONTRACT' || node.kind === 'DEPENDENCY' || node.kind === 'TARGET').length;
+  if (summary.caseCount !== cases.length || summary.sourceCount !== expectedByKind('SOURCE') || summary.oracleCount !== expectedByKind('ORACLE') || summary.contractCount !== expectedByKind('CONTRACT') || summary.dependencyCount !== expectedByKind('DEPENDENCY') || summary.targetCount !== 1 || expectedByKind('TARGET') !== 1 || summary.impactedAssetCount !== impactedAssetCount || summary.orphanCaseCount !== 0) {
+    throw invalidScenarioQualityImpact('Impact graph summary does not match its case closure.');
+  }
+  const expectedCoverage = (predicate: (value: ScenarioQualityImpactCase) => boolean) => Math.round(cases.filter(predicate).length * 100 / cases.length);
+  if (quality.ownerCoveragePercent !== expectedCoverage((value) => Boolean(value.owner)) || quality.sourceCoveragePercent !== expectedCoverage((value) => Boolean(value.sourceRef)) || quality.oracleCoveragePercent !== expectedCoverage((value) => Boolean(value.oracleRef)) || quality.contractCoveragePercent !== expectedCoverage((value) => value.contractRefs.length > 0) || quality.behaviorClosurePercent !== expectedCoverage((value) => value.dependencyRefs.length > 0)) throw invalidScenarioQualityImpact('Quality coverage does not match case cards.');
+  const activeCaseCount = cases.filter((value) => value.lifecycle === 'ACTIVE').length;
+  const draftCaseCount = cases.filter((value) => value.lifecycle === 'DRAFT').length;
+  const staleCaseCount = cases.filter((value) => value.lifecycle === 'STALE').length;
+  if (admission.activeCaseCount !== activeCaseCount || admission.draftCaseCount !== draftCaseCount || admission.staleCaseCount !== staleCaseCount) throw invalidScenarioQualityImpact('Admission counts do not match case cards.');
+  const expectedFreshness: ScenarioQualityImpactFreshnessStatus = cases.some((value) => value.freshnessStatus === 'STALE') ? 'STALE' : cases.some((value) => value.freshnessStatus === 'UNVERIFIED') ? 'UNVERIFIED' : 'CURRENT';
+  if (quality.freshnessStatus !== expectedFreshness) throw invalidScenarioQualityImpact('Quality freshness does not match case cards.');
+  if (admission.status !== quality.status) throw invalidScenarioQualityImpact('Admission and quality status must match.');
+  const blockerCodes = new Set(blockers.map((blocker) => blocker.code));
+  const allCoverageComplete = [quality.ownerCoveragePercent, quality.sourceCoveragePercent, quality.oracleCoveragePercent, quality.contractCoveragePercent, quality.behaviorClosurePercent].every((value) => value === 100);
+  if (admission.status === 'READY') {
+    if (activeCaseCount === 0 || blockers.length > 0 || quality.freshnessStatus !== 'CURRENT' || !allCoverageComplete || summary.orphanCaseCount !== 0) throw invalidScenarioQualityImpact('READY admission contradicts its quality evidence.');
+  } else {
+    if (blockers.length === 0) throw invalidScenarioQualityImpact('BLOCKED admission requires at least one blocker.');
+    if (quality.freshnessStatus === 'UNVERIFIED' && !blockerCodes.has('FRESHNESS_EVIDENCE_MISSING')) throw invalidScenarioQualityImpact('UNVERIFIED freshness requires FRESHNESS_EVIDENCE_MISSING.');
+    if (activeCaseCount === 0 && !blockerCodes.has('NO_ACTIVE_CASES')) throw invalidScenarioQualityImpact('Zero active cases require NO_ACTIVE_CASES.');
+  }
+  return { schemaVersion: root.schemaVersion, datasetRef, targetRef, projectionFingerprint, admission, quality, summary, cases, impactGraph: { nodes, edges } };
+}
+
+export function selectScenarioQualityImpact(
+  projection: ScenarioQualityImpactProjection,
+  caseId: string,
+): ScenarioQualityImpactSelection {
+  const scenario = projection.cases.find((value) => value.caseRef.id === caseId);
+  if (!scenario) return { nodeIds: new Set(), edgeIds: new Set() };
+  const caseNode = projection.impactGraph.nodes.find((node) => qualityRefIdentity(node.ref) === qualityRefIdentity(scenario.caseRef));
+  if (!caseNode) return { nodeIds: new Set(), edgeIds: new Set() };
+  const selectedEdges = projection.impactGraph.edges.filter((edge) => edge.source === caseNode.id);
+  const nodeIds = new Set([caseNode.id, ...selectedEdges.map((edge) => edge.target)]);
+  const edgeIds = new Set(selectedEdges.map((edge) => edge.id));
+  return { nodeIds, edgeIds };
 }
 
 function scenarioScopeIdentity(scope: ScenarioScope): string {

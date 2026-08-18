@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
-import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.OutputType;
@@ -34,7 +33,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Real-browser acceptance for Capability Studio GP-01 through GP-08. */
+/** Real-browser acceptance for Capability Studio GP-01 through GP-10. */
 @SpringBootTest(
         classes = ResourceGatewayApplication.class,
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
@@ -120,7 +119,7 @@ class CapabilityStudioBrowserAcceptanceTest {
                 "//button[contains(@class,'capability-scenario-list-item')][contains(.,'补偿历史超时')]"))
                 .click();
         assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
-                .contains("补偿历史超时", "业务目标", "预期 / Oracle", "依赖表现", "超时");
+                .contains("补偿历史超时", "业务目标", "预期 / Oracle", "隔离运行依赖", "超时");
         assertNoPageOverflow();
         capture("capability-studio-gp01-gp03-zh-1440.png");
     }
@@ -136,7 +135,7 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertNoPageOverflow();
         capture("capability-studio-gp01-zh-1024.png");
 
-        driver.manage().window().setSize(new Dimension(390, 844));
+        setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.id("capability-task-select")));
         new Select(driver.findElement(By.id("capability-task-select")))
@@ -206,12 +205,12 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertThat(cases.getFirstSelectedOption().getAttribute("value"))
                 .isEqualTo("case-compensation-history-timeout");
         assertThat(driver.findElement(By.tagName("body")).getText())
-                .contains("运行超时", "真实调用", "隔离 Fixture 控制", "历史补偿查询", "超时")
+                .contains("运行状态", "通过", "真实调用", "隔离 Fixture 控制", "历史补偿查询", "超时")
                 .doesNotContain("DEMO-ORDER-20260818-001");
         assertThat(driver.findElements(By.cssSelector(".feature-dag-edge-label"))).hasSize(5);
         assertThat(driver.findElement(By.cssSelector(
                 "[data-node-id='compensationHistoryLookup']")).getText())
-                .contains("历史补偿查询", "超时");
+                .contains("历史补偿查询", "替身运行");
         assertThat(driver.findElement(By.cssSelector(
                 ".capability-segmented-control button:first-child")).getAttribute("aria-pressed"))
                 .isEqualTo("true");
@@ -233,7 +232,7 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertNoPageOverflow();
         assertNoSeriousOrCriticalAxeViolations();
         capture("capability-studio-gp06-payload-zh-1440.png");
-        driver.manage().window().setSize(new Dimension(1440, 1100));
+        setViewport(1440, 1100);
         ((JavascriptExecutor) driver).executeScript("""
                 document.querySelector('.capability-feature-dag-section')
                   .scrollIntoView({block: 'start'});
@@ -241,14 +240,14 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp05-gp06-dag-payload-zh-1440.png");
         ((JavascriptExecutor) driver).executeScript("window.scrollTo(0, 0)");
 
-        driver.manage().window().setSize(new Dimension(1024, 768));
+        setViewport(1024, 768);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='capability-feature-rehearsal']")));
         assertDesktopDagFitsAndEdgesAlign();
         assertNoPageOverflow();
         capture("capability-studio-gp05-gp06-payload-zh-1024.png");
 
-        driver.manage().window().setSize(new Dimension(390, 844));
+        setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
         assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
         assertThat(new Select(driver.findElement(By.id("feature-rehearsal-case"))).getOptions())
@@ -323,14 +322,19 @@ class CapabilityStudioBrowserAcceptanceTest {
         WebElement result = driver.findElement(By.cssSelector(
                 "[data-testid='governed-baseline-result']"));
         assertThat(result.getText())
-                .contains("27 项检查全部通过", "仍不可验收", "9 / 9", "3 / 3", "27 / 27")
-                .contains("每轮业务结果指纹尚未导出", "尚缺部署级断网与出口观测", "负责人尚未签署");
+                .contains("27 项业务检查全部通过", "仍不可验收", "9 / 9", "27 / 27")
+                .contains("结果稳定", "当前结果尚未绑定不可变的发布候选构建", "尚缺部署级断网与出口观测", "负责人尚未签署");
         assertThat(driver.findElements(By.cssSelector(
                 ".capability-governed-case-table tbody tr"))).hasSize(9);
         assertThat(driver.findElements(By.cssSelector(
-                ".capability-governed-case-table tbody td"))).hasSize(27);
+                ".capability-governed-case-table .capability-oracle-cell"))).hasSize(9);
         assertThat(driver.findElements(By.cssSelector(
-                ".capability-governed-rounds > div"))).hasSize(3);
+                ".capability-governed-case-table .capability-evidence-matrix-button"))).hasSize(27);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-governed-rounds > div")))
+                .hasSize(3)
+                .extracting(WebElement::getText)
+                .allSatisfy(text -> assertThat(text).contains("9 / 9", "通过"));
         assertThat(driver.findElements(By.cssSelector(
                 ".capability-governed-result details[open]"))).isEmpty();
         assertNoInternalStatusLeakage();
@@ -340,7 +344,7 @@ class CapabilityStudioBrowserAcceptanceTest {
                 "arguments[0].scrollIntoView({block: 'start'});", result);
         capture("capability-studio-gp07-gp08-governed-tool-zh-1440.png");
 
-        driver.manage().window().setSize(new Dimension(390, 844));
+        setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
         assertThat(new Select(driver.findElement(By.id("capability-task-select")))
                 .getFirstSelectedOption().getAttribute("value")).isEqualTo("tool");
@@ -352,6 +356,86 @@ class CapabilityStudioBrowserAcceptanceTest {
         ((JavascriptExecutor) driver).executeScript(
                 "arguments[0].scrollIntoView({block: 'start'});", result);
         capture("capability-studio-gp07-gp08-governed-tool-zh-390.png");
+    }
+
+    @Test
+    void gp09ExposesFalsifiableQualityAdmissionAndCaseImpactAcrossViewports()
+            throws IOException {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(1440, 1100);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=zh-CN&task=quality"));
+
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-quality-impact']")));
+        WebElement quality = driver.findElement(By.cssSelector(
+                "[data-testid='capability-quality-impact']"));
+        assertThat(quality.getText())
+                .contains("准入阻断", "缺少新鲜度证据", "没有使用中的 case")
+                .contains("9 条 case", "条草稿", "条使用中", "条孤儿 case")
+                .contains("当前视图不导出请求/响应内容", "不代表源数据已经完成语义脱敏");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-impact-metrics strong")))
+                .extracting(WebElement::getText)
+                .containsExactly("100%", "100%", "100%", "100%", "100%");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-counts strong")))
+                .extracting(WebElement::getText)
+                .containsExactly("9", "0", "0");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-case-item"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-graph-node"))).hasSize(37);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-edge"))).hasSize(81);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-graph-node.selected"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-edge.selected"))).hasSize(8);
+
+        WebElement timeoutCase = driver.findElements(By.cssSelector(
+                ".capability-quality-case-item")).get(2);
+        timeoutCase.click();
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='capability-quality-case-details'] h4"),
+                "补偿历史超时"));
+        assertThat(timeoutCase.getAttribute("aria-pressed")).isEqualTo("true");
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-graph-node.selected"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-edge.selected"))).hasSize(8);
+        assertNoBrowserErrorState();
+        assertNoInternalStatusLeakage();
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        ((JavascriptExecutor) driver).executeScript("window.scrollTo(0, 0);");
+        capture("capability-studio-gp09-quality-admission-zh-1440.png");
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});",
+                driver.findElement(By.cssSelector(
+                        "[data-testid='capability-quality-case-details']")));
+        capture("capability-studio-gp09-case-impact-zh-1440.png");
+
+        setViewport(390, 844);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        assertThat(new Select(driver.findElement(By.id("capability-task-select")))
+                .getFirstSelectedOption().getAttribute("value")).isEqualTo("quality");
+        assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-case-item"))).hasSize(9);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-graph-node"))).hasSize(37);
+        assertThat(driver.findElements(By.cssSelector(
+                ".capability-quality-edge"))).hasSize(81);
+        assertNoPageOverflow();
+        assertNoSeriousOrCriticalAxeViolations();
+        ((JavascriptExecutor) driver).executeScript("window.scrollTo(0, 0);");
+        capture("capability-studio-gp09-quality-admission-zh-390.png");
+        ((JavascriptExecutor) driver).executeScript(
+                "arguments[0].scrollIntoView({block: 'start'});",
+                driver.findElement(By.cssSelector(
+                        "[data-testid='capability-quality-case-details']")));
+        capture("capability-studio-gp09-case-impact-zh-390.png");
     }
 
     @Test
@@ -490,7 +574,7 @@ class CapabilityStudioBrowserAcceptanceTest {
         String secondCaseName = secondCase.getText().split("\\n")[0];
         secondCase.click();
         assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
-                .contains(secondCaseName, "Business goal", "Expected / Oracle", "Dependency behavior");
+                .contains(secondCaseName, "Business goal", "Expected / Oracle", "Isolated runtime controls");
         assertNoInternalStatusLeakage();
         assertNoPageOverflow();
         assertNoSeriousOrCriticalAxeViolations();
@@ -505,14 +589,14 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertNoInternalStatusLeakage();
         assertNoSeriousOrCriticalAxeViolations();
 
-        driver.manage().window().setSize(new Dimension(1024, 768));
+        setViewport(1024, 768);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='capability-tutorial-branch']")));
         assertNoPageOverflow();
         assertNoInternalStatusLeakage();
         capture("capability-studio-gp01-gp03-en-1024.png");
 
-        driver.manage().window().setSize(new Dimension(390, 844));
+        setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
         new Select(driver.findElement(By.id("capability-task-select"))).selectByValue("scenarios");
         wait.until(ExpectedConditions.numberOfElementsToBe(
@@ -555,7 +639,7 @@ class CapabilityStudioBrowserAcceptanceTest {
         assertThat(driver.findElement(By.cssSelector("[data-testid='capability-scenario-details']")).getText())
                 .contains(targetCaseText.split("\\n")[0]);
 
-        driver.manage().window().setSize(new Dimension(390, 844));
+        setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
         WebElement taskSelect = tabUntilActive(By.id("capability-task-select"));
         assertThat(driver.switchTo().activeElement().getAttribute("id")).isEqualTo("capability-task-select");
@@ -593,13 +677,34 @@ class CapabilityStudioBrowserAcceptanceTest {
                 .usingAnyFreePort()
                 .build();
         try {
-            return new ChromeDriver(driverService, options);
+            ChromeDriver chromeDriver = new ChromeDriver(driverService, options);
+            setViewport(chromeDriver, width, height);
+            return chromeDriver;
         } catch (RuntimeException failure) {
             driverService.stop();
             driverService = null;
             Assumptions.abort("Chrome/WebDriver session is unavailable");
             return null;
         }
+    }
+
+    private void setViewport(int width, int height) {
+        setViewport(driver, width, height);
+    }
+
+    private void setViewport(WebDriver browser, int width, int height) {
+        assertThat(browser).as("browser for exact viewport emulation").isInstanceOf(ChromeDriver.class);
+        ChromeDriver chrome = (ChromeDriver) browser;
+        chrome.executeCdpCommand("Emulation.setDeviceMetricsOverride", Map.of(
+                "width", width,
+                "height", height,
+                "deviceScaleFactor", 1,
+                "mobile", false));
+        JavascriptExecutor javascript = (JavascriptExecutor) browser;
+        Number actualWidth = (Number) javascript.executeScript("return window.innerWidth;");
+        Number actualHeight = (Number) javascript.executeScript("return window.innerHeight;");
+        assertThat(actualWidth.intValue()).as("exact viewport width").isEqualTo(width);
+        assertThat(actualHeight.intValue()).as("exact viewport height").isEqualTo(height);
     }
 
     private Path chromeDriverExecutableOrSkip() {

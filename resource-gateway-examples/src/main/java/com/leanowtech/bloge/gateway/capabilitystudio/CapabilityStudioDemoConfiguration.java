@@ -84,6 +84,14 @@ public class CapabilityStudioDemoConfiguration {
     }
 
     @Bean
+    CapabilityStudioScenarioQualityImpactProjection capabilityStudioScenarioQualityImpactProjection(
+            CapabilityStudioGoldenDemoPack pack,
+            CapabilityStudioScenarioDatasetProjector datasetProjector,
+            ObjectMapper mapper) {
+        return new CapabilityStudioScenarioQualityImpactProjection(pack, datasetProjector, mapper);
+    }
+
+    @Bean
     CapabilityStudioFeatureRehearsalService capabilityStudioFeatureRehearsalService(
             CapabilityStudioGoldenDemoPack pack,
             ObjectMapper mapper,
