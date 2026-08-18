@@ -397,6 +397,25 @@ if (!result.verified()) {
 }
 ```
 
+`CapabilityStudioBrowserMatrixResultBuilder` is the public producer-side API for CI adapters and
+external browser harnesses. It owns the fixed 60-cell denominator, inserts explicit `NOT_RUN`
+cells, derives summary/diagnostic status from observations, and computes the same deterministic
+evidence closure checked by the verifier. Callers record observations; they do not set the root
+status or aggregate counts.
+
+For the repository implementation, run the end-to-end producer and independent verifier together:
+
+```bash
+./scripts/run-capability-studio-browser-matrix.sh
+```
+
+The script accepts only a clean source tree by default and exits successfully after the CLI prints
+`VALID status=COMPLETE`. `--allow-dirty` is an explicit development diagnostic mode: all 60 cells
+may pass, but the root artifact remains `FAILED`, the CLI returns exit code 3, and the script labels
+the run `DEVELOPMENT_VERIFIED`. Invalid or unreadable artifacts return exit code 2. The CLI output
+contains only status and stable error codes; it never prints browser observations or business
+payloads.
+
 The verifier independently rejects missing, duplicate, invented, or reordered cells; actual
 viewport drift; horizontal overflow; serious/critical axe violations; leaked technical IDs or raw
 JSON; incomplete keyboard paths; P0/P1 findings; inconsistent aggregates; dirty candidates reported

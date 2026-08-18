@@ -4670,6 +4670,17 @@ mvn -f resource-gateway-examples/pom.xml -Pfrontend package
 mvn -f resource-gateway-examples/pom.xml spring-boot:run
 ```
 
+Run the fixed Capability Studio release-candidate browser matrix from the repository root:
+
+```bash
+./scripts/run-capability-studio-browser-matrix.sh
+```
+
+The command builds the candidate, executes `GP-01..GP-10` in both languages at
+`1440×900`, `1024×768`, and `390×844`, writes 60 fingerprinted screenshots, and asks the
+independent Test Kit CLI to revalidate the result. It rejects a dirty worktree by default. Use
+`--allow-dirty` only for development diagnosis; that mode cannot produce a `COMPLETE` result.
+
 If BLOGE core artifacts are missing, install them from the main BLOGE repo:
 
 ```bash

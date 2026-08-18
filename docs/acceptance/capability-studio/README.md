@@ -12,7 +12,7 @@
 | Acceptance Baseline v1 | [`capability-studio-acceptance-baseline-v1.json`](capability-studio-acceptance-baseline-v1.json) | 冻结 GP、黄金包、Spike、可用性、安全和 NFR 门禁 | `NO_GO` |
 | Stage Acceptance Result v1 Schema | [`capability-studio-stage-acceptance-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v1.schema.json) | 固定 `S*-AC-*` 单条验收结果、五项统一前置条件、证据和签署状态机 | 兼容协议，可消费，不代表任何合同已通过 |
 | Stage Acceptance Result v2 Schema | [`capability-studio-stage-acceptance-result-v2.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v2.schema.json) | 固定 `AC-STD-01..09`、候选执行绑定、签署前证据闭包和正式 Stage 退出状态 | 语义协议已定义，外部 Evidence/签名 Authority 尚未闭合 |
-| Browser Matrix Result v1 Schema | [`capability-studio-browser-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json) | 固定 `GP-01..10 × 中英文 × 3 视口` 的 60 格机器结果、候选/基线/环境/时间窗绑定和证据闭包 | 协议与离线 verifier 已完成；真实 producer、60 格执行和产品/UX/QA 签署未闭合 |
+| Browser Matrix Result v1 Schema | [`capability-studio-browser-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json) | 固定 `GP-01..10 × 中英文 × 3 视口` 的 60 格机器结果、候选/基线/环境/时间窗绑定和证据闭包 | 真实 producer 与本地干净候选 60/60 已闭合；CI Candidate/Environment Authority 和产品/UX/QA 签署未闭合 |
 | Golden Path Manifest Schema | [`capability-studio-golden-path-acceptance-manifest-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-golden-path-acceptance-manifest-v1.schema.json) | 约束发布候选验收证据的机器结构 | 可消费，未证明通过 |
 | Golden Path NO_GO fixture | [`capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json`](capability-studio-golden-path-acceptance-manifest-v1.no-go.fixture.json) | 提供真实的初始缺证据状态 | `NO_GO` |
 | Governed Baseline Schema | [`capability-studio-governed-baseline-v3.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json) | 固定 GP-07/08 的 9 × 3 矩阵、逐 Case 业务 Oracle、部署候选与 canonical execution intent；失败态强制 `NOT_VERIFIED` | 当前为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO` |
@@ -35,7 +35,7 @@
 - Capability Studio 的 Baseline/Manifest Schema、初始 `NO_GO` fixture 和追踪矩阵。
 - `Stage Acceptance Result v1` 严格 Schema 与独立 Test Kit verifier；它将 `NOT_RUN`、`BLOCKED`、`FAIL`、`PARTIAL`、`PASS` 固定为互斥状态语义，禁止 `PARTIAL` 退出 Stage，并对 `PASS` 的五项前置条件、执行矩阵、证据可用性、P0/P1 阻断和 Owner 签署失败关闭。协议可复验不表示当前 Stage 0 已通过；
 - `Stage Acceptance Result v2` 严格 Schema 与独立 Test Kit 语义 verifier；它只承载正式 `STAGE_EXIT`，要求 `AC-STD-01` 至 `AC-STD-09` 精确集合，并把结果身份、候选执行、完整环境/egress 投影、检查和签署前 Evidence 绑定为可复算闭包。`NOT_RUN` 不允许伪造执行时间；运行前与运行中 `BLOCKED` 使用互斥时间语义；候选、环境、egress、签署投影与 `AC-STD-01/06/09` 必须一致；`PASS` 要求干净候选、完整观测窗口、零真实/被拒外呼尝试和三类 Owner 签署。默认 verifier 不解析外部 Evidence，不验签名公钥、签发者权限或 Owner 身份，因此只能证明结果语义自洽，不能单独把 Stage 0 从 `NO_GO` 改为 `ACCEPTED`；
-- `Browser Matrix Result v1` 严格 Schema 与独立 Test Kit verifier；它把 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 固定为不可缩减的 60 格，并绑定候选制品/source commit、Baseline、浏览器/driver/axe 环境和执行时间窗。Verifier 会重算单元身份、排序、汇总和 evidence closure，拒绝假通过、脏候选 Complete、伪造未执行观测和证据篡改。`verified=true, artifactStatus=FAILED` 只表示失败结果诚实自洽，不表示 UI 通过；当前仍未生成由真实浏览器 producer 和 CI Authority 背书的 60 格完整结果；
+- `Browser Matrix Result v1` 严格 Schema、真实 Chrome producer、独立 Test Kit builder/verifier/CLI 和一键运行脚本；它把 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 固定为不可缩减的 60 格，并绑定候选制品/source commit、Baseline、浏览器/driver/axe 环境和执行时间窗。Verifier 会重算单元身份、排序、汇总和 evidence closure，拒绝假通过、脏候选 Complete、伪造未执行观测和证据篡改。提交 `dea25cadc` 的本地干净候选运行得到 `BMR-dea25cadc49a-1787061494`：60/60 通过、0 跳过、0 P0/P1，独立 CLI 返回 `VALID status=COMPLETE`。这是本地开发级候选证据，不是 CI Candidate/Environment Authority 的正式证明；
 - GP-04 的教程分支业务句式编辑器，用户通过条件、表现和持续时间配置超时，无需编辑 Mock JSON；
 - GP-04 的数据库 head、immutable revision、严格保存协议和隔离预检，以及 409 冲突保留输入、结构化恢复动作和断网分类测试；
 - GP-04 的 SQL 原子 optimistic CAS、同版本并发单赢家、stale 同内容重试幂等、Authority 重建恢复和 Canonical Baseline 漂移失败关闭测试；
@@ -63,7 +63,7 @@
 - 生产运行协议边界已扩展到 fixture、stub、binding override、dependency behavior 和 Dataset 字段族，并在五类运行入口、三组 production profile 上验证 DTO 前拒绝、审计失败关闭和 Payload 不泄漏；
 - GP-01/03/04 英文 1440×900、1024×768、390×844 真实 Chrome 证据，以及 GP-05/06 英文 1024×768 证据；覆盖 Dataset 的 Tab/Enter/Space 键盘路径、Feature 权限切换、六种组件状态和真实浏览器完整 axe-core 检查。真实 axe 曾检出并推动修复选中场景辅助文字对比度和 DAG 滚动区焦点问题。
 
-仍未完成的是持久化且具备权限边界的 Dataset Authority、可信 freshness/review Authority、Active 生命周期与审批入口、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、契约与 Tutorial 全键盘/人工读屏/并发浏览器矩阵，以及 GP-07 至 GP-10 尚未覆盖的中文 1024、英文 1440/390 和异常状态其余视口。GP-07 至 GP-10 的英文 1024 开发切片、GP-09 仅键盘主路径与真实 503/Retry 恢复已经闭合，但固定 60 格尚未形成由 CI Candidate/Environment Authority 背书的完整结果，六人可用性签署也未执行。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
+仍未完成的是持久化且具备权限边界的 Dataset Authority、可信 freshness/review Authority、Active 生命周期与审批入口、Feature 的字段级 source map、客户级数据分类/ABAC/跨 Scope Payload Authority、目标环境 Candidate attestation、部署级 network deny/egress 观测、Data Lens 英文拒绝态、错误/冲突/断网状态的完整三视口矩阵、人工读屏、并发浏览器矩阵和六人可用性签署。正常态固定 60 格已由本地干净候选完整执行，但尚未由 CI Candidate/Environment Authority 签发，产品、UX、QA 也未签署。当前 `/scenario-dataset` 是 Stage 0 Golden Demo Pack 的不可变业务投影，不是客户生产 Dataset 的写入 Authority。当前页面已调用同一受治理编译/应用级 Resource Registry/真实 Resource Operator/注册/执行链路并闭合开发 Oracle，结果为 `DEVELOPMENT_TEST_OWNED / CERTIFIABLE / NO_GO`；证据可信度提升不等于目标环境或发布责任已经闭合，因此不能替代 Owner 签署的 `S0-AC-04` 证据。
 
 因此 Baseline 和 Manifest 必须保持 `NO_GO`、`PENDING` 或 `NOT_RUN`。元数据可读、开发自动化通过和启动探针成功，只能证明当前纵向切片可演示，不能冒充 Capability Studio 产品验收通过。
 
@@ -106,24 +106,42 @@
 | 1024×768 | 英文 GP-10 原 child run 精确证据、同一 Case 和完整引用闭包 | [`capability-studio-gp10-exact-evidence-en-1024.png`](../../assets/capability-studio/capability-studio-gp10-exact-evidence-en-1024.png) |
 | 1024×768 | 英文 GP-10 从精确证据进入保持同一 Run/Case/Node 的 Feature DAG | [`capability-studio-gp10-exact-dag-en-1024.png`](../../assets/capability-studio/capability-studio-gp10-exact-dag-en-1024.png) |
 
-这些证据关闭了所列中英文开发状态、Dataset 与 GP-09 键盘路径、Feature 权限切换、Tool 受治理开发验证、GP-09 503/Retry 和自动 axe 检查，但不覆盖契约/Tutorial 全键盘、人工屏幕阅读器、异常状态三视口、固定 60 格其余单元、不可变发布候选运行证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
+这些截图与固定矩阵关闭了正常态 GP-01 至 GP-10 的中英文三视口、键盘路径、页面溢出、技术 ID/Raw JSON 泄漏和自动 axe 检查，但不覆盖人工屏幕阅读器、异常状态三视口、CI Authority 签发的不可变发布候选证据或人工可用性签署。业务资产名称和说明仍是 Canonical Demo Pack 的中文权威数据，语言切换只承诺产品界面文案，不应误报为业务内容本地化。
 
 ## 3. 更新流程
 
-### 3.1 先改合同，再改实现
+### 3.1 运行固定浏览器矩阵
+
+在干净提交上运行唯一正式入口：
+
+```bash
+./scripts/run-capability-studio-browser-matrix.sh
+```
+
+脚本会构建生产前端与候选 JAR，执行固定 60 格真实 Chrome 矩阵，再由 `resource-gateway-test-kit` 独立校验结果。成功条件是 `60/60` 通过、0 跳过、0 P0/P1、候选与环境绑定完整，并输出 `VALID status=COMPLETE`。结果写入 `resource-gateway-examples/target/acceptance/capability-studio-browser-matrix-result-v1.json`，逐格截图写入同目录下的 `browser-matrix-evidence/`。
+
+工作树不干净时，默认命令会在浏览器启动前拒绝执行。开发诊断可显式运行：
+
+```bash
+./scripts/run-capability-studio-browser-matrix.sh --allow-dirty
+```
+
+开发模式即使 60 格全部通过，也只能输出 `DEVELOPMENT_VERIFIED`；根结果保持 `FAILED`，独立 CLI 返回退出码 3。不得将该结果复制为正式证据。`--no-build` 只用于复用已存在的候选 JAR，不改变候选干净度和 `COMPLETE` 门槛。
+
+### 3.2 先改合同，再改实现
 
 改变黄金路径的动作顺序、页面反馈、业务预期、资产数量、场景分母、生产隔离策略或签署门槛时，先更新 Baseline、Screen State Inventory 和 Traceability Matrix，并由产品/架构/QA 重新评审。实现不能先行改变验收含义。
 
 不改变验收语义的实现修复，可以只补充对应证据引用和测试结果，但不得删除失败、限制或未覆盖记录。
 
-### 3.2 更新 Baseline
+### 3.3 更新 Baseline
 
 1. 增加 revision，保留旧文件和变更说明。
 2. 更新 `goldenPack`、`goldenPaths`、`spikes`、浏览器矩阵、可用性门槛、安全门禁和 NFR 门禁。
 3. 所有引用使用 exact ref；没有真实资产时使用 `status: NOT_RUN` 或 `PENDING`，不得编造 pass。
 4. 只有对应角色完成签署，Baseline 才能从 `NO_GO` 变为 `APPROVED`。签署字段不能由脚本代填。
 
-### 3.3 生成 Manifest
+### 3.4 生成 Manifest
 
 每个发布候选生成一个新的 Manifest：
 
