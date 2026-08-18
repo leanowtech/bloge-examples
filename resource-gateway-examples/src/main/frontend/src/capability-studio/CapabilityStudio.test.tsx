@@ -51,6 +51,29 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).not.toMatch(/\b(ACCEPTED|PASS)\b/);
   });
 
+  it('moves and activates mobile task tabs with standard arrow-key navigation', async () => {
+    await render();
+    const overview = query<HTMLButtonElement>('#capability-mobile-task-overview');
+    overview.focus();
+
+    await act(async () => overview.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+    })));
+
+    const contract = query<HTMLButtonElement>('#capability-mobile-task-contract');
+    expect(contract.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(contract);
+    expect(query('[data-testid="capability-contract"]')).toBeTruthy();
+
+    await act(async () => contract.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+    })));
+    expect(query<HTMLButtonElement>('#capability-mobile-task-scenarios').getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement?.id).toBe('capability-mobile-task-scenarios');
+  });
+
   it('opens the selected API contract instead of always showing the first API', async () => {
     await render();
     const apiButtons = document.querySelectorAll<HTMLButtonElement>('.capability-sidebar .capability-task-button');

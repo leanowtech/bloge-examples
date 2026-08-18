@@ -67,6 +67,16 @@ import './capabilityStudio.css';
 
 type Task = 'overview' | 'contract' | 'scenarios' | 'quality' | 'tutorial' | 'feature' | 'tool';
 
+const MOBILE_TASKS: Array<{ value: Task; en: string; zh: string }> = [
+  { value: 'overview', en: 'Overview', zh: '能力总览' },
+  { value: 'contract', en: 'Contract', zh: '接口契约' },
+  { value: 'scenarios', en: 'Scenarios', zh: '场景数据' },
+  { value: 'quality', en: 'Quality', zh: '质量影响' },
+  { value: 'tutorial', en: 'Rehearsal', zh: '隔离演练' },
+  { value: 'feature', en: 'Feature', zh: '特征编排' },
+  { value: 'tool', en: 'Tool', zh: '工具契约' },
+];
+
 interface CapabilityStudioDeepLink {
   task: Task | null;
   runId: string | null;
@@ -268,6 +278,12 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
     const current = readCapabilityStudioDeepLink();
     if (current.runId && current.scenarioId) void readExactEvidence(current.runId, current.scenarioId);
   };
+  const moveMobileTask = (currentIndex: number, nextIndex: number) => {
+    const boundedIndex = (nextIndex + MOBILE_TASKS.length) % MOBILE_TASKS.length;
+    const nextTask = MOBILE_TASKS[boundedIndex].value;
+    document.getElementById(`capability-mobile-task-${nextTask}`)?.focus();
+    if (boundedIndex !== currentIndex) navigateTask(nextTask);
+  };
 
   return (
     <main className="capability-studio" data-testid="capability-studio">
@@ -284,16 +300,32 @@ export default function CapabilityStudio({ fetcher }: CapabilityStudioProps) {
       </header>
 
       <div className="capability-mobile-task-switcher">
-        <label htmlFor="capability-task-select">{locale === 'zh-CN' ? '当前任务' : 'Current task'}</label>
-        <select id="capability-task-select" value={task} onChange={(event) => navigateTask(event.target.value as Task)}>
-          <option value="overview">{locale === 'zh-CN' ? '能力总览' : 'Capability overview'}</option>
-          <option value="contract">{locale === 'zh-CN' ? '订单查询契约' : 'Order lookup contract'}</option>
-          <option value="scenarios">{locale === 'zh-CN' ? '场景数据' : 'Scenario data'}</option>
-          <option value="quality">{locale === 'zh-CN' ? '质量与影响' : 'Quality & impact'}</option>
-          <option value="tutorial">{locale === 'zh-CN' ? '隔离演练配置' : 'Isolated rehearsal setup'}</option>
-          <option value="feature">{locale === 'zh-CN' ? '特征编排' : 'Feature orchestration'}</option>
-          <option value="tool">{locale === 'zh-CN' ? '工具契约' : 'Tool contract'}</option>
-        </select>
+        <span id="capability-mobile-task-label">{locale === 'zh-CN' ? '当前任务' : 'Current task'}</span>
+        <div className="capability-mobile-task-tabs" role="tablist" aria-labelledby="capability-mobile-task-label">
+          {MOBILE_TASKS.map((option, index) => (
+            <button
+              id={`capability-mobile-task-${option.value}`}
+              key={option.value}
+              type="button"
+              role="tab"
+              aria-selected={task === option.value}
+              tabIndex={task === option.value ? 0 : -1}
+              onClick={() => navigateTask(option.value)}
+              onKeyDown={(event) => {
+                let nextIndex = index;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = index + 1;
+                else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = index - 1;
+                else if (event.key === 'Home') nextIndex = 0;
+                else if (event.key === 'End') nextIndex = MOBILE_TASKS.length - 1;
+                else return;
+                event.preventDefault();
+                moveMobileTask(index, nextIndex);
+              }}
+            >
+              {locale === 'zh-CN' ? option.zh : option.en}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="capability-layout">

@@ -458,8 +458,11 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
 .capability-exact-evidence-error { margin-top: 14px; }
 @keyframes capability-spin { to { transform: rotate(360deg); } }
 .capability-mobile-task-switcher { display: none; max-width: 1440px; margin: 0 auto 12px; }
-.capability-mobile-task-switcher label { display: block; color: var(--cap-muted); font-size: 12px; margin-bottom: 5px; }
-.capability-mobile-task-switcher select { width: 100%; border: 1px solid var(--cap-border-strong); border-radius: 4px; background: #fff; padding: 9px; }
+.capability-mobile-task-switcher > span { display: block; color: var(--cap-muted); font-size: 12px; margin-bottom: 5px; }
+.capability-mobile-task-tabs { display: flex; gap: 6px; overflow-x: auto; padding: 1px 1px 5px; scrollbar-width: thin; }
+.capability-mobile-task-tabs button { flex: 0 0 auto; min-height: 36px; border: 1px solid var(--cap-border-strong); border-radius: 4px; background: #fff; padding: 7px 10px; color: var(--cap-muted); cursor: pointer; font-size: 12px; font-weight: 700; }
+.capability-mobile-task-tabs button[aria-selected='true'] { border-color: var(--cap-blue); background: var(--cap-blue-soft); color: var(--cap-blue); }
+.capability-mobile-task-tabs button:focus-visible { outline: 2px solid var(--cap-blue); outline-offset: 1px; }
 .capability-studio-state { display: grid; place-items: center; min-height: 420px; color: var(--cap-muted); }
 .capability-error-state { display: block; max-width: 900px; margin: 50px auto; padding: 30px; border: 1px solid var(--cap-border); border-radius: 6px; background: var(--cap-surface); }
 .capability-error-icon { color: var(--cap-amber); margin-bottom: 18px; }
@@ -484,6 +487,11 @@ button.capability-asset-row:hover { color: var(--cap-blue); }
   .capability-sidebar { display: none; }
   .capability-readiness-panel { margin-top: 12px; min-height: 0; }
   .capability-overview-grid, .capability-contract-grid, .capability-branch-grid, .capability-error-grid { grid-template-columns: 1fr; }
+  .capability-asset-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .capability-asset-row .capability-asset-kind { grid-column: 1; grid-row: 1; }
+  .capability-asset-row > div { grid-column: 2; grid-row: 1; }
+  .capability-asset-row .capability-asset-readiness { grid-column: 2; grid-row: 2; white-space: normal; }
+  .capability-asset-row > svg { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
   .capability-count-strip { grid-template-columns: repeat(2, 1fr); }
   .capability-count-tile:nth-child(2) { border-right: 0; }
   .capability-count-tile:nth-child(-n + 2) { border-bottom: 1px solid var(--cap-border); }

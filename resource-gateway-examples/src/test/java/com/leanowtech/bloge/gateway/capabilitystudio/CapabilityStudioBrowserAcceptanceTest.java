@@ -145,9 +145,8 @@ class CapabilityStudioBrowserAcceptanceTest {
 
         setViewport(390, 844);
         wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.id("capability-task-select")));
-        new Select(driver.findElement(By.id("capability-task-select")))
-                .selectByValue("scenarios");
+                By.id("capability-mobile-task-overview")));
+        driver.findElement(By.id("capability-mobile-task-scenarios")).click();
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector(".capability-scenario-list-item"), 9));
         assertThat(driver.findElement(By.cssSelector(".capability-scenario-dataset-header")).getText())
@@ -256,7 +255,9 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp05-gp06-payload-zh-1024.png");
 
         setViewport(390, 844);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-mobile-task-feature")));
+        assertThat(driver.findElement(By.id("capability-mobile-task-feature"))
+                .getAttribute("aria-selected")).isEqualTo("true");
         assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
         assertThat(new Select(driver.findElement(By.id("feature-rehearsal-case"))).getOptions())
                 .hasSize(9);
@@ -353,9 +354,9 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp07-gp08-governed-tool-zh-1440.png");
 
         setViewport(390, 844);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
-        assertThat(new Select(driver.findElement(By.id("capability-task-select")))
-                .getFirstSelectedOption().getAttribute("value")).isEqualTo("tool");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-mobile-task-tool")));
+        assertThat(driver.findElement(By.id("capability-mobile-task-tool"))
+                .getAttribute("aria-selected")).isEqualTo("true");
         assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
         assertThat(driver.findElements(By.cssSelector(
                 ".capability-governed-case-table tbody tr"))).hasSize(9);
@@ -465,9 +466,9 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp09-case-impact-zh-1440.png");
 
         setViewport(390, 844);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
-        assertThat(new Select(driver.findElement(By.id("capability-task-select")))
-                .getFirstSelectedOption().getAttribute("value")).isEqualTo("quality");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-mobile-task-quality")));
+        assertThat(driver.findElement(By.id("capability-mobile-task-quality"))
+                .getAttribute("aria-selected")).isEqualTo("true");
         assertThat(driver.findElement(By.cssSelector(".capability-sidebar")).isDisplayed()).isFalse();
         assertThat(driver.findElements(By.cssSelector(
                 ".capability-quality-case-item"))).hasSize(9);
@@ -799,8 +800,16 @@ class CapabilityStudioBrowserAcceptanceTest {
         capture("capability-studio-gp01-gp03-en-1024.png");
 
         setViewport(390, 844);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
-        new Select(driver.findElement(By.id("capability-task-select"))).selectByValue("scenarios");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-mobile-task-tutorial")));
+        driver.findElement(By.id("capability-mobile-task-overview")).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        assertThat(driver.findElements(By.cssSelector(".capability-asset-readiness")))
+                .allSatisfy(readiness -> assertThat(readiness.getRect().getX()
+                        + readiness.getRect().getWidth()).isLessThanOrEqualTo(390));
+        assertNoPageOverflow();
+
+        driver.findElement(By.id("capability-mobile-task-scenarios")).click();
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector(".capability-scenario-list-item"), 9));
         assertThat(driver.findElement(By.cssSelector(".capability-scenario-dataset-header")).getText())
@@ -842,13 +851,46 @@ class CapabilityStudioBrowserAcceptanceTest {
                 .contains(targetCaseText.split("\\n")[0]);
 
         setViewport(390, 844);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-task-select")));
-        WebElement taskSelect = tabUntilActive(By.id("capability-task-select"));
-        assertThat(driver.switchTo().activeElement().getAttribute("id")).isEqualTo("capability-task-select");
-        taskSelect.sendKeys(Keys.HOME, Keys.ARROW_DOWN, Keys.ARROW_DOWN, Keys.ENTER);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.id("capability-mobile-task-scenarios")));
+        WebElement taskTab = tabUntilActive(By.id("capability-mobile-task-scenarios"));
+        assertThat(driver.switchTo().activeElement().getAttribute("id"))
+                .isEqualTo("capability-mobile-task-scenarios");
+        taskTab.sendKeys(Keys.HOME);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+        driver.switchTo().activeElement().sendKeys(Keys.ARROW_RIGHT, Keys.ARROW_RIGHT);
         wait.until(ExpectedConditions.numberOfElementsToBe(
                 By.cssSelector(".capability-scenario-list-item"), 9));
-        assertThat(driver.switchTo().activeElement().getAttribute("id")).isEqualTo("capability-task-select");
+        assertThat(driver.switchTo().activeElement().getAttribute("id"))
+                .isEqualTo("capability-mobile-task-scenarios");
+        assertNoPageOverflow();
+    }
+
+    @Test
+    void mobileTaskSwitcherCommitsEachKeyboardStepAcrossReactRenders() {
+        assumeFrontendBundlePresent();
+        driver = newChromeDriverOrSkip(390, 844);
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        driver.get(url("/capabilities/?lang=en"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='capability-overview']")));
+
+        String currentTask = "overview";
+        for (String expectedTask : List.of("contract", "scenarios")) {
+            WebElement taskTab = tabUntilActive(By.id("capability-mobile-task-" + currentTask));
+            assertThat(taskTab).isEqualTo(driver.switchTo().activeElement());
+            taskTab.sendKeys(Keys.ARROW_RIGHT);
+            wait.until(webDriver -> "true".equals(webDriver.findElement(
+                    By.id("capability-mobile-task-" + expectedTask)).getAttribute("aria-selected")));
+            assertThat(driver.switchTo().activeElement().getAttribute("id"))
+                    .isEqualTo("capability-mobile-task-" + expectedTask);
+            currentTask = expectedTask;
+        }
+
+        wait.until(ExpectedConditions.numberOfElementsToBe(
+                By.cssSelector(".capability-scenario-list-item"), 9));
+        assertThat(driver.switchTo().activeElement().getAttribute("id"))
+                .isEqualTo("capability-mobile-task-scenarios");
         assertNoPageOverflow();
     }
 
