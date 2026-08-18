@@ -230,7 +230,7 @@ export const governedBaselineProjectionFixture = {
   verificationScope: 'GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES',
   releaseGateStatus: 'NO_GO',
   verificationLevel: 'DEVELOPMENT_VERIFIED',
-  evidenceClass: 'EXPLORATORY',
+  evidenceClass: 'CERTIFIABLE',
   caseCount: 9,
   roundCount: 3,
   suiteRunCount: 3,
@@ -322,7 +322,6 @@ export const governedBaselineProjectionFixture = {
   })),
   limitations: [
     'RUNTIME_ENVIRONMENT_NOT_ATTESTED',
-    'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
     'DEPLOYMENT_EGRESS_NOT_OBSERVED',
     'OWNER_SIGNOFF_NOT_PRESENT',
   ],

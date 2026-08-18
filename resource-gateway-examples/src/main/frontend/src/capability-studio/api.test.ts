@@ -240,6 +240,12 @@ describe('Capability Studio governed baseline API', () => {
       publication: null,
       rounds: [],
       cases: [],
+      limitations: [
+        'RUNTIME_ENVIRONMENT_NOT_ATTESTED',
+        'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
+        'DEPLOYMENT_EGRESS_NOT_OBSERVED',
+        'OWNER_SIGNOFF_NOT_PRESENT',
+      ],
       diagnostics: ['REAL_EXTERNAL_CALL_FORBIDDEN'],
     };
     const fetcher = vi.fn<CapabilityStudioFetcher>(async () => json(failed));

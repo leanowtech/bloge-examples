@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 
 import java.time.Duration;
@@ -30,6 +33,9 @@ final class CapabilityStudioGoldenScenarioMaterialResolver
     private static final String RESPONSIBILITY_RESOURCE = "api-cancellation-responsibility";
     private static final String POLICY_RESOURCE = "api-city-pricing-policy";
     private static final String COMPENSATION_RESOURCE = "api-compensation-history";
+    private static final ObjectMapper JSON = new ObjectMapper()
+            .findAndRegisterModules()
+            .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS);
     private static final Map<String, String> NODE_BY_RESOURCE = Map.of(
             ORDER_RESOURCE, "orderLookup",
             RESPONSIBILITY_RESOURCE, "responsibilityLookup",
@@ -239,7 +245,7 @@ final class CapabilityStudioGoldenScenarioMaterialResolver
     private static ScenarioDraftSet.DependencyBehavior behavior(
             String caseId, String resourceRef, String kind, String summary) {
         return switch (kind) {
-            case "RETURN" -> ScenarioDraftSet.DependencyBehavior.returning(payload(caseId, resourceRef));
+            case "RETURN" -> transportResponse(payload(caseId, resourceRef));
             case "ERROR" -> new ScenarioDraftSet.DependencyBehavior(
                     ScenarioDraftSet.BehaviorKind.ERROR,
                     ScenarioDraftSet.BehaviorBoundary.NODE,
@@ -282,6 +288,28 @@ final class CapabilityStudioGoldenScenarioMaterialResolver
             default -> throw new IllegalArgumentException(
                     ERROR_PREFIX + "UNSUPPORTED_BEHAVIOR: " + kind);
         };
+    }
+
+    private static ScenarioDraftSet.DependencyBehavior transportResponse(
+            Map<String, Object> payload) {
+        try {
+            return new ScenarioDraftSet.DependencyBehavior(
+                    ScenarioDraftSet.BehaviorKind.RETURN,
+                    ScenarioDraftSet.BehaviorBoundary.TRANSPORT,
+                    null,
+                    null,
+                    JSON.writeValueAsString(payload),
+                    200,
+                    Map.of("Content-Type", "application/json"),
+                    "",
+                    "",
+                    "",
+                    null,
+                    "");
+        } catch (JsonProcessingException failure) {
+            throw new IllegalStateException(
+                    ERROR_PREFIX + "TRANSPORT_RESPONSE_SERIALIZATION_FAILED", failure);
+        }
     }
 
     private static ScenarioDraftSet.AssertionDraft assertion(

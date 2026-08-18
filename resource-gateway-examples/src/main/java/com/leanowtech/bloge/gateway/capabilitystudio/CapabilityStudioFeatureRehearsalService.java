@@ -64,15 +64,25 @@ public final class CapabilityStudioFeatureRehearsalService {
     private final CapabilityStudioGoldenDemoPack pack;
     private final ObjectMapper objectMapper;
     private final OperatorRegistry operatorRegistry;
+    private final ResourceRegistry resourceRegistry;
     private final CapabilityStudioDataLensProjector dataLensProjector;
 
     public CapabilityStudioFeatureRehearsalService(
             CapabilityStudioGoldenDemoPack pack,
             ObjectMapper objectMapper,
             OperatorRegistry operatorRegistry) {
+        this(pack, objectMapper, operatorRegistry, new DemoResourceRegistry());
+    }
+
+    CapabilityStudioFeatureRehearsalService(
+            CapabilityStudioGoldenDemoPack pack,
+            ObjectMapper objectMapper,
+            OperatorRegistry operatorRegistry,
+            ResourceRegistry resourceRegistry) {
         this.pack = Objects.requireNonNull(pack, "pack");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper").findAndRegisterModules();
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
+        this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
         this.dataLensProjector = new CapabilityStudioDataLensProjector(this.objectMapper);
     }
 
@@ -446,11 +456,19 @@ public final class CapabilityStudioFeatureRehearsalService {
         BlgeExpressionEvaluator evaluator = new BlgeExpressionEvaluator();
         return new HttpResourceOperator(
                 transport,
-                new DemoResourceRegistry(),
+                resourceRegistry,
                 evaluator,
                 new UrlTemplateRenderer(),
                 new PayloadExtractor(objectMapper),
                 new ResponseValidator(evaluator));
+    }
+
+    static List<ResourceDescriptor> demoResourceDescriptors() {
+        return List.of(
+                DemoResourceRegistry.descriptor(ORDER_RESOURCE),
+                DemoResourceRegistry.descriptor(RESPONSIBILITY_RESOURCE),
+                DemoResourceRegistry.descriptor(POLICY_RESOURCE),
+                DemoResourceRegistry.descriptor(COMPENSATION_RESOURCE));
     }
 
     private static Graph withOperatorRefs(Graph graph) {
@@ -520,11 +538,9 @@ public final class CapabilityStudioFeatureRehearsalService {
     }
 
     private static final class DemoResourceRegistry implements ResourceRegistry {
-        private final Map<String, ResourceDescriptor> resources = Map.of(
-                ORDER_RESOURCE, descriptor(ORDER_RESOURCE),
-                RESPONSIBILITY_RESOURCE, descriptor(RESPONSIBILITY_RESOURCE),
-                POLICY_RESOURCE, descriptor(POLICY_RESOURCE),
-                COMPENSATION_RESOURCE, descriptor(COMPENSATION_RESOURCE));
+        private final Map<String, ResourceDescriptor> resources = demoResourceDescriptors().stream()
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        ResourceDescriptor::resourceId, descriptor -> descriptor));
 
         @Override
         public ResourceDescriptor resolve(String resourceId) {

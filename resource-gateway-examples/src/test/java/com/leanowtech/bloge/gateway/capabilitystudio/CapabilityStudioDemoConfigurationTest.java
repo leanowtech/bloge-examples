@@ -5,6 +5,8 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import org.h2.jdbcx.JdbcDataSource;
@@ -17,7 +19,9 @@ import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class CapabilityStudioDemoConfigurationTest {
     private final JdbcDataSource dataSource = dataSource();
@@ -29,6 +33,7 @@ class CapabilityStudioDemoConfigurationTest {
                     () -> mock(ScenarioGovernedRegistryGateway.class))
             .withBean(TestSuiteExecutionService.class, () -> mock(TestSuiteExecutionService.class))
             .withBean(TestExecutionApiService.class, () -> mock(TestExecutionApiService.class))
+            .withBean(WritableResourceRegistry.class, () -> mock(WritableResourceRegistry.class))
             .withBean(JdbcDataSource.class, () -> dataSource)
             .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
             .withBean(PlatformTransactionManager.class, () -> new DataSourceTransactionManager(dataSource))
@@ -135,5 +140,31 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
                         .hasSingleBean(CapabilityStudioGovernedBaselineService.class));
+    }
+
+    @Test
+    void refusesToOverwriteAnExistingResourceDescriptor() {
+        WritableResourceRegistry registry = mock(WritableResourceRegistry.class);
+        ResourceDescriptor expected = CapabilityStudioFeatureRehearsalService
+                .demoResourceDescriptors().getFirst();
+        ResourceDescriptor conflicting = new ResourceDescriptor(
+                expected.resourceId(),
+                "https://existing.example.test/resource",
+                expected.method(),
+                expected.defaultHeaders(),
+                expected.authStrategy(),
+                expected.defaultTimeout(),
+                expected.parameterMapping(),
+                expected.responseProtocol(),
+                expected.payloadPath(),
+                expected.externalWriteContract());
+        when(registry.contains(expected.resourceId())).thenReturn(true);
+        when(registry.resolve(expected.resourceId())).thenReturn(conflicting);
+
+        assertThatThrownBy(() -> CapabilityStudioDemoConfiguration
+                .bindDemoResourceDescriptors(registry))
+                .isInstanceOf(org.springframework.beans.factory.BeanCreationException.class)
+                .hasMessageContaining("Conflicting Resource descriptor")
+                .hasMessageContaining(expected.resourceId());
     }
 }

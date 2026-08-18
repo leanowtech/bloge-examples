@@ -348,7 +348,16 @@ public final class CapabilityStudioScenarioDatasetCompiler {
             CapabilityStudioScenarioDatasetMaterial.DependencyMaterial dependency,
             String path) {
         if (dependency.behavior().boundary() == ScenarioDraftSet.BehaviorBoundary.TRANSPORT) {
-            fail("TRANSPORT_BOUNDARY_UNSUPPORTED", path + "/behavior/boundary");
+            boolean descriptorBackedResponse = "httpResource".equals(
+                    dependency.selector().operatorRef())
+                    && !dependency.selector().resourceRef().isBlank()
+                    && dependency.behavior().kind() == ScenarioDraftSet.BehaviorKind.RETURN
+                    && dependency.behavior().output() == null
+                    && dependency.behavior().statusCode() != null
+                    && !dependency.behavior().rawBody().isBlank();
+            if (!descriptorBackedResponse) {
+                fail("TRANSPORT_BOUNDARY_UNSUPPORTED", path + "/behavior/boundary");
+            }
         }
         if (!dependency.selector().functionRef().isBlank()) {
             fail("FUNCTION_SELECTOR_UNSUPPORTED", path + "/selector/functionRef");

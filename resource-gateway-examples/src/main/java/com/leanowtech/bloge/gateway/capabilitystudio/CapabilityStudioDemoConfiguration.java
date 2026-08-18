@@ -6,6 +6,8 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -85,8 +87,24 @@ public class CapabilityStudioDemoConfiguration {
     CapabilityStudioFeatureRehearsalService capabilityStudioFeatureRehearsalService(
             CapabilityStudioGoldenDemoPack pack,
             ObjectMapper mapper,
-            OperatorRegistry operatorRegistry) {
-        return new CapabilityStudioFeatureRehearsalService(pack, mapper, operatorRegistry);
+            OperatorRegistry operatorRegistry,
+            WritableResourceRegistry resourceRegistry) {
+        bindDemoResourceDescriptors(resourceRegistry);
+        return new CapabilityStudioFeatureRehearsalService(
+                pack, mapper, operatorRegistry, resourceRegistry);
+    }
+
+    static void bindDemoResourceDescriptors(WritableResourceRegistry registry) {
+        for (ResourceDescriptor descriptor
+                : CapabilityStudioFeatureRehearsalService.demoResourceDescriptors()) {
+            if (!registry.contains(descriptor.resourceId())) {
+                registry.register(descriptor);
+            } else if (!descriptor.equals(registry.resolve(descriptor.resourceId()))) {
+                throw new BeanCreationException(
+                        "capabilityStudioFeatureRehearsalService",
+                        "Conflicting Resource descriptor: " + descriptor.resourceId());
+            }
+        }
     }
 
     @Bean

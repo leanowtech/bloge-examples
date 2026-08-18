@@ -108,6 +108,28 @@ class CapabilityStudioScenarioDatasetCompilerTest {
     }
 
     @Test
+    void compilesCanonicalReturnsOnlyAsDescriptorBackedTransportResponses() {
+        CapabilityStudioScenarioDatasetCompilation result = compiler.compile(
+                dataset, target(), new CapabilityStudioGoldenScenarioMaterialResolver(pack));
+
+        assertThat(result.draftSet().scenarios().stream()
+                .flatMap(scenario -> scenario.dependencies().stream())
+                .filter(dependency -> dependency.behavior().kind()
+                        == ScenarioDraftSet.BehaviorKind.RETURN)
+                .toList())
+                .isNotEmpty()
+                .allSatisfy(dependency -> {
+                    assertThat(dependency.selector().operatorRef()).isEqualTo("httpResource");
+                    assertThat(dependency.selector().resourceRef()).startsWith("api-");
+                    assertThat(dependency.behavior().boundary())
+                            .isEqualTo(ScenarioDraftSet.BehaviorBoundary.TRANSPORT);
+                    assertThat(dependency.behavior().output()).isNull();
+                    assertThat(dependency.behavior().statusCode()).isEqualTo(200);
+                    assertThat(dependency.behavior().rawBody()).isNotBlank();
+                });
+    }
+
+    @Test
     void compilingThreeTimesProducesByteForByteIdenticalOutput() throws Exception {
         CapabilityStudioScenarioDatasetCompilation first = compiler.compile(
                 dataset, target(), resolver());
@@ -323,7 +345,7 @@ class CapabilityStudioScenarioDatasetCompilerTest {
     }
 
     @Test
-    void rejectsStage0UnsupportedReplayFunctionTransportAndObserveSemantics() {
+    void rejectsStage0UnsupportedReplayFunctionMalformedTransportAndObserveSemantics() {
         assertCode((ignoredDataset, dataCase) -> {
             CapabilityStudioScenarioDatasetMaterial.CaseMaterial original = resolver().resolve(dataset, dataCase);
             CapabilityStudioScenarioDatasetMaterial.DependencyMaterial dependency = original.dependencies().getFirst();

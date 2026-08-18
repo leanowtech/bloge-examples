@@ -6,19 +6,31 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiResponse;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
+import com.leanowtech.bloge.gateway.testing.api.TestOperatorExecutionApiRequest;
+import com.leanowtech.bloge.gateway.testing.api.TestOperatorTargetDescriptor;
+import com.leanowtech.bloge.gateway.testing.api.StoredFixtureBundle;
+import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRegistrationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidence;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Real governed Stage 0 proof over the existing testing control-plane authorities. */
 @SpringBootTest(
@@ -71,6 +83,9 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
     private TestExecutionApiService childExecutions;
 
     @Autowired
+    private ResourceRegistry resources;
+
+    @Autowired
     private CapabilityStudioGovernedBaselineService governedBaseline;
 
     private IntegrationRequestContext publicationIdentity;
@@ -81,6 +96,7 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
     private CapabilityStudioGovernedCompilation governedCompilation;
     private CapabilityStudioGovernedCandidateService candidate;
     private CapabilityStudioFeatureRehearsalService.RuntimeAsset runtimeAsset;
+    private TestOperatorTargetDescriptor runtimeDescriptor;
 
     @BeforeEach
     void wireCanonicalRuntimeTargetIntoTheRealRegistry() {
@@ -97,6 +113,11 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(runtimeTarget.id()).isEqualTo(target.operator().operatorRef());
         assertThat(runtimeTarget.fingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(runtimeTarget.fingerprint()).isNotEqualTo(target.operator().fingerprint());
+        runtimeDescriptor = childExecutions.describeOperatorTarget(
+                CapabilityStudioFeatureRehearsalService.TOOL_REF, executionIdentity);
+        assertThat(runtimeDescriptor.target()).isEqualTo(runtimeTarget);
+        assertThat(runtimeDescriptor.certificationEligible()).isTrue();
+        assertThat(runtimeDescriptor.certificationGaps()).isEmpty();
 
         dataset = CapabilityStudioGoldenGovernedTarget.retarget(
                 new CapabilityStudioScenarioDatasetProjector(pack, mapper).project(), target);
@@ -135,7 +156,7 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         {
             assertThat(child.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
             assertThat(child.evidenceStatus()).isEqualTo("PASSED");
-            assertThat(child.evidenceClass()).isEqualTo("EXPLORATORY");
+            assertThat(child.evidenceClass()).isEqualTo("CERTIFIABLE");
             assertThat(child.evidenceFingerprint()).matches("sha256:[a-f0-9]{64}");
             assertThat(child.semanticResultFingerprint()).matches("sha256:[a-f0-9]{64}");
             assertThat(child.assertionsEvaluated()).isOne();
@@ -185,7 +206,7 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(projection.businessCheckCount()).isEqualTo(27);
         assertThat(projection.businessCheckPassCount()).isEqualTo(27);
         assertThat(projection.realExternalCallCount()).isZero();
-        assertThat(projection.evidenceClass()).isEqualTo("EXPLORATORY");
+        assertThat(projection.evidenceClass()).isEqualTo("CERTIFIABLE");
         assertThat(projection.publication()).isNotNull();
         assertThat(projection.publication().fixtureCount()).isEqualTo(9);
         assertThat(projection.rounds()).hasSize(3)
@@ -251,10 +272,63 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(projection.limitations()).containsExactly(
                 "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
                 "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
-                "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
                 "DEPLOYMENT_EGRESS_NOT_OBSERVED",
                 "OWNER_SIGNOFF_NOT_PRESENT");
         assertThat(projection.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void unresolvedResourceCannotBePromotedByAStoredTransportFixture() {
+        assertThat(resources.contains("api-order-lookup")).isTrue();
+        assertThat(resources.contains("api-resource-does-not-exist")).isFalse();
+
+        TestOperatorTargetDescriptor httpTarget = childExecutions.describeOperatorTarget(
+                "httpResource", executionIdentity);
+        StoredFixtureBundle fixture = registerHttpFixture(
+                "capability-studio-unresolved-resource", httpTarget.target(),
+                "api-resource-does-not-exist",
+                FixtureRule.Behavior.protocolResponse(
+                        "{}", 200, Map.of("Content-Type", "application/json"),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        assertThatThrownBy(() -> executeHttpResource(httpTarget.target(),
+                "api-resource-does-not-exist", fixture))
+                .isInstanceOf(com.leanowtech.bloge.gateway.integration.IntegrationProblemException.class)
+                .satisfies(failure -> assertThat(
+                        ((com.leanowtech.bloge.gateway.integration.IntegrationProblemException) failure)
+                                .problem().code())
+                        .isEqualTo("RG.TEST.RESOURCE_DESCRIPTOR_NOT_FOUND"));
+    }
+
+    @Test
+    void outputLevelResourceFixtureCannotBePromotedByTheProductionHttpOperator() {
+        TestOperatorTargetDescriptor httpTarget = childExecutions.describeOperatorTarget(
+                "httpResource", executionIdentity);
+        StoredFixtureBundle fixture = registerHttpFixture(
+                "capability-studio-output-level-resource", httpTarget.target(),
+                "api-order-lookup", FixtureRule.Behavior.returning(Map.of(
+                        "resourceId", "api-order-lookup",
+                        "statusCode", 200,
+                        "payload", Map.of("controlled", true))));
+
+        TestExecutionApiResponse response = executeHttpResource(
+                httpTarget.target(), "api-order-lookup", fixture);
+
+        assertThat(response.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+        assertThat(response.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
+    void productionHttpResourceAssemblyWithoutTransportControlCannotBePromoted() {
+        TestOperatorTargetDescriptor httpTarget = childExecutions.describeOperatorTarget(
+                "httpResource", executionIdentity);
+        StoredFixtureBundle fixture = registerHttpFixture(
+                "capability-studio-production-real-call", httpTarget.target(),
+                "api-order-lookup", FixtureRule.Behavior.real());
+
+        assertNoCertifiableSuccess(() -> executeHttpResource(httpTarget.target(),
+                "api-order-lookup", fixture));
     }
 
     private CapabilityStudioGovernedCandidateService.CandidateReceipt run(String requestId) {
@@ -262,6 +336,66 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
                 CapabilityStudioFeatureRehearsalService.TOOL_REF, executionIdentity);
         return candidate.run(null, target.operator(), target.contract(), runtimeTarget,
                 compilation, requestId, publicationIdentity, executionIdentity);
+    }
+
+    private StoredFixtureBundle registerHttpFixture(
+            String fixtureId,
+            TestExecutionApiRequest.Target target,
+            String resourceId,
+            FixtureRule.Behavior behavior) {
+        FixtureRule rule = new FixtureRule(
+                FixtureRule.SCHEMA_VERSION,
+                fixtureId + "-rule",
+                FixtureRule.Selector.resource(resourceId),
+                behavior,
+                FixtureRule.Consumption.once(),
+                FixtureRule.SchemaCheck.strict());
+        FixtureBundle bundle = new FixtureBundle(
+                FixtureBundle.SCHEMA_VERSION,
+                fixtureId,
+                1,
+                target.fingerprint(),
+                "INTERNAL",
+                null,
+                null,
+                List.of(rule),
+                List.of(),
+                Map.of("fixtureKind", "CERTIFIABLE_TRANSPORT_NEGATIVE"));
+        return childExecutions.registerFixture(fixtureId,
+                new FixtureBundleRegistrationRequest("", target, bundle), executionIdentity);
+    }
+
+    private TestExecutionApiResponse executeHttpResource(
+            TestExecutionApiRequest.Target target,
+            String resourceId,
+            StoredFixtureBundle fixture) {
+        return childExecutions.executeOperator(
+                "httpResource",
+                new TestOperatorExecutionApiRequest(
+                        "",
+                        target,
+                        TestOperatorExecutionApiRequest.EXECUTION_PURPOSE,
+                        Map.of("resourceId", resourceId, "params", Map.of()),
+                        null,
+                        new TestExecutionApiRequest.FixtureBundleRef(
+                                fixture.fixtureBundleId(), fixture.revision(), fixture.fingerprint()),
+                        TestExecutionApiRequest.Verbosity.FULL,
+                        Map.of("test", "governed-certification-negative")),
+                executionIdentity);
+    }
+
+    private static void assertNoCertifiableSuccess(
+            java.util.function.Supplier<TestExecutionApiResponse> execution) {
+        try {
+            TestExecutionApiResponse response = execution.get();
+            assertThat(response.evidence()).isNotNull();
+            assertThat(response.evidence().status() == TestRunEvidence.Status.PASSED
+                    && response.evidence().evidenceClass()
+                    == TestRunEvidence.EvidenceClass.CERTIFIABLE).isFalse();
+        } catch (RuntimeException rejected) {
+            // Rejection before evidence publication is also fail-closed.
+            assertThat(rejected).isNotNull();
+        }
     }
 
     private static IntegrationRequestContext identity(String purpose, String actor) {

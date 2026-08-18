@@ -83,7 +83,7 @@ class CapabilityStudioDemoControllerTest {
                 .andExpect(jsonPath("$.schemaVersion").value(
                         "resource-gateway.capability-studio.governed-baseline.v3"))
                 .andExpect(jsonPath("$.evidenceKind").value("DEVELOPMENT_TEST_OWNED"))
-                .andExpect(jsonPath("$.evidenceClass").value("EXPLORATORY"))
+                .andExpect(jsonPath("$.evidenceClass").value("CERTIFIABLE"))
                 .andExpect(jsonPath("$.verificationLevel").value("DEVELOPMENT_VERIFIED"))
                 .andExpect(jsonPath("$.status").value("PASSED"))
                 .andExpect(jsonPath("$.caseCount").value(9))
@@ -149,7 +149,7 @@ class CapabilityStudioDemoControllerTest {
                 CapabilityStudioGovernedBaselineProjection.VERIFICATION_SCOPE,
                 CapabilityStudioGovernedBaselineProjection.RELEASE_GATE_STATUS,
                 CapabilityStudioGovernedBaselineProjection.DEVELOPMENT_VERIFIED,
-                CapabilityStudioGovernedBaselineProjection.EXPLORATORY,
+                CapabilityStudioGovernedBaselineProjection.CERTIFIABLE,
                 9, 3, 3, 27, 9, 27, 27, 0,
                 fingerprintA, fingerprintB, fingerprintC,
                 null,
@@ -164,7 +164,6 @@ class CapabilityStudioDemoControllerTest {
                 java.util.List.of(
                         "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
                         "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
-                        "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
                         "DEPLOYMENT_EGRESS_NOT_OBSERVED",
                         "OWNER_SIGNOFF_NOT_PRESENT"),
                 java.util.List.of());

@@ -149,6 +149,7 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(result.oraclePassCount).toBe(9);
     expect(result.businessCheckPassCount).toBe(27);
     expect(result.verificationLevel).toBe('DEVELOPMENT_VERIFIED');
+    expect(result.evidenceClass).toBe('CERTIFIABLE');
     expect(result.candidateBuild?.artifactFingerprint).toMatch(/^sha256:/);
     expect(result.candidateIntentFingerprint).toMatch(/^sha256:/);
     expect(result.publication.suiteRef.kind).toBe('TEST_SUITE');
@@ -174,6 +175,12 @@ describe('Capability Studio governed baseline protocol', () => {
     failed.publication = null;
     failed.rounds = [];
     failed.cases = [];
+    failed.limitations = [
+      'RUNTIME_ENVIRONMENT_NOT_ATTESTED',
+      'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
+      'DEPLOYMENT_EGRESS_NOT_OBSERVED',
+      'OWNER_SIGNOFF_NOT_PRESENT',
+    ];
     failed.diagnostics = ['suite assertion failed'];
 
     expect(parseGovernedBaselineProjection(failed)).toMatchObject({
@@ -215,7 +222,7 @@ describe('Capability Studio governed baseline protocol', () => {
     expect(() => parseGovernedBaselineProjection(duplicateSuiteRun)).toThrow('Duplicate governedBaseline.rounds suiteRunId');
   });
 
-  it('requires all four release limitations and exact round sequences', () => {
+  it('requires every fact-derived release limitation and exact round sequences', () => {
     const missingLimitation = structuredClone(governedBaselineProjectionFixture);
     missingLimitation.limitations = ['IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND'];
     expect(() => parseGovernedBaselineProjection(missingLimitation)).toThrow('Required governed baseline limitation');
@@ -239,12 +246,15 @@ describe('Capability Studio governed baseline protocol', () => {
     ];
     expect(parseGovernedBaselineProjection(unbound)).toMatchObject({ candidateBuild: null });
 
-    const certifiable = structuredClone(governedBaselineProjectionFixture);
-    certifiable.evidenceClass = 'CERTIFIABLE' as never;
-    certifiable.limitations = certifiable.limitations
-      .filter((value) => value !== 'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED');
-    const parsed = parseGovernedBaselineProjection(certifiable);
-    expect(parsed.status === 'PASSED' && parsed.evidenceClass).toBe('CERTIFIABLE');
+    const exploratory = structuredClone(governedBaselineProjectionFixture);
+    exploratory.evidenceClass = 'EXPLORATORY' as never;
+    exploratory.limitations = [
+      exploratory.limitations[0],
+      'CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED',
+      ...exploratory.limitations.slice(1),
+    ];
+    const parsed = parseGovernedBaselineProjection(exploratory);
+    expect(parsed.status === 'PASSED' && parsed.evidenceClass).toBe('EXPLORATORY');
 
     const intentWithoutCandidate = structuredClone(governedBaselineProjectionFixture);
     intentWithoutCandidate.candidateBuild = null as never;

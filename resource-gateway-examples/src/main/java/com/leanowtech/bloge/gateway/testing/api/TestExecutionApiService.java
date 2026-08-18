@@ -15,6 +15,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilitySnapshot;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeBinding;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
+import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionIntent;
@@ -835,6 +836,7 @@ public final class TestExecutionApiService {
         } catch (IllegalArgumentException invalidInput) {
             throw badRequest(identity, "RG.TEST.OPERATOR_INPUT_INVALID", invalidInput.getMessage(), Map.of());
         }
+        requireResolvedResourceInput(target, typedInput, identity);
         ResourceFixtureRuntime resourceRuntime = new ResourceFixtureRuntime(
                 target.resourceRegistry(), expressionEvaluator, objectMapper);
         TestRunService kernel = new TestRunService(operatorRegistry, objectMapper, resourceRuntime);
@@ -866,6 +868,30 @@ public final class TestExecutionApiService {
         }
         return response(persisted, persisted.plan(), persisted.evidence(),
                 persisted.integrity(), request.verbosity());
+    }
+
+    private static void requireResolvedResourceInput(
+            OperatorExecutionTargetSnapshot target,
+            Object typedInput,
+            IntegrationRequestContext identity) {
+        if (!"httpResource".equals(target.operatorRef())) {
+            return;
+        }
+        String resourceId = typedInput instanceof HttpResourceInput resourceInput
+                ? normalized(resourceInput.resourceId())
+                : typedInput instanceof Map<?, ?> input
+                ? normalized(input.get("resourceId") == null
+                        ? "" : String.valueOf(input.get("resourceId")))
+                : "";
+        if (resourceId.isBlank()) {
+            throw badRequest(identity, "RG.TEST.RESOURCE_DESCRIPTOR_REQUIRED",
+                    "The httpResource input requires a resourceId.", Map.of());
+        }
+        if (!target.resourceRegistry().contains(resourceId)) {
+            throw badRequest(identity, "RG.TEST.RESOURCE_DESCRIPTOR_NOT_FOUND",
+                    "The httpResource input does not resolve to a frozen resource descriptor.",
+                    Map.of("resourceId", resourceId));
+        }
     }
 
     /** Executes a bounded set of independent requests sequentially. */

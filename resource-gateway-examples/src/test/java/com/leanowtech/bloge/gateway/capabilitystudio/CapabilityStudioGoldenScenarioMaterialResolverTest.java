@@ -52,34 +52,47 @@ class CapabilityStudioGoldenScenarioMaterialResolverTest {
             assertThat(material.dependencies())
                     .extracting(dependency -> dependency.selector().resourceRef())
                     .containsExactlyInAnyOrderElementsOf(NODE_BY_RESOURCE.keySet());
+            assertThat(material.dependencies())
+                    .filteredOn(dependency -> dependency.behavior().kind()
+                            == ScenarioDraftSet.BehaviorKind.RETURN)
+                    .allSatisfy(dependency -> {
+                        assertThat(dependency.behavior().boundary())
+                                .isEqualTo(ScenarioDraftSet.BehaviorBoundary.TRANSPORT);
+                        assertThat(dependency.behavior().output()).isNull();
+                        assertThat(dependency.behavior().statusCode()).isEqualTo(200);
+                        assertThat(dependency.behavior().rawBody()).isNotBlank();
+                    });
             assertThat(material.assertions()).isNotEmpty();
         }
     }
 
     @Test
-    void materializesCanonicalPayloadAndSpecialBehaviorExactly() {
-        assertThat(dependency("case-standard-cancellation-fee", "api-order-lookup")
-                .behavior().output()).isEqualTo(Map.of(
+    void materializesCanonicalPayloadAsRawTransportResponsesAndSpecialBehaviorExactly()
+            throws Exception {
+        assertThat(transportPayload("case-standard-cancellation-fee", "api-order-lookup"))
+                .isEqualTo(Map.of(
                         "orderId", "DEMO-ORDER-20260818-001",
                         "cityCode", "SZ",
                         "serviceType", "ECONOMY",
                         "status", "CANCELLED"));
-        assertThat(dependency("case-rider-not-responsible", "api-cancellation-responsibility")
-                .behavior().output()).isEqualTo(Map.of(
+        assertThat(transportPayload(
+                "case-rider-not-responsible", "api-cancellation-responsibility"))
+                .isEqualTo(Map.of(
                         "owner", "RIDER",
                         "reasonCode", "RIDER_NOT_AT_FAULT",
                         "responsibilityReason", "RIDER_NOT_RESPONSIBLE"));
-        assertThat(dependency("case-driver-responsible", "api-cancellation-responsibility")
-                .behavior().output()).isEqualTo(Map.of(
+        assertThat(transportPayload(
+                "case-driver-responsible", "api-cancellation-responsibility"))
+                .isEqualTo(Map.of(
                         "owner", "DRIVER",
                         "reasonCode", "DRIVER_LATE",
                         "responsibilityReason", "DRIVER_RESPONSIBLE"));
-        assertThat(dependency("case-city-policy-missing", "api-city-pricing-policy")
-                .behavior().output()).isEqualTo(Map.of());
-        assertThat(dependency("case-compensation-history-empty", "api-compensation-history")
-                .behavior().output()).isEqualTo(Map.of());
-        assertThat(dependency("case-policy-revision-regression", "api-city-pricing-policy")
-                .behavior().output()).isEqualTo(Map.of(
+        assertThat(transportPayload("case-city-policy-missing", "api-city-pricing-policy"))
+                .isEqualTo(Map.of());
+        assertThat(transportPayload("case-compensation-history-empty", "api-compensation-history"))
+                .isEqualTo(Map.of());
+        assertThat(transportPayload("case-policy-revision-regression", "api-city-pricing-policy"))
+                .isEqualTo(Map.of(
                         "version", "SZ-CANCEL-2026.08-R2",
                         "feeRule", "CANCEL_FEE_AFTER_5_MIN",
                         "effectiveFrom", "2026-08-01T00:00:00Z"));
@@ -91,6 +104,17 @@ class CapabilityStudioGoldenScenarioMaterialResolverTest {
         assertThat(timeout.errorType()).isEqualTo("TIMEOUT");
         assertThat(timeout.after()).isEqualTo(Duration.ofMillis(10));
         assertThat(timeout.output()).isNull();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> transportPayload(String caseId, String resourceRef)
+            throws Exception {
+        ScenarioDraftSet.DependencyBehavior behavior = dependency(caseId, resourceRef).behavior();
+        assertThat(behavior.boundary()).isEqualTo(ScenarioDraftSet.BehaviorBoundary.TRANSPORT);
+        assertThat(behavior.output()).isNull();
+        assertThat(behavior.statusCode()).isEqualTo(200);
+        assertThat(behavior.headers()).containsEntry("Content-Type", "application/json");
+        return JSON.readValue(behavior.rawBody(), Map.class);
     }
 
     @Test
