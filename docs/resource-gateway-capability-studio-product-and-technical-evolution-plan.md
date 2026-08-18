@@ -1278,12 +1278,35 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 |---|---|---|---|
 | `S0-AC-01` | `PARTIAL` | GP-01 至 GP-06 已有中英文真实 Chrome 开发证据；覆盖 1440、1024、390，包含 Dataset、教程分支、Feature Trace、键盘路径和 axe | GP-07 至 GP-10 尚未形成同等纵向切片；异常状态、人工读屏、产品/UX/QA 签署未闭合 |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在；每个 Case 已投影完整四 API `RUNTIME_CONTROL`，幂等与禁止写入作为独立 `BUSINESS_EXPECTATION` 保留，编译 source map 不再把业务预期误降为 Tool fixture；前后端与独立 Test Kit 均按该语义验证运行闭包 | Dataset 仍为只读投影；受保护 fixture material 仍由开发服务组装；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
-| `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划，并已把同一 Canonical Feature DAG 包装为 Tool binding，经既有 `OperatorMicroGraphRunner -> TestRunService -> BLOGE nested graph` 路径完成真实嵌套执行、nested selector 命中和零 HTTP delegate 调用；Tool composability manifest 已声明四个 exact Resource 依赖，通用执行目标快照可区分声明闭包、空 Registry 和 opaque 目标，并在闭包未被运行证据证明前拒绝认证。Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens，并由严格 v1 Schema 与独立 Test Kit verifier 对真实 wire response 校验 6/5 基数、Run 身份、边闭包、权限和指纹；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | Spike A 编译计划仍未注册并作为同一 Fixture/TestSuite 资产闭包运行，声明的嵌套依赖尚未形成独立认证结果；Spike B 缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 缺部署级 network deny 和安全签署 |
-| `S0-AC-04` | `PARTIAL` | test/staging 的 payload-free 开发基线已固定执行 9×3，产生 27 个唯一 `runId`；9 个独立业务 Oracle、同 Case semantic/business fingerprint 三轮稳定、duplicate 幂等、forbidden-write 的 Graph operator + Trace、零进程内真实调用和两批并发隔离已有自动化证据。timeout Case 已保留依赖原始 `TIMEOUT` 尝试和错误码，BLOGE fallback 后节点终态为 `MOCKED`，Feature/Tool 终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`；Data Lens 和 Oracle 对 attempt/final 双态互验。受保护的 Stage 0 material resolver 还会校验 Graph/Contract/Dataset/Binding exact ref、Case 坐标、行为摘要与四依赖闭包并拒绝漂移；严格 v1 Schema 与独立 Test Kit verifier 已对真实响应闭包互验；投影明确标记 `DEVELOPMENT_TEST_OWNED` | 运行材料仍不是 SPIKE-A 注册产物的同一资产闭包，exact ref 校验结果尚未作为 27 份发布候选 Run Evidence 的一部分持久化；缺运行环境 fingerprint、部署级 network deny/egress 观测与正确性/Runtime/QA 签署，因而不能 `PASS` |
+| `S0-AC-03` | `PARTIAL` | Spike A 已产出确定性注册计划，并新增强类型 exact-ref provenance：source map 闭包参与 FixtureBundle/TestSuite 内容寻址；受治理 publisher 只复用既有 Registry、忽略写返回并逐项独立回读复算；candidate service 只以回读确认的 exact suite 调用既有 `TestSuiteExecutionService`。完整闭包使用可逆字典清单写入 aggregate evidence，实测 suite metadata 为 11,863 bytes，低于既有 16,384 bytes 上限；child evidence 保存 suite ref 与紧凑 provenance/source-map fingerprint。真实 Spring test profile 已以同一注册闭包完成 9 Fixture、1 Suite、9 个唯一 child run 的一轮执行，全部 `PASSED`，进程内真实外部调用为 0；同一 client request 幂等返回同一收据，新 request 复用发布资产并生成新 suite run。旧 Scenario 编译保持内容寻址兼容；相关跨层定向测试 66 项全绿。同一 Canonical Feature DAG 也已包装为 Tool binding，并通过既有 BLOGE nested graph 路径执行；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens；Spike C 已证明生产装配缺席和进程内 connector counter 为 0 | 已完成开发环境的一轮同闭包集成，但尚未形成独立 verifier 认证、发布候选三轮运行或真实 Owner 签署。Spike B 仍缺字段级 source map、企业身份授权和可信 Graph/semantic fingerprint 来源；Spike C 仍缺部署级 network deny 和安全签署 |
+| `S0-AC-04` | `PARTIAL` | test/staging 的 payload-free 开发基线已固定执行 9×3，产生 27 个唯一 `runId`；9 个独立业务 Oracle、同 Case semantic/business fingerprint 三轮稳定、duplicate 幂等、forbidden-write 的 Graph operator + Trace、零进程内真实调用和两批并发隔离已有自动化证据。timeout Case 已保留依赖原始 `TIMEOUT` 尝试和错误码，BLOGE fallback 后节点终态为 `MOCKED`，Feature/Tool 终态为 `PASSED`，业务结论为 `MANUAL_REVIEW / COMPENSATION_HISTORY_TIMEOUT`；Data Lens 和 Oracle 对 attempt/final 双态互验。受保护的 Stage 0 material resolver 校验 Graph/Contract/Dataset/Binding exact ref、Case 坐标、行为摘要与四依赖闭包并拒绝漂移。新的编译、发布与 suite-run 边界已完成一轮同闭包 9 Case 开发集成，并对缺失、部分字段、篡改、覆盖和体积越界失败关闭；投影仍明确标记 `DEVELOPMENT_TEST_OWNED` | 现有 27 次浏览器开发基线尚未改由该注册资产链路产生；一轮 Spring 集成不能替代 9×3 发布候选矩阵。因此新 exact closure 仍不是 27 份发布候选 Run Evidence 的实际来源；运行环境 fingerprint、部署级 network deny/egress 观测与正确性/Runtime/QA 签署仍未闭合，不能 `PASS` |
 | `S0-AC-05` | `NOT_RUN` | 已有可执行任务界面和黄金演示数据 | 尚未组织 6 名代表性用户测试，也没有 P0/P1 关闭和复验记录 |
 | `S0-AC-06` | `NOT_RUN` | Baseline、ADR、Screen Inventory、追踪矩阵和 `NO_GO` Manifest 已版本化 | ADR 仍为 `Proposed`；Baseline 未批准；Manifest 未接受；七类签署均为空 |
 
 局部开发证据只允许把对应合同从 `NOT_RUN` 更新为 `PARTIAL`。只有表中全部缺口关闭并由指定 Owner 签署，Stage 0 才能退出；启动脚本、组件测试或截图均不能单独生成 `PASS`。
+
+##### 当前受治理候选开发验收子结果
+
+以下结果只证明提交 `90978fef6` 的服务端控制面切片达到 `DEVELOPMENT_VERIFIED`。它不是 `S0-AC-03` 或 `S0-AC-04` 的正式 Acceptance Result。
+
+| 子合同 | 可执行标准 | 当前观测 | 结论 |
+|---|---|---|---|
+| `S0-DEV-GOV-01` | 同一 Dataset、Tool Contract、runtime target 与 source map 重复编译时，FixtureBundle/TestSuite 内容地址和 provenance fingerprint 不漂移 | 确定性、内容寻址和旧 Scenario 兼容性测试通过 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-02` | 完整 exact-ref 闭包不得因传输预算被截断；持久化往返后必须可严格还原；suite metadata 不超过 16,384 bytes | 可逆字典清单严格重建 kind、id、revision、fingerprint、Scope 和 Authority；Canonical suite metadata 为 11,863 bytes；未知字段、非法索引和非整数 revision 失败关闭 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-03` | 发布必须注册 9 个 Fixture 和 1 个 Suite；不得信任写返回；每个资产必须独立回读并复算 fingerprint | 真实 Registry 集成通过，回读内容与编译计划一致 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-04` | 只能执行回读确认的 exact suite；必须产生 9 个互异 child `runId` 和 9 个互异 Fixture ref；全部 Case 终态为 `PASSED`；进程内真实外部调用为 0 | 真实 Spring test profile 一轮执行满足全部条件 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-05` | 同一 client request 重试必须返回同一收据；新 request 必须复用同一发布资产并生成新的 suite `runId` | 幂等与新请求测试通过 | `PASS`，仅限开发证据 |
+| `S0-DEV-GOV-06` | provenance 缺失、字段不全、指纹篡改、调用方覆盖、闭包漂移或协议体积越界时，不得生成可认证结果 | 编译、执行和候选边界负向测试通过 | `PASS`，仅限开发证据 |
+
+复验命令必须包含以下 66 项测试，不得只运行成功路径：
+
+```bash
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ScenarioGovernedCompilerTest,ScenarioGovernedProvenanceMetadataCodecTest,CapabilityStudioGovernedCompilationServiceTest,CapabilityStudioGovernedAssetPublisherTest,CapabilityStudioGovernedCandidateServiceTest,CapabilityStudioGovernedCandidateIntegrationTest,TestSuiteExecutionServiceTest \
+  test
+```
+
+正式退出条件保持不变：浏览器 9×3 必须切换到该注册资产链路，27 份 Run Evidence 必须绑定同一 exact closure，并补齐独立 verifier、运行环境 fingerprint、部署级 network deny/egress 观测和指定 Owner 签署。任一项缺失，Stage 0 仍为 `NO_GO`。
 
 #### Stage 1：业务接口与场景数据
 

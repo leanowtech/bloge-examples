@@ -167,7 +167,7 @@ Scenario Dataset、教程分支、隔离预检、Feature Trace 和全部页面�
 6. 选择「受控数据」。系统重新读取同一个 Case 的 Payload 权限投影。检查节点和边的演示输入/输出；这些值只来自本地受控数据，不代表真实业务载荷。切回「结构」后，值必须消失，fingerprint、状态和拓扑仍然保留。
 7. 选择「隔离演练配置」。在「当什么条件、依赖如何表现、持续多久」三个控件中确认历史补偿查询超时，调整时长后选择「保存并隔离预检」。
 8. 预检通过时确认四项反馈：教程分支产生精确 revision、标准基线未改变、未解析依赖为 0、真实接口调用为 0 且失败时转真实接口已禁止。
-9. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、真实 BLOGE Trace 驱动的 Feature DAG/Data Lens，以及 test-owned material 下 9 个 Case 各运行 3 次的开发业务 Oracle 和进程内 connector 调用为 0；Dataset 写入 Authority、编译产物注册与同闭包执行、字段级 source map、Tool 画布、发布候选 exact refs、部署级 network deny 和业务签署仍未完成。
+9. 查看「验收状态」。正确结论仍是 `NO_GO`：当前已证明 Stage 0 Dataset 投影、test/staging 教程分支保存与预检、Dataset 到既有 governed compiler 的确定性注册计划、source map exact-ref provenance 的内容寻址、注册后独立回读，以及同一注册闭包在真实 Spring test profile 中完成一轮 9 Case 执行；9 个 child run 全部通过且进程内真实外部调用为 0。页面另有 test-owned material 下 9 个 Case 各运行 3 次的开发业务 Oracle，但两份证据尚未合并为同一发布候选矩阵；Dataset 写入 Authority、浏览器 9×3 基线切换、字段级 source map、Tool 画布、部署级 network deny 和业务签署仍未完成。
 
 需要直接检查 Feature Trace 协议时，使用以下请求。`STRUCTURE_ONLY` 不返回节点输入、节点输出和边值；`PAYLOAD_VISIBLE` 只返回 Canonical Demo Pack 的受控演示值。两个权限态必须引用同一次 Case 语义和同一 Graph fingerprint。
 
@@ -202,7 +202,7 @@ curl -fsS 'http://localhost:8080/api/capability-studio/feature-rehearsal-baselin
 
 ![受控数据权限下的完整 Feature DAG 与 Data Lens](assets/capability-studio/capability-studio-gp05-gp06-dag-payload-zh-1440.png)
 
-保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包、Scenario Dataset、Feature Trace 或 9×3 开发基线未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支和 Feature Rehearsal 只在 test/staging 装配。教程分支 head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Tool Run 按钮。Feature Rehearsal 和 9×3 基线虽然使用真实 BLOGE Graph、`TestRunService` 和 `TestRunEvidence`，运行材料仍由非生产演示服务组装；它们尚未执行 SPIKE-A 的受治理注册产物，也不构成发布候选 `S0-AC-04` 业务证据。
+保存发生版本冲突时，页面会保留当前输入并提供「重新加载最新版本」；加载或网络失败会同时说明发生原因、影响和恢复动作。若启动脚本提示黄金数据包、Scenario Dataset、Feature Trace 或 9×3 开发基线未就绪，检查是否使用了 `--no-capability-studio`，并查看 `target/example-logs/visual-canvas-demo.log`。教程分支和 Feature Rehearsal 只在 test/staging 装配。教程分支 head 与 immutable revision 保存在当前 H2 数据库；使用同一数据库重启后继续保留，停止脚本不会主动清空。production profile 不装配这些端点，并且普通运行入口会在 DTO 反序列化前拒绝 fixture、stub、binding override、dependency behavior 和 Dataset 控制字段。当前 Scenario Dataset 是由 Golden Demo Pack 确定性生成的只读、payload-free 投影，页面尚不提供 Dataset 持久化写入或 Tool Run 按钮。服务端已有通用的受治理资产 publisher 与 candidate service：编译 source map 进入 FixtureBundle/TestSuite 内容寻址，注册后必须独立回读，suite aggregate evidence 保存可逆的完整闭包，child evidence 保存紧凑指纹绑定；真实 Spring test profile 已验证一轮 9 Case 同闭包运行。Feature Rehearsal 和页面上的 9×3 基线虽然使用真实 BLOGE Graph、`TestRunService` 和 `TestRunEvidence`，目前仍由非生产演示服务组装运行材料，尚未切换到这条候选链路，因此一轮服务端集成与页面 9×3 均不能单独构成发布候选 `S0-AC-04` 业务证据。
 
 ### 3.3 从业务能力资产组合开始
 

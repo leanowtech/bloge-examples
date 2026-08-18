@@ -90,7 +90,15 @@ miscompiled as fixtures over the Tool itself. The compiler preserves RETURN, ERR
 ordered consumption, and `MUST_NOT_CALL`, and rejects real fallback, ambiguous selectors,
 incomplete exact references, or unsupported lowerings. The governed adapter delegates to the existing
 `ScenarioGovernedCompiler` and deterministically produces FixtureBundle/TestSuite registration
-plans with a payload-free source map. A Data Lens read model also projects the existing
+plans with a payload-free source map. The source map is now lowered into a typed, sorted exact-ref
+provenance closure that participates in FixtureBundle and TestSuite content addressing. The
+governed asset publisher registers those plans only through the existing testing registry, ignores
+write receipts, and independently re-reads and re-fingerprints every fixture and suite. The
+candidate service then executes that exact suite through the existing `TestSuiteExecutionService`;
+aggregate evidence retains the full exact-ref closure, while each child run carries the exact suite
+reference plus compact provenance and source-map fingerprints so it remains below the 16 KiB child
+request metadata boundary. Legacy Scenario compilation omits this metadata and retains its previous
+content-addressed output. A Data Lens read model also projects the existing
 `TestRunEvidence` in structure-only or payload-visible modes. The test/staging-only Feature
 Rehearsal endpoint now executes an actual BLOGE graph with four `HttpResourceOperator` nodes,
 one pure aggregator, and one pure decision; Capability Studio renders the same Trace as a stable
@@ -105,8 +113,12 @@ still observe zero calls. Its composability manifest declares the four exact Res
 so execution target snapshots can distinguish a declared closure from an opaque or empty registry.
 The
 fixed 9 Case x 3 development baseline also runs nine independent business Oracles. These are
-truthfully marked development evidence: SPIKE-A registry publication and same-closure suite
-execution, field-level source maps, independently certified nested dependency closure, deployment network
+truthfully marked development evidence: the generic SPIKE-A publication/execution boundary has now
+completed a real Spring test-profile run over the same registered nine-case closure. It registered
+nine fixtures and one suite, produced nine unique passing child runs, observed zero in-process real
+external calls, and kept the reversible suite provenance manifest at 11,863 bytes under the existing
+16,384-byte metadata limit. The browser 9 x 3 baseline has not yet been switched to a release-candidate
+run of those registered assets. Field-level source maps, independently certified nested dependency closure, deployment network
 policy, and release Owner sign-off remain incomplete. To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
