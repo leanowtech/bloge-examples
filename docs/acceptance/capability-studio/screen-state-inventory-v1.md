@@ -10,7 +10,7 @@
 |---|---|---|---|
 | `LOADING` | 当前正在读取的业务对象 | 允许取消或返回 | `aria-busy`、DOM |
 | `EMPTY` | 为什么为空、需要什么前置资产 | 创建或选择推荐样例 | DOM、协议 |
-| `ERROR` | 面向业务的错误类别、发生原因、影响和恢复动作；内部错误码与原始响应默认不展示 | 原地重试，不丢草稿；恢复后清除陈旧错误和成功状态 | DOM、失败协议、技术信息不泄漏断言 |
+| `ERROR` | 面向业务的错误类别、发生原因、影响和恢复动作；错误摘要与主要恢复控件在操作失败后进入当前视口，焦点落到错误反馈或主要恢复控件；内部错误码与原始响应默认不展示 | 原地重试，不丢草稿；恢复后清除陈旧错误和成功状态 | DOM 几何与 viewport 断言、active element、失败协议、技术信息不泄漏断言 |
 | `FORBIDDEN` | 缺少的权限与可申请范围 | 发起申请或返回 | DOM、安全审计 |
 | `CONFLICT` | 本地与服务端 revision 差异 | 比较、重载、另存分支 | DOM、并发协议 |
 | `STALE` | 漂移来源和受影响资产 | 重新编译或迁移 | DOM、影响报告 |
@@ -23,7 +23,7 @@
 | `GP-01` | `/capabilities/` 能力总览 | 4 API、1 Feature、1 Tool、9 Case；主要动作是查看订单查询契约 | Demo Pack 不可用时显示业务化原因、影响和重试，不泄漏内部协议码 | `data-testid=capability-overview`；中文与英文 1440/1024/390 Chrome | `BROWSER_SMOKE_VERIFIED_READY` |
 | `GP-02` | 订单信息查询契约 | 输入、成功结果、错误、副作用、Owner、SLA、敏感度 | 契约不完整时拒绝猜测，返回总览 | `data-testid=capability-contract`；中文 1440 Chrome API 选择 | `BROWSER_SMOKE_VERIFIED_ZH` |
 | `GP-03` | 场景数据中心 | Dataset 分母、生命周期、分类、Owner、九条 Case、五项质量覆盖；选择 Case 后显示业务目标、来源、Oracle、适用契约、依赖表现与精确引用 | 空筛选可清除；网络、Schema、跨 Scope、重复引用、契约闭包、质量漂移或 Active readiness 失败时 fail closed 并提供重试 | `data-testid=capability-scenarios` / `capability-scenario-details`；严格前后端协议与 Test Kit；中英文三视口 Chrome；Tab/Space 键盘选择；真实 axe | `BROWSER_SMOKE_VERIFIED_STAGE0_PROJECTION` |
-| `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成数据库 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；数据库 CAS/重建/漂移测试；中文实际保存/预检；英文 1024 Chrome；Test Kit 实际 HTTP 互验；真实 axe | `BROWSER_SMOKE_VERIFIED_DURABLE_AUTHORITY` |
+| `GP-04` | Tutorial Branch 行为编辑器 | 以「当什么条件、依赖如何表现、持续多久」编辑；保存生成数据库 revision；预检显示未解析依赖、真实调用和 fallback | 409 保留未保存值并可重载最新版本；错误摘要与恢复按钮自动进入视口，焦点可达；断网与非法响应显示原因、影响和恢复动作 | `data-testid=capability-tutorial-branch`；数据库 CAS/重建/漂移测试；中文实际保存/预检；英文 1024 Chrome；Test Kit 实际 HTTP 互验；组件自动滚动/焦点测试；producer 真实 viewport 几何门禁；canonical candidate 复跑待完成 | `PARTIAL_DEVELOPMENT_IMPLEMENTED_CONFLICT_RECOVERY` |
 | `GP-05` | Feature DAG + Data Lens | 四 API、聚合、决策、节点状态、边值与 fingerprint 来自同一次 Trace；桌面完整展开，移动端内部滚动 | 结构权限隐藏输入、输出和边值，但保留 topology、状态与 fingerprint；Payload 权限显示受控演示数据 | `data-testid=capability-feature-rehearsal` / `feature-dag`；中英文 1440/1024/390 Chrome；几何、键盘和 axe | `BROWSER_SMOKE_VERIFIED_TRACE_PROJECTION` |
 | `GP-06` | Feature 隔离运行 | 补偿历史原始尝试为 `TIMEOUT`，fallback 后聚合与决策安全继续，Feature 最终 `PASSED` 且真实调用为 0 | 未知 Case、非法控制计划和 Fixture 未命中均失败关闭；部署级 network deny 尚未证明 | 实际 BLOGE RunTrace、4 API fail-fast connector counter、24 并发、稳定 fingerprint、真实 Chrome | `PARTIAL_TEST_OWNED_RUNTIME` |
 | `GP-07` | Tool 契约 | 输入、输出、错误、禁止结果、副作用、exact dependency 和 9 × 3 正确性目标；技术证据默认折叠 | 依赖 stale 时显示影响和迁移动作；运行失败在原位说明影响并可重试 | `data-testid=capability-tool` / `run-governed-baseline`；中文 1440/390 与英文 1024 Chrome、axe、无溢出 | `BROWSER_SMOKE_VERIFIED_PARTIAL_MATRIX` |
@@ -37,6 +37,7 @@
 - 桌面采用 240px 左侧任务导航、自适应主区和约 320px 就绪区；移动端折叠为单列任务选择器。
 - Auto Layout、边标签、数据摘要、长中文名和最长技术引用不得重叠或改变固定控件尺寸。
 - 所有任务、筛选、详情和恢复动作可用键盘完成；状态不只依赖颜色。
+- 操作触发的错误反馈不能只存在于 DOM。错误摘要必须与当前 viewport 相交，主要恢复控件必须完整位于 viewport 内，焦点必须进入错误反馈或主要恢复控件；需要用户自行滚动寻找恢复入口即为失败。
 - 截图只证明视觉状态，不能替代 DOM、协议、运行、网络和 exact-ref 断言。
 - 业务主界面不得直接显示 `NO_GO`、`NOT_RUN`、`METADATA_READY_RUNTIME_EVIDENCE_PENDING` 等内部枚举；对应机器值保留在协议或折叠技术详情中，主界面显示可行动的业务状态。
 

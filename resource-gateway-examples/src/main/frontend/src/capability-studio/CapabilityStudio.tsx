@@ -816,14 +816,23 @@ function TutorialBranchView({ fetcher, locale }: { fetcher?: CapabilityStudioFet
       <div className="capability-editor-actions"><div><small>{locale === 'zh-CN' ? '保存会创建新的不可变教程版本' : 'Saving creates a new immutable tutorial revision'}</small><span>{locale === 'zh-CN' ? '标准基线始终保持原值' : 'The canonical baseline remains unchanged'}</span></div><button type="button" className="capability-primary-action" disabled={saving || !condition || durationMs < 100 || durationMs > 30000} onClick={() => void saveAndPreflight()}>{saving ? <RefreshCw className="capability-spin" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />} {saving ? (locale === 'zh-CN' ? '正在保存并预检...' : 'Saving and checking...') : (locale === 'zh-CN' ? '保存并隔离预检' : 'Save and run isolated preflight')}</button></div>
     </section>
     {preflight && <section className="capability-preflight-success" role="status" data-testid="capability-preflight-success"><CheckCircle2 size={21} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '隔离预检通过，可以进入试跑' : 'Isolated preflight passed; ready to run'}</strong><p>{locale === 'zh-CN' ? `教程分支已保存为第 ${preflight.revision} 版，标准基线未改变。` : `Tutorial branch revision ${preflight.revision} is saved and the canonical baseline is unchanged.`}</p><dl><div><dt>{locale === 'zh-CN' ? '未解析依赖' : 'Unresolved dependencies'}</dt><dd>{preflight.unresolvedDependencies}</dd></div><div><dt>{locale === 'zh-CN' ? '真实接口调用' : 'Real external calls'}</dt><dd>{preflight.realExternalCallCount}</dd></div><div><dt>{locale === 'zh-CN' ? '失败时转真实接口' : 'Fallback to real APIs'}</dt><dd>{preflight.fallbackToReal ? (locale === 'zh-CN' ? '是' : 'Yes') : (locale === 'zh-CN' ? '已禁止' : 'Blocked')}</dd></div></dl></div></section>}
-    {error && <TutorialError error={error} locale={locale} onReload={() => void load()} />}
+    {error && <TutorialError error={error} locale={locale} onReload={() => void load()} autoFocusRecovery />}
     <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '版本技术引用' : 'Revision technical references'}</summary><dl><div><dt>Branch</dt><dd>{branch.branchId}@{branch.revision}</dd></div><div><dt>Fingerprint</dt><dd>{branch.fingerprint}</dd></div><div><dt>Baseline</dt><dd>{branch.canonicalBaselineFingerprint}</dd></div></dl></details>
   </div>;
 }
 
-function TutorialError({ error, locale, onReload }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void }) {
+function TutorialError({ error, locale, onReload, autoFocusRecovery = false }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void; autoFocusRecovery?: boolean }) {
+  const errorRef = useRef<HTMLElement>(null);
+  const recoveryButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!autoFocusRecovery) return;
+    errorRef.current?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
+    recoveryButtonRef.current?.focus();
+  }, [autoFocusRecovery, error]);
+
   const presentation = capabilityStudioErrorPresentation(error, locale, 'tutorial');
-  return <section className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
+  return <section ref={errorRef} className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
 }
 
 function asRequestError(error: unknown): CapabilityStudioRequestError {

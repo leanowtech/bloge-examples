@@ -272,6 +272,11 @@ describe('Capability Studio Stage 0 read-only slice', () => {
 
   it('keeps GP-04 edits and gives a recovery action on optimistic revision conflict', async () => {
     const fetcher = tutorialFetcher({ conflict: true });
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
     await render(fetcher);
     await act(async () => buttonWithText('Isolated rehearsal setup').click());
     await settle();
@@ -296,6 +301,8 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     expect(duration.value).toBe('5100');
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+    expect(document.activeElement).toBe(query<HTMLButtonElement>('[data-testid="capability-tutorial-error"] button'));
   });
 
   it('presents a generic tutorial operation failure as a safe validation outcome', async () => {
