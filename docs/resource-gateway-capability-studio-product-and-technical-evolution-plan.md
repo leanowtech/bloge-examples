@@ -842,7 +842,7 @@ DAG 同时调用订单、责任、规则和补偿接口，进行字段标准化�
 | `GP-06` | 运行当前特征场景 | 历史补偿依赖的原始尝试显示 `TIMEOUT`，BLOGE fallback 被明确标识；Feature 最终状态为 `PASSED`，输出 `action=MANUAL_REVIEW`、`informationGap=COMPENSATION_HISTORY_TIMEOUT` | 不能把超时投影为空数据；聚合与决策节点按降级输入继续执行；真实外部调用数为 0；Trace 同时保留失败尝试和恢复后结果 | RunTrace attempt/final 断言、Feature Oracle、Data Lens、mock 标记、network deny |
 | `GP-07` | 打开工具契约 | 显示输入、输出、错误、禁止结果、副作用、精确依赖和“9 场景 × 3 轮”验证目标 | 默认不要求技术 ID 或 Raw JSON；技术坐标默认折叠；主操作唯一且可被键盘触发 | Contract projection、引用闭包、DOM/可访问名称断言 |
 | `GP-08` | 在工具页运行全部 9 个 Canonical Case | 同屏显示 9/9 场景、9/9 业务 Oracle、3/3 轮次、27/27 业务断言、0 进程内真实调用；展示 3 个 suite run、9 × 3 Case 矩阵、同 Case 三轮稳定的业务结果指纹和 timeout/duplicate/forbidden-write 专项证明，并并列“开发验证通过”与“发布仍不可验收”；部署已绑定候选时显示候选制品与执行意图 | 严格覆盖固定 9 Case × 3 轮；3 个 suite `runId` 和 27 个 child `runId` 全部唯一；三轮 publication/provenance/source-map、candidate intent 与逐 Case semantic fingerprint 稳定；child evidence 必须经既有授权 API 回读且完整签名可独立验证；Canonical `RETURN` 必须作为 descriptor-backed transport response 经过同一 `ResourceRegistry`、`HttpResourceOperator` 和输出映射链，当前样例为 `verificationLevel=DEVELOPMENT_VERIFIED / evidenceClass=CERTIFIABLE`；未绑定候选时显示四项限制，绑定后只保留目标环境认证、部署级 egress 和 Owner 签署三项限制；始终保持 `releaseGateStatus=NO_GO` | 受治理 Batch API、v3 严格 Schema、独立 Test Kit verifier、候选/意图篡改与未解析 Resource 负向测试、Spring 集成、真实 Chrome、axe、桌面/移动截图 |
-| `GP-09` | 查看场景数据质量与影响 | 显示来源、脱敏、新鲜度、覆盖、复用和受影响资产 | 每个 Active Case 均有 Owner、Oracle 和适用契约；无孤立数据 | Quality projection、impact graph |
+| `GP-09` | 从场景数据中心进入「质量与影响」，选择一条 Case 查看其来源、正确性判定和受影响资产 | 首屏必须同时说明「五项闭包覆盖是否齐全」和「当前为何仍不可准入」；逐 Case 展示 Owner、Source、Oracle、适用 Contract、运行依赖、复用数与影响路径；脱敏和新鲜度使用独立状态，不得混成一个“数据安全”标签 | 投影必须严格闭合 Dataset、9 个 Case、Source、Oracle、Contract、runtime dependency 和 Target exact refs；节点、边、Case 与汇总数量可独立复算且无孤立 Case。`READY` 只允许在 Active Case 大于 0、五项覆盖均为 100%、新鲜度为 `CURRENT`、无 blocker、无孤立 Case 时出现；当前黄金样例必须如实显示 9 个 `DRAFT`、0 个 `ACTIVE`、新鲜度 `UNVERIFIED`、准入 `BLOCKED`。`PAYLOAD_NOT_EXPORTED` 只证明当前投影没有导出 Payload，不得宣称源数据已经完成语义脱敏 | 严格 Quality/Impact v1 Schema、独立 Test Kit 内容指纹与图闭包复算、服务端确定性/篡改/授权测试、前端选择与恢复测试、真实 Chrome 中英文/桌面/移动/键盘/axe/溢出证据 |
 | `GP-10` | 在 Tool 的 9 × 3 Case 矩阵选择一轮运行，打开证据，再进入失败或降级节点 | 首屏明确说明“读取原运行，没有重新执行”；展示原 `runId`、Case、焦点节点，以及 Tool、Contract、Dataset、runtime target、Binding Plan、Fixture、Behavior、依赖、source map、provenance 和结构级 Data Lens 的完整 exact closure；Feature 页只绘制焦点所属 graph path，完整 Data Lens 不丢失外层 Tool 节点 | GET 只能读取已持久化 child run，调用次数为 0；同一 Run/Case 连续读取 response bytes 与 projection fingerprint 完全相同；URL 必须绑定 `task/runId/scenarioId/nodeId`，刷新、前进、后退和从 Feature 返回 Tool 后仍指向同一 Run/Case/Node；结构视图不得包含 Payload；未知 Run/Case、合同漂移、引用缺失、指纹篡改、无权限和审计故障必须失败关闭；当前 Canonical timeout 子图恰好为 6 节点，完整 Data Lens 恰好为 7 节点，`fallbackToReal=false` | 严格 v1 Schema、独立 Test Kit 对真实 wire bytes 复算、服务端零重跑/确定性/篡改/授权测试、前端 URL 与错误恢复测试、真实 Spring + Chrome 刷新/返回测试、1440/1280/390 DOM/视觉/溢出证据 |
 
 步骤失败时不能只显示错误码。每个失败状态必须同时展示：发生了什么、当前影响、主要恢复动作、是否保留未保存内容。
@@ -876,6 +876,23 @@ DAG 同时调用订单、责任、规则和补偿接口，进行字段标准化�
 | 非演示环境 | production profile 或 demo 开关关闭 | 端点不装配，不存在「仅靠权限即可激活」的隐藏路径 | production 中返回任何演示 Trace 或 Payload | production 装配否定测试、路由扫描、部署配置快照 |
 
 上表的 401/403 不能只验证 HTTP 状态。还必须证明认证/授权发生在 Graph 执行之前，拒绝记录写入失败时整个请求失败关闭，且错误投影、前端恢复态和服务日志都不携带 Payload。
+
+#### 9.6.3 场景数据质量与影响验收合同
+
+GP-09 解决的不是「有没有质量百分比」，而是三个更严格的问题：这批数据能否被准入、为什么；任一 Case 变化会影响什么；页面对数据保护状态的表述是否可被证据支持。覆盖率、准入状态、数据新鲜度和 Payload 边界必须分开判定。
+
+| 验收面 | 机器可观测标准 | 直接失败条件 | 必须证据 |
+|---|---|---|---|
+| 引用闭包 | Dataset、Case、Source、Oracle、Contract、runtime dependency、Target 全部使用 exact ref；同一身份只出现一次；Case、节点和边稳定排序；每条边的端点存在 | 用名称拼接关系、缺少 fingerprint/Scope/Authority、重复节点、悬空边、汇总数量与图不一致 | 严格 Schema、Test Kit exact-ref/排序/去重/基数复算、服务端篡改测试 |
+| Case 完备性 | 每条 Case 必须有 Owner、Source、Oracle、至少一个适用 Contract，以及完整的 runtime-control dependency；`impactedAssetCount` 必须等于该 Case 的唯一 Contract、runtime dependency 与 Target 并集 | 任一 Case 孤立、责任人或正确性判定缺失、影响数量由前端猜测 | 服务端投影测试、Test Kit 闭包复算、UI Case 选择断言 |
+| 准入状态 | `READY` 必须同时满足：`activeCaseCount > 0`、五项覆盖均为 100%、新鲜度为 `CURRENT`、`orphanCaseCount=0` 且 blocker 为空；`BLOCKED` 至少有一个稳定 blocker 和业务可读说明 | 只有覆盖率 100% 就显示 READY；0 个 Active Case 仍显示可发布；阻断原因只给错误码 | 状态机负向测试、矛盾组合 mutation test、首屏 DOM 断言 |
+| 当前黄金样例 | 固定显示 9 个 `DRAFT`、0 个 `ACTIVE`、0 个孤立 Case；五项覆盖均为 100%；新鲜度为 `UNVERIFIED`；blocker 至少包含 `NO_ACTIVE_CASES` 与 `FRESHNESS_EVIDENCE_MISSING`；最终准入为 `BLOCKED` | 为演示好看而把 Draft 改成 Active、伪造复核时间或隐藏 blocker | 固定数据断言、截图、协议快照和 Test Kit verifier |
+| 新鲜度 | Source 没有可信复核时间时只能是 `UNVERIFIED`；未来引入 Authority 后才可依据受信复核时间和策略窗口计算 `CURRENT/STALE` | 用当前系统时间或页面加载时间冒充复核时间；无时间证据仍显示 CURRENT | Authority/时间来源断言、边界时钟测试、过期和时钟漂移测试 |
+| Payload 与脱敏 | 普通质量投影的 `payloadExposure` 固定为 `NONE`，递归扫描不得出现 request、response、body、fixture、mock、replay、secret 等业务值字段；页面必须明确「未导出 Payload」不等于「源数据已语义脱敏」 | 用 `PAYLOAD_NOT_EXPORTED` 宣称已完成脱敏；值进入响应、DOM、URL、日志或 Evidence | Schema/Test Kit 泄漏扫描、Controller 负向测试、浏览器 DOM/URL 扫描 |
+| 影响交互 | 选择 Case 后只高亮其 Source、Oracle、适用 Contract、runtime dependency 与 Target；业务名称优先，技术坐标默认折叠；桌面展示可扫读关系图，移动端降级为稳定关系列表 | 选择后影响路径不变、节点被遮挡、主视图暴露原始 ID、移动端横向溢出 | 前端交互测试、真实浏览器 DOM/像素/键盘/读屏检查 |
+| 失败与恢复 | loading、协议错误、越权、空结果、stale 和服务错误均说明发生了什么、影响和恢复动作；失败不能回退到前端本地推断的“近似影响图” | API 失败后仍展示旧结论却不标 stale；静默用 Demo 常量补图 | 错误态测试、断网/篡改/刷新浏览器测试 |
+
+当前黄金样例通过的是「投影真实性」验收，不是「数据已准入」验收。它应明确证明系统不会把 100% 元数据覆盖误报为业务数据已经可发布；只有后续 Dataset Authority 提供可信复核时间、生命周期变更和 Owner 审批后，才允许生成新的 `READY` 证据。
 
 ## 10. 技术架构
 
