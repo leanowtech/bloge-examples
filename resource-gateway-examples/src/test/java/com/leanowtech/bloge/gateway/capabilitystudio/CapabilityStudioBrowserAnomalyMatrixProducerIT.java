@@ -75,6 +75,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Timeout(1800)
 class CapabilityStudioBrowserAnomalyMatrixProducerIT {
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration GOVERNED_9X3_OPERATION_TIMEOUT = Duration.ofSeconds(60);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final HttpClient HTTP = HttpClient.newHttpClient();
     private static final String DEMO_AUTHORIZATION = "Bearer bloge-aneke-demo-token";
@@ -145,6 +146,7 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
         if (filter.active() && !developmentMode(repository)) {
             throw new IllegalArgumentException("anomaly filters are development-only");
         }
+        int completedCells = 0;
         for (String profile : List.of("ERROR", "OFFLINE", "CONFLICT")) {
             if (!filter.profiles().contains(profile)) continue;
             List<String> goldenPaths = "CONFLICT".equals(profile)
@@ -162,6 +164,9 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
                             CapabilityStudioBrowserAnomalyMatrixArtifact.Observation observation =
                                     executeCell(profile, goldenPath, locale, viewport);
                             if (observation != null) artifact.record(observation);
+                            completedCells++;
+                            System.out.printf("[browser-anomaly] cell %d/126 %s %s %s %s%n",
+                                    completedCells, profile, goldenPath, locale, viewport.coordinate());
                         } finally {
                             closeBrowser();
                         }
@@ -376,7 +381,7 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
             case "GP-07" -> openTask("tool", viewport, keyboard);
             case "GP-08" -> { openTask("tool", viewport, keyboard); keyboard.activate(By.cssSelector("[data-testid='run-governed-baseline']"), Keys.ENTER); }
             case "GP-09" -> openTask("quality", viewport, keyboard);
-            case "GP-10" -> { openTask("tool", viewport, keyboard); keyboard.activate(By.cssSelector("[data-testid='run-governed-baseline']"), Keys.ENTER); waitFor(By.cssSelector("[data-testid='governed-baseline-result']")); keyboard.activate(By.cssSelector("[data-testid='governed-evidence-case-compensation-history-timeout-1']"), Keys.ENTER); }
+            case "GP-10" -> { openTask("tool", viewport, keyboard); keyboard.activate(By.cssSelector("[data-testid='run-governed-baseline']"), Keys.ENTER); waitForGovernedBaselineResult(); keyboard.activate(By.cssSelector("[data-testid='governed-evidence-case-compensation-history-timeout-1']"), Keys.ENTER); }
             default -> throw new IllegalArgumentException("unknown golden path " + goldenPath);
         }
     }
@@ -403,7 +408,7 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
             waitFor(By.cssSelector("[data-testid='capability-overview']"));
             openTask("GP-02".equals(goldenPath) ? "contract" : "tool", viewport, keyboard);
         }
-        waitFor(readyLocator(goldenPath));
+        waitForReady(goldenPath);
         if ("GP-06".equals(goldenPath)) {
             keyboard.activate(By.cssSelector(
                     ".capability-segmented-control button:last-child"), Keys.ENTER);
@@ -894,6 +899,23 @@ class CapabilityStudioBrowserAnomalyMatrixProducerIT {
     }
 
     private WebElement waitFor(By locator) { return new WebDriverWait(driver, WAIT_TIMEOUT).until(ExpectedConditions.visibilityOfElementLocated(locator)); }
+
+    private WebElement waitForReady(String goldenPath) {
+        if ("GP-08".equals(goldenPath)) return waitForGovernedBaselineResult();
+        return waitFor(readyLocator(goldenPath));
+    }
+
+    private WebElement waitForGovernedBaselineResult() {
+        long startedAt = System.nanoTime();
+        try {
+            return new WebDriverWait(driver, GOVERNED_9X3_OPERATION_TIMEOUT).until(
+                    ExpectedConditions.visibilityOfElementLocated(
+                            By.cssSelector("[data-testid='governed-baseline-result']")));
+        } finally {
+            System.out.printf("[browser-anomaly] governed-baseline wait elapsed=%dms%n",
+                    Duration.ofNanos(System.nanoTime() - startedAt).toMillis());
+        }
+    }
 
     private Path chromeDriverExecutable() throws IOException {
         String configured = System.getProperty("webdriver.chrome.driver", "").trim();

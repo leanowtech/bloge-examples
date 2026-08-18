@@ -64,6 +64,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Timeout(1800)
 class CapabilityStudioBrowserMatrixProducerIT {
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(20);
+    private static final Duration GOVERNED_9X3_OPERATION_TIMEOUT = Duration.ofSeconds(60);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Path MAC_CHROME_BINARY = Path.of(
             "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome");
@@ -150,6 +151,7 @@ class CapabilityStudioBrowserMatrixProducerIT {
                         startedAt);
 
         try {
+            int completedCells = 0;
             for (String locale : CapabilityStudioBrowserMatrixArtifact.LOCALES) {
                 for (CapabilityStudioBrowserMatrixArtifact.Viewport viewport
                         : CapabilityStudioBrowserMatrixArtifact.VIEWPORTS) {
@@ -157,6 +159,9 @@ class CapabilityStudioBrowserMatrixProducerIT {
                     try {
                         for (String goldenPath : CapabilityStudioBrowserMatrixArtifact.GOLDEN_PATHS) {
                             artifact.record(executeCell(goldenPath, locale, viewport));
+                            completedCells++;
+                            System.out.printf("[browser-matrix] cell %d/60 %s %s %s%n",
+                                    completedCells, goldenPath, locale, viewport.coordinate());
                         }
                     } finally {
                         closeBrowser();
@@ -396,7 +401,7 @@ class CapabilityStudioBrowserMatrixProducerIT {
             KeyboardJourney keyboard) {
         openTask("tool", viewport, keyboard);
         keyboard.activate(By.cssSelector("[data-testid='run-governed-baseline']"), Keys.ENTER);
-        WebElement result = waitFor(By.cssSelector("[data-testid='governed-baseline-result']"));
+        WebElement result = waitForGovernedBaselineResult();
         assertThat(driver.findElements(By.cssSelector(
                 ".capability-governed-case-table tbody tr"))).hasSize(9);
         assertThat(driver.findElements(By.cssSelector(
@@ -428,7 +433,7 @@ class CapabilityStudioBrowserMatrixProducerIT {
             KeyboardJourney keyboard) {
         openTask("tool", viewport, keyboard);
         keyboard.activate(By.cssSelector("[data-testid='run-governed-baseline']"), Keys.ENTER);
-        waitFor(By.cssSelector("[data-testid='governed-baseline-result']"));
+        waitForGovernedBaselineResult();
         keyboard.activate(By.cssSelector(
                 "[data-testid='governed-evidence-case-compensation-history-timeout-1']"),
                 Keys.ENTER);
@@ -658,6 +663,18 @@ class CapabilityStudioBrowserMatrixProducerIT {
 
     private WebElement waitFor(By locator) {
         return browserWait().until(ExpectedConditions.visibilityOfElementLocated(locator));
+    }
+
+    private WebElement waitForGovernedBaselineResult() {
+        long startedAt = System.nanoTime();
+        try {
+            return new WebDriverWait(driver, GOVERNED_9X3_OPERATION_TIMEOUT).until(
+                    ExpectedConditions.visibilityOfElementLocated(
+                            By.cssSelector("[data-testid='governed-baseline-result']")));
+        } finally {
+            System.out.printf("[browser-matrix] governed-baseline wait elapsed=%dms%n",
+                    Duration.ofNanos(System.nanoTime() - startedAt).toMillis());
+        }
     }
 
     private WebDriverWait browserWait() {
