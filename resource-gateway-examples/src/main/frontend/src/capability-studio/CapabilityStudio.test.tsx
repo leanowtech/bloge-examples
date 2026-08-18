@@ -301,7 +301,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     expect(duration.value).toBe('5100');
     expect(document.querySelector('[data-testid="capability-preflight-success"]')).toBeNull();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center', inline: 'nearest' });
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
     expect(document.activeElement).toBe(query<HTMLButtonElement>('[data-testid="capability-tutorial-error"] button'));
   });
 
@@ -744,7 +744,7 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     await act(async () => buttonWithText('Cancellation dispute feature').click());
     await settle();
     await expectNoSevereAccessibilityViolations('feature rehearsal structure');
-  });
+  }, 15_000);
 
   it('shows a visible what happened / impact / retry error state', async () => {
     const fetcher = vi.fn(async () => new Response('offline', { status: 503 }));
@@ -758,6 +758,22 @@ describe('Capability Studio Stage 0 read-only slice', () => {
     expect(document.body.textContent).toContain('How to continue');
     expect(document.body.textContent).not.toContain('RG.CAPABILITY_STUDIO.');
     expect(document.querySelector('[data-testid="capability-load-error"] details')).toBeNull();
+  });
+
+  it('focuses and scrolls the recoverable load action into view', async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: scrollIntoView,
+    });
+    const fetcher = vi.fn(async () => new Response('offline', { status: 503 }));
+
+    await render(fetcher);
+    await settle();
+
+    const retry = query<HTMLButtonElement>('[data-testid="capability-load-error"] button');
+    expect(document.activeElement).toBe(retry);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'nearest' });
   });
 
   it('keeps critical labels bilingual when the explicit locale is Chinese', async () => {

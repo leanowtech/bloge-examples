@@ -528,6 +528,20 @@ interface CapabilityStudioErrorPresentation {
   recoveryAction: string;
 }
 
+function useRecoveryActionFocus(recoverableError: Error | null | undefined) {
+  const recoveryButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!recoverableError) return;
+    const recoveryButton = recoveryButtonRef.current;
+    if (!recoveryButton) return;
+    recoveryButton.focus({ preventScroll: true });
+    recoveryButton.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [recoverableError]);
+
+  return recoveryButtonRef;
+}
+
 const INTERNAL_PROTOCOL_TEXT = [
   /\bRG(?:\.[A-Z0-9_-]+)+\b/i,
   /\bHTTP\s*[:=]?\s*\d{3}\b/i,
@@ -634,7 +648,8 @@ function capabilityStudioErrorPresentation(
 
 function ScenarioDatasetError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
   const presentation = capabilityStudioErrorPresentation(error, locale, 'scenario');
-  return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
+  const recoveryButtonRef = useRecoveryActionFocus(error);
+  return <div className="capability-view capability-error-state capability-scenario-error" data-testid="capability-scenario-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h3>{locale === 'zh-CN' ? '场景数据暂时不可用' : 'Scenario data is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载场景数据' : 'Retry scenario dataset'}</button></div>;
 }
 
 function QualityImpactView({ fetcher, locale }: { fetcher?: CapabilityStudioFetcher; locale: 'en' | 'zh-CN' }) {
@@ -709,7 +724,8 @@ function QualityImpactGraphNode({ node, selected, locale }: { node: ScenarioQual
 
 function QualityImpactError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
   const presentation = capabilityStudioErrorPresentation(error, locale, 'quality');
-  return <div className="capability-view capability-error-state capability-quality-impact-error" data-testid="capability-quality-impact-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{locale === 'zh-CN' ? '业务质量检查' : 'Business quality check'} · {presentation.category}</p><h3>{locale === 'zh-CN' ? '质量与影响暂时不可用' : 'Quality & impact is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载质量与影响' : 'Retry quality & impact'}</button></div>;
+  const recoveryButtonRef = useRecoveryActionFocus(error);
+  return <div className="capability-view capability-error-state capability-quality-impact-error" data-testid="capability-quality-impact-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{locale === 'zh-CN' ? '业务质量检查' : 'Business quality check'} · {presentation.category}</p><h3>{locale === 'zh-CN' ? '质量与影响暂时不可用' : 'Quality & impact is unavailable'}</h3><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载质量与影响' : 'Retry quality & impact'}</button></div>;
 }
 
 function displayQualityStatus(value: string, locale: 'en' | 'zh-CN'): string { return value === 'BLOCKED' ? (locale === 'zh-CN' ? '准入阻断' : 'Admission blocked') : value === 'READY' ? (locale === 'zh-CN' ? '可进入准入' : 'Ready for admission') : value === 'STALE' ? (locale === 'zh-CN' ? '质量已过期' : 'Quality stale') : value; }
@@ -816,23 +832,15 @@ function TutorialBranchView({ fetcher, locale }: { fetcher?: CapabilityStudioFet
       <div className="capability-editor-actions"><div><small>{locale === 'zh-CN' ? '保存会创建新的不可变教程版本' : 'Saving creates a new immutable tutorial revision'}</small><span>{locale === 'zh-CN' ? '标准基线始终保持原值' : 'The canonical baseline remains unchanged'}</span></div><button type="button" className="capability-primary-action" disabled={saving || !condition || durationMs < 100 || durationMs > 30000} onClick={() => void saveAndPreflight()}>{saving ? <RefreshCw className="capability-spin" size={16} aria-hidden="true" /> : <Save size={16} aria-hidden="true" />} {saving ? (locale === 'zh-CN' ? '正在保存并预检...' : 'Saving and checking...') : (locale === 'zh-CN' ? '保存并隔离预检' : 'Save and run isolated preflight')}</button></div>
     </section>
     {preflight && <section className="capability-preflight-success" role="status" data-testid="capability-preflight-success"><CheckCircle2 size={21} aria-hidden="true" /><div><strong>{locale === 'zh-CN' ? '隔离预检通过，可以进入试跑' : 'Isolated preflight passed; ready to run'}</strong><p>{locale === 'zh-CN' ? `教程分支已保存为第 ${preflight.revision} 版，标准基线未改变。` : `Tutorial branch revision ${preflight.revision} is saved and the canonical baseline is unchanged.`}</p><dl><div><dt>{locale === 'zh-CN' ? '未解析依赖' : 'Unresolved dependencies'}</dt><dd>{preflight.unresolvedDependencies}</dd></div><div><dt>{locale === 'zh-CN' ? '真实接口调用' : 'Real external calls'}</dt><dd>{preflight.realExternalCallCount}</dd></div><div><dt>{locale === 'zh-CN' ? '失败时转真实接口' : 'Fallback to real APIs'}</dt><dd>{preflight.fallbackToReal ? (locale === 'zh-CN' ? '是' : 'Yes') : (locale === 'zh-CN' ? '已禁止' : 'Blocked')}</dd></div></dl></div></section>}
-    {error && <TutorialError error={error} locale={locale} onReload={() => void load()} autoFocusRecovery />}
+    {error && <TutorialError error={error} locale={locale} onReload={() => void load()} />}
     <details className="capability-technical-details"><summary><ChevronDown size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '版本技术引用' : 'Revision technical references'}</summary><dl><div><dt>Branch</dt><dd>{branch.branchId}@{branch.revision}</dd></div><div><dt>Fingerprint</dt><dd>{branch.fingerprint}</dd></div><div><dt>Baseline</dt><dd>{branch.canonicalBaselineFingerprint}</dd></div></dl></details>
   </div>;
 }
 
-function TutorialError({ error, locale, onReload, autoFocusRecovery = false }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void; autoFocusRecovery?: boolean }) {
-  const errorRef = useRef<HTMLElement>(null);
-  const recoveryButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    if (!autoFocusRecovery) return;
-    errorRef.current?.scrollIntoView?.({ block: 'center', inline: 'nearest' });
-    recoveryButtonRef.current?.focus();
-  }, [autoFocusRecovery, error]);
-
+function TutorialError({ error, locale, onReload }: { error: CapabilityStudioRequestError; locale: 'en' | 'zh-CN'; onReload: () => void }) {
+  const recoveryButtonRef = useRecoveryActionFocus(error);
   const presentation = capabilityStudioErrorPresentation(error, locale, 'tutorial');
-  return <section ref={errorRef} className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
+  return <section className="capability-operation-error" role="alert" data-testid="capability-tutorial-error"><AlertTriangle size={20} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><div className="capability-operation-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '当前影响' : 'Current impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '恢复动作' : 'Recovery action'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={onReload}><RefreshCw size={15} aria-hidden="true" /> {error.status === 409 ? (locale === 'zh-CN' ? '重新加载最新版本' : 'Reload latest revision') : (locale === 'zh-CN' ? '重新加载教程分支' : 'Reload tutorial branch')}</button></div></section>;
 }
 
 function asRequestError(error: unknown): CapabilityStudioRequestError {
@@ -922,6 +930,7 @@ function FeatureRehearsalView({ asset, fetcher, text, locale, storedEvidence, st
   const safeErrorPresentation = error && errorPresentation
     ? capabilityStudioErrorPresentation(error, locale, 'feature', errorPresentation)
     : null;
+  const recoveryButtonRef = useRecoveryActionFocus(error && !loading ? error : null);
 
   return <div className="capability-view" data-testid="capability-feature-rehearsal">
     <ViewHeading kicker="GP-05 / GP-06" title={text(asset.name)} description={locale === 'zh-CN' ? '从业务场景进入特征加工图，并沿同一次运行查看每个节点和数据边。' : 'Start from a business scenario, inspect the feature DAG, and follow the same run through every node and data edge.'} status={storedEvidenceRequested ? (locale === 'zh-CN' ? '精确证据 · 只读' : 'EXACT EVIDENCE · READ-ONLY') : (locale === 'zh-CN' ? '运行态只读' : 'RUN VIEW · READ-ONLY')} />
@@ -931,7 +940,7 @@ function FeatureRehearsalView({ asset, fetcher, text, locale, storedEvidence, st
       {storedEvidenceRequested && <button type="button" className="capability-secondary-action capability-return-tool" onClick={onReturnTool}><Wrench size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '返回本次 Tool 证据' : 'Return to Tool evidence'}</button>}
     </section>
     {loading && <div className="capability-feature-state" role="status" aria-live="polite"><RefreshCw className="capability-spin" size={18} aria-hidden="true" /> {locale === 'zh-CN' ? '正在加载特征运行和数据视图...' : 'Loading feature run and data lens...'}</div>}
-    {!loading && error && safeErrorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{safeErrorPresentation.category}</p><strong>{storedEvidenceRequested ? (locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read') : (locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load')}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{safeErrorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{safeErrorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{safeErrorPresentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={storedEvidenceRequested ? onRetryExact : () => void load(caseId, permission)}><RefreshCw size={15} aria-hidden="true" /> {storedEvidenceRequested ? (locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence') : (locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario')}</button></div></section>}
+    {!loading && error && safeErrorPresentation && <section className="capability-operation-error capability-feature-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{safeErrorPresentation.category}</p><strong>{storedEvidenceRequested ? (locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read') : (locale === 'zh-CN' ? '特征演练暂时无法加载' : 'Feature rehearsal could not load')}</strong><div className="capability-operation-error-grid"><div><small>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</small><p>{safeErrorPresentation.whatHappened}</p></div><div><small>{locale === 'zh-CN' ? '影响' : 'Impact'}</small><p>{safeErrorPresentation.impact}</p></div><div><small>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</small><p>{safeErrorPresentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={storedEvidenceRequested ? onRetryExact : () => void load(caseId, permission)}><RefreshCw size={15} aria-hidden="true" /> {storedEvidenceRequested ? (locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence') : (locale === 'zh-CN' ? '重试当前场景' : 'Retry current scenario')}</button></div></section>}
     {!loading && projection && <FeatureRehearsalContent projection={projection} selectedCase={selectedCase} locale={locale} text={text} focusNodeId={storedEvidence?.focusNodeId} exactEvidence={storedEvidenceRequested} />}
   </div>;
 }
@@ -1099,12 +1108,14 @@ function ToolGovernedBaselineView({ asset, text, locale, projection, error, load
 
 function GovernedBaselineError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
   const presentation = capabilityStudioErrorPresentation(error, locale, 'governed');
-  return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
+  const recoveryButtonRef = useRecoveryActionFocus(error);
+  return <section className="capability-operation-error capability-governed-error" role="alert"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '本次受治理验证未完成' : 'The governed verification did not complete'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重新运行' : 'Run again'}</button></div></section>;
 }
 
 function GovernedRunEvidenceError({ error, locale, onRetry }: { error: Error; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
   const presentation = capabilityStudioErrorPresentation(error, locale, 'evidence');
-  return <section className="capability-operation-error capability-exact-evidence-error" role="alert" data-testid="governed-run-evidence-error"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence'}</button></div></section>;
+  const recoveryButtonRef = useRecoveryActionFocus(error);
+  return <section className="capability-operation-error capability-exact-evidence-error" role="alert" data-testid="governed-run-evidence-error"><AlertTriangle size={19} aria-hidden="true" /><div><p className="capability-kicker">{presentation.category}</p><strong>{locale === 'zh-CN' ? '精确运行证据暂时无法读取' : 'Exact run evidence could not be read'}</strong><div className="capability-operation-error-grid"><div><b>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</b><p>{presentation.whatHappened}</p></div><div><b>{locale === 'zh-CN' ? '影响' : 'Impact'}</b><p>{presentation.impact}</p></div><div><b>{locale === 'zh-CN' ? '如何恢复' : 'Recovery'}</b><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-secondary-action" onClick={onRetry}><RefreshCw size={15} aria-hidden="true" /> {locale === 'zh-CN' ? '重试精确证据' : 'Retry exact evidence'}</button></div></section>;
 }
 
 function GovernedRunEvidencePanel({ evidence, locale, onOpenGraph }: { evidence: GovernedRunEvidenceProjection; locale: 'en' | 'zh-CN'; onOpenGraph: (evidence: GovernedRunEvidenceProjection) => void }) {
@@ -1259,5 +1270,6 @@ function EmptyEvidence({ locale }: { locale: 'en' | 'zh-CN' }) { return <section
 
 function LoadError({ error, locale, onRetry }: { error: Error | null; locale: 'en' | 'zh-CN'; onRetry: () => void }) {
   const presentation = capabilityStudioErrorPresentation(error, locale, 'load');
-  return <main className="capability-studio capability-studio-state capability-error-state" data-testid="capability-load-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h2>{locale === 'zh-CN' ? '能力设计数据暂时不可用' : 'Capability Studio data is unavailable'}</h2><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载' : 'Retry loading'}</button></main>;
+  const recoveryButtonRef = useRecoveryActionFocus(error);
+  return <main className="capability-studio capability-studio-state capability-error-state" data-testid="capability-load-error"><div className="capability-error-icon"><AlertTriangle size={23} aria-hidden="true" /></div><p className="capability-kicker">{presentation.category}</p><h2>{locale === 'zh-CN' ? '能力设计数据暂时不可用' : 'Capability Studio data is unavailable'}</h2><div className="capability-error-grid"><div><strong>{locale === 'zh-CN' ? '发生了什么' : 'What happened'}</strong><p>{presentation.whatHappened}</p></div><div><strong>{locale === 'zh-CN' ? '影响' : 'Impact'}</strong><p>{presentation.impact}</p></div><div><strong>{locale === 'zh-CN' ? '如何继续' : 'How to continue'}</strong><p>{presentation.recoveryAction}</p></div></div><button ref={recoveryButtonRef} type="button" className="capability-primary-action" onClick={onRetry}><RefreshCw size={16} aria-hidden="true" /> {locale === 'zh-CN' ? '重试加载' : 'Retry loading'}</button></main>;
 }
