@@ -125,7 +125,7 @@ class VisualCanvasDemoScriptTest {
                 "$preflight.fingerprint == $branch.fingerprint",
                 ".schemaVersion == \"resource-gateway.capability-studio.feature-rehearsal.v1\"",
                 ".scenario.id == \"case-compensation-history-timeout\"",
-                ".run.status == \"TIMED_OUT\"",
+                ".run.status == \"PASSED\"",
                 ".run.realExternalCallCount == 0",
                 ".dataLens.permissionMode == \"STRUCTURE_ONLY\"",
                 "(.dataLens.nodes | length) == 6",
@@ -134,6 +134,7 @@ class VisualCanvasDemoScriptTest {
                 ".evidenceKind == \"DEVELOPMENT_TEST_OWNED\"",
                 ".caseCount == 9 and .roundCount == 3 and .runCount == 27",
                 "[.cases[].oracle.status] | all(. == \"PASS\")",
+                "[.cases[].rounds[].status] | all(. == \"PASSED\")",
                 "[.cases[].rounds[].realExternalCallCount] | all(. == 0)",
                 "[.cases[].rounds[].runId] | unique | length",
                 "[.operators[].sideEffectType] | all(. != \"WRITE\" and . != \"MIXED\")");

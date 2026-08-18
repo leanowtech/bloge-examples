@@ -172,9 +172,14 @@ Authority. Those remain separate release gates.
 `CapabilityStudioFeatureRehearsalBaselineVerifier` verifies the separate payload-free
 `DEVELOPMENT_TEST_OWNED` 9 Case × 3 round projection. Its strict Schema fixes the Baseline and
 Graph identities, Case order, counts, and wire shape. The semantic verifier then requires 27
-unique Run IDs, three stable semantic fingerprints per Case, the expected timeout status only for
-the timeout Case, exact Case-to-Oracle assertion binding, all Oracles passing, zero declared real
-calls, the exact six operator footprints, and no `WRITE` or `MIXED` side effects.
+unique Run IDs, three stable semantic fingerprints per Case, final `PASSED` status for every
+Feature run, exact Case-to-Oracle assertion binding, all Oracles passing, zero declared real calls,
+the exact six operator footprints, and no `WRITE` or `MIXED` side effects. For the timeout Case,
+the Oracle records the dependency attempt `TIMEOUT`, BLOGE fallback, and final `PASSED` outcome;
+the current service must not misreport the component timeout as the Feature's final status. The v1
+verifier remains backward-compatible with an older receipt only when all three rounds of the one
+designated timeout Case consistently use `TIMED_OUT`; mixed rounds and `TIMED_OUT` on any other
+Case fail closed.
 
 ```java
 CapabilityStudioFeatureRehearsalBaselineVerifier verifier =
@@ -194,7 +199,7 @@ execution, deployment egress denial, environment binding, or Owner sign-off.
 
 `CapabilityStudioGovernedBaselineVerifier` verifies the payload-free receipt returned by
 `POST /api/capability-studio/governed-baseline`. The Test Kit packages the strict
-`resource-gateway.capability-studio.governed-baseline.v1` schema, so this check does not require
+`resource-gateway.capability-studio.governed-baseline.v2` schema, so this check does not require
 the Spring Boot gateway or its implementation classes.
 
 ```java
@@ -209,9 +214,12 @@ if (!result.verified()) {
 
 For `PASSED`, verification requires the complete 9 Case x 3 round receipt: three unique suite run
 IDs, nine canonical case IDs, 27 unique child run IDs, rounds `1`, `2`, and `3` for every case,
-`PASSED` throughout, zero real external calls, and the three declared limitations. For
-`FAILED_CLOSED`, the receipt must contain zero suite/child run counts, null call and fingerprint
-fields, a null publication, empty rounds/cases, and at least one diagnostic. Neither state is
+`PASSED` throughout, nine passing business Oracles, 27 passing business assertions, stable
+per-Case semantic-result fingerprints, satisfied Fixture controls, the exact timeout/duplicate/
+forbidden-write proofs, zero real external calls, `EXPLORATORY` evidence, and the five declared
+release limitations. For `FAILED_CLOSED`, the receipt must contain zero suite/child/Oracle/
+assertion/call counts, a null evidence class and fingerprints, a null publication, empty
+rounds/cases, and at least one diagnostic. Neither state is
 treated as a production release approval; the receipt remains `DEVELOPMENT_TEST_OWNED` with
 `releaseGateStatus=NO_GO`.
 

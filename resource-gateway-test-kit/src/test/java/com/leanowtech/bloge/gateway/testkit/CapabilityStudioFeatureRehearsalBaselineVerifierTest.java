@@ -80,9 +80,28 @@ class CapabilityStudioFeatureRehearsalBaselineVerifierTest {
     }
 
     @Test
-    void rejectsWrongTimeoutStatus() {
+    void rejectsMixedFinalStatusesWithinTheTimeoutCase() {
         ObjectNode projection = validProjection();
-        round(projection, 5, 1).put("status", "PASSED");
+        round(projection, 5, 1).put("status", "TIMED_OUT");
+
+        assertFailure(projection, CapabilityStudioFeatureRehearsalBaselineVerifier.FailureKind.SEMANTIC,
+                "RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_BASELINE_CASE_STATUS_INVALID");
+    }
+
+    @Test
+    void acceptsTheLegacyV1TimeoutStatusWhenAllThreeTimeoutRoundsAgree() {
+        ObjectNode projection = validProjection();
+        for (int roundIndex = 0; roundIndex < 3; roundIndex++) {
+            round(projection, 5, roundIndex).put("status", "TIMED_OUT");
+        }
+
+        assertThat(VERIFIER.verify(projection).verified()).isTrue();
+    }
+
+    @Test
+    void rejectsTimeoutStatusForANonTimeoutCase() {
+        ObjectNode projection = validProjection();
+        round(projection, 0, 0).put("status", "TIMED_OUT");
 
         assertFailure(projection, CapabilityStudioFeatureRehearsalBaselineVerifier.FailureKind.SEMANTIC,
                 "RG.CAPABILITY_STUDIO.FEATURE_REHEARSAL_BASELINE_CASE_STATUS_INVALID");
@@ -213,7 +232,6 @@ class CapabilityStudioFeatureRehearsalBaselineVerifierTest {
 
     private static ObjectNode caseNode(int caseIndex) {
         String caseId = CapabilityStudioFeatureRehearsalBaselineVerifier.CANONICAL_CASE_IDS.get(caseIndex);
-        String status = "case-compensation-history-timeout".equals(caseId) ? "TIMED_OUT" : "PASSED";
         ObjectNode result = JSON.createObjectNode()
                 .put("caseId", caseId)
                 .put("caseName", "Case " + caseId)
@@ -223,7 +241,7 @@ class CapabilityStudioFeatureRehearsalBaselineVerifierTest {
             rounds.add(JSON.createObjectNode()
                     .put("round", round)
                     .put("runId", "baseline-run-" + caseIndex + "-" + round)
-                    .put("status", status)
+                    .put("status", "PASSED")
                     .put("semanticFingerprint", fingerprint('c'))
                     .put("realExternalCallCount", 0));
         }

@@ -2421,7 +2421,7 @@ wait_for_ready() {
                         ! printf '%s' "${capability_studio_feature_rehearsal}" | jq -e '
                         (.schemaVersion == "resource-gateway.capability-studio.feature-rehearsal.v1")
                         and (.scenario.id == "case-compensation-history-timeout")
-                        and (.run.status == "TIMED_OUT")
+                        and (.run.status == "PASSED")
                         and (.run.bindingMode == "FIXTURE_CONTROLLED_NON_PRODUCTION")
                         and (.run.realExternalCallCount == 0)
                         and (.dataLens.permissionMode == "STRUCTURE_ONLY")
@@ -2443,10 +2443,7 @@ wait_for_ready() {
                         and (([.cases[].rounds[].runId] | length) == 27)
                         and (([.cases[].rounds[].runId] | unique | length) == 27)
                         and ([.cases[] | [.rounds[].semanticFingerprint] | unique | length] | all(. == 1))
-                        and ([.cases[] | select(.caseId == "case-compensation-history-timeout")
-                            | .rounds[].status] | all(. == "TIMED_OUT"))
-                        and ([.cases[] | select(.caseId != "case-compensation-history-timeout")
-                            | .rounds[].status] | all(. == "PASSED"))
+                        and ([.cases[].rounds[].status] | all(. == "PASSED"))
                         and ((.operators | length) == 6)
                         and ([.operators[].sideEffectType] | all(. != "WRITE" and . != "MIXED"))
                         and ((.diagnostics | length) == 0)
@@ -2477,7 +2474,7 @@ wait_for_ready() {
                     ! printf '%s' "${capability_studio_feature_rehearsal}" |
                     grep -Eq '"schemaVersion"[[:space:]]*:[[:space:]]*"resource-gateway.capability-studio.feature-rehearsal.v1"' ||
                     ! printf '%s' "${capability_studio_feature_rehearsal}" |
-                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"TIMED_OUT"' ||
+                    grep -Eq '"status"[[:space:]]*:[[:space:]]*"PASSED"' ||
                     ! printf '%s' "${capability_studio_feature_rehearsal}" |
                     grep -Eq '"permissionMode"[[:space:]]*:[[:space:]]*"STRUCTURE_ONLY"' ||
                     ! printf '%s' "${capability_studio_feature_rehearsal}" |

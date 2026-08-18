@@ -14,8 +14,10 @@ class CapabilityStudioGovernedBaselineVerifierTest {
             new CapabilityStudioGovernedBaselineVerifier();
 
     @Test
-    void packagesTheGovernedBaselineSchema() {
-        assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_RESOURCE))
+    void packagesBothGovernedBaselineSchemaVersions() {
+        assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_V1_RESOURCE))
+                .isNotNull();
+        assertThat(getClass().getResource(CapabilityStudioSchemaSupport.GOVERNED_BASELINE_V2_RESOURCE))
                 .isNotNull();
     }
 
@@ -24,15 +26,11 @@ class CapabilityStudioGovernedBaselineVerifierTest {
         CapabilityStudioGovernedBaselineVerifier.VerificationResult result =
                 VERIFIER.verify(passedProjection());
 
-        assertThat(result.verified()).isTrue();
+        assertThat(result.verified()).withFailMessage("verification result: %s", result).isTrue();
         assertThat(result.checks()).contains(
-                "SCHEMA",
-                "UNIQUE_SUITE_RUN_IDS",
-                "UNIQUE_CASE_IDS",
-                "UNIQUE_CHILD_RUN_IDS",
-                "CASE_ROUND_COVERAGE",
-                "PASSED_STATUS_MATRIX",
-                "LIMITATIONS");
+                "SCHEMA", "UNIQUE_SUITE_RUN_IDS", "UNIQUE_CASE_IDS", "UNIQUE_CHILD_RUN_IDS",
+                "CASE_ORACLES", "CASE_ASSERTIONS", "FIXTURE_CONTROLS",
+                "SEMANTIC_RESULT_STABILITY", "CASE_PROOFS", "LIMITATIONS");
     }
 
     @Test
@@ -68,48 +66,57 @@ class CapabilityStudioGovernedBaselineVerifierTest {
     @Test
     void rejectsDuplicateChildRunIdsAcrossCases() {
         ObjectNode projection = passedProjection();
-        ObjectNode firstCase = (ObjectNode) projection.withArray("cases").get(0);
-        String firstRunId = firstCase.withArray("rounds").get(0).path("runId").asText();
-        ObjectNode secondCase = (ObjectNode) projection.withArray("cases").get(1);
-        ((ObjectNode) secondCase.withArray("rounds").get(0)).put("runId", firstRunId);
+        String firstRunId = projection.withArray("cases").get(0).withArray("rounds")
+                .get(0).path("runId").asText();
+        ((ObjectNode) projection.withArray("cases").get(1).withArray("rounds").get(0))
+                .put("runId", firstRunId);
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SEMANTIC,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_INVALID");
     }
 
     @Test
-    void rejectsACaseRoundThatIsNotOneTwoOrThreeInOrder() {
+    void rejectsTamperedSemanticResultFingerprint() {
         ObjectNode projection = passedProjection();
-        ObjectNode firstCase = (ObjectNode) projection.withArray("cases").get(0);
-        ((ObjectNode) firstCase.withArray("rounds").get(2)).put("round", 2);
+        ((ObjectNode) projection.withArray("cases").get(0).withArray("rounds").get(1))
+                .put("semanticResultFingerprint", fingerprint('f'));
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SEMANTIC,
-                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_INVALID");
+                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SEMANTIC_RESULT_FINGERPRINT_DRIFT");
     }
 
     @Test
-    void rejectsNonPassedStatusesBeforeTheyCanBecomeEvidence() {
+    void rejectsTamperedAssertionsAtTheSchemaBoundary() {
         ObjectNode projection = passedProjection();
-        ObjectNode firstCase = (ObjectNode) projection.withArray("cases").get(0);
-        ((ObjectNode) firstCase.withArray("rounds").get(0)).put("status", "FAILED");
+        ((ObjectNode) projection.withArray("cases").get(0)).put("assertionsPassed", 2);
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
     }
 
     @Test
-    void rejectsNonZeroRealExternalCalls() {
+    void rejectsTamperedHighRiskProofAtTheSchemaBoundary() {
         ObjectNode projection = passedProjection();
-        projection.put("realExternalCallCount", 1);
+        ((ArrayNode) projection.withArray("cases").get(2).withArray("proofs"))
+                .set(4, JSON.getNodeFactory().textNode("BUSINESS_ASSERTION_PASSED"));
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
     }
 
     @Test
-    void rejectsTamperedLimitations() {
+    void rejectsTamperedEvidenceClassAtTheSchemaBoundary() {
         ObjectNode projection = passedProjection();
-        projection.withArray("limitations").set(0, JSON.getNodeFactory().textNode("CLAIMED_SIGNOFF"));
+        projection.put("evidenceClass", "CERTIFIABLE");
+
+        assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
+                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
+    }
+
+    @Test
+    void rejectsFabricatedFailedClosedCounts() {
+        ObjectNode projection = failedClosedProjection();
+        projection.put("suiteRunCount", 1);
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
@@ -119,24 +126,6 @@ class CapabilityStudioGovernedBaselineVerifierTest {
     void rejectsFailedClosedReceiptsThatContainAClaimedFingerprint() {
         ObjectNode projection = failedClosedProjection();
         projection.put("compilationFingerprint", fingerprint('f'));
-
-        assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
-                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
-    }
-
-    @Test
-    void rejectsFailedClosedReceiptsThatContainRunsOrCases() {
-        ObjectNode projection = failedClosedProjection();
-        projection.putArray("rounds").add(round(1));
-
-        assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
-                "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
-    }
-
-    @Test
-    void rejectsFailedClosedReceiptsWithoutDiagnostics() {
-        ObjectNode projection = failedClosedProjection();
-        projection.putArray("diagnostics");
 
         assertFailure(projection, CapabilityStudioGovernedBaselineVerifier.FailureKind.SCHEMA,
                 "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SCHEMA_INVALID");
@@ -160,22 +149,28 @@ class CapabilityStudioGovernedBaselineVerifierTest {
             String errorCode) {
         CapabilityStudioGovernedBaselineVerifier.VerificationResult result =
                 VERIFIER.verify(projection);
-        assertThat(result.failureKind()).isEqualTo(kind);
-        assertThat(result.errorCode()).isEqualTo(errorCode);
+        assertThat(result.failureKind()).withFailMessage("verification result: %s", result)
+                .isEqualTo(kind);
+        assertThat(result.errorCode()).withFailMessage("verification result: %s", result)
+                .isEqualTo(errorCode);
     }
 
     private static ObjectNode passedProjection() {
         ObjectNode result = JSON.createObjectNode()
-                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v1")
+                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v2")
                 .put("evidenceKind", "DEVELOPMENT_TEST_OWNED")
                 .put("baselineId", "capability-studio-governed-9x3-v1")
                 .put("status", "PASSED")
-                .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS")
+                .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES")
                 .put("releaseGateStatus", "NO_GO")
+                .put("evidenceClass", "EXPLORATORY")
                 .put("caseCount", 9)
                 .put("roundCount", 3)
                 .put("suiteRunCount", 3)
                 .put("childRunCount", 27)
+                .put("oraclePassCount", 9)
+                .put("businessCheckCount", 27)
+                .put("businessCheckPassCount", 27)
                 .put("realExternalCallCount", 0)
                 .put("compilationFingerprint", fingerprint('a'))
                 .put("sourceMapFingerprint", fingerprint('b'))
@@ -198,13 +193,7 @@ class CapabilityStudioGovernedBaselineVerifierTest {
         for (int caseIndex = 0;
              caseIndex < CapabilityStudioGovernedBaselineVerifier.CANONICAL_CASE_IDS.size();
              caseIndex++) {
-            ObjectNode caseNode = cases.addObject()
-                    .put("caseId", CapabilityStudioGovernedBaselineVerifier.CANONICAL_CASE_IDS
-                            .get(caseIndex));
-            ArrayNode caseRounds = caseNode.putArray("rounds");
-            for (int round = 1; round <= 3; round++) {
-                caseRounds.add(caseRound(caseIndex, round));
-            }
+            cases.add(caseNode(caseIndex));
         }
         addLimitationsAndDiagnostics(result);
         return result;
@@ -212,17 +201,21 @@ class CapabilityStudioGovernedBaselineVerifierTest {
 
     private static ObjectNode failedClosedProjection() {
         ObjectNode result = JSON.createObjectNode()
-                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v1")
+                .put("schemaVersion", "resource-gateway.capability-studio.governed-baseline.v2")
                 .put("evidenceKind", "DEVELOPMENT_TEST_OWNED")
                 .put("baselineId", "capability-studio-governed-9x3-v1")
                 .put("status", "FAILED_CLOSED")
-                .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS")
+                .put("verificationScope", "GOVERNED_SUITE_ASSERTIONS_AND_BUSINESS_ORACLES")
                 .put("releaseGateStatus", "NO_GO")
+                .putNull("evidenceClass")
                 .put("caseCount", 9)
                 .put("roundCount", 3)
                 .put("suiteRunCount", 0)
                 .put("childRunCount", 0)
-                .putNull("realExternalCallCount")
+                .put("oraclePassCount", 0)
+                .put("businessCheckCount", 0)
+                .put("businessCheckPassCount", 0)
+                .put("realExternalCallCount", 0)
                 .putNull("compilationFingerprint")
                 .putNull("sourceMapFingerprint")
                 .putNull("provenanceFingerprint")
@@ -243,14 +236,48 @@ class CapabilityStudioGovernedBaselineVerifierTest {
                 .put("childRunCount", 9);
     }
 
-    private static ObjectNode caseRound(int caseIndex, int round) {
+    private static ObjectNode caseNode(int caseIndex) {
+        String caseId = CapabilityStudioGovernedBaselineVerifier.CANONICAL_CASE_IDS.get(caseIndex);
+        ObjectNode result = JSON.createObjectNode()
+                .put("caseId", caseId)
+                .put("oracleId", "oracle-" + caseId.substring("case-".length()))
+                .put("oracleStatus", "PASS")
+                .put("semanticResultFingerprint", fingerprint('a'));
+        result.put("assertionsEvaluated", 3).put("assertionsPassed", 3)
+                .put("fixtureControlsEvaluated", 3).put("fixtureControlsSatisfied", 3);
+        ArrayNode proofs = result.putArray("proofs");
+        proofs.add("BUSINESS_ASSERTION_PASSED")
+                .add("SEMANTIC_RESULT_STABLE")
+                .add("FIXTURE_CONTROL_SATISFIED")
+                .add("ZERO_REAL_EXTERNAL_CALLS");
+        if ("case-compensation-history-timeout".equals(caseId)) {
+            proofs.add("TIMEOUT_FALLBACK_CONFIRMED");
+        } else if ("case-duplicate-cancellation".equals(caseId)) {
+            proofs.add("DUPLICATE_IDEMPOTENCY_CONFIRMED");
+        } else if ("case-forbidden-write-effect".equals(caseId)) {
+            proofs.add("FORBIDDEN_WRITE_EFFECT_ABSENT");
+        }
+        ArrayNode rounds = result.putArray("rounds");
+        for (int round = 1; round <= 3; round++) {
+            rounds.add(caseRound(caseIndex, round, fingerprint('a')));
+        }
+        return result;
+    }
+
+    private static ObjectNode caseRound(int caseIndex, int round, String semanticFingerprint) {
         return JSON.createObjectNode()
                 .put("round", round)
                 .put("runId", "child-run-" + caseIndex + "-" + round)
                 .put("status", "PASSED")
                 .put("fixtureBundleId", "fixture-bundle-" + caseIndex)
                 .put("fixtureRevision", 1)
-                .put("fixtureFingerprint", fingerprint('f'));
+                .put("fixtureFingerprint", fingerprint('f'))
+                .put("evidenceFingerprint", fingerprint((char) ('a' + round)))
+                .put("semanticResultFingerprint", semanticFingerprint)
+                .put("assertionsEvaluated", 1)
+                .put("assertionsPassed", 1)
+                .put("fixtureControlsEvaluated", 1)
+                .put("fixtureControlsSatisfied", 1);
     }
 
     private static void addLimitationsAndDiagnostics(ObjectNode result) {

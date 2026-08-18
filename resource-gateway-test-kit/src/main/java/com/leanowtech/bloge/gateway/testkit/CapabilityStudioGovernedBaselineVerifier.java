@@ -9,16 +9,16 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Offline verifier for the Capability Studio governed baseline v1 projection.
+ * Offline verifier for the Capability Studio governed baseline v2 projection.
  *
  * <p>The verifier validates the packaged strict schema and the cross-field evidence contract for
- * the payload-free 9 Case x 3 round receipt. A {@code FAILED_CLOSED} receipt is accepted only when
+ * the payload-free 9 case x 3 round receipt. A {@code FAILED_CLOSED} receipt is accepted only when
  * it contains no fabricated execution evidence.</p>
  */
 public final class CapabilityStudioGovernedBaselineVerifier {
     /** Maximum UTF-8 wire document accepted before parsing. */
     public static final int MAXIMUM_BASELINE_BYTES = 16 * 1024 * 1024;
-    /** Canonical governed baseline case identifiers. */
+    /** Canonical governed baseline case identifiers, in wire order. */
     public static final List<String> CANONICAL_CASE_IDS = List.of(
             "case-city-policy-missing",
             "case-compensation-history-empty",
@@ -29,11 +29,18 @@ public final class CapabilityStudioGovernedBaselineVerifier {
             "case-policy-revision-regression",
             "case-rider-not-responsible",
             "case-standard-cancellation-fee");
-    /** Limitations that must remain visible on both truthful receipt states. */
+    /** Limitations that must remain visible on both truthful receipt states, in wire order. */
     public static final List<String> LIMITATIONS = List.of(
-            "BUSINESS_RESULT_FINGERPRINT_NOT_EXPORTED",
+            "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
+            "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
+            "CERTIFIABLE_EVIDENCE_NOT_ESTABLISHED",
             "DEPLOYMENT_EGRESS_NOT_OBSERVED",
             "OWNER_SIGNOFF_NOT_PRESENT");
+    private static final List<String> COMMON_PROOFS = List.of(
+            "BUSINESS_ASSERTION_PASSED",
+            "SEMANTIC_RESULT_STABLE",
+            "FIXTURE_CONTROL_SATISFIED",
+            "ZERO_REAL_EXTERNAL_CALLS");
 
     private static final ObjectMapperHolder JSON = new ObjectMapperHolder();
 
@@ -150,6 +157,9 @@ public final class CapabilityStudioGovernedBaselineVerifier {
     private static VerificationResult verifyPassed(JsonNode projection) {
         if (projection.path("suiteRunCount").intValue() != 3
                 || projection.path("childRunCount").intValue() != 27
+                || projection.path("oraclePassCount").intValue() != 9
+                || projection.path("businessCheckCount").intValue() != 27
+                || projection.path("businessCheckPassCount").intValue() != 27
                 || projection.path("realExternalCallCount").intValue() != 0) {
             return semanticFailure(
                     "PASSED_COUNTS_AND_CALLS",
@@ -181,6 +191,11 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                 "UNIQUE_CHILD_RUN_IDS",
                 "CASE_ROUND_COVERAGE",
                 "PASSED_STATUS_MATRIX",
+                "CASE_ORACLES",
+                "CASE_ASSERTIONS",
+                "FIXTURE_CONTROLS",
+                "SEMANTIC_RESULT_STABILITY",
+                "CASE_PROOFS",
                 "LIMITATIONS",
                 "DIAGNOSTICS_EMPTY");
     }
@@ -217,26 +232,12 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                         "UNIQUE_CASE_IDS",
                         "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ID_INVALID");
             }
-            JsonNode caseRounds = caseNode.path("rounds");
-            Set<Integer> roundNumbers = new LinkedHashSet<>();
-            for (int roundIndex = 0; roundIndex < 3; roundIndex++) {
-                JsonNode caseRound = caseRounds.get(roundIndex);
-                if (!roundNumbers.add(caseRound.path("round").intValue())
-                        || caseRound.path("round").intValue() != roundIndex + 1
-                        || !"PASSED".equals(caseRound.path("status").textValue())
-                        || !childRunIds.add(caseRound.path("runId").textValue())) {
-                    return semanticFailure(
-                            "CASE_ROUND_COVERAGE",
-                            "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_INVALID");
-                }
-            }
-            if (!roundNumbers.equals(Set.of(1, 2, 3))) {
-                return semanticFailure(
-                        "CASE_ROUND_COVERAGE",
-                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_SET_INVALID");
+            VerificationResult semantics = verifyCase(caseNode, caseId, childRunIds);
+            if (!semantics.verified()) {
+                return semantics;
             }
         }
-        if (caseIds.size() != 9) {
+        if (caseIds.size() != CANONICAL_CASE_IDS.size()) {
             return semanticFailure(
                     "UNIQUE_CASE_IDS",
                     "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ID_CARDINALITY_INVALID");
@@ -247,13 +248,123 @@ public final class CapabilityStudioGovernedBaselineVerifier {
                     "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CHILD_RUN_ID_CARDINALITY_INVALID");
         }
         return valid("UNIQUE_CASE_IDS", "UNIQUE_CHILD_RUN_IDS", "CASE_ROUND_COVERAGE",
-                "PASSED_STATUS_MATRIX");
+                "PASSED_STATUS_MATRIX", "CASE_ORACLES", "CASE_ASSERTIONS", "FIXTURE_CONTROLS",
+                "SEMANTIC_RESULT_STABILITY", "CASE_PROOFS");
+    }
+
+    private static VerificationResult verifyCase(
+            JsonNode caseNode, String caseId, Set<String> childRunIds) {
+        if (!("oracle-" + caseId.substring("case-".length()))
+                .equals(caseNode.path("oracleId").textValue())
+                || !"PASS".equals(caseNode.path("oracleStatus").textValue())) {
+            return semanticFailure(
+                    "CASE_ORACLES",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_ORACLE_INVALID");
+        }
+        if (caseNode.path("assertionsEvaluated").intValue() != 3
+                || caseNode.path("assertionsPassed").intValue() != 3) {
+            return semanticFailure(
+                    "CASE_ASSERTIONS",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ASSERTIONS_INVALID");
+        }
+        int fixtureControlsEvaluated = caseNode.path("fixtureControlsEvaluated").intValue();
+        int fixtureControlsSatisfied = caseNode.path("fixtureControlsSatisfied").intValue();
+        if (fixtureControlsEvaluated <= 0 || fixtureControlsEvaluated != fixtureControlsSatisfied) {
+            return semanticFailure(
+                    "FIXTURE_CONTROLS",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_FIXTURE_CONTROLS_INVALID");
+        }
+        if (!expectedProofs(caseId).equals(toStrings(caseNode.path("proofs")))) {
+            return semanticFailure(
+                    "CASE_PROOFS",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_PROOFS_INVALID");
+        }
+
+        String semanticFingerprint = caseNode.path("semanticResultFingerprint").textValue();
+        JsonNode rounds = caseNode.path("rounds");
+        int assertionTotal = 0;
+        int assertionPassTotal = 0;
+        int fixtureTotal = 0;
+        int fixtureSatisfiedTotal = 0;
+        for (int roundIndex = 0; roundIndex < 3; roundIndex++) {
+            JsonNode round = rounds.get(roundIndex);
+            if (round.path("round").intValue() != roundIndex + 1
+                    || !"PASSED".equals(round.path("status").textValue())
+                    || !childRunIds.add(round.path("runId").textValue())) {
+                return semanticFailure(
+                        "CASE_ROUND_COVERAGE",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_INVALID");
+            }
+            if (round.path("assertionsEvaluated").intValue() != 1
+                    || round.path("assertionsPassed").intValue() != 1) {
+                return semanticFailure(
+                        "CASE_ASSERTIONS",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_ASSERTIONS_INVALID");
+            }
+            int evaluated = round.path("fixtureControlsEvaluated").intValue();
+            int satisfied = round.path("fixtureControlsSatisfied").intValue();
+            if (evaluated <= 0 || evaluated != satisfied) {
+                return semanticFailure(
+                        "FIXTURE_CONTROLS",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_ROUND_FIXTURE_CONTROLS_INVALID");
+            }
+            if (!semanticFingerprint.equals(round.path("semanticResultFingerprint").textValue())) {
+                return semanticFailure(
+                        "SEMANTIC_RESULT_STABILITY",
+                        "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_SEMANTIC_RESULT_FINGERPRINT_DRIFT");
+            }
+            assertionTotal += round.path("assertionsEvaluated").intValue();
+            assertionPassTotal += round.path("assertionsPassed").intValue();
+            fixtureTotal += evaluated;
+            fixtureSatisfiedTotal += satisfied;
+        }
+        if (assertionTotal != 3 || assertionPassTotal != 3
+                || fixtureTotal != fixtureControlsEvaluated
+                || fixtureSatisfiedTotal != fixtureControlsSatisfied) {
+            return semanticFailure(
+                    "CASE_ASSERTIONS",
+                    "RG.CAPABILITY_STUDIO.GOVERNED_BASELINE_CASE_TOTALS_INVALID");
+        }
+        return valid("CASE_ROUND_COVERAGE", "PASSED_STATUS_MATRIX", "CASE_ORACLES",
+                "CASE_ASSERTIONS", "FIXTURE_CONTROLS", "SEMANTIC_RESULT_STABILITY", "CASE_PROOFS");
+    }
+
+    private static List<String> expectedProofs(String caseId) {
+        if ("case-compensation-history-timeout".equals(caseId)) {
+            return appendProof(COMMON_PROOFS, "TIMEOUT_FALLBACK_CONFIRMED");
+        }
+        if ("case-duplicate-cancellation".equals(caseId)) {
+            return appendProof(COMMON_PROOFS, "DUPLICATE_IDEMPOTENCY_CONFIRMED");
+        }
+        if ("case-forbidden-write-effect".equals(caseId)) {
+            return appendProof(COMMON_PROOFS, "FORBIDDEN_WRITE_EFFECT_ABSENT");
+        }
+        return COMMON_PROOFS;
+    }
+
+    private static List<String> appendProof(List<String> common, String highRiskProof) {
+        java.util.ArrayList<String> result = new java.util.ArrayList<>(common);
+        result.add(highRiskProof);
+        return List.copyOf(result);
+    }
+
+    private static List<String> toStrings(JsonNode values) {
+        if (!values.isArray()) {
+            return List.of();
+        }
+        java.util.ArrayList<String> result = new java.util.ArrayList<>();
+        values.forEach(value -> result.add(value.textValue()));
+        return List.copyOf(result);
     }
 
     private static VerificationResult verifyFailedClosed(JsonNode projection) {
         if (projection.path("suiteRunCount").intValue() != 0
                 || projection.path("childRunCount").intValue() != 0
-                || !projection.path("realExternalCallCount").isNull()
+                || projection.path("oraclePassCount").intValue() != 0
+                || projection.path("businessCheckCount").intValue() != 0
+                || projection.path("businessCheckPassCount").intValue() != 0
+                || projection.path("realExternalCallCount").intValue() != 0
+                || !projection.path("evidenceClass").isNull()
                 || !projection.path("compilationFingerprint").isNull()
                 || !projection.path("sourceMapFingerprint").isNull()
                 || !projection.path("provenanceFingerprint").isNull()

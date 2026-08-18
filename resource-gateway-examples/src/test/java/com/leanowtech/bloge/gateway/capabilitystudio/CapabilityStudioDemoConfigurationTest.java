@@ -5,6 +5,7 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedRegistryGateway;
+import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.Test;
@@ -27,6 +28,7 @@ class CapabilityStudioDemoConfigurationTest {
             .withBean(ScenarioGovernedRegistryGateway.class,
                     () -> mock(ScenarioGovernedRegistryGateway.class))
             .withBean(TestSuiteExecutionService.class, () -> mock(TestSuiteExecutionService.class))
+            .withBean(TestExecutionApiService.class, () -> mock(TestExecutionApiService.class))
             .withBean(JdbcDataSource.class, () -> dataSource)
             .withBean(JdbcTemplate.class, () -> new JdbcTemplate(dataSource))
             .withBean(PlatformTransactionManager.class, () -> new DataSourceTransactionManager(dataSource))

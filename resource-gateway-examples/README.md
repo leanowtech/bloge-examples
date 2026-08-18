@@ -115,11 +115,15 @@ The fixed 9 Case x 3 Oracle baseline remains available for detailed business sem
 now adds a governed 9 x 3 development run over the same compiler, registry, write-after-read verification,
 and exact-suite execution boundary. Its test/staging-only POST endpoint produces three unique suite runs
 and 27 unique passing child runs, keeps publication, provenance, and source-map fingerprints stable, and
-observes zero in-process real external calls. A strict public schema and the independent Test Kit verifier
-reject malformed, incomplete, reordered, or tampered receipts; failed-closed responses do not fabricate
-publication or run evidence. The UI deliberately shows both "development verification passed" and
-"release acceptance remains closed." Per-Case business-result fingerprints, candidate/environment binding,
-deployment-level egress observation, field-level source maps, and release Owner sign-off remain incomplete.
+observes zero in-process real external calls. After each suite completes, the service re-reads all signed
+child evidence through the authorized API and closes exact run/target/Fixture identity, evidence integrity,
+per-Case semantic-result fingerprints, business assertions, and Fixture-control counts. The v2 public schema
+and independent Test Kit verifier require nine passing business Oracles, 27 passing assertions, stable results,
+and explicit timeout-fallback, duplicate-idempotency, and forbidden-write proofs. Failed-closed responses do
+not fabricate an evidence class, publication, fingerprints, or runs. The UI deliberately shows both
+"development verification passed" and "release acceptance remains closed." Evidence remains
+`EXPLORATORY`; immutable candidate/environment binding, deployment-level egress observation, field-level
+source maps, certifiable evidence, and release Owner sign-off remain incomplete.
 To disable the Capability Studio sample and
 open the legacy Business Mirror:
 
@@ -200,7 +204,7 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 | `POST http://localhost:8080/api/capability-studio/tutorial-branch/preflight` | Prove exact branch binding, zero unresolved dependencies, zero real calls, and no real-service fallback |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal?caseId=case-compensation-history-timeout&permission=STRUCTURE_ONLY` | Run the non-production cancellation Feature through BLOGE and read the payload-free 6-node/5-edge Trace; use `PAYLOAD_VISIBLE` only for controlled demo values |
 | `GET http://localhost:8080/api/capability-studio/feature-rehearsal-baseline` | Run the fixed 9 Case × 3 round development baseline and read payload-free Oracle, semantic/business fingerprint, operator side-effect, unique Run ID, and zero in-process real-call evidence; strict v1 Schema and independent Test Kit verification; `DEVELOPMENT_TEST_OWNED`, not release acceptance |
-| `POST http://localhost:8080/api/capability-studio/governed-baseline` | Run the Tool page's governed 9 × 3 development verification through the existing compiler, registry, exact-suite runtime, and independent verifier; returns 3 suite/27 child runs and keeps `releaseGateStatus=NO_GO` until business-result fingerprints, deployment egress, candidate/environment binding, and Owner sign-off exist |
+| `POST http://localhost:8080/api/capability-studio/governed-baseline` | Run the Tool page's governed 9 × 3 development verification through the existing compiler, registry, exact-suite runtime, signed child-evidence readback, and independent v2 verifier; returns 3 suite/27 child runs, 9/9 business Oracles, 27/27 assertions, stable semantic results and three high-risk proofs, while keeping `EXPLORATORY / NO_GO` until certifiable evidence, deployment egress, candidate/environment binding, and Owner sign-off exist |
 | `POST http://localhost:8080/api/mirror/sessions` | Create an encrypted stateful simulation Session after starting with `--stateful` (test/staging only) |
 | `GET http://localhost:8080/api/mirror/sessions/{sessionId}/write-attempts/{attemptId}` | Read one authenticated payload-free durable write outcome for recovery or governance evidence |
 | `POST http://localhost:8080/api/mirror/sessions/{sessionId}/checkpoints` | Sign a payload-free exact Session/store-generation checkpoint after starting with `--stateful` |

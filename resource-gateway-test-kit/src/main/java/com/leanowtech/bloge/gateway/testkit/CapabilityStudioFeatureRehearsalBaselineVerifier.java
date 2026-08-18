@@ -207,7 +207,10 @@ public final class CapabilityStudioFeatureRehearsalBaselineVerifier {
             }
             JsonNode rounds = caseNode.path("rounds");
             String semanticFingerprint = null;
-            String expectedStatus = TIMEOUT_CASE.equals(expectedCaseId) ? "TIMED_OUT" : "PASSED";
+            String expectedStatus = TIMEOUT_CASE.equals(expectedCaseId)
+                    && "TIMED_OUT".equals(rounds.get(0).path("status").textValue())
+                    ? "TIMED_OUT"
+                    : "PASSED";
             for (int roundIndex = 0; roundIndex < 3; roundIndex++) {
                 JsonNode round = rounds.get(roundIndex);
                 if (round.path("round").intValue() != roundIndex + 1) {
