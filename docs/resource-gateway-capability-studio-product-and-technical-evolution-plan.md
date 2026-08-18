@@ -226,9 +226,42 @@ Wire-to-UI 通过只允许把该纵向切片标为 `DEVELOPMENT_VERIFIED`。目�
 | 完全隔离运行 | 选择“完全隔离”运行整个工具，并检查 timeout、duplicate 与 forbidden-write 三类高风险分支 | 进程内真实调用、部署级真实 egress 和被网络策略拒绝的调用尝试均为 0；timeout 原始尝试和 fallback 均可追溯；duplicate 幂等；forbidden-write 无写入 | 任一真实或被拒外呼尝试；生产入口可注入替身；超时被解释为空数据；禁写分支发生写调用 | candidate/environment attestation、counter、network deny、attempt/final Trace；Runtime、安全、QA |
 | 正确性与数据积累 | 从运行结果回到 exact Case、Dataset、Oracle、Contract、DAG 节点和数据版本，并查看质量与影响 | 证据和 Deep Link 精确回到原 Run/Case/Node；Active Case 具备完整来源、责任人、正确性依据、审批、复用方与保留策略；撤销和过期会阻断新运行 | 只能看到绿色总数；证据无法定位原数据和图；本地替身被标为客户现场认证；撤销后仍可新运行 | Evidence bundle、impact graph、lifecycle event、Deep Link 浏览器测试；数据 Owner、治理 Owner、正确性 Owner |
 | 首次使用体验 | 代表性业务作者从默认入口完成 `GP-01` 至 `GP-10` | 至少 5/6 在 15 分钟内独立完成；技术 ID 输入 0 次、Raw JSON 编辑 0 次；能说清替身、真实调用和证据边界；P0/P1 为 0 | 依赖主持人补步骤；关键 ID 需手填；失败无恢复动作；用户把开发验证误解为发布认证 | 原始任务录像、计时、错误记录、复验报告；业务 Owner、产品、UX |
-| 企业交付可信度 | 从不可变候选执行完整矩阵并导出可独立复验的结果 | `GP-01..10 × 2 语言 × 3 视口=60` 格全部执行且无跳过；`AC-STD-01..09` 全部通过；目标环境、证据闭包和指定 Owner 签署完整 | 缩小分母；脏工作区；证据 fingerprint 不一致；自动化代签；只保留重跑后的成功记录 | Candidate、Browser Matrix Result、Stage Acceptance Result v2、签署；产品、架构、安全、Runtime、QA |
+| 企业交付可信度 | 从不可变候选执行完整矩阵并导出可独立复验的结果 | 正常态 60 格、服务错误 60 格、目标请求断网 60 格、GP-04 真实保存冲突 6 格，共 186 格全部执行且无跳过；`AC-STD-01..09` 全部通过；目标环境、证据闭包和指定 Owner 签署完整 | 缩小分母；用 503 冒充断网；用静态页面冒充真实 409；脏工作区；证据 fingerprint 不一致；自动化代签；只保留重跑后的成功记录 | Candidate、Base Browser Matrix Result、Browser Anomaly Matrix Result、Stage Acceptance Result v2、签署；产品、架构、安全、Runtime、QA |
 
 本轮演进的产品验收结论只有两种：上述七个验收域全部闭合时为 `ACCEPTED`；否则为 `NO_GO`，并按合同记录 `NOT_RUN`、`BLOCKED` 或 `FAIL` 的具体原因。`DEVELOPMENT_VERIFIED` 和 `PARTIAL` 可以说明工程进展，但不能替代最终产品验收。
+
+### 0.6 开工前七项冻结，避免再次边做边猜
+
+本轮反思后的核心修正不是增加更多页面说明，而是把实施前仍可争论的事项全部前移。以下七项采用布尔门禁，不按完成比例加权，也不接受“先开发、后补材料”。它们与第 12.4 节的验收包、第 12.7 节的开工门禁和第 18 章的 Definition of Ready 是同一组约束的评审入口。
+
+| 冻结项 | 开工前必须明确 | 可验收产物 | `NO_GO` 条件 |
+|---|---|---|---|
+| `FREEZE-01 产品任务` | 唯一首要用户、首要业务任务、范围和非目标；默认入口只承载一条连续主路径 | Product Acceptance Charter、术语表、任务流 | 同时存在两个以上同优先级主路径，或仍需先理解技术模块才能开始 |
+| `FREEZE-02 黄金业务事实` | 4 API、1 Feature、1 Tool、9 Case 的输入事实、依赖表现、正确结果、禁止结果、Owner 和来源 | 内容寻址 Golden Demo Pack、逐 Case Oracle、Canonical Baseline | 任一 Active Case 无 Oracle、无 Owner、无来源，或业务结果只能由开发人员口头解释 |
+| `FREEZE-03 交互基准` | `GP-01` 至 `GP-10` 的逐屏动作、即时反馈、完成状态、错误状态、恢复动作和上下文保持 | 可点击高保真原型、Screen State Inventory、中英文关键视口 | 主任务依赖技术 ID、Raw JSON、主持人补步骤，或错误后没有可执行恢复动作 |
+| `FREEZE-04 领域与权威` | Capability、Contract、Dataset、Case、Behavior、Binding、Evidence 的聚合根、Authority、exact ref 和生命周期 | ADR、严格 Schema、兼容与迁移规则 | 同一事实存在两个写入权威，或运行仍可读取 mutable head |
+| `FREEZE-05 技术可行性` | Dataset 可确定性下沉、Data Lens 来自真实 BLOGE Trace、生产面物理排除调用方替身注入 | Spike A/B/C 的代码、正负测试、原始报告 | 任一 Spike 只能依靠静态 Mock、第二套 Runtime 或隐藏 UI 证明 |
+| `FREEZE-06 可执行验收` | 固定候选、目标环境、测试分母、直接失败条件、Evidence、复算方式和签署角色 | `AC-PRE-*`、`AC-STD-*`、`S*-AC-*`、测试骨架和 Acceptance Result | 测试可被跳过或缩小分母，证据不可复算，或脚本可以代替真实 Owner 签署 |
+| `FREEZE-07 纵向交付` | 第一条切片从用户动作贯穿协议、Runtime、真实浏览器、Evidence 和恢复；范围变更先改 Baseline | 第 12.9 节验收卡、按依赖排序的 backlog、变更记录 | 工作包仍按前端/后端横切，或没有明确关闭哪个 `GP-*`、不变量与 Stage 合同 |
+
+开工评审必须逐项给出 `GO` 或 `NO_GO`，并记录判定人、时间和证据 exact ref。`FREEZE-01` 至 `FREEZE-07` 全部为 `GO` 只表示可以开始 Stage 1 纵向切片，不表示产品已验收；正式阶段退出仍以第 13.1 节的 `S*-AC-*` 为准。
+
+### 0.7 验收权威矩阵，禁止系统自证
+
+Resource Gateway 可以生成运行事实、证据投影和复验工具，但不能同时成为所有事实的签发者与最终裁决者。正式验收必须区分“系统观测到什么”和“谁有权确认该事实”。
+
+| 验收事实 | 权威来源 | Resource Gateway / Test Kit 的责任 | 不允许的替代 |
+|---|---|---|---|
+| 候选身份 | CI 或发布系统的 Candidate Authority | 绑定 build、commit、artifact digest，拒绝调用方覆盖并校验一致性 | 本地工作区名称、页面版本文案、脚本自填 `CLEAN` |
+| 目标环境 | 平台或 SRE 的 Environment Authority | 校验环境证明的签名、有效期、Scope、候选制品和执行窗口 | 应用自行声明“当前是 staging”，或沿用另一环境的证明 |
+| 业务正确性 | 业务 Owner 与正确性 Owner 管理的 Oracle Authority | 对逐 Case 输入、依赖表现、结果、禁止结果和 semantic fingerprint 执行确定性验证 | 以 HTTP 200、Suite `PASSED` 或开发人员判断代替业务 Oracle |
+| 引用与内容闭包 | 各资产 Registry Authority | 从原始 bytes 独立复算 exact ref、fingerprint、Scope 和关系闭包 | 信任响应中自报的 fingerprint，或运行时回查 mutable head |
+| 运行隔离 | Runtime 观测、网络策略与 Egress Authority | 同时验证进程内 connector counter、部署级 egress 和被拒外呼尝试均为 0 | 只看应用日志没有外呼，或把被网络策略拦截的尝试记为“零调用” |
+| UX 与可访问性 | 真实浏览器自动化、QA、UX 与代表性用户 | 固定矩阵、保留 DOM/axe/截图/录像和原始任务记录，绑定同一候选 | 设计稿截图、组件单测、开发者代替目标用户完成任务 |
+| Evidence 真实性 | 受信 Evidence Store、Issuer Policy 与 Key Set Authority | 解析 exact URI、校验内容 fingerprint、签名、签发权限、有效期和撤销状态 | 只验证 JSON Schema，或接受结果中内嵌的未受信公钥自签 |
+| 阶段签署 | 组织身份与审批系统中的指定 Owner | 校验角色权限、签署时间和 `evidenceClosureFingerprint` 绑定 | 构建脚本代签、共享账号、证据生成前预签或单一角色代签全部职责 |
+
+因此，默认 Test Kit verifier 通过只证明协议结构、状态机和确定性不变量成立。只有外部 Evidence Resolver、受信 Key Set/Issuer Policy、目标环境证明和指定 Owner 签署也全部闭合，`Stage Acceptance Result v2` 才允许进入 `PASS`。任何无法识别 Authority、无法验证签名或无法解析 Evidence 的情况必须失败关闭为 `BLOCKED` 或 `FAIL`，不得降级成“人工看过即可”。
 
 ## 1. 从技术诉求到产品任务
 
@@ -1440,7 +1473,7 @@ owners: [<业务/产品/UX/工程/安全/QA 责任人>]
 
 | ID | 可观察结果与系统不变量 | 必须证据 | 判定与 Owner |
 |---|---|---|---|
-| `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录 | 产品、UX、QA 全部签署后 `PASS` |
+| `S0-AC-01` | 评审者从默认入口完成 `GP-01` 至 `GP-10` 原型走查；全程不输入技术 ID、不编辑 Raw JSON、不依赖主持人口头补步骤；固定浏览器分母为正常态 60 格、服务错误 60 格、目标请求断网 60 格和 GP-04 真实保存冲突 6 格，共 186 格 | 固定候选构建、逐屏状态清单、中文/英文 1440/1024/390 浏览器记录；异常格同时保存 fault-trigger、UI 结果、恢复动作与恢复后 `READY` 证据 | 任一格缺失、跳过、动态缩减，或只截图而不能证明故障真实发生即 `FAIL`；产品、UX、QA 全部签署后 `PASS` |
 | `S0-AC-02` | Golden Demo Pack 固定为 4 API、1 Feature、1 Tool、9 Case；Case 均有 Owner、Source、Oracle、适用契约和精确引用闭包 | Demo Pack Schema 校验、Test Kit verifier、内容 fingerprint、篡改与跨 Scope 负向用例 | 业务 Owner、正确性 Owner `PASS` |
 | `S0-AC-03` | Spike A 无损下沉到既有测试 Runtime；Spike B 来自真实 BLOGE Trace；Spike C 从生产装配和协议移除注入能力 | 三份 Spike 报告与仓库测试；确定性、source map、Data Lens、生产 profile、network deny 和 counter 证据 | 架构、Runtime、画布、安全分别签署，三项均 `PASS` |
 | `S0-AC-04` | 满足 `AC-STD-01` 至 `AC-STD-07`：不可变候选与执行意图绑定；固定 9 个 Canonical Case 各执行 3 次，共 27 个唯一 `runId`；每个 Case 的业务 Oracle 均通过，同一 Case 的业务结果 fingerprint 三次一致；Graph/Contract/Dataset/Binding exact ref 全程不变；duplicate Case 三次结果幂等；forbidden-write Case 无写调用；timeout Case 的依赖尝试为 `TIMEOUT`，fallback 后 Feature/Tool 最终 `PASSED` 并输出 `MANUAL_REVIEW` 与 `COMPENSATION_HISTORY_TIMEOUT`；进程内与部署级真实外部调用观测均为 0 | 候选制品与执行意图指纹、27 份 `CERTIFIABLE` Run Evidence、逐 Case Oracle 明细、业务结果与依赖 fingerprint、调用点/写入点 Trace、timeout attempt/final/fallback Trace、进程内 counter、network deny/egress 观测、运行环境 fingerprint；Test Kit 批量 verifier 对证据闭包独立复算 | 任一候选/意图漂移、Case 任一次缺失、Oracle 未通过、引用漂移、重复 `runId`、fingerprint 不一致、禁写不成立、timeout 原始尝试丢失、fallback 未执行、最终结果不是人工复核、counter 非 0、Evidence 非 `CERTIFIABLE` 或 network deny 未观测即 `FAIL`；正确性 Owner、Runtime、QA 全部签署后 `PASS` |
@@ -1451,7 +1484,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 
 | ID | 当前状态 | 已有可复验证据 | 阻止 `PASS` 的缺口 |
 |---|---|---|---|
-| `S0-AC-01` | `PARTIAL` | 真实 Chrome producer 已在提交 `dea25cadc` 的本地干净候选上执行固定 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 60 格；60/60 通过、0 跳过、0 P0/P1、0 页面横向溢出、0 axe serious/critical、无技术 ID/Raw JSON 编辑泄漏，键盘路径完整。结果绑定候选 JAR、source commit、Baseline、Chrome/driver/axe 环境、时间窗和 60 个截图指纹，独立 Test Kit CLI 返回 `VALID status=COMPLETE` | 该结果由本地开发环境产生，尚无 CI Candidate/Environment Authority 签发，也未覆盖错误、冲突、断网状态的完整三视口矩阵、人工读屏和六人可用性；产品、UX、QA 尚未签署，因此不能转为正式 `PASS` |
+| `S0-AC-01` | `PARTIAL` | 真实 Chrome producer 已在提交 `dea25cadc` 的本地干净候选上执行固定 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 正常态 60 格；60/60 通过、0 跳过、0 P0/P1、0 页面横向溢出、0 axe serious/critical、无技术 ID/Raw JSON 编辑泄漏，键盘路径完整。结果绑定候选 JAR、source commit、Baseline、Chrome/driver/axe 环境、时间窗和 60 个截图指纹，独立 Test Kit CLI 返回 `VALID status=COMPLETE` | 该结果由本地开发环境产生，尚无 CI Candidate/Environment Authority 签发；计划中的 60 格服务错误、60 格目标请求断网和 6 格 GP-04 真实保存冲突均未形成固定协议与完整证据，当前只闭合 60/186；人工读屏和六人可用性未执行，产品、UX、QA 尚未签署，因此不能转为正式 `PASS` |
 | `S0-AC-02` | `PARTIAL` | 4 API、1 Feature、1 Tool、9 Case 的 Golden Demo Pack、严格加载和 Test Kit 基础验证已存在；每个 Case 已投影完整四 API `RUNTIME_CONTROL`，幂等与禁止写入作为独立 `BUSINESS_EXPECTATION` 保留，编译 source map 不再把业务预期误降为 Tool fixture；前后端与独立 Test Kit 均按该语义验证运行闭包 | Dataset 仍为只读投影；受保护 fixture material 仍由开发服务组装；部分子引用是 Stage 0 坐标摘要；业务与正确性 Owner 未签署 |
 | `S0-AC-03` | `PARTIAL` | Spike A 已实现确定性编译、强类型 exact-ref provenance、内容寻址、通过既有 Registry 发布后逐项回读复算，并仅以确认的 exact suite 进入既有 `TestSuiteExecutionService`；完整闭包以可逆字典清单写入 aggregate evidence，Canonical suite metadata 为 11,863 bytes；真实 Spring test profile 已从同一受治理闭包连续运行 3 个 suite、27 个唯一 child run，全部 `PASSED` 且进程内真实外部调用为 0。四个 Canonical API descriptor 已幂等进入应用级 `ResourceRegistry`，同名异构 descriptor 会使 Demo 装配失败而不会覆盖已有资产；Canonical `RETURN` 以 transport-level 原始响应经过真实 `HttpResourceOperator` 的状态、协议和输出映射链，合格 child evidence 为 `CERTIFIABLE`；未解析 descriptor 在调度前以稳定错误失败，output-level 替身仍只能产生 `EXPLORATORY` 证据。严格 Schema 与独立 Test Kit verifier 已验证成功、失败关闭和篡改负向样例。同一 Canonical Feature DAG 已包装为 Tool binding 并通过既有 BLOGE nested graph 路径执行；Spike B 已用真实 BLOGE Trace 驱动 6 节点、5 边 Data Lens，并用服务端可信身份、专用 purpose 和 clearance 取代查询参数授权；Spike C 已证明 production profile/property 不装配受治理基线端点，且进程内 connector counter 为 0。部署启动器已能用实际 JAR SHA-256、Git commit 与 `CLEAN` source tree 生成不可由请求覆盖的候选绑定 | 上述仍是 `DEVELOPMENT_TEST_OWNED`；候选绑定机制已实现，但尚未形成目标验收环境的正式 Candidate attestation。Spike B 仍缺字段级 source map、客户级数据分类/ABAC/Scope Authority 和可信 Graph/semantic fingerprint 来源；Spike C 仍缺部署级 network deny/egress 观测和安全签署 |
 | `S0-AC-04` | `PARTIAL` | `POST /api/capability-studio/governed-baseline` 已把页面 9 × 3 切换到同一受治理编译、应用级 `ResourceRegistry`、真实 `HttpResourceOperator`、Registry 回读与 exact-suite 执行链路；真实 Spring 运行产生 3 个唯一 suite `runId`、27 个唯一 child `runId`，九个 Case 在每轮恰好出现一次并全部 `PASSED`。服务端通过既有授权 API 回读每条完整签名 child evidence，逐项核对 target/fixture/run/integrity，导出 payload-free evidence fingerprint、semantic result fingerprint、业务断言与 Fixture 控制计数；同 Case 三轮 semantic fingerprint 一致，9/9 Oracle 与 27/27 业务断言通过，timeout fallback、duplicate 幂等和 forbidden-write 无写入均形成专项证明；publication receipt、suite exact ref、compilation/source-map/provenance fingerprint 三轮一致，进程内真实外部调用为 0。Canonical `RETURN` 使用 descriptor-backed transport fixture，child evidence 为 `CERTIFIABLE`；未解析 Resource 在调度前失败，output-level 替身保持 `EXPLORATORY`。v3 严格 Schema 新增 `verificationLevel`、部署候选和 canonical execution intent；独立 Test Kit 会重算 intent 并拒绝候选篡改，失败态固定为 `NOT_VERIFIED` 且不携带运行证据 | 协议继续强制 `DEVELOPMENT_TEST_OWNED / NO_GO`。干净制品由演示启动器运行时可关闭候选未绑定限制，但正式 `PASS` 仍缺目标环境 Candidate attestation、部署级 network deny/egress 观测及正确性/Runtime/QA Owner 签署；缺少任一项都不能用 `CERTIFIABLE` 证据替代发布验收 |
@@ -1482,7 +1515,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-18，�
 | `S0-DEV-GOV-14` | Data Lens 的视图参数不得成为授权事实；服务端必须先验证 credential 与专用 purpose，再以受信 clearance 裁决 Payload；401/403 和安全审计不可用必须在 Feature Graph 执行前失败关闭；伪造 `X-Clearance` 不得提权 | Controller 覆盖缺少/无效 credential、缺少 purpose、PUBLIC 结构查看、PUBLIC Payload 拒绝、伪造 clearance、CONFIDENTIAL Payload、审计不可用；两个零交互测试证明拒绝和审计故障发生在 rehearsal service 之前；前端覆盖 host credential、固定 purpose、中英文恢复文案和拒绝后回到实际结构视图；启动脚本使用认证探针。2026-08-18 真实浏览器再以 `CONFIDENTIAL` 与 `PUBLIC` 两个独立 test 实例复验中文桌面和 `390×844`：允许态闭合 6 节点、5 条边、0 真实调用及同一 Trace Payload，拒绝态回到结构投影、保留 6/5 拓扑且 DOM 无 Payload | `PASS`，仅限 test/staging 演示切片；英文拒绝态、客户级 ABAC、数据分类、跨 Scope Payload Authority 和正式安全签署仍未闭合 |
 | `S0-DEV-GOV-15` | 精确证据必须读取原持久化 child run，禁止隐式重跑；同一 Run/Case 重读必须字节级稳定。投影必须闭合 Tool、所有适用 Contract、Dataset、Case、runtime target、Binding Plan、Fixture、Behavior、依赖、source map、provenance、断言和同一 Run/Data Lens；完整结构证据与当前 graph-path DAG 必须分别验收。`STRUCTURE_ONLY` 不得携带 Payload；嵌套 edge/path 坐标必须无损；只有显式 `ALLOW_REAL`/`FALLBACK_TO_REAL` 才可令 `fallbackToReal=true`。URL 必须保持 `task/runId/scenarioId/nodeId`，刷新、返回和重复点击不得创建新 Run | 服务端单元/集成测试覆盖原 Run、零执行、字节/指纹确定性、7 节点完整 Data Lens、6 节点当前子图、timeout 焦点、Contract union、嵌套 edge/path、错误 Case、未知 Run、合同/Fixture/plan/evidence 漂移、授权与篡改失败关闭；前端 66 条聚焦测试覆盖严格解析、同格单 GET、错误恢复、URL 刷新/返回和子图过滤；独立 Test Kit 用真实响应 bytes 通过 Schema、exact closure、焦点、Payload 边界及三类 fingerprint 复算；真实 Spring + Chrome 从 Tool timeout cell 进入证据、Feature、刷新并返回，原 Run/Case/Node 不变；本地干净候选固定 60 格另闭合双语三视口正常态的原 Run/Case/Node、DAG 对齐、页面溢出和 axe serious/critical；当前候选 Test Kit 848 条全量为 0 失败、0 错误、0 跳过，Resource Gateway `clean verify` 共 6703 条、0 失败、0 错误、28 条条件性跳过 | `PASS`，仅限 test/staging 开发证据；目标环境 Candidate attestation、部署级 egress、客户级 ABAC/Scope Authority、异常恢复三视口、人工读屏、CI Authority 与 QA/Integration Owner 签署仍未闭合，正式 Stage 0 保持 `NO_GO` |
 | `S0-DEV-GOV-16` | GP-09 必须从同一 Dataset 产生严格、确定、payload-free 的质量与影响投影；根级 `targetRef` 必须独立锚定唯一被验证的 Feature/Tool，图不能自声明目标后自证闭包。固定黄金事实为 9 `DRAFT`、0 `ACTIVE`、0 `STALE`、五项覆盖 100%、新鲜度 `UNVERIFIED`、准入 `BLOCKED`，且 blocker 精确为 `FRESHNESS_EVIDENCE_MISSING`、`NO_ACTIVE_CASES`。图必须为 37 节点/81 边、无孤立 Case；每 Case 闭合 Source、Oracle、1 Contract、4 runtime dependency 和同一 Target，影响资产计数为 6；`PAYLOAD_NOT_EXPORTED` 不得被解释为源数据已语义脱敏 | 公开严格 v1 Schema；服务端确定性、基数、排序、授权和配置装配测试；独立 Test Kit 从真实 wire bytes 重算 projection fingerprint、根级 Target exact-ref/Scope/关系/准入/汇总与 Payload 边界；前端严格 parser、认证 purpose、选择和错误恢复测试；真实 Spring + Chrome 既有专项闭合质量投影、键盘主路径、503/Retry 和内部协议码不泄漏；本地干净候选固定 60 格另闭合双语三视口正常态的 9 Case、37/81 图、所选 Case 9 节点/8 边、五项 100%、两个业务阻断、页面溢出和 axe serious/critical；Browser 插件以 1280×720 现场复核场景切换；启动脚本以根级 `targetRef=TOOL/tool-cancellation-fee-dispute-handling` 复验同一协议真相。当前候选 Test Kit 848 条全量为 0 失败、0 错误、0 跳过，Resource Gateway `clean verify` 共 6703 条、0 失败、0 错误、28 条条件性跳过 | `PASS`，仅限 test/staging 开发证据；当前 Dataset 仍是只读 Golden Authority，缺可信 freshness Authority、Active 生命周期变更、客户级数据分类/语义脱敏证明、异常状态三视口、人工读屏、CI Authority 与 Data Owner 签署，正式准入继续为 `BLOCKED`，Stage 0 继续为 `NO_GO` |
-| `S0-DEV-GOV-17` | `S0-AC-01` 的自动化浏览器结果必须固定为 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 共 60 格，不允许调用方缩小分母。每格必须显式记录实际 viewport、溢出、axe serious/critical、技术 ID/Raw JSON 泄漏、键盘路径、P0/P1 和 Evidence；`NOT_RUN`/`SKIPPED` 不得伪造观测。结果必须绑定候选制品与 source commit、Baseline、浏览器/driver/axe 环境和执行时间窗，并整体形成可复算 evidence closure | 严格 v1 Schema、Resource Gateway 固定分母构造器与真实 Chrome producer、Test Kit builder/verifier/CLI 和 fail-closed 一键脚本均已实现。提交 `dea25cadc` 的本地干净候选产生 `BMR-dea25cadc49a-1787061494`：60/60 通过、0 跳过、0 P0/P1，候选 JAR fingerprint 为 `sha256:02088ee8464ba843d983f7ce7d7b75c6253fe15d1a6645f483e209d6a5f2bb9e`，evidence closure 为 `sha256:d1a79931c9a2f6ae4771663e6f612a63d14793f8c1a97d56aaa0d79ec08eb829`，独立 CLI 返回 `VALID status=COMPLETE`。脏工作树默认在执行前拒绝；显式开发模式即使 60 格通过也只能得到非 Complete 结果 | `PASS`，仅限本地干净候选的机器开发证据；尚缺 CI Candidate/Environment Authority、外部 Evidence 存储/签发、人工读屏、六人可用性和产品/UX/QA 签署，正式 `S0-AC-01` 仍为 `PARTIAL` |
+| `S0-DEV-GOV-17` | `S0-AC-01` 的正常态 Base Browser Matrix 必须固定为 `GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844` 共 60 格，不允许调用方缩小分母。每格必须显式记录实际 viewport、溢出、axe serious/critical、技术 ID/Raw JSON 泄漏、键盘路径、P0/P1 和 Evidence；`NOT_RUN`/`SKIPPED` 不得伪造观测。结果必须绑定候选制品与 source commit、Baseline、浏览器/driver/axe 环境和执行时间窗，并整体形成可复算 evidence closure | 严格 v1 Schema、Resource Gateway 固定分母构造器与真实 Chrome producer、Test Kit builder/verifier/CLI 和 fail-closed 一键脚本均已实现。提交 `dea25cadc` 的本地干净候选产生 `BMR-dea25cadc49a-1787061494`：60/60 通过、0 跳过、0 P0/P1，候选 JAR fingerprint 为 `sha256:02088ee8464ba843d983f7ce7d7b75c6253fe15d1a6645f483e209d6a5f2bb9e`，evidence closure 为 `sha256:d1a79931c9a2f6ae4771663e6f612a63d14793f8c1a97d56aaa0d79ec08eb829`，独立 CLI 返回 `VALID status=COMPLETE`。脏工作树默认在执行前拒绝；显式开发模式即使 60 格通过也只能得到非 Complete 结果 | `PASS`，仅限正常态 Base Matrix 的本地干净候选机器开发证据；异常态 126 格、CI Candidate/Environment Authority、外部 Evidence 存储/签发、人工读屏、六人可用性和产品/UX/QA 签署仍缺失，正式 `S0-AC-01` 仍为 `PARTIAL` |
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 
@@ -1568,7 +1601,7 @@ npm run build
 
 | Stage | 固定执行矩阵 | 通过阈值 | 立即失败条件 |
 |---|---|---|---|
-| Stage 0 | `GP-01..10 × zh-CN/en-US × 1440/1024/390`；Canonical `9 Case × 3 轮`；6 名代表性用户；3 项技术 Spike | 自动矩阵 100%；至少 5/6 用户在 15 分钟内独立完成；P0/P1 为 0；三项 Spike 全部签署 | 黄金路径依赖手填 ID/Raw JSON/主持人补步骤；任一 Case 错判；真实调用非 0；协议或证据不可复算 |
+| Stage 0 | 浏览器正常态 `GP-01..10 × zh-CN/en-US × 1440/1024/390 = 60`；服务错误同维度 60；目标请求断网同维度 60；GP-04 真实保存冲突 `1 × 2 × 3 = 6`，合计 186；Canonical `9 Case × 3 轮`；6 名代表性用户；3 项技术 Spike | 186 格固定 obligation 全部执行、无跳过且 P0/P1 为 0；异常格同时证明 fault trigger、业务化反馈、数据保留、恢复动作和恢复后 `READY`；至少 5/6 用户在 15 分钟内独立完成；三项 Spike 全部签署 | 缩小或动态跳过分母；用 HTTP 错误冒充断网；用模拟文案冒充真实 stale revision 冲突；黄金路径依赖手填 ID/Raw JSON/主持人补步骤；任一 Case 错判；真实调用非 0；协议或证据不可复算 |
 | Stage 1 | 订单查询、城市规则 `2 API × 样例/表单/OpenAPI/Schema 4 种入口 × 新建/兼容修改/breaking 修改/非法输入 4 类变更`；正常、业务错误、超时、禁止访问 4 类依赖表现 | 32 个创作组合和 8 个隔离运行组合全部通过；round-trip 语义差异为 0 | breaking change 未阻断；保存丢数据；未解析依赖继续运行；敏感字段泄漏 |
 | Stage 2 | 取消费争议 `1 Feature × timeout/retry/fallback/skip/partial 5 类故障 × 有/无 Payload 权限 2 类身份 × 1440/1024 2 个视口` | 20 个 Data Lens 组合全部通过；节点、端口、边标签和数据摘要遮挡数为 0 | Trace 与 Oracle 状态矛盾；字段来源不可解释；无权限身份看到 Payload；Auto Layout 遮挡关键数据 |
 | Stage 3 | `9 Canonical Case × 3 轮` Tool 整包运行；exact export、篡改、混版、越权 4 类离线验证；依赖兼容与 breaking 升级各 1 组 | 27 次运行与 exact export 全通过；3 类负向包全部被拒绝；breaking 升级稳定阻断 | 任一依赖未进入闭包；本地替身被标为现场认证；禁止写入发生；结果 fingerprint 漂移 |
@@ -1656,7 +1689,23 @@ Stage 0 冻结的性能与恢复 SLO 必须从 Stage 1 起进入每次发布候�
 
 ### 15.4 真实浏览器 Golden Path
 
-至少覆盖：
+发布候选的浏览器验收分为相互绑定、不能互相替代的两份机器结果：
+
+1. `Base Browser Matrix Result v1` 固定正常态 60 格：`GP-01..10 × zh-CN/en-US × 1440×900/1024×768/390×844`。
+2. `Browser Anomaly Matrix Result v1` 固定异常态 126 格：同维度的服务错误 60 格、目标请求断网 60 格，以及 GP-04 的 `2 语言 × 3 视口` 真实 stale revision 保存冲突 6 格。
+
+两份结果必须绑定同一个 candidate、Baseline、浏览器环境和执行窗口。正常态协议不能为了加入异常态而改变 60 格分母；异常态协议通过 `baseMatrixRef` 引用正常态结果。发布门禁要求两份结果同时 `COMPLETE`，总计 186 格全部执行且没有跳过。
+
+异常态的 `PASS` 表示预期故障被正确触发、解释和恢复，不表示 HTTP 请求成功。每个异常 obligation 必须记录 fault mechanism、目标路由、实际故障类别、期望界面状态、期望恢复动作、浏览器观察和 Evidence fingerprint，并满足：
+
+- 服务错误使用目标 API 的真实 4xx/5xx 观测，不能只显示预置错误文案；
+- 断网使用目标请求的 transport failure，不能用 503 冒充；
+- 保存冲突来自浏览器读取旧 revision 后的真实并发写入与 409，必须保留本地草稿、不得覆盖服务端新 revision，也不得沿用陈旧的绿色预检；
+- 点击 Retry、Reload 或重新合并后回到 `READY`，旧错误、旧 Evidence 和假成功状态全部清除；
+- 截图只能证明视觉结果，必须另有 fault-trigger Evidence 证明故障确实发生；
+- 异常协议继续保持 payload-free，不写入 request/response body、HTML、Trace 或业务字段值。
+
+浏览器矩阵还必须覆盖：
 
 - 中文和英文；
 - 1440px、1024px 和 390px 关键视口；
@@ -1801,9 +1850,9 @@ Manifest 只保存精确引用、状态、计数和 fingerprint，不复制业�
 
 ### 体验验收
 
-- 真实浏览器完成中文/英文、桌面/移动和键盘路径。
+- 真实浏览器完成正常态 60 格与异常态 126 格，共 186 格中文/英文、桌面/移动和键盘路径；两份矩阵绑定同一候选且无跳过。
 - 1440px、1024px 和 390px 视口无节点、边标签、表格文本、数据摘要和状态控件遮挡。
-- 404、400、无权限、冲突、过期和运行失败均说明原因、影响和可执行恢复动作。
+- 404、400、无权限、冲突、过期、目标请求断网和运行失败均由真实故障触发，并说明原因、影响和可执行恢复动作；恢复后页面回到 `READY` 且不保留旧 Evidence。
 - 保存、运行、跨页面和 Deep Link 不丢失当前能力、场景与数据上下文。
 - `CapabilityStudioGoldenPathAcceptanceManifest` 为 `ACCEPTED`，且所有签署和证据引用闭合。
 
@@ -1869,4 +1918,4 @@ formalImplementationGap = (27 - formalPassCount) / 27 × 100%
 3. 若只能关闭开发缺口，则更新 `S0-DEV-GOV-*`、追踪矩阵和剩余缺口，但正式差距保持不变；
 4. 下一轮优先选择能移除最多共同根因的纵向切片，而不是选择最容易把页面标绿的局部任务。
 
-当前自动化可继续关闭的首要根因依次为：本地固定 60 单元浏览器矩阵已闭合，但仍缺 CI Candidate/Environment Authority、外部 Evidence 存储与签发；Scenario Dataset/freshness 缺少持久化 Authority 与 Active 生命周期；Feature 缺字段级 source map 和客户级 ABAC/Scope Authority；部署级 network deny/egress 尚无目标环境证据；错误、冲突和断网状态尚未形成完整三视口矩阵。六人可用性、业务判断和 Owner 签署属于必须由真实责任人完成的外部验收，系统只能提供可信入口和证据，不能代签。
+当前自动化可继续关闭的首要根因依次为：本地正常态 60 单元浏览器矩阵已闭合，但计划中的服务错误 60 格、目标请求断网 60 格和 GP-04 真实保存冲突 6 格尚未形成 `Browser Anomaly Matrix Result v1`，当前浏览器完成度为 60/186；仍缺 CI Candidate/Environment Authority、外部 Evidence 存储与签发；Scenario Dataset/freshness 缺少持久化 Authority 与 Active 生命周期；Feature 缺字段级 source map 和客户级 ABAC/Scope Authority；部署级 network deny/egress 尚无目标环境证据。六人可用性、业务判断和 Owner 签署属于必须由真实责任人完成的外部验收，系统只能提供可信入口和证据，不能代签。
