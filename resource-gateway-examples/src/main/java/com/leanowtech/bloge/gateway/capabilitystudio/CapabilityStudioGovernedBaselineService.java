@@ -160,8 +160,7 @@ public final class CapabilityStudioGovernedBaselineService {
         for (int round = 1; round <= ROUND_COUNT; round++) {
             String clientRequestId = batchId + ":round-" + round;
             receipts.add(candidate.run(null, target.operator(), target.contract(), runtimeTarget,
-                    datasetCompilation, clientRequestId, publicationIdentity, executionIdentity,
-                    candidateAuthority.current().orElse(null)));
+                    datasetCompilation, clientRequestId, publicationIdentity, executionIdentity));
         }
         return projectVerified(receipts, expectedCaseIds, rehearsal.operatorFootprints(),
                 runtimeAsset.realExternalCalls().get());

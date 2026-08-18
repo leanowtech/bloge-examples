@@ -149,9 +149,10 @@ public class CapabilityStudioDemoConfiguration {
             CapabilityStudioGovernedCompilationService compiler,
             CapabilityStudioGovernedAssetPublisher publisher,
             TestSuiteExecutionService executions,
-            TestExecutionApiService childExecutions) {
+            TestExecutionApiService childExecutions,
+            CapabilityStudioDeploymentCandidateAuthority candidateAuthority) {
         return new CapabilityStudioGovernedCandidateService(
-                mapper, compiler, publisher, executions, childExecutions);
+                mapper, compiler, publisher, executions, childExecutions, candidateAuthority);
     }
 
     @Bean

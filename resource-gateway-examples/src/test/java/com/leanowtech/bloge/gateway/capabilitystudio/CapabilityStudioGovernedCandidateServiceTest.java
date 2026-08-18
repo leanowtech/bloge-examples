@@ -60,7 +60,8 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @BeforeEach
     void setUp() {
         service = new CapabilityStudioGovernedCandidateService(
-                mapper, compiler, publisher, executions, childExecutions);
+                mapper, compiler, publisher, executions, childExecutions,
+                CapabilityStudioDeploymentCandidateAuthority.unbound());
     }
 
     @Test
@@ -120,6 +121,11 @@ class CapabilityStudioGovernedCandidateServiceTest {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
         CapabilityStudioGovernedAssetPublisher.Receipt publication = publication();
         CapabilityStudioDeploymentCandidateAuthority.Binding build = candidateBuild();
+        service = new CapabilityStudioGovernedCandidateService(
+                mapper, compiler, publisher, executions, childExecutions,
+                new CapabilityStudioDeploymentCandidateAuthority(
+                        build.authority(), build.instanceId(), build.buildRef(), build.revision(),
+                        build.sourceCommit(), build.sourceTreeStatus(), build.artifactFingerprint()));
         when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication);
         when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
@@ -138,7 +144,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
 
         CapabilityStudioGovernedCandidateService.CandidateReceipt receipt = service.run(
                 null, null, null, runtimeTarget(), null, "candidate-bound",
-                publicationIdentity, executionIdentity, build);
+                publicationIdentity, executionIdentity);
 
         assertThat(receipt.candidateBuild()).isEqualTo(build);
         assertThat(receipt.evidence().candidateIntentFingerprint())
@@ -154,6 +160,12 @@ class CapabilityStudioGovernedCandidateServiceTest {
     @Test
     void rejectsCandidateIntentFingerprintDrift() {
         CapabilityStudioGovernedCompilation compilation = compilation(true);
+        CapabilityStudioDeploymentCandidateAuthority.Binding build = candidateBuild();
+        service = new CapabilityStudioGovernedCandidateService(
+                mapper, compiler, publisher, executions, childExecutions,
+                new CapabilityStudioDeploymentCandidateAuthority(
+                        build.authority(), build.instanceId(), build.buildRef(), build.revision(),
+                        build.sourceCommit(), build.sourceTreeStatus(), build.artifactFingerprint()));
         when(compiler.compile(null, null, null, runtimeTarget(), null)).thenReturn(compilation);
         when(publisher.publish(compilation, publicationIdentity)).thenReturn(publication());
         when(executions.execute(eq("suite-golden"), any(), eq(executionIdentity)))
@@ -165,7 +177,7 @@ class CapabilityStudioGovernedCandidateServiceTest {
 
         assertThatThrownBy(() -> service.run(
                 null, null, null, runtimeTarget(), null, "candidate-drift",
-                publicationIdentity, executionIdentity, candidateBuild()))
+                publicationIdentity, executionIdentity))
                 .isInstanceOf(CapabilityStudioGovernedCompilationException.class)
                 .extracting("code")
                 .isEqualTo(

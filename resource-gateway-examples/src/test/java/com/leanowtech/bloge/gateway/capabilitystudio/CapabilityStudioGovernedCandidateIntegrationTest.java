@@ -56,6 +56,13 @@ import static org.mockito.Mockito.verify;
                 "gateway.testing.durable.worker-quarantines.request-key-protection.write-mode=KEYED_ONLY",
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.instance-id=integration-replica-a",
                 "gateway.testing.durable.worker-quarantines.request-index-rollout.artifact-fingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "gateway.capability-studio.acceptance.candidate-build.authority=integration-test",
+                "gateway.capability-studio.acceptance.candidate-build.instance-id=integration-replica-a",
+                "gateway.capability-studio.acceptance.candidate-build.build-ref=resource-gateway-examples",
+                "gateway.capability-studio.acceptance.candidate-build.revision=1.0.0",
+                "gateway.capability-studio.acceptance.candidate-build.source-commit=abcdef0",
+                "gateway.capability-studio.acceptance.candidate-build.source-tree-status=CLEAN",
+                "gateway.capability-studio.acceptance.candidate-build.artifact-fingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 "spring.datasource.url=jdbc:h2:mem:capability-studio-governed-candidate;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false",
                 "gateway.testing.store.jdbc-url=jdbc:h2:mem:capability-studio-governed-candidate-control;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         })
@@ -96,6 +103,9 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
 
     @Autowired
     private CapabilityStudioGovernedBaselineService governedBaseline;
+
+    @Autowired
+    private CapabilityStudioDeploymentCandidateAuthority candidateAuthority;
 
     @Autowired
     private CapabilityStudioScenarioDatasetProjector datasetProjector;
@@ -151,7 +161,7 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         CapabilityStudioGovernedAssetPublisher publisher =
                 new CapabilityStudioGovernedAssetPublisher(mapper, registryGateway);
         candidate = new CapabilityStudioGovernedCandidateService(
-                mapper, compiler, publisher, suiteExecutions, childExecutions);
+                mapper, compiler, publisher, suiteExecutions, childExecutions, candidateAuthority);
     }
 
     @Test
@@ -167,6 +177,9 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(receipt.evidence().status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
         assertThat(receipt.evidence().provenanceFingerprint()).matches("sha256:[a-f0-9]{64}");
         assertThat(receipt.evidence().sourceMapFingerprint()).matches("sha256:[a-f0-9]{64}");
+        assertThat(receipt.candidateBuild()).isEqualTo(candidateAuthority.current().orElseThrow());
+        assertThat(receipt.evidence().candidateIntentFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
         assertThat(receipt.evidence().childRuns()).allSatisfy(child ->
         {
             assertThat(child.status()).isEqualTo(TestSuiteRunEvidence.Status.PASSED.name());
@@ -224,6 +237,20 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
         assertThat(projection.evidenceClass()).isEqualTo("CERTIFIABLE");
         assertThat(projection.publication()).isNotNull();
         assertThat(projection.publication().fixtureCount()).isEqualTo(9);
+        CapabilityStudioDeploymentCandidateAuthority.Binding boundCandidate =
+                candidateAuthority.current().orElseThrow();
+        assertThat(projection.candidateBuild()).satisfies(candidateBuild -> {
+            assertThat(candidateBuild.authority()).isEqualTo(boundCandidate.authority());
+            assertThat(candidateBuild.instanceId()).isEqualTo(boundCandidate.instanceId());
+            assertThat(candidateBuild.buildRef()).isEqualTo(boundCandidate.buildRef());
+            assertThat(candidateBuild.revision()).isEqualTo(boundCandidate.revision());
+            assertThat(candidateBuild.sourceCommit()).isEqualTo(boundCandidate.sourceCommit());
+            assertThat(candidateBuild.sourceTreeStatus()).isEqualTo(boundCandidate.sourceTreeStatus());
+            assertThat(candidateBuild.artifactFingerprint())
+                    .isEqualTo(boundCandidate.artifactFingerprint());
+        });
+        assertThat(projection.candidateIntentFingerprint())
+                .matches("sha256:[a-f0-9]{64}");
         assertThat(projection.rounds()).hasSize(3)
                 .extracting(CapabilityStudioGovernedBaselineProjection.Round::suiteRunId)
                 .doesNotHaveDuplicates();
@@ -285,7 +312,6 @@ class CapabilityStudioGovernedCandidateIntegrationTest {
                 .map(CapabilityStudioGovernedBaselineProjection.CaseRound::runId))
                 .doesNotHaveDuplicates();
         assertThat(projection.limitations()).containsExactly(
-                "IMMUTABLE_RELEASE_CANDIDATE_NOT_BOUND",
                 "RUNTIME_ENVIRONMENT_NOT_ATTESTED",
                 "DEPLOYMENT_EGRESS_NOT_OBSERVED",
                 "OWNER_SIGNOFF_NOT_PRESENT");

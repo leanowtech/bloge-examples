@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -47,18 +48,22 @@ public final class CapabilityStudioGovernedCandidateService {
     private final CapabilityStudioGovernedAssetPublisher publisher;
     private final TestSuiteExecutionService suiteExecutions;
     private final TestExecutionApiService childExecutions;
+    private final Optional<CapabilityStudioDeploymentCandidateAuthority.Binding> candidateBinding;
 
     public CapabilityStudioGovernedCandidateService(
             ObjectMapper mapper,
             CapabilityStudioGovernedCompilationService compiler,
             CapabilityStudioGovernedAssetPublisher publisher,
             TestSuiteExecutionService suiteExecutions,
-            TestExecutionApiService childExecutions) {
+            TestExecutionApiService childExecutions,
+            CapabilityStudioDeploymentCandidateAuthority candidateAuthority) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.publisher = Objects.requireNonNull(publisher, "publisher");
         this.suiteExecutions = Objects.requireNonNull(suiteExecutions, "suiteExecutions");
         this.childExecutions = Objects.requireNonNull(childExecutions, "childExecutions");
+        this.candidateBinding = Objects.requireNonNull(candidateAuthority, "candidateAuthority")
+                .current();
     }
 
     /**
@@ -84,14 +89,14 @@ public final class CapabilityStudioGovernedCandidateService {
             IntegrationRequestContext publicationIdentity,
             IntegrationRequestContext executionIdentity) {
         return run(graph, operator, contract, runtimeTarget, datasetCompilation, clientRequestId,
-                publicationIdentity, executionIdentity, null);
+                publicationIdentity, executionIdentity, candidateBinding.orElse(null));
     }
 
     /**
      * Executes an exact candidate and binds a deployment-owned build identity into the signed
      * aggregate request-metadata fingerprint.
      */
-    public CandidateReceipt run(
+    private CandidateReceipt run(
             GraphDraft graph,
             OperatorDefinition operator,
             ContractDraft contract,

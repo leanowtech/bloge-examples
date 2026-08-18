@@ -369,8 +369,7 @@ are not resolved through the evidence catalog.
 
 This verifier performs payload-free Schema and semantic closure verification only. It does not
 resolve external evidence, verify public-key signatures, or establish issuer/authority
-permissions; a verified document alone must not be declared formal Stage PASS. Formal acceptance
-remains `NO_GO` until a later authority resolver closes those cryptographic and authority checks.
+permissions; a verified document alone must not be declared formal Stage PASS.
 
 ```java
 CapabilityStudioStageAcceptanceResultV2Verifier verifier =
@@ -378,6 +377,42 @@ CapabilityStudioStageAcceptanceResultV2Verifier verifier =
 CapabilityStudioStageAcceptanceResultV2Verifier.VerificationResult result =
         verifier.verify(resultJsonBytes);
 ```
+
+`CapabilityStudioStageAcceptanceAuthorityVerifier` is the mandatory second stage for formal
+acceptance. It first runs the semantic verifier; an invalid protocol returns `PROTOCOL_INVALID`
+without calling any external system, and a truthful non-`PASS` document returns `NOT_ACCEPTED`.
+For a semantic `PASS`, it resolves every evidence coordinate in stable `evidenceId` order, then
+every owner signature in stable role order. Resolver outages become `BLOCKED`; missing artifacts,
+coordinate drift, issuer rejection, authority binding drift, or invalid Owner decisions become
+`REJECTED`. Only complete external verification returns `ACCEPTED`.
+
+The resolver returns bounded `ResolvedEvidence` facts, never business payloads. The verifier binds
+environment facts to the declared issuer, Scope, candidate artifact, environment fingerprint, and
+full execution window; it binds egress facts to the candidate intent and observation window; and it
+binds every Owner signature to the same pre-signoff evidence closure. One immutable
+`AcceptanceContext` is passed to all issuer and Owner policies so a signature from another result,
+candidate, environment, or execution window cannot be reused.
+
+```java
+CapabilityStudioStageAcceptanceAuthorityVerifier authorityVerifier =
+        new CapabilityStudioStageAcceptanceAuthorityVerifier();
+CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult authorityResult =
+        authorityVerifier.verify(
+                stageResult,
+                evidenceResolver,
+                evidenceIssuerPolicy,
+                ownerAuthority);
+if (!authorityResult.accepted()) {
+    throw new IllegalStateException(authorityResult.reasonCode());
+}
+```
+
+The three collaborators must be backed by external authorities. In particular, a policy that
+returns `VERIFIED` without checking an independently pinned `EvidenceVerificationKeySet`, issuer
+permissions, key lifecycle/revocation, signature, expiry, and organizational Owner role does not
+constitute formal acceptance. The orchestration and cross-binding gate are implemented; the
+repository still keeps Stage 0 at `NO_GO` until concrete trusted Resolver/Issuer/Owner adapters and
+target-environment evidence are configured and independently exercised.
 
 ## Verify the Stage 0 Browser Matrix Result
 

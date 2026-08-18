@@ -134,6 +134,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .hasSingleBean(CapabilityStudioGovernedCompilationService.class)
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .hasSingleBean(CapabilityStudioDeploymentCandidateAuthority.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
                         .hasSingleBean(CapabilityStudioGovernedBaselineService.class)
                         .hasSingleBean(CapabilityStudioGovernedRunEvidenceService.class)
@@ -156,6 +157,7 @@ class CapabilityStudioDemoConfigurationTest {
                         .hasSingleBean(CapabilityStudioFeatureRehearsalBaselineService.class)
                         .hasSingleBean(CapabilityStudioGovernedCompilationService.class)
                         .hasSingleBean(CapabilityStudioGovernedAssetPublisher.class)
+                        .hasSingleBean(CapabilityStudioDeploymentCandidateAuthority.class)
                         .hasSingleBean(CapabilityStudioGovernedCandidateService.class)
                         .hasSingleBean(CapabilityStudioGovernedBaselineService.class)
                         .hasSingleBean(CapabilityStudioGovernedRunEvidenceService.class));

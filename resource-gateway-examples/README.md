@@ -104,9 +104,14 @@ acceptance all enforce these facts independently.
 
 The governed asset publisher registers those plans only through the existing testing registry, ignores
 write receipts, and independently re-reads and re-fingerprints every fixture and suite. The
-candidate service then executes that exact suite through the existing `TestSuiteExecutionService`;
-aggregate evidence retains the full exact-ref closure, while each child run carries the exact suite
-reference plus compact provenance and source-map fingerprints so it remains below the 16 KiB child
+candidate service then executes that exact suite through the existing `TestSuiteExecutionService`.
+It snapshots `CapabilityStudioDeploymentCandidateAuthority` at construction time; its public run
+API has no candidate argument, so controllers, baseline orchestration, and other callers cannot
+replace the deployment-owned build identity for an individual run. Bound deployments put that same
+candidate into every execution intent, while explicitly unbound local deployments retain the honest
+unbound limitation. Aggregate evidence retains the full exact-ref closure; each child run carries
+the exact suite reference plus compact provenance and source-map fingerprints so it remains below
+the 16 KiB child
 request metadata boundary. Legacy Scenario compilation omits this metadata and retains its previous
 content-addressed output. A Data Lens read model also projects the existing
 `TestRunEvidence` in structure-only or payload-visible modes. The requested mode is not an
