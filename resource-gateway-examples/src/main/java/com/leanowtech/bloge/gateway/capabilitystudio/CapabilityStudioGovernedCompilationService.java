@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationPlan;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
@@ -270,9 +271,14 @@ public final class CapabilityStudioGovernedCompilationService {
                         provenance.sourceMapFingerprint()),
                 "SOURCE_MAP_FINGERPRINT_DRIFT", path);
         if (requireExactRefs) {
-            require(Objects.equals(metadata.get(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS),
-                            provenance.exactRefs()),
-                    "EXACT_REF_CLOSURE_DRIFT", path);
+            try {
+                require(Objects.equals(ScenarioGovernedProvenanceMetadataCodec.decodeExactRefs(
+                                        metadata.get(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS)),
+                                provenance.exactRefs()),
+                        "EXACT_REF_CLOSURE_DRIFT", path);
+            } catch (IllegalArgumentException invalid) {
+                throw failure("EXACT_REF_CLOSURE_DRIFT", path);
+            }
         }
     }
 

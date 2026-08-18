@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationPlan;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompiler;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioValidationService;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRegistrationRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
@@ -78,12 +79,9 @@ class CapabilityStudioGovernedCompilationServiceTest {
                     ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
                     ScenarioGovernedCompiler.GOVERNED_PROVENANCE_FINGERPRINT,
                     ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
-            assertThat(metadata.get(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS))
-                    .isInstanceOf(List.class);
-            @SuppressWarnings("unchecked")
             List<ScenarioGovernedCompilationProvenance.ExactRef> refs =
-                    (List<ScenarioGovernedCompilationProvenance.ExactRef>) metadata.get(
-                            ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
+                    ScenarioGovernedProvenanceMetadataCodec.decodeExactRefs(metadata.get(
+                            ScenarioGovernedCompiler.GOVERNED_EXACT_REFS));
             assertThat(refs).containsExactlyInAnyOrderElementsOf(expected);
         });
 
@@ -152,10 +150,10 @@ class CapabilityStudioGovernedCompilationServiceTest {
                 null, operator, contract, runtimeTarget(), adapterCompilation());
         Map<String, Object> metadata = result.plan().suite().testSuite().metadata();
         Object exactRefs = metadata.get(ScenarioGovernedCompiler.GOVERNED_EXACT_REFS);
-        int exactRefCount = ((java.util.Collection<?>) exactRefs).size();
+        int exactRefCount = ScenarioGovernedProvenanceMetadataCodec.exactRefCount(exactRefs);
 
         assertThat(exactRefCount).isGreaterThan(50).isLessThanOrEqualTo(4_096);
-        assertThat(JSON.writeValueAsBytes(exactRefs).length).isLessThanOrEqualTo(1_048_576);
+        assertThat(JSON.writeValueAsBytes(metadata).length).isLessThanOrEqualTo(16_384);
         Map<String, Object> compactChildBinding = Map.of(
                 ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION,
                 metadata.get(ScenarioGovernedCompiler.GOVERNED_PROVENANCE_SCHEMA_VERSION),

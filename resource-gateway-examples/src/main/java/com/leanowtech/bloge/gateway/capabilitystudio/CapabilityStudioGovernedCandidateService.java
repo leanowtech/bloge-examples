@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
@@ -149,10 +150,19 @@ public final class CapabilityStudioGovernedCandidateService {
                         actualMetadata.get("governedSourceMapFingerprint"))),
                 "SOURCE_MAP_FINGERPRINT_DRIFT",
                 "/response/evidence/metadata/governedSourceMapFingerprint");
-        require(Objects.equals(expectedMetadata.get("governedExactRefs"),
-                        actualMetadata.get("governedExactRefs")),
-                "EXACT_REF_CLOSURE_DRIFT",
-                "/response/evidence/metadata/governedExactRefs");
+        try {
+            require(Objects.equals(
+                            ScenarioGovernedProvenanceMetadataCodec.decodeExactRefs(
+                                    expectedMetadata.get("governedExactRefs")),
+                            ScenarioGovernedProvenanceMetadataCodec.decodeExactRefs(
+                                    actualMetadata.get("governedExactRefs"))),
+                    "EXACT_REF_CLOSURE_DRIFT",
+                    "/response/evidence/metadata/governedExactRefs");
+        } catch (IllegalArgumentException invalid) {
+            throw new CapabilityStudioGovernedCompilationException(
+                    ERROR_PREFIX + "EXACT_REF_CLOSURE_DRIFT",
+                    "/response/evidence/metadata/governedExactRefs");
+        }
 
         List<ChildRunRef> childRuns = evidence.caseResults().stream()
                 .map(result -> new ChildRunRef(

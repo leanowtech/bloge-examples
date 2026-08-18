@@ -490,7 +490,8 @@ public class ScenarioGovernedCompiler {
         metadata.put(GOVERNED_PROVENANCE_FINGERPRINT, provenanceFingerprint);
         metadata.put(GOVERNED_SOURCE_MAP_FINGERPRINT, provenance.sourceMapFingerprint());
         if (includeExactRefs) {
-            metadata.put(GOVERNED_EXACT_REFS, provenance.exactRefs());
+            metadata.put(GOVERNED_EXACT_REFS,
+                    ScenarioGovernedProvenanceMetadataCodec.encodeExactRefs(provenance));
         }
         return metadata;
     }

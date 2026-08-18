@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
@@ -38,7 +39,6 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -1507,10 +1507,6 @@ public final class TestSuiteExecutionService {
         }
 
         Object refsValue = source.get("governedExactRefs");
-        if (!(refsValue instanceof Collection<?> refs)
-                || refs.isEmpty() || refs.size() > MAX_GOVERNED_EXACT_REFS) {
-            throw governedProvenanceInvalid(identity, "EXACT_REFS_BOUNDS");
-        }
         final ScenarioGovernedCompilationProvenance parsed;
         try {
             if (objectMapper.writeValueAsBytes(refsValue).length
@@ -1518,7 +1514,10 @@ public final class TestSuiteExecutionService {
                 throw governedProvenanceInvalid(identity, "CANONICAL_VALUE_BOUNDS");
             }
             List<ScenarioGovernedCompilationProvenance.ExactRef> exactRefs =
-                    objectMapper.convertValue(refsValue, new TypeReference<>() { });
+                    ScenarioGovernedProvenanceMetadataCodec.decodeExactRefs(refsValue);
+            if (exactRefs.size() > MAX_GOVERNED_EXACT_REFS) {
+                throw governedProvenanceInvalid(identity, "EXACT_REFS_BOUNDS");
+            }
             parsed = new ScenarioGovernedCompilationProvenance(
                     schemaVersion, sourceMapFingerprint, exactRefs);
             if (parsed.exactRefs().size() != exactRefs.size()) {
@@ -1545,7 +1544,7 @@ public final class TestSuiteExecutionService {
         propagated.put("governedProvenanceSchemaVersion", schemaVersion);
         propagated.put("governedProvenanceFingerprint", provenanceFingerprint);
         propagated.put("governedSourceMapFingerprint", sourceMapFingerprint);
-        propagated.put("governedExactRefs", parsed.exactRefs());
+        propagated.put("governedExactRefs", refsValue);
         Map<String, Object> aggregateMetadata = Map.copyOf(propagated);
         Map<String, Object> childMetadata = Map.of(
                 "governedProvenanceSchemaVersion", schemaVersion,

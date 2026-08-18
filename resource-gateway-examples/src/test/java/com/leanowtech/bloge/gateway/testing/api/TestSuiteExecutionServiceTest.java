@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testing.api;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionSubjects;
@@ -912,7 +913,8 @@ class TestSuiteExecutionServiceTest {
                 "governedProvenanceSchemaVersion", provenance.schemaVersion(),
                 "governedProvenanceFingerprint", provenance.fingerprint(objectMapper),
                 "governedSourceMapFingerprint", provenance.sourceMapFingerprint(),
-                "governedExactRefs", provenance.exactRefs());
+                "governedExactRefs",
+                ScenarioGovernedProvenanceMetadataCodec.encodeExactRefs(provenance));
     }
 
     private StoredTestSuite storedPropertySuite() {

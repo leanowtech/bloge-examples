@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.capabilitystudio;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationPlan;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedCompilationProvenance;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioGovernedProvenanceMetadataCodec;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionResponse;
@@ -217,19 +219,17 @@ class CapabilityStudioGovernedCandidateServiceTest {
                         "governedExactRefs", exactRefs()));
     }
 
-    private static List<Map<String, Object>> exactRefs() {
-        return List.of(Map.of(
-                "kind", "DATASET",
-                "id", "dataset-golden",
-                "revision", 1,
-                "fingerprint", fingerprint('5'),
-                "scope", Map.of(
-                        "tenantId", "tenant-a",
-                        "organizationId", "org-a",
-                        "projectId", "project-a",
-                        "environmentId", "test",
-                        "region", "sg"),
-                "authority", "CAPABILITY_STUDIO_GOLDEN_PACK"));
+    private static Map<String, Object> exactRefs() {
+        ScenarioGovernedCompilationProvenance provenance =
+                new ScenarioGovernedCompilationProvenance(
+                        ScenarioGovernedCompilationProvenance.SCHEMA_VERSION,
+                        SOURCE_MAP_FINGERPRINT,
+                        List.of(new ScenarioGovernedCompilationProvenance.ExactRef(
+                                "DATASET", "dataset-golden", 1, fingerprint('5'),
+                                new ScenarioGovernedCompilationProvenance.Scope(
+                                        "tenant-a", "org-a", "project-a", "test", "sg"),
+                                "CAPABILITY_STUDIO_GOLDEN_PACK")));
+        return ScenarioGovernedProvenanceMetadataCodec.encodeExactRefs(provenance);
     }
 
     private CapabilityStudioGovernedAssetPublisher.Receipt publication() {
