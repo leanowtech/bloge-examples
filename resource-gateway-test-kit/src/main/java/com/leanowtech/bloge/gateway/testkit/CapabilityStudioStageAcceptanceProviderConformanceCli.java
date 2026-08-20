@@ -3,7 +3,6 @@ package com.leanowtech.bloge.gateway.testkit;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -75,7 +74,15 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
             printFailure(safeOut, "USAGE");
             return EXIT_INVALID;
         }
-        byte[] input = readBounded(args[1]);
+        Path inputPath;
+        try {
+            inputPath = Path.of(args[1]);
+        } catch (RuntimeException failure) {
+            printFailure(safeOut, "READ");
+            return EXIT_INVALID;
+        }
+        byte[] input = CapabilityStudioBoundedFileReader.read(
+                inputPath, MAXIMUM_INPUT_BYTES);
         if (input == null) {
             printFailure(safeOut, "READ");
             return EXIT_INVALID;
@@ -150,8 +157,9 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
             String verdict = result.verdict().name();
             if (result.verdict()
                     == CapabilityStudioStageAcceptanceProviderConformance.Verdict.CONFORMANT) {
-                out.println("CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount="
-                        + result.challengeCount() + " reportFingerprint="
+                out.println("CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount="
+                        + result.challengeCount() + " authorityBindingFingerprint="
+                        + result.providerBindingFingerprint() + " reportFingerprint="
                         + report.path("reportFingerprint").textValue());
                 return EXIT_CONFORMANT;
             }
@@ -208,15 +216,6 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
             return List.of();
         }
         return List.of(discovered.getFirst().get());
-    }
-
-    private static byte[] readBounded(String value) {
-        try (InputStream input = Files.newInputStream(Path.of(value))) {
-            byte[] bytes = input.readNBytes(MAXIMUM_INPUT_BYTES + 1);
-            return bytes.length <= MAXIMUM_INPUT_BYTES ? bytes : null;
-        } catch (IOException | RuntimeException failure) {
-            return null;
-        }
     }
 
     private static boolean validArgs(String[] args) {

@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.abort;
 
 class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -40,7 +41,9 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
 
         assertThat(accepted).isZero();
         assertThat(loads).hasValue(1);
-        assertThat(success.text()).startsWith("CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=");
+        assertThat(success.text()).startsWith(
+                "CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=")
+                .contains("authorityBindingFingerprint=sha256:");
         assertThat(new CapabilityStudioStageAcceptanceProviderConformanceResultVerifier()
                 .verify(Files.readAllBytes(output)).verified()).isTrue();
 
@@ -105,6 +108,13 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
         assertThat(CapabilityStudioStageAcceptanceProviderConformanceCli.run(
                 new String[0], usage.stream(), usage.stream(), NOW, List::of)).isEqualTo(2);
 
+        Output invalidPath = new Output();
+        assertThat(CapabilityStudioStageAcceptanceProviderConformanceCli.run(
+                new String[]{"--result", "\u0000", "--output", "invalid-path-report.json"},
+                invalidPath.stream(), invalidPath.stream(), NOW, List::of)).isEqualTo(2);
+        assertThat(invalidPath.text()).contains("PROVIDER_CONFORMANCE_CLI.READ")
+                .doesNotContain("\u0000");
+
         Path oversized = temp.resolve("oversized.json");
         Files.write(oversized, new byte[
                 CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES + 1]);
@@ -123,6 +133,32 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
 
         assertThat(usage.text()).contains("PROVIDER_CONFORMANCE_CLI.USAGE");
         assertThat(size.text()).contains("PROVIDER_CONFORMANCE_CLI.READ");
+    }
+
+    @Test
+    void mapsSymlinkAndNonRegularInputToTheStableReadFailure() throws Exception {
+        ObjectNode pass = CapabilityStudioStageAcceptanceAuthorityVerifierTest.validStagePass();
+        Path target = write("target.json", pass.toString());
+        Path link = temp.resolve("linked-result.json");
+        try {
+            Files.createSymbolicLink(link, target.getFileName());
+        } catch (UnsupportedOperationException | java.io.IOException failure) {
+            abort("symbolic links are unavailable in this test environment");
+        }
+
+        Output symlinkOutput = new Output();
+        assertThat(run(link, temp.resolve("symlink-report.json"), List::of, symlinkOutput))
+                .isEqualTo(2);
+        assertThat(symlinkOutput.text())
+                .contains("PROVIDER_CONFORMANCE_CLI.READ")
+                .doesNotContain(link.toString());
+
+        Path directory = temp.resolve("directory-result.json");
+        Files.createDirectory(directory);
+        Output directoryOutput = new Output();
+        assertThat(run(directory, temp.resolve("directory-report.json"), List::of,
+                directoryOutput)).isEqualTo(2);
+        assertThat(directoryOutput.text()).contains("PROVIDER_CONFORMANCE_CLI.READ");
     }
 
     @Test
@@ -253,6 +289,12 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
             CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuer,
             CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority owner)
             implements CapabilityStudioStageAcceptanceAuthorityProvider {
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
+                    fp('a'), resolver, issuer, owner);
+        }
+
         public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver evidenceResolver() {
             return resolver;
         }
@@ -272,6 +314,19 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
         private NoisyProvider(ObjectNode result, String secret) {
             this.result = result;
             this.secret = secret;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            printSecret(secret, "binding-accessor");
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
+                    fp('a'), evidenceResolver(), evidenceIssuerPolicy(), ownerAuthority());
+        }
+
+        @Override
+        public String authorityBindingFingerprint() {
+            printSecret(secret, "binding-accessor");
+            return fp('a');
         }
 
         @Override
