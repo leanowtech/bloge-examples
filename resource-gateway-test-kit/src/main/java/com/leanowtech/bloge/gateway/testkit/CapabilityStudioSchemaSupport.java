@@ -78,6 +78,9 @@ final class CapabilityStudioSchemaSupport {
     static final String AUTHORITY_EVIDENCE_ENVELOPE_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-authority-evidence-envelope-v1.schema.json";
+    static final String PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

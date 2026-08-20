@@ -1539,7 +1539,7 @@ accepted = candidateBound
 | `S0-AC-05` | 至少 5/6 代表性用户在 15 分钟内独立完成黄金路径；无 P0/P1；能说明替身、真实调用和证据含义 | 原始任务记录、完成时间、错误点、严重级别、修订与复验记录 | 业务 Owner、产品、UX `PASS` |
 | `S0-AC-06` | Baseline、Demo Pack、ADR、追踪矩阵与 Manifest 互相使用 exact ref；任何内容变化都会使旧签署失效 | `APPROVED` Baseline、`ACCEPTED` Manifest、七类真实签署和独立 fingerprint 复算 | 交付负责人核对后 `PASS` |
 
-Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-19，当前结论仍为 `NO_GO`：
+Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，当前结论仍为 `NO_GO`：
 
 | ID | 当前状态 | 已有可复验证据 | 阻止 `PASS` 的缺口 |
 |---|---|---|---|
@@ -1584,6 +1584,26 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-19，�
 | `S0-DEV-GOV-24` | 同一不可变候选必须一次性完成正常态 60 格与异常态 126 格，并以 exact base binding、候选制品、环境、执行窗口和两个 evidence closure 证明 186 个 obligation 属于同一可复验运行；错误面板必须与请求语言一致，恢复主动作必须完整位于冻结视口且取得焦点；409 必须按真实请求关联并保留双方数据 | 候选 `40a6d47ca99d19515f03432508dd8d11ce72d13c`、artifact `sha256:ba7c05e6c920d74390a73194ba6368574095876d5e0dbd824eefc710a28b2c35`、environment `sha256:4abf760df61cf15e4cf68400a69113cb52250348448a3ea5afd7874b3ba83599`；正常结果 `BMR-40a6d47ca99d-1787091131` 与 closure `sha256:b0d7a82627f57a4b63a4e73be1ef58e22b9a02f3166566182c7094043b433c8b` 为 60/60，执行时间窗为 `2026-08-18T22:12:11.630011Z..2026-08-18T22:16:02.373497Z`；异常结果 `BAMR-40a6d47ca99d-1787091420` 与 closure `sha256:3181acbb55da760e687464ae0f6ae6f321bbcf99d9a38456627830c8208b04c6` 为 126/126，执行时间窗为 `2026-08-18T22:17:00.095318Z..2026-08-18T22:30:02.991012Z`；Chrome `151.0.7922.138`、driver `150.0.7871.124`、axe `4.12.1`；脚本返回 `COMPLETE: 186/186`，人工复核中英文 390 与英文 1024 冲突截图通过 | `DEVELOPMENT_VERIFIED`：浏览器机器分母已经闭合，但 Chrome 151/driver 150/Selenium CDP 149 版本风险、CI/目标环境 Authority、部署级 egress、外部 Evidence Store、人工读屏、六人可用性及指定 Owner 签署仍未关闭，正式 `formalPassCount` 不增加 |
 | `S0-DEV-GOV-25` | 完整回归的测试结果和验收证据必须分别裁决：测试进程退出成功不能覆盖报告写入失败、磁盘耗尽、Evidence manifest 缺项或跳过项；正式验收必须验证 `expectedEvidenceManifest == persistedEvidenceManifest` 且 `skippedCount=0` | 2026-08-19 在源码提交 `40a6d47ca99d19515f03432508dd8d11ce72d13c` 上执行 Resource Gateway `clean verify`：Maven 最终报告 6717 项、0 失败、0 错误、28 跳过并返回 `BUILD SUCCESS`，但 Surefire 同时明确报告 `No space left on device`，至少一份测试报告未能写入；该运行因此只记录为本地回归观察，不构成完整验收 Evidence。清理可再生产物后，Test Kit `clean verify` 为 943 项、0 失败、0 错误、0 跳过并成功完成 JAR、shade 与 Javadoc 阶段 | 开发观察（非 Acceptance 状态）：代码回归没有观测到失败，但 Resource Gateway 运行因 28 项跳过和 Evidence 落盘不完整，按 `AC-STD-03/09` 不得记为 `PASS`；正式复验必须在容量预检通过的 CI/目标环境中重跑，并以完整 manifest、写入收据和独立 verifier 关闭该阻断 |
 | `S0-DEV-GOV-26` | Capability Studio 正式浏览器脚本必须在任何 Maven/Chrome 前 fail-closed 检查根文件系统剩余空间、inode、artifact root、Maven `target` 和 `TMPDIR` 的实际写入；合同最低阈值为 `4194304 KiB`/4 GiB 与 `20000` inode，正式配置只允许提高，降低任一阈值必须在 Maven 前失败。默认输出必须使用 `<commit-short>-<utc>-<pid>` run-scoped root；clean artifact root 在写探针清理后必须无任何文件、子目录或 symlink，显式同父目录也不例外，否则以 `RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_ARTIFACT_ROOT_NOT_FRESH` 在 Maven 前失败。`--allow-dirty` 是强制开发诊断开关：无论源码树 CLEAN/DIRTY 都不得执行正式 bundle gate、生成正式 manifest 或输出 `COMPLETE: 186/186`；DIRTY 诊断可复用显式 existing base。正式模式在两个 JSON CLI 完成后还必须由 `CapabilityStudioBrowserEvidenceBundleCli` 以四个固定参数生成同 root 的 `capability-studio-browser-evidence-bundle-manifest-v1.json`。证据文件分母固定为 `60 + 126 × 3 = 438`：60 个 normal `.png` screenshot，加上每个 anomaly obligation 同前缀的 `-error.png`、`-recovered.png` 与 `-trigger.json` 精确三件套；任意三文件、角色缺失、跨 obligation 或 normal 非 PNG 必须 fail-closed；只有 bundle 单行输出严格匹配 `VALID status=COMPLETE expectedCount=438 persistedCount=438 manifestFingerprint=sha256:<64 lowercase hex>` 才能输出 `COMPLETE: 186/186` | 脚本已实现正式/开发显式状态、阈值语法与合同下限双校验、空间/inode 检查、artifact/Maven/TMPDIR 可写探针清理、clean root freshness、同父目录拒绝、run-scoped 输出、双 CLI 后严格 bundle gate 和 `EVIDENCE_MANIFEST` 输出；Test Kit verifier 以流式 SHA-256、4096 项 inventory 硬上限、NOFOLLOW 路径检查和精确 role 集合校验真实文件闭包，聚焦 15/15；Resource Gateway 聚焦契约测试 8/8，覆盖 help、非法阈值、正式阈值低于合同下限与容量不足均在 Maven 前失败、跨目录结果拒绝、显式 root 预存旧 evidence 时 Maven 零启动、`--allow-dirty` 强制关闭正式分支、bundle 调用和严格匹配顺序；Test Kit `clean verify` 958/958，Schema packaging、shaded JAR 与 Javadoc/doclint 全部通过。2026-08-19 的一次本地观测约 `0.6 GiB` 可用空间，在该条件下正式入口会于候选构建前失败；实际裁决以每次 preflight 实测为准 | `DEVELOPMENT_VERIFIED` / 开发机制；不增加 `formalPassCount`，不替代外部 Candidate/Environment Authority、Evidence Store、产品/UX/QA、业务/安全/运行 Owner 的真实签署 |
+| `S0-DEV-GOV-27` | Provider Conformance TCK 必须使用 strict Draft 2020-12 结果 Schema，固定六项机制检查、summary exact counts、唯一 Provider 装配、无 fallback、无自签替代和 fail-closed 正负挑战；确定性重放必须比较完整 resolver 请求/结果和 Authority 决策转录，不能只比较最终 verdict；报告必须与原 Stage Result 交叉复算绑定、原子创建且不覆盖旧文件；`CONFORMANT` 只表示 Provider 相对当前部署信任配置的机制一致 | 新增 Schema、TCK、结果 Builder、独立 Verifier、ServiceLoader CLI 和部署说明；聚焦测试 20/20，既有 Stage Authority/CLI 联动测试 44/44；Test Kit `clean verify` 978/978，0 失败、0 错误、0 跳过，Schema packaging、shaded JAR 与 Javadoc/doclint 全部通过 | `DEVELOPMENT_VERIFIED`：开发机制闭合；不增加 `formalPassCount=0/27`，不替代外部五项检查或正式 Stage 退出验收 |
+
+##### Provider Conformance 切片的二元验收标准
+
+`S0-DEV-GOV-27` 不以“代码已存在”或“Happy Path 能运行”为完成条件。只有下列十项同时成立，开发切片才可记为 `DEVELOPMENT_VERIFIED`；任一项不满足即为 `FAIL`，依赖无法提供时为 `BLOCKED`，不得按比例折算：
+
+| ID | 可执行验收标准 | 失败判定与必须证据 |
+|---|---|---|
+| `PCTCK-AC-01` | 输入先由 Stage Acceptance Result v2 独立验证器校验，输入上限固定为 4 MiB；非法 JSON、Schema/语义不合法或时钟非法时，Provider 加载次数必须为 0 | 任一非法输入触发 ServiceLoader 或 Provider 回调即 `FAIL`；保存调用计数和稳定 reason code |
+| `PCTCK-AC-02` | 非 `PASS` Stage Result 产生 `NON_CONFORMANT`，Provider 加载与外部调用均为 0；不得通过 Provider 把前置失败改写为成功 | 任一外部调用、fallback 或 `CONFORMANT` 即 `FAIL` |
+| `PCTCK-AC-03` | 只允许 Java `ServiceLoader` 发现唯一部署 Provider；0 个、多个、注册/构造/链接失败均产生 `BLOCKED`，不得内置默认 Provider、从输入选择 Provider 或切换信任根 | 输出六项固定检查和 `BLOCKED` reason；发现 fallback、自签或第二条装配路径即 `FAIL` |
+| `PCTCK-AC-04` | Baseline 必须由 resolver、Issuer Policy 与 Owner Authority 全部接受；第二次运行的 resolver 请求顺序、解析结果及两类 Authority 决策转录必须与第一次完全一致 | 两次都返回 `ACCEPTED` 但任一权威事实、调用顺序或 reason 漂移，`DETERMINISTIC_REPLAY` 必须为 `FAIL` |
+| `PCTCK-AC-05` | 对每个 Evidence 与 Owner Signature 发起错误 fingerprint 查询，只允许精确 `NOT_FOUND` 通过；`AVAILABLE` 为 `FAIL`，`UNAVAILABLE`/异常为 `BLOCKED` | challenge 数量必须等于实际引用数，且不得把不可用解释为不存在 |
+| `PCTCK-AC-06` | 对每个 Evidence 篡改 material fingerprint、对每个 Owner Signoff 篡改 evidence closure；两类 Authority 都必须确定性 `REJECTED` | 返回 `VERIFIED` 为 `FAIL`；返回空值、`UNAVAILABLE` 或运行异常为 `BLOCKED` |
+| `PCTCK-AC-07` | 结果必须按固定顺序包含六项检查，状态只能为 `PASS/FAIL/BLOCKED/NOT_RUN`；summary、challengeCount、终止顺序和 verdict 必须相互一致 | `CONFORMANT` 必须六项全 `PASS` 且 challengeCount 大于 0；`BLOCKED` 不得夹带 `FAIL`；提前终止后的项必须为 `NOT_RUN` |
+| `PCTCK-AC-08` | 报告必须通过 strict Draft 2020-12 Schema，所有对象关闭额外字段；独立 Verifier 重算检查顺序、summary、外部检查顺序和排除自身字段后的 report fingerprint，并以原 Stage Result 交叉复算 `resultId`、`revision`、完整结果 fingerprint；报告上限 128 KiB | 只校验报告自指纹、未读取原 Stage Result，或直接信任任一提交方计数、顺序、绑定即 `FAIL` |
+| `PCTCK-AC-09` | CLI 只接受 `--result PATH --output PATH`；报告先完整写入同目录临时文件并强制落盘，再以原子 hard-link 发布；目标已存在时不得覆盖；stdout/stderr 不得包含业务 Payload、凭据、Provider 消息或堆栈 | 退出码固定为 0=`CONFORMANT`、2=输入/读写错误、3=`NON_CONFORMANT/BLOCKED`；半写、覆盖或信息泄露任一发生即 `FAIL` |
+| `PCTCK-AC-10` | 本切片聚焦测试、与既有 Authority/CLI 的联动测试及 Test Kit `clean verify` 均为 0 失败、0 错误、0 跳过；Schema 必须进入普通 JAR 与 shaded JAR，Javadoc/doclint 必须通过 | 当前实测分别为 20/20、44/44、978/978；后续测试总数可以增加但不得减少冻结行为覆盖，构建任一后置阶段失败则整项 `FAIL` |
+
+即使 `PCTCK-AC-01..10` 全部通过，正式 Stage 状态仍不变化。企业部署还必须在同一候选、同一环境和同一证据闭包上关闭五项外部责任：组织级信任根归属、KMS/HSM 私钥托管、目标环境真实传输、部署级 egress 强制执行、Owner 流程签署。每项都要有可解析 exact ref、fingerprint、有效时间窗和责任 Owner；缺一项时正式结果只能是 `BLOCKED`，`formalPassCount` 仍为 0。
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 
@@ -1596,6 +1616,10 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioStageAcceptanceResultV2VerifierTest test
+
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioStageAcceptanceProviderConformanceTest,CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest,CapabilityStudioStageAcceptanceProviderConformanceResultVerifierTest,CapabilityStudioStageAcceptanceProviderConformanceCliTest \
+  test
 
 mvn -f resource-gateway-test-kit/pom.xml \
   -Dtest=CapabilityStudioScenarioQualityImpactVerifierTest test
@@ -1976,7 +2000,7 @@ Manifest 只保存精确引用、状态、计数和 fingerprint，不复制业�
 formalImplementationGap = (27 - formalPassCount) / 27 × 100%
 ```
 
-截至 2026-08-19，正式 `formalPassCount=0`，因此正式实现与验收差距仍为 **100%**。这不表示开发工作为零：`S0-DEV-GOV-01..26` 和 GP-01..10 的开发切片已经形成大量 `DEVELOPMENT_VERIFIED` 证据和诚实的开发观察，本地同一干净候选的浏览器机器分母也已达到 186/186；它只表示没有任何一条 Stage 退出合同同时闭合 CI/目标环境 Candidate Authority、业务 Oracle、部署级隔离、完整外部 Evidence、人工复核和 Owner 签署。
+截至 2026-08-20，正式 `formalPassCount=0`，因此正式实现与验收差距仍为 **100%**。这不表示开发工作为零：`S0-DEV-GOV-01..27` 和 GP-01..10 的开发切片已经形成大量 `DEVELOPMENT_VERIFIED` 证据和诚实的开发观察，本地同一干净候选的浏览器机器分母也已达到 186/186；它只表示没有任何一条 Stage 退出合同同时闭合 CI/目标环境 Candidate Authority、业务 Oracle、部署级隔离、完整外部 Evidence、人工复核和 Owner 签署。
 
 “差距小于 3%”在这个分母下不存在模糊空间：缺少 1 个合同即为 `1/27 = 3.70%`，所以停止条件只能是 **27/27 个正式合同全部 `PASS`**。任何开发子合同全绿、设计评分 97/100 或单个 Stage 的演示成功，都不能降低正式差距分子。
 

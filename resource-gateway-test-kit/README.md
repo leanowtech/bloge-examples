@@ -502,6 +502,87 @@ exception text. A provider should use `CapabilityStudioAuthorityEvidenceResolver
 actual storage adapters, trust pins, role directory, and target-environment evidence remain under
 enterprise deployment Authority.
 
+## Verify the Provider Conformance TCK Result
+
+The Provider Conformance TCK is a protocol and mechanism gate for a deployment-owned
+Capability Studio acceptance Provider. Its result schema is
+[`capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json`](../docs/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json).
+The result is intentionally smaller than a Stage Acceptance Result: it has a `verdict`, a
+`resultBinding` containing only `resultId`, `revision`, and `resultFingerprint`, `verifiedAt`,
+six fixed checks, recomputed summary counts, the fixed external-check list, and a
+`sha256:<64 lowercase hex>` `reportFingerprint`. Every object is closed with
+`additionalProperties: false`.
+
+The six checks are exactly `LOCAL_PROTOCOL`, `BASELINE_AUTHORITY_ACCEPTANCE`,
+`DETERMINISTIC_REPLAY`, `RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED`,
+`EVIDENCE_POLICY_TAMPER_FAIL_CLOSED`, and `OWNER_AUTHORITY_TAMPER_FAIL_CLOSED`. Each check
+records `PASS`, `FAIL`, `BLOCKED`, or `NOT_RUN`, a stable machine-readable `reasonCode`, and
+`challengeCount`. The verifier recomputes the summary from the six checks and rejects a report
+whose counts do not match. `CONFORMANT` requires six `PASS` checks and a total
+`challengeCount > 0`.
+
+`CONFORMANT` has a deliberately narrow meaning: the Provider's mechanism is consistent with the
+trust configuration of the current deployment. It does not add to `formalPassCount`, and it does
+not establish external organization ownership, real target-environment transport, deployment
+egress enforcement, or Owner process approval. The report's `externalChecksRequired` is always
+the unique set `TRUST_ROOT_ORGANIZATION`, `KMS_HSM_CUSTODY`, `TARGET_ENVIRONMENT_TRANSPORT`,
+`DEPLOYMENT_EGRESS_ENFORCEMENT`, and `OWNER_PROCESS_ATTESTATION`.
+
+### Deployment Integration And Challenge Semantics
+
+The deployment integration is fail-closed and has one Provider resolution path:
+
+1. Package the deployment-owned Provider in the same classpath as the Test Kit and publish its
+   `ServiceLoader` registration.
+2. Load exactly one Provider. Zero Providers, more than one Provider, a Provider construction
+   error, or an invalid registration produces `BLOCKED`; the TCK must not select a default.
+3. Validate the local result protocol before invoking deployment dependencies.
+4. Run all six positive and negative challenges in a stable order. Replay compares the complete
+   resolver request/result and Authority decision transcript, not only the final verdict. A wrong
+   resolver fingerprint, evidence-policy tamper, or Owner-authority tamper must fail closed.
+5. Recompute the result and report fingerprints, then publish the report atomically to a new
+   explicit output path. An existing file is never overwritten.
+
+Run the TCK with the Test Kit and the same enterprise Provider JAR on the classpath:
+
+```bash
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<enterprise-provider.jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProviderConformanceCli \
+  --result <stage-acceptance-result.json> \
+  --output <provider-conformance-result.json>
+```
+
+Exit `0` means `CONFORMANT`; exit `3` means `NON_CONFORMANT` or `BLOCKED`; exit `2` means usage,
+input, read, report verification, or atomic output publication failed.
+
+The CLI, TCK, result builder, independent verifier, and packaged schema are implemented. On
+2026-08-20 the focused slice passed 20/20 tests, its existing Stage Authority/CLI integration
+passed 44/44, and Test Kit `clean verify` passed 978/978 tests with no failures, errors, or skips;
+the shaded JAR and Javadoc/doclint gates also passed. These are development mechanism results,
+not a conformance claim for an enterprise deployment Provider. The Provider must not use a
+fallback implementation, a fallback trust root, or a self-signed substitute. It must not echo
+credentials, business data, file contents, or diagnostic stack traces in the report or CLI
+output.
+
+Use `CapabilityStudioStageAcceptanceProviderConformanceResultVerifier.verifyBound(...)` when a
+consumer has both the report and its source Stage Result. It first verifies the report, then
+independently recomputes the source `resultId`, `revision`, and complete Stage Result fingerprint.
+The single-argument `verify(...)` proves only the report's internal integrity; it cannot establish
+source provenance by itself. The CLI always uses `verifyBound(...)` before publishing a report.
+
+The result semantics are strict:
+
+| Verdict | Meaning | TCK action |
+|---|---|---|
+| `CONFORMANT` | All six checks are `PASS` and at least one challenge ran | Mechanism conformance only; no formal Stage pass |
+| `NON_CONFORMANT` | At least one executed challenge proves a mechanism failure | Preserve the failed check and do not retry it as a pass |
+| `BLOCKED` | A required dependency or trust input is unavailable or indeterminate | Preserve the blocked check; do not convert absence of evidence into `PASS` |
+| `INPUT_INVALID` | The input Stage Result cannot be interpreted under the protocol | Stop before loading the Provider and report the stable reason code |
+
+`FAIL` proves a negative mechanism result. `BLOCKED` means that the TCK could not decide. Neither
+state can be hidden by omitting a check, shrinking the six-check set, or substituting a successful
+fallback.
+
 ## Verify the Stage 0 Browser Matrix Result
 
 `CapabilityStudioBrowserMatrixResultVerifier` verifies the strict, payload-free browser result

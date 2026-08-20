@@ -948,7 +948,7 @@ public final class CapabilityStudioStageAcceptanceAuthorityVerifier {
         };
     }
 
-    private static AcceptanceContext acceptanceContext(JsonNode result) {
+    static AcceptanceContext acceptanceContext(JsonNode result) {
         JsonNode binding = result.path("candidateExecutionBinding");
         JsonNode environment = result.path("environmentAttestation");
         return new AcceptanceContext(
@@ -985,7 +985,7 @@ public final class CapabilityStudioStageAcceptanceAuthorityVerifier {
         return new ProjectionBindings(environmentProjection, egressProjection);
     }
 
-    private static List<EvidenceReference> evidenceReferences(JsonNode result) {
+    static List<EvidenceReference> evidenceReferences(JsonNode result) {
         List<EvidenceReference> references = new ArrayList<>();
         for (JsonNode value : result.path("evidenceRefs")) {
             references.add(new EvidenceReference(
@@ -995,7 +995,7 @@ public final class CapabilityStudioStageAcceptanceAuthorityVerifier {
         return List.copyOf(references);
     }
 
-    private static List<OwnerSignoff> ownerSignoffs(JsonNode result) {
+    static List<OwnerSignoff> ownerSignoffs(JsonNode result) {
         List<OwnerSignoff> signoffs = new ArrayList<>();
         for (JsonNode value : result.path("signoffs")) {
             signoffs.add(new OwnerSignoff(

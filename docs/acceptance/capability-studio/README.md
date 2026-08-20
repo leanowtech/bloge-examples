@@ -12,6 +12,7 @@
 | Acceptance Baseline v1 | [`capability-studio-acceptance-baseline-v1.json`](capability-studio-acceptance-baseline-v1.json) | 冻结 GP、黄金包、Spike、可用性、安全和 NFR 门禁 | `NO_GO` |
 | Stage Acceptance Result v1 Schema | [`capability-studio-stage-acceptance-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v1.schema.json) | 固定 `S*-AC-*` 单条验收结果、五项统一前置条件、证据和签署状态机 | 兼容协议，可消费，不代表任何合同已通过 |
 | Stage Acceptance Result v2 Schema | [`capability-studio-stage-acceptance-result-v2.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v2.schema.json) | 固定 `AC-STD-01..09`、候选执行绑定、签署前证据闭包和正式 Stage 退出状态 | 语义协议已定义，外部 Evidence/签名 Authority 尚未闭合 |
+| Provider Conformance Result v1 Schema | [`capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json) | 固定 Provider Conformance TCK 的六项机制检查、汇总计数、外部检查清单和报告指纹 | 开发机制已验证；不代表外部五项检查或正式 Stage 验收通过 |
 | Authority Evidence Envelope v1 Schema | [`capability-studio-authority-evidence-envelope-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-authority-evidence-envelope-v1.schema.json) | 约束 Evidence Store 按精确坐标返回的无业务 Payload 权威事实、候选/环境/时间窗绑定和 Ed25519 seal | 通用 resolver 与 pinned issuer policy 已实现；企业存储、Issuer pin、Owner Authority 和目标环境证据仍待配置 |
 | Browser Matrix Result v1 Schema | [`capability-studio-browser-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json) | 固定 `GP-01..10 × 中英文 × 3 视口` 的 60 格机器结果、候选/基线/环境/时间窗绑定和证据闭包 | 真实 producer 与本地干净候选 60/60 已闭合；CI Candidate/Environment Authority 和产品/UX/QA 签署未闭合 |
 | Browser Anomaly Matrix Result v1 Schema | [`capability-studio-browser-anomaly-matrix-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-browser-anomaly-matrix-result-v1.schema.json) | 固定服务错误 60 格、目标请求断网 60 格和 GP-04 stale revision 冲突 6 格，校验故障真实触发、业务化反馈、恢复、数据保留和正常态 exact binding | 同一干净候选已完成异常态 `COMPLETE` 126/126：ERROR 60、OFFLINE 60、CONFLICT 6；独立 CLI 和正式脚本合计返回 `COMPLETE: 186/186`，但仍属于本地 `DEVELOPMENT_VERIFIED`，不是正式 Stage 0 通过 |
@@ -190,6 +191,44 @@
 3. 不复制 payload，只写 evidence ref、脱敏摘要和 fingerprint。
 4. 未执行的观测使用 `NOT_RUN`，未知计数使用 `null`，不使用 `0` 代替“没有观测”。
 5. 结构校验通过不等于验收通过；需要执行 README 第 5 节的跨字段不变量。
+
+### 3.5 Provider Conformance TCK 部署接入
+
+Provider Conformance TCK 是部署接入的机制门禁，不是新的 Stage 退出合同。其唯一协议文件为
+[`capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json`](../../schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json)，使用 strict Draft 2020-12，所有对象禁止额外字段。
+
+结果固定包含：
+
+- `verdict`：`CONFORMANT`、`NON_CONFORMANT`、`BLOCKED`、`INPUT_INVALID`；
+- `resultBinding`：只含 `resultId`、`revision`、`resultFingerprint`；
+- `verifiedAt`、六项固定检查、summary exact counts、固定且唯一的 `externalChecksRequired`，以及 `sha256:<64 位小写十六进制>` 的 `reportFingerprint`。
+
+六项检查必须各出现一次：`LOCAL_PROTOCOL`、`BASELINE_AUTHORITY_ACCEPTANCE`、
+`DETERMINISTIC_REPLAY`、`RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED`、
+`EVIDENCE_POLICY_TAMPER_FAIL_CLOSED`、`OWNER_AUTHORITY_TAMPER_FAIL_CLOSED`。每项只能使用
+`PASS`、`FAIL`、`BLOCKED`、`NOT_RUN`，并记录稳定 `reasonCode` 与 `challengeCount`。验证器必须从六项检查重新计算 summary；提交方提供的不一致计数必须拒绝。只有六项均为 `PASS` 且总 `challengeCount > 0` 时，才允许 `CONFORMANT`。
+
+部署接入按以下顺序执行：
+
+1. 将部署拥有的 Provider 与 Test Kit 放在同一 classpath，并提供 `ServiceLoader` 注册。
+2. 必须发现唯一一个 Provider。缺失、重复、注册非法或构造失败均产生 `BLOCKED` 报告，不得选择默认 Provider；只有输入 Stage Result 不合法时才产生 `INPUT_INVALID` 报告。
+3. 先验证本地协议，再调用部署依赖；协议非法或前置结果不满足时保持零外部调用。
+4. 按固定顺序运行正向与负向挑战，重算结果/报告指纹，并只写入显式输出路径。
+
+正向挑战覆盖本地协议、Baseline Authority 接受、确定性重放；负向挑战覆盖错误 fingerprint 的 resolver、Evidence Policy 篡改和 Owner Authority 篡改，均必须 fail-closed。Provider 不得使用 fallback、替代信任根或自签结果。预期 CLI 形态为：
+
+```bash
+CapabilityStudioStageAcceptanceProviderConformanceCli \
+  --result <stage-acceptance-result.json> \
+  --output <provider-conformance-result.json>
+```
+
+CLI、TCK、结果 Builder、独立 Verifier 和 Schema 打包均已实现。CLI 发布报告前会同时校验报告与原 Stage Result，独立复算 `resultId`、`revision` 和完整 Stage Result fingerprint；只验证报告自身不能证明来源绑定。2026-08-20 的开发复验结果为：本切片聚焦测试 20/20、与既有 Stage Authority/CLI 的联动测试 44/44、Test Kit `clean verify` 978/978，均为 0 失败、0 错误、0 跳过；shaded JAR 与 Javadoc/doclint 同时通过。该结果只证明当前源码候选的开发机制，不是企业部署 Provider 的正式符合性报告。
+
+四种结果语义必须保持可区分：`FAIL` 表示已执行挑战证明机制不符合；`BLOCKED` 表示 Provider 装配、依赖或信任输入不可用，无法作出结论；`INPUT_INVALID` 表示输入 Stage Result 不能按协议解释。三者都不能通过省略检查或 fallback 变成 `CONFORMANT`。`CONFORMANT` 只证明 Provider 相对当前部署信任配置的机制一致，不增加 `formalPassCount`，不替代外部组织归属、真实目标环境与 Owner 签署。固定外部检查要求为：
+
+`TRUST_ROOT_ORGANIZATION`、`KMS_HSM_CUSTODY`、`TARGET_ENVIRONMENT_TRANSPORT`、
+`DEPLOYMENT_EGRESS_ENFORCEMENT`、`OWNER_PROCESS_ATTESTATION`。
 
 ## 4. 内容寻址
 

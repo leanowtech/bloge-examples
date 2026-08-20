@@ -47,6 +47,39 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
+## Provider Conformance TCK
+
+Capability Studio deployments use the Provider Conformance TCK as a narrow protocol-mechanism
+gate. The strict Draft 2020-12 result schema is
+[`capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json`](../docs/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json).
+It fixes six checks: `LOCAL_PROTOCOL`, `BASELINE_AUTHORITY_ACCEPTANCE`,
+`DETERMINISTIC_REPLAY`, `RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED`,
+`EVIDENCE_POLICY_TAMPER_FAIL_CLOSED`, and `OWNER_AUTHORITY_TAMPER_FAIL_CLOSED`. A
+`CONFORMANT` result requires six `PASS` checks and `challengeCount > 0`.
+
+Deployment onboarding is deterministic: put the deployment-owned Provider and its
+`ServiceLoader` registration on the Test Kit classpath, require exactly one Provider, validate
+the local result before external calls, run the positive and negative replay/tamper challenges,
+recompute the summary and `reportFingerprint`, and write the result to the explicit output path.
+There is no Provider fallback and no self-signed trust substitute. The expected command shape is:
+
+```bash
+CapabilityStudioStageAcceptanceProviderConformanceCli \
+  --result <stage-acceptance-result.json> \
+  --output <provider-conformance-result.json>
+```
+
+The CLI, TCK, strict result builder, independent verifier, and packaged schema are implemented.
+The focused slice passes 20/20 tests, its existing Stage Authority/CLI integration passes 44/44,
+and the Test Kit `clean verify` passes 978/978 tests with no skips, including shaded JAR and
+Javadoc/doclint. These are development mechanism results, not a conformance claim for an
+enterprise deployment Provider.
+`CONFORMANT` proves mechanism consistency with the current deployment trust configuration only;
+it does not increase `formalPassCount`, or replace organization ownership, KMS/HSM custody, real
+target-environment transport, deployment egress enforcement, or Owner process attestation.
+`NON_CONFORMANT`, `BLOCKED`, and `INPUT_INVALID` remain explicit outcomes and cannot be hidden by
+omitting checks or falling back to a successful path.
+
 ## Try It In VS Code, No Server Required
 
 The reference extension packages the real Business Mirror and Author workspaces with offline
