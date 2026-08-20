@@ -5,13 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
+import java.util.regex.Pattern;
 
 /**
  * Fail-closed command-line verifier for formal Capability Studio Stage Acceptance Result v2.
@@ -31,6 +31,10 @@ public final class CapabilityStudioStageAcceptanceCli {
 
     private static final String CODE_PREFIX = "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Pattern AUTHORITY_BINDING_FINGERPRINT =
+            Pattern.compile("sha256:[0-9a-f]{64}");
+    private static final String EXPECTED_AUTHORITY_BINDING_ENV =
+            "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT";
 
     private CapabilityStudioStageAcceptanceCli() {
     }
@@ -62,6 +66,17 @@ public final class CapabilityStudioStageAcceptanceCli {
             PrintStream err,
             Instant now,
             ProviderSource providerSource) {
+        return run(args, out, err, now, providerSource,
+                System.getenv(EXPECTED_AUTHORITY_BINDING_ENV));
+    }
+
+    static int run(
+            String[] args,
+            PrintStream out,
+            PrintStream err,
+            Instant now,
+            ProviderSource providerSource,
+            String expectedAuthorityBindingFingerprint) {
         PrintStream safeOut = out == null ? System.out : out;
         Objects.requireNonNull(now, "now is required");
         if (args == null || args.length != 1 || blank(args[0])) {
@@ -69,7 +84,13 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_INVALID;
         }
 
-        byte[] wire = readBounded(args[0]);
+        byte[] wire;
+        try {
+            wire = CapabilityStudioBoundedFileReader.read(Path.of(args[0]),
+                    CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES);
+        } catch (RuntimeException failure) {
+            wire = null;
+        }
         if (wire == null) {
             invalid(safeOut, "READ");
             return EXIT_INVALID;
@@ -103,6 +124,11 @@ public final class CapabilityStudioStageAcceptanceCli {
                     + "STATUS_NOT_PASS");
             return EXIT_NOT_ACCEPTED;
         }
+        if (!AUTHORITY_BINDING_FINGERPRINT.matcher(
+                String.valueOf(expectedAuthorityBindingFingerprint)).matches()) {
+            invalid(safeOut, "EXPECTED_AUTHORITY_BINDING_INVALID");
+            return EXIT_INVALID;
+        }
 
         CapabilityStudioStageAcceptanceAuthorityProvider provider;
         try {
@@ -117,19 +143,15 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_INVALID;
         }
 
-        CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver resolver;
-        CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuerPolicy;
-        CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority;
+        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding binding;
         try {
-            resolver = CapabilityStudioProviderOutputIsolation.call(
-                    () -> Objects.requireNonNull(
-                            provider.evidenceResolver(), "evidenceResolver is required"));
-            issuerPolicy = CapabilityStudioProviderOutputIsolation.call(
-                    () -> Objects.requireNonNull(
-                            provider.evidenceIssuerPolicy(), "evidenceIssuerPolicy is required"));
-            ownerAuthority = CapabilityStudioProviderOutputIsolation.call(
-                    () -> Objects.requireNonNull(
-                            provider.ownerAuthority(), "ownerAuthority is required"));
+            binding = CapabilityStudioProviderOutputIsolation.call(
+                    () -> Objects.requireNonNull(provider.authorityBinding(),
+                            "authorityBinding is required"));
+            if (!AUTHORITY_BINDING_FINGERPRINT.matcher(binding.fingerprint()).matches()
+                    || !expectedAuthorityBindingFingerprint.equals(binding.fingerprint())) {
+                throw new IllegalArgumentException("authorityBindingFingerprint does not match pin");
+            }
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
@@ -139,7 +161,8 @@ public final class CapabilityStudioStageAcceptanceCli {
         try {
             verification = CapabilityStudioProviderOutputIsolation.call(
                     () -> new CapabilityStudioStageAcceptanceAuthorityVerifier().verify(
-                            result, now, resolver, issuerPolicy, ownerAuthority));
+                            result, now, binding.resolver(), binding.issuerPolicy(),
+                            binding.ownerAuthority()));
         } catch (RuntimeException failure) {
             safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
                     + CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
@@ -147,7 +170,8 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_NOT_ACCEPTED;
         }
         if (verification.accepted()) {
-            safeOut.println("ACCEPTED outcome=ACCEPTED reasonCode="
+            safeOut.println("ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
+                    + binding.fingerprint() + " reasonCode="
                     + safeCode(verification.reasonCode(),
                     CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX + "ACCEPTED"));
             return EXIT_ACCEPTED;
@@ -190,22 +214,6 @@ public final class CapabilityStudioStageAcceptanceCli {
             return List.of();
         }
         return List.of(discovered.getFirst().get());
-    }
-
-    private static byte[] readBounded(String value) {
-        try {
-            Path path = Path.of(value);
-            if (Files.size(path)
-                    > CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES) {
-                return null;
-            }
-            byte[] wire = Files.readAllBytes(path);
-            return wire.length
-                    <= CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES
-                    ? wire : null;
-        } catch (IOException | RuntimeException failure) {
-            return null;
-        }
     }
 
     private static void invalid(PrintStream out, String suffix) {

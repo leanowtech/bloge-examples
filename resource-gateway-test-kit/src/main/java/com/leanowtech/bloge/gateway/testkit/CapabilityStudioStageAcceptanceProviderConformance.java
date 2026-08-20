@@ -36,6 +36,16 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
     /** The fixed TCK check order. */
     public static final List<String> CHECK_IDS = List.of(
             "LOCAL_PROTOCOL",
+            "AUTHORITY_BINDING",
+            "BASELINE_AUTHORITY_ACCEPTANCE",
+            "DETERMINISTIC_REPLAY",
+            "RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED",
+            "EVIDENCE_POLICY_TAMPER_FAIL_CLOSED",
+            "OWNER_AUTHORITY_TAMPER_FAIL_CLOSED");
+
+    /** The frozen six-check order emitted by the legacy v1 Java/report API. */
+    public static final List<String> LEGACY_CHECK_IDS = List.of(
+            "LOCAL_PROTOCOL",
             "BASELINE_AUTHORITY_ACCEPTANCE",
             "DETERMINISTIC_REPLAY",
             "RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED",
@@ -46,6 +56,8 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
     private static final Pattern RESULT_ID = Pattern.compile("SAR-[A-Za-z0-9._-]{1,120}");
     private static final Pattern SAFE_CODE_SUFFIX = Pattern.compile("[A-Z][A-Z0-9_.-]{0,120}");
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[A-Fa-f0-9]{64}");
+    private static final Pattern AUTHORITY_BINDING_FINGERPRINT =
+            Pattern.compile("sha256:[0-9a-f]{64}");
     private static final int MAXIMUM_RESULT_BYTES =
             CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES;
 
@@ -66,7 +78,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
 
     /** Final TCK verdicts. */
     public enum Verdict {
-        /** All six checks passed. */
+        /** All checks in the selected v1 or v2 protocol passed. */
         CONFORMANT,
         /** A deterministic provider contract violation was observed. */
         NON_CONFORMANT,
@@ -134,12 +146,14 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
      *
      * @param verdict final TCK verdict
      * @param reasonCode stable final reason code
-     * @param checkResults exactly the six fixed check results
+     * @param checkResults exactly the frozen six-check v1 or seven-check v2 result set
      * @param challengeCount number of challenge invocations attempted
      * @param resultId verified input result identity, or null for invalid input
      * @param revision verified input revision, or zero for invalid input
      * @param resultFingerprint canonical fingerprint of the verified input Stage Result, or null
      *                          for invalid input
+     * @param providerBindingFingerprint verified deployment-owned authority binding, or null
+     *                                   when provider identity was not verified
      * @param verificationTime trusted verification time, or null when the clock is invalid
      */
     public record Result(
@@ -150,15 +164,44 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
             String resultId,
             int revision,
             String resultFingerprint,
+            String providerBindingFingerprint,
             Instant verificationTime) {
+        /**
+         * Source-compatible constructor for callers that do not yet provide a binding.
+         *
+         * @param verdict final TCK verdict
+         * @param reasonCode stable final reason code
+         * @param checkResults fixed TCK checks
+         * @param challengeCount total challenge count
+         * @param resultId verified result identity
+         * @param revision verified result revision
+         * @param resultFingerprint verified result fingerprint
+         * @param verificationTime trusted verification time
+         */
+        public Result(
+                Verdict verdict,
+                String reasonCode,
+                List<CheckResult> checkResults,
+                int challengeCount,
+                String resultId,
+                int revision,
+                String resultFingerprint,
+                Instant verificationTime) {
+            this(verdict, reasonCode, checkResults, challengeCount, resultId, revision,
+                    resultFingerprint, null, verificationTime);
+        }
+
         /** Validates and defensively copies the result boundary. */
         public Result {
             verdict = Objects.requireNonNull(verdict, "verdict is required");
             reasonCode = code(reasonCode);
             checkResults = List.copyOf(new ArrayList<>(
                     Objects.requireNonNull(checkResults, "checkResults are required")));
-            if (!checkResults.stream().map(CheckResult::checkId).toList().equals(CHECK_IDS)) {
-                throw new IllegalArgumentException("checkResults must contain the fixed TCK order");
+            List<String> checkIds = checkResults.stream().map(CheckResult::checkId).toList();
+            boolean v2 = checkIds.equals(CHECK_IDS);
+            boolean v1 = checkIds.equals(LEGACY_CHECK_IDS);
+            if (!v1 && !v2) {
+                throw new IllegalArgumentException("checkResults must contain a fixed TCK order");
             }
             if (challengeCount < 0) {
                 throw new IllegalArgumentException("challengeCount cannot be negative");
@@ -167,7 +210,8 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
             if (attempts != challengeCount) {
                 throw new IllegalArgumentException("challengeCount does not match check results");
             }
-            if (checkResults.subList(0, 3).stream()
+            int nonChallengeCount = v2 ? 4 : 3;
+            if (checkResults.subList(0, nonChallengeCount).stream()
                     .anyMatch(check -> check.challengeCount() != 0)) {
                 throw new IllegalArgumentException("non-challenge checks cannot count challenges");
             }
@@ -178,6 +222,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
 
             if (verdict == Verdict.INPUT_INVALID) {
                 if (resultId != null || revision != 0 || resultFingerprint != null
+                        || providerBindingFingerprint != null || verificationTime != null
                         || checkResults.getFirst().status() != CheckStatus.FAIL
                         || checkResults.subList(1, checkResults.size()).stream()
                         .anyMatch(check -> check.status() != CheckStatus.NOT_RUN)) {
@@ -192,7 +237,23 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
                         || checkResults.getFirst().status() != CheckStatus.PASS) {
                     throw new IllegalArgumentException("verified result binding is invalid");
                 }
-                validateCheckProgression(checkResults);
+                if (v1 && providerBindingFingerprint != null) {
+                    throw new IllegalArgumentException("v1 cannot carry provider authority binding");
+                }
+                if (v2) {
+                    if (checkResults.get(1).status() == CheckStatus.PASS
+                            && (providerBindingFingerprint == null
+                            || !AUTHORITY_BINDING_FINGERPRINT.matcher(providerBindingFingerprint)
+                            .matches())) {
+                        throw new IllegalArgumentException("provider authority binding is invalid");
+                    }
+                    if (checkResults.get(1).status() != CheckStatus.PASS
+                            && providerBindingFingerprint != null) {
+                        throw new IllegalArgumentException(
+                                "provider authority binding must be null before binding passes");
+                    }
+                }
+                validateCheckProgression(checkResults, v2);
             }
 
             boolean failed = checkResults.stream()
@@ -232,24 +293,47 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
             return checkResults;
         }
 
-        private static void validateCheckProgression(List<CheckResult> checks) {
-            CheckStatus baseline = checks.get(1).status();
-            CheckStatus replay = checks.get(2).status();
+        private static void validateCheckProgression(List<CheckResult> checks, boolean v2) {
+            int baselineIndex = v2 ? 2 : 1;
+            int replayIndex = v2 ? 3 : 2;
+            int challengeStart = v2 ? 4 : 3;
+            if (v2) {
+                CheckStatus binding = checks.get(1).status();
+                if (binding != CheckStatus.PASS) {
+                    if (binding == CheckStatus.NOT_RUN
+                            && checks.get(baselineIndex).status() != CheckStatus.FAIL) {
+                        throw new IllegalArgumentException("binding termination order is invalid");
+                    }
+                    if (binding != CheckStatus.NOT_RUN
+                            && checks.subList(baselineIndex, checks.size()).stream()
+                            .anyMatch(check -> check.status() != CheckStatus.NOT_RUN)) {
+                        throw new IllegalArgumentException("binding termination order is invalid");
+                    }
+                    if (binding == CheckStatus.NOT_RUN
+                            && checks.subList(replayIndex, checks.size()).stream()
+                            .anyMatch(check -> check.status() != CheckStatus.NOT_RUN)) {
+                        throw new IllegalArgumentException("binding termination order is invalid");
+                    }
+                    return;
+                }
+            }
+            CheckStatus baseline = checks.get(baselineIndex).status();
+            CheckStatus replay = checks.get(replayIndex).status();
             if (baseline != CheckStatus.PASS) {
-                if (baseline == CheckStatus.NOT_RUN || checks.subList(2, checks.size()).stream()
+                if (baseline == CheckStatus.NOT_RUN || checks.subList(replayIndex, checks.size()).stream()
                         .anyMatch(check -> check.status() != CheckStatus.NOT_RUN)) {
                     throw new IllegalArgumentException("baseline termination order is invalid");
                 }
                 return;
             }
             if (replay != CheckStatus.PASS) {
-                if (replay == CheckStatus.NOT_RUN || checks.subList(3, checks.size()).stream()
+                if (replay == CheckStatus.NOT_RUN || checks.subList(challengeStart, checks.size()).stream()
                         .anyMatch(check -> check.status() != CheckStatus.NOT_RUN)) {
                     throw new IllegalArgumentException("replay termination order is invalid");
                 }
                 return;
             }
-            if (checks.subList(3, checks.size()).stream().anyMatch(check ->
+            if (checks.subList(challengeStart, checks.size()).stream().anyMatch(check ->
                     check.status() == CheckStatus.NOT_RUN || check.challengeCount() == 0)) {
                 throw new IllegalArgumentException("challenge check progression is invalid");
             }
@@ -306,31 +390,41 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
             return finish(Verdict.NON_CONFORMANT, "STATUS_NOT_PASS", resultId, revision,
                     resultFingerprint, now, 0, notRunChecks(
                             pass("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_VALID"),
-                            fail("BASELINE_AUTHORITY_ACCEPTANCE", "STATUS_NOT_PASS")));
+                            new CheckResult("AUTHORITY_BINDING", CheckStatus.NOT_RUN,
+                                    code("NOT_RUN")),
+                            fail("BASELINE_AUTHORITY_ACCEPTANCE", "STATUS_NOT_PASS")), null);
         }
         if (provider == null) {
             return finish(Verdict.BLOCKED, "PROVIDER_DEPENDENCY_UNAVAILABLE", resultId, revision,
                     resultFingerprint, now, 0,
-                    blockedAfterLocal("PROVIDER_DEPENDENCY_UNAVAILABLE"));
+                    blockedAfterLocal("PROVIDER_DEPENDENCY_UNAVAILABLE"), null);
         }
 
-        EvidenceResolver resolver;
-        CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuerPolicy;
-        CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority;
+        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding baselineBinding;
         try {
-            resolver = provider.evidenceResolver();
-            issuerPolicy = provider.evidenceIssuerPolicy();
-            ownerAuthority = provider.ownerAuthority();
+            baselineBinding = provider.authorityBinding();
         } catch (RuntimeException unavailable) {
-            return finish(Verdict.BLOCKED, "PROVIDER_DEPENDENCY_UNAVAILABLE", resultId, revision,
+            return finish(Verdict.BLOCKED, "AUTHORITY_BINDING_UNAVAILABLE", resultId, revision,
                     resultFingerprint, now, 0,
-                    blockedAfterLocal("PROVIDER_DEPENDENCY_UNAVAILABLE"));
+                    blockedAfterLocal("AUTHORITY_BINDING_UNAVAILABLE"), null);
         }
-        if (resolver == null || issuerPolicy == null || ownerAuthority == null) {
-            return finish(Verdict.BLOCKED, "PROVIDER_DEPENDENCY_UNAVAILABLE", resultId, revision,
+        if (baselineBinding == null) {
+            return finish(Verdict.NON_CONFORMANT, "AUTHORITY_BINDING_MISSING", resultId, revision,
                     resultFingerprint, now, 0,
-                    blockedAfterLocal("PROVIDER_DEPENDENCY_UNAVAILABLE"));
+                    failedAfterBinding("AUTHORITY_BINDING_MISSING"), null);
         }
+        String providerBindingFingerprint = baselineBinding.fingerprint();
+        if (!AUTHORITY_BINDING_FINGERPRINT.matcher(providerBindingFingerprint).matches()) {
+            return finish(Verdict.NON_CONFORMANT, "AUTHORITY_BINDING_INVALID", resultId, revision,
+                    resultFingerprint, now, 0,
+                    failedAfterBinding("AUTHORITY_BINDING_INVALID"), null);
+        }
+
+        EvidenceResolver resolver = baselineBinding.resolver();
+        CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuerPolicy =
+                baselineBinding.issuerPolicy();
+        CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority =
+                baselineBinding.ownerAuthority();
 
         AcceptanceContext context;
         List<EvidenceReference> evidence;
@@ -345,6 +439,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
 
         List<CheckResult> checks = new ArrayList<>();
         checks.add(pass("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_VALID"));
+        checks.add(pass("AUTHORITY_BINDING", "AUTHORITY_BINDING_VALID"));
         AuthorityTranscript baselineTranscript = new AuthorityTranscript();
         CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult baseline = safeAuthority(
                 input, now, baselineTranscript.resolver(resolver),
@@ -356,14 +451,32 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
         if (baseline == null || !baseline.accepted()) {
             return finish(verdictFor(checks), primaryReason(checks), resultId, revision,
                     resultFingerprint, now, 0,
-                    appendNotRun(checks));
+                    appendNotRun(checks), providerBindingFingerprint);
         }
 
+        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding replayBinding;
+        try {
+            replayBinding = provider.authorityBinding();
+        } catch (RuntimeException unavailable) {
+            checks.add(new CheckResult("DETERMINISTIC_REPLAY", CheckStatus.BLOCKED,
+                    code("DETERMINISTIC_REPLAY_AUTHORITY_BINDING_UNAVAILABLE")));
+            return finish(Verdict.BLOCKED, "DETERMINISTIC_REPLAY_AUTHORITY_BINDING_UNAVAILABLE",
+                    resultId, revision, resultFingerprint, now, 0,
+                    appendNotRun(checks), providerBindingFingerprint);
+        }
+        if (replayBinding == null
+                || !AUTHORITY_BINDING_FINGERPRINT.matcher(replayBinding.fingerprint()).matches()) {
+            checks.add(fail("DETERMINISTIC_REPLAY",
+                    "DETERMINISTIC_REPLAY_AUTHORITY_BINDING_INVALID"));
+            return finish(Verdict.NON_CONFORMANT, "DETERMINISTIC_REPLAY_AUTHORITY_BINDING_INVALID",
+                    resultId, revision, resultFingerprint, now, 0,
+                    appendNotRun(checks), providerBindingFingerprint);
+        }
         AuthorityTranscript replayTranscript = new AuthorityTranscript();
         CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult replay = safeAuthority(
-                input, now, replayTranscript.resolver(resolver),
-                replayTranscript.issuerPolicy(issuerPolicy),
-                replayTranscript.ownerAuthority(ownerAuthority));
+                input, now, replayTranscript.resolver(replayBinding.resolver()),
+                replayTranscript.issuerPolicy(replayBinding.issuerPolicy()),
+                replayTranscript.ownerAuthority(replayBinding.ownerAuthority()));
         CheckResult replayCheck = authorityCheck("DETERMINISTIC_REPLAY", replay,
                 "DETERMINISTIC_REPLAY_ACCEPTED", "DETERMINISTIC_REPLAY_DRIFT",
                 "DETERMINISTIC_REPLAY_BLOCKED");
@@ -371,11 +484,16 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
                 && !baselineTranscript.sameAs(replayTranscript)) {
             replayCheck = fail("DETERMINISTIC_REPLAY", "DETERMINISTIC_REPLAY_DRIFT");
         }
+        if (replay != null && replay.accepted()
+                && !providerBindingFingerprint.equals(replayBinding.fingerprint())) {
+            replayCheck = fail("DETERMINISTIC_REPLAY",
+                    "DETERMINISTIC_REPLAY_AUTHORITY_BINDING_DRIFT");
+        }
         checks.add(replayCheck);
-        if (replay == null || !replay.accepted()) {
+        if (replay == null || !replay.accepted() || replayCheck.status() != CheckStatus.PASS) {
             return finish(verdictFor(checks), primaryReason(checks), resultId, revision,
                     resultFingerprint, now, 0,
-                    appendNotRun(checks));
+                    appendNotRun(checks), providerBindingFingerprint);
         }
 
         int challengeCount = 0;
@@ -395,7 +513,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
         checks.add(ownerChallenge.result());
 
         return finish(verdictFor(checks), primaryReason(checks), resultId, revision,
-                resultFingerprint, now, challengeCount, checks);
+                resultFingerprint, now, challengeCount, checks, providerBindingFingerprint);
     }
 
     private CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult safeAuthority(
@@ -612,7 +730,19 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
 
     private static List<CheckResult> blockedAfterLocal(String reason) {
         return notRunChecks(pass("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_VALID"),
-                new CheckResult("BASELINE_AUTHORITY_ACCEPTANCE", CheckStatus.BLOCKED, code(reason)));
+                new CheckResult("AUTHORITY_BINDING", CheckStatus.BLOCKED, code(reason)));
+    }
+
+    private static List<CheckResult> blockedAfterBinding(String reason) {
+        return notRunChecks(pass("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_VALID"),
+                pass("AUTHORITY_BINDING", "AUTHORITY_BINDING_VALID"),
+                new CheckResult("BASELINE_AUTHORITY_ACCEPTANCE", CheckStatus.BLOCKED,
+                        code(reason)));
+    }
+
+    private static List<CheckResult> failedAfterBinding(String reason) {
+        return notRunChecks(pass("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_VALID"),
+                fail("AUTHORITY_BINDING", reason));
     }
 
     private static List<CheckResult> appendNotRun(List<CheckResult> checks) {
@@ -635,7 +765,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
         List<CheckResult> checks = notRunChecks(
                 fail("LOCAL_PROTOCOL", "LOCAL_PROTOCOL_INVALID"));
         return finish(Verdict.INPUT_INVALID, "LOCAL_PROTOCOL_INVALID", null, 0,
-                null, now, 0, checks);
+                null, null, 0, checks, null);
     }
 
     private static Result finish(
@@ -646,10 +776,11 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
             String resultFingerprint,
             Instant now,
             int challengeCount,
-            List<CheckResult> checks) {
+            List<CheckResult> checks,
+            String providerBindingFingerprint) {
         List<CheckResult> fixed = List.copyOf(checks);
         return new Result(verdict, code(reason), fixed, challengeCount,
-                resultId, revision, resultFingerprint, now);
+                resultId, revision, resultFingerprint, providerBindingFingerprint, now);
     }
 
     private static Verdict verdictFor(List<CheckResult> checks) {

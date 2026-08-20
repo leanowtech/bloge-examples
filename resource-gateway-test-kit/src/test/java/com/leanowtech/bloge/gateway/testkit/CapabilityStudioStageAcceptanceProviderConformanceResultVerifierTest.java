@@ -34,6 +34,39 @@ class CapabilityStudioStageAcceptanceProviderConformanceResultVerifierTest {
     }
 
     @Test
+    void verifiesHistoricalV1ReportUnderTheOriginalSixCheckContract() throws Exception {
+        ObjectNode historical = CapabilityStudioStageAcceptanceProviderConformanceResultBuilder
+                .build(CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.conformant());
+        historical.put("schemaVersion",
+                "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v1");
+        ArrayNode checks = (ArrayNode) historical.path("checks");
+        checks.remove(1);
+        ((ObjectNode) historical.path("summary")).put("totalCount", 6)
+                .put("passCount", 6).put("notRunCount", 0);
+        historical.remove("providerBindingFingerprint");
+        refingerprint(historical);
+
+        assertThat(new CapabilityStudioStageAcceptanceProviderConformanceResultVerifier()
+                .verify(bytes(historical)).verified()).isTrue();
+    }
+
+    @Test
+    void rejectsMissingV2ProviderBindingAndUnknownSchemaVersion() throws Exception {
+        ObjectNode report = CapabilityStudioStageAcceptanceProviderConformanceResultBuilder
+                .build(CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.conformant());
+        report.remove("providerBindingFingerprint");
+        refingerprint(report);
+        var verifier = new CapabilityStudioStageAcceptanceProviderConformanceResultVerifier();
+        assertThat(verifier.verify(bytes(report)).verified()).isFalse();
+
+        ObjectNode unknown = CapabilityStudioStageAcceptanceProviderConformanceResultBuilder
+                .build(CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.conformant());
+        unknown.put("schemaVersion", "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v3");
+        refingerprint(unknown);
+        assertThat(verifier.verify(bytes(unknown)).verified()).isFalse();
+    }
+
+    @Test
     void rejectsOrderSummaryFingerprintExternalListAndBlockedFailTampering() throws Exception {
         ObjectNode base = CapabilityStudioStageAcceptanceProviderConformanceResultBuilder.build(
                 CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.conformant());
@@ -65,7 +98,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceResultVerifierTest {
                 .put("failCount", 1);
         refingerprint(failedLocalWithVerifiedBinding);
         ObjectNode blockedFail = report("BLOCKED", "BASELINE_AUTHORITY_BLOCKED", "BLOCKED");
-        ((ObjectNode) ((ArrayNode) blockedFail.path("checks")).get(1)).put("status", "FAIL")
+        ((ObjectNode) ((ArrayNode) blockedFail.path("checks")).get(2)).put("status", "FAIL")
                 .put("reasonCode", CapabilityStudioStageAcceptanceProviderConformance.CODE_PREFIX
                         + "BASELINE_AUTHORITY_REJECTED");
 
@@ -101,6 +134,8 @@ class CapabilityStudioStageAcceptanceProviderConformanceResultVerifierTest {
                 CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.check(
                         "LOCAL_PROTOCOL", "PASS", 0, "LOCAL_PROTOCOL_VALID"),
                 CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.check(
+                        "AUTHORITY_BINDING", "PASS", 0, "AUTHORITY_BINDING_VALID"),
+                CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.check(
                         "BASELINE_AUTHORITY_ACCEPTANCE", baselineStatus, 0, reason),
                 CapabilityStudioStageAcceptanceProviderConformanceResultBuilderTest.check(
                         "DETERMINISTIC_REPLAY", "NOT_RUN", 0, "NOT_RUN"),
@@ -112,7 +147,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceResultVerifierTest {
                         "OWNER_AUTHORITY_TAMPER_FAIL_CLOSED", "NOT_RUN", 0, "NOT_RUN"));
         var value = new CapabilityStudioStageAcceptanceProviderConformance.Result(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.valueOf(verdict), reason,
-                checks, 0, "SAR-report", 1, FP, NOW);
+                checks, 0, "SAR-report", 1, FP, FP, NOW);
         return CapabilityStudioStageAcceptanceProviderConformanceResultBuilder.build(value);
     }
 

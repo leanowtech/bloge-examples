@@ -7,8 +7,11 @@ import java.util.List;
 
 /** Builds the strict, payload-free Provider Conformance report from the core TCK result. */
 public final class CapabilityStudioStageAcceptanceProviderConformanceResultBuilder {
-    /** The report schema version. */
+    /** The current seven-check report schema version. */
     public static final String SCHEMA_VERSION =
+            "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v2";
+    /** The frozen legacy six-check report schema version. */
+    public static final String LEGACY_SCHEMA_VERSION =
             "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v1";
 
     private static final List<String> EXTERNAL_CHECKS = List.of(
@@ -32,8 +35,15 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultBuild
         if (result == null) {
             throw new IllegalArgumentException("result is required");
         }
+        boolean v2 = result.checks().size()
+                == CapabilityStudioStageAcceptanceProviderConformance.CHECK_IDS.size();
+        boolean v1 = result.checks().size()
+                == CapabilityStudioStageAcceptanceProviderConformance.LEGACY_CHECK_IDS.size();
+        if (!v1 && !v2) {
+            throw new IllegalArgumentException("result check set is unsupported");
+        }
         ObjectNode report = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
-        report.put("schemaVersion", SCHEMA_VERSION);
+        report.put("schemaVersion", v2 ? SCHEMA_VERSION : LEGACY_SCHEMA_VERSION);
         report.put("verdict", result.verdict().name());
         report.put("reasonCode", result.reasonCode());
         if (result.verdict() == CapabilityStudioStageAcceptanceProviderConformance.Verdict.INPUT_INVALID) {
@@ -45,6 +55,13 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultBuild
             binding.put("revision", result.revision());
             binding.put("resultFingerprint", result.resultFingerprint());
             report.put("verifiedAt", result.verificationTime().toString());
+        }
+        if (v2) {
+            if (result.providerBindingFingerprint() == null) {
+                report.putNull("providerBindingFingerprint");
+            } else {
+                report.put("providerBindingFingerprint", result.providerBindingFingerprint());
+            }
         }
 
         ArrayNode checks = report.putArray("checks");
@@ -84,8 +101,10 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultBuild
                         .MAXIMUM_REPORT_BYTES);
         report.put("reportFingerprint", reportFingerprint);
 
-        if (!CapabilityStudioSchemaSupport.validate(
-                report, CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE)
+        String schema = v2
+                ? CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V2_RESOURCE
+                : CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE;
+        if (!CapabilityStudioSchemaSupport.validate(report, schema)
                 .isEmpty()) {
             throw new IllegalStateException("RG.CAPABILITY_STUDIO.PROVIDER_CONFORMANCE_REPORT_INVALID");
         }

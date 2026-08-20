@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.testkit;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceKind;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolution;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ReferenceKind;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ResolutionRequest;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ResolvedEvidence;
@@ -79,6 +80,96 @@ class CapabilityStudioStageAcceptanceCliTest {
         assertThat(ambiguous).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
         assertThat(missingOutput.text()).contains("PROVIDER_CONFIGURATION");
         assertThat(ambiguousOutput.text()).contains("PROVIDER_CONFIGURATION");
+    }
+
+    @Test
+    void expectedBindingPinIsRequiredAndValidatedBeforeProviderAuthorityBinding() throws Exception {
+        Path artifact = write("pin.json", passResult().toString());
+        AtomicInteger loads = new AtomicInteger();
+        Output missing = new Output();
+        Output malformed = new Output();
+        int missingExit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{artifact.toString()}, missing.out(), missing.err(), NOW,
+                () -> {
+                    loads.incrementAndGet();
+                    return List.of(acceptingProvider(passResult()));
+                }, null);
+        int malformedExit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{artifact.toString()}, malformed.out(), malformed.err(), NOW,
+                () -> {
+                    loads.incrementAndGet();
+                    return List.of(acceptingProvider(passResult()));
+                }, "SHA256:" + "a".repeat(64));
+
+        assertThat(missingExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(malformedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(missing.text()).contains("EXPECTED_AUTHORITY_BINDING_INVALID");
+        assertThat(malformed.text()).contains("EXPECTED_AUTHORITY_BINDING_INVALID");
+        assertThat(loads).hasValue(0);
+    }
+
+    @Test
+    void mismatchingPinFailsBeforeResolverIssuerOrOwnerCallbacks() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("pin-mismatch.json", result.toString());
+        AtomicInteger callbacks = new AtomicInteger();
+        Provider provider = new Provider(
+                request -> {
+                    callbacks.incrementAndGet();
+                    return EvidenceResolution.available(facts(request,
+                            result.path("evidenceClosureFingerprint").asText()));
+                },
+                (reference, evidence, context) -> {
+                    callbacks.incrementAndGet();
+                    return verified();
+                },
+                (signoff, signature, context) -> {
+                    callbacks.incrementAndGet();
+                    return verified();
+                });
+        Output output = new Output();
+
+        int exit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{artifact.toString()}, output.out(), output.err(), NOW,
+                () -> List.of(provider), fingerprint('b'));
+
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(output.text()).contains("PROVIDER_CONFIGURATION");
+        assertThat(callbacks).hasValue(0);
+    }
+
+    @Test
+    void legacyProviderIsFailClosedEvenWhenItsOldAccessorsAreComplete() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("legacy-provider.json", result.toString());
+        Provider delegate = acceptingProvider(result);
+        CapabilityStudioStageAcceptanceAuthorityProvider legacy =
+                new CapabilityStudioStageAcceptanceAuthorityProvider() {
+                    @Override
+                    public EvidenceResolver evidenceResolver() {
+                        return delegate.resolver();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                            evidenceIssuerPolicy() {
+                        return delegate.issuer();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                            ownerAuthority() {
+                        return delegate.owner();
+                    }
+                };
+        Output output = new Output();
+
+        int exit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{artifact.toString()}, output.out(), output.err(), NOW,
+                () -> List.of(legacy), fingerprint('a'));
+
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(output.text()).contains("PROVIDER_CONFIGURATION");
     }
 
     @Test
@@ -223,7 +314,8 @@ class CapabilityStudioStageAcceptanceCliTest {
                     CapabilityStudioStageAcceptanceCli.ProviderSource providers,
                     Output output) {
         return CapabilityStudioStageAcceptanceCli.run(
-                new String[]{artifact.toString()}, output.out(), output.err(), NOW, providers);
+                new String[]{artifact.toString()}, output.out(), output.err(), NOW, providers,
+                fingerprint('a'));
     }
 
     private Path write(String name, String value) throws Exception {
@@ -316,6 +408,17 @@ class CapabilityStudioStageAcceptanceCliTest {
             CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority owner)
             implements CapabilityStudioStageAcceptanceAuthorityProvider {
         @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
+                    fingerprint('a'), resolver, issuer, owner);
+        }
+
+        @Override
+        public String authorityBindingFingerprint() {
+            return fingerprint('a');
+        }
+
+        @Override
         public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver evidenceResolver() {
             return resolver;
         }
@@ -340,6 +443,19 @@ class CapabilityStudioStageAcceptanceCliTest {
         private NoisyProvider(ObjectNode result, String secret) {
             this.result = result;
             this.secret = secret;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            printSecret(secret, "binding-accessor");
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
+                    fingerprint('a'), evidenceResolver(), evidenceIssuerPolicy(), ownerAuthority());
+        }
+
+        @Override
+        public String authorityBindingFingerprint() {
+            printSecret(secret, "binding-accessor");
+            return fingerprint('a');
         }
 
         @Override

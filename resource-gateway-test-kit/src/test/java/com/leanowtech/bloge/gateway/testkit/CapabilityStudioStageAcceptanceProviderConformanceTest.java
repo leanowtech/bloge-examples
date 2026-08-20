@@ -48,13 +48,14 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
                         CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS,
                         CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS,
                         CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS,
+                        CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS,
                         CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS));
         assertThat(result.challengeCount()).isEqualTo(28);
         assertThat(result.resultFingerprint()).isEqualTo(
                 EvidenceVerificationSupport.sha256Bounded(input, CapabilityStudioStageAcceptanceResultV2Verifier.MAXIMUM_RESULT_BYTES));
         assertThat(result.checkResults()).extracting(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckResult::challengeCount)
-                .containsExactly(0, 0, 0, 14, 11, 3);
+                .containsExactly(0, 0, 0, 0, 14, 11, 3);
         assertThat(result.checkResults().stream()
                 .mapToInt(CapabilityStudioStageAcceptanceProviderConformance.CheckResult::challengeCount)
                 .sum()).isEqualTo(result.challengeCount());
@@ -82,6 +83,36 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
     }
 
     @Test
+    void legacyProviderWithoutAtomicBindingIsRejectedClosed() {
+        Provider delegate = conformantProvider(validStagePass());
+        CapabilityStudioStageAcceptanceAuthorityProvider legacy =
+                new CapabilityStudioStageAcceptanceAuthorityProvider() {
+                    @Override
+                    public EvidenceResolver evidenceResolver() {
+                        return delegate.resolver;
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                            evidenceIssuerPolicy() {
+                        return delegate.issuer;
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                            ownerAuthority() {
+                        return delegate.owner;
+                    }
+                };
+
+        Result result = verify(validStagePass(), legacy);
+
+        assertThat(result.verdict()).isEqualTo(Verdict.NON_CONFORMANT);
+        assertThat(result.checkResults().get(1).status()).isEqualTo(CheckStatus.FAIL);
+        assertThat(result.providerBindingFingerprint()).isNull();
+    }
+
+    @Test
     void baselineRejectAndBlockAreTerminalBeforeChallenges() {
         ObjectNode input = validStagePass();
         Provider rejected = conformantProvider(input);
@@ -89,7 +120,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         var reject = verify(input, rejected);
         assertThat(reject.verdict()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.NON_CONFORMANT);
-        assertThat(reject.checkResults().get(1).status()).isEqualTo(
+        assertThat(reject.checkResults().get(2).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.FAIL);
         assertThat(reject.challengeCount()).isZero();
 
@@ -98,7 +129,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         var unavailable = verify(input, blocked);
         assertThat(unavailable.verdict()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.BLOCKED);
-        assertThat(unavailable.checkResults().get(1).status()).isEqualTo(
+        assertThat(unavailable.checkResults().get(2).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.BLOCKED);
     }
 
@@ -114,7 +145,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
 
         assertThat(result.verdict()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.NON_CONFORMANT);
-        assertThat(result.checkResults().get(2).status()).isEqualTo(
+        assertThat(result.checkResults().get(3).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.FAIL);
         assertThat(result.challengeCount()).isZero();
     }
@@ -147,10 +178,25 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         Result result = verify(input, provider);
 
         assertThat(result.verdict()).isEqualTo(Verdict.NON_CONFORMANT);
-        assertThat(result.checkResults().get(2).status()).isEqualTo(CheckStatus.FAIL);
-        assertThat(result.checkResults().get(2).reasonCode())
+        assertThat(result.checkResults().get(3).status()).isEqualTo(CheckStatus.FAIL);
+        assertThat(result.checkResults().get(3).reasonCode())
                 .endsWith("DETERMINISTIC_REPLAY_DRIFT");
         assertThat(result.challengeCount()).isZero();
+    }
+
+    @Test
+    void replayRejectsAuthorityBindingFingerprintDrift() {
+        ObjectNode input = validStagePass();
+        Provider provider = conformantProvider(input);
+        provider.driftBinding = true;
+
+        Result result = verify(input, provider);
+
+        assertThat(result.verdict()).isEqualTo(Verdict.NON_CONFORMANT);
+        assertThat(result.providerBindingFingerprint()).isEqualTo(fingerprint('a'));
+        assertThat(result.checkResults().get(3).status()).isEqualTo(CheckStatus.FAIL);
+        assertThat(result.checkResults().get(3).reasonCode())
+                .endsWith("DETERMINISTIC_REPLAY_AUTHORITY_BINDING_DRIFT");
     }
 
     @Test
@@ -162,7 +208,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         var fail = verify(input, available);
         assertThat(fail.verdict()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.NON_CONFORMANT);
-        assertThat(fail.checkResults().get(3).status()).isEqualTo(
+        assertThat(fail.checkResults().get(4).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.FAIL);
 
         Provider unavailable = conformantProvider(input);
@@ -173,7 +219,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         var blocked = verify(input, unavailable);
         assertThat(blocked.verdict()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.BLOCKED);
-        assertThat(blocked.checkResults().get(3).status()).isEqualTo(
+        assertThat(blocked.checkResults().get(4).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.BLOCKED);
 
         Provider notFoundWithEvidence = conformantProvider(input);
@@ -189,7 +235,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         };
         var malformedNotFound = verify(input, notFoundWithEvidence);
         assertThat(malformedNotFound.verdict()).isEqualTo(Verdict.NON_CONFORMANT);
-        assertThat(malformedNotFound.checkResults().get(3).status()).isEqualTo(CheckStatus.FAIL);
+        assertThat(malformedNotFound.checkResults().get(4).status()).isEqualTo(CheckStatus.FAIL);
     }
 
     @Test
@@ -200,13 +246,13 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
                 evidence.materialFingerprint().equals(fingerprint('6'))
                         ? AuthorityDecision.verified() : AuthorityDecision.verified();
         var issuerResult = verify(input, issuerVerified);
-        assertThat(issuerResult.checkResults().get(4).status()).isEqualTo(
+        assertThat(issuerResult.checkResults().get(5).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.FAIL);
 
         Provider ownerVerified = conformantProvider(input);
         ownerVerified.owner = (signoff, signature, context) -> AuthorityDecision.verified();
         var ownerResult = verify(input, ownerVerified);
-        assertThat(ownerResult.checkResults().get(5).status()).isEqualTo(
+        assertThat(ownerResult.checkResults().get(6).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.FAIL);
     }
 
@@ -224,7 +270,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.BLOCKED);
         assertThat(issuerResult.checkResults().subList(0, 3)).allMatch(check ->
                 check.status() == CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS);
-        assertThat(issuerResult.checkResults().get(4).status()).isEqualTo(
+        assertThat(issuerResult.checkResults().get(5).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.BLOCKED);
 
         Provider ownerException = conformantProvider(input);
@@ -241,7 +287,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
                 CapabilityStudioStageAcceptanceProviderConformance.Verdict.BLOCKED);
         assertThat(ownerResult.checkResults().subList(0, 3)).allMatch(check ->
                 check.status() == CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.PASS);
-        assertThat(ownerResult.checkResults().get(5).status()).isEqualTo(
+        assertThat(ownerResult.checkResults().get(6).status()).isEqualTo(
                 CapabilityStudioStageAcceptanceProviderConformance.CheckStatus.BLOCKED);
         assertThat(ownerResult.toString()).doesNotContain("secret-business-payload");
     }
@@ -249,18 +295,18 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
     @Test
     void resultConstructorRejectsInconsistentManualStates() {
         List<CheckResult> invalidInput = manualChecks(
-                CheckStatus.FAIL, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
+                CheckStatus.FAIL, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
                 CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN);
         assertThatThrownBy(() -> new Result(Verdict.INPUT_INVALID, tckCode("TEST"),
                 invalidInput, 0, "SAR-manual", 1, fingerprint('f'), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> manualResult(Verdict.INPUT_INVALID, manualChecks(
-                CheckStatus.PASS, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
+                CheckStatus.PASS, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
                 CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN),
                 null, 0, null, null)).isInstanceOf(IllegalArgumentException.class);
 
         List<CheckResult> baselineFailure = manualChecks(
-                CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.NOT_RUN,
+                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.FAIL, CheckStatus.NOT_RUN,
                 CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN);
         assertThatThrownBy(() -> manualResult(Verdict.NON_CONFORMANT, baselineFailure,
                 null, 0, null, NOW)).isInstanceOf(IllegalArgumentException.class);
@@ -270,29 +316,32 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
 
         List<CheckResult> allPass = manualChecks(
                 CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS,
-                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS);
+                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS);
         assertThatThrownBy(() -> manualResult(Verdict.NON_CONFORMANT, allPass,
                 "SAR-manual", 1, fingerprint('f'), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> manualResult(Verdict.BLOCKED, manualChecks(
-                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS,
+                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS,
                 CheckStatus.FAIL, CheckStatus.PASS, CheckStatus.PASS),
                 "SAR-manual", 1, fingerprint('f'), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
 
         assertThatThrownBy(() -> manualResult(Verdict.BLOCKED, manualChecks(
-                CheckStatus.PASS, CheckStatus.BLOCKED, CheckStatus.PASS,
-                CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN),
-                "SAR-manual", 1, fingerprint('f'), NOW))
-                .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> manualResult(Verdict.BLOCKED, manualChecks(
                 CheckStatus.PASS, CheckStatus.PASS, CheckStatus.BLOCKED,
-                CheckStatus.BLOCKED, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN),
+                CheckStatus.NOT_RUN, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
+                CheckStatus.NOT_RUN),
                 "SAR-manual", 1, fingerprint('f'), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> manualResult(Verdict.BLOCKED, manualChecks(
                 CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS,
-                CheckStatus.BLOCKED, CheckStatus.NOT_RUN, CheckStatus.PASS),
+                CheckStatus.BLOCKED, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
+                CheckStatus.NOT_RUN),
+                "SAR-manual", 1, fingerprint('f'), NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> manualResult(Verdict.BLOCKED, manualChecks(
+                CheckStatus.PASS, CheckStatus.PASS, CheckStatus.PASS,
+                CheckStatus.BLOCKED, CheckStatus.NOT_RUN, CheckStatus.NOT_RUN,
+                CheckStatus.PASS),
                 "SAR-manual", 1, fingerprint('f'), NOW))
                 .isInstanceOf(IllegalArgumentException.class);
 
@@ -305,8 +354,8 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
                 .isInstanceOf(IllegalArgumentException.class);
 
         List<CheckResult> zeroChallenge = new ArrayList<>(allPass);
-        zeroChallenge.set(3, new CheckResult(
-                CapabilityStudioStageAcceptanceProviderConformance.CHECK_IDS.get(3),
+        zeroChallenge.set(4, new CheckResult(
+                CapabilityStudioStageAcceptanceProviderConformance.CHECK_IDS.get(4),
                 CheckStatus.PASS, 0, tckCode("TEST")));
         assertThatThrownBy(() -> manualResult(Verdict.CONFORMANT, zeroChallenge,
                 "SAR-manual", 1, fingerprint('f'), NOW))
@@ -360,7 +409,7 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
     private static List<CheckResult> manualChecks(CheckStatus... statuses) {
         List<CheckResult> checks = new ArrayList<>();
         for (int index = 0; index < statuses.length; index++) {
-            int challengeCount = index >= 3 && statuses[index] != CheckStatus.NOT_RUN ? 1 : 0;
+            int challengeCount = index >= 4 && statuses[index] != CheckStatus.NOT_RUN ? 1 : 0;
             checks.add(new CheckResult(
                     CapabilityStudioStageAcceptanceProviderConformance.CHECK_IDS.get(index),
                     statuses[index], challengeCount, tckCode("TEST")));
@@ -482,6 +531,8 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         private EvidenceResolver resolver;
         private CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuer;
         private CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority owner;
+        private boolean driftBinding;
+        private int bindingReads;
 
         private Provider(EvidenceResolver resolver,
                          CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuer,
@@ -489,6 +540,20 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
             this.resolver = resolver;
             this.issuer = issuer;
             this.owner = owner;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            bindingReads++;
+            char seed = driftBinding && bindingReads > 1 ? 'b' : 'a';
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
+                    fingerprint(seed), resolver, issuer, owner);
+        }
+
+        @Override
+        public String authorityBindingFingerprint() {
+            bindingReads++;
+            return driftBinding && bindingReads > 1 ? fingerprint('b') : fingerprint('a');
         }
 
         @Override
@@ -518,6 +583,18 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
 
         int accesses() {
             return accesses;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding() {
+            accesses++;
+            return delegate.authorityBinding();
+        }
+
+        @Override
+        public String authorityBindingFingerprint() {
+            accesses++;
+            return delegate.authorityBindingFingerprint();
         }
 
         @Override

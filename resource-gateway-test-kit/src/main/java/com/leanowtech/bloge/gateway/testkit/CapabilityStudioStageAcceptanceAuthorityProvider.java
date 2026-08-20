@@ -11,6 +11,59 @@ package com.leanowtech.bloge.gateway.testkit;
  */
 public interface CapabilityStudioStageAcceptanceAuthorityProvider {
     /**
+     * One immutable snapshot of all authority dependencies used by one verification attempt.
+     *
+     * <p>Implementations must construct this value from the same deployment snapshot as the
+     * fingerprint. Consumers must not reconstruct a binding by calling the legacy accessors
+     * independently.</p>
+     *
+     * @param fingerprint lowercase deployment binding fingerprint
+     * @param resolver exact-coordinate evidence resolver
+     * @param issuerPolicy pinned evidence issuer policy
+     * @param ownerAuthority organizational owner authority
+     */
+    record AuthorityBinding(
+            String fingerprint,
+            CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver resolver,
+            CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuerPolicy,
+            CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority) {
+        /** Validates and defensively fixes the authority snapshot boundary. */
+        public AuthorityBinding {
+            if (fingerprint == null || resolver == null || issuerPolicy == null
+                    || ownerAuthority == null) {
+                throw new IllegalArgumentException("authority binding is incomplete");
+            }
+        }
+    }
+
+    /**
+     * Returns one atomic authority snapshot for formal verification.
+     *
+     * <p>The default is intentionally {@code null}: it preserves source and binary compatibility
+     * for legacy providers, while current formal and conformance paths reject it closed.</p>
+     *
+     * @return one immutable binding, or null for a legacy provider
+     */
+    default AuthorityBinding authorityBinding() {
+        return null;
+    }
+
+    /**
+     * Returns the deployment-owned immutable fingerprint for the complete authority binding.
+     *
+     * <p>The fingerprint identifies the resolver, issuer policy, and owner authority as one
+     * deployment binding. It must never contain or derive from secrets. The default keeps source
+     * and binary compatibility for providers compiled before the binding contract was added;
+     * formal and conformance paths reject a missing or malformed value.</p>
+     *
+     * @return lowercase {@code sha256:} fingerprint, or null for a legacy provider
+     */
+    @Deprecated
+    default String authorityBindingFingerprint() {
+        return null;
+    }
+
+    /**
      * Returns the exact-coordinate external evidence and signature resolver.
      *
      * @return deployment-owned resolver
