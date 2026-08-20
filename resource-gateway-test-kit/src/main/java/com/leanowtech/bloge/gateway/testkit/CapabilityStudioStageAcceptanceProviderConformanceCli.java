@@ -99,13 +99,21 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
             return writeReport(local, input, now, args[3], safeOut);
         }
 
-        CapabilityStudioStageAcceptanceAuthorityProvider provider = loadProvider(providerSource);
+        CapabilityStudioStageAcceptanceAuthorityProvider provider;
+        try {
+            provider = CapabilityStudioProviderOutputIsolation.call(
+                    () -> loadProvider(providerSource));
+        } catch (RuntimeException failure) {
+            provider = null;
+        }
         CapabilityStudioStageAcceptanceProviderConformance.Result result;
         if (provider == null) {
             result = local;
         } else {
+            CapabilityStudioStageAcceptanceAuthorityProvider verifiedProvider = provider;
             try {
-                result = tck.verify(input, now, provider);
+                result = CapabilityStudioProviderOutputIsolation.call(
+                        () -> tck.verify(input, now, verifiedProvider));
             } catch (RuntimeException | ServiceConfigurationError | LinkageError providerFailure) {
                 result = local;
             }

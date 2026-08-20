@@ -70,10 +70,21 @@ CapabilityStudioStageAcceptanceProviderConformanceCli \
 ```
 
 The CLI, TCK, strict result builder, independent verifier, and packaged schema are implemented.
-The focused slice passes 20/20 tests, its existing Stage Authority/CLI integration passes 44/44,
-and the Test Kit `clean verify` passes 978/978 tests with no skips, including shaded JAR and
-Javadoc/doclint. These are development mechanism results, not a conformance claim for an
-enterprise deployment Provider.
+The Provider TCK slice passed 20/20 tests and its Stage Authority/CLI integration passed 44/44 when
+that slice was completed. The deployment runner now enforces the TCK before formal acceptance:
+
+```bash
+JAVA_BIN="$(command -v java)" \
+resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
+  --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --provider-classpath '<enterprise-provider.jar>:<provider-dependency.jar>' \
+  --stage-result '<stage-acceptance-result-v2.json>' \
+  --conformance-output '<new-provider-conformance-result-v1.json>'
+```
+
+The combined CLI and deployment-runner slice passes 28/28 focused tests, and the current Test Kit
+`clean verify` passes 996/996 tests with no skips, including shaded JAR and Javadoc/doclint. These
+are development mechanism results, not a conformance claim for an enterprise deployment Provider.
 `CONFORMANT` proves mechanism consistency with the current deployment trust configuration only;
 it does not increase `formalPassCount`, or replace organization ownership, KMS/HSM custody, real
 target-environment transport, deployment egress enforcement, or Owner process attestation.

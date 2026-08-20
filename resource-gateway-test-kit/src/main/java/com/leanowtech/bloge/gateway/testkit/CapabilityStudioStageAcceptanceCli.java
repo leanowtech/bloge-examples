@@ -8,7 +8,6 @@ import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
@@ -105,8 +104,14 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_NOT_ACCEPTED;
         }
 
-        CapabilityStudioStageAcceptanceAuthorityProvider provider =
-                loadProvider(providerSource);
+        CapabilityStudioStageAcceptanceAuthorityProvider provider;
+        try {
+            provider = CapabilityStudioProviderOutputIsolation.call(
+                    () -> loadProvider(providerSource));
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
         if (provider == null) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
@@ -116,12 +121,15 @@ public final class CapabilityStudioStageAcceptanceCli {
         CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuerPolicy;
         CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority;
         try {
-            resolver = Objects.requireNonNull(
-                    provider.evidenceResolver(), "evidenceResolver is required");
-            issuerPolicy = Objects.requireNonNull(
-                    provider.evidenceIssuerPolicy(), "evidenceIssuerPolicy is required");
-            ownerAuthority = Objects.requireNonNull(
-                    provider.ownerAuthority(), "ownerAuthority is required");
+            resolver = CapabilityStudioProviderOutputIsolation.call(
+                    () -> Objects.requireNonNull(
+                            provider.evidenceResolver(), "evidenceResolver is required"));
+            issuerPolicy = CapabilityStudioProviderOutputIsolation.call(
+                    () -> Objects.requireNonNull(
+                            provider.evidenceIssuerPolicy(), "evidenceIssuerPolicy is required"));
+            ownerAuthority = CapabilityStudioProviderOutputIsolation.call(
+                    () -> Objects.requireNonNull(
+                            provider.ownerAuthority(), "ownerAuthority is required"));
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
@@ -129,8 +137,9 @@ public final class CapabilityStudioStageAcceptanceCli {
 
         CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult verification;
         try {
-            verification = new CapabilityStudioStageAcceptanceAuthorityVerifier().verify(
-                    result, now, resolver, issuerPolicy, ownerAuthority);
+            verification = CapabilityStudioProviderOutputIsolation.call(
+                    () -> new CapabilityStudioStageAcceptanceAuthorityVerifier().verify(
+                            result, now, resolver, issuerPolicy, ownerAuthority));
         } catch (RuntimeException failure) {
             safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
                     + CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
@@ -174,10 +183,13 @@ public final class CapabilityStudioStageAcceptanceCli {
     }
 
     private static List<CapabilityStudioStageAcceptanceAuthorityProvider> providers() {
-        List<CapabilityStudioStageAcceptanceAuthorityProvider> providers = new ArrayList<>();
-        ServiceLoader.load(CapabilityStudioStageAcceptanceAuthorityProvider.class)
-                .forEach(providers::add);
-        return List.copyOf(providers);
+        List<ServiceLoader.Provider<CapabilityStudioStageAcceptanceAuthorityProvider>> discovered =
+                ServiceLoader.load(CapabilityStudioStageAcceptanceAuthorityProvider.class)
+                        .stream().limit(2).toList();
+        if (discovered.size() != 1) {
+            return List.of();
+        }
+        return List.of(discovered.getFirst().get());
     }
 
     private static byte[] readBounded(String value) {

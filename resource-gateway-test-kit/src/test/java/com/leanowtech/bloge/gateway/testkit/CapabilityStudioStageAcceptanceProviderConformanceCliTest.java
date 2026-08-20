@@ -125,6 +125,43 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
         assertThat(size.text()).contains("PROVIDER_CONFORMANCE_CLI.READ");
     }
 
+    @Test
+    void isolatesProviderDiscoveryAccessorsAndTckCallbacks() throws Exception {
+        String secret = "provider-conformance-secret";
+        ObjectNode result = CapabilityStudioStageAcceptanceAuthorityVerifierTest.validStagePass();
+        Path input = write("noisy-provider.json", result.toString());
+        Path output = temp.resolve("noisy-report.json");
+        Output cliOutput = new Output();
+        ByteArrayOutputStream capturedOutBytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream capturedErrBytes = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
+        PrintStream capturedOut = new PrintStream(capturedOutBytes, true, StandardCharsets.UTF_8);
+        PrintStream capturedErr = new PrintStream(capturedErrBytes, true, StandardCharsets.UTF_8);
+
+        try {
+            System.setOut(capturedOut);
+            System.setErr(capturedErr);
+            int exit = run(input, output, () -> {
+                System.out.println(secret + " discovery-out");
+                System.err.println(secret + " discovery-err");
+                return List.of(new NoisyProvider(result, secret));
+            }, cliOutput);
+
+            assertThat(exit).isZero();
+            assertThat(cliOutput.text()).doesNotContain(secret);
+            assertThat(capturedOutBytes.toString(StandardCharsets.UTF_8)).doesNotContain(secret);
+            assertThat(capturedErrBytes.toString(StandardCharsets.UTF_8)).doesNotContain(secret);
+            assertThat(System.out).isSameAs(capturedOut);
+            assertThat(System.err).isSameAs(capturedErr);
+        } finally {
+            System.setOut(originalOut);
+            System.setErr(originalErr);
+        }
+        assertThat(System.out).isSameAs(originalOut);
+        assertThat(System.err).isSameAs(originalErr);
+    }
+
     private int run(Path input, Path output,
                     CapabilityStudioStageAcceptanceProviderConformanceCli.ProviderSource source,
                     Output out) {
@@ -163,8 +200,13 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
                         .equals(context.evidenceClosureFingerprint())
                         && signature.evidenceClosureFingerprint()
                         .equals(context.evidenceClosureFingerprint())
-                        ? CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.verified()
-                        : CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.rejected());
+                ? CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.verified()
+                : CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.rejected());
+    }
+
+    private static void printSecret(String secret, String phase) {
+        System.out.println(secret + " " + phase + " out");
+        System.err.println(secret + " " + phase + " err");
     }
 
     private static CapabilityStudioStageAcceptanceAuthorityVerifier.ResolvedEvidence facts(
@@ -219,6 +261,74 @@ class CapabilityStudioStageAcceptanceProviderConformanceCliTest {
         }
         public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority() {
             return owner;
+        }
+    }
+
+    private static final class NoisyProvider
+            implements CapabilityStudioStageAcceptanceAuthorityProvider {
+        private final ObjectNode result;
+        private final String secret;
+
+        private NoisyProvider(ObjectNode result, String secret) {
+            this.result = result;
+            this.secret = secret;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver evidenceResolver() {
+            printSecret(secret, "resolver-accessor");
+            Set<CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate> coordinates =
+                    coordinates(result);
+            String closure = result.path("evidenceClosureFingerprint").asText();
+            return request -> {
+                printSecret(secret, "resolver-callback");
+                return coordinates.contains(request.coordinate())
+                        ? CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolution.available(
+                                facts(request, closure))
+                        : CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolution.notFound();
+            };
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                evidenceIssuerPolicy() {
+            printSecret(secret, "issuer-accessor");
+            return (reference, evidence, context) -> {
+                printSecret(secret, "issuer-callback");
+                return evidence.materialFingerprint().equals(fp('6'))
+                        ? CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.verified()
+                        : CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.rejected();
+            };
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority() {
+            printSecret(secret, "owner-accessor");
+            return (signoff, signature, context) -> {
+                printSecret(secret, "owner-callback");
+                return signoff.evidenceClosureFingerprint()
+                        .equals(context.evidenceClosureFingerprint())
+                        && signature.evidenceClosureFingerprint()
+                        .equals(context.evidenceClosureFingerprint())
+                        ? CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.verified()
+                        : CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.rejected();
+            };
+        }
+
+        private static Set<CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate>
+                coordinates(ObjectNode input) {
+            Set<CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate> coordinates =
+                    new HashSet<>();
+            for (JsonNode value : input.path("evidenceRefs")) {
+                coordinates.add(new CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate(
+                        value.path("exactRef").asText(), value.path("fingerprint").asText()));
+            }
+            for (JsonNode value : input.path("signoffs")) {
+                coordinates.add(new CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate(
+                        value.path("signatureRef").path("exactRef").asText(),
+                        value.path("signatureRef").path("fingerprint").asText()));
+            }
+            return coordinates;
         }
     }
 

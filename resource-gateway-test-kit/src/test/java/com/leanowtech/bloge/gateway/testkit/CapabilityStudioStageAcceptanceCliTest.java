@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CapabilityStudioStageAcceptanceCliTest {
     private static final Instant NOW = Instant.parse("2026-01-01T00:12:00Z");
@@ -160,6 +161,58 @@ class CapabilityStudioStageAcceptanceCliTest {
         assertThat(output.text()).contains("PROVIDER_CONFIGURATION").doesNotContain(secret);
     }
 
+    @Test
+    void isolatesProviderDiscoveryAccessorsAndAuthorityCallbacks() throws Exception {
+        String secret = "capability-studio-provider-secret";
+        ObjectNode result = passResult();
+        Path artifact = write("noisy-provider.json", result.toString());
+        Output output = new Output();
+        ByteArrayOutputStream capturedOutBytes = new ByteArrayOutputStream();
+        ByteArrayOutputStream capturedErrBytes = new ByteArrayOutputStream();
+        PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
+        PrintStream capturedOut = new PrintStream(capturedOutBytes, true, StandardCharsets.UTF_8);
+        PrintStream capturedErr = new PrintStream(capturedErrBytes, true, StandardCharsets.UTF_8);
+
+        try {
+            System.setOut(capturedOut);
+            System.setErr(capturedErr);
+            int exit = run(artifact, () -> {
+                System.out.println(secret + " discovery-out");
+                System.err.println(secret + " discovery-err");
+                return List.of(new NoisyProvider(result, secret));
+            }, output);
+
+            assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
+            assertThat(output.text()).doesNotContain(secret);
+            assertThat(capturedOutBytes.toString(StandardCharsets.UTF_8)).doesNotContain(secret);
+            assertThat(capturedErrBytes.toString(StandardCharsets.UTF_8)).doesNotContain(secret);
+            assertThat(System.out).isSameAs(capturedOut);
+            assertThat(System.err).isSameAs(capturedErr);
+        } finally {
+            System.setOut(originalOut);
+            System.setErr(originalErr);
+        }
+        assertThat(System.out).isSameAs(originalOut);
+        assertThat(System.err).isSameAs(originalErr);
+    }
+
+    @Test
+    void restoresGlobalStreamsWithoutConvertingProviderErrors() throws Exception {
+        PrintStream originalOut = System.out;
+        PrintStream originalErr = System.err;
+        AssertionError providerError = new AssertionError("provider-fatal-error");
+
+        assertThatThrownBy(() -> run(write("provider-error.json", passResult().toString()), () -> {
+            System.out.println("must-be-discarded");
+            System.err.println("must-also-be-discarded");
+            throw providerError;
+        }, new Output())).isSameAs(providerError);
+
+        assertThat(System.out).isSameAs(originalOut);
+        assertThat(System.err).isSameAs(originalErr);
+    }
+
     private int run(Path artifact,
                     List<CapabilityStudioStageAcceptanceAuthorityProvider> providers,
                     Output output) {
@@ -205,6 +258,11 @@ class CapabilityStudioStageAcceptanceCliTest {
         return new Provider(request -> EvidenceResolution.available(facts(request, closure)),
                 (reference, evidence, context) -> verified(),
                 (signoff, signature, context) -> verified());
+    }
+
+    private static void printSecret(String secret, String phase) {
+        System.out.println(secret + " " + phase + " out");
+        System.err.println(secret + " " + phase + " err");
     }
 
     private static ResolvedEvidence facts(ResolutionRequest request, String closure) {
@@ -271,6 +329,46 @@ class CapabilityStudioStageAcceptanceCliTest {
         @Override
         public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority() {
             return owner;
+        }
+    }
+
+    private static final class NoisyProvider
+            implements CapabilityStudioStageAcceptanceAuthorityProvider {
+        private final ObjectNode result;
+        private final String secret;
+
+        private NoisyProvider(ObjectNode result, String secret) {
+            this.result = result;
+            this.secret = secret;
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver evidenceResolver() {
+            printSecret(secret, "resolver-accessor");
+            String closure = result.path("evidenceClosureFingerprint").textValue();
+            return request -> {
+                printSecret(secret, "resolver-callback");
+                return EvidenceResolution.available(facts(request, closure));
+            };
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                evidenceIssuerPolicy() {
+            printSecret(secret, "issuer-accessor");
+            return (reference, evidence, context) -> {
+                printSecret(secret, "issuer-callback");
+                return verified();
+            };
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority() {
+            printSecret(secret, "owner-accessor");
+            return (signoff, signature, context) -> {
+                printSecret(secret, "owner-callback");
+                return verified();
+            };
         }
     }
 

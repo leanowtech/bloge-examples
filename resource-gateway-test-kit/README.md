@@ -502,6 +502,68 @@ exception text. A provider should use `CapabilityStudioAuthorityEvidenceResolver
 actual storage adapters, trust pins, role directory, and target-environment evidence remain under
 enterprise deployment Authority.
 
+Provider discovery, Provider accessors, and synchronous resolver, issuer-policy, and Owner-authority
+callbacks run inside a process-wide output-isolation window. Direct writes to `System.out` and
+`System.err` in that window are discarded, and the exact prior streams are restored even when the
+Provider throws. The isolation layer does not convert or swallow `Error`. Run the CLI as a dedicated
+one-shot process: a Provider must not start unmanaged asynchronous writers, and the process-wide
+window can temporarily suppress output from unrelated threads in the same JVM.
+
+### Run the deployment acceptance gate
+
+Use the deployment runner when CI or a target-environment job must enforce Provider conformance
+before formal Stage acceptance. The same Test Kit JAR, Provider classpath, and Stage Result are used
+for both commands:
+
+```bash
+JAVA_BIN="$(command -v java)" \
+resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
+  --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --provider-classpath '<enterprise-provider.jar>:<provider-dependency.jar>' \
+  --stage-result '<stage-acceptance-result-v2.json>' \
+  --conformance-output '<new-provider-conformance-result-v1.json>'
+```
+
+Before Java starts, the runner requires each flag exactly once, a real executable `JAVA_BIN` path,
+readable non-symlink regular files for the Test Kit, Stage Result, and every Provider classpath
+entry, a Stage Result no larger than 4 MiB, a writable output parent, and an output path that does
+not exist. The deployment image must provide `sha256sum` or `shasum`. Paths may contain spaces;
+classpath entries cannot contain `:`.
+
+The runner copies the Test Kit, Stage Result, and every Provider classpath entry into mode-restricted
+run snapshots under the temporary directory and keeps each SHA-256 digest in the parent shell.
+Both Java phases use those snapshot paths; the runner recomputes every digest after each phase and
+fails before continuing when a snapshot changed. A source file changed after snapshot creation
+cannot alter the second phase or make the two phases evaluate different bytes. The source directory
+and Java runtime remain deployment trust inputs: mount or publish them from an immutable,
+deployment-controlled artifact location until snapshot creation finishes. The runner rejects a
+source that becomes a symbolic link while it is copied; it does not replace artifact-signing,
+supply-chain verification, or OS-level read-only isolation from a malicious same-UID Provider.
+
+The runner then applies these gates in order:
+
+1. Run `CapabilityStudioStageAcceptanceProviderConformanceCli`.
+2. Require exit `0`, exactly one canonical `CONFORMANT` line, and a readable non-symlink report of
+   1 through 131072 bytes. Stop before formal verification when any condition fails.
+3. Run `CapabilityStudioStageAcceptanceCli` with the same classpath and Stage Result.
+4. Require exit `0` and exactly one canonical `ACCEPTED` line.
+
+Success emits exactly:
+
+```text
+ACCEPTED status=ACCEPTED providerConformanceFingerprint=sha256:<64 lowercase hex>
+```
+
+Exit `3` preserves a conformance or formal not-accepted decision. Exit `2` covers usage, preflight,
+I/O, malformed or forged child output, and every other failure. Child stdout and stderr stay in a
+mode-restricted temporary directory under the output parent, are never echoed, and are removed on
+success, failure, or signal. On `HUP`, `INT`, or `TERM`, the runner sends `TERM`, waits for at most
+five seconds, escalates to `KILL` when required, and reaps the active Java child before cleanup. The
+launch window records a pending signal before the child PID is available. The Provider must not
+spawn unmanaged operating-system children.
+Use a deployment-controlled output parent; the runner does not create an acceptance receipt, sign
+evidence, assign trust roots, or turn a local `CONFORMANT` result into an organizational approval.
+
 ## Verify the Provider Conformance TCK Result
 
 The Provider Conformance TCK is a protocol and mechanism gate for a deployment-owned
@@ -555,10 +617,11 @@ java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<enterprise-provider.jar
 Exit `0` means `CONFORMANT`; exit `3` means `NON_CONFORMANT` or `BLOCKED`; exit `2` means usage,
 input, read, report verification, or atomic output publication failed.
 
-The CLI, TCK, result builder, independent verifier, and packaged schema are implemented. On
-2026-08-20 the focused slice passed 20/20 tests, its existing Stage Authority/CLI integration
-passed 44/44, and Test Kit `clean verify` passed 978/978 tests with no failures, errors, or skips;
-the shaded JAR and Javadoc/doclint gates also passed. These are development mechanism results,
+The CLI, TCK, result builder, independent verifier, and packaged schema are implemented. The
+Provider TCK slice-closing run on 2026-08-20 passed 20/20 focused tests, 44/44 existing Stage
+Authority/CLI integration tests, and 978/978 Test Kit tests with no failures, errors, or skips.
+The latest full result after deployment-gate integration is 996/996. The shaded JAR and
+Javadoc/doclint gates also passed. These are development mechanism results,
 not a conformance claim for an enterprise deployment Provider. The Provider must not use a
 fallback implementation, a fallback trust root, or a self-signed substitute. It must not echo
 credentials, business data, file contents, or diagnostic stack traces in the report or CLI

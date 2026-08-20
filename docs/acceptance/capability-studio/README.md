@@ -223,12 +223,50 @@ CapabilityStudioStageAcceptanceProviderConformanceCli \
   --output <provider-conformance-result.json>
 ```
 
-CLI、TCK、结果 Builder、独立 Verifier 和 Schema 打包均已实现。CLI 发布报告前会同时校验报告与原 Stage Result，独立复算 `resultId`、`revision` 和完整 Stage Result fingerprint；只验证报告自身不能证明来源绑定。2026-08-20 的开发复验结果为：本切片聚焦测试 20/20、与既有 Stage Authority/CLI 的联动测试 44/44、Test Kit `clean verify` 978/978，均为 0 失败、0 错误、0 跳过；shaded JAR 与 Javadoc/doclint 同时通过。该结果只证明当前源码候选的开发机制，不是企业部署 Provider 的正式符合性报告。
+CLI、TCK、结果 Builder、独立 Verifier 和 Schema 打包均已实现。CLI 发布报告前会同时校验报告与原 Stage Result，独立复算 `resultId`、`revision` 和完整 Stage Result fingerprint；只验证报告自身不能证明来源绑定。2026-08-20 的 TCK 切片封板运行结果为：聚焦测试 20/20、与既有 Stage Authority/CLI 的联动测试 44/44、Test Kit `clean verify` 978/978，均为 0 失败、0 错误、0 跳过；当前全量结果见 3.6 节。shaded JAR 与 Javadoc/doclint 同时通过。该结果只证明当前源码候选的开发机制，不是企业部署 Provider 的正式符合性报告。
 
 四种结果语义必须保持可区分：`FAIL` 表示已执行挑战证明机制不符合；`BLOCKED` 表示 Provider 装配、依赖或信任输入不可用，无法作出结论；`INPUT_INVALID` 表示输入 Stage Result 不能按协议解释。三者都不能通过省略检查或 fallback 变成 `CONFORMANT`。`CONFORMANT` 只证明 Provider 相对当前部署信任配置的机制一致，不增加 `formalPassCount`，不替代外部组织归属、真实目标环境与 Owner 签署。固定外部检查要求为：
 
 `TRUST_ROOT_ORGANIZATION`、`KMS_HSM_CUSTODY`、`TARGET_ENVIRONMENT_TRANSPORT`、
 `DEPLOYMENT_EGRESS_ENFORCEMENT`、`OWNER_PROCESS_ATTESTATION`。
+
+### 3.6 CI 与目标环境部署门禁
+
+部署任务必须使用
+[`verify-capability-studio-stage-acceptance.sh`](../../../resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh)
+串行执行 Provider Conformance 和正式 Stage Acceptance。脚本会把 Test Kit、Provider classpath 全部条目和 Stage Result 复制为权限收紧的运行快照，并在父 shell 内保存每个 SHA-256；两步只读取同一组快照字节，每步结束后必须重新计算全部摘要。源文件在快照后发生变化不会影响第二步，快照发生持久修改时脚本会在下一阶段前失败。禁止把两个命令拆到不同候选、不同环境或不同信任配置中执行。
+
+```bash
+JAVA_BIN="$(command -v java)" \
+resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
+  --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  --provider-classpath '<enterprise-provider.jar>:<provider-dependency.jar>' \
+  --stage-result '<stage-acceptance-result-v2.json>' \
+  --conformance-output '<new-provider-conformance-result-v1.json>'
+```
+
+执行前必须满足以下条件：
+
+1. `JAVA_BIN` 指向一个真实可执行文件；部署镜像提供 `sha256sum` 或 `shasum`。脚本不执行拼接命令，也不使用 `eval`。
+2. Test Kit JAR、Stage Result 和每个 Provider classpath 条目都是可读、非符号链接的普通文件。
+3. Stage Result 不超过 4 MiB。
+4. Conformance 输出目录已存在且可写，输出文件尚不存在。
+5. Test Kit、Provider classpath 和 Java runtime 来自部署控制的不可变制品位置，并至少保持到运行快照创建完成。运行快照不能替代制品签名或供应链校验。
+6. 验收任务运行在专用一次性 JVM 中。Provider 不得启动未受管异步线程写入全局输出流。
+
+脚本先运行 Conformance CLI。只有退出码为 `0`、stdout 恰好为一行规范 `CONFORMANT` 结果，且报告是 1 至 131072 字节的可读、非符号链接普通文件时，脚本才运行正式 Stage Acceptance CLI。正式 CLI 也必须退出 `0`，且 stdout 恰好为一行规范 `ACCEPTED` 结果。成功时，脚本只输出：
+
+```text
+ACCEPTED status=ACCEPTED providerConformanceFingerprint=sha256:<64 位小写十六进制>
+```
+
+退出码 `3` 表示 Conformance 或正式验收给出“不通过、受阻或拒绝”的有效裁决；退出码 `2` 表示参数、前置检查、读写、Provider 配置或子进程输出不合法。子进程 stdout/stderr 只进入输出目录下的权限受限临时目录，脚本不会在失败时回显这些内容。脚本收到 `HUP`、`INT` 或 `TERM` 时，会向当前 Java 子进程发送 `TERM`，最多等待 5 秒，必要时升级为 `KILL`；脚本回收子进程后再删除临时目录。Provider 不得启动未受管操作系统子进程。
+
+正式 CLI 在本地协议通过后，会隔离 Provider discovery、accessor 和同步 Authority 回调对 `System.out/System.err` 的直接写入，并在异常或 `Error` 离开隔离窗口前恢复原输出流。该机制只处理同步调用，不是异步日志治理方案。
+
+本门禁是部署执行机制，不是签署收据。脚本不生成组织信任根，不托管 KMS/HSM 私钥，不证明目标环境或部署 egress，也不替代 Owner 流程签署。缺少任一外部责任时，即使脚本机制测试全部通过，正式 `formalPassCount` 也不能增加。
+
+2026-08-20 的开发复验结果为：CLI 与部署脚本聚焦测试 28/28，Test Kit `clean verify` 996/996，均为 0 失败、0 错误、0 跳过；JAR、shaded JAR 和 Javadoc/doclint 同时通过。该结果只允许把部署门禁切片标为 `DEVELOPMENT_VERIFIED`。
 
 ## 4. 内容寻址
 
