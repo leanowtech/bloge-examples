@@ -87,6 +87,15 @@ final class CapabilityStudioSchemaSupport {
     static final String MOUNTED_AUTHORITY_BUNDLE_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-mounted-authority-bundle-v1.schema.json";
+    static final String MOUNTED_TARGET_ADMISSION_BUNDLE_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-mounted-target-admission-bundle-v1.schema.json";
+    static final String CANDIDATE_TARGET_ADMISSION_PROOF_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-candidate-target-admission-proof-v1.schema.json";
+    static final String ENVIRONMENT_TARGET_ADMISSION_PROOF_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-environment-target-admission-proof-v1.schema.json";
     static final String CANDIDATE_ATTESTATION_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-candidate-attestation-v1.schema.json";

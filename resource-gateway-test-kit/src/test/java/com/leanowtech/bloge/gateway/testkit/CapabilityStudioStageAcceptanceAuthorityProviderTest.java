@@ -1,150 +1,550 @@
 package com.leanowtech.bloge.gateway.testkit;
 
-import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleMaterial;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AtomicAdmissionLifecycleCommitReceipt;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAdmissionAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAuthorityDecision;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitStatus;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.RevocationAuthoritySnapshot;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.TrustedVerificationClockBinding;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolution;
-import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver;
-import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.RecordComponent;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Instant;
 import java.util.Arrays;
+import java.util.HexFormat;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CapabilityStudioStageAcceptanceAuthorityProviderTest {
-    private static final EvidenceResolver RESOLVER = request -> EvidenceResolution.unavailable();
-    private static final EvidenceIssuerPolicy ISSUER =
-            (reference, evidence, context) ->
-                    CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.unavailable();
-    private static final OwnerAuthority OWNER =
-            (signoff, signature, context) ->
-                    CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision.unavailable();
+    private static final ObjectMapper STRICT_JSON = new ObjectMapper(
+            new JsonFactory().rebuild()
+                    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .build());
+    private static final Instant NOW = Instant.parse("2026-01-01T00:12:00Z");
+    private static final String CLOCK_FINGERPRINT = fingerprint('1');
+    private static final String LIFECYCLE_AUTHORITY_FINGERPRINT = fingerprint('2');
+    private static final String LEASE_AUTHORITY_FINGERPRINT = fingerprint('3');
+    private static final String DEPLOYMENT_AUTHORITY_FINGERPRINT =
+            DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                    CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
+                    LEASE_AUTHORITY_FINGERPRINT);
+    private static final String OLD_MESSAGE =
+            "{\"messageVersion\":\"resource-gateway.capability-studio."
+                    + "stage-acceptance-provider-binding.v1\","
+                    + "\"authorityMaterialFingerprint\":\"" + fingerprint('a')
+                    + "\",\"targetBindingFingerprint\":\"" + fingerprint('b') + "\"}";
 
     @Test
-    void preservesThePublicLegacyFourArgumentBindingContract() {
-        String material = fingerprint('a');
+    void preservesExactPhaseTwoRecordShapesAndConstructors() {
+        AuthorityBinding authority = authorityBinding(fingerprint('a'));
+        TargetAdmissionBinding admission = legacyAdmission(new byte[]{1});
+        TargetBoundAuthorityBinding outer = new TargetBoundAuthorityBinding(authority, admission);
 
-        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding binding =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
-                        material, RESOLVER, ISSUER, OWNER);
-        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding duplicate =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
-                        material, RESOLVER, ISSUER, OWNER);
-
-        assertThat(binding.fingerprint()).isEqualTo(material);
-        assertThat(binding).isEqualTo(duplicate);
-        assertThat(Arrays.stream(CapabilityStudioStageAcceptanceAuthorityProvider
-                .AuthorityBinding.class.getRecordComponents()).map(RecordComponent::getName))
-                .containsExactly("fingerprint", "resolver", "issuerPolicy", "ownerAuthority");
+        assertThat(componentNames(AuthorityBinding.class)).containsExactly(
+                "fingerprint", "resolver", "issuerPolicy", "ownerAuthority");
+        assertThat(componentNames(TargetAdmissionBinding.class)).containsExactly(
+                "targetBindingBytes", "candidateAttestationBytes",
+                "environmentAttestationBytes", "verificationContext",
+                "candidateAuthority", "environmentAuthority");
+        assertThat(componentNames(TargetBoundAuthorityBinding.class)).containsExactly(
+                "fingerprint", "authorityBinding", "targetAdmissionBinding");
+        assertThat(new AuthorityBinding(fingerprint('a'), authority.resolver(),
+                authority.issuerPolicy(), authority.ownerAuthority())).isEqualTo(authority);
+        TargetAdmissionBinding reconstructed = new TargetAdmissionBinding(
+                admission.targetBindingBytes(),
+                admission.candidateAttestationBytes(), admission.environmentAttestationBytes(),
+                admission.verificationContext(), admission.candidateAuthority(),
+                admission.environmentAuthority());
+        assertThat(reconstructed.targetBindingFingerprint())
+                .isEqualTo(admission.targetBindingFingerprint());
+        assertThat(new TargetBoundAuthorityBinding(outer.fingerprint(), authority, admission))
+                .isEqualTo(outer);
     }
 
     @Test
-    void snapshotsTargetAdmissionBytesAndEnforcesEachBound() {
+    void preservesLiteralPhaseTwoMessageVersionAndHelperOutputs() {
+        assertThat(TargetBoundAuthorityBinding.MESSAGE_VERSION)
+                .isEqualTo("resource-gateway.capability-studio."
+                        + "stage-acceptance-provider-binding.v1");
+        assertThat(TargetBoundAuthorityBinding.aggregateCanonicalMessage(
+                TargetBoundAuthorityBinding.MESSAGE_VERSION,
+                fingerprint('a'), fingerprint('b'))).isEqualTo(OLD_MESSAGE);
+        assertThat(TargetBoundAuthorityBinding.aggregateFingerprint(
+                TargetBoundAuthorityBinding.MESSAGE_VERSION,
+                fingerprint('a'), fingerprint('b')))
+                .isEqualTo("sha256:4b7f068491a5829e2cdbe0c3bea5f5c5"
+                        + "da97f37fe33c7a21d483e23c916b8ba9");
+        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider.aggregateFingerprint(
+                TargetBoundAuthorityBinding.MESSAGE_VERSION,
+                fingerprint('a'), fingerprint('b')))
+                .isEqualTo("sha256:4b7f068491a5829e2cdbe0c3bea5f5c5"
+                        + "da97f37fe33c7a21d483e23c916b8ba9");
+    }
+
+    @Test
+    void phaseTwoAdmissionBytesRemainDefensiveAndBounded() {
         byte[] target = "target-binding-secret".getBytes(StandardCharsets.UTF_8);
         byte[] candidate = new byte[]{2, 3};
         byte[] environment = new byte[]{4, 5};
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding admission =
-                targetAdmission(target, candidate, environment);
+        TargetAdmissionBinding admission = legacyAdmission(target, candidate, environment);
 
         target[0] = 'X';
         candidate[0] = 9;
         environment[0] = 8;
-        byte[] targetCopy = admission.targetBindingBytes();
-        byte[] candidateCopy = admission.candidateAttestationBytes();
-        byte[] environmentCopy = admission.environmentAttestationBytes();
-        targetCopy[0] = 'Y';
-        candidateCopy[0] = 7;
-        environmentCopy[0] = 6;
+        byte[] copy = admission.targetBindingBytes();
+        copy[0] = 'Y';
 
         assertThat(admission.targetBindingBytes()).containsExactly(
                 "target-binding-secret".getBytes(StandardCharsets.UTF_8));
         assertThat(admission.candidateAttestationBytes()).containsExactly(2, 3);
         assertThat(admission.environmentAttestationBytes()).containsExactly(4, 5);
         assertThat(admission.toString()).doesNotContain("target-binding-secret");
-
-        assertThatThrownBy(() -> targetAdmission(
+        assertThatThrownBy(() -> legacyAdmission(
                 new byte[CapabilityStudioStageAcceptanceTargetBindingVerifier
-                        .MAXIMUM_TARGET_BINDING_BYTES + 1], candidate, environment))
+                        .MAXIMUM_TARGET_BINDING_BYTES + 1]))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("targetBindingBytes");
     }
 
     @Test
-    void targetBoundFingerprintIsDeterministicAndDistinctFromAuthorityMaterial() {
-        String material = fingerprint('a');
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding firstAdmission =
-                targetAdmission(new byte[]{1}, new byte[]{2}, new byte[]{3});
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding secondAdmission =
-                targetAdmission(new byte[]{1}, new byte[]{2}, new byte[]{3});
+    void formalV2AggregateIsDeterministicAndDriftsForEveryMaterialCoordinate() {
+        String version = FormalTargetBoundAuthorityBinding.MESSAGE_VERSION;
+        String authority = fingerprint('a');
+        String deploymentAuthority = fingerprint('f');
+        String admission = fingerprint('b');
+        String raw = fingerprint('c');
+        String canonical = fingerprint('d');
 
-        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
-                        material, RESOLVER, ISSUER, OWNER);
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding first =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding(
-                        authorityBinding, firstAdmission);
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding second =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding(
-                        authorityBinding, secondAdmission);
-        String expected = CapabilityStudioStageAcceptanceAuthorityProvider
-                .TargetBoundAuthorityBinding
-                .aggregateFingerprint(
-                        CapabilityStudioStageAcceptanceAuthorityProvider
-                                .TargetBoundAuthorityBinding.MESSAGE_VERSION,
-                        material, firstAdmission.targetBindingFingerprint());
+        assertThat(Set.of(
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, authority, deploymentAuthority, admission, raw, canonical),
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, fingerprint('e'), deploymentAuthority,
+                        admission, raw, canonical),
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, authority, fingerprint('e'), admission, raw, canonical),
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, authority, deploymentAuthority,
+                        fingerprint('e'), raw, canonical),
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, authority, deploymentAuthority,
+                        admission, fingerprint('e'), canonical),
+                CapabilityStudioStageAcceptanceAuthorityProvider.formalAggregateFingerprint(
+                        version, authority, deploymentAuthority,
+                        admission, raw, fingerprint('e'))))
+                .hasSize(6);
 
-        assertThat(first.fingerprint()).isEqualTo(expected);
-        assertThat(second.fingerprint()).isEqualTo(expected);
-        assertThat(first.fingerprint()).isNotEqualTo(material);
-        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider.aggregateFingerprint(
-                CapabilityStudioStageAcceptanceAuthorityProvider
-                        .TargetBoundAuthorityBinding.MESSAGE_VERSION,
-                material, firstAdmission.targetBindingFingerprint())).isEqualTo(expected);
-        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding
-                .aggregateCanonicalMessage(
-                        CapabilityStudioStageAcceptanceAuthorityProvider
-                                .TargetBoundAuthorityBinding.MESSAGE_VERSION,
-                        material, firstAdmission.targetBindingFingerprint()))
-                .isEqualTo("{\"messageVersion\":\""
-                        + CapabilityStudioStageAcceptanceAuthorityProvider
-                        .TargetBoundAuthorityBinding.MESSAGE_VERSION
-                        + "\",\"authorityMaterialFingerprint\":\"" + material
-                        + "\",\"targetBindingFingerprint\":\""
-                        + firstAdmission.targetBindingFingerprint() + "\"}");
-        assertThat(first.toString()).doesNotContain(material,
-                firstAdmission.targetBindingFingerprint());
+        FormalTargetBoundAuthorityBinding first = new FormalTargetBoundAuthorityBinding(
+                authorityBinding(authority), formalAdmission(new byte[]{1}));
+        FormalTargetBoundAuthorityBinding second = new FormalTargetBoundAuthorityBinding(
+                authorityBinding(authority), formalAdmission(new byte[]{1}));
+        assertThat(first.fingerprint()).isEqualTo(second.fingerprint()).isNotEqualTo(authority);
+        assertThat(first.toString()).doesNotContain(authority, fingerprint('b'));
+        assertThat(first.targetAdmissionBinding().deploymentAuthorityBinding().toString())
+                .doesNotContain(DEPLOYMENT_AUTHORITY_FINGERPRINT);
     }
 
     @Test
-    void rejectsAnExplicitOuterFingerprintThatDoesNotMatchTheAggregate() {
-        var authorityBinding =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
-                        fingerprint('a'), RESOLVER, ISSUER, OWNER);
-        var admission = targetAdmission(new byte[]{1}, new byte[]{2}, new byte[]{3});
+    void deploymentAuthorityAggregateIsDerivedAndDriftsForEveryComponentCoordinate() {
+        DeploymentAdmissionAuthorityBinding base = deploymentBinding(
+                CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
+                LEASE_AUTHORITY_FINGERPRINT);
+        DeploymentAdmissionAuthorityBinding clockDrift = deploymentBinding(
+                fingerprint('4'), LIFECYCLE_AUTHORITY_FINGERPRINT,
+                LEASE_AUTHORITY_FINGERPRINT);
+        DeploymentAdmissionAuthorityBinding lifecycleDrift = deploymentBinding(
+                CLOCK_FINGERPRINT, fingerprint('4'), LEASE_AUTHORITY_FINGERPRINT);
+        DeploymentAdmissionAuthorityBinding leaseDrift = deploymentBinding(
+                CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT, fingerprint('4'));
 
-        assertThatThrownBy(() ->
-                new CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding(
-                        fingerprint('c'), authorityBinding, admission))
+        assertThat(Set.of(base.fingerprint(), clockDrift.fingerprint(),
+                lifecycleDrift.fingerprint(), leaseDrift.fingerprint())).hasSize(4);
+        assertThat(base.fingerprint()).isEqualTo(DEPLOYMENT_AUTHORITY_FINGERPRINT);
+        assertThat(Set.of(
+                new FormalTargetBoundAuthorityBinding(authorityBinding(fingerprint('a')),
+                        formalAdmission(new byte[]{1}, base)).fingerprint(),
+                new FormalTargetBoundAuthorityBinding(authorityBinding(fingerprint('a')),
+                        formalAdmission(new byte[]{1}, clockDrift)).fingerprint(),
+                new FormalTargetBoundAuthorityBinding(authorityBinding(fingerprint('a')),
+                        formalAdmission(new byte[]{1}, lifecycleDrift)).fingerprint(),
+                new FormalTargetBoundAuthorityBinding(authorityBinding(fingerprint('a')),
+                        formalAdmission(new byte[]{1}, leaseDrift)).fingerprint()))
+                .hasSize(4);
+        assertThatThrownBy(() -> new DeploymentAdmissionAuthorityBinding(
+                fingerprint('f'), base.trustedClockBinding(),
+                base.lifecycleAuthorityBinding(), base.executionLeaseAuthorityBinding()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessage("target-bound authority binding fingerprint is invalid");
+                .hasMessage("deployment admission authority binding fingerprint is invalid");
+        assertThatThrownBy(() -> new TrustedVerificationClockBinding("SHA256:bad", () -> NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new AdmissionLifecycleAuthorityBinding(
+                "sha256:bad", request -> DeploymentAuthorityDecision.verified("VERIFIED")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new ExecutionLeaseAuthorityBinding(
+                "", request -> ExecutionLeaseCommitResult.unavailable("UNAVAILABLE")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new DeploymentAdmissionAuthorityBinding(
+                null, base.lifecycleAuthorityBinding(), base.executionLeaseAuthorityBinding()))
+                .isInstanceOf(NullPointerException.class);
+        assertThat(base.toString()).doesNotContain(
+                CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
+                LEASE_AUTHORITY_FINGERPRINT, base.fingerprint());
+        assertThat(base.trustedClockBinding().toString()).doesNotContain(CLOCK_FINGERPRINT);
+        assertThat(base.lifecycleAuthorityBinding().toString())
+                .doesNotContain(LIFECYCLE_AUTHORITY_FINGERPRINT);
+        assertThat(base.executionLeaseAuthorityBinding().toString())
+                .doesNotContain(LEASE_AUTHORITY_FINGERPRINT);
     }
 
-    private static CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding
-    targetAdmission(byte[] target, byte[] candidate, byte[] environment) {
+    @Test
+    void formalV2ConstructorRejectsAnExplicitWrongAggregate() {
+        AuthorityBinding authority = authorityBinding(fingerprint('a'));
+        FormalTargetAdmissionBinding admission = formalAdmission(new byte[]{1});
+
+        assertThatThrownBy(() -> new FormalTargetBoundAuthorityBinding(
+                fingerprint('f'), authority, admission))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("formal target-bound authority binding fingerprint is invalid");
+    }
+
+    @Test
+    void leaseCommitIsDurablyIdempotentAndRejectsMismatchedRetry() {
+        InMemoryLeaseAuthority authority = new InMemoryLeaseAuthority(
+                DEPLOYMENT_AUTHORITY_FINGERPRINT);
+        ExecutionLeaseRequest request = leaseRequest("1", NOW);
+        ExecutionLeaseRequest crashRetry = leaseRequest("1", NOW.plusSeconds(30));
+        ExecutionLeaseRequest rawDrift = leaseRequest("1", NOW,
+                fingerprint('6'), request.evidenceClosureFingerprint());
+        ExecutionLeaseRequest closureDrift = leaseRequest("1", NOW,
+                request.stageResultRawFingerprint(), fingerprint('7'));
+
+        ExecutionLeaseCommitResult committed = authority.commit(request);
+        ExecutionLeaseCommitResult recovered = authority.commit(crashRetry);
+        ExecutionLeaseCommitResult mismatched = authority.commit(leaseRequest("2", NOW));
+        ExecutionLeaseCommitResult rawMismatch = authority.commit(rawDrift);
+        ExecutionLeaseCommitResult closureMismatch = authority.commit(closureDrift);
+
+        assertThat(crashRetry.commitIdentityFingerprint())
+                .isEqualTo(request.commitIdentityFingerprint());
+        assertThat(leaseRequest("2", NOW).commitIdentityFingerprint())
+                .isNotEqualTo(request.commitIdentityFingerprint());
+        assertThat(rawDrift.commitIdentityFingerprint())
+                .isNotEqualTo(request.commitIdentityFingerprint());
+        assertThat(closureDrift.commitIdentityFingerprint())
+                .isNotEqualTo(request.commitIdentityFingerprint());
+        assertThat(crashRetry.commitIdentityCanonicalMessage())
+                .isEqualTo(request.commitIdentityCanonicalMessage())
+                .doesNotContain(NOW.toString(), NOW.plusSeconds(30).toString());
+        assertThat(request.commitIdentityCanonicalMessage()).contains(
+                "\"stageResultRawFingerprint\":\"" + request.stageResultRawFingerprint(),
+                "\"evidenceClosureFingerprint\":\""
+                        + request.evidenceClosureFingerprint());
+        assertThat(committed.status()).isEqualTo(ExecutionLeaseCommitStatus.COMMITTED);
+        assertThat(recovered.status()).isEqualTo(ExecutionLeaseCommitStatus.RECOVERED);
+        assertThat(recovered.receipt()).isEqualTo(committed.receipt());
+        assertThat(recovered.receipt().fingerprint())
+                .isEqualTo(committed.receipt().fingerprint());
+        assertThat(mismatched.status()).isEqualTo(ExecutionLeaseCommitStatus.REJECTED);
+        assertThat(rawMismatch.status()).isEqualTo(ExecutionLeaseCommitStatus.REJECTED);
+        assertThat(closureMismatch.status()).isEqualTo(ExecutionLeaseCommitStatus.REJECTED);
+        assertThat(mismatched.receipt()).isNull();
+        assertThat(rawMismatch.receipt()).isNull();
+        assertThat(closureMismatch.receipt()).isNull();
+        assertThat(authority.commits).hasValue(1);
+        assertThat(committed.receipt().requestFingerprint())
+                .isEqualTo(request.commitIdentityFingerprint());
+        assertThat(committed.receipt().lifecycleMaterial()).isEqualTo(request.lifecycleMaterial());
+        assertThat(committed.receipt().lifecycleCommitReceipt().fencingSequence()).isEqualTo(1);
+        assertThat(committed.receipt().lifecycleCommitReceipt()
+                .deploymentAdmissionAuthorityMaterialFingerprint())
+                .isEqualTo(DEPLOYMENT_AUTHORITY_FINGERPRINT);
+        assertThat(committed.receipt().toString()).doesNotContain(
+                request.executionLeaseId(), request.deploymentAdmissionAuthorityMaterialFingerprint());
+        assertThatThrownBy(() -> leaseRequest(
+                "1", NOW, "sha256:bad", request.evidenceClosureFingerprint()))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> leaseRequest(
+                "1", NOW, request.stageResultRawFingerprint(), "SHA256:" + "a".repeat(64)))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void executionLeaseCommitIdentityIsExactStrictCanonicalJson() throws Exception {
+        ExecutionLeaseRequest request = leaseRequest("1", NOW);
+        String expected = "{\"messageVersion\":\""
+                + CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EXECUTION_LEASE_COMMIT_IDENTITY_MESSAGE_VERSION
+                + "\",\"resultId\":\"SAR-test\""
+                + ",\"resultRevision\":1"
+                + ",\"stageResultRawFingerprint\":\"" + fingerprint('4') + "\""
+                + ",\"evidenceClosureFingerprint\":\"" + fingerprint('5') + "\""
+                + ",\"contractId\":\"contract:test\""
+                + ",\"contractRevision\":\"1\""
+                + ",\"executionLeaseId\":\"lease:test\""
+                + ",\"providerOuterFingerprint\":\"" + fingerprint('a') + "\""
+                + ",\"targetRawFingerprint\":\"" + fingerprint('b') + "\""
+                + ",\"targetCanonicalFingerprint\":\"" + fingerprint('c') + "\""
+                + ",\"lifecycleMaterialFingerprint\":\""
+                + lifecycleMaterial().fingerprint() + "\""
+                + ",\"deploymentAdmissionAuthorityMaterialFingerprint\":\""
+                + DEPLOYMENT_AUTHORITY_FINGERPRINT + "\"}";
+
+        String canonicalMessage = request.commitIdentityCanonicalMessage();
+        assertThat(canonicalMessage).isEqualTo(expected);
+        var parsed = STRICT_JSON.readTree(canonicalMessage);
+        assertThat(parsed.size()).isEqualTo(13);
+        assertThat(parsed.path("stageResultRawFingerprint").textValue())
+                .isEqualTo(request.stageResultRawFingerprint());
+        assertThat(parsed.path("evidenceClosureFingerprint").textValue())
+                .isEqualTo(request.evidenceClosureFingerprint());
+        assertThat(STRICT_JSON.writeValueAsString(parsed)).isEqualTo(expected);
+    }
+
+    @Test
+    void lifecycleCommitReceiptRejectsFingerprintAndRevocationHeadTamper() {
+        ExecutionLeaseRequest request = leaseRequest("1", NOW);
+        AtomicAdmissionLifecycleCommitReceipt valid = lifecycleReceipt(request, 1);
+        var revocation = request.lifecycleMaterial().revocationAuthority();
+
+        assertThat(valid.toString()).doesNotContain(
+                valid.fingerprint(), valid.requestFingerprint(), revocation.registryRef());
+        assertThat(lifecycleReceipt(request, 2).fingerprint())
+                .isNotEqualTo(valid.fingerprint());
+        assertThatThrownBy(() -> new AtomicAdmissionLifecycleCommitReceipt(
+                fingerprint('f'), valid.deploymentAdmissionAuthorityMaterialFingerprint(),
+                valid.lifecycleMaterialFingerprint(), valid.revocationRegistryRef(),
+                valid.revocationRegistryRevision(), valid.revocationSnapshotFingerprint(),
+                valid.fencingSequence(), valid.committedAt(), valid.requestFingerprint()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("atomic lifecycle commit receipt fingerprint is invalid");
+
+        AtomicAdmissionLifecycleCommitReceipt wrongHead =
+                new AtomicAdmissionLifecycleCommitReceipt(
+                        request.deploymentAdmissionAuthorityMaterialFingerprint(),
+                        request.lifecycleMaterial().fingerprint(), revocation.registryRef(),
+                        revocation.revision(), fingerprint('d'), 1, NOW,
+                        request.commitIdentityFingerprint());
+        assertThatThrownBy(() -> new ExecutionLeaseReceipt(
+                request.commitIdentityFingerprint(), request.lifecycleMaterial(), wrongHead))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("execution lease lifecycle commit receipt is invalid");
+    }
+
+    @Test
+    void concurrentExactLeaseRequestsCreateOneCommitAndRecoverOneReceipt() throws Exception {
+        InMemoryLeaseAuthority authority = new InMemoryLeaseAuthority(
+                DEPLOYMENT_AUTHORITY_FINGERPRINT);
+        ExecutionLeaseRequest request = leaseRequest("1", NOW);
+        int consumers = 16;
+        CountDownLatch ready = new CountDownLatch(consumers);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try (var executor = Executors.newFixedThreadPool(consumers)) {
+            var futures = java.util.stream.IntStream.range(0, consumers)
+                    .mapToObj(index -> executor.submit(() -> {
+                        ready.countDown();
+                        start.await();
+                        return authority.commit(request);
+                    })).toList();
+            ready.await();
+            start.countDown();
+            var results = futures.stream().map(future -> {
+                try {
+                    return future.get();
+                } catch (Exception failure) {
+                    throw new AssertionError(failure);
+                }
+            }).toList();
+            assertThat(results.stream().filter(result ->
+                    result.status() == ExecutionLeaseCommitStatus.COMMITTED)).hasSize(1);
+            assertThat(results.stream().filter(result ->
+                    result.status() == ExecutionLeaseCommitStatus.RECOVERED))
+                    .hasSize(consumers - 1);
+            assertThat(results.stream().map(result -> result.receipt().fingerprint()).distinct())
+                    .hasSize(1);
+            assertThat(authority.commits).hasValue(1);
+        }
+    }
+
+    private static String[] componentNames(Class<?> recordType) {
+        return Arrays.stream(recordType.getRecordComponents())
+                .map(RecordComponent::getName).toArray(String[]::new);
+    }
+
+    private static AuthorityBinding authorityBinding(String fingerprint) {
+        return new AuthorityBinding(fingerprint,
+                request -> EvidenceResolution.unavailable(),
+                (reference, evidence, context) ->
+                        CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
+                                .unavailable(),
+                (signoff, signature, context) ->
+                        CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
+                                .unavailable());
+    }
+
+    private static TargetAdmissionBinding legacyAdmission(byte[] target) {
+        return legacyAdmission(target, new byte[]{2}, new byte[]{3});
+    }
+
+    private static TargetAdmissionBinding legacyAdmission(
+            byte[] target, byte[] candidate, byte[] environment) {
         var context = new CapabilityStudioStageAcceptanceTargetBindingVerifier.VerificationContext(
                 "lease:test", Set.of("runtime:test"), fingerprint('b'));
-        return new CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding(
-                target, candidate, environment, context,
+        return new TargetAdmissionBinding(target, candidate, environment, context,
                 facts -> CapabilityStudioStageAcceptanceTargetBindingVerifier.AuthorityDecision
                         .verified(),
                 facts -> CapabilityStudioStageAcceptanceTargetBindingVerifier.AuthorityDecision
                         .verified());
     }
 
+    private static FormalTargetAdmissionBinding formalAdmission(byte[] target) {
+        return formalAdmission(target, deploymentBinding(
+                CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
+                LEASE_AUTHORITY_FINGERPRINT));
+    }
+
+    private static FormalTargetAdmissionBinding formalAdmission(
+            byte[] target, DeploymentAdmissionAuthorityBinding deployment) {
+        String raw = rawFingerprint(target);
+        var context = new CapabilityStudioStageAcceptanceTargetBindingVerifier.VerificationContext(
+                "lease:test", Set.of("runtime:test"), fingerprint('d'));
+        var lifecycle = lifecycleMaterial();
+        return new FormalTargetAdmissionBinding(fingerprint('b'), raw, fingerprint('d'),
+                target, new byte[]{2}, new byte[]{3}, context,
+                facts -> CapabilityStudioStageAcceptanceTargetBindingVerifier.AuthorityDecision
+                        .verified(),
+                facts -> CapabilityStudioStageAcceptanceTargetBindingVerifier.AuthorityDecision
+                        .verified(),
+                lifecycle, deployment);
+    }
+
+    private static DeploymentAdmissionAuthorityBinding deploymentBinding(
+            String clockFingerprint,
+            String lifecycleAuthorityFingerprint,
+            String leaseAuthorityFingerprint) {
+        String deploymentFingerprint = DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                clockFingerprint, lifecycleAuthorityFingerprint, leaseAuthorityFingerprint);
+        return new DeploymentAdmissionAuthorityBinding(
+                new TrustedVerificationClockBinding(clockFingerprint, () -> NOW),
+                new AdmissionLifecycleAuthorityBinding(lifecycleAuthorityFingerprint,
+                        request -> DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED")),
+                new ExecutionLeaseAuthorityBinding(leaseAuthorityFingerprint,
+                        new InMemoryLeaseAuthority(deploymentFingerprint)));
+    }
+
+    private static ExecutionLeaseRequest leaseRequest(
+            String contractRevision, Instant trustedVerificationTime) {
+        return leaseRequest(contractRevision, trustedVerificationTime,
+                fingerprint('4'), fingerprint('5'));
+    }
+
+    private static ExecutionLeaseRequest leaseRequest(
+            String contractRevision,
+            Instant trustedVerificationTime,
+            String stageResultRawFingerprint,
+            String evidenceClosureFingerprint) {
+        return new ExecutionLeaseRequest(
+                "SAR-test", 1, stageResultRawFingerprint, evidenceClosureFingerprint,
+                "contract:test", contractRevision, "lease:test",
+                fingerprint('a'), fingerprint('b'), fingerprint('c'), lifecycleMaterial(),
+                DEPLOYMENT_AUTHORITY_FINGERPRINT, trustedVerificationTime);
+    }
+
+    private static AdmissionLifecycleMaterial lifecycleMaterial() {
+        var revocation = new RevocationAuthoritySnapshot(
+                "registry:test", 1, fingerprint('e'), NOW.minusSeconds(60), NOW.plusSeconds(600));
+        return new AdmissionLifecycleMaterial(
+                fingerprint('b'), "bundle:test", 1, "ACTIVE", null, revocation);
+    }
+
     private static String fingerprint(char seed) {
         return "sha256:" + String.valueOf(seed).repeat(64);
     }
+
+    private static String rawFingerprint(byte[] value) {
+        try {
+            return "sha256:" + HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value));
+        } catch (Exception failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    private static final class InMemoryLeaseAuthority
+            implements CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseAuthority {
+        private final String authorityFingerprint;
+        private final ConcurrentHashMap<String, StoredCommit> store = new ConcurrentHashMap<>();
+        private final AtomicInteger commits = new AtomicInteger();
+
+        private InMemoryLeaseAuthority(String authorityFingerprint) {
+            this.authorityFingerprint = authorityFingerprint;
+        }
+
+        @Override
+        public ExecutionLeaseCommitResult commit(ExecutionLeaseRequest request) {
+            if (!authorityFingerprint.equals(
+                    request.deploymentAdmissionAuthorityMaterialFingerprint())
+                    || !request.lifecycleMaterial().revocationAuthority().expiresAt()
+                    .isAfter(request.trustedVerificationTime())) {
+                return ExecutionLeaseCommitResult.rejected("LEASE_POLICY_REJECTED");
+            }
+            AtomicReference<ExecutionLeaseCommitResult> result = new AtomicReference<>();
+            store.compute(request.executionLeaseId(), (lease, existing) -> {
+                if (existing == null) {
+                    long fencingSequence = commits.incrementAndGet();
+                    ExecutionLeaseReceipt receipt = new ExecutionLeaseReceipt(
+                            request.commitIdentityFingerprint(), request.lifecycleMaterial(),
+                            lifecycleReceipt(request, fencingSequence));
+                    result.set(ExecutionLeaseCommitResult.committed(
+                            receipt, "LEASE_COMMITTED"));
+                    return new StoredCommit(request.commitIdentityFingerprint(), receipt);
+                }
+                if (existing.requestFingerprint().equals(request.commitIdentityFingerprint())) {
+                    result.set(ExecutionLeaseCommitResult.recovered(
+                            existing.receipt(), "LEASE_RECEIPT_RECOVERED"));
+                } else {
+                    result.set(ExecutionLeaseCommitResult.rejected("LEASE_REQUEST_MISMATCH"));
+                }
+                return existing;
+            });
+            return result.get();
+        }
+    }
+
+    private static AtomicAdmissionLifecycleCommitReceipt lifecycleReceipt(
+            ExecutionLeaseRequest request, long fencingSequence) {
+        RevocationAuthoritySnapshot revocation =
+                request.lifecycleMaterial().revocationAuthority();
+        return new AtomicAdmissionLifecycleCommitReceipt(
+                request.deploymentAdmissionAuthorityMaterialFingerprint(),
+                request.lifecycleMaterial().fingerprint(), revocation.registryRef(),
+                revocation.revision(), revocation.snapshotFingerprint(), fencingSequence,
+                NOW, request.commitIdentityFingerprint());
+    }
+
+    private record StoredCommit(String requestFingerprint, ExecutionLeaseReceipt receipt) { }
 }

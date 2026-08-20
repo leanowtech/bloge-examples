@@ -6,7 +6,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceConfigurationError;
@@ -18,9 +21,13 @@ import java.util.regex.Pattern;
  *
  * <p>The CLI accepts one result path and discovers exactly one deployment-owned
  * {@link CapabilityStudioStageAcceptanceAuthorityProvider}. It validates the local protocol before
- * loading that provider, then verifies deployment-owned target admission before any post-run
- * authority call. Malformed and non-{@code PASS} results make no external authority calls. The
- * result document cannot carry or select its own trust provider.</p>
+ * loading that provider, then verifies deployment-owned lifecycle and target admission before
+ * any post-run authority call. Malformed and non-{@code PASS} results make no external authority
+ * calls. The result document cannot carry or select its own trust provider. Immediately before
+ * acceptance, the CLI requires the deployment lease Authority to atomically consume or fence the
+ * exact lease request. The mounted bundle loader does not consume leases or self-prove lifecycle
+ * currentness. Output reason codes are a closed CLI-owned vocabulary; Provider reason text is
+ * never emitted.</p>
  */
 public final class CapabilityStudioStageAcceptanceCli {
     /** Exit code for a formally accepted result. */
@@ -31,6 +38,31 @@ public final class CapabilityStudioStageAcceptanceCli {
     public static final int EXIT_NOT_ACCEPTED = 3;
 
     private static final String CODE_PREFIX = "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.";
+    private static final String REASON_PROTOCOL_INVALID = CODE_PREFIX + "PROTOCOL_INVALID";
+    private static final String REASON_STATUS_NOT_PASS = CODE_PREFIX + "STATUS_NOT_PASS";
+    private static final String REASON_FORMAL_TARGET_BINDING_UNAVAILABLE =
+            CODE_PREFIX + "FORMAL_TARGET_BINDING_UNAVAILABLE";
+    private static final String REASON_TRUSTED_CLOCK_UNAVAILABLE =
+            CODE_PREFIX + "TRUSTED_CLOCK_UNAVAILABLE";
+    private static final String REASON_ADMISSION_LIFECYCLE_REJECTED =
+            CODE_PREFIX + "ADMISSION_LIFECYCLE_REJECTED";
+    private static final String REASON_ADMISSION_LIFECYCLE_UNAVAILABLE =
+            CODE_PREFIX + "ADMISSION_LIFECYCLE_UNAVAILABLE";
+    private static final String REASON_TARGET_BINDING_REJECTED =
+            CODE_PREFIX + "TARGET_BINDING_REJECTED";
+    private static final String REASON_TARGET_BINDING_UNAVAILABLE =
+            CODE_PREFIX + "TARGET_BINDING_UNAVAILABLE";
+    private static final String REASON_AUTHORITY_REJECTED =
+            CODE_PREFIX + "AUTHORITY_REJECTED";
+    private static final String REASON_AUTHORITY_UNAVAILABLE =
+            CODE_PREFIX + "AUTHORITY_UNAVAILABLE";
+    private static final String REASON_AUTHORITY_PROTOCOL_INVALID =
+            CODE_PREFIX + "AUTHORITY_PROTOCOL_INVALID";
+    private static final String REASON_EXECUTION_LEASE_REJECTED =
+            CODE_PREFIX + "EXECUTION_LEASE_REJECTED";
+    private static final String REASON_EXECUTION_LEASE_UNAVAILABLE =
+            CODE_PREFIX + "EXECUTION_LEASE_UNAVAILABLE";
+    private static final String REASON_ACCEPTED = CODE_PREFIX + "ACCEPTED";
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern AUTHORITY_BINDING_FINGERPRINT =
             Pattern.compile("sha256:[0-9a-f]{64}");
@@ -97,6 +129,7 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_INVALID;
         }
         byte[] originalStageResultBytes = wire;
+        String stageResultRawFingerprint = sha256(originalStageResultBytes);
 
         CapabilityStudioStageAcceptanceResultV2Verifier semanticVerifier =
                 new CapabilityStudioStageAcceptanceResultV2Verifier();
@@ -109,7 +142,7 @@ public final class CapabilityStudioStageAcceptanceCli {
         }
         if (!semantic.verified()) {
             safeOut.println("INVALID outcome=PROTOCOL_INVALID reasonCode="
-                    + safeCode(semantic.errorCode(), CODE_PREFIX + "PROTOCOL_INVALID"));
+                    + REASON_PROTOCOL_INVALID);
             return EXIT_INVALID;
         }
 
@@ -122,8 +155,7 @@ public final class CapabilityStudioStageAcceptanceCli {
         }
         if (!"PASS".equals(result.path("status").textValue())) {
             safeOut.println("NOT_ACCEPTED outcome=NOT_ACCEPTED reasonCode="
-                    + CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
-                    + "STATUS_NOT_PASS");
+                    + REASON_STATUS_NOT_PASS);
             return EXIT_NOT_ACCEPTED;
         }
         if (!AUTHORITY_BINDING_FINGERPRINT.matcher(
@@ -136,6 +168,10 @@ public final class CapabilityStudioStageAcceptanceCli {
         try {
             provider = CapabilityStudioProviderOutputIsolation.call(
                     () -> loadProvider(providerSource));
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_FORMAL_TARGET_BINDING_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
@@ -145,34 +181,94 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_INVALID;
         }
 
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding binding;
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding binding;
         try {
             binding = CapabilityStudioProviderOutputIsolation.call(
-                    provider::targetBoundAuthorityBinding);
+                    provider::formalTargetBoundAuthorityBinding);
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_FORMAL_TARGET_BINDING_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
         }
         if (binding == null) {
-            safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
-                    + CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
-                    + "TARGET_BINDING_UNAVAILABLE");
+            blocked(safeOut, REASON_FORMAL_TARGET_BINDING_UNAVAILABLE);
             return EXIT_NOT_ACCEPTED;
         }
 
         CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding =
                 binding.authorityBinding();
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding targetAdmission =
-                binding.targetAdmissionBinding();
-
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding
+                targetAdmission = binding.targetAdmissionBinding();
+        CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAdmissionAuthorityBinding
+                deploymentAuthority = targetAdmission.deploymentAuthorityBinding();
         try {
+            String aggregate = CapabilityStudioStageAcceptanceAuthorityProvider
+                    .FormalTargetBoundAuthorityBinding.aggregateFingerprint(
+                            CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .FormalTargetBoundAuthorityBinding.MESSAGE_VERSION,
+                            authorityBinding.fingerprint(),
+                            deploymentAuthority.fingerprint(),
+                            targetAdmission.targetAdmissionMaterialFingerprint(),
+                            targetAdmission.targetRawFingerprint(),
+                            targetAdmission.targetCanonicalFingerprint());
             if (!AUTHORITY_BINDING_FINGERPRINT.matcher(binding.fingerprint()).matches()
+                    || !aggregate.equals(binding.fingerprint())
                     || !expectedAuthorityBindingFingerprint.equals(binding.fingerprint())) {
                 throw new IllegalArgumentException("authority binding fingerprint does not match pin");
             }
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
+        }
+
+        Instant trustedVerificationTime;
+        if (deploymentAuthority.trustedClock() == null) {
+            blocked(safeOut, REASON_TRUSTED_CLOCK_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        }
+        try {
+            trustedVerificationTime = CapabilityStudioProviderOutputIsolation.call(
+                    deploymentAuthority.trustedClock()::verificationTime);
+            if (trustedVerificationTime == null) {
+                throw new IllegalStateException("trusted clock returned null");
+            }
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_TRUSTED_CLOCK_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
+
+        CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAuthorityDecision
+                lifecycleDecision;
+        if (deploymentAuthority.lifecycleAuthority() == null) {
+            blocked(safeOut, REASON_ADMISSION_LIFECYCLE_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        }
+        try {
+            var lifecycleRequest = new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .AdmissionLifecycleRequest(targetAdmission.lifecycleMaterial(),
+                    binding.fingerprint(), targetAdmission.targetRawFingerprint(),
+                    targetAdmission.targetCanonicalFingerprint(),
+                    deploymentAuthority.fingerprint(), trustedVerificationTime);
+            lifecycleDecision = CapabilityStudioProviderOutputIsolation.call(
+                    () -> deploymentAuthority.lifecycleAuthority().verify(lifecycleRequest));
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_ADMISSION_LIFECYCLE_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
+        int lifecycleExit = deploymentDecision(safeOut, lifecycleDecision);
+        if (lifecycleExit != EXIT_ACCEPTED) {
+            return lifecycleExit;
         }
 
         CapabilityStudioStageAcceptanceTargetBindingVerifier.VerificationResult targetVerification;
@@ -183,26 +279,29 @@ public final class CapabilityStudioStageAcceptanceCli {
                             targetAdmission.targetBindingBytes(),
                             targetAdmission.candidateAttestationBytes(),
                             targetAdmission.environmentAttestationBytes(),
-                            targetAdmission.verificationContext(), now,
+                            targetAdmission.verificationContext(), trustedVerificationTime,
                             targetAdmission.candidateAuthority(),
                             targetAdmission.environmentAuthority()));
-        } catch (RuntimeException failure) {
-            safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
-                    + CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
-                    + "TARGET_BINDING_UNAVAILABLE");
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_FORMAL_TARGET_BINDING_UNAVAILABLE);
             return EXIT_NOT_ACCEPTED;
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
         }
-        if (targetVerification == null || !targetVerification.verified()) {
-            String outcome = targetVerification == null
-                    ? CapabilityStudioStageAcceptanceTargetBindingVerifier.Outcome.BLOCKED.name()
-                    : targetVerification.outcome().name();
-            String reasonCode = targetVerification == null
-                    ? CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
-                    + "TARGET_BINDING_UNAVAILABLE"
-                    : safeCode(targetVerification.reasonCode(),
-                    CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
-                            + "TARGET_BINDING_UNAVAILABLE");
-            safeOut.println("NOT_ACCEPTED outcome=" + outcome + " reasonCode=" + reasonCode);
+        if (targetVerification == null) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
+        if (!targetVerification.verified()) {
+            safeOut.println("NOT_ACCEPTED outcome=" + targetVerification.outcome().name()
+                    + " reasonCode=" + switch (targetVerification.outcome()) {
+                        case REJECTED -> REASON_TARGET_BINDING_REJECTED;
+                        case BLOCKED -> REASON_TARGET_BINDING_UNAVAILABLE;
+                        case VERIFIED -> throw new IllegalArgumentException(
+                                "target verification result is invalid");
+                    });
             return EXIT_NOT_ACCEPTED;
         }
 
@@ -210,28 +309,65 @@ public final class CapabilityStudioStageAcceptanceCli {
         try {
             verification = CapabilityStudioProviderOutputIsolation.call(
                     () -> new CapabilityStudioStageAcceptanceAuthorityVerifier().verify(
-                            result, now, authorityBinding.resolver(),
+                            result, trustedVerificationTime, authorityBinding.resolver(),
                             authorityBinding.issuerPolicy(), authorityBinding.ownerAuthority()));
         } catch (RuntimeException failure) {
             safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
-                    + CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
-                    + "AUTHORITY_UNAVAILABLE");
+                    + REASON_AUTHORITY_UNAVAILABLE);
             return EXIT_NOT_ACCEPTED;
         }
-        if (verification.accepted()) {
-            safeOut.println("ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
-                    + binding.fingerprint() + " reasonCode="
-                    + safeCode(verification.reasonCode(),
-                    CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX + "ACCEPTED"));
-            return EXIT_ACCEPTED;
+        if (!verification.accepted()) {
+            safeOut.println("NOT_ACCEPTED outcome=" + verification.outcome()
+                    + " reasonCode=" + switch (verification.outcome()) {
+                        case BLOCKED -> REASON_AUTHORITY_UNAVAILABLE;
+                        case REJECTED -> REASON_AUTHORITY_REJECTED;
+                        case PROTOCOL_INVALID -> REASON_AUTHORITY_PROTOCOL_INVALID;
+                        case ACCEPTED, NOT_ACCEPTED -> throw new IllegalArgumentException(
+                                "authority verification result is invalid");
+                    });
+            return verification.outcome()
+                    == CapabilityStudioStageAcceptanceAuthorityVerifier.Outcome.PROTOCOL_INVALID
+                    ? EXIT_INVALID : EXIT_NOT_ACCEPTED;
         }
-        safeOut.println("NOT_ACCEPTED outcome=" + verification.outcome()
-                + " reasonCode=" + safeCode(verification.reasonCode(),
-                CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
-                        + "AUTHORITY_REJECTED"));
-        return verification.outcome()
-                == CapabilityStudioStageAcceptanceAuthorityVerifier.Outcome.PROTOCOL_INVALID
-                ? EXIT_INVALID : EXIT_NOT_ACCEPTED;
+
+        CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult leaseResult;
+        if (deploymentAuthority.executionLeaseAuthority() == null) {
+            blocked(safeOut, REASON_EXECUTION_LEASE_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        }
+        try {
+            var leaseRequest = new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .ExecutionLeaseRequest(result.path("resultId").textValue(),
+                    result.path("revision").longValue(),
+                    stageResultRawFingerprint,
+                    result.path("evidenceClosureFingerprint").textValue(),
+                    result.path("contractId").textValue(),
+                    result.path("contractRevision").textValue(),
+                    targetAdmission.verificationContext().executionLeaseId(),
+                    binding.fingerprint(), targetAdmission.targetRawFingerprint(),
+                    targetAdmission.targetCanonicalFingerprint(),
+                    targetAdmission.lifecycleMaterial(), deploymentAuthority.fingerprint(),
+                    trustedVerificationTime);
+            leaseResult = CapabilityStudioProviderOutputIsolation.call(
+                    () -> deploymentAuthority.executionLeaseAuthority().commit(leaseRequest));
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt receipt =
+                    requireValidReceipt(leaseResult, leaseRequest);
+            if (receipt == null) {
+                return emitLeaseFailure(safeOut, leaseResult);
+            }
+            safeOut.println("ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
+                    + binding.fingerprint() + " leaseCommitStatus=" + leaseResult.status()
+                    + " leaseReceiptFingerprint=" + receipt.fingerprint()
+                    + " reasonCode=" + REASON_ACCEPTED);
+            return EXIT_ACCEPTED;
+        } catch (CapabilityStudioStageAcceptanceAuthorityProvider
+                 .DeploymentUnavailableException unavailable) {
+            blocked(safeOut, REASON_EXECUTION_LEASE_UNAVAILABLE);
+            return EXIT_NOT_ACCEPTED;
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
     }
 
     @FunctionalInterface
@@ -251,6 +387,10 @@ public final class CapabilityStudioStageAcceptanceCli {
             }
             return providers.getFirst();
         } catch (RuntimeException | ServiceConfigurationError failure) {
+            if (deploymentUnavailable(failure)) {
+                throw new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentUnavailableException();
+            }
             return null;
         }
     }
@@ -269,11 +409,118 @@ public final class CapabilityStudioStageAcceptanceCli {
         out.println("INVALID errorCode=" + CODE_PREFIX + suffix);
     }
 
-    private static String safeCode(String value, String fallback) {
-        return value != null && value.matches("[A-Z][A-Z0-9_.-]{0,254}") ? value : fallback;
+    private static void blocked(PrintStream out, String reasonCode) {
+        out.println("NOT_ACCEPTED outcome=BLOCKED reasonCode=" + reasonCode);
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt
+            requireValidReceipt(
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result,
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request) {
+        if (result == null || result.status() == null) {
+            throw new IllegalArgumentException("execution lease commit result is invalid");
+        }
+        if (result.status()
+                != CapabilityStudioStageAcceptanceAuthorityProvider
+                .ExecutionLeaseCommitStatus.COMMITTED
+                && result.status()
+                != CapabilityStudioStageAcceptanceAuthorityProvider
+                .ExecutionLeaseCommitStatus.RECOVERED) {
+            return null;
+        }
+        CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt receipt =
+                result.receipt();
+        if (receipt == null
+                || !receipt.requestFingerprint().equals(request.commitIdentityFingerprint())
+                || !receipt.lifecycleMaterial().equals(request.lifecycleMaterial())) {
+            throw new IllegalArgumentException("execution lease receipt is invalid");
+        }
+        var lifecycleReceipt = receipt.lifecycleCommitReceipt();
+        var revocation = request.lifecycleMaterial().revocationAuthority();
+        if (!lifecycleReceipt.requestFingerprint().equals(
+                request.commitIdentityFingerprint())
+                || !lifecycleReceipt.deploymentAdmissionAuthorityMaterialFingerprint().equals(
+                request.deploymentAdmissionAuthorityMaterialFingerprint())
+                || !lifecycleReceipt.lifecycleMaterialFingerprint().equals(
+                request.lifecycleMaterial().fingerprint())
+                || !lifecycleReceipt.revocationRegistryRef().equals(revocation.registryRef())
+                || lifecycleReceipt.revocationRegistryRevision() != revocation.revision()
+                || !lifecycleReceipt.revocationSnapshotFingerprint().equals(
+                revocation.snapshotFingerprint())
+                || lifecycleReceipt.committedAt().isBefore(revocation.observedAt())
+                || !revocation.expiresAt().isAfter(lifecycleReceipt.committedAt())) {
+            throw new IllegalArgumentException("execution lease receipt is invalid");
+        }
+        return receipt;
+    }
+
+    private static int emitLeaseFailure(
+            PrintStream out,
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result) {
+        return switch (result.status()) {
+            case REJECTED -> {
+                out.println("NOT_ACCEPTED outcome=REJECTED reasonCode="
+                        + REASON_EXECUTION_LEASE_REJECTED);
+                yield EXIT_NOT_ACCEPTED;
+            }
+            case UNAVAILABLE -> {
+                out.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                        + REASON_EXECUTION_LEASE_UNAVAILABLE);
+                yield EXIT_NOT_ACCEPTED;
+            }
+            case COMMITTED, RECOVERED -> throw new IllegalArgumentException(
+                    "execution lease commit result is invalid");
+        };
+    }
+
+    private static boolean deploymentUnavailable(Throwable failure) {
+        Throwable current = failure;
+        for (int depth = 0; current != null && depth < 32; depth++) {
+            if (current instanceof CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentUnavailableException) {
+                return true;
+            }
+            Throwable cause = current.getCause();
+            if (cause == current) {
+                return false;
+            }
+            current = cause;
+        }
+        return false;
+    }
+
+    private static int deploymentDecision(
+            PrintStream out,
+            CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAuthorityDecision decision) {
+        if (decision == null || decision.status() == null) {
+            invalid(out, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
+        return switch (decision.status()) {
+            case VERIFIED -> EXIT_ACCEPTED;
+            case REJECTED -> {
+                out.println("NOT_ACCEPTED outcome=REJECTED reasonCode="
+                        + REASON_ADMISSION_LIFECYCLE_REJECTED);
+                yield EXIT_NOT_ACCEPTED;
+            }
+            case UNAVAILABLE -> {
+                out.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                        + REASON_ADMISSION_LIFECYCLE_UNAVAILABLE);
+                yield EXIT_NOT_ACCEPTED;
+            }
+        };
     }
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static String sha256(byte[] value) {
+        try {
+            return "sha256:" + HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value));
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable");
+        }
     }
 }

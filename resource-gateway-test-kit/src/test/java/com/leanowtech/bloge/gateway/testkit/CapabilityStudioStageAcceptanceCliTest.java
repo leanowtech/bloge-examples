@@ -16,11 +16,15 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +37,14 @@ class CapabilityStudioStageAcceptanceCliTest {
     private static final String TARGET_IDENTITY = "runtime:capability-studio";
     private static final String TARGET_SCOPE = "tenant:demo/environment:acceptance";
     private static final Instant NOW = Instant.parse("2026-01-01T00:12:00Z");
+    private static final String CLOCK_FINGERPRINT = fingerprint('7');
+    private static final String LIFECYCLE_AUTHORITY_FINGERPRINT = fingerprint('8');
+    private static final String LEASE_AUTHORITY_FINGERPRINT = fingerprint('9');
+    private static final String DEPLOYMENT_AUTHORITY_FINGERPRINT =
+            CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                    CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
+                    LEASE_AUTHORITY_FINGERPRINT);
 
     @TempDir
     Path temporaryDirectory;
@@ -42,16 +54,82 @@ class CapabilityStudioStageAcceptanceCliTest {
         ObjectNode result = passResult();
         Path artifact = write("pass.json", result.toString());
         Output output = new Output();
+        Provider provider = acceptingProvider(result);
 
-        int exit = run(artifact, List.of(acceptingProvider(result)), output);
+        int exit = run(artifact, List.of(provider), output);
+
+        var binding = provider.formalTargetBoundAuthorityBinding();
+        var receipt = committedLease(leaseRequest(result, binding, NOW)).receipt();
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
+        assertThat(output.text()).isEqualTo("ACCEPTED outcome=ACCEPTED "
+                + "authorityBindingFingerprint=" + binding.fingerprint()
+                + " leaseCommitStatus=COMMITTED leaseReceiptFingerprint="
+                + receipt.fingerprint() + " reasonCode="
+                + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED"
+                + System.lineSeparator());
+        assertThat(output.text()).doesNotContain(
+                "attestation:environment:1", "actor:correctness", "signature:correctness",
+                TARGET_LEASE, DEPLOYMENT_AUTHORITY_FINGERPRINT);
+    }
+
+    @Test
+    void recoveredLeaseReceiptIsAnAcceptedClosedOutput() throws Exception {
+        ObjectNode result = passResult();
+        String providerReason = "LEASE_RECOVERY_CREDENTIAL_TOKEN_ABC123";
+        var admission = withDeploymentAuthorities(targetAdmission(result), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified(
+                                "LIFECYCLE_CREDENTIAL_TOKEN_ABC123"),
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .ExecutionLeaseCommitResult.recovered(
+                        committedLease(request).receipt(), providerReason));
+        Provider delegate = acceptingProvider(result);
+        Provider provider = new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                admission);
+        Output output = new Output();
+
+        int exit = run(write("recovered.json", result.toString()), List.of(provider), output);
+
+        var binding = provider.formalTargetBoundAuthorityBinding();
+        var receipt = committedLease(leaseRequest(result, binding, NOW)).receipt();
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
+        assertThat(output.text()).isEqualTo("ACCEPTED outcome=ACCEPTED "
+                + "authorityBindingFingerprint=" + binding.fingerprint()
+                + " leaseCommitStatus=RECOVERED leaseReceiptFingerprint="
+                + receipt.fingerprint() + " reasonCode="
+                + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED"
+                + System.lineSeparator()).doesNotContain(providerReason, "CREDENTIAL_TOKEN");
+    }
+
+    @Test
+    void leaseRequestBindsExactOriginalStageResultBytesAndVerifiedClosure() throws Exception {
+        ObjectNode result = passResult();
+        String exactWire = result.toPrettyString() + System.lineSeparator();
+        byte[] exactBytes = exactWire.getBytes(StandardCharsets.UTF_8);
+        AtomicReference<CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest>
+                observed = new AtomicReference<>();
+        var admission = withDeploymentAuthorities(targetAdmission(result), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                request -> {
+                    observed.set(request);
+                    return committedLease(request);
+                });
+        Provider delegate = acceptingProvider(result);
+        Provider provider = new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                admission);
+        Output output = new Output();
+
+        int exit = run(write("exact-stage-result.json", exactWire), List.of(provider), output);
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
-        assertThat(output.text()).contains(
-                "ACCEPTED outcome=ACCEPTED",
-                "authorityBindingFingerprint=" + bindingFingerprint(result),
-                CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX + "ACCEPTED");
-        assertThat(output.text()).doesNotContain(
-                "attestation:environment:1", "actor:correctness", "signature:correctness");
+        assertThat(observed.get().stageResultRawFingerprint())
+                .isEqualTo(rawFingerprint(exactBytes))
+                .isNotEqualTo(rawFingerprint(result.toString()
+                        .getBytes(StandardCharsets.UTF_8)));
+        assertThat(observed.get().evidenceClosureFingerprint())
+                .isEqualTo(result.path("evidenceClosureFingerprint").textValue());
+        assertThat(output.text()).contains("leaseCommitStatus=COMMITTED");
     }
 
     @Test
@@ -154,7 +232,7 @@ class CapabilityStudioStageAcceptanceCliTest {
         Path artifact = write("aggregate-mismatch.json", result.toString());
         AtomicInteger callbacks = new AtomicInteger();
         Provider valid = acceptingProvider(result);
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding admission =
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding admission =
                 targetAdmission(result, facts -> {
                     callbacks.incrementAndGet();
                     return verifiedTarget();
@@ -166,13 +244,13 @@ class CapabilityStudioStageAcceptanceCliTest {
                 new CapabilityStudioStageAcceptanceAuthorityProvider() {
                     @Override
                     public CapabilityStudioStageAcceptanceAuthorityProvider
-                            .TargetBoundAuthorityBinding targetBoundAuthorityBinding() {
+                            .FormalTargetBoundAuthorityBinding formalTargetBoundAuthorityBinding() {
                         var authority =
                                 new CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding(
                                         fingerprint('a'), valid.resolver(), valid.issuer(),
                                         valid.owner());
                         return new CapabilityStudioStageAcceptanceAuthorityProvider
-                                .TargetBoundAuthorityBinding(
+                                .FormalTargetBoundAuthorityBinding(
                                 fingerprint('b'), authority, admission);
                     }
 
@@ -246,7 +324,8 @@ class CapabilityStudioStageAcceptanceCliTest {
                 () -> List.of(legacy), fingerprint('a'));
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
-        assertThat(output.text()).contains("outcome=BLOCKED", "TARGET_BINDING_UNAVAILABLE");
+        assertThat(output.text()).contains(
+                "outcome=BLOCKED", "FORMAL_TARGET_BINDING_UNAVAILABLE");
     }
 
     @Test
@@ -254,26 +333,50 @@ class CapabilityStudioStageAcceptanceCliTest {
         ObjectNode result = passResult();
         Path artifact = write("legacy-binding.json", result.toString());
         AtomicInteger postRunCallbacks = new AtomicInteger();
-        Provider legacyBinding = new Provider(
-                request -> {
-                    postRunCallbacks.incrementAndGet();
-                    return EvidenceResolution.available(facts(request,
-                            result.path("evidenceClosureFingerprint").asText()));
-                },
-                (reference, evidence, context) -> {
-                    postRunCallbacks.incrementAndGet();
-                    return verified();
-                },
-                (signoff, signature, context) -> {
-                    postRunCallbacks.incrementAndGet();
-                    return verified();
-                });
+        Provider delegate = acceptingProvider(result);
+        CapabilityStudioStageAcceptanceAuthorityProvider legacyBinding =
+                new CapabilityStudioStageAcceptanceAuthorityProvider() {
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityProvider
+                            .TargetBoundAuthorityBinding targetBoundAuthorityBinding() {
+                        var formal = delegate.targetAdmission();
+                        var legacy = new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .TargetAdmissionBinding(formal.targetBindingBytes(),
+                                formal.candidateAttestationBytes(),
+                                formal.environmentAttestationBytes(),
+                                formal.verificationContext(), formal.candidateAuthority(),
+                                formal.environmentAuthority());
+                        return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .TargetBoundAuthorityBinding(delegate.authorityBinding(), legacy);
+                    }
+
+                    @Override
+                    public EvidenceResolver evidenceResolver() {
+                        postRunCallbacks.incrementAndGet();
+                        return delegate.resolver();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                            evidenceIssuerPolicy() {
+                        postRunCallbacks.incrementAndGet();
+                        return delegate.issuer();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                            ownerAuthority() {
+                        postRunCallbacks.incrementAndGet();
+                        return delegate.owner();
+                    }
+                };
         Output output = new Output();
 
         int exit = run(artifact, List.of(legacyBinding), output);
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
-        assertThat(output.text()).contains("outcome=BLOCKED", "TARGET_BINDING_UNAVAILABLE");
+        assertThat(output.text()).contains(
+                "outcome=BLOCKED", "FORMAL_TARGET_BINDING_UNAVAILABLE");
         assertThat(postRunCallbacks).hasValue(0);
     }
 
@@ -283,6 +386,24 @@ class CapabilityStudioStageAcceptanceCliTest {
         Path artifact = write("callback-order.json", result.toString());
         List<String> calls = new ArrayList<>();
         String closure = result.path("evidenceClosureFingerprint").textValue();
+        var targetAdmission = targetAdmission(result, facts -> {
+            calls.add("candidate");
+            return verifiedTarget();
+        }, facts -> {
+            calls.add("environment");
+            return verifiedTarget();
+        });
+        targetAdmission = withDeploymentAuthorities(targetAdmission, () -> {
+            calls.add("clock");
+            return NOW;
+        }, request -> {
+            calls.add("lifecycle");
+            return CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED");
+        }, request -> {
+            calls.add("lease");
+            return committedLease(request);
+        });
         Provider provider = new Provider(
                 request -> {
                     calls.add("resolver");
@@ -295,20 +416,248 @@ class CapabilityStudioStageAcceptanceCliTest {
                 (signoff, signature, context) -> {
                     calls.add("owner");
                     return verified();
-                }, targetAdmission(result, facts -> {
-                    calls.add("candidate");
-                    return verifiedTarget();
-                }, facts -> {
-                    calls.add("environment");
-                    return verifiedTarget();
-                }));
+                }, targetAdmission);
 
         int exit = run(artifact, List.of(provider), new Output());
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
-        assertThat(calls).startsWith("candidate", "environment", "resolver");
+        assertThat(calls).containsSubsequence("clock", "lifecycle", "candidate",
+                "environment", "resolver", "issuer", "owner", "lease");
         assertThat(calls.indexOf("issuer")).isGreaterThan(calls.indexOf("resolver"));
         assertThat(calls.indexOf("owner")).isGreaterThan(calls.indexOf("issuer"));
+        assertThat(calls.getLast()).isEqualTo("lease");
+        assertThat(calls.stream().filter("lease"::equals)).hasSize(1);
+    }
+
+    @Test
+    void lifecycleRejectionAndUnavailabilityStopEveryLaterCallback() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("lifecycle-decisions.json", result.toString());
+        AtomicInteger laterCallbacks = new AtomicInteger();
+        Provider delegate = acceptingProvider(result);
+        var baseAdmission = targetAdmission(result, facts -> {
+            laterCallbacks.incrementAndGet();
+            return verifiedTarget();
+        }, facts -> {
+            laterCallbacks.incrementAndGet();
+            return verifiedTarget();
+        });
+        var rejectedAdmission = withDeploymentAuthorities(baseAdmission, () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.rejected(
+                                "LIFECYCLE_CREDENTIAL_ROLLBACK_ABC123"),
+                CapabilityStudioStageAcceptanceCliTest::committedLease);
+        Provider rejected = new Provider(request -> {
+            laterCallbacks.incrementAndGet();
+            return delegate.resolver().resolve(request);
+        }, delegate.issuer(), delegate.owner(), rejectedAdmission);
+        Output rejectedOutput = new Output();
+
+        int rejectedExit = run(artifact, List.of(rejected), rejectedOutput);
+
+        assertThat(rejectedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(rejectedOutput.text()).isEqualTo(
+                "NOT_ACCEPTED outcome=REJECTED reasonCode="
+                        + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI."
+                        + "ADMISSION_LIFECYCLE_REJECTED" + System.lineSeparator())
+                .doesNotContain("LIFECYCLE_CREDENTIAL_ROLLBACK_ABC123");
+        assertThat(laterCallbacks).hasValue(0);
+
+        var unavailableAdmission = withDeploymentAuthorities(baseAdmission, () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.unavailable(
+                                "REVOCATION_CREDENTIAL_TOKEN_ABC123"),
+                CapabilityStudioStageAcceptanceCliTest::committedLease);
+        Output unavailableOutput = new Output();
+
+        int unavailableExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        unavailableAdmission)), unavailableOutput);
+
+        assertThat(unavailableExit)
+                .isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(unavailableOutput.text()).isEqualTo(
+                "NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                        + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI."
+                        + "ADMISSION_LIFECYCLE_UNAVAILABLE" + System.lineSeparator())
+                .doesNotContain("REVOCATION_CREDENTIAL_TOKEN_ABC123");
+        assertThat(laterCallbacks).hasValue(0);
+    }
+
+    @Test
+    void trustedClockAndMountedDependencyOutagesBlockButMalformedProvidersAreInvalid()
+            throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("dependency-outages.json", result.toString());
+        AtomicInteger laterCallbacks = new AtomicInteger();
+        Provider delegate = acceptingProvider(result);
+        var clockAdmission = withDeploymentAuthorities(targetAdmission(result, facts -> {
+            laterCallbacks.incrementAndGet();
+            return verifiedTarget();
+        }, facts -> {
+            laterCallbacks.incrementAndGet();
+            return verifiedTarget();
+        }), () -> {
+            throw new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentUnavailableException();
+        }, request -> {
+            laterCallbacks.incrementAndGet();
+            return CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED");
+        }, CapabilityStudioStageAcceptanceCliTest::committedLease);
+        Output clockOutput = new Output();
+
+        int clockExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        clockAdmission)), clockOutput);
+
+        assertThat(clockExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(clockOutput.text()).contains("outcome=BLOCKED", "TRUSTED_CLOCK_UNAVAILABLE");
+        assertThat(laterCallbacks).hasValue(0);
+
+        CapabilityStudioStageAcceptanceAuthorityProvider unavailable = providerThrowingSnapshot(
+                new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentUnavailableException());
+        CapabilityStudioStageAcceptanceAuthorityProvider malformed = providerThrowingSnapshot(
+                new IllegalStateException("provider-mount-secret"));
+        Output unavailableOutput = new Output();
+        Output malformedOutput = new Output();
+
+        int unavailableExit = run(artifact, List.of(unavailable), unavailableOutput);
+        int malformedExit = run(artifact, List.of(malformed), malformedOutput);
+
+        assertThat(unavailableExit)
+                .isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(unavailableOutput.text()).contains(
+                "outcome=BLOCKED", "FORMAL_TARGET_BINDING_UNAVAILABLE");
+        assertThat(malformedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(malformedOutput.text()).contains("PROVIDER_CONFIGURATION")
+                .doesNotContain("provider-mount-secret");
+    }
+
+    @Test
+    void leaseReplayAndStoreOutageOccurOnlyAfterPostRunAcceptance() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("lease-decisions.json", result.toString());
+        Provider delegate = acceptingProvider(result);
+        AtomicInteger leaseCalls = new AtomicInteger();
+        AtomicInteger postRunCalls = new AtomicInteger();
+        var rejectedAdmission = withDeploymentAuthorities(delegate.targetAdmission(), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                request -> {
+                    leaseCalls.incrementAndGet();
+                    return CapabilityStudioStageAcceptanceAuthorityProvider
+                            .ExecutionLeaseCommitResult.rejected(
+                                    "LEASE_CREDENTIAL_REPLAY_ABC123");
+                });
+        Provider rejected = providerWithCountingPostRunCallbacks(
+                result, postRunCalls, rejectedAdmission);
+        Output rejectedOutput = new Output();
+
+        int rejectedExit = run(artifact, List.of(rejected), rejectedOutput);
+
+        assertThat(rejectedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(rejectedOutput.text()).isEqualTo(
+                "NOT_ACCEPTED outcome=REJECTED reasonCode="
+                        + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI."
+                        + "EXECUTION_LEASE_REJECTED" + System.lineSeparator())
+                .doesNotContain("LEASE_CREDENTIAL_REPLAY_ABC123");
+        assertThat(postRunCalls).hasPositiveValue();
+        assertThat(leaseCalls).hasValue(1);
+
+        var unavailableAdmission = withDeploymentAuthorities(delegate.targetAdmission(), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .ExecutionLeaseCommitResult.unavailable(
+                                "LEASE_STORE_CREDENTIAL_TOKEN_ABC123"));
+        Output unavailableOutput = new Output();
+
+        int unavailableExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        unavailableAdmission)), unavailableOutput);
+
+        assertThat(unavailableExit)
+                .isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(unavailableOutput.text()).isEqualTo(
+                "NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                        + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI."
+                        + "EXECUTION_LEASE_UNAVAILABLE" + System.lineSeparator())
+                .doesNotContain("LEASE_STORE_CREDENTIAL_TOKEN_ABC123");
+    }
+
+    @Test
+    void lifecycleCommitReceiptFromAnotherDeploymentAuthorityIsInvalid() throws Exception {
+        ObjectNode result = passResult();
+        Provider delegate = acceptingProvider(result);
+        var admission = withDeploymentAuthorities(delegate.targetAdmission(), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                request -> {
+                    var revocation = request.lifecycleMaterial().revocationAuthority();
+                    var wrongAuthorityReceipt = new CapabilityStudioStageAcceptanceAuthorityProvider
+                            .AtomicAdmissionLifecycleCommitReceipt(
+                            fingerprint('f'), request.lifecycleMaterial().fingerprint(),
+                            revocation.registryRef(), revocation.revision(),
+                            revocation.snapshotFingerprint(), 1, NOW,
+                            request.commitIdentityFingerprint());
+                    var receipt = new CapabilityStudioStageAcceptanceAuthorityProvider
+                            .ExecutionLeaseReceipt(request.commitIdentityFingerprint(),
+                            request.lifecycleMaterial(), wrongAuthorityReceipt);
+                    return CapabilityStudioStageAcceptanceAuthorityProvider
+                            .ExecutionLeaseCommitResult.committed(
+                            receipt, "LEASE_CREDENTIAL_TOKEN_ABC123");
+                });
+        Output output = new Output();
+
+        int exit = run(write("wrong-lifecycle-receipt.json", result.toString()),
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        admission)), output);
+
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(output.text()).contains("PROVIDER_CONFIGURATION")
+                .doesNotContain("LEASE_CREDENTIAL_TOKEN_ABC123");
+    }
+
+    @Test
+    void missingFormalDependenciesBlockAtTheirCapabilityBoundaries() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("missing-formal-dependencies.json", result.toString());
+        Provider delegate = acceptingProvider(result);
+
+        var noClock = withDeploymentAuthorities(
+                delegate.targetAdmission(), null,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                CapabilityStudioStageAcceptanceCliTest::committedLease);
+        Output clockOutput = new Output();
+        int clockExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        noClock)), clockOutput);
+        assertThat(clockExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(clockOutput.text()).contains("TRUSTED_CLOCK_UNAVAILABLE");
+
+        var noLifecycle = withDeploymentAuthorities(
+                delegate.targetAdmission(), () -> NOW, null,
+                CapabilityStudioStageAcceptanceCliTest::committedLease);
+        Output lifecycleOutput = new Output();
+        int lifecycleExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        noLifecycle)), lifecycleOutput);
+        assertThat(lifecycleExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(lifecycleOutput.text()).contains("ADMISSION_LIFECYCLE_UNAVAILABLE");
+
+        var noLease = withDeploymentAuthorities(
+                delegate.targetAdmission(), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"), null);
+        Output leaseOutput = new Output();
+        int leaseExit = run(artifact,
+                List.of(new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                        noLease)), leaseOutput);
+        assertThat(leaseExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(leaseOutput.text()).contains("EXECUTION_LEASE_UNAVAILABLE");
     }
 
     @Test
@@ -316,7 +665,7 @@ class CapabilityStudioStageAcceptanceCliTest {
         ObjectNode result = passResult();
         Path artifact = write("environment-throw.json", result.toString());
         AtomicInteger postRunCallbacks = new AtomicInteger();
-        String secret = "environment-authority-secret";
+        String secret = "ENVIRONMENT_CREDENTIAL_TOKEN_ABC123";
         Provider provider = providerWithCountingPostRunCallbacks(result, postRunCallbacks,
                 targetAdmission(result, facts -> verifiedTarget(), facts -> {
                     throw new IllegalStateException(secret);
@@ -327,7 +676,7 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(output.text()).contains("outcome=BLOCKED",
-                "ENVIRONMENT_AUTHORITY_UNAVAILABLE").doesNotContain(secret);
+                "TARGET_BINDING_UNAVAILABLE").doesNotContain(secret);
         assertThat(postRunCallbacks).hasValue(0);
     }
 
@@ -344,7 +693,7 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(output.text()).contains("outcome=BLOCKED",
-                "ENVIRONMENT_AUTHORITY_DECISION_INVALID");
+                "TARGET_BINDING_UNAVAILABLE");
         assertThat(postRunCallbacks).hasValue(0);
     }
 
@@ -359,12 +708,12 @@ class CapabilityStudioStageAcceptanceCliTest {
                 new CapabilityStudioStageAcceptanceAuthorityProvider() {
                     @Override
                     public CapabilityStudioStageAcceptanceAuthorityProvider
-                            .TargetBoundAuthorityBinding targetBoundAuthorityBinding() {
+                            .FormalTargetBoundAuthorityBinding formalTargetBoundAuthorityBinding() {
                         if (snapshots.incrementAndGet() != 1) {
                             return null;
                         }
                         return new CapabilityStudioStageAcceptanceAuthorityProvider
-                                .TargetBoundAuthorityBinding(
+                                .FormalTargetBoundAuthorityBinding(
                                 delegate.authorityBinding(), delegate.targetAdmission());
                     }
 
@@ -434,10 +783,10 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(rejectedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(rejectedOutput.text()).contains("outcome=REJECTED",
-                "CANDIDATE_AUTHORITY_REJECTED");
+                "TARGET_BINDING_REJECTED");
         assertThat(postRunCallbacks).hasValue(0);
 
-        String secret = "target-authority-secret";
+        String secret = "TARGET_AUTHORITY_CREDENTIAL_TOKEN_ABC123";
         Provider blocked = new Provider(base.resolver(), base.issuer(), base.owner(),
                 targetAdmission(result, facts -> {
                     throw new IllegalStateException(secret);
@@ -450,7 +799,7 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(blockedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(blockedOutput.text()).contains("outcome=BLOCKED",
-                "CANDIDATE_AUTHORITY_UNAVAILABLE").doesNotContain(secret);
+                "TARGET_BINDING_UNAVAILABLE").doesNotContain(secret);
         assertThat(postRunCallbacks).hasValue(0);
     }
 
@@ -469,10 +818,10 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(output.text()).contains("outcome=REJECTED",
-                "TARGET_BINDING_RESULT_MISMATCH");
+                "TARGET_BINDING_REJECTED");
 
         ObjectNode targetResult = passResult();
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding original =
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding original =
                 targetAdmission(targetResult);
         ObjectNode driftedTarget;
         try {
@@ -481,11 +830,16 @@ class CapabilityStudioStageAcceptanceCliTest {
             throw new AssertionError(failure);
         }
         driftedTarget.put("fingerprint", fingerprint('0'));
-        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding driftedAdmission =
-                new CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding(
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding driftedAdmission =
+                new CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding(
+                        original.targetAdmissionMaterialFingerprint(),
+                        TARGET_VERIFIER.rawAttestationFingerprint(
+                                JSON.writeValueAsBytes(driftedTarget)),
+                        original.targetCanonicalFingerprint(),
                         JSON.writeValueAsBytes(driftedTarget), original.candidateAttestationBytes(),
                         original.environmentAttestationBytes(), original.verificationContext(),
-                        original.candidateAuthority(), original.environmentAuthority());
+                        original.candidateAuthority(), original.environmentAuthority(),
+                        original.lifecycleMaterial(), original.deploymentAuthorityBinding());
         Provider targetDelegate = acceptingProvider(targetResult);
         Provider targetDriftProvider = new Provider(
                 targetDelegate.resolver(), targetDelegate.issuer(), targetDelegate.owner(),
@@ -493,11 +847,16 @@ class CapabilityStudioStageAcceptanceCliTest {
         Path targetArtifact = write("target-drift.json", targetResult.toString());
         Output targetOutput = new Output();
 
-        int targetExit = run(targetArtifact, List.of(targetDriftProvider), targetOutput);
+        String driftedOuter = new CapabilityStudioStageAcceptanceAuthorityProvider
+                .FormalTargetBoundAuthorityBinding(
+                targetDriftProvider.authorityBinding(), driftedAdmission).fingerprint();
+        int targetExit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{targetArtifact.toString()}, targetOutput.out(), targetOutput.err(),
+                NOW, () -> List.of(targetDriftProvider), driftedOuter);
 
         assertThat(targetExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
         assertThat(targetOutput.text()).contains("outcome=REJECTED",
-                "TARGET_BINDING_FINGERPRINT_MISMATCH");
+                "TARGET_BINDING_REJECTED");
     }
 
     @Test
@@ -535,13 +894,14 @@ class CapabilityStudioStageAcceptanceCliTest {
                 accepting.resolver(),
                 (reference, evidence, context) ->
                         CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
-                                .rejected("TEST_ISSUER_REJECTED"),
+                                .rejected("ISSUER_CREDENTIAL_TOKEN_ABC123"),
                 accepting.owner(), accepting.targetAdmission());
 
         int exit = run(artifact, List.of(rejecting), output);
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
-        assertThat(output.text()).contains("outcome=REJECTED", "TEST_ISSUER_REJECTED");
+        assertThat(output.text()).contains("outcome=REJECTED", "AUTHORITY_REJECTED")
+                .doesNotContain("ISSUER_CREDENTIAL_TOKEN_ABC123");
     }
 
     @Test
@@ -578,6 +938,48 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
         assertThat(output.text()).contains("PROVIDER_CONFIGURATION").doesNotContain(secret);
+    }
+
+    @Test
+    void providerDiscoveryDependencyOutagesBlockThroughDirectAndWrappedCauses()
+            throws Exception {
+        Path artifact = write("discovery-outage.json", passResult().toString());
+        List<RuntimeException> failures = List.of(
+                new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentUnavailableException(),
+                new IllegalStateException("wrapped-discovery-secret",
+                        new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .DeploymentUnavailableException()));
+        for (RuntimeException failure : failures) {
+            Output output = new Output();
+            int exit = run(artifact, () -> {
+                throw failure;
+            }, output);
+            assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+            assertThat(output.text()).contains(
+                    "outcome=BLOCKED", "FORMAL_TARGET_BINDING_UNAVAILABLE")
+                    .doesNotContain("wrapped-discovery-secret");
+        }
+
+        Output serviceLoaderOutput = new Output();
+        int serviceLoaderExit = run(artifact, () -> {
+            throw new ServiceConfigurationError("service-loader-secret",
+                    new CapabilityStudioStageAcceptanceAuthorityProvider
+                            .DeploymentUnavailableException());
+        }, serviceLoaderOutput);
+        assertThat(serviceLoaderExit)
+                .isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(serviceLoaderOutput.text()).contains(
+                "outcome=BLOCKED", "FORMAL_TARGET_BINDING_UNAVAILABLE")
+                .doesNotContain("service-loader-secret");
+
+        Output malformedOutput = new Output();
+        int malformedExit = run(artifact, () -> {
+            throw new ServiceConfigurationError("malformed-loader-secret");
+        }, malformedOutput);
+        assertThat(malformedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(malformedOutput.text()).contains("PROVIDER_CONFIGURATION")
+                .doesNotContain("malformed-loader-secret");
     }
 
     @Test
@@ -700,7 +1102,7 @@ class CapabilityStudioStageAcceptanceCliTest {
     private static Provider providerWithCountingPostRunCallbacks(
             ObjectNode result,
             AtomicInteger callbacks,
-            CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding admission) {
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding admission) {
         String closure = result.path("evidenceClosureFingerprint").textValue();
         return new Provider(request -> {
             callbacks.incrementAndGet();
@@ -714,7 +1116,7 @@ class CapabilityStudioStageAcceptanceCliTest {
         }, admission);
     }
 
-    private static CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding
     targetAdmission(ObjectNode result) {
         return targetAdmission(result, facts ->
                         CapabilityStudioStageAcceptanceTargetBindingVerifier.AuthorityDecision
@@ -723,7 +1125,65 @@ class CapabilityStudioStageAcceptanceCliTest {
                                 .verified());
     }
 
-    private static CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding
+            withDeploymentAuthorities(
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding source,
+            CapabilityStudioStageAcceptanceAuthorityProvider.TrustedVerificationClock clock,
+            CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleAuthority
+                    lifecycle,
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseAuthority lease) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding(
+                source.targetAdmissionMaterialFingerprint(), source.targetRawFingerprint(),
+                source.targetCanonicalFingerprint(), source.targetBindingBytes(),
+                source.candidateAttestationBytes(), source.environmentAttestationBytes(),
+                source.verificationContext(), source.candidateAuthority(),
+                source.environmentAuthority(), source.lifecycleMaterial(),
+                new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAdmissionAuthorityBinding(
+                        new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .TrustedVerificationClockBinding(
+                                CLOCK_FINGERPRINT, clock),
+                        new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .AdmissionLifecycleAuthorityBinding(
+                                LIFECYCLE_AUTHORITY_FINGERPRINT, lifecycle),
+                        new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .ExecutionLeaseAuthorityBinding(
+                                LEASE_AUTHORITY_FINGERPRINT, lease)));
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider providerThrowingSnapshot(
+            RuntimeException failure) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityProvider
+                    .FormalTargetBoundAuthorityBinding formalTargetBoundAuthorityBinding() {
+                throw failure;
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return request -> EvidenceResolution.unavailable();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return (reference, evidence, context) ->
+                        CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
+                                .unavailable();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return (signoff, signature, context) ->
+                        CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
+                                .unavailable();
+            }
+        };
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding
     targetAdmission(
             ObjectNode result,
             CapabilityStudioStageAcceptanceTargetBindingVerifier.CandidateAuthority candidateAuthority,
@@ -762,9 +1222,26 @@ class CapabilityStudioStageAcceptanceCliTest {
                     new CapabilityStudioStageAcceptanceTargetBindingVerifier.VerificationContext(
                             TARGET_LEASE, Set.of(TARGET_IDENTITY),
                             target.path("fingerprint").textValue());
-            return new CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding(
-                    targetBytes, candidateBytes, environmentBytes, context,
-                    candidateAuthority, environmentAuthority);
+            return new CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding(
+                    fingerprint('9'), TARGET_VERIFIER.rawAttestationFingerprint(targetBytes),
+                    target.path("fingerprint").textValue(), targetBytes, candidateBytes,
+                    environmentBytes, context,
+                    candidateAuthority, environmentAuthority, lifecycleMaterial(),
+                    new CapabilityStudioStageAcceptanceAuthorityProvider
+                            .DeploymentAdmissionAuthorityBinding(
+                            new CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .TrustedVerificationClockBinding(
+                                    CLOCK_FINGERPRINT, () -> NOW),
+                            new CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .AdmissionLifecycleAuthorityBinding(
+                                    LIFECYCLE_AUTHORITY_FINGERPRINT,
+                                    request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .DeploymentAuthorityDecision.verified(
+                                                    "LIFECYCLE_VERIFIED")),
+                            new CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .ExecutionLeaseAuthorityBinding(
+                                    LEASE_AUTHORITY_FINGERPRINT,
+                                    CapabilityStudioStageAcceptanceCliTest::committedLease)));
         } catch (Exception failure) {
             throw new AssertionError(failure);
         }
@@ -827,11 +1304,79 @@ class CapabilityStudioStageAcceptanceCliTest {
     }
 
     private static String bindingFingerprint(ObjectNode result) {
-        return CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding
+        return CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
                 .aggregateFingerprint(
-                        CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding
+                        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
                                 .MESSAGE_VERSION,
-                        fingerprint('a'), targetAdmission(result).targetBindingFingerprint());
+                        fingerprint('a'),
+                        targetAdmission(result).deploymentAuthorityBinding().fingerprint(),
+                        targetAdmission(result).targetAdmissionMaterialFingerprint(),
+                        targetAdmission(result).targetRawFingerprint(),
+                        targetAdmission(result).targetCanonicalFingerprint());
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult
+            committedLease(
+            CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request) {
+        var revocation = request.lifecycleMaterial().revocationAuthority();
+        var lifecycleReceipt = new CapabilityStudioStageAcceptanceAuthorityProvider
+                .AtomicAdmissionLifecycleCommitReceipt(
+                request.deploymentAdmissionAuthorityMaterialFingerprint(),
+                request.lifecycleMaterial().fingerprint(), revocation.registryRef(),
+                revocation.revision(), revocation.snapshotFingerprint(), 1, NOW,
+                request.commitIdentityFingerprint());
+        var receipt = new CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt(
+                request.commitIdentityFingerprint(), request.lifecycleMaterial(), lifecycleReceipt);
+        return CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult
+                .committed(receipt, "LEASE_COMMITTED");
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest
+            leaseRequest(
+            ObjectNode result,
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                    binding,
+            Instant trustedVerificationTime) {
+        return leaseRequest(result, binding, trustedVerificationTime,
+                result.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest
+            leaseRequest(
+            ObjectNode result,
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                    binding,
+            Instant trustedVerificationTime,
+            byte[] exactStageResultBytes) {
+        var admission = binding.targetAdmissionBinding();
+        return new CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest(
+                result.path("resultId").textValue(), result.path("revision").longValue(),
+                rawFingerprint(exactStageResultBytes),
+                result.path("evidenceClosureFingerprint").textValue(),
+                result.path("contractId").textValue(),
+                result.path("contractRevision").textValue(),
+                admission.verificationContext().executionLeaseId(), binding.fingerprint(),
+                admission.targetRawFingerprint(), admission.targetCanonicalFingerprint(),
+                admission.lifecycleMaterial(), admission.deploymentAuthorityBinding().fingerprint(),
+                trustedVerificationTime);
+    }
+
+    private static String rawFingerprint(byte[] value) {
+        try {
+            return "sha256:" + HexFormat.of().formatHex(
+                    MessageDigest.getInstance("SHA-256").digest(value));
+        } catch (Exception failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleMaterial
+            lifecycleMaterial() {
+        var revocation = new CapabilityStudioStageAcceptanceAuthorityProvider
+                .RevocationAuthoritySnapshot("registry:stage-acceptance", 1,
+                fingerprint('8'), NOW.minusSeconds(60), NOW.plusSeconds(600));
+        return new CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleMaterial(
+                fingerprint('9'), "bundle:stage-acceptance", 1, "ACTIVE", null, revocation);
     }
 
     private static void refreshClosure(ObjectNode result) {
@@ -901,7 +1446,7 @@ class CapabilityStudioStageAcceptanceCliTest {
             CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver resolver,
             CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy issuer,
             CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority owner,
-            CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding targetAdmission)
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding targetAdmission)
             implements CapabilityStudioStageAcceptanceAuthorityProvider {
         private Provider(
                 CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceResolver resolver,
@@ -917,11 +1462,11 @@ class CapabilityStudioStageAcceptanceCliTest {
         }
 
         @Override
-        public CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding
-                targetBoundAuthorityBinding() {
+        public CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                formalTargetBoundAuthorityBinding() {
             return targetAdmission == null ? null
                     : new CapabilityStudioStageAcceptanceAuthorityProvider
-                    .TargetBoundAuthorityBinding(authorityBinding(), targetAdmission);
+                    .FormalTargetBoundAuthorityBinding(authorityBinding(), targetAdmission);
         }
 
         @Override
@@ -950,18 +1495,29 @@ class CapabilityStudioStageAcceptanceCliTest {
             implements CapabilityStudioStageAcceptanceAuthorityProvider {
         private final ObjectNode result;
         private final String secret;
-        private final CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding
+        private final CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetAdmissionBinding
                 targetAdmission;
 
         private NoisyProvider(ObjectNode result, String secret) {
             this.result = result;
             this.secret = secret;
-            this.targetAdmission = targetAdmission(result, facts -> {
+            var localAdmission = targetAdmission(result, facts -> {
                 printSecret(secret, "candidate-authority");
                 return verifiedTarget();
             }, facts -> {
                 printSecret(secret, "environment-authority");
                 return verifiedTarget();
+            });
+            this.targetAdmission = withDeploymentAuthorities(localAdmission, () -> {
+                printSecret(secret, "trusted-clock");
+                return NOW;
+            }, request -> {
+                printSecret(secret, "lifecycle-authority");
+                return CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED");
+            }, request -> {
+                printSecret(secret, "lease-authority");
+                return committedLease(request);
             });
         }
 
@@ -973,11 +1529,11 @@ class CapabilityStudioStageAcceptanceCliTest {
         }
 
         @Override
-        public CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding
-                targetBoundAuthorityBinding() {
+        public CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                formalTargetBoundAuthorityBinding() {
             printSecret(secret, "target-bound-binding-accessor");
             return new CapabilityStudioStageAcceptanceAuthorityProvider
-                    .TargetBoundAuthorityBinding(authorityBinding(), targetAdmission);
+                    .FormalTargetBoundAuthorityBinding(authorityBinding(), targetAdmission);
         }
 
         @Override

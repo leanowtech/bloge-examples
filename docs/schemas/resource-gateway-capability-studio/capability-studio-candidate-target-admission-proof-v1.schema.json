@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-candidate-target-admission-proof-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Candidate Target Admission Proof v1",
+  "description": "Closed detached Ed25519 proof for the Candidate Authority domain.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "role",
+    "algorithm",
+    "keyId",
+    "signedAt",
+    "expiresAt",
+    "signedFactsFingerprint",
+    "signature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.candidate-target-admission-proof.v1"
+    },
+    "role": { "const": "CANDIDATE_AUTHORITY" },
+    "algorithm": { "const": "Ed25519" },
+    "keyId": { "$ref": "#/$defs/safeRef" },
+    "signedAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" },
+    "signedFactsFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "signature": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+    }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    }
+  }
+}
