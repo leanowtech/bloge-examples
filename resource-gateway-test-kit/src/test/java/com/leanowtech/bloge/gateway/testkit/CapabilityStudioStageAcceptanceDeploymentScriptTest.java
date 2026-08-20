@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.security.MessageDigest;
 import java.util.EnumSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -25,7 +26,38 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
             "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProviderConformanceCli";
     private static final String FORMAL_MAIN =
             "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceCli";
-    private static final String EXPECTED_AUTHORITY_BINDING = "sha256:" + "a".repeat(64);
+    private static final String AUTHORITY_MATERIAL = fingerprint('a');
+    private static final String TRUSTED_CLOCK_MATERIAL = fingerprint('b');
+    private static final String LIFECYCLE_AUTHORITY_MATERIAL = fingerprint('c');
+    private static final String LEASE_AUTHORITY_MATERIAL = fingerprint('d');
+    private static final String TARGET_ADMISSION_MATERIAL = fingerprint('e');
+    private static final String TARGET_RAW = fingerprint('f');
+    private static final String TARGET_CANONICAL = fingerprint('1');
+    private static final String LIFECYCLE_MATERIAL = fingerprint('2');
+    private static final String REVOCATION_SNAPSHOT = fingerprint('3');
+    private static final String LEASE_RECEIPT = fingerprint('4');
+    private static final String DEPLOYMENT_AUTHORITY_MATERIAL = sha256Text(
+            "{\"messageVersion\":\"resource-gateway.capability-studio."
+                    + "deployment-admission-authority-binding.v1\","
+                    + "\"trustedClockMaterialFingerprint\":\"" + TRUSTED_CLOCK_MATERIAL
+                    + "\",\"admissionLifecycleAuthorityMaterialFingerprint\":\""
+                    + LIFECYCLE_AUTHORITY_MATERIAL
+                    + "\",\"executionLeaseAuthorityMaterialFingerprint\":\""
+                    + LEASE_AUTHORITY_MATERIAL + "\"}");
+    private static final String FORMAL_OUTER = sha256Text(
+            "{\"messageVersion\":\"resource-gateway.capability-studio."
+                    + "stage-acceptance-provider-binding.v2\","
+                    + "\"authorityMaterialFingerprint\":\"" + AUTHORITY_MATERIAL
+                    + "\",\"deploymentAdmissionAuthorityMaterialFingerprint\":\""
+                    + DEPLOYMENT_AUTHORITY_MATERIAL
+                    + "\",\"targetAdmissionMaterialFingerprint\":\""
+                    + TARGET_ADMISSION_MATERIAL + "\",\"targetRawFingerprint\":\""
+                    + TARGET_RAW + "\",\"targetCanonicalFingerprint\":\""
+                    + TARGET_CANONICAL + "\"}");
+    private static final String AUTHORITY_PIN_ENV =
+            "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT";
+    private static final String FORMAL_PIN_ENV =
+            "BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT";
     private static final String TEST_KIT_PIN_ENV = "BLOGE_EXPECTED_TEST_KIT_JAR_SHA256";
     private static final String STAGE_RESULT_PIN_ENV = "BLOGE_EXPECTED_STAGE_RESULT_SHA256";
     private static final String PROVIDER_PINS_ENV = "BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S";
@@ -40,10 +72,10 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
 
         ProcessResult syntax = process(List.of("bash", "-n", scriptPath().toString()),
                 Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
-                        "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING));
+                        AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL));
         ProcessResult help = process(List.of("bash", scriptPath().toString(), "--help"),
                 Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
-                        "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING));
+                        AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL));
 
         assertThat(syntax.exitCode()).isZero();
         assertThat(help.exitCode()).isZero();
@@ -75,7 +107,7 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     }
 
     @Test
-    void deploymentBindingPinIsRequiredAndValidatedBeforeJava() throws Exception {
+    void authorityMaterialPinIsRequiredAndValidatedBeforeJava() throws Exception {
         Path fakeJava = fakeJava("success");
         Path log = temp.resolve("calls.log");
         Path jar = regularFile("test-kit.jar", "jar");
@@ -88,12 +120,39 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
             environment.put("JAVA_BIN", fakeJava.toString());
             environment.put("FAKE_LOG", log.toString());
             if (pin != null) {
-                environment.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", pin);
+                environment.put(AUTHORITY_PIN_ENV, pin);
             }
+            environment.put(FORMAL_PIN_ENV, FORMAL_OUTER);
             ProcessResult result = process(withScript(arguments(jar, provider.toString(), stage,
                     output)), environment);
             assertThat(result.exitCode()).isEqualTo(2);
             assertThat(result.output()).isEqualTo("ERROR code=AUTHORITY_BINDING\n")
+                    .doesNotContain(jar.toString(), provider.toString(), stage.toString());
+            assertThat(log).doesNotExist();
+        }
+    }
+
+    @Test
+    void formalOuterPinIsRequiredAndValidatedSeparatelyBeforeJava() throws Exception {
+        Path fakeJava = fakeJava("success");
+        Path log = temp.resolve("formal-pin-calls.log");
+        Path jar = regularFile("formal-pin-test-kit.jar", "jar");
+        Path provider = regularFile("formal-pin-provider.jar", "provider");
+        Path stage = regularFile("formal-pin-stage.json", "{}");
+        Path output = temp.resolve("formal-pin-report.json");
+        Map<String, String> validPins = pinEnvironment(jar, provider.toString(), stage);
+        for (String pin : java.util.Arrays.asList(null, "", "sha256:" + "A".repeat(64))) {
+            Map<String, String> environment = new java.util.HashMap<>(validPins);
+            environment.put("JAVA_BIN", fakeJava.toString());
+            environment.put("FAKE_LOG", log.toString());
+            environment.put(AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
+            if (pin != null) {
+                environment.put(FORMAL_PIN_ENV, pin);
+            }
+            ProcessResult result = process(withScript(arguments(jar, provider.toString(), stage,
+                    output)), environment);
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).isEqualTo("ERROR code=FORMAL_AUTHORITY_BINDING\n")
                     .doesNotContain(jar.toString(), provider.toString(), stage.toString());
             assertThat(log).doesNotExist();
         }
@@ -113,8 +172,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 pinEnvironment(jar, providerOne + ":" + providerTwo, stage));
         validPins.put("JAVA_BIN", fakeJava.toString());
         validPins.put("FAKE_LOG", log.toString());
-        validPins.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT",
-                EXPECTED_AUTHORITY_BINDING);
+        validPins.put(AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
+        validPins.put(FORMAL_PIN_ENV, FORMAL_OUTER);
         String[] orderedProviderPins = validPins.get(PROVIDER_PINS_ENV).split(",", -1);
 
         List<Map.Entry<String, String>> invalidPins = List.of(
@@ -211,7 +270,7 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Path output = temp.resolve("report.json");
         Map<String, String> environment = Map.of(
                 "JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
-                "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING);
+                AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
         List<List<String>> invalidArguments = List.of(
                 List.of("--test-kit-jar", jar.toString(),
                         "--test-kit-jar", jar.toString(),
@@ -247,12 +306,19 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo(
-                "ACCEPTED status=ACCEPTED authorityBindingFingerprint="
-                        + EXPECTED_AUTHORITY_BINDING + " providerConformanceFingerprint=sha256:"
-                        + "0000000000000000000000000000000000000000000000000000000000000000\n");
+                "ACCEPTED status=ACCEPTED authorityMaterialFingerprint="
+                        + AUTHORITY_MATERIAL + " formalOuterFingerprint=" + FORMAL_OUTER
+                        + " providerConformanceFingerprint=" + fingerprint('0')
+                        + " leaseCommitStatus=COMMITTED leaseReceiptFingerprint="
+                        + LEASE_RECEIPT + " formalTranscriptFingerprint="
+                        + sha256Text(formalLine("COMMITTED") + "\n") + "\n");
         List<FakeInvocation> calls = invocations(log);
         assertThat(calls).extracting(FakeInvocation::main)
                 .containsExactly(CONFORMANCE_MAIN, FORMAL_MAIN);
+        assertThat(calls).extracting(FakeInvocation::authorityPin)
+                .containsExactly(AUTHORITY_MATERIAL, FORMAL_OUTER);
+        assertThat(calls).extracting(FakeInvocation::formalDeploymentPin)
+                .containsOnly("<absent>");
         assertThat(calls.get(0).classpath()).isEqualTo(calls.get(1).classpath())
                 .doesNotContain(jar.toString(), providerOne.toString(), providerTwo.toString());
         assertThat(calls.get(0).stageResult()).isEqualTo(calls.get(1).stageResult())
@@ -264,6 +330,32 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                     .filter(name -> name.startsWith(".capability-studio-acceptance.")))
                     .isEmpty();
         }
+    }
+
+    @Test
+    void recoveredLeasePreservesTheExpandedTranscriptAndFinalStatus() throws Exception {
+        Path fakeJava = fakeJava("recovered");
+        Path log = temp.resolve("recovered-calls.log");
+        Path jar = regularFile("recovered-kit.jar", "kit");
+        Path provider = regularFile("recovered-provider.jar", "provider");
+        Path stage = regularFile("recovered-stage.json", "{}");
+
+        ProcessResult result = run(fakeJava, log, jar, provider, stage,
+                temp.resolve("recovered-report.json"));
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.output()).isEqualTo(
+                "ACCEPTED status=ACCEPTED authorityMaterialFingerprint="
+                        + AUTHORITY_MATERIAL + " formalOuterFingerprint=" + FORMAL_OUTER
+                        + " providerConformanceFingerprint=" + fingerprint('0')
+                        + " leaseCommitStatus=RECOVERED leaseReceiptFingerprint="
+                        + LEASE_RECEIPT + " formalTranscriptFingerprint="
+                        + sha256Text(formalLine("RECOVERED") + "\n") + "\n");
+        List<FakeInvocation> calls = invocations(log);
+        assertThat(calls).extracting(FakeInvocation::authorityPin)
+                .containsExactly(AUTHORITY_MATERIAL, FORMAL_OUTER);
+        assertThat(calls).extracting(FakeInvocation::formalDeploymentPin)
+                .containsOnly("<absent>");
     }
 
     @Test
@@ -366,8 +458,90 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     }
 
     @Test
-    void bothJavaPhasesMustMatchTheOutOfBandDeploymentPin() throws Exception {
-        for (String mode : List.of("mismatch-conformance", "mismatch-formal")) {
+    void nulBytesInChildStdoutAreRejectedByExactByteComparison() throws Exception {
+        for (String mode : List.of("nul-conformance", "nul-formal")) {
+            Path caseDirectory = Files.createDirectory(temp.resolve(mode));
+            Path log = caseDirectory.resolve("calls.log");
+            ProcessResult result = run(fakeJava(caseDirectory, mode), log,
+                    regularFile(caseDirectory, "kit.jar", "kit"),
+                    regularFile(caseDirectory, "provider.jar", "provider"),
+                    regularFile(caseDirectory, "stage.json", "{}"),
+                    caseDirectory.resolve("report.json"));
+
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).doesNotContain("ACCEPTED status=ACCEPTED");
+            assertThat(invocations(log)).extracting(FakeInvocation::main)
+                    .containsExactlyElementsOf(mode.equals("nul-formal")
+                            ? List.of(CONFORMANCE_MAIN, FORMAL_MAIN)
+                            : List.of(CONFORMANCE_MAIN));
+        }
+    }
+
+    @Test
+    void everyFormalFingerprintFieldRequiresStrictLowercaseSha256() throws Exception {
+        List<String> fingerprintFields = List.of(
+                "authorityBindingFingerprint", "authorityMaterialFingerprint",
+                "leaseReceiptFingerprint", "targetAdmissionMaterialFingerprint",
+                "deploymentAdmissionAuthorityMaterialFingerprint", "targetRawFingerprint",
+                "targetCanonicalFingerprint", "trustedClockMaterialFingerprint",
+                "admissionLifecycleAuthorityMaterialFingerprint",
+                "executionLeaseAuthorityMaterialFingerprint", "lifecycleMaterialFingerprint",
+                "revocationSnapshotFingerprint");
+        for (String field : fingerprintFields) {
+            ProcessResult result = runWithFormalOutput("malformed-" + field,
+                    replaceField(formalLine("COMMITTED"), field,
+                            "sha256:" + "A".repeat(64)) + "\n");
+            assertThat(result.exitCode()).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void formalTranscriptRejectsReorderExtraMissingWrongReasonAndLineShape()
+            throws Exception {
+        String valid = formalLine("COMMITTED");
+        Map<String, String> malformed = new LinkedHashMap<>();
+        malformed.put("reordered", valid.replace(
+                "authorityBindingFingerprint=" + FORMAL_OUTER
+                        + " authorityMaterialFingerprint=" + AUTHORITY_MATERIAL,
+                "authorityMaterialFingerprint=" + AUTHORITY_MATERIAL
+                        + " authorityBindingFingerprint=" + FORMAL_OUTER) + "\n");
+        malformed.put("extra", valid.replace(" reasonCode=",
+                " unexpected=" + fingerprint('6') + " reasonCode=") + "\n");
+        malformed.put("missing", valid.replace(
+                " targetRawFingerprint=" + TARGET_RAW, "") + "\n");
+        malformed.put("wrong-reason", valid.replace(
+                "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED",
+                "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED") + "\n");
+        malformed.put("multiple-lines", valid + "\nunexpected\n");
+        malformed.put("no-newline", valid);
+        for (Map.Entry<String, String> entry : malformed.entrySet()) {
+            assertThat(runWithFormalOutput(entry.getKey(), entry.getValue()).exitCode())
+                    .isEqualTo(2);
+        }
+    }
+
+    @Test
+    void canonicalDeploymentAndFormalAggregateDriftFailsClosed() throws Exception {
+        ProcessResult deployment = runWithFormalOutput("deployment-aggregate-drift",
+                replaceField(formalLine("COMMITTED"),
+                        "deploymentAdmissionAuthorityMaterialFingerprint",
+                        fingerprint('5')) + "\n");
+        ProcessResult formal = runWithFormalOutput("formal-aggregate-drift",
+                replaceField(formalLine("COMMITTED"),
+                        "targetRawFingerprint", fingerprint('5')) + "\n");
+
+        assertThat(deployment.exitCode()).isEqualTo(2);
+        assertThat(deployment.output())
+                .isEqualTo("ERROR code=DEPLOYMENT_AUTHORITY_AGGREGATE_MISMATCH\n");
+        assertThat(formal.exitCode()).isEqualTo(2);
+        assertThat(formal.output())
+                .isEqualTo("ERROR code=FORMAL_AUTHORITY_AGGREGATE_MISMATCH\n");
+    }
+
+    @Test
+    void eachJavaPhaseMustMatchItsOwnOutOfBandDeploymentPin() throws Exception {
+        for (String mode : List.of(
+                "mismatch-conformance", "mismatch-formal", "mismatch-material")) {
             Path caseDirectory = Files.createDirectory(temp.resolve(mode));
             Path fakeJava = fakeJava(caseDirectory, mode);
             Path log = caseDirectory.resolve("calls.log");
@@ -378,9 +552,36 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                     caseDirectory.resolve("report.json"));
 
             assertThat(result.exitCode()).isEqualTo(2);
-            assertThat(result.output()).isEqualTo("ERROR code=AUTHORITY_BINDING_MISMATCH\n")
+            String code = mode.equals("mismatch-formal")
+                    ? "FORMAL_AUTHORITY_BINDING_MISMATCH" : "AUTHORITY_BINDING_MISMATCH";
+            assertThat(result.output()).isEqualTo("ERROR code=" + code + "\n")
                     .doesNotContain(jar.toString(), provider.toString(), stage.toString());
-            assertThat(invocations(log)).hasSize(mode.endsWith("formal") ? 2 : 1);
+            assertThat(invocations(log)).hasSize(
+                    mode.equals("mismatch-conformance") ? 1 : 2);
+        }
+    }
+
+    @Test
+    void swappedOrDriftedSplitPinsFailAtTheirOwnPhase() throws Exception {
+        Path jar = regularFile("swapped-kit.jar", "kit");
+        Path provider = regularFile("swapped-provider.jar", "provider");
+        Path stage = regularFile("swapped-stage.json", "{}");
+        for (boolean swap : List.of(false, true)) {
+            Path caseDirectory = Files.createDirectory(temp.resolve("pin-drift-" + swap));
+            Path log = caseDirectory.resolve("calls.log");
+            Map<String, String> overrides = swap
+                    ? Map.of(AUTHORITY_PIN_ENV, FORMAL_OUTER,
+                            FORMAL_PIN_ENV, AUTHORITY_MATERIAL)
+                    : Map.of(FORMAL_PIN_ENV, fingerprint('9'));
+
+            ProcessResult result = run(fakeJava(caseDirectory, "success"), log, jar,
+                    provider.toString(), stage, caseDirectory.resolve("report.json"), overrides);
+
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).isEqualTo("ERROR code="
+                    + (swap ? "AUTHORITY_BINDING_MISMATCH"
+                    : "FORMAL_AUTHORITY_BINDING_MISMATCH") + "\n");
+            assertThat(invocations(log)).hasSize(swap ? 1 : 2);
         }
     }
 
@@ -423,6 +624,34 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     }
 
     @Test
+    void finalOutputWriteFailureFailsClosed() throws Exception {
+        Path caseDirectory = Files.createDirectory(temp.resolve("closed-output"));
+        Path fakeJava = fakeJava(caseDirectory, "success");
+        Path log = caseDirectory.resolve("calls.log");
+        Path jar = regularFile(caseDirectory, "kit.jar", "kit");
+        Path provider = regularFile(caseDirectory, "provider.jar", "provider");
+        Path stage = regularFile(caseDirectory, "stage.json", "{}");
+        List<String> command = new java.util.ArrayList<>(List.of(
+                "bash", "-c", "exec 1>&-; exec bash \"$@\"", "closed-output",
+                scriptPath().toString()));
+        command.addAll(arguments(jar, provider.toString(), stage,
+                caseDirectory.resolve("report.json")));
+        Map<String, String> environment = new java.util.HashMap<>(
+                pinEnvironment(jar, provider.toString(), stage));
+        environment.put("JAVA_BIN", fakeJava.toString());
+        environment.put("FAKE_LOG", log.toString());
+        environment.put(AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
+        environment.put(FORMAL_PIN_ENV, FORMAL_OUTER);
+
+        ProcessResult result = process(command, environment);
+
+        assertThat(result.exitCode()).isEqualTo(2);
+        assertThat(result.output()).isEmpty();
+        assertThat(invocations(log)).hasSize(2);
+        assertNoTemporaryDirectories(caseDirectory);
+    }
+
+    @Test
     void terminationSignalStopsResponsiveAndUnresponsiveChildrenBeforeCleanup()
             throws Exception {
         assertSignalTermination("block", true);
@@ -442,8 +671,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 arguments(jar, provider.toString(), stage, output))).redirectErrorStream(true);
         builder.environment().put("JAVA_BIN", fakeJava.toString());
         builder.environment().put("FAKE_LOG", log.toString());
-        builder.environment().put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT",
-                EXPECTED_AUTHORITY_BINDING);
+        builder.environment().put(AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
+        builder.environment().put(FORMAL_PIN_ENV, FORMAL_OUTER);
         builder.environment().putAll(pinEnvironment(jar, provider.toString(), stage));
         Path childPidFile = caseDirectory.resolve("child.pid");
         Path childStatusFile = caseDirectory.resolve("child.status");
@@ -490,7 +719,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Map<String, String> environment = new java.util.HashMap<>(Map.of(
                 "JAVA_BIN", fakeJava(caseDirectory, "success").toString(),
                 "FAKE_LOG", log.toString(),
-                "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING,
+                AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL,
+                FORMAL_PIN_ENV, FORMAL_OUTER,
                 "FAKE_SECRET", secret,
                 "PATH", fakeBin + ":" + System.getenv("PATH")));
         Path jar = regularFile(caseDirectory, "kit.jar", "kit");
@@ -565,11 +795,25 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     private List<FakeInvocation> invocations(Path log) throws IOException {
         return Files.readAllLines(log).stream().map(line -> {
             String[] fields = line.split("\\|", -1);
-            if (fields.length != 3) {
+            if (fields.length != 5) {
                 throw new AssertionError("invalid fake invocation log");
             }
-            return new FakeInvocation(fields[0], fields[1], fields[2]);
+            return new FakeInvocation(fields[0], fields[1], fields[2], fields[3], fields[4]);
         }).toList();
+    }
+
+    private ProcessResult runWithFormalOutput(String name, String formalOutput)
+            throws Exception {
+        Path caseDirectory = Files.createDirectory(temp.resolve("formal-output-" + name));
+        Path log = caseDirectory.resolve("calls.log");
+        ProcessResult result = run(fakeJava(caseDirectory, "success"), log,
+                regularFile(caseDirectory, "kit.jar", "kit"),
+                regularFile(caseDirectory, "provider.jar", "provider").toString(),
+                regularFile(caseDirectory, "stage.json", "{}"),
+                caseDirectory.resolve("report.json"),
+                Map.of("FAKE_FORMAL_OUTPUT", formalOutput));
+        assertThat(invocations(log)).hasSize(2);
+        return result;
     }
 
     private ProcessResult run(Path fakeJava, Path log, Path jar, Path provider, Path stage,
@@ -593,7 +837,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         var environment = new java.util.HashMap<String, String>();
         environment.put("JAVA_BIN", fakeJava.toString());
         environment.put("FAKE_LOG", log.toString());
-        environment.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING);
+        environment.put(AUTHORITY_PIN_ENV, AUTHORITY_MATERIAL);
+        environment.put(FORMAL_PIN_ENV, FORMAL_OUTER);
         environment.putAll(pinEnvironment(jar, providerClasspath, stage));
         environment.putAll(extraEnvironment);
         return process(command, environment);
@@ -612,12 +857,15 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Path script = directory.resolve("fake-java-" + mode + ".sh");
         String source = "#!/usr/bin/env bash\n"
                 + "set -u\n"
+                + "formal_committed='" + formalLine("COMMITTED") + "'\n"
+                + "formal_recovered='" + formalLine("RECOVERED") + "'\n"
                 + "if [[ \"$3\" == \"" + CONFORMANCE_MAIN + "\" ]]; then effective_stage=\"$5\"; else effective_stage=\"$4\"; fi\n"
-                + "printf '%s|%s|%s\\n' \"$3\" \"$2\" \"$effective_stage\" >> \"$FAKE_LOG\"\n"
+                + "printf '%s|%s|%s|%s|%s\\n' \"$3\" \"$2\" \"$effective_stage\" \"$BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT\" \"${BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT-<absent>}\" >> \"$FAKE_LOG\"\n"
                 + "if [[ \"$3\" == \"" + CONFORMANCE_MAIN + "\" ]]; then\n"
                 + "  case \"${FAKE_MODE:-" + mode + "}\" in\n"
-                + "    success|success-secret|formal-exit-3|spoof-formal|multiline-formal|mismatch-formal) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
-                + "    mutate-sources) printf '%s' changed-kit > \"$SOURCE_TEST_KIT\"; printf '%s' changed-provider > \"$SOURCE_PROVIDER\"; printf '%s' changed-stage > \"$SOURCE_STAGE\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    success|success-secret|recovered|formal-exit-3|spoof-formal|multiline-formal|mismatch-formal|mismatch-material|nul-formal) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=" + AUTHORITY_MATERIAL + " reportFingerprint=" + fingerprint('0') + "'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    nul-conformance) printf 'CONFOR\\0MANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=" + AUTHORITY_MATERIAL + " reportFingerprint=" + fingerprint('0') + "\\n'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    mutate-sources) printf '%s' changed-kit > \"$SOURCE_TEST_KIT\"; printf '%s' changed-provider > \"$SOURCE_PROVIDER\"; printf '%s' changed-stage > \"$SOURCE_STAGE\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=" + AUTHORITY_MATERIAL + " reportFingerprint=" + fingerprint('0') + "'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
                 + "    mutate-snapshot) chmod 600 \"$5\"; printf '%s' changed-snapshot > \"$5\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
                 + "    missing-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000' ;;\n"
                 + "    empty-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; : > \"$7\" ;;\n"
@@ -632,14 +880,19 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 + "    ignore-term) trap '' TERM; printf '%s\\n' \"$$\" > \"$FAKE_CHILD_PID_FILE\"; while :; do sleep 1; done ;;\n"
                 + "  esac\n"
                 + "else\n"
+                + "  if [[ \"${FAKE_FORMAL_OUTPUT+x}\" == x ]]; then printf '%s' \"$FAKE_FORMAL_OUTPUT\"; exit 0; fi\n"
                 + "  case \"${FAKE_MODE:-" + mode + "}\" in\n"
-                + "    success|success-secret) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
-                + "    mismatch-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
-                + "    mutate-sources) test_kit_snapshot=${2%%:*}; provider_snapshot=${2#*:}; [[ \"$(cat \"$test_kit_snapshot\")\" == kit && \"$(cat \"$provider_snapshot\")\" == provider && \"$(cat \"$4\")\" == '{}' ]] || exit 2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
+                + "    success|success-secret) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' \"$formal_committed\" ;;\n"
+                + "    recovered) printf '%s\\n' \"$formal_recovered\" ;;\n"
+                + "    mismatch-formal) printf '%s\\n' '" + replaceField(formalLine("COMMITTED"), "authorityBindingFingerprint", fingerprint('9')) + "' ;;\n"
+                + "    mismatch-material) printf '%s\\n' '" + replaceField(formalLine("COMMITTED"), "authorityMaterialFingerprint", fingerprint('9')) + "' ;;\n"
+                + "    mutate-sources) test_kit_snapshot=${2%%:*}; provider_snapshot=${2#*:}; [[ \"$(cat \"$test_kit_snapshot\")\" == kit && \"$(cat \"$provider_snapshot\")\" == provider && \"$(cat \"$4\")\" == '{}' ]] || exit 2; printf '%s\\n' \"$formal_committed\" ;;\n"
                 + "    formal-exit-3) exit 3 ;;\n"
-                + "    spoof-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY./unsafe' ;;\n"
-                + "    multiline-formal) printf '%s\\n%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' 'unexpected' ;;\n"
-                + "    mismatch-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
+                + "    spoof-formal) printf '%s\\n' '" + formalLine("COMMITTED").replace("RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED", "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI./unsafe") + "' ;;\n"
+                + "    multiline-formal) printf '%s\\n%s\\n' \"$formal_committed\" unexpected ;;\n"
+                + "    nul-formal) printf '" + formalLine("COMMITTED").replace(
+                        "ACCEPTED outcome=ACCEPTED", "ACCEPTED outcome=ACC\\0EPTED")
+                        + "\\n' ;;\n"
                 + "  esac\n"
                 + "fi\n";
         Files.writeString(script, source, StandardCharsets.UTF_8);
@@ -695,6 +948,47 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         return hex.toString();
     }
 
+    private static String sha256Text(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte item : digest) {
+                hex.append(String.format("%02x", item));
+            }
+            return "sha256:" + hex;
+        } catch (Exception failure) {
+            throw new AssertionError(failure);
+        }
+    }
+
+    private static String fingerprint(char seed) {
+        return "sha256:" + String.valueOf(seed).repeat(64);
+    }
+
+    private static String formalLine(String leaseStatus) {
+        return "ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=" + FORMAL_OUTER
+                + " authorityMaterialFingerprint=" + AUTHORITY_MATERIAL
+                + " leaseCommitStatus=" + leaseStatus
+                + " leaseReceiptFingerprint=" + LEASE_RECEIPT
+                + " targetAdmissionMaterialFingerprint=" + TARGET_ADMISSION_MATERIAL
+                + " deploymentAdmissionAuthorityMaterialFingerprint="
+                + DEPLOYMENT_AUTHORITY_MATERIAL
+                + " targetRawFingerprint=" + TARGET_RAW
+                + " targetCanonicalFingerprint=" + TARGET_CANONICAL
+                + " trustedClockMaterialFingerprint=" + TRUSTED_CLOCK_MATERIAL
+                + " admissionLifecycleAuthorityMaterialFingerprint="
+                + LIFECYCLE_AUTHORITY_MATERIAL
+                + " executionLeaseAuthorityMaterialFingerprint=" + LEASE_AUTHORITY_MATERIAL
+                + " lifecycleMaterialFingerprint=" + LIFECYCLE_MATERIAL
+                + " revocationSnapshotFingerprint=" + REVOCATION_SNAPSHOT
+                + " reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED";
+    }
+
+    private static String replaceField(String line, String field, String replacement) {
+        return line.replaceFirst(field + "=[^ ]+", field + "=" + replacement);
+    }
+
     private Path fakeCp(Path bin) throws IOException {
         Path script = bin.resolve("cp");
         Files.writeString(script, "#!/usr/bin/env bash\n"
@@ -741,6 +1035,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     private record ProcessResult(int exitCode, String output) {
     }
 
-    private record FakeInvocation(String main, String classpath, String stageResult) {
+    private record FakeInvocation(
+            String main, String classpath, String stageResult, String authorityPin,
+            String formalDeploymentPin) {
     }
 }

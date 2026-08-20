@@ -72,6 +72,11 @@ done
     && "$seen_stage_result" -eq 1 && "$seen_conformance_output" -eq 1 ]] || fail USAGE
 expected_authority_binding="${BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT:-}"
 [[ "$expected_authority_binding" =~ ^sha256:[0-9a-f]{64}$ ]] || fail AUTHORITY_BINDING
+expected_formal_authority_binding="${BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT:-}"
+[[ "$expected_formal_authority_binding" =~ ^sha256:[0-9a-f]{64}$ ]] \
+    || fail FORMAL_AUTHORITY_BINDING
+unset BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT
+unset BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT
 [[ -n "$provider_classpath" && "$provider_classpath" != :* \
     && "$provider_classpath" != *: && "$provider_classpath" != *::* ]] || fail INPUT
 
@@ -167,11 +172,17 @@ trap terminate HUP INT TERM
 run_child() {
     local stdout_path="$1"
     local stderr_path="$2"
+    local child_authority_binding="$3"
     local child_exit
-    shift 2
+    shift 3
     pending_termination=0
     trap mark_termination HUP INT TERM
-    "$@" >"$stdout_path" 2>"$stderr_path" &
+    (
+        unset BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT
+        unset BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT
+        export BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT="$child_authority_binding"
+        exec "$@"
+    ) >"$stdout_path" 2>"$stderr_path" &
     child_pid=$!
     trap terminate HUP INT TERM
     if [[ "$pending_termination" -ne 0 ]]; then
@@ -274,7 +285,7 @@ conformance_stderr="$temporary_directory/conformance.stderr"
 formal_stdout="$temporary_directory/formal.stdout"
 formal_stderr="$temporary_directory/formal.stderr"
 
-run_child "$conformance_stdout" "$conformance_stderr" \
+run_child "$conformance_stdout" "$conformance_stderr" "$expected_authority_binding" \
     "$java_bin" -cp "$classpath" "$CONFORMANCE_MAIN" \
     --result "$stage_result_snapshot" --output "$conformance_output"
 conformance_exit=$?
@@ -290,11 +301,17 @@ conformance_lines=$(wc -l < "$conformance_stdout" 2>/dev/null) || exit 2
 conformance_last_byte=$(tail -c 1 "$conformance_stdout" 2>/dev/null | od -An -t x1 | tr -d '[:space:]') || exit 2
 [[ "$conformance_lines" -eq 1 && "$conformance_last_byte" == '0a' ]] || exit 2
 if [[ "$conformance_line" =~ ^CONFORMANT[[:space:]]verdict=CONFORMANT[[:space:]]checkCount=7[[:space:]]challengeCount=([1-9][0-9]*)[[:space:]]authorityBindingFingerprint=(sha256:[0-9a-f]{64})[[:space:]]reportFingerprint=(sha256:[0-9a-f]{64})$ ]]; then
+    conformance_challenge_count="${BASH_REMATCH[1]}"
     conformance_authority_binding="${BASH_REMATCH[2]}"
     provider_conformance_fingerprint="${BASH_REMATCH[3]}"
 else
     exit 2
 fi
+conformance_expected_stdout="$temporary_directory/conformance.expected.stdout"
+printf 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=%s authorityBindingFingerprint=%s reportFingerprint=%s\n' \
+    "$conformance_challenge_count" "$conformance_authority_binding" \
+    "$provider_conformance_fingerprint" >"$conformance_expected_stdout" || exit 2
+cmp -s "$conformance_stdout" "$conformance_expected_stdout" || exit 2
 [[ "$conformance_authority_binding" == "$expected_authority_binding" ]] \
     || fail AUTHORITY_BINDING_MISMATCH
 
@@ -304,7 +321,7 @@ conformance_output_size=$(wc -c < "$conformance_output" 2>/dev/null | tr -d '[:s
     && "$conformance_output_size" -gt 0 \
     && "$conformance_output_size" -le "$MAX_CONFORMANCE_OUTPUT_BYTES" ]] || exit 2
 
-run_child "$formal_stdout" "$formal_stderr" \
+run_child "$formal_stdout" "$formal_stderr" "$expected_formal_authority_binding" \
     "$java_bin" -cp "$classpath" "$FORMAL_MAIN" "$stage_result_snapshot"
 formal_exit=$?
 snapshots_unchanged || exit 2
@@ -318,16 +335,73 @@ formal_line=$(sed -n '1p' "$formal_stdout" 2>/dev/null) || exit 2
 formal_lines=$(wc -l < "$formal_stdout" 2>/dev/null) || exit 2
 formal_last_byte=$(tail -c 1 "$formal_stdout" 2>/dev/null | od -An -t x1 | tr -d '[:space:]') || exit 2
 [[ "$formal_lines" -eq 1 && "$formal_last_byte" == '0a' ]] || exit 2
-if [[ "$formal_line" =~ ^ACCEPTED[[:space:]]outcome=ACCEPTED[[:space:]]authorityBindingFingerprint=(sha256:[0-9a-f]{64})[[:space:]]reasonCode=RG\.CAPABILITY_STUDIO\.STAGE_ACCEPTANCE_AUTHORITY\.[A-Z0-9][A-Z0-9_.-]{0,254}$ ]]; then
+formal_pattern='^ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=(sha256:[0-9a-f]{64}) authorityMaterialFingerprint=(sha256:[0-9a-f]{64}) leaseCommitStatus=(COMMITTED|RECOVERED) leaseReceiptFingerprint=(sha256:[0-9a-f]{64}) targetAdmissionMaterialFingerprint=(sha256:[0-9a-f]{64}) deploymentAdmissionAuthorityMaterialFingerprint=(sha256:[0-9a-f]{64}) targetRawFingerprint=(sha256:[0-9a-f]{64}) targetCanonicalFingerprint=(sha256:[0-9a-f]{64}) trustedClockMaterialFingerprint=(sha256:[0-9a-f]{64}) admissionLifecycleAuthorityMaterialFingerprint=(sha256:[0-9a-f]{64}) executionLeaseAuthorityMaterialFingerprint=(sha256:[0-9a-f]{64}) lifecycleMaterialFingerprint=(sha256:[0-9a-f]{64}) revocationSnapshotFingerprint=(sha256:[0-9a-f]{64}) reasonCode=RG\.CAPABILITY_STUDIO\.STAGE_ACCEPTANCE_CLI\.ACCEPTED$'
+if [[ "$formal_line" =~ $formal_pattern ]]; then
     formal_authority_binding="${BASH_REMATCH[1]}"
+    formal_authority_material="${BASH_REMATCH[2]}"
+    lease_commit_status="${BASH_REMATCH[3]}"
+    lease_receipt_fingerprint="${BASH_REMATCH[4]}"
+    target_admission_material_fingerprint="${BASH_REMATCH[5]}"
+    deployment_admission_authority_material_fingerprint="${BASH_REMATCH[6]}"
+    target_raw_fingerprint="${BASH_REMATCH[7]}"
+    target_canonical_fingerprint="${BASH_REMATCH[8]}"
+    trusted_clock_material_fingerprint="${BASH_REMATCH[9]}"
+    admission_lifecycle_authority_material_fingerprint="${BASH_REMATCH[10]}"
+    execution_lease_authority_material_fingerprint="${BASH_REMATCH[11]}"
+    lifecycle_material_fingerprint="${BASH_REMATCH[12]}"
+    revocation_snapshot_fingerprint="${BASH_REMATCH[13]}"
 else
     exit 2
 fi
-[[ "$formal_authority_binding" == "$expected_authority_binding" ]] \
+formal_expected_stdout="$temporary_directory/formal.expected.stdout"
+printf 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=%s authorityMaterialFingerprint=%s leaseCommitStatus=%s leaseReceiptFingerprint=%s targetAdmissionMaterialFingerprint=%s deploymentAdmissionAuthorityMaterialFingerprint=%s targetRawFingerprint=%s targetCanonicalFingerprint=%s trustedClockMaterialFingerprint=%s admissionLifecycleAuthorityMaterialFingerprint=%s executionLeaseAuthorityMaterialFingerprint=%s lifecycleMaterialFingerprint=%s revocationSnapshotFingerprint=%s reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED\n' \
+    "$formal_authority_binding" "$formal_authority_material" \
+    "$lease_commit_status" "$lease_receipt_fingerprint" \
+    "$target_admission_material_fingerprint" \
+    "$deployment_admission_authority_material_fingerprint" \
+    "$target_raw_fingerprint" "$target_canonical_fingerprint" \
+    "$trusted_clock_material_fingerprint" \
+    "$admission_lifecycle_authority_material_fingerprint" \
+    "$execution_lease_authority_material_fingerprint" \
+    "$lifecycle_material_fingerprint" "$revocation_snapshot_fingerprint" \
+    >"$formal_expected_stdout" || exit 2
+cmp -s "$formal_stdout" "$formal_expected_stdout" || exit 2
+[[ "$formal_authority_binding" == "$expected_formal_authority_binding" ]] \
+    || fail FORMAL_AUTHORITY_BINDING_MISMATCH
+[[ "$formal_authority_material" == "$expected_authority_binding" ]] \
     || fail AUTHORITY_BINDING_MISMATCH
-[[ "$formal_authority_binding" == "$conformance_authority_binding" ]] \
+[[ "$formal_authority_material" == "$conformance_authority_binding" ]] \
     || fail AUTHORITY_BINDING_MISMATCH
 
-printf 'ACCEPTED status=ACCEPTED authorityBindingFingerprint=%s providerConformanceFingerprint=%s\n' \
-    "$expected_authority_binding" "$provider_conformance_fingerprint"
+deployment_canonical="$temporary_directory/deployment-authority.canonical.json"
+printf '{"messageVersion":"resource-gateway.capability-studio.deployment-admission-authority-binding.v1","trustedClockMaterialFingerprint":"%s","admissionLifecycleAuthorityMaterialFingerprint":"%s","executionLeaseAuthorityMaterialFingerprint":"%s"}' \
+    "$trusted_clock_material_fingerprint" \
+    "$admission_lifecycle_authority_material_fingerprint" \
+    "$execution_lease_authority_material_fingerprint" \
+    >"$deployment_canonical" || exit 2
+deployment_aggregate=$(sha256_file "$deployment_canonical") || exit 2
+deployment_aggregate="sha256:$deployment_aggregate"
+[[ "$deployment_aggregate" == "$deployment_admission_authority_material_fingerprint" ]] \
+    || fail DEPLOYMENT_AUTHORITY_AGGREGATE_MISMATCH
+
+formal_canonical="$temporary_directory/formal-authority.canonical.json"
+printf '{"messageVersion":"resource-gateway.capability-studio.stage-acceptance-provider-binding.v2","authorityMaterialFingerprint":"%s","deploymentAdmissionAuthorityMaterialFingerprint":"%s","targetAdmissionMaterialFingerprint":"%s","targetRawFingerprint":"%s","targetCanonicalFingerprint":"%s"}' \
+    "$formal_authority_material" \
+    "$deployment_admission_authority_material_fingerprint" \
+    "$target_admission_material_fingerprint" \
+    "$target_raw_fingerprint" \
+    "$target_canonical_fingerprint" \
+    >"$formal_canonical" || exit 2
+formal_aggregate=$(sha256_file "$formal_canonical") || exit 2
+formal_aggregate="sha256:$formal_aggregate"
+[[ "$formal_aggregate" == "$formal_authority_binding" ]] \
+    || fail FORMAL_AUTHORITY_AGGREGATE_MISMATCH
+
+formal_transcript_digest=$(sha256_file "$formal_stdout") || exit 2
+formal_transcript_fingerprint="sha256:$formal_transcript_digest"
+
+printf 'ACCEPTED status=ACCEPTED authorityMaterialFingerprint=%s formalOuterFingerprint=%s providerConformanceFingerprint=%s leaseCommitStatus=%s leaseReceiptFingerprint=%s formalTranscriptFingerprint=%s\n' \
+    "$formal_authority_material" "$formal_authority_binding" \
+    "$provider_conformance_fingerprint" "$lease_commit_status" \
+    "$lease_receipt_fingerprint" "$formal_transcript_fingerprint" 2>/dev/null || exit 2
 exit 0

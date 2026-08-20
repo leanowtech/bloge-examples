@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,7 +22,9 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,11 +44,6 @@ class CapabilityStudioStageAcceptanceCliTest {
     private static final String CLOCK_FINGERPRINT = fingerprint('7');
     private static final String LIFECYCLE_AUTHORITY_FINGERPRINT = fingerprint('8');
     private static final String LEASE_AUTHORITY_FINGERPRINT = fingerprint('9');
-    private static final String DEPLOYMENT_AUTHORITY_FINGERPRINT =
-            CapabilityStudioStageAcceptanceAuthorityProvider
-                    .DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
-                    CLOCK_FINGERPRINT, LIFECYCLE_AUTHORITY_FINGERPRINT,
-                    LEASE_AUTHORITY_FINGERPRINT);
 
     @TempDir
     Path temporaryDirectory;
@@ -59,17 +58,56 @@ class CapabilityStudioStageAcceptanceCliTest {
         int exit = run(artifact, List.of(provider), output);
 
         var binding = provider.formalTargetBoundAuthorityBinding();
+        var admission = binding.targetAdmissionBinding();
+        var deployment = admission.deploymentAuthorityBinding();
+        var lifecycle = admission.lifecycleMaterial();
         var receipt = committedLease(leaseRequest(result, binding, NOW)).receipt();
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
         assertThat(output.text()).isEqualTo("ACCEPTED outcome=ACCEPTED "
                 + "authorityBindingFingerprint=" + binding.fingerprint()
+                + " authorityMaterialFingerprint="
+                + binding.authorityBinding().fingerprint()
                 + " leaseCommitStatus=COMMITTED leaseReceiptFingerprint="
-                + receipt.fingerprint() + " reasonCode="
+                + receipt.fingerprint()
+                + " targetAdmissionMaterialFingerprint="
+                + admission.targetAdmissionMaterialFingerprint()
+                + " deploymentAdmissionAuthorityMaterialFingerprint="
+                + deployment.fingerprint()
+                + " targetRawFingerprint=" + admission.targetRawFingerprint()
+                + " targetCanonicalFingerprint=" + admission.targetCanonicalFingerprint()
+                + " trustedClockMaterialFingerprint="
+                + deployment.trustedClockBinding().fingerprint()
+                + " admissionLifecycleAuthorityMaterialFingerprint="
+                + deployment.lifecycleAuthorityBinding().fingerprint()
+                + " executionLeaseAuthorityMaterialFingerprint="
+                + deployment.executionLeaseAuthorityBinding().fingerprint()
+                + " lifecycleMaterialFingerprint=" + lifecycle.fingerprint()
+                + " revocationSnapshotFingerprint="
+                + lifecycle.revocationAuthority().snapshotFingerprint()
+                + " reasonCode="
                 + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED"
                 + System.lineSeparator());
+        Map<String, String> transcript = transcript(output.text());
+        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider
+                .DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                        transcript.get("trustedClockMaterialFingerprint"),
+                        transcript.get("admissionLifecycleAuthorityMaterialFingerprint"),
+                        transcript.get("executionLeaseAuthorityMaterialFingerprint")))
+                .isEqualTo(transcript.get(
+                        "deploymentAdmissionAuthorityMaterialFingerprint"));
+        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider
+                .FormalTargetBoundAuthorityBinding.aggregateFingerprint(
+                        CapabilityStudioStageAcceptanceAuthorityProvider
+                                .FormalTargetBoundAuthorityBinding.MESSAGE_VERSION,
+                        transcript.get("authorityMaterialFingerprint"),
+                        transcript.get("deploymentAdmissionAuthorityMaterialFingerprint"),
+                        transcript.get("targetAdmissionMaterialFingerprint"),
+                        transcript.get("targetRawFingerprint"),
+                        transcript.get("targetCanonicalFingerprint")))
+                .isEqualTo(transcript.get("authorityBindingFingerprint"));
         assertThat(output.text()).doesNotContain(
                 "attestation:environment:1", "actor:correctness", "signature:correctness",
-                TARGET_LEASE, DEPLOYMENT_AUTHORITY_FINGERPRINT);
+                TARGET_LEASE);
     }
 
     @Test
@@ -91,14 +129,96 @@ class CapabilityStudioStageAcceptanceCliTest {
         int exit = run(write("recovered.json", result.toString()), List.of(provider), output);
 
         var binding = provider.formalTargetBoundAuthorityBinding();
+        var targetAdmission = binding.targetAdmissionBinding();
+        var deployment = targetAdmission.deploymentAuthorityBinding();
+        var lifecycle = targetAdmission.lifecycleMaterial();
         var receipt = committedLease(leaseRequest(result, binding, NOW)).receipt();
         assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
         assertThat(output.text()).isEqualTo("ACCEPTED outcome=ACCEPTED "
                 + "authorityBindingFingerprint=" + binding.fingerprint()
+                + " authorityMaterialFingerprint="
+                + binding.authorityBinding().fingerprint()
                 + " leaseCommitStatus=RECOVERED leaseReceiptFingerprint="
-                + receipt.fingerprint() + " reasonCode="
+                + receipt.fingerprint()
+                + " targetAdmissionMaterialFingerprint="
+                + targetAdmission.targetAdmissionMaterialFingerprint()
+                + " deploymentAdmissionAuthorityMaterialFingerprint="
+                + deployment.fingerprint()
+                + " targetRawFingerprint=" + targetAdmission.targetRawFingerprint()
+                + " targetCanonicalFingerprint="
+                + targetAdmission.targetCanonicalFingerprint()
+                + " trustedClockMaterialFingerprint="
+                + deployment.trustedClockBinding().fingerprint()
+                + " admissionLifecycleAuthorityMaterialFingerprint="
+                + deployment.lifecycleAuthorityBinding().fingerprint()
+                + " executionLeaseAuthorityMaterialFingerprint="
+                + deployment.executionLeaseAuthorityBinding().fingerprint()
+                + " lifecycleMaterialFingerprint=" + lifecycle.fingerprint()
+                + " revocationSnapshotFingerprint="
+                + lifecycle.revocationAuthority().snapshotFingerprint()
+                + " reasonCode="
                 + "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED"
                 + System.lineSeparator()).doesNotContain(providerReason, "CREDENTIAL_TOKEN");
+    }
+
+    @Test
+    void committedAndRecoveredTranscriptsDifferOnlyByInvocationStatus() throws Exception {
+        ObjectNode result = passResult();
+        AtomicReference<CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt>
+                durableReceipt = new AtomicReference<>();
+        AtomicInteger commits = new AtomicInteger();
+        var admission = withDeploymentAuthorities(targetAdmission(result), () -> NOW,
+                request -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAuthorityDecision.verified("LIFECYCLE_VERIFIED"),
+                request -> {
+                    if (commits.getAndIncrement() == 0) {
+                        var committed = committedLease(request);
+                        durableReceipt.set(committed.receipt());
+                        return committed;
+                    }
+                    return CapabilityStudioStageAcceptanceAuthorityProvider
+                            .ExecutionLeaseCommitResult.recovered(
+                                    durableReceipt.get(), "RECOVERY_PAYLOAD_SUPPRESSED");
+                });
+        Provider delegate = acceptingProvider(result);
+        Provider provider = new Provider(delegate.resolver(), delegate.issuer(), delegate.owner(),
+                admission);
+        Path artifact = write("commit-recover.json", result.toString());
+        Output committed = new Output();
+        Output recovered = new Output();
+
+        int committedExit = run(artifact, List.of(provider), committed);
+        int recoveredExit = run(artifact, List.of(provider), recovered);
+
+        assertThat(committedExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
+        assertThat(recoveredExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_ACCEPTED);
+        assertThat(recovered.text().replace("leaseCommitStatus=RECOVERED",
+                "leaseCommitStatus=COMMITTED")).isEqualTo(committed.text());
+        assertThat(recovered.text()).doesNotContain("RECOVERY_PAYLOAD_SUPPRESSED");
+    }
+
+    @Test
+    void acceptedOutputFailureReturnsInvalidWithoutWritingToStderr() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("broken-output.json", result.toString());
+        Provider provider = acceptingProvider(result);
+        PrintStream broken = new PrintStream(new OutputStream() {
+            @Override
+            public void write(int value) throws IOException {
+                throw new IOException("OUTPUT_CREDENTIAL_TOKEN_ABC123");
+            }
+        }, true, StandardCharsets.UTF_8);
+        ByteArrayOutputStream errors = new ByteArrayOutputStream();
+
+        int exit = CapabilityStudioStageAcceptanceCli.run(
+                new String[]{artifact.toString()}, broken,
+                new PrintStream(errors, true, StandardCharsets.UTF_8), NOW,
+                () -> List.of(provider),
+                provider.formalTargetBoundAuthorityBinding().fingerprint());
+
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(broken.checkError()).isTrue();
+        assertThat(errors.toString(StandardCharsets.UTF_8)).isEmpty();
     }
 
     @Test
@@ -1436,6 +1556,27 @@ class CapabilityStudioStageAcceptanceCliTest {
 
     private static Instant instant(String time) {
         return Instant.parse("2026-01-01T" + time + "Z");
+    }
+
+    private static Map<String, String> transcript(String output) {
+        String line = output.stripTrailing();
+        if (line.contains("\n") || line.contains("\r")) {
+            throw new IllegalArgumentException("transcript must contain one line");
+        }
+        String[] tokens = line.split(" ");
+        if (tokens.length < 2 || !"ACCEPTED".equals(tokens[0])) {
+            throw new IllegalArgumentException("transcript status is invalid");
+        }
+        Map<String, String> fields = new LinkedHashMap<>();
+        for (int index = 1; index < tokens.length; index++) {
+            int separator = tokens[index].indexOf('=');
+            if (separator < 1 || separator == tokens[index].length() - 1
+                    || fields.put(tokens[index].substring(0, separator),
+                    tokens[index].substring(separator + 1)) != null) {
+                throw new IllegalArgumentException("transcript field is invalid");
+            }
+        }
+        return Map.copyOf(fields);
     }
 
     private static String fingerprint(char seed) {

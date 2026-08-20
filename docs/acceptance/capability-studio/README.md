@@ -262,7 +262,12 @@ Bundle root 只允许包含 Manifest 直接引用的 JSON 普通文件：
 
 Manifest 通过 `bundleFingerprint` 绑定 Artifact 原始文件摘要、Key Set 语义 pin、Issuer/Scope、Evidence kind、Owner role、Actor allow-list 和 TTL。Loader 在构造时一次性读取并防御性快照全部文件；后续 Resolver 不回读挂载目录。Bundle 使用受信时钟验证生效和过期时间，目录逃逸、符号链接、未知字段、重复绑定、超限、指纹漂移和生命周期非法均失败关闭。
 
-正式部署还必须提供 out-of-band 期望 pin。三个值必须相等：Manifest 的 `bundleFingerprint`、Provider 原子 `AuthorityBinding.fingerprint()`、部署任务的 `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`。期望 pin 必须来自受控部署清单、制品签名系统或等价 Authority；不得由脚本读取 Bundle 后自行计算并回填。
+正式部署还必须提供两类 out-of-band 期望 pin。Manifest 的 `bundleFingerprint`、Provider 原子
+`AuthorityBinding.fingerprint()` 与部署任务的
+`BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 固定同一份 post-run Authority material；
+`BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT` 则独立固定包含 Target Admission 与部署
+Authority 配置的完整 formal outer。两者语义不同，不要求相等。期望 pin 必须来自受控部署清单、
+制品签名系统或等价 Authority；不得由脚本读取 Bundle 后自行计算并回填。
 
 ```bash
 mvn -f resource-gateway-test-kit/pom.xml clean install
@@ -273,7 +278,8 @@ BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 位小写十六进制>' \
 BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 位小写十六进制>' \
 BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 位小写十六进制>,<64 位小写十六进制>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
-BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 位小写十六进制>' \
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<post-run AuthorityBinding material>' \
+BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT='sha256:<formal outer>' \
 JAVA_BIN="$(command -v java)" \
 resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
@@ -283,7 +289,12 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --conformance-output '<new-provider-conformance-result-v2.json>'
 ```
 
-`JAVA_TOOL_OPTIONS` 由部署任务控制，只用于向两个一次性 JVM 注入同一只读 Bundle root，不得混入未审批的 Java Agent、classpath 或调试选项。Bundle mount 仍应使用只读卷、独立运行身份或容器隔离；Provider fingerprint 的一致性检查不能阻止同一 UID 在单个校验窗口内恶意修改并恢复文件。
+`JAVA_TOOL_OPTIONS` 由部署任务控制，用于向两个一次性 JVM 注入 Authority Bundle root；formal-v2
+所需的 Target Admission Bundle root 与 execution-lease state root 也仍由部署控制的 JVM options
+注入。现有八参数 runner 不接收、复制或快照这些 root，不得混入未审批的 Java Agent、classpath
+或调试选项。Bundle mount 仍应使用只读卷、独立运行身份或容器隔离；Provider fingerprint 的一致性
+检查不能阻止同一 UID 在单个校验窗口内恶意修改并恢复文件。本步骤不是完整的 formal-v2 Bundle
+snapshot/Evidence-manifest 模式。
 
 该流程成功只能证明：两个阶段使用了同一份被部署方 pin 住的 Authority 配置，并且 Provider 通过机制挑战。它不能证明企业信任根归属、KMS/HSM 私钥托管、目标环境 transport、部署级 egress 原始观测和 Owner 审批真实发生。五项外部责任仍须以精确引用、指纹、时间窗和真实责任人签署进入同一 Stage Result Evidence 闭包。
 
@@ -298,7 +309,8 @@ BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 位小写十六进制>' \
 BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 位小写十六进制>' \
 BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 位小写十六进制>,<64 位小写十六进制>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
-BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 位小写十六进制>' \
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<post-run AuthorityBinding material>' \
+BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT='sha256:<formal outer>' \
 JAVA_BIN="$(command -v java)" \
 resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
@@ -318,15 +330,28 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
 7. `BLOGE_EXPECTED_TEST_KIT_JAR_SHA256`、`BLOGE_EXPECTED_STAGE_RESULT_SHA256` 和
    `BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S` 由部署 Authority 以 out-of-band 方式注入，分别
    固定 Test Kit、Stage Result 和按 classpath 顺序排列的 Provider 制品；不得由脚本读取文件后自行回填。
-8. `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 是 formal CLI 的期望 binding pin，由部署 Authority
-   以 out-of-band 方式注入，格式为 lowercase SHA-256；不得从 Stage Result、Provider 输出或 Bundle 运行时自发现。
+8. 部署 Authority 以 out-of-band 方式同时注入两个 lowercase SHA-256：
+   `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 只固定 Conformance/post-run Authority material，
+   `BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT` 固定完整 formal outer。脚本不得从
+   Stage Result、Provider 输出或 Bundle 运行时自发现，也不得要求二者相等。
 
-当前 runner 已读取前述四类 pin，并在 Java 启动前验证制品摘要的格式、数量、顺序和快照一致性。这只证明开发机制已对齐；正式验收仍需部署 Authority 真实注入并签署同一证据闭包。
+当前 runner 已读取三类制品 pin 和两类 binding pin，并在 Java 启动前验证格式、数量、顺序和
+快照一致性。预检后，父进程会删除两个部署环境变量；Conformance 子进程只接收 post-run
+material pin，formal 子进程通过既有 child CLI 环境变量名只接收 formal outer pin，另一 pin 在
+对应子进程中必须不存在。根目录仍由部署控制的 JVM options 注入，不属于现有八参数接口。该
+runner 尚不提供 formal-v2 Bundle 快照或 Evidence manifest 模式。这只证明开发机制已对齐；正式
+验收仍需部署 Authority 真实注入并签署同一证据闭包。
 
-脚本先运行 Conformance CLI。只有退出码为 `0`、stdout 恰好为一行规范 `CONFORMANT` 结果，且报告是 1 至 131072 字节的可读、非符号链接普通文件时，脚本才运行正式 Stage Acceptance CLI。正式 CLI 也必须退出 `0`，且 stdout 恰好为一行规范 `ACCEPTED` 结果。两个子进程声明的 binding 必须与 out-of-band pin 三方精确相等。成功时，脚本只输出：
+脚本先运行 Conformance CLI。只有退出码为 `0`、stdout 恰好为一行规范 `CONFORMANT` 结果，且
+报告是 1 至 131072 字节的可读、非符号链接普通文件时，脚本才运行正式 Stage Acceptance CLI。
+正式 CLI 也必须退出 `0`，且 stdout 恰好为一行固定顺序的 expanded `ACCEPTED` 结果。脚本验证
+Conformance 与 formal inner 等于 post-run pin、formal outer 等于独立 formal pin，并按固定 JSON
+域版本独立复算 deployment aggregate 与 formal outer。两类成功输出都必须由已解析字段重建为
+canonical 单行及结尾换行，并与原始 stdout 逐字节相等；NUL、隐藏字节、额外空白、字段乱序或
+附加行均失败关闭。脚本随后才计算该原始 formal transcript 的 SHA-256。成功时只输出：
 
 ```text
-ACCEPTED status=ACCEPTED authorityBindingFingerprint=sha256:<64 位小写十六进制> providerConformanceFingerprint=sha256:<64 位小写十六进制>
+ACCEPTED status=ACCEPTED authorityMaterialFingerprint=sha256:<64 位小写十六进制> formalOuterFingerprint=sha256:<64 位小写十六进制> providerConformanceFingerprint=sha256:<64 位小写十六进制> leaseCommitStatus=<COMMITTED|RECOVERED> leaseReceiptFingerprint=sha256:<64 位小写十六进制> formalTranscriptFingerprint=sha256:<64 位小写十六进制>
 ```
 
 退出码 `3` 表示 Conformance 或正式验收给出“不通过、受阻或拒绝”的有效裁决；退出码 `2` 表示参数、前置检查、读写、Provider 配置或子进程输出不合法。子进程 stdout/stderr 只进入输出目录下的权限受限临时目录，脚本不会在失败时回显这些内容。脚本收到 `HUP`、`INT` 或 `TERM` 时，会向当前 Java 子进程发送 `TERM`，最多等待 5 秒，必要时升级为 `KILL`；脚本回收子进程后再删除临时目录。Provider 不得启动未受管操作系统子进程。

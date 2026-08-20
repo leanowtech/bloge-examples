@@ -498,8 +498,19 @@ java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<enterprise-provider.jar
 Exit `0` means every semantic and external authority gate returned `ACCEPTED`. Exit `3` means the
 document is valid but is `NOT_ACCEPTED`, `BLOCKED`, or `REJECTED`. Exit `2` means usage, bounded
 read, protocol, or Provider configuration is invalid. Output contains only the outcome and stable
-reason code; it never echoes file paths, Evidence coordinates, actors, signatures, keys, or
-exception text. A provider should use `CapabilityStudioAuthorityEvidenceResolver`,
+reason code on failure. Successful output additionally emits, in fixed order, the formal outer,
+lease status and receipt, target-admission material, deployment-admission material, target raw and
+canonical fingerprints, the trusted clock/lifecycle/lease authority coordinates, lifecycle
+material, and revocation snapshot fingerprints. These payload-free coordinates are sufficient for
+an independent evidence builder to reconstruct the formal material declaration. The accepted line
+uses this exact field order:
+
+```text
+ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=<formal-outer> authorityMaterialFingerprint=<inner-authority-material> leaseCommitStatus=<COMMITTED|RECOVERED> leaseReceiptFingerprint=<receipt> targetAdmissionMaterialFingerprint=<target-admission-material> deploymentAdmissionAuthorityMaterialFingerprint=<deployment-admission-material> targetRawFingerprint=<target-raw> targetCanonicalFingerprint=<target-canonical> trustedClockMaterialFingerprint=<trusted-clock-material> admissionLifecycleAuthorityMaterialFingerprint=<lifecycle-authority-material> executionLeaseAuthorityMaterialFingerprint=<lease-authority-material> lifecycleMaterialFingerprint=<lifecycle-material> revocationSnapshotFingerprint=<revocation-snapshot> reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED
+```
+
+Output never echoes file paths, Evidence coordinates, actors, signatures, keys, or exception text.
+A provider should use `CapabilityStudioAuthorityEvidenceResolver`,
 `CapabilityStudioPinnedEvidenceIssuerPolicy`, and `CapabilityStudioPinnedOwnerAuthority`, but the
 actual storage adapters, trust pins, role directory, and target-environment evidence remain under
 enterprise deployment Authority.
@@ -542,15 +553,18 @@ window can temporarily suppress output from unrelated threads in the same JVM.
 
 Use the deployment runner when CI or a target-environment job must enforce Provider conformance
 before formal Stage acceptance. The deployment contract has eight stable `DEPLOY-AC-*` obligations;
-the current test counts are observations only. The same Test Kit JAR, Provider classpath, Stage
-Result, and out-of-band Authority binding pin are used for both commands. With the mounted Provider:
+the current test counts are observations only. Both phases use the same Test Kit JAR, Provider
+classpath, and Stage Result, but they consume distinct out-of-band trust coordinates: Conformance
+pins the post-run `AuthorityBinding` material while formal acceptance pins the complete outer.
+With the mounted Provider:
 
 ```bash
 BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 lowercase hex>' \
 BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 lowercase hex>' \
 BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 lowercase hex>,<64 lowercase hex>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
-BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 lowercase hex>' \
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<post-run AuthorityBinding material>' \
+BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT='sha256:<formal outer>' \
 JAVA_BIN="$(command -v java)" \
 resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
@@ -563,10 +577,13 @@ Before Java starts, the runner requires each flag exactly once, a real executabl
 readable non-symlink regular files for the Test Kit, Stage Result, and every Provider classpath
 entry, a Stage Result no larger than 4 MiB, a writable output parent, and an output path that does
 not exist. The three artifact variables are ordered, out-of-band SHA-256 pins: the Provider list
-must contain one comma-separated digest per classpath entry. `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`
-is the formal CLI expected pin and must be supplied by deployment Authority, not calculated from the
-Provider, Bundle, or Stage Result during the task. The deployment image must provide `sha256sum` or
-`shasum`. Paths may contain spaces; classpath entries cannot contain `:`.
+must contain one comma-separated digest per classpath entry.
+`BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` pins only the post-run Authority material reported
+by Conformance and emitted as `authorityMaterialFingerprint` by the formal CLI.
+`BLOGE_EXPECTED_FORMAL_AUTHORITY_BINDING_FINGERPRINT` separately pins the complete formal outer.
+Deployment Authority must supply both; the runner never derives either pin or requires them to be
+equal. The deployment image must provide `sha256sum` or `shasum`. Paths may contain spaces;
+classpath entries cannot contain `:`.
 
 The runner copies the Test Kit, Stage Result, and every Provider classpath entry into mode-restricted
 run snapshots under the temporary directory and keeps each SHA-256 digest in the parent shell.
@@ -578,10 +595,26 @@ deployment-controlled artifact location until snapshot creation finishes. The ru
 source that becomes a symbolic link while it is copied; it does not replace artifact-signing,
 supply-chain verification, or OS-level read-only isolation from a malicious same-UID Provider.
 
-The runner reads these exact four pin variables. It rejects missing, malformed, out-of-order, or
-mismatched artifact pins before Java starts, then requires the atomic Provider binding to match the
-deployment pin in both JVM phases. This mechanical check does not replace signed release metadata
-or the responsible deployment Authority.
+The runner reads the three artifact-pin variables and the two binding-pin variables. It rejects a
+missing or malformed binding pin before Java starts. The Conformance child receives only the
+post-run material pin through its existing environment name; the formal child receives the formal
+outer through that same child CLI environment name. After preflight, the parent removes both
+deployment variable names and injects only the phase-specific value in an isolated child
+environment; the other pin is absent rather than merely ignored.
+The runner requires Conformance and formal `authorityMaterialFingerprint` to equal the post-run
+pin, requires the formal outer to equal its separate pin, then independently recomputes the
+deployment-authority and formal-outer canonical JSON aggregates. This mechanical check does not
+replace signed release metadata or the responsible deployment Authority.
+
+For both Java phases, a regex match is not enough: the runner reconstructs the complete canonical
+success line plus its final LF from the parsed fields and byte-compares it with the raw stdout file.
+Only that exact file is hashed as the formal transcript. Hidden NUL bytes, extra bytes, alternate
+spacing, reordered fields, or additional lines therefore fail closed before the final success line.
+
+Authority Bundle root, Target Admission Bundle root, and execution-lease state root injection
+remain deployment-controlled JVM configuration outside this eight-argument runner. This step does
+not snapshot those roots and is not the future full formal-v2 Bundle-snapshot/Evidence-manifest
+mode.
 
 ### Frozen acceptance obligations
 
@@ -607,13 +640,13 @@ The runner then applies these gates in order:
    and a readable non-symlink report of 1 through 131072 bytes. Stop before formal verification
    when any condition fails.
 3. Run `CapabilityStudioStageAcceptanceCli` with the same classpath and Stage Result.
-4. Require exit `0`, exactly one canonical `ACCEPTED` line, and exact equality among the
-   Conformance binding, formal binding, and out-of-band expected pin.
+4. Require exit `0` and exactly one expanded canonical `ACCEPTED` line; verify the split pins,
+   recompute the deployment and formal aggregates, and hash the exact formal transcript bytes.
 
 Success emits exactly:
 
 ```text
-ACCEPTED status=ACCEPTED authorityBindingFingerprint=sha256:<64 lowercase hex> providerConformanceFingerprint=sha256:<64 lowercase hex>
+ACCEPTED status=ACCEPTED authorityMaterialFingerprint=sha256:<64 lowercase hex> formalOuterFingerprint=sha256:<64 lowercase hex> providerConformanceFingerprint=sha256:<64 lowercase hex> leaseCommitStatus=<COMMITTED|RECOVERED> leaseReceiptFingerprint=sha256:<64 lowercase hex> formalTranscriptFingerprint=sha256:<64 lowercase hex>
 ```
 
 Exit `3` preserves a conformance or formal not-accepted decision. Exit `2` covers usage, preflight,

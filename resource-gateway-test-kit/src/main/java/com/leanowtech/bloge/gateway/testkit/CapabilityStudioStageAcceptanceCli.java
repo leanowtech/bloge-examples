@@ -27,7 +27,8 @@ import java.util.regex.Pattern;
  * acceptance, the CLI requires the deployment lease Authority to atomically consume or fence the
  * exact lease request. The mounted bundle loader does not consume leases or self-prove lifecycle
  * currentness. Output reason codes are a closed CLI-owned vocabulary; Provider reason text is
- * never emitted.</p>
+ * never emitted. Successful output includes the fixed-order, payload-free formal material
+ * transcript needed to build independent acceptance evidence.</p>
  */
 public final class CapabilityStudioStageAcceptanceCli {
     /** Exit code for a formally accepted result. */
@@ -204,7 +205,14 @@ public final class CapabilityStudioStageAcceptanceCli {
                 targetAdmission = binding.targetAdmissionBinding();
         CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentAdmissionAuthorityBinding
                 deploymentAuthority = targetAdmission.deploymentAuthorityBinding();
+        CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleMaterial
+                lifecycleMaterial = targetAdmission.lifecycleMaterial();
         try {
+            String deploymentAggregate = CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                            deploymentAuthority.trustedClockBinding().fingerprint(),
+                            deploymentAuthority.lifecycleAuthorityBinding().fingerprint(),
+                            deploymentAuthority.executionLeaseAuthorityBinding().fingerprint());
             String aggregate = CapabilityStudioStageAcceptanceAuthorityProvider
                     .FormalTargetBoundAuthorityBinding.aggregateFingerprint(
                             CapabilityStudioStageAcceptanceAuthorityProvider
@@ -214,7 +222,8 @@ public final class CapabilityStudioStageAcceptanceCli {
                             targetAdmission.targetAdmissionMaterialFingerprint(),
                             targetAdmission.targetRawFingerprint(),
                             targetAdmission.targetCanonicalFingerprint());
-            if (!AUTHORITY_BINDING_FINGERPRINT.matcher(binding.fingerprint()).matches()
+            if (!deploymentAggregate.equals(deploymentAuthority.fingerprint())
+                    || !AUTHORITY_BINDING_FINGERPRINT.matcher(binding.fingerprint()).matches()
                     || !aggregate.equals(binding.fingerprint())
                     || !expectedAuthorityBindingFingerprint.equals(binding.fingerprint())) {
                 throw new IllegalArgumentException("authority binding fingerprint does not match pin");
@@ -252,7 +261,7 @@ public final class CapabilityStudioStageAcceptanceCli {
         }
         try {
             var lifecycleRequest = new CapabilityStudioStageAcceptanceAuthorityProvider
-                    .AdmissionLifecycleRequest(targetAdmission.lifecycleMaterial(),
+                    .AdmissionLifecycleRequest(lifecycleMaterial,
                     binding.fingerprint(), targetAdmission.targetRawFingerprint(),
                     targetAdmission.targetCanonicalFingerprint(),
                     deploymentAuthority.fingerprint(), trustedVerificationTime);
@@ -346,7 +355,7 @@ public final class CapabilityStudioStageAcceptanceCli {
                     targetAdmission.verificationContext().executionLeaseId(),
                     binding.fingerprint(), targetAdmission.targetRawFingerprint(),
                     targetAdmission.targetCanonicalFingerprint(),
-                    targetAdmission.lifecycleMaterial(), deploymentAuthority.fingerprint(),
+                    lifecycleMaterial, deploymentAuthority.fingerprint(),
                     trustedVerificationTime);
             leaseResult = CapabilityStudioProviderOutputIsolation.call(
                     () -> deploymentAuthority.executionLeaseAuthority().commit(leaseRequest));
@@ -355,11 +364,60 @@ public final class CapabilityStudioStageAcceptanceCli {
             if (receipt == null) {
                 return emitLeaseFailure(safeOut, leaseResult);
             }
-            safeOut.println("ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
-                    + binding.fingerprint() + " leaseCommitStatus=" + leaseResult.status()
+            String authorityMaterialFingerprint = authorityBinding.fingerprint();
+            String targetAdmissionMaterialFingerprint =
+                    targetAdmission.targetAdmissionMaterialFingerprint();
+            String deploymentAdmissionAuthorityMaterialFingerprint =
+                    deploymentAuthority.fingerprint();
+            String targetRawFingerprint = targetAdmission.targetRawFingerprint();
+            String targetCanonicalFingerprint = targetAdmission.targetCanonicalFingerprint();
+            String trustedClockMaterialFingerprint =
+                    deploymentAuthority.trustedClockBinding().fingerprint();
+            String admissionLifecycleAuthorityMaterialFingerprint =
+                    deploymentAuthority.lifecycleAuthorityBinding().fingerprint();
+            String executionLeaseAuthorityMaterialFingerprint =
+                    deploymentAuthority.executionLeaseAuthorityBinding().fingerprint();
+            String lifecycleMaterialFingerprint = lifecycleMaterial.fingerprint();
+            String revocationSnapshotFingerprint =
+                    lifecycleMaterial.revocationAuthority().snapshotFingerprint();
+            String deploymentAggregate = CapabilityStudioStageAcceptanceAuthorityProvider
+                    .DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
+                            trustedClockMaterialFingerprint,
+                            admissionLifecycleAuthorityMaterialFingerprint,
+                            executionLeaseAuthorityMaterialFingerprint);
+            String formalAggregate = CapabilityStudioStageAcceptanceAuthorityProvider
+                    .FormalTargetBoundAuthorityBinding.aggregateFingerprint(
+                            CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .FormalTargetBoundAuthorityBinding.MESSAGE_VERSION,
+                            authorityMaterialFingerprint, deploymentAggregate,
+                            targetAdmissionMaterialFingerprint, targetRawFingerprint,
+                            targetCanonicalFingerprint);
+            if (!deploymentAggregate.equals(
+                    deploymentAdmissionAuthorityMaterialFingerprint)
+                    || !formalAggregate.equals(binding.fingerprint())) {
+                invalid(safeOut, "PROVIDER_CONFIGURATION");
+                return EXIT_INVALID;
+            }
+            String accepted = "ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
+                    + binding.fingerprint() + " authorityMaterialFingerprint="
+                    + authorityMaterialFingerprint
+                    + " leaseCommitStatus=" + leaseResult.status()
                     + " leaseReceiptFingerprint=" + receipt.fingerprint()
-                    + " reasonCode=" + REASON_ACCEPTED);
-            return EXIT_ACCEPTED;
+                    + " targetAdmissionMaterialFingerprint="
+                    + targetAdmissionMaterialFingerprint
+                    + " deploymentAdmissionAuthorityMaterialFingerprint="
+                    + deploymentAdmissionAuthorityMaterialFingerprint
+                    + " targetRawFingerprint=" + targetRawFingerprint
+                    + " targetCanonicalFingerprint=" + targetCanonicalFingerprint
+                    + " trustedClockMaterialFingerprint=" + trustedClockMaterialFingerprint
+                    + " admissionLifecycleAuthorityMaterialFingerprint="
+                    + admissionLifecycleAuthorityMaterialFingerprint
+                    + " executionLeaseAuthorityMaterialFingerprint="
+                    + executionLeaseAuthorityMaterialFingerprint
+                    + " lifecycleMaterialFingerprint=" + lifecycleMaterialFingerprint
+                    + " revocationSnapshotFingerprint=" + revocationSnapshotFingerprint
+                    + " reasonCode=" + REASON_ACCEPTED;
+            return emitAccepted(safeOut, accepted) ? EXIT_ACCEPTED : EXIT_INVALID;
         } catch (CapabilityStudioStageAcceptanceAuthorityProvider
                  .DeploymentUnavailableException unavailable) {
             blocked(safeOut, REASON_EXECUTION_LEASE_UNAVAILABLE);
@@ -411,6 +469,16 @@ public final class CapabilityStudioStageAcceptanceCli {
 
     private static void blocked(PrintStream out, String reasonCode) {
         out.println("NOT_ACCEPTED outcome=BLOCKED reasonCode=" + reasonCode);
+    }
+
+    private static boolean emitAccepted(PrintStream out, String line) {
+        try {
+            out.println(line);
+            out.flush();
+            return !out.checkError();
+        } catch (RuntimeException failure) {
+            return false;
+        }
     }
 
     private static CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt
