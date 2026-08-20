@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-environment-attestation-v1.schema.json",
+  "title": "Capability Studio Environment Attestation v1",
+  "description": "Closed, payload-free target environment fact signed by an external Environment Authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "environmentRef",
+    "attestationRevision",
+    "role",
+    "executionLeaseId",
+    "candidateAttestation",
+    "environmentFingerprint",
+    "targetProfile",
+    "scope",
+    "region",
+    "runtimeIdentity",
+    "networkPolicy",
+    "featureFlagsRef",
+    "logicalClock",
+    "admissionWindow",
+    "trustedTargetIdentities",
+    "issuer",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.environment-attestation.v1" },
+    "environmentRef": { "$ref": "#/$defs/safeRef" },
+    "attestationRevision": { "type": "integer", "minimum": 1 },
+    "role": { "const": "ENVIRONMENT_AUTHORITY" },
+    "executionLeaseId": { "$ref": "#/$defs/safeRef" },
+    "candidateAttestation": { "$ref": "#/$defs/attestationCoordinate" },
+    "environmentFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "targetProfile": { "$ref": "#/$defs/safeRef" },
+    "scope": { "$ref": "#/$defs/safeRef" },
+    "region": { "$ref": "#/$defs/safeRef" },
+    "runtimeIdentity": { "$ref": "#/$defs/safeRef" },
+    "networkPolicy": { "$ref": "#/$defs/safeRef" },
+    "featureFlagsRef": { "$ref": "#/$defs/exactRef" },
+    "logicalClock": { "$ref": "#/$defs/dateTime" },
+    "admissionWindow": { "$ref": "#/$defs/admissionWindow" },
+    "trustedTargetIdentities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safeRef" }
+    },
+    "issuer": { "$ref": "#/$defs/safeRef" },
+    "issuedAt": { "$ref": "#/$defs/dateTime" },
+    "expiresAt": { "$ref": "#/$defs/dateTime" }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$",
+      "minLength": 20,
+      "maxLength": 30
+    },
+    "attestationCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateRef", "attestationRevision", "fingerprint"],
+      "properties": {
+        "candidateRef": { "$ref": "#/$defs/safeRef" },
+        "attestationRevision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "admissionWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "through"],
+      "properties": {
+        "from": { "$ref": "#/$defs/dateTime" },
+        "through": { "$ref": "#/$defs/dateTime" }
+      }
+    }
+  }
+}

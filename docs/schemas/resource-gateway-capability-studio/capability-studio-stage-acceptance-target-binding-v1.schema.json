@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-target-binding-v1.schema.json",
+  "title": "Capability Studio Stage Acceptance Target Binding v1",
+  "description": "Closed out-of-band binding between one Stage Acceptance Result v2, execution lease, and two attestation coordinates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "resultId",
+    "resultRevision",
+    "contractId",
+    "contractRevision",
+    "executionLeaseId",
+    "candidateAttestation",
+    "environmentAttestation",
+    "trustedTargetIdentities",
+    "fingerprint"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.stage-acceptance-target-binding.v1" },
+    "resultId": { "type": "string", "pattern": "^SAR-[A-Za-z0-9._-]{1,120}$" },
+    "resultRevision": { "type": "integer", "minimum": 1 },
+    "contractId": { "$ref": "#/$defs/safeRef" },
+    "contractRevision": { "$ref": "#/$defs/safeRef" },
+    "executionLeaseId": { "$ref": "#/$defs/safeRef" },
+    "candidateAttestation": { "$ref": "#/$defs/candidateCoordinate" },
+    "environmentAttestation": { "$ref": "#/$defs/environmentCoordinate" },
+    "trustedTargetIdentities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/safeRef" }
+    },
+    "fingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "candidateCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidateRef", "attestationRevision", "fingerprint"],
+      "properties": {
+        "candidateRef": { "$ref": "#/$defs/safeRef" },
+        "attestationRevision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "environmentCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environmentRef", "attestationRevision", "fingerprint"],
+      "properties": {
+        "environmentRef": { "$ref": "#/$defs/safeRef" },
+        "attestationRevision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

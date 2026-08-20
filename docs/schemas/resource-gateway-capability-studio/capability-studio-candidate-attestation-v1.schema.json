@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-candidate-attestation-v1.schema.json",
+  "title": "Capability Studio Candidate Attestation v1",
+  "description": "Closed, payload-free candidate identity fact signed by an external Candidate Authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "candidateRef",
+    "attestationRevision",
+    "role",
+    "buildRef",
+    "revision",
+    "sourceCommit",
+    "sourceTreeStatus",
+    "artifactDigest",
+    "baselineRef",
+    "demoPackRef",
+    "executionIntentFingerprint",
+    "scope",
+    "issuer",
+    "issuedAt",
+    "expiresAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "resource-gateway.capability-studio.candidate-attestation.v1" },
+    "candidateRef": { "$ref": "#/$defs/safeRef" },
+    "attestationRevision": { "type": "integer", "minimum": 1 },
+    "role": { "const": "CANDIDATE_AUTHORITY" },
+    "buildRef": { "$ref": "#/$defs/safeRef" },
+    "revision": { "$ref": "#/$defs/safeRef" },
+    "sourceCommit": { "$ref": "#/$defs/sourceCommit" },
+    "sourceTreeStatus": { "const": "CLEAN" },
+    "artifactDigest": { "$ref": "#/$defs/fingerprint" },
+    "baselineRef": { "$ref": "#/$defs/exactRef" },
+    "demoPackRef": { "$ref": "#/$defs/exactRef" },
+    "executionIntentFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "scope": { "$ref": "#/$defs/safeRef" },
+    "issuer": { "$ref": "#/$defs/safeRef" },
+    "issuedAt": { "$ref": "#/$defs/dateTime" },
+    "expiresAt": { "$ref": "#/$defs/dateTime" }
+  },
+  "$defs": {
+    "safeRef": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+-]*$"
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{7,64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$",
+      "minLength": 20,
+      "maxLength": 30
+    },
+    "exactRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exactRef", "fingerprint"],
+      "properties": {
+        "exactRef": { "$ref": "#/$defs/safeRef" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    }
+  }
+}

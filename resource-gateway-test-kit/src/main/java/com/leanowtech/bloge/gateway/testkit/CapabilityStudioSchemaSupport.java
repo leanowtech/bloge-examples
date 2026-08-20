@@ -87,6 +87,15 @@ final class CapabilityStudioSchemaSupport {
     static final String MOUNTED_AUTHORITY_BUNDLE_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-mounted-authority-bundle-v1.schema.json";
+    static final String CANDIDATE_ATTESTATION_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-candidate-attestation-v1.schema.json";
+    static final String ENVIRONMENT_ATTESTATION_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-environment-attestation-v1.schema.json";
+    static final String STAGE_ACCEPTANCE_TARGET_BINDING_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-stage-acceptance-target-binding-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =
