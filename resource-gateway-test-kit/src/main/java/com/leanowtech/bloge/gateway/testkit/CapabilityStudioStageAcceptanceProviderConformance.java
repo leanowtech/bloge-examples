@@ -22,11 +22,22 @@ import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Provider conformance TCK for Capability Studio Stage Acceptance authority dependencies.
+ * Authority-material-only preflight TCK for Capability Studio Stage Acceptance providers.
  *
- * <p>The TCK is deliberately an authority boundary. It reports only stable, bounded metadata;
- * it never returns the input document, exact references, actors, signatures, provider messages,
- * or business payload.</p>
+ * <p>Provider Conformance v1 and v2 are {@code AUTHORITY-MATERIAL-ONLY}. They validate the
+ * resolver, issuer policy, and owner authority from an atomic
+ * {@link CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding}. They cannot prove
+ * Candidate Authority, Environment Authority, Target Admission, or formal Stage Acceptance. A
+ * {@link Verdict#CONFORMANT CONFORMANT} v2 result must never be described or consumed as
+ * target-bound conformance.</p>
+ *
+ * <p>Target-bound formal admission is enforced exclusively by
+ * {@link CapabilityStudioStageAcceptanceCli}, using a
+ * {@link CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding}. The v2
+ * check set is intentionally not extended for that purpose.</p>
+ *
+ * <p>The TCK reports only stable, bounded metadata; it never returns the input document, exact
+ * references, actors, signatures, provider messages, or business payload.</p>
  */
 public final class CapabilityStudioStageAcceptanceProviderConformance {
     /** Stable prefix shared by every TCK reason code. */
@@ -78,7 +89,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
 
     /** Final TCK verdicts. */
     public enum Verdict {
-        /** All checks in the selected v1 or v2 protocol passed. */
+        /** All authority-material-only checks in the selected v1 or v2 protocol passed. */
         CONFORMANT,
         /** A deterministic provider contract violation was observed. */
         NON_CONFORMANT,
@@ -142,7 +153,10 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
     }
 
     /**
-     * Defensive, payload-free conformance result.
+     * Defensive, payload-free authority-material-only conformance result.
+     *
+     * <p>A {@link Verdict#CONFORMANT CONFORMANT} result does not establish Candidate Authority,
+     * Environment Authority, Target Admission, or formal Stage Acceptance.</p>
      *
      * @param verdict final TCK verdict
      * @param reasonCode stable final reason code
@@ -352,7 +366,13 @@ public final class CapabilityStudioStageAcceptanceProviderConformance {
     }
 
     /**
-     * Verifies one Stage Acceptance v2 wire document against one provider.
+     * Runs the Provider Conformance v2 authority-material-only preflight against one provider.
+     *
+     * <p>This method validates only the provider's atomic resolver/issuer/owner
+     * {@link CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding}. Formal
+     * target-bound admission remains the exclusive responsibility of
+     * {@link CapabilityStudioStageAcceptanceCli} and its
+     * {@link CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding}.</p>
      *
      * @param wire UTF-8 Stage Acceptance Result v2 document
      * @param now trusted verification instant

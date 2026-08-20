@@ -16,7 +16,13 @@ import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProvi
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProviderConformance.Result;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProviderConformance.Verdict;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -59,6 +65,51 @@ class CapabilityStudioStageAcceptanceProviderConformanceTest {
         assertThat(result.checkResults().stream()
                 .mapToInt(CapabilityStudioStageAcceptanceProviderConformance.CheckResult::challengeCount)
                 .sum()).isEqualTo(result.challengeCount());
+    }
+
+    @Test
+    void authorityMaterialConformanceDoesNotImplyTargetBoundFormalAdmission(
+            @TempDir Path temporaryDirectory) throws Exception {
+        ObjectNode input = validStagePass();
+        Provider provider = conformantProvider(input);
+        AtomicInteger authorityCallbacks = new AtomicInteger();
+        EvidenceResolver resolver = provider.resolver;
+        var issuer = provider.issuer;
+        var owner = provider.owner;
+        provider.resolver = request -> {
+            authorityCallbacks.incrementAndGet();
+            return resolver.resolve(request);
+        };
+        provider.issuer = (reference, evidence, context) -> {
+            authorityCallbacks.incrementAndGet();
+            return issuer.verify(reference, evidence, context);
+        };
+        provider.owner = (signoff, signature, context) -> {
+            authorityCallbacks.incrementAndGet();
+            return owner.verify(signoff, signature, context);
+        };
+
+        Result preflight = verify(input, provider);
+
+        assertThat(preflight.verdict()).isEqualTo(Verdict.CONFORMANT);
+        assertThat(authorityCallbacks).hasPositiveValue();
+        authorityCallbacks.set(0);
+
+        Path artifact = temporaryDirectory.resolve("authority-material-only.json");
+        Files.write(artifact, bytes(input));
+        ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
+        int formalExit;
+        try (PrintStream output = new PrintStream(
+                outputBytes, true, StandardCharsets.UTF_8)) {
+            formalExit = CapabilityStudioStageAcceptanceCli.run(
+                    new String[]{artifact.toString()}, output, output, NOW,
+                    () -> List.of(provider), fingerprint('a'));
+        }
+
+        assertThat(formalExit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(outputBytes.toString(StandardCharsets.UTF_8))
+                .contains("outcome=BLOCKED", "TARGET_BINDING_UNAVAILABLE");
+        assertThat(authorityCallbacks).hasValue(0);
     }
 
     @Test

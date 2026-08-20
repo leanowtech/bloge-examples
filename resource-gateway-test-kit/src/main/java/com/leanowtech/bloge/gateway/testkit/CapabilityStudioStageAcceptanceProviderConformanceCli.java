@@ -13,9 +13,23 @@ import java.util.List;
 import java.util.ServiceConfigurationError;
 import java.util.ServiceLoader;
 
-/** Command-line entry point for producing an atomic Provider Conformance report. */
+/**
+ * Command-line entry point for the Provider Conformance authority-material-only preflight.
+ *
+ * <p>Provider Conformance v1 and v2 are {@code AUTHORITY-MATERIAL-ONLY}: they validate the
+ * resolver, issuer policy, and owner authority in an atomic
+ * {@link CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding}. A
+ * {@code CONFORMANT} v2 report does not prove Candidate Authority, Environment Authority, Target
+ * Admission, or formal Stage Acceptance, and must never be described or consumed as target-bound
+ * conformance.</p>
+ *
+ * <p>Target-bound formal admission is enforced exclusively by
+ * {@link CapabilityStudioStageAcceptanceCli}, using a
+ * {@link CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding}. This CLI
+ * does not extend the published v2 checks or report contract.</p>
+ */
 public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
-    /** Exit code for a conformant provider. */
+    /** Exit code for a provider conformant to the authority-material-only preflight. */
     public static final int EXIT_CONFORMANT = 0;
     /** Exit code for usage, input, read, or output failure. */
     public static final int EXIT_INVALID = 2;
@@ -32,7 +46,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
     }
 
     /**
-     * Runs the CLI using the current clock and Java ServiceLoader.
+     * Runs the authority-material-only CLI using the current clock and Java ServiceLoader.
      *
      * @param args exactly {@code --result PATH --output PATH}
      * @param out payload-free result stream
@@ -45,7 +59,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
     }
 
     /**
-     * Process entry point.
+     * Process entry point for the authority-material-only preflight.
      *
      * @param args exactly {@code --result PATH --output PATH}
      */
@@ -54,7 +68,8 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceCli {
     }
 
     /**
-     * Runs the CLI with injectable clock and provider source for deterministic tests.
+     * Runs the authority-material-only CLI with injectable clock and provider source for
+     * deterministic tests.
      *
      * @param args exactly {@code --result PATH --output PATH}
      * @param out payload-free output stream

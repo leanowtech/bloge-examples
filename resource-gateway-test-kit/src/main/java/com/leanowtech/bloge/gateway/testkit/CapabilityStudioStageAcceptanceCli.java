@@ -18,8 +18,9 @@ import java.util.regex.Pattern;
  *
  * <p>The CLI accepts one result path and discovers exactly one deployment-owned
  * {@link CapabilityStudioStageAcceptanceAuthorityProvider}. It validates the local protocol before
- * loading that provider, so malformed and non-{@code PASS} results make no external authority
- * calls. The result document cannot carry or select its own trust provider.</p>
+ * loading that provider, then verifies deployment-owned target admission before any post-run
+ * authority call. Malformed and non-{@code PASS} results make no external authority calls. The
+ * result document cannot carry or select its own trust provider.</p>
  */
 public final class CapabilityStudioStageAcceptanceCli {
     /** Exit code for a formally accepted result. */
@@ -95,6 +96,7 @@ public final class CapabilityStudioStageAcceptanceCli {
             invalid(safeOut, "READ");
             return EXIT_INVALID;
         }
+        byte[] originalStageResultBytes = wire;
 
         CapabilityStudioStageAcceptanceResultV2Verifier semanticVerifier =
                 new CapabilityStudioStageAcceptanceResultV2Verifier();
@@ -143,26 +145,73 @@ public final class CapabilityStudioStageAcceptanceCli {
             return EXIT_INVALID;
         }
 
-        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding binding;
+        CapabilityStudioStageAcceptanceAuthorityProvider.TargetBoundAuthorityBinding binding;
         try {
             binding = CapabilityStudioProviderOutputIsolation.call(
-                    () -> Objects.requireNonNull(provider.authorityBinding(),
-                            "authorityBinding is required"));
+                    provider::targetBoundAuthorityBinding);
+        } catch (RuntimeException failure) {
+            invalid(safeOut, "PROVIDER_CONFIGURATION");
+            return EXIT_INVALID;
+        }
+        if (binding == null) {
+            safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                    + CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
+                    + "TARGET_BINDING_UNAVAILABLE");
+            return EXIT_NOT_ACCEPTED;
+        }
+
+        CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding authorityBinding =
+                binding.authorityBinding();
+        CapabilityStudioStageAcceptanceAuthorityProvider.TargetAdmissionBinding targetAdmission =
+                binding.targetAdmissionBinding();
+
+        try {
             if (!AUTHORITY_BINDING_FINGERPRINT.matcher(binding.fingerprint()).matches()
                     || !expectedAuthorityBindingFingerprint.equals(binding.fingerprint())) {
-                throw new IllegalArgumentException("authorityBindingFingerprint does not match pin");
+                throw new IllegalArgumentException("authority binding fingerprint does not match pin");
             }
         } catch (RuntimeException failure) {
             invalid(safeOut, "PROVIDER_CONFIGURATION");
             return EXIT_INVALID;
         }
 
+        CapabilityStudioStageAcceptanceTargetBindingVerifier.VerificationResult targetVerification;
+        try {
+            targetVerification = CapabilityStudioProviderOutputIsolation.call(
+                    () -> new CapabilityStudioStageAcceptanceTargetBindingVerifier().verify(
+                            originalStageResultBytes,
+                            targetAdmission.targetBindingBytes(),
+                            targetAdmission.candidateAttestationBytes(),
+                            targetAdmission.environmentAttestationBytes(),
+                            targetAdmission.verificationContext(), now,
+                            targetAdmission.candidateAuthority(),
+                            targetAdmission.environmentAuthority()));
+        } catch (RuntimeException failure) {
+            safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                    + CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
+                    + "TARGET_BINDING_UNAVAILABLE");
+            return EXIT_NOT_ACCEPTED;
+        }
+        if (targetVerification == null || !targetVerification.verified()) {
+            String outcome = targetVerification == null
+                    ? CapabilityStudioStageAcceptanceTargetBindingVerifier.Outcome.BLOCKED.name()
+                    : targetVerification.outcome().name();
+            String reasonCode = targetVerification == null
+                    ? CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
+                    + "TARGET_BINDING_UNAVAILABLE"
+                    : safeCode(targetVerification.reasonCode(),
+                    CapabilityStudioStageAcceptanceTargetBindingVerifier.CODE_PREFIX
+                            + "TARGET_BINDING_UNAVAILABLE");
+            safeOut.println("NOT_ACCEPTED outcome=" + outcome + " reasonCode=" + reasonCode);
+            return EXIT_NOT_ACCEPTED;
+        }
+
         CapabilityStudioStageAcceptanceAuthorityVerifier.VerificationResult verification;
         try {
             verification = CapabilityStudioProviderOutputIsolation.call(
                     () -> new CapabilityStudioStageAcceptanceAuthorityVerifier().verify(
-                            result, now, binding.resolver(), binding.issuerPolicy(),
-                            binding.ownerAuthority()));
+                            result, now, authorityBinding.resolver(),
+                            authorityBinding.issuerPolicy(), authorityBinding.ownerAuthority()));
         } catch (RuntimeException failure) {
             safeOut.println("NOT_ACCEPTED outcome=BLOCKED reasonCode="
                     + CapabilityStudioStageAcceptanceAuthorityVerifier.CODE_PREFIX
