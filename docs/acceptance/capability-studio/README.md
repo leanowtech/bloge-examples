@@ -241,8 +241,8 @@ CLI、TCK、结果 Builder、独立 Verifier 和双版本 Schema 打包均已实
 `AUTHBUNDLE-CONTRACT-v1` 的唯一 Bundle obligation denominator 是 `ABP-001..024`；
 `AUTHBUNDLE-AC-01..10` 是聚合验收行，不额外增加分母。每组合同都必须有共享 Preconditions、Oracle、system
 invariants、`FAIL/BLOCKED` 规则、Evidence manifest 和 Owner/签署角色；各 AC 行不得脱离共享
-上下文单独解释。当前 Bundle loader 12/12、跨版本 Provider/TCK/CLI/shell 50/50、参考 Provider
-6/6 和 Test Kit 1013/1013 仅是开发观测，不改变分母，也不增加 `formalPassCount=0/27`。
+上下文单独解释。当前 Bundle loader 15/15、跨版本 Provider/TCK/CLI/shell 58/58、参考 Provider
+6/6 和 Test Kit 1030/1030 仅是开发观测，不改变分母，也不增加 `formalPassCount=0/27`。
 
 #### 3.5.1 挂载企业 Authority Bundle
 
@@ -262,16 +262,16 @@ Bundle root 只允许包含 Manifest 直接引用的 JSON 普通文件：
 
 Manifest 通过 `bundleFingerprint` 绑定 Artifact 原始文件摘要、Key Set 语义 pin、Issuer/Scope、Evidence kind、Owner role、Actor allow-list 和 TTL。Loader 在构造时一次性读取并防御性快照全部文件；后续 Resolver 不回读挂载目录。Bundle 使用受信时钟验证生效和过期时间，目录逃逸、符号链接、未知字段、重复绑定、超限、指纹漂移和生命周期非法均失败关闭。
 
-正式部署还必须提供 out-of-band 期望 pin。三个值必须相等：Manifest 的 `bundleFingerprint`、Provider 的 `authorityBindingFingerprint()`、部署任务的 `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`。期望 pin 必须来自受控部署清单、制品签名系统或等价 Authority；不得由脚本读取 Bundle 后自行计算并回填。
+正式部署还必须提供 out-of-band 期望 pin。三个值必须相等：Manifest 的 `bundleFingerprint`、Provider 原子 `AuthorityBinding.fingerprint()`、部署任务的 `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`。期望 pin 必须来自受控部署清单、制品签名系统或等价 Authority；不得由脚本读取 Bundle 后自行计算并回填。
 
 ```bash
 mvn -f resource-gateway-test-kit/pom.xml clean install
 mvn -f resource-gateway-test-kit/examples/capability-studio-mounted-authority-provider/pom.xml \
   clean verify
 
-BLOGE_EXPECTED_TEST_KIT_FINGERPRINT='<64 位小写十六进制>' \
-BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT='<64 位小写十六进制>' \
-BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS='<64 位小写十六进制>,<64 位小写十六进制>' \
+BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 位小写十六进制>' \
+BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 位小写十六进制>' \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 位小写十六进制>,<64 位小写十六进制>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
 BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 位小写十六进制>' \
 JAVA_BIN="$(command -v java)" \
@@ -294,9 +294,9 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
 串行执行 Provider Conformance 和正式 Stage Acceptance。脚本会把 Test Kit、Provider classpath 全部条目和 Stage Result 复制为权限收紧的运行快照，并在父 shell 内保存每个 SHA-256；两步只读取同一组快照字节，每步结束后必须重新计算全部摘要。源文件在快照后发生变化不会影响第二步，快照发生持久修改时脚本会在下一阶段前失败。禁止把两个命令拆到不同候选、不同环境或不同信任配置中执行。
 
 ```bash
-BLOGE_EXPECTED_TEST_KIT_FINGERPRINT='<64 位小写十六进制>' \
-BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT='<64 位小写十六进制>' \
-BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS='<64 位小写十六进制>,<64 位小写十六进制>' \
+BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 位小写十六进制>' \
+BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 位小写十六进制>' \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 位小写十六进制>,<64 位小写十六进制>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
 BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 位小写十六进制>' \
 JAVA_BIN="$(command -v java)" \
@@ -315,13 +315,13 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
 4. Conformance 输出目录已存在且可写，输出文件尚不存在。
 5. Test Kit、Provider classpath 和 Java runtime 来自部署控制的不可变制品位置，并至少保持到运行快照创建完成。运行快照不能替代制品签名或供应链校验。
 6. 验收任务运行在专用一次性 JVM 中。Provider 不得启动未受管异步线程写入全局输出流。
-7. `BLOGE_EXPECTED_TEST_KIT_FINGERPRINT`、`BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT` 和
-   `BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS` 由部署 Authority 以 out-of-band 方式注入，分别
+7. `BLOGE_EXPECTED_TEST_KIT_JAR_SHA256`、`BLOGE_EXPECTED_STAGE_RESULT_SHA256` 和
+   `BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S` 由部署 Authority 以 out-of-band 方式注入，分别
    固定 Test Kit、Stage Result 和按 classpath 顺序排列的 Provider 制品；不得由脚本读取文件后自行回填。
 8. `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 是 formal CLI 的期望 binding pin，由部署 Authority
    以 out-of-band 方式注入，格式为 lowercase SHA-256；不得从 Stage Result、Provider 输出或 Bundle 运行时自发现。
 
-本次只冻结规范变量名，未修改部署脚本实现；若当前 runner 尚未读取前三个规范变量，执行结果必须记为 `BLOCKED`，不能把历史变量名默认为兼容别名。
+当前 runner 已读取前述四类 pin，并在 Java 启动前验证制品摘要的格式、数量、顺序和快照一致性。这只证明开发机制已对齐；正式验收仍需部署 Authority 真实注入并签署同一证据闭包。
 
 脚本先运行 Conformance CLI。只有退出码为 `0`、stdout 恰好为一行规范 `CONFORMANT` 结果，且报告是 1 至 131072 字节的可读、非符号链接普通文件时，脚本才运行正式 Stage Acceptance CLI。正式 CLI 也必须退出 `0`，且 stdout 恰好为一行规范 `ACCEPTED` 结果。两个子进程声明的 binding 必须与 out-of-band pin 三方精确相等。成功时，脚本只输出：
 
@@ -335,7 +335,7 @@ ACCEPTED status=ACCEPTED authorityBindingFingerprint=sha256:<64 位小写十六�
 
 本门禁是部署执行机制，不是签署收据。脚本不生成组织信任根，不托管 KMS/HSM 私钥，不证明目标环境或部署 egress，也不替代 Owner 流程签署。缺少任一外部责任时，即使脚本机制测试全部通过，正式 `formalPassCount` 也不能增加。
 
-2026-08-20 的开发复验结果为：Bundle loader 12/12、跨版本 Provider/TCK/CLI/shell 50/50、参考 Provider 6/6、Test Kit `clean verify` 1013/1013，均为 0 失败、0 错误、0 跳过；普通 JAR、shaded JAR、Provider JAR、v1/v2/Bundle Schema packaging 和 Javadoc/doclint 同时通过。该结果只允许把 `S0-DEV-GOV-29` 标为 `DEVELOPMENT_VERIFIED`。
+2026-08-20 的开发复验结果为：Bundle loader 15/15、跨版本 Provider/TCK/CLI/shell 58/58、参考 Provider 6/6、Test Kit `clean verify` 1030/1030，均为 0 失败、0 错误、0 跳过；普通 JAR、shaded JAR、Provider JAR、v1/v2/Bundle Schema packaging 和 Javadoc/doclint 同时通过。该结果只允许把 `S0-DEV-GOV-29` 标为 `DEVELOPMENT_VERIFIED`。
 
 ## 4. 内容寻址
 

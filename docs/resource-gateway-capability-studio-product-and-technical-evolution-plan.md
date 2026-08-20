@@ -1585,8 +1585,8 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，�
 | `S0-DEV-GOV-25` | 完整回归的测试结果和验收证据必须分别裁决：测试进程退出成功不能覆盖报告写入失败、磁盘耗尽、Evidence manifest 缺项或跳过项；正式验收必须验证 `expectedEvidenceManifest == persistedEvidenceManifest` 且 `skippedCount=0` | 2026-08-19 在源码提交 `40a6d47ca99d19515f03432508dd8d11ce72d13c` 上执行 Resource Gateway `clean verify`：Maven 最终报告 6717 项、0 失败、0 错误、28 跳过并返回 `BUILD SUCCESS`，但 Surefire 同时明确报告 `No space left on device`，至少一份测试报告未能写入；该运行因此只记录为本地回归观察，不构成完整验收 Evidence。清理可再生产物后，Test Kit `clean verify` 为 943 项、0 失败、0 错误、0 跳过并成功完成 JAR、shade 与 Javadoc 阶段 | 开发观察（非 Acceptance 状态）：代码回归没有观测到失败，但 Resource Gateway 运行因 28 项跳过和 Evidence 落盘不完整，按 `AC-STD-03/09` 不得记为 `PASS`；正式复验必须在容量预检通过的 CI/目标环境中重跑，并以完整 manifest、写入收据和独立 verifier 关闭该阻断 |
 | `S0-DEV-GOV-26` | Capability Studio 正式浏览器脚本必须在任何 Maven/Chrome 前 fail-closed 检查根文件系统剩余空间、inode、artifact root、Maven `target` 和 `TMPDIR` 的实际写入；合同最低阈值为 `4194304 KiB`/4 GiB 与 `20000` inode，正式配置只允许提高，降低任一阈值必须在 Maven 前失败。默认输出必须使用 `<commit-short>-<utc>-<pid>` run-scoped root；clean artifact root 在写探针清理后必须无任何文件、子目录或 symlink，显式同父目录也不例外，否则以 `RG.CAPABILITY_STUDIO.BROWSER_PREFLIGHT_ARTIFACT_ROOT_NOT_FRESH` 在 Maven 前失败。`--allow-dirty` 是强制开发诊断开关：无论源码树 CLEAN/DIRTY 都不得执行正式 bundle gate、生成正式 manifest 或输出 `COMPLETE: 186/186`；DIRTY 诊断可复用显式 existing base。正式模式在两个 JSON CLI 完成后还必须由 `CapabilityStudioBrowserEvidenceBundleCli` 以四个固定参数生成同 root 的 `capability-studio-browser-evidence-bundle-manifest-v1.json`。证据文件分母固定为 `60 + 126 × 3 = 438`：60 个 normal `.png` screenshot，加上每个 anomaly obligation 同前缀的 `-error.png`、`-recovered.png` 与 `-trigger.json` 精确三件套；任意三文件、角色缺失、跨 obligation 或 normal 非 PNG 必须 fail-closed；只有 bundle 单行输出严格匹配 `VALID status=COMPLETE expectedCount=438 persistedCount=438 manifestFingerprint=sha256:<64 lowercase hex>` 才能输出 `COMPLETE: 186/186` | 脚本已实现正式/开发显式状态、阈值语法与合同下限双校验、空间/inode 检查、artifact/Maven/TMPDIR 可写探针清理、clean root freshness、同父目录拒绝、run-scoped 输出、双 CLI 后严格 bundle gate 和 `EVIDENCE_MANIFEST` 输出；Test Kit verifier 以流式 SHA-256、4096 项 inventory 硬上限、NOFOLLOW 路径检查和精确 role 集合校验真实文件闭包，聚焦 15/15；Resource Gateway 聚焦契约测试 8/8，覆盖 help、非法阈值、正式阈值低于合同下限与容量不足均在 Maven 前失败、跨目录结果拒绝、显式 root 预存旧 evidence 时 Maven 零启动、`--allow-dirty` 强制关闭正式分支、bundle 调用和严格匹配顺序；Test Kit `clean verify` 958/958，Schema packaging、shaded JAR 与 Javadoc/doclint 全部通过。2026-08-19 的一次本地观测约 `0.6 GiB` 可用空间，在该条件下正式入口会于候选构建前失败；实际裁决以每次 preflight 实测为准 | `DEVELOPMENT_VERIFIED` / 开发机制；不增加 `formalPassCount`，不替代外部 Candidate/Environment Authority、Evidence Store、产品/UX/QA、业务/安全/运行 Owner 的真实签署 |
 | `S0-DEV-GOV-27` | Provider Conformance TCK 必须使用 strict Draft 2020-12 结果 Schema、唯一 Provider 装配、无 fallback、无自签替代和 fail-closed 正负挑战；当前 v2 固定七项机制检查，v1 六项只作为不可变历史协议；确定性重放必须比较完整 resolver 请求/结果和 Authority 决策转录，不能只比较最终 verdict；报告必须与原 Stage Result 交叉复算绑定、原子创建且不覆盖旧文件；`CONFORMANT` 只表示 Provider 相对当前部署信任配置的机制一致 | 固定 `PCTCK-AC-01..10` 十个 obligation；v1 封板观测 20/20、44/44、978/978 只标为历史；当前 v2 开发观测见 `PCTCK-AC-10`，且由独立 Schema、TCK、Builder、Verifier、ServiceLoader CLI 和部署说明共同形成 Evidence manifest | `DEVELOPMENT_VERIFIED`：仅表示十个开发 obligation 的机器机制闭合；不增加 `formalPassCount=0/27`，不替代外部五项检查或正式 Stage 退出验收 |
-| `S0-DEV-GOV-28` | CI/目标环境必须通过一个 fail-closed 入口按固定顺序执行 Provider Conformance 与正式 Stage Acceptance；两步复用同一 Test Kit、Provider classpath 和 Stage Result 的运行快照。脚本必须在 Java 前完成有界输入、普通文件、唯一参数、全新输出、三类制品 pin 和真实 Java 可执行路径检查，再把所有输入复制为权限收紧的快照；父 shell 保存每个快照的 SHA-256，并在每个阶段后重算。Conformance 未得到单行规范成功结果或报告不满足 1..128 KiB 普通文件约束时不得启动正式验证；正式成功也必须是单行规范结果。Provider discovery、accessor 与同步 Authority 回调直接写入的 stdout/stderr 必须被隔离并在异常或 `Error` 后恢复，子进程内容不得泄漏；收到终止信号时必须以有界 TERM/KILL 流程回收当前 Java 子进程后再清理 | 固定 `DEPLOY-AC-01..08` 八个 obligation；Test Kit、Stage Result、Provider classpath 和 authority binding 必须由 `BLOGE_EXPECTED_TEST_KIT_FINGERPRINT`、`BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT`、`BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS`、`BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 逐项 pin。28/28 与 996/996 只作为历史开发观测，不是当前分母；当前结果必须写入 deployment Evidence manifest | `DEVELOPMENT_VERIFIED`：仅表示八个部署 obligation 的开发机制闭合；不增加 `formalPassCount=0/27`。脚本不生成正式收据，不证明外部 Evidence Store、信任根归属、KMS/HSM 托管、目标环境 transport、部署 egress 或 Owner 流程签署 |
-| `S0-DEV-GOV-29` | 企业 Provider 必须从部署方只读 Authority Bundle 装配，不内置私钥、默认信任根、网络 fallback 或演示绕过；Manifest 必须以 strict Schema、生命周期、递归规范指纹、精确 Artifact 坐标、原始 envelope 文件摘要、Key Set 语义 pin、Issuer/Scope、Owner/Actor 和 TTL 形成不可变快照。Conformance 与正式 CLI 必须使用 v2 报告和 `authorityBindingFingerprint`，并同时匹配部署方 out-of-band `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`；已发布 v1 Schema 与六项语义保持字节级不变并继续可离线验证 | 开发观测：Bundle loader 12/12、Provider/TCK/CLI/shell 50/50、参考 Provider 6/6、Test Kit `clean verify` 1013/1013，均为 0 失败、0 错误、0 跳过；这些观测必须映射到冻结的 24 个 `ABP-*` obligation 和 `AUTHBUNDLE-AC-01..10`，不能替代 obligation 分母。普通 JAR、shaded JAR、Provider JAR、三份 Schema 与 Javadoc/doclint 通过只证明开发包装链 | `DEVELOPMENT_VERIFIED`：仓库已经提供企业 Provider 参考制品和可执行接入合同，但没有企业实际 Bundle、组织信任根、KMS/HSM 私钥托管、目标环境/egress 原始 Evidence 或真实 Owner 签署；因此不增加 `formalPassCount=0/27` |
+| `S0-DEV-GOV-28` | CI/目标环境必须通过一个 fail-closed 入口按固定顺序执行 Provider Conformance 与正式 Stage Acceptance；两步复用同一 Test Kit、Provider classpath 和 Stage Result 的运行快照。脚本必须在 Java 前完成有界输入、普通文件、唯一参数、全新输出、三类制品 pin 和真实 Java 可执行路径检查，再把所有输入复制为权限收紧的快照；父 shell 保存每个快照的 SHA-256，并在每个阶段后重算。Conformance 未得到单行规范成功结果或报告不满足 1..128 KiB 普通文件约束时不得启动正式验证；正式成功也必须是单行规范结果。Provider discovery、accessor 与同步 Authority 回调直接写入的 stdout/stderr 必须被隔离并在异常或 `Error` 后恢复，子进程内容不得泄漏；收到终止信号时必须以有界 TERM/KILL 流程回收当前 Java 子进程后再清理 | 固定 `DEPLOY-AC-01..08` 八个 obligation；Test Kit、Stage Result、Provider classpath 和 authority binding 必须由 `BLOGE_EXPECTED_TEST_KIT_JAR_SHA256`、`BLOGE_EXPECTED_STAGE_RESULT_SHA256`、`BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S`、`BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 逐项 pin。28/28 与 996/996 只作为历史开发观测，不是当前分母；当前结果必须写入 deployment Evidence manifest | `DEVELOPMENT_VERIFIED`：仅表示八个部署 obligation 的开发机制闭合；不增加 `formalPassCount=0/27`。脚本不生成正式收据，不证明外部 Evidence Store、信任根归属、KMS/HSM 托管、目标环境 transport、部署 egress 或 Owner 流程签署 |
+| `S0-DEV-GOV-29` | 企业 Provider 必须从部署方只读 Authority Bundle 装配，不内置私钥、默认信任根、网络 fallback 或演示绕过；Manifest 必须以 strict Schema、生命周期、递归规范指纹、精确 Artifact 坐标、原始 envelope 文件摘要、Key Set 语义 pin、Issuer/Scope、Owner/Actor 和 TTL 形成不可变快照。Conformance 与正式 CLI 必须使用 v2 报告和原子 `AuthorityBinding`，并同时匹配部署方 out-of-band `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`；已发布 v1 Schema 与六项语义保持字节级不变并继续可离线验证 | 开发观测：Bundle loader 15/15、Provider/TCK/CLI/shell 58/58、参考 Provider 6/6、Test Kit `clean verify` 1030/1030，均为 0 失败、0 错误、0 跳过；这些观测必须映射到冻结的 24 个 `ABP-*` obligation 和 `AUTHBUNDLE-AC-01..10`，不能替代 obligation 分母。普通 JAR、shaded JAR、Provider JAR、三份 Schema 与 Javadoc/doclint 通过只证明开发包装链 | `DEVELOPMENT_VERIFIED`：仓库已经提供企业 Provider 参考制品和可执行接入合同，但没有企业实际 Bundle、组织信任根、KMS/HSM 私钥托管、目标环境/egress 原始 Evidence 或真实 Owner 签署；因此不增加 `formalPassCount=0/27` |
 
 ##### 三组工程合同的共享裁决规则
 
@@ -1626,20 +1626,20 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，�
 | `PCTCK-AC-09` | `PCTCK-PRE-v1` | CLI 只收 `--result/--output`，原子发布且不覆盖；退出码 0/2/3 固定；输出不泄密 | 半写、覆盖、泄漏为 `FAIL` | CLI transcript/output digest；Platform + Security |
 | `PCTCK-AC-10` | `PCTCK-PRE-v1` | obligation 全部执行、0 skip；Schema packaging、普通/shaded JAR、Javadoc/doclint 均成功 | 后置阶段失败为 `FAIL`；本地工具/磁盘不可用为 `BLOCKED` | build manifest；QA + Platform |
 
-`S0-DEV-GOV-27` 的历史 v1 观测是 20/20、44/44、978/978，只说明当次 v1 候选运行，不是当前分母，也不是永久门槛。当前 v2 观测（截至 2026-08-20）是跨版本 Provider/TCK/CLI/shell 50/50，Test Kit `clean verify` 1013/1013，均为开发观察；它们不能替代 10 个冻结 obligation，也不增加 `formalPassCount=0/27`。
+`S0-DEV-GOV-27` 的历史 v1 观测是 20/20、44/44、978/978，只说明当次 v1 候选运行，不是当前分母，也不是永久门槛。当前 v2 观测（截至 2026-08-20）是跨版本 Provider/TCK/CLI/shell 58/58，Test Kit `clean verify` 1030/1030，均为开发观察；它们不能替代 10 个冻结 obligation，也不增加 `formalPassCount=0/27`。
 
 ##### 部署验收合同 `DEPLOY-CONTRACT-v1`
 
 **共享前置 `DEPLOY-PRE-v1`：**
 
 1. 部署任务拥有同一候选的 Test Kit JAR、Provider classpath 全部条目、Stage Result、Java runtime 和输出目录；所有输入为可读、非符号链接普通文件，输出目标不存在。
-2. 部署 Authority 在 shell 启动前以 out-of-band 方式提供三类制品 pin：`BLOGE_EXPECTED_TEST_KIT_FINGERPRINT`、`BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT`、`BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS`；formal CLI/Provider binding 另由 `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 提供。
+2. 部署 Authority 在 shell 启动前以 out-of-band 方式提供三类制品 pin：`BLOGE_EXPECTED_TEST_KIT_JAR_SHA256`、`BLOGE_EXPECTED_STAGE_RESULT_SHA256`、`BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S`；formal CLI/Provider binding 另由 `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT` 提供。
 3. 三类制品 pin 必须是小写 SHA-256：Test Kit/Stage Result 为单值，Provider classpath 按 classpath 顺序以逗号分隔；数量必须与实际 classpath 条目一致。脚本不得读取制品后自行回填 pin。
 4. 一次性 JVM、只读 Authority Bundle mount、专用运行身份、外部 Evidence Store、目标环境和部署 egress 证明均由部署 Authority 负责；shell 只做机械门禁。
 
 **固定分母、Oracle、不变量、失败/阻断、证据与签署：**
 
-- 固定 obligation denominator 是 `DEPLOY-OBLIGATIONS-v1 = [DEPLOY-AC-01..DEPLOY-AC-08]`，共 8 个稳定 obligation；`28/28`、`50/50` 或全量测试数都不是分母。
+- 固定 obligation denominator 是 `DEPLOY-OBLIGATIONS-v1 = [DEPLOY-AC-01..DEPLOY-AC-08]`，共 8 个稳定 obligation；任何聚焦测试数或全量测试总数都不是分母。
 - Oracle 是：同一快照字节按固定顺序通过 Conformance，再通过 formal CLI；stdout 各恰好一行、退出码和成功行格式精确匹配；三类 artifact pin、authority binding pin、快照边界摘要全部一致。
 - 系统不变量是：Java 前置检查 fail-closed；两阶段只读同一快照；不覆盖输出、不跟随 symlink、不泄漏子进程输出；同步 Provider 输出隔离并恢复原流；未受管线程/子进程不被门禁默许。
 - `FAIL`：已启动但违反快照、输出、隔离、pin 或信号回收不变量。`BLOCKED`：制品、Hash 工具、输出目录、Java、Authority 或外部证据设施在启动前不可用。脚本参数或 pin 格式非法属于 `FAIL` 的输入拒绝，不得记为通过。
@@ -1657,7 +1657,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，�
 | `DEPLOY-AC-07` | `DEPLOY-PRE-v1` | 协议未通过/非 PASS 时 Provider load=0；通过后同步 stdout/stderr 隔离并恢复 | Provider 秘密泄漏、Error 未恢复或异步行为被误宣称已治理为 `FAIL` | isolation transcript；Security + Platform |
 | `DEPLOY-AC-08` | `DEPLOY-PRE-v1` | 8 个 obligation 全部执行；Schema、普通/shaded JAR、Javadoc/doclint 后置阶段成功 | 后置阶段失败为 `FAIL`；执行环境不可用为 `BLOCKED` | deployment build manifest；QA + Release |
 
-本合同的 pin 说明必须按上述规范变量名书写。当前仓库中的部署脚本实现若仍读取历史变量名，则不能把新名称视为已兼容别名；在实现对齐前，`DEPLOY-AC-01` 必须记为 `BLOCKED`，本轮文档不把该差异伪装成已通过。
+本合同的 pin 说明必须按上述规范变量名书写。当前部署脚本已使用这三个制品 SHA-256 变量和 Authority Binding 变量，并在 Java 启动前验证格式、数量、源文件摘要与快照摘要。这只闭合 `DEPLOY-AC-01` 的开发机制；没有真实部署 Authority 注入与签署时，正式验收仍为 `BLOCKED`。
 
 ##### 企业 Authority Bundle 合同 `AUTHBUNDLE-CONTRACT-v1`
 
@@ -1670,7 +1670,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，�
 
 **固定分母、Oracle、不变量、失败/阻断、证据与签署：**
 
-- 固定 obligation denominator 是 `AUTHORITY-BUNDLE-PROVIDER-v1` inventory 的 24 个稳定 ID（见下表）；`AUTHBUNDLE-AC-01..10` 是对这 24 个 obligation 的聚合验收行，不额外增加分母。12/50/1013 只是某次观测，绝不是永久分母。
+- 固定 obligation denominator 是 `AUTHORITY-BUNDLE-PROVIDER-v1` inventory 的 24 个稳定 ID（见下表）；`AUTHBUNDLE-AC-01..10` 是对这 24 个 obligation 的聚合验收行，不额外增加分母。任何 JUnit 测试数只是某次观测，绝不是永久分母。
 - Oracle 是：Manifest/引用文件/语义 Key Set 指纹独立复算；构造后源文件变化不影响 immutable snapshot；v1 Schema/六项语义不变，v2/七项含 atomic binding；两个 JVM 与 expected pin 精确相等；制品和日志无敏感信息。
 - 系统不变量是：目录边界和 bounded read；重复字段/未知字段/符号链接/路径逃逸拒绝；生命周期 `generatedAt <= now < expiresAt`；Authority accessor 与 binding fingerprint 原子对应；无回读、无热更新、无私钥和网络副作用。
 - `FAIL`：已执行的 Bundle/Provider/兼容性/绑定/脱敏/包装不变量失败。`BLOCKED`：企业 Bundle、Key Set、组织 pin、只读挂载或外部签署事实缺失，无法形成正式裁决。Bundle 不可用不能降级到 demo Provider。
@@ -1719,7 +1719,7 @@ Stage 0 的合同定义与实现进度必须分开记录。截至 2026-08-20，�
 | `ABP-023` | CLI/shell 顺序、输出、退出码和信号回收 | `AUTHBUNDLE-AC-10` |
 | `ABP-024` | ordinary/shaded/Provider JAR、Schema/Javadoc、ServiceLoader 和 redaction packaging | `AUTHBUNDLE-AC-10` |
 
-截至 2026-08-20 的开发观测为 Bundle loader 12/12、跨版本 Provider/TCK/CLI/shell 50/50、参考 Provider 6/6、Test Kit `clean verify` 1013/1013，均为 0 失败、0 错误、0 跳过；这些数字只能作为当次证据 manifest 的 observations，不能替代 24 个 `ABP-*` obligation、10 个 `AUTHBUNDLE-AC-*` 或企业外部签署。`S0-DEV-GOV-29` 仍只能是 `DEVELOPMENT_VERIFIED`，正式 `formalPassCount=0/27`、`NO_GO`。
+截至 2026-08-20 的开发观测为 Bundle loader 15/15、跨版本 Provider/TCK/CLI/shell 58/58、参考 Provider 6/6、Test Kit `clean verify` 1030/1030，均为 0 失败、0 错误、0 跳过；这些数字只能作为当次证据 manifest 的 observations，不能替代 24 个 `ABP-*` obligation、10 个 `AUTHBUNDLE-AC-*` 或企业外部签署。`S0-DEV-GOV-29` 仍只能是 `DEVELOPMENT_VERIFIED`，正式 `formalPassCount=0/27`、`NO_GO`。
 
 复验必须同时覆盖服务端、前端协议、独立 Test Kit 和真实浏览器，不得只运行成功路径。当前候选使用以下命令：
 

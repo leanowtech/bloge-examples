@@ -528,8 +528,8 @@ construction; resolver calls do not reopen the mount.
 The Bundle contains public verification material and signed payload-free envelopes only. It must
 not contain signing private keys, business payloads, a default trust root, or a local approval
 substitute. The reference Provider reads exactly one JVM property,
-`bloge.capabilityStudio.authorityBundleRoot`, and delegates `authorityBindingFingerprint()` to the
-verified Manifest fingerprint.
+`bloge.capabilityStudio.authorityBundleRoot`, and returns one atomic `AuthorityBinding` whose
+fingerprint and three Authority dependencies come from the same verified Bundle snapshot.
 
 Provider discovery, Provider accessors, and synchronous resolver, issuer-policy, and Owner-authority
 callbacks run inside a process-wide output-isolation window. Direct writes to `System.out` and
@@ -546,9 +546,9 @@ the current test counts are observations only. The same Test Kit JAR, Provider c
 Result, and out-of-band Authority binding pin are used for both commands. With the mounted Provider:
 
 ```bash
-BLOGE_EXPECTED_TEST_KIT_FINGERPRINT='<64 lowercase hex>' \
-BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT='<64 lowercase hex>' \
-BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS='<64 lowercase hex>,<64 lowercase hex>' \
+BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 lowercase hex>' \
+BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 lowercase hex>' \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 lowercase hex>,<64 lowercase hex>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
 BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 lowercase hex>' \
 JAVA_BIN="$(command -v java)" \
@@ -578,11 +578,10 @@ deployment-controlled artifact location until snapshot creation finishes. The ru
 source that becomes a symbolic link while it is copied; it does not replace artifact-signing,
 supply-chain verification, or OS-level read-only isolation from a malicious same-UID Provider.
 
-The formal contract names above are normative. This documentation-only change does not rename the
-already checked-in shell implementation; until the runner reads the three normative artifact-pin
-variables, a deployment using only those names must be recorded as `BLOCKED` rather than treated as
-an executable `PASS`. Do not silently treat a historical variable spelling as an alias in an
-acceptance record.
+The runner reads these exact four pin variables. It rejects missing, malformed, out-of-order, or
+mismatched artifact pins before Java starts, then requires the atomic Provider binding to match the
+deployment pin in both JVM phases. This mechanical check does not replace signed release metadata
+or the responsible deployment Authority.
 
 ### Frozen acceptance obligations
 
@@ -597,8 +596,8 @@ The three contracts are signed against stable IDs, not JUnit counts:
 `FAIL` means an executed obligation contradicts its Oracle or invariant. `BLOCKED` means the
 required deployment material, trust input, evidence store or signing role was unavailable before
 a conclusive run. Missing or skipped obligations never reduce the denominator. The current
-observations are Bundle loader 12/12, cross-version Provider/TCK/CLI/shell 50/50, reference
-Provider 6/6, and Test Kit `clean verify` 1013/1013; they do not change the denominators and do
+observations are Bundle loader 15/15, cross-version Provider/TCK/CLI/shell 58/58, reference
+Provider 6/6, and Test Kit `clean verify` 1030/1030; they do not change the denominators and do
 not increase `formalPassCount=0/27`.
 
 The runner then applies these gates in order:
@@ -688,8 +687,8 @@ input, read, report verification, or atomic output publication failed.
 
 The CLI, TCK, result builder, independent verifier, and both packaged schemas are implemented. The
 v1 slice-closing observations of 20/20, 44/44, and 978/978 remain historical. The current
-cross-version Provider/TCK/CLI/shell suite passes 50/50, the mounted Bundle suite passes 12/12,
-the reference Provider passes 6/6, and the Test Kit passes 1013/1013 with no failures, errors, or
+cross-version Provider/TCK/CLI/shell suite passes 58/58, the mounted Bundle suite passes 15/15,
+the reference Provider passes 6/6, and the Test Kit passes 1030/1030 with no failures, errors, or
 skips. Ordinary and shaded JAR packaging plus Javadoc/doclint also pass. These are development
 mechanism results,
 not a conformance claim for an enterprise deployment Provider. The Provider must not use a

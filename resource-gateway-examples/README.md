@@ -75,14 +75,14 @@ CapabilityStudioStageAcceptanceProviderConformanceCli \
 The CLI, TCK, strict result builder, independent verifier, and both packaged schemas are implemented.
 The Provider TCK slice's 20/20 and Stage Authority/CLI integration's 44/44 are historical v1
 observations, not permanent denominators. Current development observations are cross-version
-Provider/TCK/CLI/shell 50/50, mounted Bundle 12/12, reference Provider 6/6, and Test Kit
-`clean verify` 1013/1013. The deployment runner now enforces the frozen contract obligations before
+Provider/TCK/CLI/shell 58/58, mounted Bundle 15/15, reference Provider 6/6, and Test Kit
+`clean verify` 1030/1030. The deployment runner now enforces the frozen contract obligations before
 formal acceptance:
 
 ```bash
-BLOGE_EXPECTED_TEST_KIT_FINGERPRINT='<64 lowercase hex>' \
-BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT='<64 lowercase hex>' \
-BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS='<64 lowercase hex>,<64 lowercase hex>' \
+BLOGE_EXPECTED_TEST_KIT_JAR_SHA256='<64 lowercase hex>' \
+BLOGE_EXPECTED_STAGE_RESULT_SHA256='<64 lowercase hex>' \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S='<64 lowercase hex>,<64 lowercase hex>' \
 JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
 BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 lowercase hex>' \
 JAVA_BIN="$(command -v java)" \
@@ -93,17 +93,17 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --conformance-output '<new-provider-conformance-result-v2.json>'
 ```
 
-The current Bundle, cross-version gate, and reference Provider suites pass 12/12, 50/50, and 6/6;
-the Test Kit `clean verify` passes 1013/1013 tests with no skips, including ordinary/shaded JAR
+The current Bundle, cross-version gate, and reference Provider suites pass 15/15, 58/58, and 6/6;
+the Test Kit `clean verify` passes 1030/1030 tests with no skips, including ordinary/shaded JAR
 Schema packaging and Javadoc/doclint. The reference mounted Provider is under
 `resource-gateway-test-kit/examples/capability-studio-mounted-authority-provider/`. These
 are development mechanism observations, not a conformance claim for an enterprise deployment Provider.
 The normative denominators are `PCTCK-AC-01..10`, `DEPLOY-AC-01..08`, and the frozen
 `AUTHORITY-BUNDLE-PROVIDER-v1` inventory `ABP-001..024`; its `AUTHBUNDLE-AC-01..10` rows are
 aggregation rows, not extra obligations. Test counts cannot shrink or redefine the inventory.
-The three artifact pins and the formal CLI expected binding pin must be supplied out-of-band. This
-documentation-only update does not rename the checked-in shell implementation; until it reads the
-normative artifact-pin variable names, a run using only those names is `BLOCKED`, not `PASS`.
+The three artifact pins and the formal CLI expected binding pin must be supplied out-of-band. The
+checked-in runner reads these exact names and rejects missing, malformed, out-of-order, or
+mismatched pins before Java starts.
 `CONFORMANT` proves mechanism consistency with the current deployment trust configuration only;
 it does not increase `formalPassCount`, or replace organization ownership, KMS/HSM custody, real
 target-environment transport, deployment egress enforcement, or Owner process attestation.

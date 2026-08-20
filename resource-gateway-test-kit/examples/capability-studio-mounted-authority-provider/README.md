@@ -46,9 +46,9 @@ mvn -f resource-gateway-test-kit/pom.xml clean install
 mvn -f resource-gateway-test-kit/examples/capability-studio-mounted-authority-provider/pom.xml clean package
 
 JAVA_TOOL_OPTIONS="-Dbloge.capabilityStudio.authorityBundleRoot=/absolute/path/to/authority-bundle" \
-BLOGE_EXPECTED_TEST_KIT_FINGERPRINT="<64 lowercase hex>" \
-BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT="<64 lowercase hex>" \
-BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS="<64 lowercase hex>" \
+BLOGE_EXPECTED_TEST_KIT_JAR_SHA256="<64 lowercase hex>" \
+BLOGE_EXPECTED_STAGE_RESULT_SHA256="<64 lowercase hex>" \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S="<64 lowercase hex>" \
 BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT="sha256:<out-of-band-bundle-fingerprint>" \
 JAVA_BIN="$(command -v java)" \
 resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
@@ -61,14 +61,13 @@ resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
 
 The JVM that runs the gate also needs the deployment property. A successful local provider
 conformance result is not a formal `ACCEPTED` result by itself. The deployment runner requires the
-three ordered artifact pins `BLOGE_EXPECTED_TEST_KIT_FINGERPRINT`,
-`BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT`, and `BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS`,
+three ordered artifact pins `BLOGE_EXPECTED_TEST_KIT_JAR_SHA256`,
+`BLOGE_EXPECTED_STAGE_RESULT_SHA256`, and `BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S`,
 plus `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`, an exact out-of-band pin supplied by the
 deployment Authority. The binding is compared with the Provider declaration in both JVM phases.
 `JAVA_TOOL_OPTIONS` is deployment-controlled and must contain only the required bundle-root
 property, with no unrelated JVM option or injection. Formal acceptance additionally requires
 real externally signed evidence, organizational Owner approvals, target-environment attestation,
 and deployment-level egress enforcement evidence. Those authorities are intentionally outside
-this repository. This documentation-only update does not change the shell implementation; until
-the runner reads the three artifact-pin names, using only them is `BLOCKED` and must not be reported
-as `PASS`.
+this repository. The runner reads all four pin variables and fails before Java when they are
+missing, malformed, out of order, or inconsistent with the source and snapshot artifacts.
