@@ -81,6 +81,12 @@ final class CapabilityStudioSchemaSupport {
     static final String PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json";
+    static final String PROVIDER_CONFORMANCE_RESULT_V2_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-stage-acceptance-provider-conformance-result-v2.schema.json";
+    static final String MOUNTED_AUTHORITY_BUNDLE_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-mounted-authority-bundle-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

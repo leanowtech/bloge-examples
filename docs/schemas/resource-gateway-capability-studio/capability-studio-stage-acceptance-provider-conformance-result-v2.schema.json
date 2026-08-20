@@ -1,0 +1,287 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v2.schema.json",
+  "title": "Capability Studio Stage Acceptance Provider Conformance Result v2",
+  "description": "Strict seven-check Provider Conformance TCK result with a deployment-owned authority binding fingerprint.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "verdict",
+    "reasonCode",
+    "resultBinding",
+    "verifiedAt",
+    "providerBindingFingerprint",
+    "checks",
+    "summary",
+    "externalChecksRequired",
+    "reportFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v2"
+    },
+    "verdict": {
+      "enum": ["CONFORMANT", "NON_CONFORMANT", "BLOCKED", "INPUT_INVALID"]
+    },
+    "reasonCode": { "$ref": "#/$defs/reasonCode" },
+    "resultBinding": {
+      "anyOf": [{ "$ref": "#/$defs/resultBinding" }, { "type": "null" }]
+    },
+    "verifiedAt": {
+      "anyOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }]
+    },
+    "providerBindingFingerprint": {
+      "anyOf": [{ "$ref": "#/$defs/fingerprint" }, { "type": "null" }]
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "$ref": "#/$defs/nonChallengeCheck" },
+        { "$ref": "#/$defs/nonChallengeCheck" },
+        { "$ref": "#/$defs/nonChallengeCheck" },
+        { "$ref": "#/$defs/nonChallengeCheck" },
+        { "$ref": "#/$defs/challengeCheck" },
+        { "$ref": "#/$defs/challengeCheck" },
+        { "$ref": "#/$defs/challengeCheck" }
+      ],
+      "items": false,
+      "allOf": [
+        { "$ref": "#/$defs/exactCheckAtIndex0" },
+        { "$ref": "#/$defs/exactCheckAtIndex1" },
+        { "$ref": "#/$defs/exactCheckAtIndex2" },
+        { "$ref": "#/$defs/exactCheckAtIndex3" },
+        { "$ref": "#/$defs/exactCheckAtIndex4" },
+        { "$ref": "#/$defs/exactCheckAtIndex5" },
+        { "$ref": "#/$defs/exactCheckAtIndex6" }
+      ]
+    },
+    "summary": { "$ref": "#/$defs/summary" },
+    "externalChecksRequired": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "prefixItems": [
+        { "const": "TRUST_ROOT_ORGANIZATION" },
+        { "const": "KMS_HSM_CUSTODY" },
+        { "const": "TARGET_ENVIRONMENT_TRANSPORT" },
+        { "const": "DEPLOYMENT_EGRESS_ENFORCEMENT" },
+        { "const": "OWNER_PROCESS_ATTESTATION" }
+      ],
+      "items": false
+    },
+    "reportFingerprint": { "$ref": "#/$defs/fingerprint" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "verdict": { "const": "CONFORMANT" } } },
+      "then": {
+        "required": ["providerBindingFingerprint"],
+        "properties": {
+          "resultBinding": { "$ref": "#/$defs/resultBinding" },
+          "verifiedAt": { "$ref": "#/$defs/dateTime" },
+          "providerBindingFingerprint": { "$ref": "#/$defs/fingerprint" },
+          "summary": { "$ref": "#/$defs/conformantSummary" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "verdict": { "enum": ["NON_CONFORMANT", "BLOCKED"] },
+          "checks": {
+            "contains": {
+              "type": "object",
+              "required": ["checkId", "status"],
+              "properties": {
+                "checkId": { "const": "AUTHORITY_BINDING" },
+                "status": { "const": "PASS" }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      },
+      "then": {
+        "required": ["providerBindingFingerprint"],
+        "properties": {
+          "providerBindingFingerprint": { "$ref": "#/$defs/fingerprint" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "verdict": { "const": "INPUT_INVALID" } } },
+      "then": {
+        "properties": {
+          "resultBinding": { "type": "null" },
+          "verifiedAt": { "type": "null" },
+          "providerBindingFingerprint": { "type": "null" },
+          "summary": { "$ref": "#/$defs/inputInvalidSummary" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "minLength": 57,
+      "maxLength": 255,
+      "pattern": "^RG\\.CAPABILITY_STUDIO\\.STAGE_ACCEPTANCE_PROVIDER_CONFORMANCE\\.[A-Z][A-Z0-9_.-]*$"
+    },
+    "resultBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultId", "revision", "resultFingerprint"],
+      "properties": {
+        "resultId": {
+          "type": "string",
+          "minLength": 5,
+          "maxLength": 124,
+          "pattern": "^SAR-[A-Za-z0-9._-]{1,120}$"
+        },
+        "revision": { "type": "integer", "minimum": 1 },
+        "resultFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["checkId", "status", "reasonCode", "challengeCount"],
+      "properties": {
+        "checkId": {
+          "enum": [
+            "LOCAL_PROTOCOL",
+            "AUTHORITY_BINDING",
+            "BASELINE_AUTHORITY_ACCEPTANCE",
+            "DETERMINISTIC_REPLAY",
+            "RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED",
+            "EVIDENCE_POLICY_TAMPER_FAIL_CLOSED",
+            "OWNER_AUTHORITY_TAMPER_FAIL_CLOSED"
+          ]
+        },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "NOT_RUN"] },
+        "reasonCode": { "$ref": "#/$defs/reasonCode" },
+        "challengeCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nonChallengeCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        { "properties": { "challengeCount": { "const": 0 } } }
+      ]
+    },
+    "challengeCheck": {
+      "allOf": [
+        { "$ref": "#/$defs/check" },
+        {
+          "if": {
+            "properties": { "status": { "const": "NOT_RUN" } },
+            "required": ["status"]
+          },
+          "then": { "properties": { "challengeCount": { "const": 0 } } },
+          "else": { "properties": { "challengeCount": { "minimum": 1 } } }
+        }
+      ]
+    },
+    "exactCheckAtIndex0": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{ "properties": { "checkId": { "const": "LOCAL_PROTOCOL" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex1": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, { "properties": { "checkId": { "const": "AUTHORITY_BINDING" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex2": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, {}, { "properties": { "checkId": { "const": "BASELINE_AUTHORITY_ACCEPTANCE" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex3": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, {}, {}, { "properties": { "checkId": { "const": "DETERMINISTIC_REPLAY" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex4": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, {}, {}, {}, { "properties": { "checkId": { "const": "RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex5": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, {}, {}, {}, {}, { "properties": { "checkId": { "const": "EVIDENCE_POLICY_TAMPER_FAIL_CLOSED" } } }]
+        }
+      }
+    },
+    "exactCheckAtIndex6": {
+      "properties": {
+        "checks": {
+          "prefixItems": [{}, {}, {}, {}, {}, {}, { "properties": { "checkId": { "const": "OWNER_AUTHORITY_TAMPER_FAIL_CLOSED" } } }]
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalCount", "passCount", "failCount", "blockedCount", "notRunCount", "challengeCount"],
+      "properties": {
+        "totalCount": { "const": 7 },
+        "passCount": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "failCount": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "blockedCount": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "notRunCount": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "challengeCount": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "conformantSummary": {
+      "allOf": [
+        { "$ref": "#/$defs/summary" },
+        { "properties": {
+          "passCount": { "const": 7 },
+          "failCount": { "const": 0 },
+          "blockedCount": { "const": 0 },
+          "notRunCount": { "const": 0 },
+          "challengeCount": { "minimum": 1 }
+        } }
+      ]
+    },
+    "inputInvalidSummary": {
+      "allOf": [
+        { "$ref": "#/$defs/summary" },
+        { "properties": {
+          "passCount": { "const": 0 },
+          "failCount": { "const": 1 },
+          "blockedCount": { "const": 0 },
+          "notRunCount": { "const": 6 },
+          "challengeCount": { "const": 0 }
+        } }
+      ]
+    }
+  }
+}

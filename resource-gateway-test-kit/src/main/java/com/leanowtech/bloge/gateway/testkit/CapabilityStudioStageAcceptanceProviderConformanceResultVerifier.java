@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /** Independently verifies the strict Provider Conformance report without returning its payload. */
 public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerifier {
@@ -18,8 +19,21 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String CODE_PREFIX =
             CapabilityStudioStageAcceptanceProviderConformance.CODE_PREFIX;
-    private static final List<String> CHECK_IDS =
+    private static final List<String> V2_CHECK_IDS =
             CapabilityStudioStageAcceptanceProviderConformance.CHECK_IDS;
+    private static final List<String> V1_CHECK_IDS = List.of(
+            "LOCAL_PROTOCOL",
+            "BASELINE_AUTHORITY_ACCEPTANCE",
+            "DETERMINISTIC_REPLAY",
+            "RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED",
+            "EVIDENCE_POLICY_TAMPER_FAIL_CLOSED",
+            "OWNER_AUTHORITY_TAMPER_FAIL_CLOSED");
+    private static final String V1_SCHEMA_VERSION =
+            "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v1";
+    private static final String V2_SCHEMA_VERSION =
+            "bloge.capabilityStudioStageAcceptanceProviderConformanceResult.v2";
+    private static final Pattern AUTHORITY_BINDING_FINGERPRINT =
+            Pattern.compile("sha256:[0-9a-f]{64}");
     private static final List<String> EXTERNAL_CHECKS = List.of(
             "TRUST_ROOT_ORGANIZATION",
             "KMS_HSM_CUSTODY",
@@ -132,9 +146,18 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
         if (report == null || !report.isObject()) {
             return invalid("REPORT_SCHEMA_INVALID");
         }
+        String schemaVersion = report.path("schemaVersion").textValue();
+        if (!V1_SCHEMA_VERSION.equals(schemaVersion) && !V2_SCHEMA_VERSION.equals(schemaVersion)) {
+            return invalid("SCHEMA_VERSION_UNSUPPORTED");
+        }
+        boolean v2 = V2_SCHEMA_VERSION.equals(schemaVersion);
+        List<String> checkIds = v2 ? V2_CHECK_IDS : V1_CHECK_IDS;
+        String schemaResource = v2
+                ? CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V2_RESOURCE
+                : CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE;
         try {
             if (!CapabilityStudioSchemaSupport.validate(
-                    report, CapabilityStudioSchemaSupport.PROVIDER_CONFORMANCE_RESULT_V1_RESOURCE)
+                    report, schemaResource)
                     .isEmpty()) {
                 return invalid("REPORT_SCHEMA_INVALID");
             }
@@ -148,7 +171,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
             return invalid("REPORT_REASON_CODE_INVALID");
         }
         List<JsonNode> checks = reportNodes(report.path("checks"));
-        if (checks == null || !checkOrder(checks)) {
+        if (checks == null || !checkOrder(checks, checkIds)) {
             return invalid("CHECK_ORDER_INVALID");
         }
         for (JsonNode check : checks) {
@@ -159,13 +182,13 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
         if (!externalOrder(report.path("externalChecksRequired"))) {
             return invalid("EXTERNAL_CHECK_ORDER_INVALID");
         }
-        if (!summaryMatches(report.path("summary"), checks)) {
+        if (!summaryMatches(report.path("summary"), checks, v2)) {
             return invalid("SUMMARY_MISMATCH");
         }
-        if (!bindingMatches(report, verdict)) {
+        if (!bindingMatches(report, verdict, checks, v2)) {
             return invalid("RESULT_BINDING_INVALID");
         }
-        if (!verdictMatches(report, verdict, rootReason, checks)) {
+        if (!verdictMatches(report, verdict, rootReason, checks, v2)) {
             return invalid("VERDICT_INVARIANT_INVALID");
         }
         ObjectNode material = ((ObjectNode) report).deepCopy();
@@ -191,12 +214,12 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
         return nodes;
     }
 
-    private static boolean checkOrder(List<JsonNode> checks) {
-        if (checks.size() != CHECK_IDS.size()) {
+    private static boolean checkOrder(List<JsonNode> checks, List<String> checkIds) {
+        if (checks.size() != checkIds.size()) {
             return false;
         }
-        for (int i = 0; i < CHECK_IDS.size(); i++) {
-            if (!CHECK_IDS.get(i).equals(checks.get(i).path("checkId").textValue())) {
+        for (int i = 0; i < checkIds.size(); i++) {
+            if (!checkIds.get(i).equals(checks.get(i).path("checkId").textValue())) {
                 return false;
             }
         }
@@ -215,8 +238,9 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
         return true;
     }
 
-    private static boolean summaryMatches(JsonNode summary, List<JsonNode> checks) {
-        if (!summary.isObject() || summary.path("totalCount").intValue() != CHECK_IDS.size()) {
+    private static boolean summaryMatches(
+            JsonNode summary, List<JsonNode> checks, boolean v2) {
+        if (!summary.isObject() || summary.path("totalCount").intValue() != checks.size()) {
             return false;
         }
         int pass = 0;
@@ -237,7 +261,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
             if (count < 0) {
                 return false;
             }
-            if (index < 3 && count != 0) {
+            if (index < (v2 ? 4 : 3) && count != 0) {
                 return false;
             }
             if ("NOT_RUN".equals(check.path("status").textValue()) && count != 0) {
@@ -252,30 +276,46 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
                 && summary.path("challengeCount").intValue() == challenges;
     }
 
-    private static boolean bindingMatches(JsonNode report, String verdict) {
+    private static boolean bindingMatches(
+            JsonNode report, String verdict, List<JsonNode> checks, boolean v2) {
         JsonNode binding = report.path("resultBinding");
         JsonNode verifiedAt = report.path("verifiedAt");
         if ("INPUT_INVALID".equals(verdict)) {
-            return binding.isNull() && verifiedAt.isNull();
+            return binding.isNull() && verifiedAt.isNull()
+                    && (!v2 || report.path("providerBindingFingerprint").isNull());
         }
-        return binding.isObject() && binding.path("resultId").isTextual()
+        boolean sourceBinding = binding.isObject() && binding.path("resultId").isTextual()
                 && binding.path("revision").intValue() >= 1
                 && binding.path("resultFingerprint").isTextual()
                 && verifiedAt.isTextual();
+        if (!sourceBinding || !v2) {
+            return sourceBinding;
+        }
+        JsonNode providerBinding = report.path("providerBindingFingerprint");
+        boolean bindingVerified = "PASS".equals(checks.get(1).path("status").textValue());
+        if (bindingVerified) {
+            return providerBinding.isTextual()
+                    && AUTHORITY_BINDING_FINGERPRINT.matcher(providerBinding.textValue()).matches();
+        }
+        return providerBinding.isNull();
     }
 
     private static boolean verdictMatches(
-            JsonNode report, String verdict, String rootReason, List<JsonNode> checks) {
+            JsonNode report,
+            String verdict,
+            String rootReason,
+            List<JsonNode> checks,
+            boolean v2) {
         List<String> statuses = checks.stream()
                 .map(check -> check.path("status").textValue()).toList();
         JsonNode summary = report.path("summary");
         if ("INPUT_INVALID".equals(verdict)) {
             return "FAIL".equals(statuses.getFirst())
-                    && statuses.subList(1, 6).stream().allMatch("NOT_RUN"::equals)
+                    && statuses.subList(1, statuses.size()).stream().allMatch("NOT_RUN"::equals)
                     && summary.path("passCount").intValue() == 0
                     && summary.path("failCount").intValue() == 1
                     && summary.path("blockedCount").intValue() == 0
-                    && summary.path("notRunCount").intValue() == 5
+                    && summary.path("notRunCount").intValue() == statuses.size() - 1
                     && summary.path("challengeCount").intValue() == 0
                     && rootReason.equals(checks.getFirst().path("reasonCode").textValue());
         }
@@ -284,7 +324,7 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
         }
         if ("CONFORMANT".equals(verdict)) {
             return statuses.stream().allMatch("PASS"::equals)
-                    && checks.subList(3, 6).stream()
+                    && checks.subList(v2 ? 4 : 3, checks.size()).stream()
                     .allMatch(check -> check.path("challengeCount").intValue() > 0)
                     && summary.path("challengeCount").intValue() > 0
                     && rootReason.equals(CODE_PREFIX + "CONFORMANT");
@@ -307,13 +347,25 @@ public final class CapabilityStudioStageAcceptanceProviderConformanceResultVerif
                 return false;
             }
         }
-        if (!"PASS".equals(statuses.get(1))) {
-            return statuses.subList(2, 6).stream().allMatch("NOT_RUN"::equals);
+        int bindingIndex = v2 ? 1 : -1;
+        int baselineIndex = v2 ? 2 : 1;
+        int replayIndex = v2 ? 3 : 2;
+        int challengeStart = v2 ? 4 : 3;
+        if (v2 && !"PASS".equals(statuses.get(bindingIndex))) {
+            return "FAIL".equals(statuses.get(baselineIndex))
+                    ? statuses.subList(replayIndex, checks.size()).stream()
+                    .allMatch("NOT_RUN"::equals)
+                    : statuses.subList(baselineIndex, checks.size()).stream()
+                    .allMatch("NOT_RUN"::equals);
         }
-        if (!"PASS".equals(statuses.get(2))) {
-            return statuses.subList(3, 6).stream().allMatch("NOT_RUN"::equals);
+        if (!"PASS".equals(statuses.get(baselineIndex))) {
+            return statuses.subList(replayIndex, checks.size()).stream().allMatch("NOT_RUN"::equals);
         }
-        return checks.subList(3, 6).stream()
+        if (!"PASS".equals(statuses.get(replayIndex))) {
+            return statuses.subList(challengeStart, checks.size()).stream()
+                    .allMatch("NOT_RUN"::equals);
+        }
+        return checks.subList(challengeStart, checks.size()).stream()
                 .allMatch(check -> !"NOT_RUN".equals(check.path("status").textValue())
                         && check.path("challengeCount").intValue() > 0);
     }
