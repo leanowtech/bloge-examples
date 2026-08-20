@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testkit.mounted;
 
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioMountedTargetAdmissionBundle;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleRequest;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentDecisionStatus;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentUnavailableException;
@@ -16,10 +17,9 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.time.Clock;
 import java.util.List;
 import java.util.ServiceLoader;
-import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -29,6 +29,8 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
     private static final String PROVIDER_CLASS =
             "com.leanowtech.bloge.gateway.testkit.mounted."
                     + "MountedCapabilityStudioStageAcceptanceAuthorityProvider";
+    private static final String PROVIDER_ARTIFACT =
+            "com.leanowtech.bloge:bloge-capability-studio-mounted-authority-provider:1.0.0";
 
     @TempDir
     Path temporaryDirectory;
@@ -153,6 +155,20 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
     }
 
     @Test
+    void configuredAuthorityMountDisappearanceIsDeploymentUnavailable() throws Exception {
+        Fixture fixture = MountedProviderTestFixtures.write(
+                temporaryDirectory, "missing-authority");
+        configure(fixture);
+        Path configuredRoot = fixture.authorityRoot();
+        Files.move(configuredRoot, configuredRoot.resolveSibling("authority-moved-away"));
+
+        assertThatThrownBy(MountedCapabilityStudioStageAcceptanceAuthorityProvider::new)
+                .isExactlyInstanceOf(DeploymentUnavailableException.class)
+                .hasMessage("RG.CAPABILITY_STUDIO.DEPLOYMENT_UNAVAILABLE")
+                .hasMessageNotContaining(configuredRoot.toString());
+    }
+
+    @Test
     void exposesLegacyAuthorityBindingAndOnePrecomputedFormalSnapshot() throws Exception {
         Fixture fixture = MountedProviderTestFixtures.write(temporaryDirectory, "formal");
         configure(fixture);
@@ -198,7 +214,7 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
     }
 
     @Test
-    void legacyAuthorityRootStillUsesAbsoluteNormalizedResolution() throws Exception {
+    void relativeAuthorityRootKeepsHistoricalPhaseTwoAndFormalCompatibility() throws Exception {
         Fixture fixture = MountedProviderTestFixtures.write(temporaryDirectory, "legacy-relative");
         configure(fixture);
         Path workingDirectory = Path.of("").toAbsolutePath().normalize();
@@ -280,52 +296,152 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
     }
 
     @Test
-    void formalOuterChangesForEveryMountedRootAndMaterialCoordinate() throws Exception {
+    void formalMaterialIsStableAcrossReadOnlyMountRelocationAndBindsMaterialAndDescriptor()
+            throws Exception {
         Fixture base = MountedProviderTestFixtures.write(temporaryDirectory, "base");
         configure(base);
-        String initial = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint();
-        List<String> fingerprints = new ArrayList<>();
-        fingerprints.add(initial);
+        var initial = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+        var targetBundle = CapabilityStudioMountedTargetAdmissionBundle.load(
+                base.targetRoot(), Clock.systemUTC());
+        var lifecycle = targetBundle.lifecycleMaterial();
+        var revocation = lifecycle.revocationAuthority();
+        String expectedStoreConfiguration =
+                MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
+                        "resource-gateway.capability-studio.mounted-provider-lease-store.v2",
+                        PROVIDER_ARTIFACT,
+                        FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                        revocation.registryRef(),
+                        "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V2");
+        var descriptor = MountedProviderTestFixtures.JSON.readTree(base.stateRoot().resolve(
+                FilesystemDeploymentAdmissionAuthority.LOCK_FILE).toFile());
+
+        assertThat(descriptor.path("configurationFingerprint").textValue())
+                .isEqualTo(expectedStoreConfiguration);
+        assertThat(initial.admissionLifecycleAuthorityMaterialFingerprint()).isEqualTo(
+                MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
+                        "resource-gateway.capability-studio."
+                                + "mounted-provider-lifecycle-authority.v2",
+                        PROVIDER_ARTIFACT, initial.authorityMaterialFingerprint(),
+                        targetBundle.bundleFingerprint(), lifecycle.fingerprint(),
+                        initial.storeDescriptorFingerprint(),
+                        FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                        revocation.registryRef(),
+                        "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V2"));
+        assertThat(initial.executionLeaseAuthorityMaterialFingerprint()).isEqualTo(
+                MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
+                        "resource-gateway.capability-studio."
+                                + "mounted-provider-execution-lease-authority.v2",
+                        PROVIDER_ARTIFACT, initial.authorityMaterialFingerprint(),
+                        targetBundle.bundleFingerprint(),
+                        lifecycle.fingerprint(), initial.storeDescriptorFingerprint(),
+                        FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                        revocation.registryRef(),
+                        "ATOMIC_MOVE_FORCE_GENERATION_CHECKPOINT_EXACT_RECOVERY_V2"));
 
         Path authorityCopy = temporaryDirectory.resolve("authority-copy").toAbsolutePath();
         MountedProviderTestFixtures.copyDirectory(base.authorityRoot(), authorityCopy);
-        configure(new Fixture(authorityCopy, base.targetRoot(), base.stateRoot()));
-        fingerprints.add(new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint());
-
         Path targetCopy = temporaryDirectory.resolve("target-copy").toAbsolutePath();
         MountedProviderTestFixtures.copyDirectory(base.targetRoot(), targetCopy);
-        configure(new Fixture(base.authorityRoot(), targetCopy, base.stateRoot()));
-        fingerprints.add(new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint());
+        configure(new Fixture(authorityCopy, targetCopy, base.stateRoot()));
+        var relocated = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
 
-        Path stateCopy = MountedProviderTestFixtures.privateDirectory(
-                temporaryDirectory.resolve("state-copy"));
-        configure(new Fixture(base.authorityRoot(), base.targetRoot(), stateCopy));
-        fingerprints.add(new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint());
+        assertThat(relocated).isEqualTo(initial);
 
         Fixture replacement = MountedProviderTestFixtures.write(
                 temporaryDirectory, "replacement");
         MountedProviderTestFixtures.replaceDirectoryContents(
                 base.authorityRoot(), replacement.authorityRoot());
         configure(base);
-        fingerprints.add(new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint());
+        var authorityChanged = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+        assertThat(authorityChanged.authorityMaterialFingerprint())
+                .isNotEqualTo(initial.authorityMaterialFingerprint());
+        assertThat(authorityChanged.admissionLifecycleAuthorityMaterialFingerprint())
+                .isNotEqualTo(initial.admissionLifecycleAuthorityMaterialFingerprint());
+        assertThat(authorityChanged.executionLeaseAuthorityMaterialFingerprint())
+                .isNotEqualTo(initial.executionLeaseAuthorityMaterialFingerprint());
+        assertThat(authorityChanged.formalOuterFingerprint())
+                .isNotEqualTo(initial.formalOuterFingerprint());
 
         MountedProviderTestFixtures.replaceDirectoryContents(
                 base.targetRoot(), replacement.targetRoot());
         configure(base);
-        fingerprints.add(new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
-                .formalTargetBoundAuthorityBinding().fingerprint());
+        var targetChanged = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+        assertThat(targetChanged.targetAdmissionMaterialFingerprint())
+                .isNotEqualTo(authorityChanged.targetAdmissionMaterialFingerprint());
+        assertThat(targetChanged.admissionLifecycleAuthorityMaterialFingerprint())
+                .isNotEqualTo(authorityChanged.admissionLifecycleAuthorityMaterialFingerprint());
+        assertThat(targetChanged.executionLeaseAuthorityMaterialFingerprint())
+                .isNotEqualTo(authorityChanged.executionLeaseAuthorityMaterialFingerprint());
+        assertThat(targetChanged.formalOuterFingerprint())
+                .isNotEqualTo(authorityChanged.formalOuterFingerprint());
 
-        assertThat(Set.copyOf(fingerprints)).hasSize(fingerprints.size());
-        assertThat(MountedCapabilityStudioStageAcceptanceAuthorityProvider
-                .componentFingerprint("domain:v1", "artifact", "root", "material-a"))
-                .isNotEqualTo(MountedCapabilityStudioStageAcceptanceAuthorityProvider
-                        .componentFingerprint(
-                                "domain:v1", "artifact", "root", "material-b"));
+        Path newState = MountedProviderTestFixtures.privateDirectory(
+                temporaryDirectory.resolve("new-state"));
+        configure(new Fixture(base.authorityRoot(), base.targetRoot(), newState));
+        var descriptorChanged = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+        assertThat(descriptorChanged.storeDescriptorFingerprint())
+                .isNotEqualTo(targetChanged.storeDescriptorFingerprint());
+        assertThat(descriptorChanged.deploymentAdmissionAuthorityMaterialFingerprint())
+                .isNotEqualTo(targetChanged.deploymentAdmissionAuthorityMaterialFingerprint());
+        assertThat(descriptorChanged.formalOuterFingerprint())
+                .isNotEqualTo(targetChanged.formalOuterFingerprint());
+    }
+
+    @Test
+    void existingStateStoreCanMoveWithoutChangingAnyFormalMaterial() throws Exception {
+        Fixture fixture = MountedProviderTestFixtures.write(temporaryDirectory, "state-move");
+        configure(fixture);
+        var before = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+
+        Path movedState = temporaryDirectory.resolve("relocated-state").toAbsolutePath();
+        Files.move(fixture.stateRoot(), movedState);
+        assertThat(fixture.stateRoot()).doesNotExist();
+        assertThat(movedState).isDirectory();
+        configure(new Fixture(fixture.authorityRoot(), fixture.targetRoot(), movedState));
+        var after = new MountedCapabilityStudioStageAcceptanceAuthorityProvider()
+                .formalMaterialDeclaration();
+
+        assertThat(after.storeDescriptorFingerprint())
+                .isEqualTo(before.storeDescriptorFingerprint());
+        assertThat(after.trustedClockMaterialFingerprint())
+                .isEqualTo(before.trustedClockMaterialFingerprint());
+        assertThat(after.admissionLifecycleAuthorityMaterialFingerprint())
+                .isEqualTo(before.admissionLifecycleAuthorityMaterialFingerprint());
+        assertThat(after.executionLeaseAuthorityMaterialFingerprint())
+                .isEqualTo(before.executionLeaseAuthorityMaterialFingerprint());
+        assertThat(after.deploymentAdmissionAuthorityMaterialFingerprint())
+                .isEqualTo(before.deploymentAdmissionAuthorityMaterialFingerprint());
+        assertThat(after.formalOuterFingerprint()).isEqualTo(before.formalOuterFingerprint());
+    }
+
+    @Test
+    void legacyV1StoreConfigurationIsRejectedByTheV2Provider() throws Exception {
+        Fixture fixture = MountedProviderTestFixtures.write(temporaryDirectory, "legacy-store");
+        var targetBundle = CapabilityStudioMountedTargetAdmissionBundle.load(
+                fixture.targetRoot(), Clock.systemUTC());
+        String v1Configuration = MountedCapabilityStudioStageAcceptanceAuthorityProvider
+                .componentFingerprint(
+                        "resource-gateway.capability-studio.mounted-provider-lease-store.v1",
+                        PROVIDER_ARTIFACT,
+                        fixture.stateRoot().toRealPath().toString(),
+                        FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                        targetBundle.lifecycleMaterial().revocationAuthority().registryRef(),
+                        "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V1");
+        FilesystemDeploymentAdmissionAuthority.prepareStore(fixture.stateRoot(),
+                v1Configuration, targetBundle.lifecycleMaterial().revocationAuthority());
+        configure(fixture);
+
+        var provider = new MountedCapabilityStudioStageAcceptanceAuthorityProvider();
+        assertThatThrownBy(provider::formalTargetBoundAuthorityBinding)
+                .isExactlyInstanceOf(IllegalStateException.class)
+                .hasMessage(MountedCapabilityStudioStageAcceptanceAuthorityProvider
+                        .EXECUTION_LEASE_STATE_ROOT_INVALID_CODE);
     }
 
     @Test

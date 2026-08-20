@@ -22,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.util.HexFormat;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Reference Provider backed by immutable authority and target-admission mounts plus a durable
@@ -86,17 +87,18 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
     private static final String CLOCK_DOMAIN =
             "resource-gateway.capability-studio.mounted-provider-clock.v1";
     private static final String LIFECYCLE_DOMAIN =
-            "resource-gateway.capability-studio.mounted-provider-lifecycle-authority.v1";
+            "resource-gateway.capability-studio.mounted-provider-lifecycle-authority.v2";
     private static final String LEASE_DOMAIN =
-            "resource-gateway.capability-studio.mounted-provider-execution-lease-authority.v1";
+            "resource-gateway.capability-studio.mounted-provider-execution-lease-authority.v2";
     private static final String STORE_DOMAIN =
-            "resource-gateway.capability-studio.mounted-provider-lease-store.v1";
+            "resource-gateway.capability-studio.mounted-provider-lease-store.v2";
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[0-9a-f]{64}");
 
     private final AuthorityBinding binding;
     private final Clock clock;
-    private final Path realAuthorityRoot;
     private volatile boolean formalInitialized;
     private FormalTargetBoundAuthorityBinding formalBinding;
+    private FormalMaterialDeclaration formalDeclaration;
     private RuntimeException formalFailure;
 
     /**
@@ -112,10 +114,9 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
     MountedCapabilityStudioStageAcceptanceAuthorityProvider(Clock clock) {
         this.clock = java.util.Objects.requireNonNull(clock, "clock is required");
         Path authorityRoot = authorityRoot();
+        realReadOnlyRoot(authorityRoot, AUTHORITY_BUNDLE_LOAD_FAILED_CODE);
         CapabilityStudioMountedAuthorityBundle authorityBundle =
                 loadAuthorityBundle(authorityRoot, clock);
-        realAuthorityRoot = realReadOnlyRoot(authorityRoot,
-                AUTHORITY_BUNDLE_LOAD_FAILED_CODE, false);
         binding = new AuthorityBinding(authorityBundle.bundleFingerprint(),
                 authorityBundle.evidenceResolver(), authorityBundle.evidenceIssuerPolicy(),
                 authorityBundle.ownerAuthority());
@@ -138,29 +139,33 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
                 stateConfigured, EXECUTION_LEASE_STATE_ROOT_INVALID_CODE);
         CapabilityStudioMountedTargetAdmissionBundle targetBundle =
                 loadTargetBundle(targetRoot, clock);
-        Path realTargetRoot = realReadOnlyRoot(targetRoot,
-                TARGET_ADMISSION_BUNDLE_LOAD_FAILED_CODE, true);
+        realReadOnlyRoot(targetRoot, TARGET_ADMISSION_BUNDLE_LOAD_FAILED_CODE);
         Path realStateRoot = FilesystemDeploymentAdmissionAuthority.requireStateRoot(stateRoot);
+        var lifecycleMaterial = targetBundle.lifecycleMaterial();
+        var revocationMaterial = lifecycleMaterial.revocationAuthority();
         String storeConfigurationFingerprint = componentFingerprint(STORE_DOMAIN,
-                PROVIDER_ARTIFACT, realStateRoot.toString(),
+                PROVIDER_ARTIFACT,
                 FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
-                targetBundle.lifecycleMaterial().revocationAuthority().registryRef(),
-                "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V1");
+                revocationMaterial.registryRef(),
+                "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V2");
         FilesystemDeploymentAdmissionAuthority.PreparedStore preparedStore =
                 FilesystemDeploymentAdmissionAuthority.prepareStore(
                         realStateRoot, storeConfigurationFingerprint,
-                        targetBundle.lifecycleMaterial().revocationAuthority());
+                        revocationMaterial);
 
         String clockFingerprint = componentFingerprint(CLOCK_DOMAIN,
                 PROVIDER_ARTIFACT, "java.time.Clock.systemUTC");
         String lifecycleFingerprint = componentFingerprint(LIFECYCLE_DOMAIN,
-                PROVIDER_ARTIFACT, realAuthorityRoot.toString(),
-                binding.fingerprint(), realTargetRoot.toString(),
-                targetBundle.bundleFingerprint(), realStateRoot.toString(),
-                "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V1");
+                PROVIDER_ARTIFACT, binding.fingerprint(), targetBundle.bundleFingerprint(),
+                lifecycleMaterial.fingerprint(), preparedStore.descriptorFingerprint(),
+                FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                revocationMaterial.registryRef(),
+                "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V2");
         String leaseFingerprint = componentFingerprint(LEASE_DOMAIN,
-                PROVIDER_ARTIFACT, realStateRoot.toString(), targetBundle.bundleFingerprint(),
-                preparedStore.descriptorFingerprint(),
+                PROVIDER_ARTIFACT, binding.fingerprint(), targetBundle.bundleFingerprint(),
+                lifecycleMaterial.fingerprint(), preparedStore.descriptorFingerprint(),
+                FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                revocationMaterial.registryRef(),
                 "ATOMIC_MOVE_FORCE_GENERATION_CHECKPOINT_EXACT_RECOVERY_V2");
         String deploymentFingerprint = DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
                 clockFingerprint, lifecycleFingerprint, leaseFingerprint);
@@ -190,6 +195,10 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
         if (!expectedFormalFingerprint.equals(formal.fingerprint())) {
             throw new IllegalStateException(TARGET_ADMISSION_BUNDLE_LOAD_FAILED_CODE);
         }
+        formalDeclaration = new FormalMaterialDeclaration(binding.fingerprint(),
+                formal.fingerprint(), targetBundle.bundleFingerprint(), deploymentFingerprint,
+                clockFingerprint, lifecycleFingerprint, leaseFingerprint,
+                preparedStore.descriptorFingerprint());
         return formal;
     }
 
@@ -248,6 +257,13 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
             throw formalFailure;
         }
         return formalBinding;
+    }
+
+    FormalMaterialDeclaration formalMaterialDeclaration() {
+        if (formalTargetBoundAuthorityBinding() == null || formalDeclaration == null) {
+            throw new IllegalStateException(FORMAL_CONFIGURATION_INCOMPLETE_CODE);
+        }
+        return formalDeclaration;
     }
 
     /**
@@ -316,6 +332,7 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
             if (unavailable != null) {
                 throw unavailable;
             }
+            realReadOnlyRoot(root, AUTHORITY_BUNDLE_LOAD_FAILED_CODE);
             throw new IllegalStateException(AUTHORITY_BUNDLE_LOAD_FAILED_CODE);
         }
     }
@@ -348,7 +365,7 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
         return null;
     }
 
-    private static Path realReadOnlyRoot(Path root, String invalidCode, boolean unavailable) {
+    private static Path realReadOnlyRoot(Path root, String invalidCode) {
         try {
             BasicFileAttributes attributes = java.nio.file.Files.readAttributes(
                     root, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
@@ -356,17 +373,14 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
                     || attributes.fileKey() == null) {
                 throw new IllegalStateException(invalidCode);
             }
+            if (!java.nio.file.Files.isReadable(root)) {
+                throw new DeploymentUnavailableException();
+            }
             return root.toRealPath(LinkOption.NOFOLLOW_LINKS);
         } catch (NoSuchFileException failure) {
-            if (unavailable) {
-                throw new DeploymentUnavailableException();
-            }
-            throw new IllegalStateException(invalidCode);
+            throw new DeploymentUnavailableException();
         } catch (java.io.IOException failure) {
-            if (unavailable) {
-                throw new DeploymentUnavailableException();
-            }
-            throw new IllegalStateException(invalidCode);
+            throw new DeploymentUnavailableException();
         }
     }
 
@@ -384,6 +398,34 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
                     MessageDigest.getInstance("SHA-256").digest(value));
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("SHA-256 unavailable");
+        }
+    }
+
+    record FormalMaterialDeclaration(
+            String authorityMaterialFingerprint,
+            String formalOuterFingerprint,
+            String targetAdmissionMaterialFingerprint,
+            String deploymentAdmissionAuthorityMaterialFingerprint,
+            String trustedClockMaterialFingerprint,
+            String admissionLifecycleAuthorityMaterialFingerprint,
+            String executionLeaseAuthorityMaterialFingerprint,
+            String storeDescriptorFingerprint) {
+        FormalMaterialDeclaration {
+            for (String value : new String[]{authorityMaterialFingerprint,
+                    formalOuterFingerprint, targetAdmissionMaterialFingerprint,
+                    deploymentAdmissionAuthorityMaterialFingerprint,
+                    trustedClockMaterialFingerprint,
+                    admissionLifecycleAuthorityMaterialFingerprint,
+                    executionLeaseAuthorityMaterialFingerprint, storeDescriptorFingerprint}) {
+                if (value == null || !FINGERPRINT.matcher(value).matches()) {
+                    throw new IllegalArgumentException("formal material declaration is invalid");
+                }
+            }
+        }
+
+        @Override
+        public String toString() {
+            return "FormalMaterialDeclaration[material=REDACTED]";
         }
     }
 }
