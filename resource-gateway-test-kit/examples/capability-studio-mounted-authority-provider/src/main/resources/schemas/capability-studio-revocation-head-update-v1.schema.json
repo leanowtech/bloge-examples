@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway/capability-studio-revocation-head-update-v1.schema.json",
+  "title": "Capability Studio Revocation Head Update v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "storeDescriptorFingerprint",
+    "registryRef",
+    "revision",
+    "snapshotFingerprint",
+    "observedAt",
+    "expiresAt",
+    "predecessorHeadFingerprint",
+    "headFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.revocation-head-update.v1"
+    },
+    "storeDescriptorFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "registryRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+\\-]{0,511}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "snapshotFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "predecessorHeadFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "headFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

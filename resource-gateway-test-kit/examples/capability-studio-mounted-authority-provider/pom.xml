@@ -9,7 +9,7 @@
     <version>1.0.0</version>
 
     <name>BLOGE Capability Studio mounted authority provider</name>
-    <description>Reference enterprise ServiceLoader provider for a read-only authority bundle mount.</description>
+    <description>Reference formal ServiceLoader provider with immutable authority mounts and durable lease state.</description>
 
     <properties>
         <java.version>25</java.version>
