@@ -298,6 +298,122 @@ snapshot/Evidence-manifest 模式。
 
 该流程成功只能证明：两个阶段使用了同一份被部署方 pin 住的 Authority 配置，并且 Provider 通过机制挑战。它不能证明企业信任根归属、KMS/HSM 私钥托管、目标环境 transport、部署级 egress 原始观测和 Owner 审批真实发生。五项外部责任仍须以精确引用、指纹、时间窗和真实责任人签署进入同一 Stage Result Evidence 闭包。
 
+#### 3.5.2 声明并快照 formal-v2 只读输入树
+
+`CapabilityStudioFormalInputTreeSnapshotter` 为 `AUTHORITY_BUNDLE` 和
+`TARGET_ADMISSION_BUNDLE` 提供同一套严格协议。协议 Schema 为
+`capability-studio-formal-input-tree-v1.schema.json`。源 root 必须是 absolute normalized
+路径。源 root 及所有已有祖先必须是具有稳定 `fileKey` 的真实目录，且不能是符号链接。
+
+每棵树必须是 flat direct-child exact tree。Snapshotter 依据对应 Bundle Manifest 计算允许文件
+闭包，并拒绝子目录、缺失文件、额外文件、空文件、不安全文件名、符号链接、硬链接和非普通文件。
+Authority 输入树沿用 mounted loader 上限：最多 641 个文件，Bundle Manifest 1 MiB、artifact
+64 KiB、key set 1 MiB、引用材料 32 MiB、完整 Bundle 树 33 MiB。Target Admission 必须恰好
+8 个文件，Bundle Manifest、target/Attestation/key set 单文件 1 MiB，proof 单文件 64 KiB，
+总计 8 MiB。文件系统不能证明稳定 `fileKey`、`unix:nlink`、POSIX 权限、同文件系统原子 move
+或文件/目录 force 时，操作失败关闭。
+边界测试构造真实 Authority 闭包：引用材料精确 32 MiB、Manifest 精确 1 MiB、完整树精确
+33 MiB，并拒绝增加的第一个字节。
+
+树内容身份只包含固定版本、`treeKind`、Bundle semantic fingerprint、排序后的 direct-child
+相对文件名、字节数和原始 SHA-256。绝对路径、mtime、inode/`fileKey`、UID 和 GID 不进入树内容
+身份。Snapshotter 仅使用这些主机坐标比较两次完整 inventory，并检测读取期间的文件替换、同尺寸
+同 mtime 内容变化、同名重建和 root swap。
+
+声明模式不写文件：
+
+```bash
+java -cp resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeCli \
+  --mode declare \
+  --tree-kind TARGET_ADMISSION_BUNDLE \
+  --source-root /mnt/target-admission-bundle \
+  --expected-bundle-semantic-fingerprint 'sha256:<64 位小写十六进制>'
+```
+
+声明结果不是证据，也不能自行签发 pin。部署 Authority 必须通过独立渠道审批并发布
+`treeFingerprint` 与 publication fingerprint。Manifest self-fingerprint 和文件 raw hash 只提供
+本地完整性，正式真实性完全来自部署侧 out-of-band pin，不存在 source/loader 自签 fallback。
+获得这些 pin 后，才能执行快照模式：
+
+```bash
+java -cp resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeCli \
+  --mode snapshot \
+  --tree-kind TARGET_ADMISSION_BUNDLE \
+  --source-root /mnt/target-admission-bundle \
+  --expected-bundle-semantic-fingerprint 'sha256:<64 位小写十六进制>' \
+  --snapshot-output-dir /run/formal-input/target-admission \
+  --expected-tree-fingerprint 'sha256:<部署 Authority 独立批准的 tree pin>' \
+  --expected-publication-fingerprint 'sha256:<部署 Authority 独立批准的 publication pin>' \
+  --transaction-nonce 'sha256:<部署生成的高熵稳定 nonce>'
+```
+
+全新事务必须先验证 tree pin，再创建 publication lease、owner claim、staging 或 final；缺失或
+格式错误的 tree/publication/nonce 坐标在任何文件系统写入前拒绝。恢复路径在读取 source 前先
+按外部坐标检查已提交 final，因此 source 挂载已卸载时，精确发布仍可返回 `RECOVERED`。唯一发布
+对象是 wrapper 目录，其中只允许
+`bundle-root/` 和 `formal-input-tree-v1.json`；Manifest 位于 Provider 兼容的 `bundle-root/`
+之外，但不再使用另一个独立输出路径。输出 parent 必须是精确 `0700`；固定的 owner-only、
+single-link lock file 与跨进程 `FileLock` 覆盖 final 检查、PREPARED 恢复和 commit。source/output
+祖先链通过 NOFOLLOW file identity、UID、mode 与 sticky-directory ownership 规则检查，并在关键
+阶段复核。
+
+transaction identity 绑定固定协议、kind、Bundle semantic fingerprint、tree pin、独立 publication
+fingerprint 和高熵稳定 nonce。严格 owner descriptor 必须先于 payload 持久化；文件仅可通过该
+transaction 的 `.part` 执行“写入、file force、chmod `0400`、再次 file force”，再原子安装子项。
+final wrapper 通过 create-new 语义创建为 `0700` PREPARED，绝不替换已有 final。完整
+`bundle-root/` 在 final 内原位 create-new，不再 rename 或递归协调非空 Bundle 目录。每个已认证
+文件从 staging 单独原子安装到 final Bundle root，全部完成后才 force、chmod `0500` 并再次
+force；source/target Bundle 目录 identity 相同会非破坏性 `BLOCKED`，绝不据此删除任一目录名。
+随后才把
+`formal-input-tree-v1.json` 原子安装为唯一逻辑 commit marker。协议不声称 wrapper 目录项一次性
+出现。之后 wrapper chmod `0500`、force、force parent 并执行双重 persisted verify。每次原子文件
+rename 都先 force target parent，再 force 不同的 source parent；同 parent 只 force 一次。文件恢复
+显式区分 source-only、target-only、both、neither。source-only 与 target-only 必须各自精确为
+`nlink=1`。both 仅在两个名字指向同一 inode、精确 `nlink=2`，且 owner descriptor/nonce、UID、
+权限、bytes 与 declaration 全部匹配时可协调：先重新验证并 force target 文件，再 force target
+parent，然后 unlink 已认证 source 名并 force source parent。unlink 前后崩溃均保留已持久化 target，
+可确定性重试。distinct-inode both 与任何其他 link count 均保持原样并 `BLOCKED`。
+
+public `verify` 是独立的纯只读离线审计，不创建或打开 publication lock，也不要求可写 `0700`
+publication parent。审计 parent 可为私有只读目录或 `0755`，但不得 group/world writable，owner 与
+祖先链仍须满足安全规则。调用方必须提供预期 kind、Bundle semantic/tree/publication fingerprint
+和 transaction ID；操作前后均验证 wrapper/`bundle-root/` 为 `0500`，所有 Bundle 文件和 Manifest
+为 `0400`，且不修改任何 sibling。验证成功只证明内容与坐标，不签发 durability receipt。
+闭包结构、权限、canonical JSON 或 schema 不匹配为 `INVALID`；wrapper 缺失/不可读、运行时 I/O
+或必要 metadata 能力故障保持 `UNAVAILABLE`。普通文件缺少稳定 `fileKey`、POSIX/`unix:*`
+metadata 不可用或读取中 metadata 消失属于能力/依赖不可用；symlink 与错误文件类型仍是结构
+`INVALID`。
+
+失败时不按路径递归 cleanup。重试只认领精确 owner receipt 与 transaction-owned partial 前缀；
+新发布返回 `COMMITTED`，精确 final（包括 commit marker 后 parent force/verify 中断）在补齐
+barrier 并复验后返回同一 receipt 的 `RECOVERED`。final 独立复验后，仅可清理精确空 owned
+staging 与 owner descriptor；清理失败保留可认证 residue，不影响 final。未知 owner/temp/
+staging/final 返回 `BLOCKED`，且不被 chmod、覆盖或删除。stdout 写入失败后，持久化 final 仍
+通过下一次调用恢复，不回滚发布。publication lease 使用固定 64 个 JVM `ReentrantLock` stripe，
+不会随攻击者选择的 Path 永久增长。`FileChannel.tryLock` 每次 miss 或 overlapping lock 都消耗一个
+独立硬尝试；尝试数按 `ceil(timeout / 20ms)` 推导并封顶 1024，因此 constant ticker 也有界。两个
+锁层另共享同一 monotonic 5 秒预算。预算不使用绝对 deadline 或 `Long.MAX_VALUE` sentinel；
+内部保存 last tick 与剩余预算，
+每次用自然溢出且 wrap-safe 的非负 delta 单向
+扣减，绝不补回。每次取得锁前后都复核剩余预算，过期后释放刚取得的锁；正常跨 wrap 后再次倒退、
+振荡或失败的 ticker 都作为 `UNAVAILABLE` 关闭。超时稳定返回 `PUBLICATION_LOCK_TIMEOUT`，线程
+中断状态会保留。
+
+本地协议不能防御忽略 publication lease、在剩余 path-based 窗口完成精确 ABA 替换的同 UID
+主动攻击者、特权 actor，也不能防御返回虚假 identity metadata 的内核或文件系统。部署必须使用
+只读挂载、独立运行身份或进程隔离覆盖该威胁。
+
+CP0-CP6 的重试状态固定为 `COMMITTED`，CP7-CP10 固定为 `RECOVERED`。子 JVM 输出重定向到
+私有临时文件，等待、TERM、强制终止与 reap 全部有界，并用故意 HANG worker 认证 harness 不会
+挂死。CP0-CP10 仅是本切片的 crash/output 开发测试矩阵，不是正式 Stage 27 验收结论，不改变
+`formalPassCount=0/27`。
+
+现有八参数 runner 尚未读取这两棵输入树的 declaration/snapshot，也尚未生成 formal-v2 Evidence
+manifest。部署 Authority 后续仍须对批准的 declaration 签发可信材料，并将其绑定到完整 runner 和
+Evidence 闭包。不能把本节 CLI 的 `DECLARED` 或 `SNAPSHOT` 输出当作正式验收结果。
+
 ### 3.6 CI 与目标环境部署门禁
 
 部署任务必须使用

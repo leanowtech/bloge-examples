@@ -105,6 +105,9 @@ final class CapabilityStudioSchemaSupport {
     static final String STAGE_ACCEPTANCE_TARGET_BINDING_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-stage-acceptance-target-binding-v1.schema.json";
+    static final String FORMAL_INPUT_TREE_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-formal-input-tree-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

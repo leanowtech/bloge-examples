@@ -549,6 +549,145 @@ Provider throws. The isolation layer does not convert or swallow `Error`. Run th
 one-shot process: a Provider must not start unmanaged asynchronous writers, and the process-wide
 window can temporarily suppress output from unrelated threads in the same JVM.
 
+### Declare and snapshot formal input trees
+
+`CapabilityStudioFormalInputTreeSnapshotter` applies the strict
+`capability-studio-formal-input-tree-v1.schema.json` protocol to either an `AUTHORITY_BUNDLE` or a
+`TARGET_ADMISSION_BUNDLE`. A source root must be absolute and normalized. The root and every
+existing ancestor must be a real non-symlink directory with a stable file identity. The Bundle is
+one flat, exact direct-child tree: subdirectories, missing or extra files, empty files, unsafe ASCII
+names, symbolic links, hard links, and non-regular files fail closed. Authority input supports the
+mounted loader's maximum closure of 641 files: a 1 MiB Bundle manifest, artifacts of at most 64
+KiB, key sets of at most 1 MiB, at most 32 MiB of referenced material, and at most 33 MiB for the
+complete Bundle tree. Target Admission requires exactly eight files, a 1 MiB Bundle manifest,
+1 MiB target/Attestation/key-set files, 64 KiB proof files, and at most 8 MiB in total. Filesystems
+that cannot expose stable file keys, `unix:nlink`, POSIX permissions, atomic same-filesystem move,
+or file/directory force are unsupported rather than silently weakened.
+The boundary suite constructs an actual Authority closure with exactly 32 MiB referenced material
+and a 1 MiB manifest (33 MiB total), then rejects the first additional byte.
+
+The tree content identity includes the fixed versions, tree kind, Bundle semantic fingerprint,
+sorted relative names, byte sizes, and exact raw SHA-256 fingerprints. It deliberately excludes
+absolute paths, mtimes, inode/file keys, UID, and GID. Those host coordinates are used only to prove
+that two complete source inventories and each bounded read observed one stable tree. A declaration
+is unsigned material awaiting independent Deployment Authority approval; it is not evidence and
+must not be treated as a self-issued pin.
+The manifest self-fingerprint and raw file hashes provide local integrity only. Formal
+authenticity comes exclusively from deployment-supplied out-of-band tree and publication pins;
+neither the source Bundle nor the snapshotter may self-assert a trusted fallback.
+
+```bash
+java -cp resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeCli \
+  --mode declare \
+  --tree-kind AUTHORITY_BUNDLE \
+  --source-root /mnt/authority-bundle \
+  --expected-bundle-semantic-fingerprint 'sha256:<64 lowercase hex>'
+
+java -cp resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeCli \
+  --mode snapshot \
+  --tree-kind AUTHORITY_BUNDLE \
+  --source-root /mnt/authority-bundle \
+  --expected-bundle-semantic-fingerprint 'sha256:<64 lowercase hex>' \
+  --snapshot-output-dir /run/formal-input/authority \
+  --expected-tree-fingerprint 'sha256:<independently approved tree fingerprint>' \
+  --expected-publication-fingerprint 'sha256:<independently approved publication fingerprint>' \
+  --transaction-nonce 'sha256:<deployment-generated high-entropy nonce>'
+```
+
+`declare` performs no writes. On a fresh transaction, `snapshot` checks the out-of-band tree pin
+before creating the publication lease, owner claim, staging, or final output. Malformed or missing
+tree/publication/nonce coordinates fail before filesystem writes. Recovery validates the supplied
+coordinates first and may inspect an existing committed final before reading the source, so an
+exact publication remains recoverable after its source mount is removed.
+The one published wrapper contains only `bundle-root/` and `formal-input-tree-v1.json`; the
+manifest is metadata outside the Provider-compatible Bundle root. The output parent must grant
+exact owner-only `0700` access. A fixed owner-only, single-link lock file and an inter-process
+`FileLock` serialize final inspection, PREPARED recovery, and commit. Output and source ancestor
+chains are checked with NOFOLLOW file identity, UID, mode, and sticky-directory ownership rules,
+then rechecked at critical phases.
+
+Publication identity binds the protocol, kind, Bundle semantic fingerprint, tree pin, independent
+publication fingerprint, and stable high-entropy transaction nonce. A strict owner descriptor is
+durably claimed before payload. Files are rebuilt only through transaction-owned `.part` names and
+follow write, file force, chmod `0400`, and second file force before atomic child installation.
+The final wrapper is created with `Files.createDirectory` create-new semantics as a `0700` PREPARED
+directory; no existing final is replaced. Its `bundle-root/` is also created in place. A non-empty
+Bundle directory is never renamed or recursively reconciled: each authenticated file is installed
+atomically from staging into the final Bundle root, after which the root is forced, changed to
+`0500`, and forced before the manifest is atomically installed last. Equal source/target Bundle
+directory identities are a non-destructive `BLOCKED`; they are never treated as permission to
+delete either name. The presence of
+`formal-input-tree-v1.json`, not one-step directory appearance, is the logical commit marker. The
+wrapper is then changed to `0500`, forced, its parent is forced, and the persisted closure is read
+twice. Every atomic file rename forces the target parent and then the distinct source parent; a
+same-parent rename forces that directory once. File recovery handles source-only, target-only,
+both, and neither explicitly. Source-only and target-only each require exactly one link. A
+both-state is recoverable only when both names identify the same inode with exactly two links and
+the owner descriptor, nonce, UID, permissions, exact bytes, and declaration all match. Recovery
+then rechecks and forces the target file, forces the target parent, unlinks only the authenticated
+source name, and forces the source parent. A crash immediately before or after that unlink retains
+the already durable target and retries deterministically. Distinct-inode both states and every
+other link-count mismatch are non-destructive `BLOCKED`.
+
+The public `verify` API is a separate, read-only offline audit. It requires independent expected
+kind, Bundle semantic fingerprint, tree fingerprint, publication fingerprint, and transaction ID,
+but neither creates nor opens the publication lock and does not require a writable `0700`
+publication parent. Its audit parent may be private/read-only or `0755`, but must not be group/world
+writable and its owner/ancestor chain must remain secure. It checks wrapper and Bundle roots remain
+`0500` and every Bundle file and manifest remain `0400` across two complete inventories. Successful
+verification proves content and coordinates only; it does not issue a durability receipt.
+Malformed closure structure, permissions, canonical JSON, or schema is `INVALID`; a missing or
+unreadable wrapper and runtime I/O or required-metadata failure remain `UNAVAILABLE`. In
+particular, a regular file without a stable file key, unavailable POSIX/`unix:*` metadata, or
+metadata that disappears during a read is a capability outage, while a symlink or wrong file type
+is malformed structure.
+
+Failure does not perform path-based recursive cleanup. A retry resumes only an exact owner receipt
+and transaction-owned partial prefix. An exact committed final returns the same receipt with
+`commitStatus=RECOVERED`; a new publication returns `COMMITTED`. After independent final
+verification, cleanup may remove only the exact empty owned staging and owner descriptor; cleanup
+failure leaves authenticated residue and never damages final. Unknown owner/temp/staging/final
+objects are left byte-for-byte unchanged and produce `BLOCKED`. This also makes a retry after stdout
+failure recover the persisted receipt. Publication lease acquisition uses one of 64 fixed JVM
+`ReentrantLock` stripes, so the registry cannot grow with attacker-selected paths, plus bounded
+`FileChannel.tryLock` polling. Independent of ticker progress, each lock miss or overlapping lock
+consumes one hard attempt derived as `ceil(timeout / 20ms)`, capped at 1024. Both lock layers also
+share one monotonic five-second budget checked before and
+after every acquisition; a lock obtained after expiry is released. The budget is computed from a
+last observed tick and remaining time. Each wrap-safe non-negative delta is deducted exactly once
+and is never restored; a backwards or failing ticker is unavailable, including a rollback after a
+valid signed `long` wrap. Timeout is the stable `PUBLICATION_LOCK_TIMEOUT` result, and interruption
+is preserved. An active
+same-UID actor that ignores the publication lease
+and performs an exact ABA replacement in the remaining path-based windows, a privileged actor, or a
+filesystem/kernel that reports false identity metadata remains outside this local protocol's threat
+model. Deployment must use read-only mounts and process/identity isolation for those adversaries.
+
+The canonical fingerprint message is compact UTF-8 JSON in schema field order with
+`treeFingerprint:null`. The v1 golden vector with one entry (`a.json`, 1 byte, raw fingerprint
+`sha256:` plus 64 `1` characters) and Bundle semantic fingerprint `sha256:` plus 64 `a`
+characters produces tree fingerprint
+`sha256:0e9730b1e690f80ceb5a903ad30c0698597fabceb0cfc73689fb076625de5666`.
+With publication fingerprint `sha256:` plus 64 `c` characters and nonce `sha256:` plus 64 `d`
+characters, its transaction ID is
+`sha256:e030db0645065053c97e85a89b88dbeaf2575b3ab041c44229d2fbc474464397` and its exact committed
+manifest raw fingerprint is
+`sha256:d38cba50859508d98c49cbfae0eeac44f79191078b0646aaca1abcf2fda3ac94`. The complete canonical
+literal is asserted by
+`CapabilityStudioFormalInputTreeSnapshotterTest.committedManifestHasExactGoldenCanonicalBytes`.
+
+The CP0-CP10 crash/output matrix is fixed: CP0-CP6 retry as `COMMITTED`, while CP7-CP10 retry as
+`RECOVERED`. Child processes redirect output to private files, are waited with a bound, and are
+terminated and reaped on timeout; an intentional HANG case certifies the harness bound. This is a
+development test for this snapshot transaction only, not a Stage 27 acceptance result, and does not
+change `formalPassCount=0/27`.
+
+The current eight-argument deployment runner does not consume these declarations or snapshots and
+does not build a formal-v2 Evidence manifest. Deployment Authority must still sign or otherwise
+authenticate approved tree declarations and bind them into the future full runner/Evidence flow.
+
 ### Run the deployment acceptance gate
 
 Use the deployment runner when CI or a target-environment job must enforce Provider conformance

@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-formal-input-tree-v1.schema.json",
+  "title": "Resource Gateway Capability Studio Formal Input Tree v1",
+  "description": "Closed commit-marker manifest installed last for one pinned, transaction-owned, flat, read-only Capability Studio formal input tree.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "treeKind",
+    "bundleSemanticFingerprint",
+    "entryCount",
+    "totalByteSize",
+    "entries",
+    "publicationFingerprint",
+    "transactionNonce",
+    "transactionId",
+    "treeFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.formal-input-tree.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.formal-input-tree.v1"
+    },
+    "treeKind": {
+      "enum": ["AUTHORITY_BUNDLE", "TARGET_ADMISSION_BUNDLE"]
+    },
+    "bundleSemanticFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "entryCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 641
+    },
+    "totalByteSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 34603008
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 641,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "publicationFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deployment-supplied out-of-band publication coordinate."
+    },
+    "transactionNonce": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deployment-generated high-entropy stable transaction nonce coordinate."
+    },
+    "transactionId": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Domain-separated identity derived from kind, semantic/tree/publication fingerprints, and transaction nonce."
+    },
+    "treeFingerprint": {
+      "$ref": "#/$defs/fingerprint"
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "byteSize", "rawFingerprint"],
+      "properties": {
+        "relativePath": {
+          "$ref": "#/$defs/relativePath"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "rawFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "treeKind": {"const": "TARGET_ADMISSION_BUNDLE"}
+        },
+        "required": ["treeKind"]
+      },
+      "then": {
+        "properties": {
+          "entryCount": {"const": 8},
+          "totalByteSize": {"maximum": 8388608},
+          "entries": {"minItems": 8, "maxItems": 8}
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "treeKind": {"const": "AUTHORITY_BUNDLE"}
+        },
+        "required": ["treeKind"]
+      },
+      "then": {
+        "properties": {
+          "entryCount": {"maximum": 641},
+          "totalByteSize": {"maximum": 34603008},
+          "entries": {"maxItems": 641}
+        }
+      }
+    }
+  ]
+}
