@@ -70,6 +70,8 @@ done
 
 [[ "$seen_test_kit_jar" -eq 1 && "$seen_provider_classpath" -eq 1 \
     && "$seen_stage_result" -eq 1 && "$seen_conformance_output" -eq 1 ]] || fail USAGE
+expected_authority_binding="${BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT:-}"
+[[ "$expected_authority_binding" =~ ^sha256:[0-9a-f]{64}$ ]] || fail AUTHORITY_BINDING
 [[ -n "$provider_classpath" && "$provider_classpath" != :* \
     && "$provider_classpath" != *: && "$provider_classpath" != *::* ]] || fail INPUT
 
@@ -85,6 +87,23 @@ IFS=':'
 read -r -a provider_entries <<< "$provider_classpath"
 IFS="$old_ifs"
 [[ "${#provider_entries[@]}" -gt 0 ]] || fail INPUT
+
+expected_test_kit_sha256="${BLOGE_EXPECTED_TEST_KIT_JAR_SHA256:-}"
+expected_stage_result_sha256="${BLOGE_EXPECTED_STAGE_RESULT_SHA256:-}"
+expected_provider_sha256s="${BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S:-}"
+[[ -n "$expected_test_kit_sha256" && -n "$expected_stage_result_sha256" \
+    && -n "$expected_provider_sha256s" ]] || fail INPUT_PIN
+[[ "$expected_test_kit_sha256" =~ ^[0-9a-f]{64}$ \
+    && "$expected_stage_result_sha256" =~ ^[0-9a-f]{64}$ \
+    && "$expected_provider_sha256s" =~ ^[0-9a-f]{64}(,[0-9a-f]{64})*$ ]] \
+    || fail INPUT_PIN_FORMAT
+old_ifs="$IFS"
+IFS=','
+read -r -a expected_provider_digests <<< "$expected_provider_sha256s"
+IFS="$old_ifs"
+[[ "${#expected_provider_digests[@]}" -eq "${#provider_entries[@]}" ]] \
+    || fail INPUT_PIN_COUNT
+
 for provider_entry in "${provider_entries[@]}"; do
     regular_readable_file "$provider_entry" || fail INPUT
 done
@@ -190,6 +209,19 @@ sha256_file() {
     printf '%s' "$digest"
 }
 
+source_test_kit_digest=$(sha256_file "$test_kit_jar") || fail INPUT_PIN
+[[ "$source_test_kit_digest" == "$expected_test_kit_sha256" ]] \
+    || fail INPUT_PIN_MISMATCH
+source_stage_result_digest=$(sha256_file "$stage_result") || fail INPUT_PIN
+[[ "$source_stage_result_digest" == "$expected_stage_result_sha256" ]] \
+    || fail INPUT_PIN_MISMATCH
+for provider_index in "${!provider_entries[@]}"; do
+    source_provider_digest=$(sha256_file "${provider_entries[$provider_index]}") \
+        || fail INPUT_PIN
+    [[ "$source_provider_digest" == "${expected_provider_digests[$provider_index]}" ]] \
+        || fail INPUT_PIN_MISMATCH
+done
+
 snapshots_unchanged() {
     local snapshot_index
     local current_digest
@@ -226,8 +258,13 @@ for provider_entry in "${provider_entries[@]}"; do
 done
 
 snapshot_digests=()
-for snapshot_file_path in "${snapshot_files[@]}"; do
+expected_snapshot_digests=("$expected_test_kit_sha256" "$expected_stage_result_sha256")
+expected_snapshot_digests+=("${expected_provider_digests[@]}")
+for snapshot_index in "${!snapshot_files[@]}"; do
+    snapshot_file_path="${snapshot_files[$snapshot_index]}"
     snapshot_digest=$(sha256_file "$snapshot_file_path") || exit 2
+    [[ "$snapshot_digest" == "${expected_snapshot_digests[$snapshot_index]}" ]] \
+        || fail INPUT_PIN_MISMATCH
     snapshot_digests+=("$snapshot_digest")
 done
 
@@ -252,11 +289,14 @@ conformance_line=$(sed -n '1p' "$conformance_stdout" 2>/dev/null) || exit 2
 conformance_lines=$(wc -l < "$conformance_stdout" 2>/dev/null) || exit 2
 conformance_last_byte=$(tail -c 1 "$conformance_stdout" 2>/dev/null | od -An -t x1 | tr -d '[:space:]') || exit 2
 [[ "$conformance_lines" -eq 1 && "$conformance_last_byte" == '0a' ]] || exit 2
-if [[ "$conformance_line" =~ ^CONFORMANT[[:space:]]verdict=CONFORMANT[[:space:]]checkCount=6[[:space:]]challengeCount=([1-9][0-9]*)[[:space:]]reportFingerprint=(sha256:[0-9a-f]{64})$ ]]; then
-    provider_conformance_fingerprint="${BASH_REMATCH[2]}"
+if [[ "$conformance_line" =~ ^CONFORMANT[[:space:]]verdict=CONFORMANT[[:space:]]checkCount=7[[:space:]]challengeCount=([1-9][0-9]*)[[:space:]]authorityBindingFingerprint=(sha256:[0-9a-f]{64})[[:space:]]reportFingerprint=(sha256:[0-9a-f]{64})$ ]]; then
+    conformance_authority_binding="${BASH_REMATCH[2]}"
+    provider_conformance_fingerprint="${BASH_REMATCH[3]}"
 else
     exit 2
 fi
+[[ "$conformance_authority_binding" == "$expected_authority_binding" ]] \
+    || fail AUTHORITY_BINDING_MISMATCH
 
 regular_readable_file "$conformance_output" || exit 2
 conformance_output_size=$(wc -c < "$conformance_output" 2>/dev/null | tr -d '[:space:]') || exit 2
@@ -278,8 +318,16 @@ formal_line=$(sed -n '1p' "$formal_stdout" 2>/dev/null) || exit 2
 formal_lines=$(wc -l < "$formal_stdout" 2>/dev/null) || exit 2
 formal_last_byte=$(tail -c 1 "$formal_stdout" 2>/dev/null | od -An -t x1 | tr -d '[:space:]') || exit 2
 [[ "$formal_lines" -eq 1 && "$formal_last_byte" == '0a' ]] || exit 2
-[[ "$formal_line" =~ ^ACCEPTED[[:space:]]outcome=ACCEPTED[[:space:]]reasonCode=RG\.CAPABILITY_STUDIO\.STAGE_ACCEPTANCE_AUTHORITY\.[A-Z0-9][A-Z0-9_.-]{0,254}$ ]] || exit 2
+if [[ "$formal_line" =~ ^ACCEPTED[[:space:]]outcome=ACCEPTED[[:space:]]authorityBindingFingerprint=(sha256:[0-9a-f]{64})[[:space:]]reasonCode=RG\.CAPABILITY_STUDIO\.STAGE_ACCEPTANCE_AUTHORITY\.[A-Z0-9][A-Z0-9_.-]{0,254}$ ]]; then
+    formal_authority_binding="${BASH_REMATCH[1]}"
+else
+    exit 2
+fi
+[[ "$formal_authority_binding" == "$expected_authority_binding" ]] \
+    || fail AUTHORITY_BINDING_MISMATCH
+[[ "$formal_authority_binding" == "$conformance_authority_binding" ]] \
+    || fail AUTHORITY_BINDING_MISMATCH
 
-printf 'ACCEPTED status=ACCEPTED providerConformanceFingerprint=%s\n' \
-    "$provider_conformance_fingerprint"
+printf 'ACCEPTED status=ACCEPTED authorityBindingFingerprint=%s providerConformanceFingerprint=%s\n' \
+    "$expected_authority_binding" "$provider_conformance_fingerprint"
 exit 0

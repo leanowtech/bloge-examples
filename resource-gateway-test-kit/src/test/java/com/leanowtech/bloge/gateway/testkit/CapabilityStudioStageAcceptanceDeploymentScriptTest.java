@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
+import java.security.MessageDigest;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,10 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
             "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceProviderConformanceCli";
     private static final String FORMAL_MAIN =
             "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceCli";
+    private static final String EXPECTED_AUTHORITY_BINDING = "sha256:" + "a".repeat(64);
+    private static final String TEST_KIT_PIN_ENV = "BLOGE_EXPECTED_TEST_KIT_JAR_SHA256";
+    private static final String STAGE_RESULT_PIN_ENV = "BLOGE_EXPECTED_STAGE_RESULT_SHA256";
+    private static final String PROVIDER_PINS_ENV = "BLOGE_EXPECTED_PROVIDER_CLASSPATH_SHA256S";
 
     @TempDir
     Path temp;
@@ -34,9 +39,11 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Path log = temp.resolve("calls.log");
 
         ProcessResult syntax = process(List.of("bash", "-n", scriptPath().toString()),
-                Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString()));
+                Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
+                        "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING));
         ProcessResult help = process(List.of("bash", scriptPath().toString(), "--help"),
-                Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString()));
+                Map.of("JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
+                        "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING));
 
         assertThat(syntax.exitCode()).isZero();
         assertThat(help.exitCode()).isZero();
@@ -65,6 +72,107 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         ProcessResult existing = run(fakeJava, log, jar, provider, stage, output);
         assertPreflightFailure(existing, output);
         assertThat(log).doesNotExist();
+    }
+
+    @Test
+    void deploymentBindingPinIsRequiredAndValidatedBeforeJava() throws Exception {
+        Path fakeJava = fakeJava("success");
+        Path log = temp.resolve("calls.log");
+        Path jar = regularFile("test-kit.jar", "jar");
+        Path provider = regularFile("provider.jar", "provider");
+        Path stage = regularFile("stage.json", "{}");
+        Path output = temp.resolve("report.json");
+        Map<String, String> validPins = pinEnvironment(jar, provider.toString(), stage);
+        for (String pin : java.util.Arrays.asList(null, "", "sha256:" + "A".repeat(64))) {
+            Map<String, String> environment = new java.util.HashMap<>(validPins);
+            environment.put("JAVA_BIN", fakeJava.toString());
+            environment.put("FAKE_LOG", log.toString());
+            if (pin != null) {
+                environment.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", pin);
+            }
+            ProcessResult result = process(withScript(arguments(jar, provider.toString(), stage,
+                    output)), environment);
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).isEqualTo("ERROR code=AUTHORITY_BINDING\n")
+                    .doesNotContain(jar.toString(), provider.toString(), stage.toString());
+            assertThat(log).doesNotExist();
+        }
+    }
+
+    @Test
+    void artifactPinsRequireLowercaseValuesExactCountsAndOrderedProvidersBeforeJava()
+            throws Exception {
+        Path fakeJava = fakeJava("success");
+        Path log = temp.resolve("calls.log");
+        Path jar = regularFile("test-kit.jar", "jar");
+        Path providerOne = regularFile("provider-one.jar", "one");
+        Path providerTwo = regularFile("provider-two.jar", "two");
+        Path stage = regularFile("stage.json", "{}");
+        Path output = temp.resolve("report.json");
+        Map<String, String> validPins = new java.util.HashMap<>(
+                pinEnvironment(jar, providerOne + ":" + providerTwo, stage));
+        validPins.put("JAVA_BIN", fakeJava.toString());
+        validPins.put("FAKE_LOG", log.toString());
+        validPins.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT",
+                EXPECTED_AUTHORITY_BINDING);
+        String[] orderedProviderPins = validPins.get(PROVIDER_PINS_ENV).split(",", -1);
+
+        List<Map.Entry<String, String>> invalidPins = List.of(
+                Map.entry(TEST_KIT_PIN_ENV, "A".repeat(64)),
+                Map.entry(STAGE_RESULT_PIN_ENV, "f".repeat(63)),
+                Map.entry(PROVIDER_PINS_ENV, sha256(providerOne)),
+                Map.entry(PROVIDER_PINS_ENV,
+                        orderedProviderPins[1] + "," + orderedProviderPins[0]),
+                Map.entry(TEST_KIT_PIN_ENV, "f".repeat(64)));
+        for (Map.Entry<String, String> invalidPin : invalidPins) {
+            Map<String, String> environment = new java.util.HashMap<>(validPins);
+            environment.put(invalidPin.getKey(), invalidPin.getValue());
+            ProcessResult result = process(withScript(arguments(jar,
+                    providerOne + ":" + providerTwo, stage, output)), environment);
+
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).startsWith("ERROR code=INPUT_PIN")
+                    .doesNotContain(jar.toString(), providerOne.toString(), stage.toString());
+            assertThat(log).doesNotExist();
+        }
+
+        for (String missingPin : List.of(TEST_KIT_PIN_ENV, STAGE_RESULT_PIN_ENV,
+                PROVIDER_PINS_ENV)) {
+            Map<String, String> environment = new java.util.HashMap<>(validPins);
+            environment.remove(missingPin);
+            ProcessResult result = process(withScript(arguments(jar,
+                    providerOne + ":" + providerTwo, stage, output)), environment);
+
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).isEqualTo("ERROR code=INPUT_PIN\n")
+                    .doesNotContain(jar.toString(), providerOne.toString(), stage.toString());
+            assertThat(log).doesNotExist();
+        }
+    }
+
+    @Test
+    void sourceMutationBetweenHashAndCopyIsRejectedBeforeJava() throws Exception {
+        Path caseDirectory = Files.createDirectory(temp.resolve("hash-copy-drift"));
+        Path fakeJava = fakeJava(caseDirectory, "success");
+        Path fakeBin = Files.createDirectory(caseDirectory.resolve("bin"));
+        Path fakeCp = fakeCp(fakeBin);
+        Path log = caseDirectory.resolve("calls.log");
+        Path jar = regularFile(caseDirectory, "kit.jar", "kit");
+        Path provider = regularFile(caseDirectory, "provider.jar", "provider");
+        Path stage = regularFile(caseDirectory, "stage.json", "{}");
+
+        ProcessResult result = run(fakeJava, log, jar, provider.toString(), stage,
+                caseDirectory.resolve("report.json"), Map.of(
+                        "PATH", fakeBin + ":" + System.getenv("PATH"),
+                        "REAL_CP", "/bin/cp",
+                        "SOURCE_TO_MUTATE", jar.toString(),
+                        "FAKE_CP_MARKER", caseDirectory.resolve("cp.marker").toString(),
+                        "FAKE_CP", fakeCp.toString()));
+
+        assertThat(result.exitCode()).isEqualTo(2);
+        assertThat(result.output()).isEqualTo("ERROR code=INPUT_PIN_MISMATCH\n");
+        assertThat(log).doesNotExist();
+        assertThat(Files.readString(jar)).isEqualTo("changed-before-copy");
     }
 
     @Test
@@ -102,7 +210,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Files.createSymbolicLink(stageLink, stage.getFileName());
         Path output = temp.resolve("report.json");
         Map<String, String> environment = Map.of(
-                "JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString());
+                "JAVA_BIN", fakeJava.toString(), "FAKE_LOG", log.toString(),
+                "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING);
         List<List<String>> invalidArguments = List.of(
                 List.of("--test-kit-jar", jar.toString(),
                         "--test-kit-jar", jar.toString(),
@@ -138,7 +247,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
 
         assertThat(result.exitCode()).isZero();
         assertThat(result.output()).isEqualTo(
-                "ACCEPTED status=ACCEPTED providerConformanceFingerprint=sha256:"
+                "ACCEPTED status=ACCEPTED authorityBindingFingerprint="
+                        + EXPECTED_AUTHORITY_BINDING + " providerConformanceFingerprint=sha256:"
                         + "0000000000000000000000000000000000000000000000000000000000000000\n");
         List<FakeInvocation> calls = invocations(log);
         assertThat(calls).extracting(FakeInvocation::main)
@@ -256,6 +366,25 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
     }
 
     @Test
+    void bothJavaPhasesMustMatchTheOutOfBandDeploymentPin() throws Exception {
+        for (String mode : List.of("mismatch-conformance", "mismatch-formal")) {
+            Path caseDirectory = Files.createDirectory(temp.resolve(mode));
+            Path fakeJava = fakeJava(caseDirectory, mode);
+            Path log = caseDirectory.resolve("calls.log");
+            Path jar = regularFile(caseDirectory, "kit.jar", "kit");
+            Path provider = regularFile(caseDirectory, "provider.jar", "provider");
+            Path stage = regularFile(caseDirectory, "stage.json", "{}");
+            ProcessResult result = run(fakeJava, log, jar, provider, stage,
+                    caseDirectory.resolve("report.json"));
+
+            assertThat(result.exitCode()).isEqualTo(2);
+            assertThat(result.output()).isEqualTo("ERROR code=AUTHORITY_BINDING_MISMATCH\n")
+                    .doesNotContain(jar.toString(), provider.toString(), stage.toString());
+            assertThat(invocations(log)).hasSize(mode.endsWith("formal") ? 2 : 1);
+        }
+    }
+
+    @Test
     void missingEmptyOrOversizedConformanceReportsStopBeforeFormalVerification()
             throws Exception {
         for (String mode : List.of("missing-report", "empty-report", "oversized-report",
@@ -313,6 +442,9 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 arguments(jar, provider.toString(), stage, output))).redirectErrorStream(true);
         builder.environment().put("JAVA_BIN", fakeJava.toString());
         builder.environment().put("FAKE_LOG", log.toString());
+        builder.environment().put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT",
+                EXPECTED_AUTHORITY_BINDING);
+        builder.environment().putAll(pinEnvironment(jar, provider.toString(), stage));
         Path childPidFile = caseDirectory.resolve("child.pid");
         Path childStatusFile = caseDirectory.resolve("child.status");
         builder.environment().put("FAKE_CHILD_PID_FILE", childPidFile.toString());
@@ -355,16 +487,21 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
                 PosixFilePermission.OWNER_EXECUTE));
         Path log = caseDirectory.resolve("calls.log");
-        Map<String, String> environment = Map.of(
+        Map<String, String> environment = new java.util.HashMap<>(Map.of(
                 "JAVA_BIN", fakeJava(caseDirectory, "success").toString(),
                 "FAKE_LOG", log.toString(),
+                "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING,
                 "FAKE_SECRET", secret,
-                "PATH", fakeBin + ":" + System.getenv("PATH"));
+                "PATH", fakeBin + ":" + System.getenv("PATH")));
+        Path jar = regularFile(caseDirectory, "kit.jar", "kit");
+        Path provider = regularFile(caseDirectory, "provider.jar", "provider");
+        Path stage = regularFile(caseDirectory, "stage.json", "{}");
+        environment.putAll(pinEnvironment(jar, provider.toString(), stage));
 
         ProcessResult result = process(withScript(arguments(
-                regularFile(caseDirectory, "kit.jar", "kit"),
-                regularFile(caseDirectory, "provider.jar", "provider").toString(),
-                regularFile(caseDirectory, "stage.json", "{}"),
+                jar,
+                provider.toString(),
+                stage,
                 caseDirectory.resolve("report.json"))), environment);
 
         assertThat(result.exitCode()).isEqualTo(2);
@@ -456,6 +593,8 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         var environment = new java.util.HashMap<String, String>();
         environment.put("JAVA_BIN", fakeJava.toString());
         environment.put("FAKE_LOG", log.toString());
+        environment.put("BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT", EXPECTED_AUTHORITY_BINDING);
+        environment.putAll(pinEnvironment(jar, providerClasspath, stage));
         environment.putAll(extraEnvironment);
         return process(command, environment);
     }
@@ -477,27 +616,30 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
                 + "printf '%s|%s|%s\\n' \"$3\" \"$2\" \"$effective_stage\" >> \"$FAKE_LOG\"\n"
                 + "if [[ \"$3\" == \"" + CONFORMANCE_MAIN + "\" ]]; then\n"
                 + "  case \"${FAKE_MODE:-" + mode + "}\" in\n"
-                + "    success|success-secret|formal-exit-3|spoof-formal|multiline-formal) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
-                + "    mutate-sources) printf '%s' changed-kit > \"$SOURCE_TEST_KIT\"; printf '%s' changed-provider > \"$SOURCE_PROVIDER\"; printf '%s' changed-stage > \"$SOURCE_STAGE\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
-                + "    mutate-snapshot) chmod 600 \"$5\"; printf '%s' changed-snapshot > \"$5\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
-                + "    missing-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000' ;;\n"
-                + "    empty-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; : > \"$7\" ;;\n"
-                + "    oversized-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; dd if=/dev/zero of=\"$7\" bs=131073 count=1 2>/dev/null ;;\n"
-                + "    symlink-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' target > \"$7-target\"; ln -s \"$7-target\" \"$7\" ;;\n"
+                + "    success|success-secret|formal-exit-3|spoof-formal|multiline-formal|mismatch-formal) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    mutate-sources) printf '%s' changed-kit > \"$SOURCE_TEST_KIT\"; printf '%s' changed-provider > \"$SOURCE_PROVIDER\"; printf '%s' changed-stage > \"$SOURCE_STAGE\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    mutate-snapshot) chmod 600 \"$5\"; printf '%s' changed-snapshot > \"$5\"; printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
+                + "    missing-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000' ;;\n"
+                + "    empty-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; : > \"$7\" ;;\n"
+                + "    oversized-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; dd if=/dev/zero of=\"$7\" bs=131073 count=1 2>/dev/null ;;\n"
+                + "    symlink-report) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' target > \"$7-target\"; ln -s \"$7-target\" \"$7\" ;;\n"
                 + "    conformance-exit-3) printf '%s\\n' blocked-report > \"$7\"; exit 3 ;;\n"
-                + "    spoof-conformance) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:not-a-fingerprint'; exit 0 ;;\n"
-                + "    multiline-conformance) printf '%s\\n%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=6 challengeCount=1 reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000' 'unexpected'; exit 0 ;;\n"
+                + "    spoof-conformance) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:not-a-fingerprint'; exit 0 ;;\n"
+                + "    multiline-conformance) printf '%s\\n%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000' 'unexpected'; exit 0 ;;\n"
+                + "    mismatch-conformance) printf '%s\\n' 'CONFORMANT verdict=CONFORMANT checkCount=7 challengeCount=1 authorityBindingFingerprint=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb reportFingerprint=sha256:0000000000000000000000000000000000000000000000000000000000000000'; printf '%s\\n' '{\"ok\":true}' > \"$7\" ;;\n"
                 + "    secret) printf '%s\\n' \"$FAKE_SECRET\" >&2; exit 3 ;;\n"
                 + "    block) trap 'printf \"%s\\n\" terminated > \"$FAKE_CHILD_STATUS\"; exit 42' TERM; printf '%s\\n' \"$$\" > \"$FAKE_CHILD_PID_FILE\"; while :; do sleep 1; done ;;\n"
                 + "    ignore-term) trap '' TERM; printf '%s\\n' \"$$\" > \"$FAKE_CHILD_PID_FILE\"; while :; do sleep 1; done ;;\n"
                 + "  esac\n"
                 + "else\n"
                 + "  case \"${FAKE_MODE:-" + mode + "}\" in\n"
-                + "    success|success-secret) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
-                + "    mutate-sources) test_kit_snapshot=${2%%:*}; provider_snapshot=${2#*:}; [[ \"$(cat \"$test_kit_snapshot\")\" == kit && \"$(cat \"$provider_snapshot\")\" == provider && \"$(cat \"$4\")\" == '{}' ]] || exit 2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
+                + "    success|success-secret) [[ \"${FAKE_MODE:-" + mode + "}\" == success-secret ]] && printf '%s\\n' \"$FAKE_SECRET\" >&2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
+                + "    mismatch-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
+                + "    mutate-sources) test_kit_snapshot=${2%%:*}; provider_snapshot=${2#*:}; [[ \"$(cat \"$test_kit_snapshot\")\" == kit && \"$(cat \"$provider_snapshot\")\" == provider && \"$(cat \"$4\")\" == '{}' ]] || exit 2; printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
                 + "    formal-exit-3) exit 3 ;;\n"
-                + "    spoof-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY./unsafe' ;;\n"
-                + "    multiline-formal) printf '%s\\n%s\\n' 'ACCEPTED outcome=ACCEPTED reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' 'unexpected' ;;\n"
+                + "    spoof-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY./unsafe' ;;\n"
+                + "    multiline-formal) printf '%s\\n%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' 'unexpected' ;;\n"
+                + "    mismatch-formal) printf '%s\\n' 'ACCEPTED outcome=ACCEPTED authorityBindingFingerprint=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb reasonCode=RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_AUTHORITY.ACCEPTED' ;;\n"
                 + "  esac\n"
                 + "fi\n";
         Files.writeString(script, source, StandardCharsets.UTF_8);
@@ -515,6 +657,57 @@ class CapabilityStudioStageAcceptanceDeploymentScriptTest {
         Path file = directory.resolve(name);
         Files.writeString(file, content, StandardCharsets.UTF_8);
         return file;
+    }
+
+    private Map<String, String> pinEnvironment(Path jar, String providerClasspath, Path stage)
+            throws Exception {
+        String[] providers = providerClasspath.split(":", -1);
+        StringBuilder providerPins = new StringBuilder();
+        if (providerClasspath.isEmpty()) {
+            providerPins.append("0".repeat(64));
+        } else {
+            for (String provider : providers) {
+                if (providerPins.length() > 0) {
+                    providerPins.append(',');
+                }
+                providerPins.append(pin(Path.of(provider)));
+            }
+        }
+        return Map.of(
+                TEST_KIT_PIN_ENV, pin(jar),
+                STAGE_RESULT_PIN_ENV, pin(stage),
+                PROVIDER_PINS_ENV, providerPins.toString());
+    }
+
+    private static String pin(Path file) throws Exception {
+        return Files.isRegularFile(file) && !Files.isSymbolicLink(file)
+                ? sha256(file)
+                : "0".repeat(64);
+    }
+
+    private static String sha256(Path file) throws Exception {
+        byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(Files.readAllBytes(file));
+        StringBuilder hex = new StringBuilder(digest.length * 2);
+        for (byte value : digest) {
+            hex.append(String.format("%02x", value));
+        }
+        return hex.toString();
+    }
+
+    private Path fakeCp(Path bin) throws IOException {
+        Path script = bin.resolve("cp");
+        Files.writeString(script, "#!/usr/bin/env bash\n"
+                + "set -u\n"
+                + "if [[ ! -e \"$FAKE_CP_MARKER\" ]]; then\n"
+                + "  printf '%s' changed-before-copy > \"$SOURCE_TO_MUTATE\"\n"
+                + "  : > \"$FAKE_CP_MARKER\"\n"
+                + "fi\n"
+                + "exec \"$REAL_CP\" \"$@\"\n", StandardCharsets.UTF_8);
+        Files.setPosixFilePermissions(script, EnumSet.of(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE,
+                PosixFilePermission.OWNER_EXECUTE));
+        return script;
     }
 
     private Path scriptPath() {
