@@ -475,8 +475,10 @@ Formal command-line acceptance uses `CapabilityStudioStageAcceptanceCli`. The CL
 v2 schema and semantic contract first. Invalid or non-`PASS` documents do not load any external
 provider. For a semantic `PASS`, Java `ServiceLoader` must discover exactly one implementation of
 `CapabilityStudioStageAcceptanceAuthorityProvider`; that deployment-owned provider supplies the
-resolver, pinned issuer policy, and organizational Owner authority. The result document cannot
-select its own provider or trust roots.
+resolver, pinned issuer policy, organizational Owner authority, and one immutable
+`authorityBindingFingerprint`. The result document cannot select its own provider, trust roots,
+Bundle root, or expected binding fingerprint. Legacy Providers remain loadable at the Java binary
+level, but formal acceptance and the current Conformance TCK reject a missing binding fingerprint.
 
 The provider JAR declares this service file:
 
@@ -502,6 +504,33 @@ exception text. A provider should use `CapabilityStudioAuthorityEvidenceResolver
 actual storage adapters, trust pins, role directory, and target-environment evidence remain under
 enterprise deployment Authority.
 
+### Use the mounted enterprise Provider
+
+The standalone reference module under
+`resource-gateway-test-kit/examples/capability-studio-mounted-authority-provider/` turns a
+deployment-owned, read-only Authority Bundle into the four Provider accessors. Build it only after
+installing the current Test Kit:
+
+```bash
+mvn -f resource-gateway-test-kit/pom.xml clean install
+mvn -f resource-gateway-test-kit/examples/capability-studio-mounted-authority-provider/pom.xml \
+  clean verify
+```
+
+The Bundle Manifest uses the packaged
+`capability-studio-mounted-authority-bundle-v1.schema.json`. It binds exact Evidence/Signature
+coordinates and raw envelope file fingerprints, pinned public Key Set snapshots, Issuer/Scope and
+Evidence-kind allow-lists, Owner roles and Actor allow-lists, proof TTLs, revision, and validity
+window. All referenced files must be bounded, non-symlink JSON files directly below the Bundle
+root. `CapabilityStudioMountedAuthorityBundle.load(...)` validates and snapshots every file at
+construction; resolver calls do not reopen the mount.
+
+The Bundle contains public verification material and signed payload-free envelopes only. It must
+not contain signing private keys, business payloads, a default trust root, or a local approval
+substitute. The reference Provider reads exactly one JVM property,
+`bloge.capabilityStudio.authorityBundleRoot`, and delegates `authorityBindingFingerprint()` to the
+verified Manifest fingerprint.
+
 Provider discovery, Provider accessors, and synchronous resolver, issuer-policy, and Owner-authority
 callbacks run inside a process-wide output-isolation window. Direct writes to `System.out` and
 `System.err` in that window are discarded, and the exact prior streams are restored even when the
@@ -512,23 +541,32 @@ window can temporarily suppress output from unrelated threads in the same JVM.
 ### Run the deployment acceptance gate
 
 Use the deployment runner when CI or a target-environment job must enforce Provider conformance
-before formal Stage acceptance. The same Test Kit JAR, Provider classpath, and Stage Result are used
-for both commands:
+before formal Stage acceptance. The deployment contract has eight stable `DEPLOY-AC-*` obligations;
+the current test counts are observations only. The same Test Kit JAR, Provider classpath, Stage
+Result, and out-of-band Authority binding pin are used for both commands. With the mounted Provider:
 
 ```bash
+BLOGE_EXPECTED_TEST_KIT_FINGERPRINT='<64 lowercase hex>' \
+BLOGE_EXPECTED_STAGE_RESULT_FINGERPRINT='<64 lowercase hex>' \
+BLOGE_EXPECTED_PROVIDER_CLASSPATH_FINGERPRINTS='<64 lowercase hex>,<64 lowercase hex>' \
+JAVA_TOOL_OPTIONS='-Dbloge.capabilityStudio.authorityBundleRoot=/mnt/authority-bundle' \
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<64 lowercase hex>' \
 JAVA_BIN="$(command -v java)" \
 resource-gateway-test-kit/scripts/verify-capability-studio-stage-acceptance.sh \
   --test-kit-jar resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-cli.jar \
   --provider-classpath '<enterprise-provider.jar>:<provider-dependency.jar>' \
   --stage-result '<stage-acceptance-result-v2.json>' \
-  --conformance-output '<new-provider-conformance-result-v1.json>'
+  --conformance-output '<new-provider-conformance-result-v2.json>'
 ```
 
 Before Java starts, the runner requires each flag exactly once, a real executable `JAVA_BIN` path,
 readable non-symlink regular files for the Test Kit, Stage Result, and every Provider classpath
 entry, a Stage Result no larger than 4 MiB, a writable output parent, and an output path that does
-not exist. The deployment image must provide `sha256sum` or `shasum`. Paths may contain spaces;
-classpath entries cannot contain `:`.
+not exist. The three artifact variables are ordered, out-of-band SHA-256 pins: the Provider list
+must contain one comma-separated digest per classpath entry. `BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT`
+is the formal CLI expected pin and must be supplied by deployment Authority, not calculated from the
+Provider, Bundle, or Stage Result during the task. The deployment image must provide `sha256sum` or
+`shasum`. Paths may contain spaces; classpath entries cannot contain `:`.
 
 The runner copies the Test Kit, Stage Result, and every Provider classpath entry into mode-restricted
 run snapshots under the temporary directory and keeps each SHA-256 digest in the parent shell.
@@ -540,18 +578,43 @@ deployment-controlled artifact location until snapshot creation finishes. The ru
 source that becomes a symbolic link while it is copied; it does not replace artifact-signing,
 supply-chain verification, or OS-level read-only isolation from a malicious same-UID Provider.
 
+The formal contract names above are normative. This documentation-only change does not rename the
+already checked-in shell implementation; until the runner reads the three normative artifact-pin
+variables, a deployment using only those names must be recorded as `BLOCKED` rather than treated as
+an executable `PASS`. Do not silently treat a historical variable spelling as an alias in an
+acceptance record.
+
+### Frozen acceptance obligations
+
+The three contracts are signed against stable IDs, not JUnit counts:
+
+| Contract | Fixed denominator | Required evidence | Signing roles |
+|---|---:|---|---|
+| `PCTCK-CONTRACT-v1` | `PCTCK-AC-01..10` (10) | v1/v2 report pair, independent verifier, replay/tamper ledger, redaction record and pins | Platform, Security, QA |
+| `DEPLOY-CONTRACT-v1` | `DEPLOY-AC-01..08` (8) | preflight, three artifact pins, authority pin, two-phase snapshot/output/process manifest | Release, Runtime, Security, QA |
+| `AUTHBUNDLE-CONTRACT-v1` | `ABP-001..024` (24); `AUTHBUNDLE-AC-01..10` are aggregation rows, not extra obligations | Bundle/schema/fingerprint, immutable snapshot, v1/v2 compatibility, atomic binding, packaging and redaction manifest | Authority, PKI/Security, Platform, Release, QA |
+
+`FAIL` means an executed obligation contradicts its Oracle or invariant. `BLOCKED` means the
+required deployment material, trust input, evidence store or signing role was unavailable before
+a conclusive run. Missing or skipped obligations never reduce the denominator. The current
+observations are Bundle loader 12/12, cross-version Provider/TCK/CLI/shell 50/50, reference
+Provider 6/6, and Test Kit `clean verify` 1013/1013; they do not change the denominators and do
+not increase `formalPassCount=0/27`.
+
 The runner then applies these gates in order:
 
 1. Run `CapabilityStudioStageAcceptanceProviderConformanceCli`.
-2. Require exit `0`, exactly one canonical `CONFORMANT` line, and a readable non-symlink report of
-   1 through 131072 bytes. Stop before formal verification when any condition fails.
+2. Require exit `0`, exactly one canonical `CONFORMANT` line with the current Provider binding,
+   and a readable non-symlink report of 1 through 131072 bytes. Stop before formal verification
+   when any condition fails.
 3. Run `CapabilityStudioStageAcceptanceCli` with the same classpath and Stage Result.
-4. Require exit `0` and exactly one canonical `ACCEPTED` line.
+4. Require exit `0`, exactly one canonical `ACCEPTED` line, and exact equality among the
+   Conformance binding, formal binding, and out-of-band expected pin.
 
 Success emits exactly:
 
 ```text
-ACCEPTED status=ACCEPTED providerConformanceFingerprint=sha256:<64 lowercase hex>
+ACCEPTED status=ACCEPTED authorityBindingFingerprint=sha256:<64 lowercase hex> providerConformanceFingerprint=sha256:<64 lowercase hex>
 ```
 
 Exit `3` preserves a conformance or formal not-accepted decision. Exit `2` covers usage, preflight,
@@ -567,20 +630,25 @@ evidence, assign trust roots, or turn a local `CONFORMANT` result into an organi
 ## Verify the Provider Conformance TCK Result
 
 The Provider Conformance TCK is a protocol and mechanism gate for a deployment-owned
-Capability Studio acceptance Provider. Its result schema is
-[`capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json`](../docs/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json).
+Capability Studio acceptance Provider. Historical
+[`v1`](../docs/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json)
+reports retain their original six-check contract. Current
+[`v2`](../docs/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v2.schema.json)
+reports add an `AUTHORITY_BINDING` check and explicit `providerBindingFingerprint`. The independent
+verifier dispatches by `schemaVersion`, retains v1 compatibility, and rejects unknown versions.
 The result is intentionally smaller than a Stage Acceptance Result: it has a `verdict`, a
 `resultBinding` containing only `resultId`, `revision`, and `resultFingerprint`, `verifiedAt`,
-six fixed checks, recomputed summary counts, the fixed external-check list, and a
+version-fixed checks, recomputed summary counts, the fixed external-check list, and a
 `sha256:<64 lowercase hex>` `reportFingerprint`. Every object is closed with
 `additionalProperties: false`.
 
-The six checks are exactly `LOCAL_PROTOCOL`, `BASELINE_AUTHORITY_ACCEPTANCE`,
+The v1 checks are exactly `LOCAL_PROTOCOL`, `BASELINE_AUTHORITY_ACCEPTANCE`,
 `DETERMINISTIC_REPLAY`, `RESOLVER_WRONG_FINGERPRINT_FAIL_CLOSED`,
 `EVIDENCE_POLICY_TAMPER_FAIL_CLOSED`, and `OWNER_AUTHORITY_TAMPER_FAIL_CLOSED`. Each check
 records `PASS`, `FAIL`, `BLOCKED`, or `NOT_RUN`, a stable machine-readable `reasonCode`, and
-`challengeCount`. The verifier recomputes the summary from the six checks and rejects a report
-whose counts do not match. `CONFORMANT` requires six `PASS` checks and a total
+`challengeCount`. v2 inserts `AUTHORITY_BINDING` after `LOCAL_PROTOCOL`; it must pass before the
+Provider dependencies are used. The verifier recomputes the version-specific summary and rejects
+inconsistent counts. `CONFORMANT` requires every version-specific check to pass and a total
 `challengeCount > 0`.
 
 `CONFORMANT` has a deliberately narrow meaning: the Provider's mechanism is consistent with the
@@ -599,7 +667,8 @@ The deployment integration is fail-closed and has one Provider resolution path:
 2. Load exactly one Provider. Zero Providers, more than one Provider, a Provider construction
    error, or an invalid registration produces `BLOCKED`; the TCK must not select a default.
 3. Validate the local result protocol before invoking deployment dependencies.
-4. Run all six positive and negative challenges in a stable order. Replay compares the complete
+4. For v2, verify the Provider binding before running the remaining positive and negative
+   challenges in a stable order. Replay compares the complete
    resolver request/result and Authority decision transcript, not only the final verdict. A wrong
    resolver fingerprint, evidence-policy tamper, or Owner-authority tamper must fail closed.
 5. Recompute the result and report fingerprints, then publish the report atomically to a new
@@ -617,11 +686,12 @@ java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<enterprise-provider.jar
 Exit `0` means `CONFORMANT`; exit `3` means `NON_CONFORMANT` or `BLOCKED`; exit `2` means usage,
 input, read, report verification, or atomic output publication failed.
 
-The CLI, TCK, result builder, independent verifier, and packaged schema are implemented. The
-Provider TCK slice-closing run on 2026-08-20 passed 20/20 focused tests, 44/44 existing Stage
-Authority/CLI integration tests, and 978/978 Test Kit tests with no failures, errors, or skips.
-The latest full result after deployment-gate integration is 996/996. The shaded JAR and
-Javadoc/doclint gates also passed. These are development mechanism results,
+The CLI, TCK, result builder, independent verifier, and both packaged schemas are implemented. The
+v1 slice-closing observations of 20/20, 44/44, and 978/978 remain historical. The current
+cross-version Provider/TCK/CLI/shell suite passes 50/50, the mounted Bundle suite passes 12/12,
+the reference Provider passes 6/6, and the Test Kit passes 1013/1013 with no failures, errors, or
+skips. Ordinary and shaded JAR packaging plus Javadoc/doclint also pass. These are development
+mechanism results,
 not a conformance claim for an enterprise deployment Provider. The Provider must not use a
 fallback implementation, a fallback trust root, or a self-signed substitute. It must not echo
 credentials, business data, file contents, or diagnostic stack traces in the report or CLI
@@ -637,13 +707,13 @@ The result semantics are strict:
 
 | Verdict | Meaning | TCK action |
 |---|---|---|
-| `CONFORMANT` | All six checks are `PASS` and at least one challenge ran | Mechanism conformance only; no formal Stage pass |
+| `CONFORMANT` | All schema-version checks are `PASS` and at least one challenge ran: six checks for historical v1, seven checks for current v2 | Mechanism conformance only; no formal Stage pass |
 | `NON_CONFORMANT` | At least one executed challenge proves a mechanism failure | Preserve the failed check and do not retry it as a pass |
 | `BLOCKED` | A required dependency or trust input is unavailable or indeterminate | Preserve the blocked check; do not convert absence of evidence into `PASS` |
 | `INPUT_INVALID` | The input Stage Result cannot be interpreted under the protocol | Stop before loading the Provider and report the stable reason code |
 
 `FAIL` proves a negative mechanism result. `BLOCKED` means that the TCK could not decide. Neither
-state can be hidden by omitting a check, shrinking the six-check set, or substituting a successful
+state can be hidden by omitting a check, shrinking the version-frozen obligation set, or substituting a successful
 fallback.
 
 ## Verify the Stage 0 Browser Matrix Result
