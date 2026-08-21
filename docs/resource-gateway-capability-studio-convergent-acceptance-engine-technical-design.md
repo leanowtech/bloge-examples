@@ -1058,6 +1058,8 @@ allowedGateRevision = 1
 
 这些值不从 GateResult 或 Evidence Root 推导。GateResult 中对应 ref 即使内部自洽，只要与任一调用方 pin 不同，也必须判定为 `INVALID`。
 
+`artifactFingerprints[]` 除 exact ref 外还必须携带 canonical `publishedAt`。12 份测试 Evidence 的 `startedAt`、`endedAt` 和 Independent Review 的 `reviewedAt` 均不得早于 Implementation Candidate 的 `publishedAt`；Gate verifier 不使用文件 mtime 代替该内容绑定时间。
+
 每个 `testEvidenceRefs[].evidenceRef` 必须指向 canonical `GateTestEvidence v1`，固定字段如下：
 
 ```text
