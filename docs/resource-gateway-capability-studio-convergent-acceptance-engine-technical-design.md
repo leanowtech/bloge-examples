@@ -1041,6 +1041,60 @@ JSON Schema 无法表达跨数组 fingerprint 不等关系，因此独立 Gate v
 
 上述任一语义检查失败时，即使 JSON Schema 通过，GateResult 仍为 `INVALID`，不能进入 Gate B。
 
+### 16.2 Gate A 证据解析与调用方 pin
+
+Gate verifier 不从 `uri` 访问网络，也不接受 `file:`、绝对路径、`..`、符号链接或未列入 Evidence Root 的文件。CLI 只接受一个绝对规范化的只读 Evidence Root；所有 `exactRef.uri` 都按安全相对路径解析，并在解析前后复核 owner、inode、link count、权限、大小和原始字节。目录中出现未被 GateResult 引用的未知文件时失败关闭。
+
+调用方必须通过 CLI 参数独立固定：
+
+```text
+expectedDesignRawFingerprint
+expectedGateProfileRawFingerprint
+expectedImplementationCandidateRawFingerprint
+expectedIndependentVerifierRawFingerprint
+expectedGateVerifierRawFingerprint
+allowedGateRevision = 1
+```
+
+这些值不从 GateResult 或 Evidence Root 推导。GateResult 中对应 ref 即使内部自洽，只要与任一调用方 pin 不同，也必须判定为 `INVALID`。
+
+每个 `testEvidenceRefs[].evidenceRef` 必须指向 canonical `GateTestEvidence v1`，固定字段如下：
+
+```text
+messageVersion = capability-studio.implementation-gate-test-evidence.v1
+gateId = GATE-A
+gateRevision = 1
+testId
+candidateRawFingerprint
+verifierRawFingerprint
+expectedMechanism
+observedTerminal
+status = PASS | FAIL
+skipped = false
+startedAt / endedAt
+evidenceFingerprint
+```
+
+`expectedMechanism` 使用与 12 个 test ID 一一对应的 closed enum，不能以自由文本解释“为什么算通过”。`PLACEHOLDER_REJECTED` 等反例只有在 `observedTerminal=INVALID` 且 verifier 与候选 pin 均匹配时才是测试 `PASS`；`HONEST_INCOMPLETE_ACCEPTED` 的 `observedTerminal` 固定为 `INCOMPLETE`；legacy 完整 Authority 正例固定为 `ACCEPTED`，三个缺失 Authority 反例固定为 `NOT_ACCEPTED`。Gate verifier 必须重算每份 `evidenceFingerprint`，并比较 GateResult 外层的 raw fingerprint。
+
+Independent Verifier 与 Gate Verifier 各自发布 canonical Build Identity：
+
+```text
+messageVersion
+artifactRole
+gateId / gateRevision
+gateProfileRawFingerprint
+sourceFingerprint
+classFingerprint
+registryFingerprint
+tckFingerprint
+identityFingerprint
+```
+
+Gate verifier 从自身 packaged resource 读取并复算 Gate Verifier Build Identity；Independent Verifier Build Identity 则按调用方 pin 和 Evidence Root 中的制品复算。两者的 `registryFingerprint`、`tckFingerprint` 和 `gateProfileRawFingerprint` 必须分别与 Gate A 固定 profile 一致。这样 `VERIFIER_DIGEST_MUTATION_REJECTED`、`REGISTRY_MUTATION_REJECTED` 和 `VERIFIER_TCK_MISMATCH_REJECTED` 验证的是独立信任边界，而不是三个不同名称指向同一份测试日志。
+
+GateResult 自身可位于 Evidence Root 内或外，但验证开始、每份 Evidence 重放后和返回前都必须重读 exact bytes 并复核 file identity。任何替换、删除、hard-link、内容恢复式 ABA 或 inode drift 都失败关闭。
+
 ### Phase 0：设计冻结与反例关闭
 
 交付：
