@@ -10,7 +10,14 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.LinkOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.PosixFilePermission;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeSnapshotter.TreeKind.AUTHORITY_BUNDLE;
 import static com.leanowtech.bloge.gateway.testkit.CapabilityStudioFormalInputTreeSnapshotter.TreeKind.TARGET_ADMISSION_BUNDLE;
@@ -81,6 +88,119 @@ class CapabilityStudioFormalInputTreeCliTest {
         assertThat(recovered.exit()).isZero();
         assertThat(recovered.output()).isEqualTo(
                 committedLine.replace("commitStatus=COMMITTED", "commitStatus=RECOVERED"));
+    }
+
+    @Test
+    void verifyEmitsExactLineForBothTreeKindsAndDoesNotWrite() throws Exception {
+        for (var kind : List.of(AUTHORITY_BUNDLE, TARGET_ADMISSION_BUNDLE)) {
+            Path workspace = privateDirectory("verify-" + kind);
+            Path source = bundle(kind, privateDirectory(workspace.resolve("source")));
+            Path publication = privateDirectory(workspace.resolve("publication"));
+            Path output = publication.resolve("snapshot");
+            String semantic = semantic(kind);
+            var snapshotter = new CapabilityStudioFormalInputTreeSnapshotter();
+            var declaration = snapshotter.declare(kind, source, semantic);
+            var receipt = snapshotter.snapshot(
+                    kind, source, semantic, output, declaration.treeFingerprint(),
+                    PUBLICATION_FINGERPRINT, TRANSACTION_NONCE);
+            Map<String, NodeObservation> before = observeTree(publication);
+
+            Run verified = run(verifyArguments(
+                    kind, output, semantic, declaration.treeFingerprint(),
+                    PUBLICATION_FINGERPRINT, receipt.transactionId()));
+
+            assertThat(verified).isEqualTo(new Run(0,
+                    "VERIFIED status=VERIFIED treeKind=" + kind
+                            + " bundleSemanticFingerprint=" + semantic
+                            + " entryCount=" + declaration.entryCount()
+                            + " totalByteSize=" + declaration.totalByteSize()
+                            + " treeFingerprint=" + declaration.treeFingerprint()
+                            + " publicationFingerprint=" + PUBLICATION_FINGERPRINT
+                            + " transactionId=" + receipt.transactionId()
+                            + " reasonCode="
+                            + CapabilityStudioFormalInputTreeCli.VERIFIED_REASON + "\n"));
+            assertThat(observeTree(publication)).isEqualTo(before);
+        }
+    }
+
+    @Test
+    void verifyRequiresItsClosedArgumentSetWithoutSourceOrNonce() throws Exception {
+        Path workspace = privateDirectory("verify-arguments");
+        String[] valid = verifyArguments(
+                AUTHORITY_BUNDLE, workspace.resolve("snapshot"), AUTHORITY_SEMANTIC,
+                CapabilityStudioFormalInputTreeTestFixtures.fingerprint('e'),
+                PUBLICATION_FINGERPRINT,
+                CapabilityStudioFormalInputTreeTestFixtures.fingerprint('f'));
+
+        for (String[] invalid : List.of(
+                removePair(valid, "--expected-transaction-id"),
+                append(valid, "--mode", "verify"),
+                append(valid, "--unknown", "SECRET"),
+                append(valid, "--source-root", workspace.resolve("source").toString()),
+                append(valid, "--transaction-nonce", TRANSACTION_NONCE),
+                replace(valid, "--snapshot-output-dir", "relative"))) {
+            assertThat(run(invalid)).isEqualTo(new Run(2, invalidLine()));
+        }
+    }
+
+    @Test
+    void verifyInvalidWrapperIsClosedAndReadOnlyFailureIsUnavailable() throws Exception {
+        Path workspace = privateDirectory("verify-failures");
+        Path source = CapabilityStudioFormalInputTreeTestFixtures.authorityBundle(
+                privateDirectory(workspace.resolve("source")));
+        Path publication = privateDirectory(workspace.resolve("publication"));
+        Path output = publication.resolve("snapshot");
+        var snapshotter = new CapabilityStudioFormalInputTreeSnapshotter();
+        var declaration = snapshotter.declare(AUTHORITY_BUNDLE, source, AUTHORITY_SEMANTIC);
+        var receipt = snapshotter.snapshot(
+                AUTHORITY_BUNDLE, source, AUTHORITY_SEMANTIC, output,
+                declaration.treeFingerprint(), PUBLICATION_FINGERPRINT, TRANSACTION_NONCE);
+        Path manifest = output.resolve(CapabilityStudioFormalInputTreeSnapshotter.MANIFEST_FILE);
+        Files.setPosixFilePermissions(manifest, Set.of(
+                PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        Files.writeString(manifest, "{\"messageVersion\":");
+        Files.setPosixFilePermissions(manifest, Set.of(PosixFilePermission.OWNER_READ));
+
+        String[] arguments = verifyArguments(
+                AUTHORITY_BUNDLE, output, AUTHORITY_SEMANTIC,
+                declaration.treeFingerprint(), PUBLICATION_FINGERPRINT,
+                receipt.transactionId());
+        Run invalid = run(arguments);
+
+        assertThat(invalid).isEqualTo(new Run(2, invalidLine()));
+        assertThat(invalid.output()).doesNotContain(output.toString());
+
+        Path missing = publication.resolve("missing");
+        Run unavailable = run(verifyArguments(
+                AUTHORITY_BUNDLE, missing, AUTHORITY_SEMANTIC,
+                declaration.treeFingerprint(), PUBLICATION_FINGERPRINT,
+                receipt.transactionId()));
+        assertThat(unavailable).isEqualTo(new Run(3, blockedLine()));
+        assertThat(unavailable.output()).doesNotContain(missing.toString());
+    }
+
+    @Test
+    void verifyOutputFailuresReturnTwoWithoutClaimingSuccess() throws Exception {
+        Path workspace = privateDirectory("verify-output-failure");
+        Path source = CapabilityStudioFormalInputTreeTestFixtures.targetBundle(
+                privateDirectory(workspace.resolve("source")));
+        Path publication = privateDirectory(workspace.resolve("publication"));
+        Path output = publication.resolve("snapshot");
+        var snapshotter = new CapabilityStudioFormalInputTreeSnapshotter();
+        var declaration = snapshotter.declare(
+                TARGET_ADMISSION_BUNDLE, source, TARGET_SEMANTIC);
+        var receipt = snapshotter.snapshot(
+                TARGET_ADMISSION_BUNDLE, source, TARGET_SEMANTIC, output,
+                declaration.treeFingerprint(), PUBLICATION_FINGERPRINT, TRANSACTION_NONCE);
+        String[] arguments = verifyArguments(
+                TARGET_ADMISSION_BUNDLE, output, TARGET_SEMANTIC,
+                declaration.treeFingerprint(), PUBLICATION_FINGERPRINT,
+                receipt.transactionId());
+
+        assertThat(CapabilityStudioFormalInputTreeCli.run(
+                arguments, partialOutput(11), snapshotter)).isEqualTo(2);
+        assertThat(CapabilityStudioFormalInputTreeCli.run(
+                arguments, flushFailingOutput(), snapshotter)).isEqualTo(2);
     }
 
     @Test
@@ -235,6 +355,36 @@ class CapabilityStudioFormalInputTreeCliTest {
         };
     }
 
+    private static String[] verifyArguments(
+            CapabilityStudioFormalInputTreeSnapshotter.TreeKind kind,
+            Path output,
+            String semantic,
+            String tree,
+            String publication,
+            String transactionId) {
+        return new String[] {
+                "--mode", "verify", "--tree-kind", kind.name(),
+                "--snapshot-output-dir", output.toString(),
+                "--expected-bundle-semantic-fingerprint", semantic,
+                "--expected-tree-fingerprint", tree,
+                "--expected-publication-fingerprint", publication,
+                "--expected-transaction-id", transactionId
+        };
+    }
+
+    private static Path bundle(
+            CapabilityStudioFormalInputTreeSnapshotter.TreeKind kind,
+            Path parent) throws IOException {
+        return kind == AUTHORITY_BUNDLE
+                ? CapabilityStudioFormalInputTreeTestFixtures.authorityBundle(parent)
+                : CapabilityStudioFormalInputTreeTestFixtures.targetBundle(parent);
+    }
+
+    private static String semantic(
+            CapabilityStudioFormalInputTreeSnapshotter.TreeKind kind) {
+        return kind == AUTHORITY_BUNDLE ? AUTHORITY_SEMANTIC : TARGET_SEMANTIC;
+    }
+
     private static String[] replace(String[] input, String name, String replacement) {
         String[] copy = input.clone();
         for (int index = 0; index < copy.length; index += 2) {
@@ -291,6 +441,22 @@ class CapabilityStudioFormalInputTreeCliTest {
         }
     }
 
+    private static Map<String, NodeObservation> observeTree(Path root) throws IOException {
+        Map<String, NodeObservation> observations = new LinkedHashMap<>();
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted().toList()) {
+                BasicFileAttributes attributes = Files.readAttributes(
+                        path, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                observations.put(root.relativize(path).toString(), new NodeObservation(
+                        attributes.fileKey(), attributes.lastModifiedTime().toMillis(),
+                        attributes.size(),
+                        Files.getPosixFilePermissions(path, LinkOption.NOFOLLOW_LINKS),
+                        attributes.isRegularFile() ? Files.readAllBytes(path) : new byte[0]));
+            }
+        }
+        return Map.copyOf(observations);
+    }
+
     private static String invalidLine() {
         return "FAILED status=INVALID reasonCode="
                 + CapabilityStudioFormalInputTreeCli.INVALID_REASON + "\n";
@@ -302,5 +468,38 @@ class CapabilityStudioFormalInputTreeCliTest {
     }
 
     private record Run(int exit, String output) {
+    }
+
+    private record NodeObservation(
+            Object fileKey,
+            long modifiedMillis,
+            long size,
+            Set<PosixFilePermission> permissions,
+            byte[] bytes) {
+        private NodeObservation {
+            permissions = Set.copyOf(permissions);
+            bytes = bytes.clone();
+        }
+
+        @Override
+        public byte[] bytes() {
+            return bytes.clone();
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof NodeObservation that
+                    && java.util.Objects.equals(fileKey, that.fileKey)
+                    && modifiedMillis == that.modifiedMillis
+                    && size == that.size
+                    && permissions.equals(that.permissions)
+                    && Arrays.equals(bytes, that.bytes);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = java.util.Objects.hash(fileKey, modifiedMillis, size, permissions);
+            return 31 * result + Arrays.hashCode(bytes);
+        }
     }
 }

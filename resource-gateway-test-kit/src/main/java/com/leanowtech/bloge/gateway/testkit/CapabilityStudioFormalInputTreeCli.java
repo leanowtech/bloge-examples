@@ -7,13 +7,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Payload-free command line for formal input-tree declaration and pinned snapshot creation.
+ * Payload-free command line for formal input-tree declaration, pinned snapshot creation, and
+ * read-only snapshot verification.
  *
  * <p>{@code declare} performs no writes and does not issue an evidence or deployment pin.
  * {@code snapshot} requires independent tree and publication fingerprints plus a stable
  * high-entropy nonce, and writes transaction material only after the tree fingerprint matches the
- * stable source declaration. The committed manifest is installed last as the logical publication
- * marker. All output is one closed, fixed-order line.</p>
+ * stable source declaration. {@code verify} audits only an existing wrapper through the pure
+ * snapshotter verification API. The committed manifest is installed last as the logical
+ * publication marker. All output is one closed, fixed-order line.</p>
  */
 public final class CapabilityStudioFormalInputTreeCli {
     /** Successful declaration reason. */
@@ -22,6 +24,9 @@ public final class CapabilityStudioFormalInputTreeCli {
     /** Successful snapshot reason. */
     public static final String SNAPSHOT_COMPLETE_REASON =
             "RG.CAPABILITY_STUDIO.FORMAL_INPUT_TREE_CLI.SNAPSHOT_COMPLETE";
+    /** Successful read-only verification reason. */
+    public static final String VERIFIED_REASON =
+            "RG.CAPABILITY_STUDIO.FORMAL_INPUT_TREE_CLI.VERIFIED";
     /** Closed invalid-input failure reason. */
     public static final String INVALID_REASON =
             "RG.CAPABILITY_STUDIO.FORMAL_INPUT_TREE_CLI.INVALID";
@@ -37,6 +42,10 @@ public final class CapabilityStudioFormalInputTreeCli {
             "--expected-bundle-semantic-fingerprint", "--snapshot-output-dir",
             "--expected-tree-fingerprint", "--expected-publication-fingerprint",
             "--transaction-nonce");
+    private static final Set<String> VERIFY_ARGUMENTS = Set.of(
+            "--mode", "--tree-kind", "--snapshot-output-dir",
+            "--expected-bundle-semantic-fingerprint", "--expected-tree-fingerprint",
+            "--expected-publication-fingerprint", "--expected-transaction-id");
 
     private CapabilityStudioFormalInputTreeCli() {
     }
@@ -44,7 +53,7 @@ public final class CapabilityStudioFormalInputTreeCli {
     /**
      * Runs the CLI and terminates with its closed exit status.
      *
-     * @param args exact declare or snapshot arguments
+     * @param args exact declare, snapshot, or verify arguments
      */
     public static void main(String[] args) {
         System.exit(run(args, System.out, new CapabilityStudioFormalInputTreeSnapshotter()));
@@ -65,16 +74,18 @@ public final class CapabilityStudioFormalInputTreeCli {
         if (output == null || snapshotter == null || observer == null) {
             return 2;
         }
+        Mode mode = null;
         try {
             Arguments parsed = parse(args);
+            mode = parsed.mode();
             String line;
-            if (parsed.mode() == Mode.DECLARE) {
+            if (mode == Mode.DECLARE) {
                 CapabilityStudioFormalInputTreeSnapshotter.Declaration declaration =
                         snapshotter.declare(
                                 parsed.treeKind(), parsed.sourceRoot(),
                                 parsed.semanticFingerprint());
                 line = declarationSuccess(declaration);
-            } else {
+            } else if (mode == Mode.SNAPSHOT) {
                 CapabilityStudioFormalInputTreeSnapshotter.SnapshotReceipt receipt =
                         snapshotter.snapshot(
                                 parsed.treeKind(), parsed.sourceRoot(),
@@ -83,6 +94,13 @@ public final class CapabilityStudioFormalInputTreeCli {
                                 parsed.transactionNonce());
                 observer.afterPersistedVerify(receipt);
                 line = snapshotSuccess(receipt);
+            } else {
+                CapabilityStudioFormalInputTreeSnapshotter.Declaration declaration =
+                        snapshotter.verify(
+                                parsed.snapshotOutputDirectory(), parsed.treeKind(),
+                                parsed.semanticFingerprint(), parsed.treeFingerprint(),
+                                parsed.publicationFingerprint(), parsed.transactionId());
+                line = verifySuccess(declaration, parsed);
             }
             return writeLine(output, line) ? 0 : 2;
         } catch (CapabilityStudioFormalInputTreeSnapshotter.FormalInputTreeException failure) {
@@ -90,8 +108,9 @@ public final class CapabilityStudioFormalInputTreeCli {
                     == CapabilityStudioFormalInputTreeSnapshotter.FailureKind.UNAVAILABLE;
             String status = unavailable ? "BLOCKED" : "INVALID";
             String reason = unavailable ? UNAVAILABLE_REASON : INVALID_REASON;
-            writeLine(output, "FAILED status=" + status + " reasonCode=" + reason);
-            return 2;
+            boolean emitted = writeLine(
+                    output, "FAILED status=" + status + " reasonCode=" + reason);
+            return unavailable && mode == Mode.VERIFY && emitted ? 3 : 2;
         } catch (RuntimeException failure) {
             writeLine(output, "FAILED status=INVALID reasonCode=" + INVALID_REASON);
             return 2;
@@ -114,9 +133,14 @@ public final class CapabilityStudioFormalInputTreeCli {
         Mode mode = switch (values.get("--mode")) {
             case "declare" -> Mode.DECLARE;
             case "snapshot" -> Mode.SNAPSHOT;
+            case "verify" -> Mode.VERIFY;
             default -> throw invalid();
         };
-        Set<String> expected = mode == Mode.DECLARE ? DECLARE_ARGUMENTS : SNAPSHOT_ARGUMENTS;
+        Set<String> expected = switch (mode) {
+            case DECLARE -> DECLARE_ARGUMENTS;
+            case SNAPSHOT -> SNAPSHOT_ARGUMENTS;
+            case VERIFY -> VERIFY_ARGUMENTS;
+        };
         if (!values.keySet().equals(expected)) {
             throw invalid();
         }
@@ -125,14 +149,17 @@ public final class CapabilityStudioFormalInputTreeCli {
                     mode,
                     CapabilityStudioFormalInputTreeSnapshotter.TreeKind.valueOf(
                             values.get("--tree-kind")),
-                    Path.of(values.get("--source-root")),
+                    mode == Mode.DECLARE || mode == Mode.SNAPSHOT
+                            ? Path.of(values.get("--source-root")) : null,
                     values.get("--expected-bundle-semantic-fingerprint"),
-                    mode == Mode.SNAPSHOT
+                    mode == Mode.SNAPSHOT || mode == Mode.VERIFY
                             ? Path.of(values.get("--snapshot-output-dir")) : null,
-                    mode == Mode.SNAPSHOT ? values.get("--expected-tree-fingerprint") : null,
-                    mode == Mode.SNAPSHOT
+                    mode == Mode.SNAPSHOT || mode == Mode.VERIFY
+                            ? values.get("--expected-tree-fingerprint") : null,
+                    mode == Mode.SNAPSHOT || mode == Mode.VERIFY
                             ? values.get("--expected-publication-fingerprint") : null,
-                    mode == Mode.SNAPSHOT ? values.get("--transaction-nonce") : null);
+                    mode == Mode.SNAPSHOT ? values.get("--transaction-nonce") : null,
+                    mode == Mode.VERIFY ? values.get("--expected-transaction-id") : null);
         } catch (IllegalArgumentException failure) {
             throw invalid();
         }
@@ -169,6 +196,20 @@ public final class CapabilityStudioFormalInputTreeCli {
                 + " reasonCode=" + SNAPSHOT_COMPLETE_REASON;
     }
 
+    private static String verifySuccess(
+            CapabilityStudioFormalInputTreeSnapshotter.Declaration declaration,
+            Arguments arguments) {
+        return "VERIFIED status=VERIFIED"
+                + " treeKind=" + declaration.treeKind()
+                + " bundleSemanticFingerprint=" + declaration.bundleSemanticFingerprint()
+                + " entryCount=" + declaration.entryCount()
+                + " totalByteSize=" + declaration.totalByteSize()
+                + " treeFingerprint=" + declaration.treeFingerprint()
+                + " publicationFingerprint=" + arguments.publicationFingerprint()
+                + " transactionId=" + arguments.transactionId()
+                + " reasonCode=" + VERIFIED_REASON;
+    }
+
     private static boolean writeLine(PrintStream output, String line) {
         try {
             output.print(line);
@@ -186,7 +227,8 @@ public final class CapabilityStudioFormalInputTreeCli {
 
     private enum Mode {
         DECLARE,
-        SNAPSHOT
+        SNAPSHOT,
+        VERIFY
     }
 
     interface CliObserver {
@@ -204,6 +246,7 @@ public final class CapabilityStudioFormalInputTreeCli {
             Path snapshotOutputDirectory,
             String treeFingerprint,
             String publicationFingerprint,
-            String transactionNonce) {
+            String transactionNonce,
+            String transactionId) {
     }
 }
