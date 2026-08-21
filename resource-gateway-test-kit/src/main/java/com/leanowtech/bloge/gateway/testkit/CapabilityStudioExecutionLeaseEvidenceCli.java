@@ -395,9 +395,6 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
             StageInvoker invoker) {
         Recovery recovery = flow.recoverBeforeValidation(stage,
                 expectedOuterFingerprint, providerSource);
-        if (recovery == Recovery.RECOVERED) {
-            return emitSuccess(safeOut, flow);
-        }
         if (recovery == Recovery.BLOCKED) {
             return line(safeOut, "NOT_ACCEPTED outcome=BLOCKED reasonCode="
                     + "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_CLI.RECOVERY_UNAVAILABLE")
@@ -498,6 +495,9 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
         private String previousAttemptClosureFingerprint;
         private EvidencePublicationStatus publicationStatus;
         private Transcript publishedTranscript;
+        private boolean replay;
+        private FormalEvidenceRecoveryBinding replayRecoveryBinding;
+        private boolean replayStoreProbed;
 
         private EvidenceFlow(
                 Path output, Instant semanticTime, String expectedPublicationFingerprint) {
@@ -523,6 +523,7 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
                         transactionId, stageRaw, expectedOuterFingerprint);
                 if (recovered != null) {
                     acceptRecovered(recovered);
+                    replay = true;
                     return Recovery.RECOVERED;
                 }
                 TranscriptPublication.BeforeJournal pending =
@@ -552,6 +553,7 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
                         pending.before.storeDescriptorFingerprint())) {
                     return Recovery.BLOCKED;
                 }
+                replayRecoveryBinding = recoveryBinding;
                 EvidenceExecutionLeaseAttempt attempt = new EvidenceExecutionLeaseAttempt(
                         pending.request, transactionId, pending.semanticVerificationTime,
                         publication.output.getParent(), pending.attemptGeneration,
@@ -601,6 +603,7 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
                     return Recovery.BLOCKED;
                 }
                 acceptRecovered(completed);
+                replay = true;
                 return Recovery.RECOVERED;
             } catch (DeploymentUnavailableException unavailable) {
                 return Recovery.BLOCKED;
@@ -631,6 +634,9 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
             if (binding == null) {
                 throw new DeploymentUnavailableException();
             }
+            if (replay) {
+                requireReplayStoreBinding(provider, binding);
+            }
             return binding.formalBinding();
         }
 
@@ -639,6 +645,20 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
                 DeploymentAdmissionAuthorityBinding ignored,
                 ExecutionLeaseRequest request) {
             transactionId = publication.evidenceTransactionId();
+            if (replay) {
+                requireReplayRequest(request);
+                EvidenceExecutionLeaseCommitResult recovered =
+                        new EvidenceExecutionLeaseCommitResult(
+                                ExecutionLeaseCommitStatus.RECOVERED,
+                                publishedTranscript.executionLeaseReceipt(),
+                                publishedTranscript.executionLeaseTransitionWitness(),
+                                "LEASE_RECOVERED");
+                evidenceResult = recovered;
+                before = publishedTranscript.beforeStateObservation();
+                after = publishedTranscript.afterStateObservation();
+                return new ExecutionLeaseCommitResult(
+                        recovered.status(), recovered.receipt(), recovered.reasonCode());
+            }
             try {
                 EvidenceExecutionLeaseAttempt attempt = new EvidenceExecutionLeaseAttempt(
                         request, transactionId, semanticTime,
@@ -671,7 +691,21 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
         @Override
         public boolean afterValidatedCommit(
                 ExecutionLeaseRequest request,
-                ExecutionLeaseCommitResult ignored) {
+                ExecutionLeaseCommitResult commitResult) {
+            if (replay) {
+                requireReplayRequest(request);
+                if (commitResult == null
+                        || commitResult.status() != ExecutionLeaseCommitStatus.RECOVERED
+                        || publishedTranscript == null
+                        || !publishedTranscript.executionLeaseReceipt().equals(
+                        commitResult.receipt())
+                        || !publishedTranscript.executionLeaseTransitionWitness().equals(
+                        evidenceResult.transitionWitness())) {
+                    throw new EvidenceInvalidRuntimeException(
+                            new IllegalArgumentException("recovered transcript mismatch"));
+                }
+                return true;
+            }
             try {
                 Transcript candidate = CapabilityStudioExecutionLeaseTranscript.create(
                         transactionId, EvidencePublicationStatus.COMMITTED, before, after,
@@ -690,6 +724,69 @@ public final class CapabilityStudioExecutionLeaseEvidenceCli {
             } catch (RuntimeException invalid) {
                 throw new EvidenceInvalidRuntimeException(invalid);
             }
+        }
+
+        private void requireReplayStoreBinding(
+                CapabilityStudioStageAcceptanceAuthorityProvider provider,
+                FormalEvidenceAuthorityBinding current) {
+            if (publishedTranscript == null || binding == null) {
+                throw new DeploymentUnavailableException();
+            }
+            try {
+                replayRecoveryBinding = CapabilityStudioProviderOutputIsolation.call(
+                        provider::formalEvidenceRecoveryBinding);
+            } catch (RuntimeException unavailable) {
+                throw new DeploymentUnavailableException();
+            }
+            if (replayRecoveryBinding == null
+                    || !current.storeDescriptorFingerprint().equals(
+                    replayRecoveryBinding.storeDescriptorFingerprint())
+                    || !current.storeDescriptorFingerprint().equals(
+                    publishedTranscript.beforeStateObservation()
+                            .storeDescriptorFingerprint())
+                    || !current.storeDescriptorFingerprint().equals(
+                    publishedTranscript.afterStateObservation()
+                            .storeDescriptorFingerprint())
+                    || !current.storeDescriptorFingerprint().equals(
+                    publishedTranscript.executionLeaseTransitionWitness()
+                            .storeDescriptorFingerprint())) {
+                throw new DeploymentUnavailableException();
+            }
+            if (replayStoreProbed) {
+                return;
+            }
+            Observation probe;
+            try {
+                probe = CapabilityStudioProviderOutputIsolation.call(
+                        () -> replayRecoveryBinding.stateObserver().observe(
+                                Phase.AFTER, publishedTranscript.evidenceTransactionId()));
+            } catch (RuntimeException unavailable) {
+                throw new DeploymentUnavailableException();
+            }
+            if (probe == null
+                    || probe.phase() != Phase.AFTER
+                    || !publishedTranscript.evidenceTransactionId().equals(
+                    probe.evidenceTransactionId())
+                    || !current.storeDescriptorFingerprint().equals(
+                    probe.storeDescriptorFingerprint())) {
+                throw new DeploymentUnavailableException();
+            }
+            replayStoreProbed = true;
+        }
+
+        private void requireReplayRequest(ExecutionLeaseRequest request) {
+            if (publishedTranscript == null
+                    || !sameStableRequest(request, publishedTranscript.executionLeaseRequest())) {
+                throw new EvidenceInvalidRuntimeException(
+                        new IllegalArgumentException("recovered request mismatch"));
+            }
+        }
+
+        private static boolean sameStableRequest(
+                ExecutionLeaseRequest left, ExecutionLeaseRequest right) {
+            return left != null && right != null
+                    && left.commitIdentityFingerprint().equals(
+                    right.commitIdentityFingerprint());
         }
     }
 

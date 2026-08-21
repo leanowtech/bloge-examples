@@ -1279,7 +1279,7 @@ class CapabilityStudioStageAcceptanceCliTest {
                 declarationA.publicationFingerprint())).isZero();
         assertThat(recoveredOut.toString(StandardCharsets.UTF_8))
                 .contains("evidencePublicationStatus=RECOVERED");
-        assertThat(providerLoads).hasValue(loadsAfterCommit);
+        assertThat(providerLoads.get()).isGreaterThan(loadsAfterCommit);
 
         Path parentB = Files.createDirectory(
                 temporaryDirectory.toRealPath().resolve("single-parent-b"));
@@ -1593,6 +1593,7 @@ class CapabilityStudioStageAcceptanceCliTest {
         int loadsAfterCommit = providerLoads.get();
         byte[] persisted = Files.readAllBytes(transcriptOutput);
         var transcript = CapabilityStudioExecutionLeaseTranscript.verify(persisted);
+        Map<String, UnknownTreeEntry> beforeReplayTree = observeUnknownTree(evidenceDirectory);
 
         ByteArrayOutputStream retryOut = new ByteArrayOutputStream();
         int retry = CapabilityStudioExecutionLeaseEvidenceCli.run(
@@ -1602,12 +1603,13 @@ class CapabilityStudioStageAcceptanceCliTest {
 
         assertThat(first).isZero();
         assertThat(retry).isZero();
-        assertThat(providerLoads).hasValue(loadsAfterCommit);
+        assertThat(providerLoads.get()).isGreaterThan(loadsAfterCommit);
         assertThat(firstOut.toString(StandardCharsets.UTF_8))
                 .contains("evidencePublicationStatus=COMMITTED", "commitStatus=COMMITTED");
         assertThat(retryOut.toString(StandardCharsets.UTF_8))
                 .contains("evidencePublicationStatus=RECOVERED", "commitStatus=RECOVERED");
         assertThat(Files.readAllBytes(transcriptOutput)).isEqualTo(persisted);
+        assertThat(observeUnknownTree(evidenceDirectory)).isEqualTo(beforeReplayTree);
         assertThat(transcript.executionLeaseTransitionWitness())
                 .isEqualTo(durable.get().transitionWitness());
         assertThat(transcript.beforeStateObservation().generation()).isZero();
@@ -1643,7 +1645,10 @@ class CapabilityStudioStageAcceptanceCliTest {
                 "--expected-publication-fingerprint", publication.publicationFingerprint()
         }, new PrintStream(bundleVerifyOut, true, StandardCharsets.UTF_8))).isZero();
         assertThat(bundleVerifyOut.toString(StandardCharsets.UTF_8))
+                .contains("STRUCTURE_VERIFIED status=STRUCTURE_VERIFIED",
+                        "terminalClass=STRUCTURE_ONLY")
                 .contains("verificationScope=DURABLE_WRAPPER")
+                .doesNotContain("status=VERIFIED")
                 .endsWith("reasonCode="
                         + CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli.VERIFIED_REASON
                         + "\n");
@@ -1705,10 +1710,9 @@ class CapabilityStudioStageAcceptanceCliTest {
                 NOW.plusSeconds(86_400), () -> {
                     throw new AssertionError("recovery-first loaded Provider");
                 }, formal.fingerprint());
-        assertThat(expiredRetry).isZero();
+        assertThat(expiredRetry).isEqualTo(2);
         assertThat(expiredRetryOut.toString(StandardCharsets.UTF_8))
-                .contains("evidencePublicationStatus=RECOVERED",
-                        "commitStatus=RECOVERED");
+                .startsWith("INVALID outcome=PROTOCOL_INVALID");
 
         Path driftedStage = write("evidence-pass-reformatted.json",
                 JSON.writerWithDefaultPrettyPrinter().writeValueAsString(result));
@@ -1832,9 +1836,10 @@ class CapabilityStudioStageAcceptanceCliTest {
                 new PrintStream(afterRetryOut, true, StandardCharsets.UTF_8), System.err,
                 NOW.plusSeconds(86_400), evidenceSource, formal.fingerprint(),
                 afterFailurePublication.publicationFingerprint());
-        assertThat(afterRetry).isZero();
+        assertThat(afterRetry).isEqualTo(2);
         assertThat(afterRetryOut.toString(StandardCharsets.UTF_8))
-                .contains("commitStatus=RECOVERED");
+                .startsWith("INVALID outcome=PROTOCOL_INVALID")
+                .doesNotContain("ACCEPTED");
 
         durable.set(null);
         committed.set(false);
@@ -1968,6 +1973,142 @@ class CapabilityStudioStageAcceptanceCliTest {
             assertThat(conflictOut.toString(StandardCharsets.UTF_8))
                     .doesNotContain("UNKNOWN_PART_CREDENTIAL");
         }
+    }
+
+    @Test
+    void committedReplayWithoutCurrentRecoveryBindingIsBlockedWithoutWriting()
+            throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("replay-recovery-binding-stage.json", result.toString());
+        Path parent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("replay-recovery-binding-publication"));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        var publication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parent, fingerprint('e'));
+        Path output = parent.resolve(publication.transcriptRelativePath());
+        Provider ordinary = acceptingProvider(result);
+        var formal = ordinary.formalTargetBoundAuthorityBinding();
+        var evidenceProvider = positiveEvidenceProvider(ordinary, formal);
+        ByteArrayOutputStream firstOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(firstOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(evidenceProvider), formal.fingerprint(),
+                publication.publicationFingerprint())).isZero();
+        Map<String, UnknownTreeEntry> beforeReplay = observeUnknownTree(parent);
+
+        ByteArrayOutputStream replayOut = new ByteArrayOutputStream();
+        int replay = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(replayOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(withoutRecoveryBinding(evidenceProvider)),
+                formal.fingerprint(), publication.publicationFingerprint());
+
+        assertThat(replay).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(replayOut.toString(StandardCharsets.UTF_8))
+                .contains("NOT_ACCEPTED")
+                .doesNotContain("ACCEPTED status=ACCEPTED");
+        assertThat(observeUnknownTree(parent)).isEqualTo(beforeReplay);
+    }
+
+    @Test
+    void committedReplayWithCurrentOwnerAuthorityUnavailableIsBlockedWithoutWriting()
+            throws Exception {
+        EvidenceBaseline baseline = committedEvidenceBaseline("replay-owner-unavailable");
+        Map<String, UnknownTreeEntry> beforeReplay = observeUnknownTree(baseline.parent());
+        var currentProvider = withOwnerAuthority(baseline.provider(),
+                (signoff, signature, context) ->
+                        CapabilityStudioStageAcceptanceAuthorityVerifier.AuthorityDecision
+                                .unavailable());
+        ByteArrayOutputStream replayOut = new ByteArrayOutputStream();
+
+        int replay = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{baseline.artifact().toString(), baseline.output().toString()},
+                new PrintStream(replayOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(currentProvider), baseline.formalFingerprint(),
+                baseline.publicationFingerprint());
+
+        assertThat(replay).isNotZero();
+        assertThat(replayOut.toString(StandardCharsets.UTF_8))
+                .contains("NOT_ACCEPTED outcome=BLOCKED")
+                .doesNotContain("ACCEPTED status=ACCEPTED");
+        assertThat(observeUnknownTree(baseline.parent())).isEqualTo(beforeReplay);
+    }
+
+    @Test
+    void committedReplayWithoutCurrentFormalTargetBindingIsBlockedWithoutWriting()
+            throws Exception {
+        EvidenceBaseline baseline = committedEvidenceBaseline("replay-target-unavailable");
+        Map<String, UnknownTreeEntry> beforeReplay = observeUnknownTree(baseline.parent());
+        ByteArrayOutputStream replayOut = new ByteArrayOutputStream();
+
+        int replay = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{baseline.artifact().toString(), baseline.output().toString()},
+                new PrintStream(replayOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(withoutCurrentFormalTargetBinding(baseline.provider())),
+                baseline.formalFingerprint(), baseline.publicationFingerprint());
+
+        assertThat(replay).isNotZero();
+        assertThat(replayOut.toString(StandardCharsets.UTF_8))
+                .contains("NOT_ACCEPTED outcome=BLOCKED")
+                .doesNotContain("ACCEPTED status=ACCEPTED");
+        assertThat(observeUnknownTree(baseline.parent())).isEqualTo(beforeReplay);
+    }
+
+    @Test
+    void committedReplayRevalidatesCurrentAuthoritiesWithoutSecondDurableCommit()
+            throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("replay-authority-counts-stage.json", result.toString());
+        Path parent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("replay-authority-counts-publication"));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        var publication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parent, fingerprint('e'));
+        Path output = parent.resolve(publication.transcriptRelativePath());
+        Provider ordinary = acceptingProvider(result);
+        var formal = ordinary.formalTargetBoundAuthorityBinding();
+        AtomicInteger storeProbes = new AtomicInteger();
+        AtomicInteger ownerCallbacks = new AtomicInteger();
+        AtomicInteger candidateCallbacks = new AtomicInteger();
+        AtomicInteger environmentCallbacks = new AtomicInteger();
+        AtomicInteger durableCommits = new AtomicInteger();
+        var currentProvider = countingEvidenceProvider(
+                positiveEvidenceProvider(ordinary, formal), storeProbes, ownerCallbacks,
+                candidateCallbacks, environmentCallbacks, durableCommits);
+        ByteArrayOutputStream firstOut = new ByteArrayOutputStream();
+
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(firstOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(currentProvider), formal.fingerprint(),
+                publication.publicationFingerprint())).isZero();
+        int ownersAfterCommit = ownerCallbacks.get();
+        int candidatesAfterCommit = candidateCallbacks.get();
+        int environmentsAfterCommit = environmentCallbacks.get();
+        assertThat(storeProbes).hasValue(0);
+        assertThat(durableCommits).hasValue(1);
+        Map<String, UnknownTreeEntry> beforeReplay = observeUnknownTree(parent);
+        ByteArrayOutputStream replayOut = new ByteArrayOutputStream();
+
+        int replay = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(replayOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(currentProvider), formal.fingerprint(),
+                publication.publicationFingerprint());
+
+        assertThat(replay).isZero();
+        assertThat(replayOut.toString(StandardCharsets.UTF_8))
+                .contains("ACCEPTED status=ACCEPTED",
+                        "evidencePublicationStatus=RECOVERED");
+        assertThat(storeProbes).hasValue(1);
+        assertThat(durableCommits).hasValue(1);
+        assertThat(ownerCallbacks.get()).isGreaterThan(ownersAfterCommit);
+        assertThat(candidateCallbacks.get()).isGreaterThan(candidatesAfterCommit);
+        assertThat(environmentCallbacks.get()).isGreaterThan(environmentsAfterCommit);
+        assertThat(observeUnknownTree(parent)).isEqualTo(beforeReplay);
     }
 
     @Test
@@ -2516,6 +2657,11 @@ class CapabilityStudioStageAcceptanceCliTest {
             Provider ordinary,
             CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
                     formal) {
+        AtomicReference<EvidenceExecutionLeaseCommitResult> durable = new AtomicReference<>();
+        AtomicReference<CapabilityStudioDeploymentStateObservation.Observation> beforeState =
+                new AtomicReference<>();
+        AtomicReference<CapabilityStudioDeploymentStateObservation.Observation> afterState =
+                new AtomicReference<>();
         return new CapabilityStudioStageAcceptanceAuthorityProvider() {
             @Override
             public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
@@ -2551,6 +2697,9 @@ class CapabilityStudioStageAcceptanceCliTest {
                                 var after = evidenceObservation(
                                         CapabilityStudioDeploymentStateObservation.Phase.AFTER,
                                         attempt.evidenceTransactionId(), true);
+                                durable.set(lease);
+                                beforeState.set(before);
+                                afterState.set(after);
                                 journal.persistCommitted(attempt, before, after, lease);
                                 return new CapabilityStudioStageAcceptanceAuthorityProvider
                                         .EvidenceExecutionLeaseTransactionResult(
@@ -2565,6 +2714,39 @@ class CapabilityStudioStageAcceptanceCliTest {
                                         ExecutionLeaseCommitStatus.UNAVAILABLE,
                                         null, null, "LEASE_UNAVAILABLE");
                             }
+                        });
+            }
+
+            @Override
+            public FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+                return new FormalEvidenceRecoveryBinding(fingerprint('6'),
+                        (phase, transactionId) -> phase
+                                == CapabilityStudioDeploymentStateObservation.Phase.BEFORE
+                                ? beforeState.get()
+                                : afterState.get(),
+                        (attempt, journal) -> {
+                            EvidenceExecutionLeaseCommitResult existing = durable.get();
+                            if (existing == null) {
+                                return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .ExistingEvidenceRecoveryResult(
+                                        CapabilityStudioStageAcceptanceAuthorityProvider
+                                                .ExistingEvidenceRecoveryStatus.ABSENT,
+                                        null, null, "LEASE_ABSENT");
+                            }
+                            boolean exact = existing.receipt().requestFingerprint().equals(
+                                    attempt.request().commitIdentityFingerprint());
+                            return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .ExistingEvidenceRecoveryResult(
+                                    exact
+                                            ? CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .ExistingEvidenceRecoveryStatus.FOUND
+                                            : CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .ExistingEvidenceRecoveryStatus.CONFLICT,
+                                    exact ? existing.receipt() : null,
+                                    exact ? existing.transitionWitness() : null,
+                                    exact ? beforeState.get() : null,
+                                    exact ? afterState.get() : null,
+                                    exact ? "LEASE_RECOVERED" : "LEASE_CONFLICT");
                         });
             }
 
@@ -2588,6 +2770,209 @@ class CapabilityStudioStageAcceptanceCliTest {
             public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
                     ownerAuthority() {
                 return ordinary.owner();
+            }
+        };
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider withoutRecoveryBinding(
+            CapabilityStudioStageAcceptanceAuthorityProvider delegate) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                return delegate.formalEvidenceAuthorityBinding();
+            }
+
+            @Override
+            public AuthorityBinding authorityBinding() {
+                return delegate.authorityBinding();
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return delegate.evidenceResolver();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return delegate.evidenceIssuerPolicy();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return delegate.ownerAuthority();
+            }
+        };
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider withOwnerAuthority(
+            CapabilityStudioStageAcceptanceAuthorityProvider delegate,
+            CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority ownerAuthority) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                FormalEvidenceAuthorityBinding evidence =
+                        delegate.formalEvidenceAuthorityBinding();
+                var formal = evidence.formalBinding();
+                var authority = formal.authorityBinding();
+                var currentAuthority = new AuthorityBinding(authority.fingerprint(),
+                        authority.resolver(), authority.issuerPolicy(), ownerAuthority);
+                var currentFormal = new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .FormalTargetBoundAuthorityBinding(formal.fingerprint(),
+                        currentAuthority, formal.targetAdmissionBinding());
+                return new FormalEvidenceAuthorityBinding(currentFormal,
+                        evidence.storeDescriptorFingerprint(), evidence.stateObserver(),
+                        evidence.transactionAuthority());
+            }
+
+            @Override
+            public FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+                return delegate.formalEvidenceRecoveryBinding();
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return delegate.evidenceResolver();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return delegate.evidenceIssuerPolicy();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return ownerAuthority;
+            }
+        };
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider
+            withoutCurrentFormalTargetBinding(
+            CapabilityStudioStageAcceptanceAuthorityProvider delegate) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                return null;
+            }
+
+            @Override
+            public FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+                return delegate.formalEvidenceRecoveryBinding();
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return delegate.evidenceResolver();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return delegate.evidenceIssuerPolicy();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return delegate.ownerAuthority();
+            }
+        };
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider countingEvidenceProvider(
+            CapabilityStudioStageAcceptanceAuthorityProvider delegate,
+            AtomicInteger storeProbes,
+            AtomicInteger ownerCallbacks,
+            AtomicInteger candidateCallbacks,
+            AtomicInteger environmentCallbacks,
+            AtomicInteger durableCommits) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                FormalEvidenceAuthorityBinding evidence =
+                        delegate.formalEvidenceAuthorityBinding();
+                var formal = evidence.formalBinding();
+                var admission = formal.targetAdmissionBinding();
+                var countedAdmission = new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .FormalTargetAdmissionBinding(
+                        admission.targetAdmissionMaterialFingerprint(),
+                        admission.targetRawFingerprint(), admission.targetCanonicalFingerprint(),
+                        admission.targetBindingBytes(), admission.candidateAttestationBytes(),
+                        admission.environmentAttestationBytes(), admission.verificationContext(),
+                        facts -> {
+                            candidateCallbacks.incrementAndGet();
+                            return admission.candidateAuthority().verify(facts);
+                        }, facts -> {
+                            environmentCallbacks.incrementAndGet();
+                            return admission.environmentAuthority().verify(facts);
+                        }, admission.lifecycleMaterial(), admission.deploymentAuthorityBinding());
+                var authority = formal.authorityBinding();
+                var countedAuthority = new AuthorityBinding(authority.fingerprint(),
+                        authority.resolver(), authority.issuerPolicy(),
+                        (signoff, signature, context) -> {
+                            ownerCallbacks.incrementAndGet();
+                            return authority.ownerAuthority().verify(
+                                    signoff, signature, context);
+                        });
+                var countedFormal = new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .FormalTargetBoundAuthorityBinding(formal.fingerprint(),
+                        countedAuthority, countedAdmission);
+                var transactionAuthority = evidence.transactionAuthority();
+                var countedTransaction = new CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceExecutionLeaseTransactionAuthority() {
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseTransactionResult commit(
+                            CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .EvidenceExecutionLeaseAttempt attempt,
+                            CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .EvidenceTransactionJournal journal) {
+                        durableCommits.incrementAndGet();
+                        return transactionAuthority.commit(attempt, journal);
+                    }
+
+                    @Override
+                    public EvidenceExecutionLeaseCommitResult recoverExisting(
+                            CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .ExecutionLeaseRequest request) {
+                        return transactionAuthority.recoverExisting(request);
+                    }
+                };
+                return new FormalEvidenceAuthorityBinding(countedFormal,
+                        evidence.storeDescriptorFingerprint(), evidence.stateObserver(),
+                        countedTransaction);
+            }
+
+            @Override
+            public FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+                FormalEvidenceRecoveryBinding recovery =
+                        delegate.formalEvidenceRecoveryBinding();
+                return new FormalEvidenceRecoveryBinding(
+                        recovery.storeDescriptorFingerprint(), (phase, transactionId) -> {
+                            storeProbes.incrementAndGet();
+                            return recovery.stateObserver().observe(phase, transactionId);
+                        }, recovery.recovery(), recovery.interruptedRecovery());
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return delegate.evidenceResolver();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return delegate.evidenceIssuerPolicy();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return delegate.ownerAuthority();
             }
         };
     }

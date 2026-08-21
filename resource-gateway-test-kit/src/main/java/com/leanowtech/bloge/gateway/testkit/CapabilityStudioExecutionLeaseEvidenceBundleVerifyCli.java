@@ -8,9 +8,12 @@ import java.nio.file.Path;
 
 /** Read-only command-line verifier for a durable execution-lease evidence wrapper. */
 public final class CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli {
-    /** Closed success reason. */
-    public static final String VERIFIED_REASON =
-            "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_BUNDLE_VERIFY_CLI.VERIFIED";
+    /** Closed read-only structural verification reason. */
+    public static final String STRUCTURE_VERIFIED_REASON =
+            "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_BUNDLE_VERIFY_CLI.STRUCTURE_VERIFIED";
+    /** @deprecated use {@link #STRUCTURE_VERIFIED_REASON}. */
+    @Deprecated
+    public static final String VERIFIED_REASON = STRUCTURE_VERIFIED_REASON;
     private static final String INVALID_REASON =
             "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_BUNDLE_VERIFY_CLI.INVALID";
     private static final String UNAVAILABLE_REASON =
@@ -33,7 +36,7 @@ public final class CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli {
      *
      * @param args exact transcript path, Stage raw, formal outer, and publication pin flags
      * @param out payload-free single-line output
-     * @return 0 verified, 2 invalid/output failure, or 3 unavailable
+     * @return 0 structurally verified, 2 invalid/output failure, or 3 unavailable
      */
     public static int run(String[] args, PrintStream out) {
         PrintStream safeOut = out == null ? System.out : out;
@@ -48,14 +51,15 @@ public final class CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli {
             Path transcript = Path.of(args[1]);
             var verified = CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
                     transcript, args[3], args[5], args[7]);
-            String line = "VERIFIED status=VERIFIED verificationScope=DURABLE_WRAPPER"
+            String line = "STRUCTURE_VERIFIED status=STRUCTURE_VERIFIED"
+                    + " terminalClass=STRUCTURE_ONLY verificationScope=DURABLE_WRAPPER"
                     + " evidenceTransactionId=" + verified.evidenceTransactionId()
                     + " transcriptRawFingerprint=" + verified.transcriptRawFingerprint()
                     + " transcriptFingerprint=" + verified.transcriptFingerprint()
                     + " leaseReceiptFingerprint=" + verified.leaseReceiptFingerprint()
                     + " transitionWitnessFingerprint="
                     + verified.transitionWitnessFingerprint()
-                    + " reasonCode=" + VERIFIED_REASON;
+                    + " reasonCode=" + STRUCTURE_VERIFIED_REASON;
             return emit(safeOut, line) ? 0 : 2;
         } catch (CapabilityStudioExecutionLeaseEvidenceBundleVerifier
                 .VerificationException failure) {
