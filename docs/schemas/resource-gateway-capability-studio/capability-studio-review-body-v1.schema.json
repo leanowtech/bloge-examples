@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json",
+  "title": "Capability Studio Reviewer Review Body v1",
+  "description": "The review body is structured evidence. A verifier recomputes openP0, openP1 and skippedCount from the ordered arrays and rejects projection drift.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gateId", "gateRevision", "reviewBodyFingerprint", "reviewedMaterialRootFingerprint", "reviewChecks", "findings", "openP0", "openP1", "skippedCount", "reviewedAt"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.review-body.v1"},
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "reviewBodyFingerprint": {"$ref": "#/$defs/documentFingerprint"},
+    "reviewedMaterialRootFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "reviewChecks": {"type": "array", "minItems": 6, "maxItems": 6, "prefixItems": [{"$ref": "#/$defs/checkIndependence"}, {"$ref": "#/$defs/checkProtocol"}, {"$ref": "#/$defs/checkClosure"}, {"$ref": "#/$defs/checkTime"}, {"$ref": "#/$defs/checkReplay"}, {"$ref": "#/$defs/checkAdmission"}], "items": false},
+    "findings": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"$ref": "#/$defs/finding"}},
+    "openP0": {"type": "integer", "minimum": 0},
+    "openP1": {"type": "integer", "minimum": 0},
+    "skippedCount": {"type": "integer", "minimum": 0, "maximum": 6},
+    "reviewedAt": {"$ref": "#/$defs/time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"findings": {"maxItems": 0}}, "required": ["findings"]},
+      "then": {"properties": {"openP0": {"const": 0}, "openP1": {"const": 0}}}
+    }
+  ],
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "aggregateFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "AGGREGATE_COMMITMENT"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]},
+    "check": {"type": "object", "additionalProperties": false, "required": ["checkId", "status"], "properties": {"checkId": {"enum": ["INDEPENDENCE", "PROTOCOL_CONFORMANCE", "MATERIAL_CLOSURE", "TIME_ORDERING", "REPLAY_SEMANTICS", "ADMISSION_BINDING"]}, "status": {"enum": ["PASS", "FINDING", "SKIPPED"]}}},
+    "checkIndependence": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "INDEPENDENCE"}}}]},
+    "checkProtocol": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "PROTOCOL_CONFORMANCE"}}}]},
+    "checkClosure": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "MATERIAL_CLOSURE"}}}]},
+    "checkTime": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "TIME_ORDERING"}}}]},
+    "checkReplay": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "REPLAY_SEMANTICS"}}}]},
+    "checkAdmission": {"allOf": [{"$ref": "#/$defs/check"}, {"properties": {"checkId": {"const": "ADMISSION_BINDING"}}}]},
+    "finding": {"type": "object", "additionalProperties": false, "required": ["findingId", "checkId", "severity", "status", "reasonCode", "detail"], "properties": {"findingId": {"type": "string", "pattern": "^F-[0-9]{3}$"}, "checkId": {"enum": ["INDEPENDENCE", "PROTOCOL_CONFORMANCE", "MATERIAL_CLOSURE", "TIME_ORDERING", "REPLAY_SEMANTICS", "ADMISSION_BINDING"]}, "severity": {"enum": ["P0", "P1", "P2"]}, "status": {"enum": ["OPEN", "RESOLVED"]}, "reasonCode": {"enum": ["ARTIFACT_COLLISION", "SCHEMA_DRIFT", "MATERIAL_MISSING", "TIME_ORDER_INVALID", "REPLAY_MISMATCH", "ADMISSION_BINDING_MISMATCH", "REVIEW_COUNT_CONSISTENCY_REJECTED"]}, "detail": {"type": "string", "minLength": 1, "maxLength": 2000}}}
+  },
+  "$comment": "Semantic verifier rules: each required check occurs exactly once in prefix order; PASS has no finding, FINDING has at least one finding, SKIPPED has no finding. openP0=count(findings where severity=P0 and status=OPEN), openP1=count(...P1...), skippedCount=count(reviewChecks where status=SKIPPED)."
+}

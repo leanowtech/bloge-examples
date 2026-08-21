@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "capability-studio.reviewer-authority-envelope.v1",
+  "authorityId": "authority:gate-a-review",
+  "issuer": "issuer:quality-office",
+  "keyId": "key:quality-office-2026",
+  "signatureAlgorithm": "none",
+  "gateId": "GATE-A",
+  "gateRevision": 1,
+  "admissionProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000023"
+  },
+  "candidateRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000024"
+  },
+  "reviewerArtifactRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000025"
+  },
+  "reviewBodyRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000026"
+  },
+  "reviewedMaterialRootFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000027"
+  },
+  "openP0": 0,
+  "openP1": 0,
+  "skippedCount": 0,
+  "reviewScope": "GATE_A_ACCEPTANCE",
+  "reviewedAt": "2026-08-21T09:30:00Z",
+  "validUntil": "2026-08-22T09:30:00Z",
+  "revocationSnapshotRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000028"
+  },
+  "signature": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000029"
+  }
+}

@@ -23,7 +23,7 @@
       "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "fileSize": 1024,
-    "fileKey": "candidate-1"
+    "fileKey": "dev:1:ino:1001"
   },
   "codeSourceObservation": {
     "preRead": {

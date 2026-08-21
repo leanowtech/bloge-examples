@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+  "title": "Capability Studio Gate A real material attack manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "manifestId", "collectorRevision", "normalizedVectorsExcluded", "guardCatalog", "cases"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.material-attack-manifest.v1"},
+    "manifestId": {"type": "string", "pattern": "^GATE-A-MATERIAL-ATTACKS-[A-Z0-9][A-Z0-9-]{1,63}$"},
+    "collectorRevision": {"const": 1},
+    "normalizedVectorsExcluded": {"const": true},
+    "guardCatalog": {"const": "docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/guard-catalog-v1.json"},
+    "cases": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 64,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A0_SLOT_COUNT_PROJECTION"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A0_TERMINAL_DERIVATION"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A0_REFERENCE_CLOSURE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A0_RESULT_FINGERPRINT"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A1_SLOT_COUNT_PROJECTION"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A1_SLOT_OUTCOME_BINDING"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A1_PROCESS_MATERIAL_CLOSURE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A1_RESULT_FINGERPRINT"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "HARNESS_PROOF_COMPLETENESS"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "PIN_LIFECYCLE_BINDING"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "ADMISSION_EVIDENCE_ROOT_CLOSURE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "CODESOURCE_INDEPENDENCE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "REVIEW_SIGNATURE_AUTHORITY"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "REVIEW_COUNT_CONSISTENCY_REJECTED"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "ROLLBACK_BINDING"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A2_CONCLUSION_PRECEDENCE"}}}]},
+        {"allOf": [{"$ref": "#/$defs/case"}, {"properties": {"caseClass": {"const": "PRIMARY_GUARD_ATTACK"}, "guardId": {"const": "A2_RESULT_FINGERPRINT"}}}]}
+      ],
+      "items": {"$ref": "#/$defs/supplementalCase"}
+    }
+  },
+  "$defs": {
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "baseFixture", "schema"],
+      "properties": {
+        "target": {"type": "string", "pattern": "^[A-Za-z0-9._/-]+$"},
+        "baseFixture": {"type": "string", "pattern": "^docs/[A-Za-z0-9._/-]+\\.json$"},
+        "schema": {"type": "string", "pattern": "^docs/schemas/[A-Za-z0-9._/-]+\\.json$"}
+      }
+    },
+    "rawMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target", "kind"],
+      "properties": {
+        "target": {"type": "string", "pattern": "^[A-Za-z0-9._/-]+$"},
+        "kind": {"enum": ["RAW_BYTES", "DIRECTORY_TREE", "ZIP_ARCHIVE", "PROCESS_STDOUT", "PROCESS_STDERR", "ROLLBACK_INSTRUCTION"]}
+      }
+    },
+    "sourceMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["canonicalBaseMaterial", "documents", "rawMaterials", "collectorReads"],
+      "properties": {
+        "canonicalBaseMaterial": {"type": "string", "enum": ["PRODUCTION_WIRE_FIXTURE", "PRODUCTION_SIGNED_FIXTURE", "PRODUCTION_SCHEMA_FIXTURE"]},
+        "documents": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/document"}},
+        "rawMaterials": {"type": "array", "items": {"$ref": "#/$defs/rawMaterial"}},
+        "collectorReads": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["JSON_BYTES", "REFERENCE_PATH", "PROCESS_TRANSCRIPT", "ZIP_ENTRIES", "DIRECTORY_TREE", "RAW_FINGERPRINT", "ED25519_SIGNATURE", "CODE_SOURCE_PATH", "EXIT_STATE"]}}
+      }
+    },
+    "mutation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mutationId", "operation", "target", "description", "singleMutation"],
+      "properties": {
+        "mutationId": {"type": "string", "pattern": "^MUT-[A-Z0-9][A-Z0-9-]{2,63}$"},
+        "operation": {"enum": ["JSON_FIELD_REPLACE", "LOGICAL_JSON_REGION_REPLACE", "BASELINE_SEMANTIC_ATTACK", "RAW_BYTES_REPLACE", "RAW_FILE_DELETE", "TREE_FILE_REPLACE", "ZIP_ENTRY_ADD", "SIGNATURE_REPLACE", "PROCESS_STATE_REPLACE"]},
+        "target": {"type": "string", "pattern": "^[A-Za-z0-9._/-]+(?:#[/A-Za-z0-9._/,+-]+)?$"},
+        "description": {"type": "string", "minLength": 20},
+        "singleMutation": {"const": true}
+      }
+    },
+    "expected": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "admissionTarget", "conclusion", "reason", "exitCode"],
+      "properties": {
+        "status": {"enum": ["FAIL", "UNAVAILABLE"]},
+        "admissionTarget": {"type": "string", "pattern": "^(requirement|artifact|guard|review):[A-Z0-9:_-]+$"},
+        "conclusion": {"enum": ["FAIL", "OPEN", "UNAVAILABLE"]},
+        "reason": {"type": "string", "pattern": "^[A-Z0-9_:-]{3,96}$"},
+        "exitCode": {"enum": [2, 3]}
+      }
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["caseId", "caseClass", "guardId", "sourceMaterial", "mutation", "expected"],
+      "properties": {
+        "caseId": {"type": "string", "pattern": "^REAL-[A-Z0-9][A-Z0-9-]{2,63}$"},
+        "caseClass": {"enum": ["PRIMARY_GUARD_ATTACK", "SUPPLEMENTAL_ATTACK"]},
+        "guardId": {"type": "string", "pattern": "^[A-Z0-9_]{3,96}$"},
+        "sourceMaterial": {"$ref": "#/$defs/sourceMaterial"},
+        "mutation": {"$ref": "#/$defs/mutation"},
+        "expected": {"$ref": "#/$defs/expected"}
+      }
+    },
+    "supplementalCase": {
+      "allOf": [
+        {"$ref": "#/$defs/case"},
+        {
+          "properties": {
+            "caseClass": {"const": "SUPPLEMENTAL_ATTACK"},
+            "guardId": {"enum": [
+              "A0_SLOT_COUNT_PROJECTION", "A0_TERMINAL_DERIVATION", "A0_REFERENCE_CLOSURE", "A0_RESULT_FINGERPRINT",
+              "A1_SLOT_COUNT_PROJECTION", "A1_SLOT_OUTCOME_BINDING", "A1_PROCESS_MATERIAL_CLOSURE", "A1_RESULT_FINGERPRINT",
+              "HARNESS_PROOF_COMPLETENESS", "PROVIDER_NAMESPACE_COLLISION_REJECTED", "PIN_LIFECYCLE_BINDING",
+              "ADMISSION_EVIDENCE_ROOT_CLOSURE", "CODESOURCE_INDEPENDENCE", "REVIEW_SIGNATURE_AUTHORITY",
+              "REVIEW_COUNT_CONSISTENCY_REJECTED", "ROLLBACK_BINDING", "A2_CONCLUSION_PRECEDENCE", "A2_RESULT_FINGERPRINT"
+            ]}
+          }
+        }
+      ]
+    }
+  }
+}

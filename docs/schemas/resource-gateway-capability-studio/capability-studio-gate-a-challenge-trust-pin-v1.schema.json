@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+  "title": "Capability Studio Gate A Challenge Trust Pin v1",
+  "description": "Caller-created trust inputs fixed before any Gate A run. Cross-field equality and raw-byte verification are mandatory verifier semantics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gateId", "gateRevision", "createdAt", "semanticVerificationTime", "allowedGateRevision", "expectedDesignRawFingerprint", "expectedReplayProfileRawFingerprint", "expectedAdmissionProfileRawFingerprint", "expectedImplementationCandidateRawFingerprint", "expectedIndependentVerifierRawFingerprint", "expectedConformanceHarnessRawFingerprint", "expectedHarnessProfileRawFingerprint", "expectedGateVerifierRawFingerprint", "expectedSchemaSetManifestRawFingerprint", "expectedTckDefinitionRawFingerprint", "expectedTckProviderRawFingerprint", "expectedCandidateSpiArtifactRawFingerprint", "expectedCandidateSpiClassRawFingerprint", "expectedReviewerArtifactRawFingerprint", "expectedReviewerTrustPolicyRawFingerprint", "expectedReviewerRevocationSnapshotRawFingerprint", "expectedChallengeInputRootFingerprint", "expectedChallengeSandboxProfileRawFingerprint", "challengeTrustPinFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-challenge-trust-pin.v1"},
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "createdAt": {"$ref": "#/$defs/time"},
+    "semanticVerificationTime": {"$ref": "#/$defs/time"},
+    "allowedGateRevision": {"const": 1},
+    "expectedDesignRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedReplayProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedAdmissionProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedImplementationCandidateRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedIndependentVerifierRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedConformanceHarnessRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedHarnessProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedGateVerifierRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedSchemaSetManifestRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedTckDefinitionRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedTckProviderRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedCandidateSpiArtifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedCandidateSpiClassRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedReviewerArtifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedReviewerTrustPolicyRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedReviewerRevocationSnapshotRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedChallengeInputRootFingerprint": {"$ref": "#/$defs/treeFingerprint"},
+    "expectedChallengeSandboxProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "challengeTrustPinFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "treeFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "TREE_COMMITMENT"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]}
+  }
+}

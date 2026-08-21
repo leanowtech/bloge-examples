@@ -1,0 +1,37 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.challenge-sandbox-profile.v1",
+  "profileId": "GATE-A-CHALLENGE-SANDBOX",
+  "revision": 1,
+  "network": {
+    "mode": "DENY_ALL",
+    "allowedHosts": []
+  },
+  "filesystem": {
+    "challengeInputReadOnly": true,
+    "materialOutputEmpty": true,
+    "scratchEmpty": true,
+    "allowSymlink": false,
+    "allowHardLink": false,
+    "allowUnknownFiles": false,
+    "maxFiles": 512,
+    "maxBytes": 67108864
+  },
+  "process": {
+    "maxRunWindowMillis": 1800000,
+    "maxStartDelayMillis": 300000,
+    "maxStdoutBytes": 1048576,
+    "maxStderrBytes": 1048576,
+    "killProcessTree": true,
+    "environmentMode": "EMPTY_ALLOWLIST"
+  },
+  "output": {
+    "allowedRole": "NON_AUTHORITY_TCK_EVIDENCE",
+    "createNewOnly": true,
+    "testReportOutsideMaterialRoot": true
+  },
+  "profileFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+  }
+}

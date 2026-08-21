@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-profile-v1.schema.json",
+  "title": "Capability Studio Gate A Conformance Harness profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "profileId", "revision", "outerRuns", "childRunCount", "providerCollisionGuard", "scratchPolicy", "harnessProfileFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.harness-profile.v1"},
+    "profileId": {"const": "GATE-A-HARNESS"},
+    "revision": {"const": 1},
+    "outerRuns": {"type": "array", "minItems": 5, "maxItems": 5, "prefixItems": [{"const": "NORMAL_A1"}, {"const": "WRONG_VERIFIER_DIGEST_A1"}, {"const": "REGISTRY_MUTATION_A1"}, {"const": "TCK_MISMATCH_A1"}, {"const": "PROVIDER_COLLISION_A1"}], "items": false},
+    "childRunCount": {"const": 12},
+    "providerCollisionGuard": {"type": "object", "additionalProperties": false, "required": ["testId", "expectedTerminal", "expectedExitCode", "required"], "properties": {"testId": {"const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"}, "expectedTerminal": {"const": "INVALID"}, "expectedExitCode": {"const": 2}, "required": {"const": true}}},
+    "scratchPolicy": {"type": "object", "additionalProperties": false, "required": ["beforeCount", "afterCount", "maxBytes", "mustBeEmpty"], "properties": {"beforeCount": {"const": 0}, "afterCount": {"const": 0}, "maxBytes": {"const": 67108864}, "mustBeEmpty": {"const": true}}},
+    "harnessProfileFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

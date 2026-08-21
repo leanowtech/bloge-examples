@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+  "title": "Capability Studio Gate A caller-observed Harness process transcript v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "runId", "invocationRef", "commandRef", "processState", "exitCode", "startedAt", "endedAt", "timedOut", "cancelled", "codeSource", "codeSourceObservation", "stdoutRef", "stderrRef", "transcriptFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.harness-process-transcript.v1"},
+    "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
+    "invocationRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "commandRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "processState": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processState"},
+    "exitCode": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processExit"},
+    "startedAt": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "endedAt": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "timedOut": {"type": "boolean"},
+    "cancelled": {"type": "boolean"},
+    "codeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
+    "codeSourceObservation": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSourceObservation"},
+    "stdoutRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "stderrRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "transcriptFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  },
+  "allOf": [
+    {"if": {"properties": {"processState": {"const": "COMPLETED"}}, "required": ["processState"]}, "then": {"properties": {"exitCode": {"enum": [0, 2, 3, 4]}, "timedOut": {"const": false}, "cancelled": {"const": false}}}},
+    {"if": {"properties": {"processState": {"const": "FAILED"}}, "required": ["processState"]}, "then": {"properties": {"exitCode": {"minimum": 1, "not": {"enum": [2, 3, 4, 130, 143, 255]}}, "timedOut": {"const": false}, "cancelled": {"const": false}}}},
+    {"if": {"properties": {"processState": {"const": "TIMED_OUT"}}, "required": ["processState"]}, "then": {"properties": {"exitCode": {"const": 143}, "timedOut": {"const": true}, "cancelled": {"const": false}}}},
+    {"if": {"properties": {"processState": {"const": "CANCELLED"}}, "required": ["processState"]}, "then": {"properties": {"exitCode": {"const": 130}, "timedOut": {"const": false}, "cancelled": {"const": true}}}},
+    {"if": {"properties": {"processState": {"const": "UNAVAILABLE"}}, "required": ["processState"]}, "then": {"properties": {"exitCode": {"const": 255}, "timedOut": {"const": false}, "cancelled": {"const": false}}}}
+  ]
+}

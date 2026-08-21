@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+  "title": "Capability Studio Gate A A1 bootstrap response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "runId", "bootstrapStatus", "reasonCode", "actualCodeSource", "checkedArtifacts", "responseFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.a1-bootstrap-response.v1"},
+    "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
+    "bootstrapStatus": {"enum": ["READY", "REJECTED", "UNAVAILABLE"]},
+    "reasonCode": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/reasonCode"},
+    "actualCodeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
+    "checkedArtifacts": {"type": "array", "minItems": 1, "maxItems": 32, "items": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"}},
+    "responseFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  },
+  "allOf": [
+    {"if": {"properties": {"bootstrapStatus": {"const": "READY"}}, "required": ["bootstrapStatus"]}, "then": {"properties": {"reasonCode": {"const": "BOOTSTRAP_READY"}}}},
+    {"if": {"properties": {"bootstrapStatus": {"const": "REJECTED"}}, "required": ["bootstrapStatus"]}, "then": {"properties": {"reasonCode": {"const": "BOOTSTRAP_REJECTED"}}}},
+    {"if": {"properties": {"bootstrapStatus": {"const": "UNAVAILABLE"}}, "required": ["bootstrapStatus"]}, "then": {"properties": {"reasonCode": {"const": "BOOTSTRAP_UNAVAILABLE"}}}}
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.a1-invocation-record.v1",
+  "runId": "RUN-NORMAL-001",
+  "runPurpose": "NORMAL_A1",
+  "commandRef": {
+    "uri": "run-material/runs/RUN-NORMAL-001/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  },
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  },
+  "challengeInputRoot": "/opt/gate-a/challenge-input",
+  "materialOutputRoot": "/opt/gate-a/material-output",
+  "scratchRoot": "/opt/gate-a/scratch",
+  "verificationTime": "2026-08-21T10:00:00Z",
+  "invocationFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+  }
+}

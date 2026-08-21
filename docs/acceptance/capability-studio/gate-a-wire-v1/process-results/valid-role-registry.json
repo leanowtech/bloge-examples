@@ -1,0 +1,174 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.role-registry.v1",
+  "registryId": "GATE-A-ROLE-REGISTRY",
+  "revision": 1,
+  "roles": [
+    {
+      "role": "IMPLEMENTATION_CANDIDATE",
+      "artifactRef": {
+        "uri": "artifacts/candidate.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/replay.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/candidate.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2828282828282828282828282828282828282828282828282828282828282828"
+        }
+      }
+    },
+    {
+      "role": "INDEPENDENT_VERIFIER",
+      "artifactRef": {
+        "uri": "artifacts/verifier.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1616161616161616161616161616161616161616161616161616161616161616"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/replay.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/verifier.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2929292929292929292929292929292929292929292929292929292929292929"
+        }
+      }
+    },
+    {
+      "role": "CONFORMANCE_HARNESS",
+      "artifactRef": {
+        "uri": "artifacts/harness.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/harness.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2525252525252525252525252525252525252525252525252525252525252525"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/harness.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:3030303030303030303030303030303030303030303030303030303030303030"
+        }
+      }
+    },
+    {
+      "role": "GATE_VERIFIER",
+      "artifactRef": {
+        "uri": "artifacts/admission.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/admission.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2626262626262626262626262626262626262626262626262626262626262626"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/admission.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:3232323232323232323232323232323232323232323232323232323232323232"
+        }
+      }
+    },
+    {
+      "role": "TCK_PROVIDER",
+      "artifactRef": {
+        "uri": "artifacts/provider.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/replay.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/provider.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      }
+    },
+    {
+      "role": "TEST_REPORT",
+      "artifactRef": {
+        "uri": "reports/TEST_REPORT.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3434343434343434343434343434343434343434343434343434343434343434"
+        }
+      },
+      "profileRef": {
+        "uri": "profiles/harness.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:2525252525252525252525252525252525252525252525252525252525252525"
+        }
+      },
+      "buildIdentityRef": {
+        "uri": "identities/harness.json",
+        "fingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "value": "sha256:3030303030303030303030303030303030303030303030303030303030303030"
+        }
+      }
+    }
+  ],
+  "registryFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:3535353535353535353535353535353535353535353535353535353535353535"
+  }
+}

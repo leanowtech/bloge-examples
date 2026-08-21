@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-authority-matrix-v1.schema.json",
+  "title": "Capability Studio Gate A authority matrix v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "factClasses", "facts"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.authority-matrix.v1"},
+    "factClasses": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "prefixItems": [
+        {"const": "EXPECTATION"}, {"const": "OBSERVATION"},
+        {"const": "DERIVED_PROJECTION"}, {"const": "PROOF_ARTIFACT"},
+        {"const": "ADMISSION_DECISION"}
+      ],
+      "items": false
+    },
+    "facts": {
+      "type": "array", "minItems": 10, "maxItems": 10,
+      "prefixItems": [
+        {"$ref": "#/$defs/expectedTckSlot"}, {"$ref": "#/$defs/expectedArtifact"},
+        {"$ref": "#/$defs/processObservation"}, {"$ref": "#/$defs/a0Adapter"},
+        {"$ref": "#/$defs/a0Felt"}, {"$ref": "#/$defs/a1Outcome"},
+        {"$ref": "#/$defs/testReport"}, {"$ref": "#/$defs/reviewFinding"},
+        {"$ref": "#/$defs/outputSeal"}, {"$ref": "#/$defs/admissionDecision"}
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["factId", "class", "soleAuthority", "allowedProjections", "forbiddenUse"],
+      "properties": {
+        "factId": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9_]{2,95}$"},
+        "class": {"enum": ["EXPECTATION", "OBSERVATION", "DERIVED_PROJECTION", "PROOF_ARTIFACT", "ADMISSION_DECISION"]},
+        "soleAuthority": {"type": "string", "minLength": 8, "maxLength": 512},
+        "allowedProjections": {
+          "type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 3, "maxLength": 256}
+        },
+        "forbiddenUse": {"type": "string", "minLength": 8, "maxLength": 512}
+      }
+    },
+    "expectedTckSlot": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "EXPECTED_TCK_SLOT"}, "class": {"const": "EXPECTATION"}}}]},
+    "expectedArtifact": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "EXPECTED_ARTIFACT_IDENTITY"}, "class": {"const": "EXPECTATION"}}}]},
+    "processObservation": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "PROCESS_OBSERVATION"}, "class": {"const": "OBSERVATION"}}}]},
+    "a0Adapter": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "A0_ADAPTER_FACT"}, "class": {"const": "PROOF_ARTIFACT"}}}]},
+    "a0Felt": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "A0_FELT_GAP"}, "class": {"const": "DERIVED_PROJECTION"}}}]},
+    "a1Outcome": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "A1_SLOT_OUTCOME"}, "class": {"const": "DERIVED_PROJECTION"}}}]},
+    "testReport": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "TEST_REPORT_CLOSURE"}, "class": {"const": "PROOF_ARTIFACT"}}}]},
+    "reviewFinding": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "REVIEW_FINDING"}, "class": {"const": "PROOF_ARTIFACT"}}}]},
+    "outputSeal": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "OBSERVED_OUTPUT_SEAL"}, "class": {"const": "OBSERVATION"}}}]},
+    "admissionDecision": {"allOf": [{"$ref": "#/$defs/fact"}, {"properties": {"factId": {"const": "ADMISSION_DECISION"}, "class": {"const": "ADMISSION_DECISION"}}}]}
+  }
+}

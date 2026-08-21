@@ -3,12 +3,12 @@
   "runId": "RUN-FAILED-001",
   "commandRef": {"uri": "run-material/runs/RUN-FAILED-001/command.json", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}},
   "processState": "FAILED",
-  "exitCode": 2,
+  "exitCode": 1,
   "startedAt": "2026-08-21T10:02:01Z",
   "endedAt": "2026-08-21T10:02:03Z",
   "timedOut": false,
   "cancelled": false,
-  "codeSource": {"artifactPath": "/opt/candidate.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "fileSize": 1024, "fileKey": "candidate-1"},
+  "codeSource": {"artifactPath": "/opt/candidate.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "fileSize": 1024, "fileKey": "dev:1:ino:1001"},
   "codeSourceObservation": {
     "preRead": {"resolvedPath": "/opt/candidate.jar", "fileKey": "dev:1:ino:1001", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0644", "fileSize": 1024, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}},
     "postRead": {"resolvedPath": "/opt/candidate.jar", "fileKey": "dev:1:ino:1001", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0644", "fileSize": 1024, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}

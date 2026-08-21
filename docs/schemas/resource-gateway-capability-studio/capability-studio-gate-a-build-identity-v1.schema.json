@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-build-identity-v1.schema.json",
+  "title": "Capability Studio Gate A Build Identity v1",
+  "description": "Packaged identity excluding the outer JAR self-fingerprint. Five leaf manifests are independently recomputed from actual entries by A2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactRole", "gateId", "gateRevision", "replayProfileRawFingerprint", "harnessProfileRawFingerprint", "admissionProfileRawFingerprint", "schemaSetManifestRef", "schemaSetFingerprint", "resourceManifestRef", "resourceManifestFingerprint", "sourceManifestRef", "sourceManifestFingerprint", "classManifestRef", "classManifestFingerprint", "dependencyLockManifestRef", "dependencyLockManifestFingerprint", "registryRawFingerprint", "tckDefinitionRawFingerprint", "identityFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-build-identity.v1"},
+    "artifactRole": {"enum": ["INDEPENDENT_VERIFIER", "CONFORMANCE_HARNESS", "GATE_VERIFIER"]},
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "replayProfileRawFingerprint": {"oneOf": [{"$ref": "#/$defs/rawFingerprint"}, {"type": "null"}]},
+    "harnessProfileRawFingerprint": {"oneOf": [{"$ref": "#/$defs/rawFingerprint"}, {"type": "null"}]},
+    "admissionProfileRawFingerprint": {"oneOf": [{"$ref": "#/$defs/rawFingerprint"}, {"type": "null"}]},
+    "schemaSetManifestRef": {"$ref": "#/$defs/packagedExactRef"},
+    "schemaSetFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "resourceManifestRef": {"$ref": "#/$defs/packagedExactRef"},
+    "resourceManifestFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "sourceManifestRef": {"$ref": "#/$defs/packagedExactRef"},
+    "sourceManifestFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "classManifestRef": {"$ref": "#/$defs/packagedExactRef"},
+    "classManifestFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "dependencyLockManifestRef": {"$ref": "#/$defs/packagedExactRef"},
+    "dependencyLockManifestFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "registryRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "tckDefinitionRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "identityFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "allOf": [
+    {"if": {"properties": {"artifactRole": {"const": "INDEPENDENT_VERIFIER"}}, "required": ["artifactRole"]}, "then": {"properties": {"replayProfileRawFingerprint": {"type": "object"}, "harnessProfileRawFingerprint": {"type": "null"}, "admissionProfileRawFingerprint": {"type": "null"}}}},
+    {"if": {"properties": {"artifactRole": {"const": "CONFORMANCE_HARNESS"}}, "required": ["artifactRole"]}, "then": {"properties": {"replayProfileRawFingerprint": {"type": "null"}, "harnessProfileRawFingerprint": {"type": "object"}, "admissionProfileRawFingerprint": {"type": "null"}}}},
+    {"if": {"properties": {"artifactRole": {"const": "GATE_VERIFIER"}}, "required": ["artifactRole"]}, "then": {"properties": {"replayProfileRawFingerprint": {"type": "null"}, "harnessProfileRawFingerprint": {"type": "null"}, "admissionProfileRawFingerprint": {"type": "object"}}}}
+  ],
+  "$defs": {
+    "path": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "aggregateFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "AGGREGATE_COMMITMENT"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]},
+    "packagedExactRef": {"type": "object", "additionalProperties": false, "required": ["entryPath", "rawFingerprint"], "properties": {"entryPath": {"$ref": "#/$defs/path"}, "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"}}}
+  },
+  "$comment": "Profile nullability is role-dependent. Five packagedExactRef entries must be inside the actual CodeSource JAR and all other entries are closed by the leaf manifests."
+}

@@ -1,0 +1,43 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.admission-profile.v1",
+  "profileId": "GATE-A-ADMISSION",
+  "revision": 1,
+  "requirements": [
+    "REQUIREMENTS",
+    "ARTIFACTS",
+    "TESTS",
+    "MANDATORY_GUARDS",
+    "TRUSTED_REVIEW"
+  ],
+  "artifactRoles": [
+    "IMPLEMENTATION_CANDIDATE",
+    "INDEPENDENT_VERIFIER",
+    "GATE_VERIFIER",
+    "TEST_REPORT"
+  ],
+  "testCount": 12,
+  "mandatoryGuards": [
+    "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+    "REVIEW_COUNT_CONSISTENCY_REJECTED"
+  ],
+  "reviewPolicy": {
+    "requiredCheckIds": [
+      "TRUST_BOUNDARY",
+      "PROCESS_OBSERVATION"
+    ],
+    "signatureAlgorithm": "Ed25519",
+    "maxOpenP0": 0,
+    "maxOpenP1": 0,
+    "maxSkipped": 0
+  },
+  "timePolicy": {
+    "maxStartDelayMillis": 300000,
+    "maxRunWindowMillis": 1800000,
+    "maxEvidenceAgeMillis": 86400000
+  },
+  "admissionProfileFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:2626262626262626262626262626262626262626262626262626262626262626"
+  }
+}

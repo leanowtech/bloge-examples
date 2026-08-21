@@ -1,0 +1,1 @@
+{"expectedAdmissionConclusion":"FAIL","expectedExitCode":2,"expectedReasonCode":"REVIEW_COUNT_CONSISTENCY_REJECTED","fixtureId":"SIGNED_REVIEW_OPEN_P0_UNDER_REPORTED","fixtureOnlyPublicKeyBase64Url":"A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg","signatureValidation":"PASS","structuralValidation":"PASS"}

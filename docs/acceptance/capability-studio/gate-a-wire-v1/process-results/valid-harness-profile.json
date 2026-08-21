@@ -1,0 +1,30 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.harness-profile.v1",
+  "profileId": "GATE-A-HARNESS",
+  "revision": 1,
+  "outerRuns": [
+    "NORMAL_A1",
+    "WRONG_VERIFIER_DIGEST_A1",
+    "REGISTRY_MUTATION_A1",
+    "TCK_MISMATCH_A1",
+    "PROVIDER_COLLISION_A1"
+  ],
+  "childRunCount": 12,
+  "providerCollisionGuard": {
+    "testId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+    "expectedTerminal": "INVALID",
+    "expectedExitCode": 2,
+    "required": true
+  },
+  "scratchPolicy": {
+    "beforeCount": 0,
+    "afterCount": 0,
+    "maxBytes": 67108864,
+    "mustBeEmpty": true
+  },
+  "harnessProfileFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:2525252525252525252525252525252525252525252525252525252525252525"
+  }
+}

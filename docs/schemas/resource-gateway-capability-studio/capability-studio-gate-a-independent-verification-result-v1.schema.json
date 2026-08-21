@@ -1,0 +1,1237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-independent-verification-result-v1.schema.json",
+  "title": "Capability Studio Gate A independent verification result and TEST_REPORT v1",
+  "description": "The immutable Harness report. It closes five outer A1 processes and twelve child test runs.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "gateId",
+    "gateRevision",
+    "resultId",
+    "challengeTrustPinRawFingerprint",
+    "candidateRawFingerprint",
+    "candidateSpiRawFingerprint",
+    "providerRawFingerprint",
+    "verifierRawFingerprint",
+    "verifierCodeSource",
+    "verifierBuildIdentityRef",
+    "harnessRawFingerprint",
+    "harnessCodeSource",
+    "harnessBuildIdentityRef",
+    "replayProfileRawFingerprint",
+    "harnessProfileRawFingerprint",
+    "schemaSetRawFingerprint",
+    "tckRawFingerprint",
+    "runMaterialRootFingerprint",
+    "verificationProcessRuns",
+    "testRuns",
+    "mandatoryGuards",
+    "scratchBeforeCount",
+    "scratchAfterCount",
+    "startedAt",
+    "endedAt",
+    "resultFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.independent-verification-result.v1"
+    },
+    "gateId": {
+      "const": "GATE-A"
+    },
+    "gateRevision": {
+      "const": 1
+    },
+    "resultId": {
+      "type": "string",
+      "pattern": "^A1-REPORT-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "challengeTrustPinRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "candidateRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "candidateSpiRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "providerRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "verifierRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "verifierCodeSource": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"
+    },
+    "verifierBuildIdentityRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "harnessRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "harnessCodeSource": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"
+    },
+    "harnessBuildIdentityRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "replayProfileRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "harnessProfileRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "schemaSetRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "tckRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "runMaterialRootFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeFingerprint"
+    },
+    "verificationProcessRuns": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/normalOuterRun"
+        },
+        {
+          "$ref": "#/$defs/wrongDigestOuterRun"
+        },
+        {
+          "$ref": "#/$defs/registryOuterRun"
+        },
+        {
+          "$ref": "#/$defs/tckOuterRun"
+        },
+        {
+          "$ref": "#/$defs/providerOuterRun"
+        }
+      ],
+      "items": false
+    },
+    "testRuns": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/testPlaceholder"
+        },
+        {
+          "$ref": "#/$defs/testWrongKind"
+        },
+        {
+          "$ref": "#/$defs/testWrongRevision"
+        },
+        {
+          "$ref": "#/$defs/testVerifierDigest"
+        },
+        {
+          "$ref": "#/$defs/testRegistry"
+        },
+        {
+          "$ref": "#/$defs/testTckMismatch"
+        },
+        {
+          "$ref": "#/$defs/testLegacyComplete"
+        },
+        {
+          "$ref": "#/$defs/testMissingStore"
+        },
+        {
+          "$ref": "#/$defs/testMissingOwner"
+        },
+        {
+          "$ref": "#/$defs/testMissingTarget"
+        },
+        {
+          "$ref": "#/$defs/testManifestDrift"
+        },
+        {
+          "$ref": "#/$defs/testIncomplete"
+        }
+      ],
+      "items": false
+    },
+    "mandatoryGuards": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providerNamespaceCollision"
+      ],
+      "properties": {
+        "providerNamespaceCollision": {
+          "$ref": "#/$defs/guard"
+        }
+      }
+    },
+    "scratchBeforeCount": {
+      "const": 0
+    },
+    "scratchAfterCount": {
+      "const": 0
+    },
+    "startedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "endedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "resultFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  },
+  "$defs": {
+    "outerRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "runPurpose",
+        "commandRecordRef",
+        "invocationRecordRef",
+        "responseRef",
+        "processTranscriptRef",
+        "derivedPinRef",
+        "derivedVerifierArtifactRef",
+        "derivedCandidateArtifactRef",
+        "commandRawFingerprint",
+        "invocationRawFingerprint",
+        "responseRawFingerprint",
+        "stdoutRawFingerprint",
+        "stderrRawFingerprint",
+        "transcriptRawFingerprint",
+        "processExitCode",
+        "observedTerminal",
+        "closedReasonCode",
+        "startedAt",
+        "endedAt",
+        "timedOut",
+        "cancelled"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"
+        },
+        "runPurpose": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/outerRunPurpose"
+        },
+        "commandRecordRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "invocationRecordRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "responseRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "processTranscriptRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "derivedPinRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "derivedVerifierArtifactRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "derivedCandidateArtifactRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "commandRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "invocationRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "responseRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "stdoutRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "stderrRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "transcriptRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "processExitCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processExit"
+        },
+        "observedTerminal": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/childTerminal"
+        },
+        "closedReasonCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/reasonCode"
+        },
+        "startedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "endedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "timedOut": {
+          "const": false
+        },
+        "cancelled": {
+          "const": false
+        }
+      }
+    },
+    "testRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testId",
+        "expectedMechanism",
+        "mutationVector",
+        "expectedTerminal",
+        "expectedExitCode",
+        "expectedReasonCode",
+        "targetArtifactRawFingerprint",
+        "inputPinRawFingerprint",
+        "commandRecordRef",
+        "requestRef",
+        "responseRef",
+        "processTranscriptRef",
+        "derivedPinRef",
+        "derivedVerifierArtifactRef",
+        "derivedCandidateArtifactRef",
+        "commandFingerprint",
+        "requestFingerprint",
+        "responseFingerprint",
+        "processExitCode",
+        "observedTerminal",
+        "closedReasonCode",
+        "stdoutRawFingerprint",
+        "stderrRawFingerprint",
+        "startedAt",
+        "endedAt",
+        "timedOut",
+        "cancelled",
+        "transcriptRawFingerprint",
+        "harnessRawFingerprint",
+        "status",
+        "skipped"
+      ],
+      "properties": {
+        "testId": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/testId"
+        },
+        "expectedMechanism": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/mechanism"
+        },
+        "mutationVector": {
+          "enum": [
+            "NONE",
+            "PLACEHOLDER",
+            "WRONG_KIND",
+            "WRONG_VERIFIER_REVISION",
+            "WRONG_VERIFIER_DIGEST",
+            "REGISTRY_MUTATION",
+            "TCK_MISMATCH",
+            "MANIFEST_IDENTITY_DRIFT",
+            "MISSING_STORE",
+            "MISSING_OWNER",
+            "MISSING_TARGET"
+          ]
+        },
+        "expectedTerminal": {
+          "enum": [
+            "INVALID",
+            "ACCEPTED",
+            "NOT_ACCEPTED",
+            "INCOMPLETE"
+          ]
+        },
+        "expectedExitCode": {
+          "enum": [
+            0,
+            2,
+            3,
+            4
+          ]
+        },
+        "expectedReasonCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/reasonCode"
+        },
+        "targetArtifactRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "inputPinRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "commandRecordRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "requestRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "responseRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "processTranscriptRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "derivedPinRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "derivedVerifierArtifactRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "derivedCandidateArtifactRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        },
+        "commandFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "requestFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "responseFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "processExitCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processExit"
+        },
+        "observedTerminal": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/childTerminal"
+        },
+        "closedReasonCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/reasonCode"
+        },
+        "stdoutRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "stderrRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "startedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "endedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "timedOut": {
+          "const": false
+        },
+        "cancelled": {
+          "const": false
+        },
+        "transcriptRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "harnessRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "status": {
+          "const": "PASS"
+        },
+        "skipped": {
+          "const": false
+        }
+      }
+    },
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guardId",
+        "expectedOutcome",
+        "observedOutcome",
+        "status",
+        "runRef"
+      ],
+      "properties": {
+        "guardId": {
+          "const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"
+        },
+        "expectedOutcome": {
+          "const": "REJECTED"
+        },
+        "observedOutcome": {
+          "const": "REJECTED"
+        },
+        "status": {
+          "const": "PASS"
+        },
+        "runRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        }
+      }
+    },
+    "normalOuterRun": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/outerRun"
+        },
+        {
+          "properties": {
+            "runPurpose": {
+              "const": "NORMAL_A1"
+            },
+            "observedTerminal": {
+              "const": "VERIFIED"
+            },
+            "processExitCode": {
+              "const": 0
+            },
+            "closedReasonCode": {
+              "const": "A1_REPLAY_VERIFIED"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "wrongDigestOuterRun": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/outerRun"
+        },
+        {
+          "properties": {
+            "runPurpose": {
+              "const": "WRONG_VERIFIER_DIGEST_A1"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "VERIFIER_DIGEST_MUTATION"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "registryOuterRun": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/outerRun"
+        },
+        {
+          "properties": {
+            "runPurpose": {
+              "const": "REGISTRY_MUTATION_A1"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "REGISTRY_MUTATION"
+            },
+            "derivedPinRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedVerifierArtifactRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "tckOuterRun": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/outerRun"
+        },
+        {
+          "properties": {
+            "runPurpose": {
+              "const": "TCK_MISMATCH_A1"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "VERIFIER_TCK_MISMATCH"
+            },
+            "derivedPinRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "providerOuterRun": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/outerRun"
+        },
+        {
+          "properties": {
+            "runPurpose": {
+              "const": "PROVIDER_COLLISION_A1"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "PROVIDER_NAMESPACE_COLLISION"
+            },
+            "derivedPinRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          }
+        }
+      ]
+    },
+    "testPlaceholder": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "PLACEHOLDER_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "PLACEHOLDER_TYPED_EVIDENCE"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "PLACEHOLDER_REJECTED"
+            },
+            "mutationVector": {
+              "const": "PLACEHOLDER"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "PLACEHOLDER_REJECTED"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testWrongKind": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "WRONG_KIND_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "KIND_ROLE_MISMATCH"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "WRONG_KIND"
+            },
+            "mutationVector": {
+              "const": "WRONG_KIND"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "WRONG_KIND"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testWrongRevision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "WRONG_VERIFIER_REVISION_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "VERIFIER_REVISION_MISMATCH"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "WRONG_VERIFIER_REVISION"
+            },
+            "mutationVector": {
+              "const": "WRONG_VERIFIER_REVISION"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "WRONG_VERIFIER_REVISION"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testVerifierDigest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "VERIFIER_DIGEST_MUTATION_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "VERIFIER_DIGEST_MUTATION"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "VERIFIER_DIGEST_MUTATION"
+            },
+            "mutationVector": {
+              "const": "WRONG_VERIFIER_DIGEST"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "VERIFIER_DIGEST_MUTATION"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testRegistry": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "REGISTRY_MUTATION_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "REGISTRY_MUTATION"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "REGISTRY_MUTATION"
+            },
+            "mutationVector": {
+              "const": "REGISTRY_MUTATION"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "REGISTRY_MUTATION"
+            },
+            "derivedPinRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedVerifierArtifactRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testTckMismatch": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "VERIFIER_TCK_MISMATCH_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "VERIFIER_TCK_MISMATCH"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "VERIFIER_TCK_MISMATCH"
+            },
+            "mutationVector": {
+              "const": "TCK_MISMATCH"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "VERIFIER_TCK_MISMATCH"
+            },
+            "derivedPinRef": {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testLegacyComplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY"
+            },
+            "expectedMechanism": {
+              "const": "COMPLETE_AUTHORITY"
+            },
+            "observedTerminal": {
+              "const": "ACCEPTED"
+            },
+            "processExitCode": {
+              "const": 0
+            },
+            "closedReasonCode": {
+              "const": "LEGACY_AUTHORITY_COMPLETE"
+            },
+            "mutationVector": {
+              "const": "NONE"
+            },
+            "expectedTerminal": {
+              "const": "ACCEPTED"
+            },
+            "expectedExitCode": {
+              "const": 0
+            },
+            "expectedReasonCode": {
+              "const": "LEGACY_AUTHORITY_COMPLETE"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingStore": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "MISSING_STORE_AUTHORITY"
+            },
+            "observedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "processExitCode": {
+              "const": 3
+            },
+            "closedReasonCode": {
+              "const": "MISSING_STORE"
+            },
+            "mutationVector": {
+              "const": "MISSING_STORE"
+            },
+            "expectedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "expectedExitCode": {
+              "const": 3
+            },
+            "expectedReasonCode": {
+              "const": "MISSING_STORE"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingOwner": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "MISSING_OWNER_AUTHORITY"
+            },
+            "observedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "processExitCode": {
+              "const": 3
+            },
+            "closedReasonCode": {
+              "const": "MISSING_OWNER"
+            },
+            "mutationVector": {
+              "const": "MISSING_OWNER"
+            },
+            "expectedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "expectedExitCode": {
+              "const": 3
+            },
+            "expectedReasonCode": {
+              "const": "MISSING_OWNER"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingTarget": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "MISSING_TARGET_AUTHORITY"
+            },
+            "observedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "processExitCode": {
+              "const": 3
+            },
+            "closedReasonCode": {
+              "const": "MISSING_TARGET"
+            },
+            "mutationVector": {
+              "const": "MISSING_TARGET"
+            },
+            "expectedTerminal": {
+              "const": "NOT_ACCEPTED"
+            },
+            "expectedExitCode": {
+              "const": 3
+            },
+            "expectedReasonCode": {
+              "const": "MISSING_TARGET"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testManifestDrift": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "MANIFEST_IDENTITY_DRIFT_REJECTED"
+            },
+            "expectedMechanism": {
+              "const": "MANIFEST_IDENTITY_DRIFT"
+            },
+            "observedTerminal": {
+              "const": "INVALID"
+            },
+            "processExitCode": {
+              "const": 2
+            },
+            "closedReasonCode": {
+              "const": "MANIFEST_IDENTITY_DRIFT"
+            },
+            "mutationVector": {
+              "const": "MANIFEST_IDENTITY_DRIFT"
+            },
+            "expectedTerminal": {
+              "const": "INVALID"
+            },
+            "expectedExitCode": {
+              "const": 2
+            },
+            "expectedReasonCode": {
+              "const": "MANIFEST_IDENTITY_DRIFT"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "testIncomplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testRun"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "HONEST_INCOMPLETE_ACCEPTED"
+            },
+            "expectedMechanism": {
+              "const": "HONEST_INCOMPLETE"
+            },
+            "observedTerminal": {
+              "const": "INCOMPLETE"
+            },
+            "processExitCode": {
+              "const": 4
+            },
+            "closedReasonCode": {
+              "const": "HONEST_INCOMPLETE"
+            },
+            "mutationVector": {
+              "const": "NONE"
+            },
+            "expectedTerminal": {
+              "const": "INCOMPLETE"
+            },
+            "expectedExitCode": {
+              "const": 4
+            },
+            "expectedReasonCode": {
+              "const": "HONEST_INCOMPLETE"
+            },
+            "derivedPinRef": {
+              "type": "null"
+            },
+            "derivedVerifierArtifactRef": {
+              "type": "null"
+            },
+            "derivedCandidateArtifactRef": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

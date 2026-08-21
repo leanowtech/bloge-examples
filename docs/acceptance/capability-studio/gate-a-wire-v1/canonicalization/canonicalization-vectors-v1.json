@@ -1,0 +1,104 @@
+{
+  "revision": 1,
+  "fingerprintProfile": "fingerprint-profile-v1.json",
+  "fingerprintProfileSchema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+  "vectors": [
+    {
+      "id": "PROPERTY_ORDER_ESCAPE_AND_SELF_FIELD",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"z\":3,\"selfFingerprint\":\"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"nested\":{\"β\":\"lambda\",\"a\":1},\"escaped\":\"line\\\\nquoted\\\\\\\"\"}",
+      "expectedCanonical": "{\"escaped\":\"line\\\\nquoted\\\\\\\"\",\"nested\":{\"a\":1,\"β\":\"lambda\"},\"selfFingerprint\":null,\"z\":3}",
+      "expectedDocumentFingerprint": "sha256:16c3502d9c89c372d5858d129720d321b8ca64a0cefd2b5c0cf3eefcd23c4aaa",
+      "expectedRawFingerprint": "sha256:d42b51704d8e675fa9d1232c593059d674674e3acd3f836f4893823c238b2705"
+    },
+    {
+      "id": "DOCUMENT_WITHOUT_STDOUT_LF",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"value\":\"same\"}",
+      "expectedCanonical": "{\"selfFingerprint\":null,\"value\":\"same\"}",
+      "expectedDocumentFingerprint": "sha256:f093bdbeaf7c00148913891178c7d478cd8d0438ec81a67b9868bfb945ca3cae",
+      "expectedRawFingerprint": "sha256:16cc5ddb21d241ffc360da3724ef836386de86a105473b998cb149700e1154fa"
+    },
+    {
+      "id": "SAME_DOCUMENT_WITH_STDOUT_LF",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"value\":\"same\"}\n",
+      "expectedCanonical": "{\"selfFingerprint\":null,\"value\":\"same\"}",
+      "expectedDocumentFingerprint": "sha256:f093bdbeaf7c00148913891178c7d478cd8d0438ec81a67b9868bfb945ca3cae",
+      "expectedRawFingerprint": "sha256:db5f303f0dc420d5b4e52383d256aea2447aee6c3d1fb5cd0b66356b84a2c94f"
+    },
+    {
+      "id": "UTF16_PROPERTY_ORDER",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"values\":{\"€\":\"Euro\",\"\\r\":\"CR\",\"😀\":\"Emoji\",\"1\":\"One\"}}",
+      "expectedCanonical": "{\"selfFingerprint\":null,\"values\":{\"\\r\":\"CR\",\"1\":\"One\",\"€\":\"Euro\",\"😀\":\"Emoji\"}}",
+      "expectedDocumentFingerprint": "sha256:f493a42ce31a3b7204852f75d32cf05c80ab7f4ac6381f5d0cd654ce0f6fba6b",
+      "expectedRawFingerprint": "sha256:a551e4ac6ba09432c15647054c9130e5bb6500d08d6ce7677c6dd426921b828c"
+    },
+    {
+      "id": "TYPED_AGGREGATE_ENTRIES",
+      "domain": "RG-CS-GATE-A-REVIEWED-MATERIAL-ROOT-v1",
+      "selfField": null,
+      "sourceText": "[{\"role\":\"DESIGN\",\"fingerprint\":{\"kind\":\"RAW_BYTES\",\"algorithm\":\"SHA-256\",\"value\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"}},{\"role\":\"RUN_MATERIAL_ROOT\",\"fingerprint\":{\"kind\":\"TREE_COMMITMENT\",\"algorithm\":\"SHA-256\",\"value\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}]",
+      "expectedCanonical": "[{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"RAW_BYTES\",\"value\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"},\"role\":\"DESIGN\"},{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"TREE_COMMITMENT\",\"value\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"},\"role\":\"RUN_MATERIAL_ROOT\"}]",
+      "expectedDocumentFingerprint": "sha256:a7b0bcdb6b32770a8705ed8ea81d9d60ac9e3e08fa5f7200dc4bebb0482dc550",
+      "expectedRawFingerprint": "sha256:23bcba531fee9106d3a239792a2e3c89ac79cfdf4eb2895dd7c3bfb025484f02"
+    }
+  ],
+  "rejections": [
+    {
+      "id": "UTF8_BOM_REJECTED",
+      "sourceText": "﻿{\"value\":1}",
+      "expectedReason": "UTF8_BOM_REJECTED"
+    },
+    {
+      "id": "INVALID_UTF8_REJECTED",
+      "sourceBytesHex": "7b2261223ac3287d",
+      "expectedReason": "INVALID_UTF8"
+    },
+    {
+      "id": "DUPLICATE_KEY_REJECTED",
+      "sourceText": "{\"role\":\"A1\",\"role\":\"A2\"}",
+      "expectedReason": "DUPLICATE_KEY"
+    },
+    {
+      "id": "LONE_SURROGATE_REJECTED",
+      "sourceText": "{\"value\":\"\\ud800\"}",
+      "expectedReason": "LONE_SURROGATE"
+    },
+    {
+      "id": "UNSAFE_INTEGER_REJECTED",
+      "sourceText": "{\"value\":9007199254740992}",
+      "expectedReason": "UNSAFE_INTEGER"
+    },
+    {
+      "id": "NON_FINITE_NUMBER_REJECTED",
+      "sourceText": "{\"value\":1e400}",
+      "expectedReason": "NON_FINITE_NUMBER"
+    }
+  ],
+  "profileRejections": [
+    {
+      "id": "PROFILE_WRONG_DOMAIN_REJECTED",
+      "objectKind": "GATE_A_CHALLENGE_TRUST_PIN",
+      "domain": "RG-CS-GATE-A-ADMISSION-TRUST-PIN-v1",
+      "selfField": "challengeTrustPinFingerprint",
+      "fingerprintKind": "CANONICAL_DOCUMENT",
+      "sourceText": "{\"schemaVersion\":\"capability-studio.gate-a-challenge-trust-pin.v1\",\"challengeTrustPinFingerprint\":null}",
+      "expectedReason": "FINGERPRINT_PROFILE_DOMAIN_MISMATCH"
+    },
+    {
+      "id": "PROFILE_WRONG_SELF_FIELD_REJECTED",
+      "objectKind": "GATE_A_CHALLENGE_TRUST_PIN",
+      "domain": "RG-CS-GATE-A-CHALLENGE-TRUST-PIN-v1",
+      "selfField": "admissionTrustPinFingerprint",
+      "fingerprintKind": "CANONICAL_DOCUMENT",
+      "sourceText": "{\"schemaVersion\":\"capability-studio.gate-a-challenge-trust-pin.v1\",\"challengeTrustPinFingerprint\":null}",
+      "expectedReason": "FINGERPRINT_PROFILE_SELF_FIELD_MISMATCH"
+    }
+  ]
+}

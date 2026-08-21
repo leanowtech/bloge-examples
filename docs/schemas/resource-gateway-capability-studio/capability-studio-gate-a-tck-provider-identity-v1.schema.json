@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+  "title": "Capability Studio Gate A TCK Provider Identity v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "providerId", "providerClass", "serviceDescriptorPath", "serviceDescriptorFingerprint", "implementationClassEntryPath", "implementationClassRawFingerprint", "spiCoordinate", "spiArtifactFingerprint", "spiClassFingerprint", "identityFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-tck-provider-identity.v1"},
+    "providerId": {"const": "gate-a-tck-provider"},
+    "providerClass": {"const": "com.leanowtech.bloge.gatetckprovider.GateATckProvider"},
+    "serviceDescriptorPath": {"const": "META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider"},
+    "serviceDescriptorFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "implementationClassEntryPath": {"const": "com/leanowtech/bloge/gatetckprovider/GateATckProvider.class"},
+    "implementationClassRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "spiCoordinate": {"type": "string", "pattern": "^[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:[A-Za-z0-9._-]+(?::[A-Za-z0-9._-]+)?$"},
+    "spiArtifactFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "spiClassFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "identityFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]}
+  },
+  "$comment": "The provider thin JAR must contain only the closed Provider allowlist. Its outer JAR raw fingerprint is pinned by the caller and is intentionally not self-embedded."
+}

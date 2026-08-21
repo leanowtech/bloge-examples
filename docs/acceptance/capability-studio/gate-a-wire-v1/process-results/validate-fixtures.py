@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import sys
@@ -16,42 +17,6 @@ from referencing import Registry, Resource
 HERE = pathlib.Path(__file__).resolve().parent
 SCHEMA_ROOT = HERE.parents[3] / "schemas" / "resource-gateway-capability-studio"
 NEGATIVE_EXPECTATIONS = HERE / "negative-fixture-expectations.json"
-
-POSITIVE_SCHEMAS = {
-    "valid-candidate-challenge-request.json": "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
-    "valid-candidate-challenge-response.json": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
-    "valid-candidate-challenge-response-legacy.json": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
-    "valid-candidate-challenge-response-legacy-missing-store.json": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
-    "valid-challenge-sandbox-profile.json": "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
-    "valid-process-command.json": "capability-studio-gate-a-process-command-record-v1.schema.json",
-    "valid-a1-invocation.json": "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
-    "valid-a1-bootstrap-response.json": "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
-    "valid-process-transcript.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-process-transcript-a1-timeout.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-process-transcript-cancelled.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-process-transcript-failed.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-process-transcript-unavailable.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-process-transcript-a2.json": "capability-studio-gate-a-process-transcript-v1.schema.json",
-    "valid-harness-invocation.json": "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
-    "valid-harness-process-transcript.json": "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
-    "valid-replay-profile.json": "capability-studio-gate-a-replay-profile-v1.schema.json",
-    "valid-harness-profile.json": "capability-studio-gate-a-harness-profile-v1.schema.json",
-    "valid-admission-profile.json": "capability-studio-gate-a-admission-profile-v1.schema.json",
-    "valid-tck.json": "capability-studio-gate-a-tck-v1.schema.json",
-    "valid-role-registry.json": "capability-studio-gate-a-role-registry-v1.schema.json",
-    "valid-candidate-replay-result.json": "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
-    "valid-replay-verification-result.json": "capability-studio-gate-a-replay-verification-result-v1.schema.json",
-    "valid-replay-verification-result-invalid.json": "capability-studio-gate-a-replay-verification-result-v1.schema.json",
-    "valid-replay-verification-result-unavailable.json": "capability-studio-gate-a-replay-verification-result-v1.schema.json",
-    "valid-replay-proof-envelope.json": "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
-    "valid-replay-proof-envelope-unavailable.json": "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
-    "valid-admission-proof-envelope.json": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
-    "valid-independent-verification-result.json": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
-    "valid-admission-verification-result.json": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
-    "valid-admission-verification-result-open.json": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
-    "valid-admission-verification-result-fail.json": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
-    "valid-admission-verification-result-unavailable.json": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
-}
 
 
 def load_json(path: pathlib.Path) -> Any:
@@ -98,8 +63,20 @@ def is_within(path: str, mutation_path: str) -> bool:
     return path == mutation_path or path.startswith(f"{mutation_path}.") or path.startswith(f"{mutation_path}[")
 
 
-def validate_positive(name: str, schema_name: str, registry: Registry) -> list[str]:
+def matching_schemas(document: Any, registry: Registry) -> list[str]:
+    matches: list[str] = []
+    for path in sorted(SCHEMA_ROOT.glob("capability-studio-gate-a-*.schema.json")):
+        if not list(validator(path.name, registry).iter_errors(document)):
+            matches.append(path.name)
+    return matches
+
+
+def validate_positive(name: str, registry: Registry) -> list[str]:
     document = load_json(HERE / name)
+    matches = matching_schemas(document, registry)
+    if len(matches) != 1:
+        return [f"{name}: expected exactly one matching schema, got {matches}"]
+    schema_name = matches[0]
     errors = list(validator(schema_name, registry).iter_errors(document))
     failures = [f"{name}: {error.json_path} [{error.validator}] {error.message}" for error in errors]
     failures.extend(f"{name}: semantic {code}" for code in semantic_errors(name, document, schema_name))
@@ -119,11 +96,66 @@ def local_ref(uri: str) -> pathlib.Path | None:
     return candidate if candidate.is_file() else None
 
 
+def raw_bytes_fingerprint(path: pathlib.Path) -> str:
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
+def process_semantic_errors(document: Any) -> list[str]:
+    errors: list[str] = []
+    if parse_timestamp(document["startedAt"]) > parse_timestamp(document["endedAt"]):
+        errors.append("PROCESS_STARTED_AFTER_ENDED")
+    observation = document["codeSourceObservation"]
+    before = observation["preRead"]
+    after = observation["postRead"]
+    if before != after:
+        errors.append("PROCESS_CODESOURCE_TOCTOU_DRIFT")
+        return errors
+    code_source = document["codeSource"]
+    if (
+        before["resolvedPath"] != code_source["artifactPath"]
+        or before["fileKey"] != code_source["fileKey"]
+        or before["fileSize"] != code_source["fileSize"]
+        or before["readRawFingerprint"] != code_source["rawFingerprint"]
+    ):
+        errors.append("PROCESS_CODESOURCE_PROJECTION_DRIFT")
+    elif before["linkCount"] != 1 or int(before["posixMode"], 8) & 0o022:
+        errors.append("PROCESS_CODESOURCE_UNSAFE_FILE_IDENTITY")
+    return errors
+
+
+def admission_result_semantic_errors(document: Any) -> list[str]:
+    statuses = [
+        entry["status"]
+        for field in (
+            "requirements",
+            "artifacts",
+            "tests",
+            "mandatoryGuards",
+            "semanticGuardResults",
+        )
+        for entry in document[field]
+    ]
+    statuses.append(document["trustedReview"]["status"])
+    if "UNAVAILABLE" in statuses:
+        derived = "UNAVAILABLE"
+    elif "FAIL" in statuses:
+        derived = "FAIL"
+    elif "MISSING" in statuses:
+        derived = "OPEN"
+    else:
+        derived = "PASS"
+    return [] if document["conclusion"] == derived else ["A2_CONCLUSION_PRECEDENCE"]
+
+
 def semantic_errors(name: str, document: Any, schema_name: str) -> list[str]:
     errors: list[str] = []
-    if schema_name == "capability-studio-gate-a-process-transcript-v1.schema.json":
-        if parse_timestamp(document["startedAt"]) > parse_timestamp(document["endedAt"]):
-            errors.append("PROCESS_STARTED_AFTER_ENDED")
+    if schema_name in {
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+    }:
+        errors.extend(process_semantic_errors(document))
+    if schema_name == "capability-studio-gate-a-admission-verification-result-v1.schema.json":
+        errors.extend(admission_result_semantic_errors(document))
     if schema_name == "capability-studio-gate-a-admission-proof-envelope-v1.schema.json":
         result_path = local_ref(document["admissionResultRef"]["uri"])
         transcript_path = local_ref(document["admissionProcessTranscriptRef"]["uri"])
@@ -132,12 +164,30 @@ def semantic_errors(name: str, document: Any, schema_name: str) -> list[str]:
             return errors
         result = load_json(result_path)
         transcript = load_json(transcript_path)
+        if (
+            document["admissionResultRef"]["rawFingerprint"]["value"]
+            != raw_bytes_fingerprint(result_path)
+        ):
+            errors.append("A2_RESULT_RAW_FINGERPRINT_MISMATCH")
+        if (
+            document["admissionProcessTranscriptRef"]["rawFingerprint"]["value"]
+            != raw_bytes_fingerprint(transcript_path)
+        ):
+            errors.append("A2_PROCESS_TRANSCRIPT_RAW_FINGERPRINT_MISMATCH")
         if result.get("messageVersion") != "resource-gateway.capability-studio.gate-a.admission-verification-result.v1":
             errors.append("A2_RESULT_KIND_MISMATCH")
         if transcript.get("messageVersion") != "resource-gateway.capability-studio.gate-a.process-transcript.v1":
             errors.append("A2_PROCESS_TRANSCRIPT_KIND_MISMATCH")
-        if transcript.get("processState") != "COMPLETED" or transcript.get("exitCode") != 0:
+        if transcript.get("processState") != "COMPLETED":
             errors.append("A2_PROCESS_NOT_COMPLETED")
+            return errors
+        if parse_timestamp(transcript["startedAt"]) > parse_timestamp(transcript["endedAt"]):
+            errors.append("A2_PROCESS_STARTED_AFTER_ENDED")
+        if parse_timestamp(transcript["endedAt"]) > parse_timestamp(document["createdAt"]):
+            errors.append("A2_CREATED_BEFORE_PROCESS_ENDED")
+        expected_exit = {"PASS": 0, "OPEN": 4, "FAIL": 2, "UNAVAILABLE": 3}.get(result.get("conclusion"))
+        if transcript.get("exitCode") != expected_exit:
+            errors.append("A2_PROCESS_OUTCOME_DRIFT")
             return errors
         if document["observedProcessState"] != transcript.get("processState") or document["observedExitCode"] != transcript.get("exitCode"):
             errors.append("A2_PROCESS_OUTCOME_DRIFT")
@@ -202,19 +252,15 @@ def main() -> int:
     expectations = load_json(NEGATIVE_EXPECTATIONS)
     failures: list[str] = []
 
-    positive_names = {path.name for path in HERE.glob("valid-*.json")}
-    if positive_names != POSITIVE_SCHEMAS.keys():
-        failures.append(
-            f"positive mapping drift: files={sorted(positive_names)} mapping={sorted(POSITIVE_SCHEMAS)}"
-        )
+    positive_names = sorted(path.name for path in HERE.glob("valid-*.json"))
     negative_names = {path.name for path in HERE.glob("invalid-*.json")}
     if negative_names != expectations.keys():
         failures.append(
             f"negative mapping drift: files={sorted(negative_names)} mapping={sorted(expectations)}"
         )
 
-    for name, schema_name in POSITIVE_SCHEMAS.items():
-        failures.extend(validate_positive(name, schema_name, registry))
+    for name in positive_names:
+        failures.extend(validate_positive(name, registry))
     for name, expectation in expectations.items():
         failures.extend(validate_negative(name, expectation, registry))
 
@@ -222,7 +268,7 @@ def main() -> int:
         print("Gate A fixture validation failed:", file=sys.stderr)
         print("\n".join(failures), file=sys.stderr)
         return 1
-    print(f"Gate A fixtures valid: {len(POSITIVE_SCHEMAS)} positive, {len(expectations)} negative")
+    print(f"Gate A fixtures valid: {len(positive_names)} positive, {len(expectations)} negative")
     return 0
 
 

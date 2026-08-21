@@ -1,0 +1,44 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-profile.v1",
+  "profileId": "GATE-A-REPLAY",
+  "revision": 1,
+  "gateRevision": 1,
+  "tckDefinition": {
+    "uri": "tck/gate-a-tck.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    }
+  },
+  "provider": {
+    "uri": "artifacts/provider.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "candidateSpi": {
+    "uri": "artifacts/candidate-spi.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:2323232323232323232323232323232323232323232323232323232323232323"
+    }
+  },
+  "allowedOperations": [
+    "TYPED_REPLAY_V1",
+    "LEGACY_STAGE_ACCEPTANCE_V2"
+  ],
+  "timePolicy": {
+    "maxStartDelayMillis": 300000,
+    "maxRunWindowMillis": 1800000,
+    "maxEvidenceAgeMillis": 86400000
+  },
+  "replayProfileFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
+  }
+}

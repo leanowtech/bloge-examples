@@ -3,9 +3,8 @@
     "base": "valid-admission-verification-result.json",
     "schema": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
     "mutationPath": "$.requirements[0]",
-    "expectedKeyword": "not",
-    "expectedPath": "$.requirements",
-    "expectedMessageContains": "should not be valid"
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_CONCLUSION_PRECEDENCE"
   },
   "invalid-candidate-replay-adapter-drift.json": {
     "base": "valid-candidate-replay-result.json",
@@ -91,9 +90,9 @@
     "base": "valid-process-transcript.json",
     "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
     "mutationPath": "$",
-    "expectedKeyword": "const",
+    "expectedKeyword": "enum",
     "expectedPath": "$.exitCode",
-    "expectedMessageContains": "0 was expected"
+    "expectedMessageContains": "not one of"
   },
   "invalid-process-transcript-timeout-exit-drift.json": {
     "base": "valid-process-transcript-a1-timeout.json",
@@ -118,6 +117,13 @@
     "validationMode": "semantic",
     "expectedSemanticCode": "PROCESS_STARTED_AFTER_ENDED"
   },
+  "invalid-process-transcript-toctou-drift.json": {
+    "base": "valid-process-transcript.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$.codeSourceObservation.postRead.fileKey",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_CODESOURCE_TOCTOU_DRIFT"
+  },
   "invalid-admission-proof-envelope-conclusion-drift.json": {
     "base": "valid-admission-proof-envelope.json",
     "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
@@ -139,6 +145,27 @@
     "mutationPath": "$.expectedAdmissionCodeSource.fileKey",
     "validationMode": "semantic",
     "expectedSemanticCode": "A2_EXPECTED_OBSERVED_CODESOURCE_DRIFT"
+  },
+  "invalid-admission-proof-envelope-result-digest.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$.admissionResultRef.rawFingerprint.value",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_RESULT_RAW_FINGERPRINT_MISMATCH"
+  },
+  "invalid-admission-proof-envelope-transcript-digest.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$.admissionProcessTranscriptRef.rawFingerprint.value",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_PROCESS_TRANSCRIPT_RAW_FINGERPRINT_MISMATCH"
+  },
+  "invalid-admission-proof-envelope-created-before-ended.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$.createdAt",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_CREATED_BEFORE_PROCESS_ENDED"
   },
   "invalid-provider-guard-accepted.json": {
     "base": "valid-independent-verification-result.json",

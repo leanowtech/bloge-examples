@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-role-registry-v1.schema.json",
+  "title": "Capability Studio Gate A role registry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "registryId", "revision", "roles", "registryFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.role-registry.v1"},
+    "registryId": {"const": "GATE-A-ROLE-REGISTRY"},
+    "revision": {"const": 1},
+    "roles": {"type": "array", "minItems": 6, "maxItems": 6, "prefixItems": [
+      {"$ref": "#/$defs/roleCandidate"}, {"$ref": "#/$defs/roleVerifier"}, {"$ref": "#/$defs/roleHarness"}, {"$ref": "#/$defs/roleGate"}, {"$ref": "#/$defs/roleProvider"}, {"$ref": "#/$defs/roleTestReport"}
+    ], "items": false},
+    "registryFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "base": {"type": "object", "additionalProperties": false, "required": ["role", "artifactRef", "profileRef", "buildIdentityRef"], "properties": {"role": {"type": "string"}, "artifactRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"}, "profileRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentRef"}, "buildIdentityRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentRef"}}},
+    "roleCandidate": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "IMPLEMENTATION_CANDIDATE"}}}]},
+    "roleVerifier": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "INDEPENDENT_VERIFIER"}}}]},
+    "roleHarness": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "CONFORMANCE_HARNESS"}}}]},
+    "roleGate": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "GATE_VERIFIER"}}}]},
+    "roleProvider": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "TCK_PROVIDER"}}}]},
+    "roleTestReport": {"allOf": [{"$ref": "#/$defs/base"}, {"properties": {"role": {"const": "TEST_REPORT"}}}]}
+  }
+}

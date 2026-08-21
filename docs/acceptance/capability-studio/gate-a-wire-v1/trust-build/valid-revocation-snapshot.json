@@ -1,0 +1,3 @@
+{
+  "schemaVersion":"capability-studio.reviewer-revocation-snapshot.v1","snapshotId":"revocation:quality-office-2026-08-21","issuer":"issuer:quality-office","revision":1,"issuedAt":"2026-08-21T00:00:00Z","validUntil":"2026-08-22T00:00:00Z","revokedKeyIds":[],"revokedAuthorityIds":[],"reviewerRevocationSnapshotFingerprint":{"kind":"CANONICAL_DOCUMENT","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000002b"}
+}

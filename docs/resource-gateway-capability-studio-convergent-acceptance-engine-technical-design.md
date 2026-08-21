@@ -1,6 +1,6 @@
 # Capability Studio 收敛式验收引擎技术设计
 
-> 状态：`REVIEW_ACCEPTED_GATE_A_PENDING`
+> 状态：`DESIGN_GATE_D0_PASSED`
 >
 > 适用范围：Capability Studio、Resource Gateway Test Kit 与 `RG-CS-FELT-v1` 的开发验证和企业验收接入。
 >
@@ -33,6 +33,83 @@
 3. 现有输出 `ACCEPTED` 的 CLI 必须被明确分类为 legacy formal-adjudication adapter，并证明它消费真实外部 Authority；做不到时必须降级为 `DEVELOPMENT_VERIFIED/INCOMPLETE`。新的本地 Runner 永远不得输出 `ACCEPTED`。
 
 三项任一未关闭，设计状态保持 `NO_GO`。架构图、Schema 或测试数量增长都不能替代该门禁。
+
+### 1.2 先设计、后实现的工程方法
+
+此前效率低的直接原因不是实现速度慢，而是设计结论、wire contract、测试 Oracle 和提交边界没有同时冻结。代码一旦先行，后续每发现一个信任缺口，就会同时改实现、Schema、fixture、文档和测试，局部修复不断放大返工面。
+
+Gate A 改用 **可执行设计门禁 + 可证明纵向切片**，不再按“先写类、再补测试、最后解释”推进：
+
+| 层次 | 设计产物 | 必须回答的问题 | 机器检查 |
+|---|---|---|---|
+| `Invariant` | 固定分母、角色边界、Authority 来源、状态与退出码 | 什么事实即使实现变化也不能改变 | closed enum、精确集合、状态投影测试 |
+| `Protocol` | strict Schema、canonicalization、fingerprint、路径与时间语义 | 两个独立实现如何对同一字节得到同一结论 | JSON Schema、golden vector、reference verifier |
+| `Trust` | Challenge Pin、Admission Pin、Build Identity、独立 Reviewer | 谁能声明事实，谁只能观察，谁有最终准入权 | artifact independence、签名、TOCTOU 与 mutation TCK |
+| `Slice` | A0/A1/A2 输入、输出、Oracle、failure semantics | 最小可运行闭环是什么，怎样失败关闭 | 正例、负例、进程 transcript、全量 build |
+
+#### Design Gate D0
+
+生产 Java 实现只能在 D0 全部满足后继续：
+
+1. 本文冻结角色、状态机、五类时序、路径语法、canonical fingerprint、固定分母和 reason/exit code，不留“实现自行决定”的语义空洞。
+2. 所有 Gate A companion document 都有 `additionalProperties=false` 的 Draft 2020-12 Schema；Schema 只冻结结构、固定槽位、closed vocabulary 与判别字段，不在 `if/then` 中枚举派生计数。跨字段、跨文档、字节、进程、时间和信任约束必须逐项列入 Semantic Guard Catalog，并指定唯一执行 owner、固定 Authority source facts 与 A2 落槽；所有 canonical/tree/aggregate fingerprint 参数必须由 Fingerprint Profile 按对象身份查表。
+3. 每类 wire object 至少有一个 valid fixture；结构不变量使用 Schema negative fixture，语义不变量使用“Schema 合法但 Guard 必须拒绝”的 attack vector，二者都明确预期 terminal、reason 和 exit code。
+4. canonicalization 至少由 Java 与一个非 Java reference implementation 对同一 golden vector 得到逐字节相同结果。
+5. Corporate Draw.io 图与正文对角色、信任方向、文件归属和进程观察边界表达一致。
+6. 独立对抗评审得到 `openP0=0`、`openP1=0`，所有 finding 都有文档或 fixture 层面的闭合证据。
+7. 设计产物单独提交；尚未通过 D0 的候选 Java 修改保持隔离，不能混入设计提交制造“已经实现”的错觉。
+
+D0 通过不代表功能完成，只代表实现目标已经变成可判定问题。之后每个子门都必须按同一纵向模板交付：
+
+```text
+frozen input contract
+  -> one bounded implementation
+  -> caller-observed process facts
+  -> typed result
+  -> positive + adversarial fixtures
+  -> independent recomputation
+  -> full build + documentation
+  -> isolated commit
+```
+
+禁止按横向技术层一次性铺开全部 DTO、CLI 或工具类。A0 只关闭 typed replay；A1 只关闭独立挑战与运行材料；A2 只关闭准入裁决。任一子门未通过，下一子门不得用临时 mock 越过它。
+
+### 1.3 D0 对抗评审闭环
+
+首轮独立评审提出 8 个 P1。处理原则不是继续向 Schema 堆跨文档条件，而是把缺失的 Authority、Observation、Derivation 和 Proof 各自放回正确层次：
+
+| Finding | 病根 | 根治机制 | 机器证据 |
+|---|---|---|---|
+| A2 缺父进程事实 | result 被误当最终执行证据 | caller-owned Admission Proof Envelope 绑定 A2 raw result、父 transcript、pins、CodeSource 与 exit/conclusion | strict Envelope Schema、正/负 fixture、父进程语义 validator |
+| `PASS + failed Guard` 仍可过 Schema | Schema 与 Guard 职责易被混淆 | 有意保持 Schema-valid，由 `A2_CONCLUSION_PRECEDENCE` 全量复算并拒绝 | semantic mutation + real material attack；不能以巨型 `if/then` 代替 |
+| Guard 血缘未冻结 | 诊断 ref 可被任意材料冒充 | Catalog 为 18 Guard 固定 ordered sourceFactIds，Authority Matrix 禁止 `ADMISSION_DECISION` 参与自身推导 | 4 份 A2 fixture x 18 = 72 条 lineage 校验 |
+| process state/exit/time 漂移 | 把非零业务终态误当 crash | `COMPLETED` 接受协议 `0/2/3/4`；异常、超时、取消、不可用分离；时间关系语义校验 | strict discriminant negatives + Schema-valid time attack |
+| TOCTOU 只存在正文 | 最终证据无法证明读取期间身份稳定 | transcript 记录 CodeSource pre/post identity、权限、link count、size 与 bytes，并与 projection/pin 对齐 | TOCTOU drift negative + byte-identical alias real attack |
+| A1 Result/Proof 混淆 | rawRef 没有目标类型和闭合语义 | Result 明确为 producer projection；Envelope 固定 CLOSED、Result/Process messageVersion、parent observation | renamed `replayResultRef`、strict Envelope fixture |
+| fingerprint 参数可自由选择 | 两个实现可能共同使用错误 domain | 44-entry Fingerprint Profile 按 objectKind/版本冻结 domain、selfField、kind | wrong-domain/wrong-self-field rejection + Java/Node reference |
+| signed Review 语义不稳定 | 密码学有效被错误等同于治理正确 | 签名之外验证 Body raw binding、finding ID 唯一/排序、check/finding 关系与 count projection | 1 个签名主攻击 + 1 个 count 主攻击 + 3 个合法重签补充攻击 |
+
+D0 最终复审必须逐项检查上表的实现证据，不接受“文档已说明”作为关闭依据。
+
+### 1.4 D0 最终签核
+
+D0 已在生产实现继续前完成独立对抗签核，最终结论为 `openP0=0/openP1=0`。签核不是以测试数量替代风险判断，而是逐项关闭 A2 父进程 Proof、A1 ref closure、A2 全槽位 precedence、Reviewer key/candidate/time/revocation、三项 review count、Catalog 顺序绑定、A0 exact-byte closure 和 Java empty-domain rejection。
+
+最终机器证据固定为：
+
+| 证据 | 结果 |
+|---|---|
+| Fingerprint Profile | 44 entries；33 canonical、3 tree、8 aggregate；Java/Node 一致 |
+| canonical vectors | 11 vectors；wrong domain、wrong self-field、empty domain 均拒绝 |
+| Process/Proof fixtures | 33 positive、24 negative；含 actual raw bytes、TOCTOU 与时间偏序 |
+| Guard lineage | 4 份 A2 fixture × 18 Guard = 72 条 ordered source fact 校验 |
+| real-material attacks | 18 primary + 20 supplemental = 38；Python 与独立 Java 逐项一致 |
+| Reviewer adversarial proof | 9 个合法重签语义攻击先独立证明 Ed25519 有效，再由治理 Guard 拒绝 |
+| Test Kit full build | 1308 unit tests + 1 integration test；0 failure / 0 error |
+| Draw.io topology | 0 error、0 warning、0 overlap；图源和 SVG 均标注 38 个真实攻击 |
+| independent review | `openP0=0/openP1=0` |
+
+该结论只表示实现问题已经可判定，并授权按本文的 A0 深模块结构开始生产代码；它不表示 A0、Gate A 或 27 项 formal acceptance 已通过。
 
 ## 2. 为什么此前推进慢
 
@@ -185,9 +262,33 @@
 
 拒绝引入 Temporal、Argo、Jenkins 或新的服务端工作流平台。它们可以调度命令，但不能原生证明 Resource Gateway 的 Authority、Lease、Evidence 和 formal failure semantics，还会破坏 Test Kit 独立、轻量、可离线复验的约束。
 
+### 4.6 Independent Verifier 的 Design It Twice
+
+“独立 verifier”不能只停留在类名或包名上。为避免实现候选自己证明自己，进一步比较三种部署形态：
+
+| 方案 | 信任隔离 | 可移植性 | 协议重复风险 | Gate B/C 复用 | 结论 |
+|---|---:|---:|---:|---:|---|
+| Test Kit 同一 JAR 内增加 verifier 类 | 低 | 高 | 低 | 中 | 只适合作为本地 Implementation Candidate，不能成为 Gate A 信任根 |
+| Shell/Python verifier | 中 | 低 | 高 | 低 | 只允许做固定参数组装、制品摘要校验和进程启动，不承载 Gate 语义 |
+| 独立 Maven verifier module | 高 | 高 | 中 | 高 | 采用；独立 JVM、独立发布制品、无 Test Kit/Runtime 依赖 |
+
+采用第三种方案，并补充成 **C+ 三角色模型**：
+
+1. `Implementation Candidate`：现有 Test Kit typed replay CLI。它只证明本地 Evidence 可被真实 adapter 重放，终态最高为 `STRUCTURE_VERIFIED/INCOMPLETE`。
+2. `Independent Verifier`：独立 Maven module。它携带固定 Gate A profile/TCK，以只读方式验证 Evidence Root，并通过固定子进程协议挑战 Implementation Candidate。
+3. `Gate Admission Checker`：由调用方固定的另一独立 artifact。受控 CI 只负责校验 digest 并运行该制品，不能用 job 脚本替代可复算的 A2 实现。它复算 GateResult，比较 out-of-band trust pin，并唯一决定 `PASS/OPEN/FAIL`。
+
+三个角色不能由同一 JAR、同一次可变构建或同一 Registry 充当。独立 Maven module 是必要条件，但不是充分条件；只有 Independent Verifier 和 Gate Admission Checker 都完成，Gate A 才有可信 `PASS` 路径。在此之前只能输出 `OPEN/FAIL/INCOMPLETE`。
+
+另有一个 caller-pinned `Conformance Harness`，它不是第四个裁决角色。Harness 只负责把 A1 当作黑盒启动，执行正常 replay、verifier digest/Registry/TCK 三组 evidence negative 以及 Provider namespace collision 强制 guard，记录有界 transcript 并组装固定 12 项 TEST_REPORT 与 guard result；它无权签署 review、修改 GateResult 或决定 admission。
+
 ## 5. 目标架构
 
 ![收敛式验收引擎架构](assets/capability-studio-convergent-acceptance-engine-architecture.svg)
+
+Gate A 的制品与信任隔离进一步展开如下：
+
+![Gate A 独立信任拓扑](assets/capability-studio-gate-a-independent-trust-topology.svg)
 
 架构分为四个平面：
 
@@ -213,12 +314,14 @@ Coordinator 只能执行有限、无业务表达能力的控制原语：固定�
 
 ```text
 Acceptance Coordinator
-  -> Test Kit typed verifier adapters
-  -> existing BLOGE / Resource Gateway Runtime through a child-process adapter
+  -- fixed process/protocol --> Test Kit typed verifier adapters
+  -- fixed process/protocol --> existing BLOGE / Resource Gateway Runtime
 
 existing BLOGE / Resource Gateway Runtime
   -X-> Acceptance Coordinator implementation classes
 ```
+
+上图是进程协议依赖，不是 Java/Maven 编译依赖。A1/A2 禁止依赖 Test Kit、Runtime 或 Provider 生产类。
 
 构建门禁必须扫描 Test Kit 新包的依赖：出现 Graph parser、Operator scheduler、Resource runtime implementation 或业务 DSL evaluator 依赖时直接失败。Coordinator 的所谓 DAG 只是有限验收步骤的静态偏序，不支持循环、动态分支、业务 Payload 传递或用户节点，因此不构成业务执行引擎。
 
@@ -458,7 +561,7 @@ Verifier：
 
 - 纯只读；
 - 不加载 Provider classpath；
-- 不持有 state root 写权限；
+- 不持有 Evidence Root、GateResult、trust pin 或 state root 写权限；
 - 不创建 lock、snapshot、journal、receipt 或 signoff；
 - 不执行 repair；
 - 独立解析 Compiled Plan；
@@ -984,6 +1087,20 @@ formalImplementationGap = (27 - formalPassCount) / 27 * 100%
 
 只有 Gate A/B/C 分别通过 P0/P1 复审，才进入 legacy full runner facade 和 stateful Lease。任一 Gate 失败只回滚本 Gate，不要求撤销前一 Gate 的 wire contract。
 
+Gate A 内部再拆成三个不可跳级的实现子门。这里的 `A0/A1/A2` 是工程迁移切片，不改变对外 `gateId=GATE-A`：
+
+| 子门 | 唯一责任 | 允许终态 | 退出证据 | 下一步权限 |
+|---|---|---|---|---|
+| `A0 CANDIDATE_REPLAY` | 证明 manifest role 必须经过真实 typed adapter | `STRUCTURE_VERIFIED/INCOMPLETE/INVALID/UNAVAILABLE` | 三个 adapter、占位/类型/版本/TOCTOU/hard-link 反例 | 只允许实现 A1 |
+| `A1 INDEPENDENT_VERIFY` | 用独立 artifact、固定 profile/TCK 挑战候选并复算测试证据 | `VERIFIED/INVALID/UNAVAILABLE`，不得输出 `ACCEPTED` | caller-pinned candidate/verifier、Evidence Root 闭包、固定 12 项 TCK | 只允许实现 A2 |
+| `A2 GATE_ADMISSION` | 由调用方信任根复算 GateResult 并作准入决定 | `PASS/OPEN/FAIL/UNAVAILABLE` | 外置 trust pin、四类 artifact 独立性、review 与时间关系、GateResult fingerprint | 只有 `PASS` 允许 Gate B |
+
+`A1 INDEPENDENT_VERIFY` 指整个独立验证子门：A1 verifier artifact 负责 9 项 candidate-path TCK，caller-pinned Harness 负责 3 项 trust-plane negative TCK，合计固定 12 项；正文单独写 “A1 artifact” 时只指前 9 项执行者。
+
+任何子门都不能把下一子门的职责内嵌进自己的可变实现。尤其禁止 A0 生成 `PASS`、A1 信任 candidate 自报的测试结果、A2 从 GateResult 或 Evidence Root 反向推导 expected pin。
+
+A2 表中的 terminal 属于 `GateAAdmissionVerificationResult`；GateResult 的持久化 `decision` 仍严格只有 `PASS/OPEN/FAIL`。A2 返回 `UNAVAILABLE` 时不修改 GateResult，也不推导新的 decision。
+
 ### 16.1 机器可审计 GateResult
 
 Gate A 必须生成符合 `capability-studio-implementation-gate-result-v1.schema.json` 的 canonical GateResult，并由独立 Gate verifier 复算。v1 有意只接受 `gateId=GATE-A`、`previousGateResultRef=null` 和 `nextAllowedGate=null|GATE-B`，不提前为尚未冻结的 Gate B/C 提供通用 PASS 入口。Gate B/C 到各自设计冻结时发布新的 admission profile 和固定分母。允许状态只有 `OPEN`、`PASS`、`FAIL`：
@@ -1010,7 +1127,7 @@ gateResultFingerprint
 - Gate 固定 requirement refs 精确覆盖，不接受“至少有若干项”；
 - 实现候选、独立 verifier、Gate verifier 和测试报告 artifact 均有 exact ref/raw fingerprint；
 - 所有固定 test evidence 状态为 `PASS` 且无 skipped；
-- 独立 Reviewer 的 artifact、Authority、review evidence 和时间均在被审候选之后；
+- 独立 Reviewer 的 artifact、Authority、review evidence 和时间均在被审候选之后，且 Reviewer Authority/Artifact/Evidence 与 caller-owned trust pin 精确绑定；
 - `openP0=0`、`openP1=0`；
 - rollback target 可解析；
 - GateResult fingerprint 可独立复算；
@@ -1035,9 +1152,10 @@ JSON Schema 无法表达跨数组 fingerprint 不等关系，因此独立 Gate v
 2. Independent Review 中的 reviewer artifact 与上述 4 个 artifact 全部不同，Reviewer Authority 不能由 Implementation Candidate 自报。
 3. 12 个 test evidence raw fingerprint 两两不同，且每份 Evidence 的内部 test ID、候选 fingerprint 和 expected failure mechanism 与数组位置精确相等；不能用同一报告的别名 URI 充数。
 4. 每份测试 Evidence 都晚于或等于被测 candidate publication，并绑定同一个候选和 Gate revision。
-5. `gateResultFingerprint = H("RG-CS-IMPLEMENTATION-GATE-RESULT-v1" || canonical(result with gateResultFingerprint=null))`；除自身字段外，`decidedAt`、review、rollback 和全部 Evidence 坐标都参与计算。
-6. Gate verifier 的启动输入必须由调用方 out-of-band 固定 `expectedDesignRawFingerprint`、`expectedGateProfileRawFingerprint` 和 `allowedGateRevision=1`；逐项比较 GateResult 的 `designRef`、`gateProfileRef` 和 revision，不能信任结果文件自报的 ref。
-7. Gate Verifier artifact 的 packaged build identity 必须声明支持 `GATE-A/revision=1/profileFingerprint`，并与调用方 pin 相等；Implementation Candidate 使用不兼容的 Gate profile 或 verifier revision 时为 `INVALID`。
+5. `gateResultFingerprint = H("RG-CS-IMPLEMENTATION-GATE-RESULT-v1" || canonical(result with gateResultFingerprint=null))`；除自身字段外，`decidedAt`、review、rollback 和全部 Evidence 坐标都参与计算。`independentReview.reviewFingerprint = H("RG-CS-GATE-A-INDEPENDENT-REVIEW-v1" || canonical(independentReview with reviewFingerprint=null))`，A2 必须复算，不能把它解释成 Review Body 或 Envelope 的别名摘要。
+6. Gate verifier 的启动输入必须由调用方 out-of-band 固定 `expectedDesignRawFingerprint`、`expectedAdmissionProfileRawFingerprint` 和 `allowedGateRevision=1`；逐项比较 GateResult 的 `designRef`、`gateProfileRef` 和 revision，不能信任结果文件自报的 ref。GateResult 的 `gateProfileRef` 专指 Admission Profile，不复用 A1 Replay Profile。
+7. Gate Verifier artifact 的 packaged build identity 必须声明支持 `GATE-A/revision=1/admissionProfileFingerprint`，并与调用方 pin 相等；Implementation Candidate 使用不兼容的 Replay Profile 或 verifier revision 时为 `INVALID`。
+8. Independent Review 的 `openP0/openP1/skippedCount` 只能由 signed Review Body arrays 确定性归约；Reviewer Artifact/Trust Policy 来自 Challenge trust basis，Review Body/Authority Envelope raw bytes 来自 Admission observed seals，并绑定同一 candidate、Admission Profile、reviewed material root、revision、scope 和 verification time。仅验证 GateResult 内三个 ref 相互自洽不构成可信 review。
 
 上述任一语义检查失败时，即使 JSON Schema 通过，GateResult 仍为 `INVALID`，不能进入 Gate B。
 
@@ -1045,20 +1163,228 @@ JSON Schema 无法表达跨数组 fingerprint 不等关系，因此独立 Gate v
 
 Gate verifier 不从 `uri` 访问网络，也不接受 `file:`、绝对路径、`..`、符号链接或未列入 Evidence Root 的文件。CLI 只接受一个绝对规范化的只读 Evidence Root；所有 `exactRef.uri` 都按安全相对路径解析，并在解析前后复核 owner、inode、link count、权限、大小和原始字节。目录中出现未被 GateResult 引用的未知文件时失败关闭。
 
-调用方必须通过 CLI 参数独立固定：
+#### Protocol Canonicalization v1
+
+所有 companion Schema 的 canonical JSON 统一采用 RFC 8785 JCS。输入必须是无 BOM 的 UTF-8；解析前拒绝重复 key、lone surrogate、非有限数字和超出 IEEE-754 safe integer 的 JSON number；金额、decimal 和大整数只能使用带 Schema pattern 的 string。JCS 输出不带尾部 LF；CLI 单行 stdout 的 LF 属于 process raw bytes，不属于 canonical document。
+
+```text
+rawSha256(bytes) = "sha256:" + lowercaseHex(SHA-256(bytes))
+
+documentFingerprint(domain, document, selfField)
+  = rawSha256(ASCII(domain) || 0x00
+      || UTF8(JCS(document with selfField=null)))
+```
+
+domain 必须是本文冻结的 ASCII 常量，`0x00` 分隔符不可省略。协议语义区分四种 fingerprint kind，即使底层都使用 SHA-256 字符串也不能互换：
+
+| Kind | 输入 | 例子 |
+|---|---|---|
+| `RAW_BYTES` | 文件 exact bytes，不做 JSON 解析 | JAR、stdout、Schema raw file |
+| `CANONICAL_DOCUMENT` | domain-separated JCS document | Request、Response、Build Identity |
+| `TREE_COMMITMENT` | domain-separated ordered TreeEntry list | Challenge/Input/Run/Admission root |
+| `AGGREGATE_COMMITMENT` | domain-separated ordered typed entries | reviewed material、test/process aggregate |
+
+新 companion Schema 使用 `{kind, algorithm="SHA-256", value="sha256:..."}` 的 typed fingerprint；字段要求具体 kind。既有 GateResult/TestEvidence v1 的 `exactRef.rawFingerprint` 保持 string wire bytes，但语义固定为 `RAW_BYTES`，不能承载 tree/document/aggregate commitment。跨实现 TCK 必须提供 property order、escaped Unicode、无/有 stdout LF、safe integer 边界、重复 key 和四种 kind 混用反例；Java 与至少一个独立 reference implementation 的 golden fingerprint 必须逐字节相同。
+
+`canonicalization/fingerprint-profile-v1.json` 是 fingerprint 参数的机器 Authority。它以固定顺序冻结 44 个对象/commitment profile，包括 `objectKind`、协议版本、domain、selfField 与 fingerprintKind；其中包含 A1 Replay Proof Envelope 和 A2 Admission Proof Envelope。生产接口必须先按 expected objectKind 查表，再比对文档版本；不得接受调用方自由传入 domain、selfField 或 kind。reference CLI 的自由参数模式仅用于字节诊断，不具备 Gate Authority。wrong-domain 与 wrong-self-field 必须由 profile lookup 拒绝，即使错误参数可生成一份内部自洽摘要。
+
+调用方必须使用两份有先后关系、都位于最终 Evidence Root 外的 pin，避免 A1 输出和最终 GateResult 形成时间循环。
+
+`GateAChallengeTrustPin v1` 在 Harness/A1 运行前创建，只固定运行挑战所需的既有事实：
 
 ```text
 expectedDesignRawFingerprint
-expectedGateProfileRawFingerprint
+expectedReplayProfileRawFingerprint
+expectedAdmissionProfileRawFingerprint
 expectedImplementationCandidateRawFingerprint
 expectedIndependentVerifierRawFingerprint
+expectedConformanceHarnessRawFingerprint
+expectedHarnessProfileRawFingerprint
 expectedGateVerifierRawFingerprint
+expectedSchemaSetManifestRawFingerprint
+expectedTckDefinitionRawFingerprint
+expectedTckProviderRawFingerprint
+expectedCandidateSpiArtifactRawFingerprint
+expectedCandidateSpiClassRawFingerprint
+expectedReviewerArtifactRawFingerprint
+expectedReviewerTrustPolicyRawFingerprint
+expectedReviewerRevocationSnapshotRawFingerprint
+expectedChallengeInputRootFingerprint
+expectedChallengeSandboxProfileRawFingerprint
+semanticVerificationTime
 allowedGateRevision = 1
 ```
 
-这些值不从 GateResult 或 Evidence Root 推导。GateResult 中对应 ref 即使内部自洽，只要与任一调用方 pin 不同，也必须判定为 `INVALID`。
+`GateAAdmissionTrustPin v1` 在 A1 的 `TEST_REPORT`、12 份 GateTestEvidence、Review Body、Reviewer Envelope 和候选 GateResult 全部形成后，由 caller 创建并固定：
 
-`artifactFingerprints[]` 除 exact ref 外还必须携带 canonical `publishedAt`。12 份测试 Evidence 的 `startedAt`、`endedAt` 和 Independent Review 的 `reviewedAt` 均不得早于 Implementation Candidate 的 `publishedAt`；Gate verifier 不使用文件 mtime 代替该内容绑定时间。
+```text
+trustBasis:
+  challengeTrustPinRawFingerprint
+  allowedGateRevision = 1
+
+admissionContext:
+  admissionVerificationTime
+
+observedOutputs:
+  sealedGateResultRawFingerprint
+  sealedAdmissionEvidenceRootFingerprint(kind=TREE_COMMITMENT)
+  sealedRunMaterialRootFingerprint(kind=TREE_COMMITMENT)
+  sealedTestReportRawFingerprint
+  sealedReviewerAuthorityRawFingerprint
+  sealedReviewBodyRawFingerprint
+  sealedReviewedMaterialRootFingerprint(kind=AGGREGATE_COMMITMENT)
+  sealedGateTestEvidenceAggregateFingerprint(kind=AGGREGATE_COMMITMENT)
+  sealedProcessMaterialAggregateFingerprint(kind=AGGREGATE_COMMITMENT)
+  sealedHarnessInvocationRawFingerprint
+  sealedHarnessProcessTranscriptRawFingerprint
+```
+
+信任与观察严格分栏：Challenge Pin 在任何运行输出形成前固定全部 trust input，包括 design、A0/A1/Harness/A2 artifact、三个 profile、Schema/TCK/Provider/SPI 以及 Reviewer artifact/policy/revocation snapshot；这些值不从被验文件推导。Admission Pin 的 `observedOutputs` 则明确由 caller 对已封存字节计算，只是 TOCTOU seal，不是 Authority。Admission Pin 必须绑定原 Challenge Pin raw fingerprint；A1 不能读取尚未产生的 GateResult，A2 不能重新运行 A1 或修改任一 seal。GateResult 中对应 ref 即使内部自洽，只要与 Challenge trust basis 或任一 observed seal 不同，也必须判定为 `FAIL`。
+
+`reviewerTrustPolicy` 固定允许的 issuer/key set、review scope、candidate subject、Admission Profile、有效期和 revocation snapshot。v1 的 `signatureAlgorithm` closed value 固定为 `Ed25519`；policy 中的 `keyId` 必须一一映射到 canonical base64url public key，不允许 `none`、动态下载 key、Envelope 旁附 key 或算法回退。
+
+`ReviewBody v1` 不只保存 findings，还必须绑定 `reviewedMaterialRootFingerprint`。该 root 是固定角色集合的聚合，不是 reviewer 自选附件：
+
+```text
+DESIGN
+IMPLEMENTATION_CANDIDATE / A0_CANDIDATE_RESULT
+REPLAY_PROFILE / INDEPENDENT_VERIFIER / INDEPENDENT_VERIFIER_BUILD_IDENTITY
+HARNESS_PROFILE / CONFORMANCE_HARNESS / CONFORMANCE_HARNESS_BUILD_IDENTITY
+ADMISSION_PROFILE / GATE_VERIFIER / GATE_VERIFIER_BUILD_IDENTITY
+SCHEMA_SET / TCK / CHALLENGE_TRUST_PIN
+TCK_PROVIDER / CANDIDATE_SPI_ARTIFACT / CANDIDATE_SPI_CLASS
+TEST_REPORT / HARNESS_INVOCATION / HARNESS_PROCESS_TRANSCRIPT
+RUN_MATERIAL_ROOT / GATE_TEST_EVIDENCE_AGGREGATE / PROCESS_MATERIAL_AGGREGATE
+```
+
+Review findings 不是自由文本计数。Reviewer Trust Policy 固定有序 `requiredCheckIds`；Review Body 必须逐项返回：
+
+```text
+reviewChecks[]: {checkId, status = PASS | FINDING | SKIPPED}
+findings[]: {findingId, checkId, severity = P0 | P1 | P2,
+             status = OPEN | RESOLVED, reasonCode, detail}
+```
+
+`detail` 只用于人读，不参与判定；`reasonCode` closed。每个 required check 恰好一次：`PASS` 不得有关联 finding，`FINDING` 至少有一个，`SKIPPED` 不得伪造 finding；findingId 唯一且按 `severity/checkId/findingId` 固定排序。三个 projection 的唯一公式是：
+
+```text
+openP0 = count(findings where severity=P0 and status=OPEN)
+openP1 = count(findings where severity=P1 and status=OPEN)
+skippedCount = count(reviewChecks where status=SKIPPED)
+```
+
+Review Body、Authority Envelope 和 GateResult 保存的三个 count 都只是兼容投影。A2 必须从 arrays 重算并逐值比较四处事实；任一矛盾为 `FAIL`。Admission Profile 固定 `REVIEW_COUNT_CONSISTENCY_REJECTED` guard：一个 Ed25519 签名有效但含 open P0 finding 且自报 `openP0=0` 的 fixture 必须被拒绝，该 guard 不增加 GateTestEvidence v1 的 12 项分母，但与 Provider collision guard 一样是 A2 `PASS` 的强制条件。该攻击向量由 `docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/` 提供，生成器必须同时复算四份 document fingerprint、raw ref、Ed25519 signature 和派生 count。
+
+每个角色恰好一次，按上述顺序计算。Entry 不是含混的 `{role, rawFingerprint}`，而是 `{role, fingerprint:{kind, algorithm, value}}`；artifact/JAR/TCK/SPI 使用 `RAW_BYTES`，A0 result/profile/Build Identity/Challenge Pin/TEST_REPORT 使用 `CANONICAL_DOCUMENT`，Schema Set/test/process/review aggregate 使用 `AGGREGATE_COMMITMENT`，Run Material Root 使用 `TREE_COMMITMENT`。角色与 kind 不匹配直接失败：
+
+```text
+reviewedMaterialRootFingerprint
+  = H("RG-CS-GATE-A-REVIEWED-MATERIAL-ROOT-v1"
+      || canonical([{role, fingerprint:{kind, algorithm, value}}, ...]))
+```
+
+`ReviewBody v1` 保存该 root、结构化 findings 与 `openP0/openP1/skippedCount`；`ReviewerAuthorityEnvelope v1` 独立包住它，避免 envelope 自哈希循环，并至少绑定：
+
+```text
+authorityId / issuer / keyId / signatureAlgorithm = Ed25519
+gateId / gateRevision / admissionProfileRawFingerprint
+candidateRawFingerprint
+reviewerArtifactRawFingerprint
+reviewBodyRawFingerprint
+reviewedMaterialRootFingerprint
+openP0 / openP1 / skippedCount
+reviewScope
+reviewedAt / validUntil
+revocationSnapshotRawFingerprint
+signature / envelopeFingerprint
+```
+
+Wire authority 文件固定为：
+
+```text
+capability-studio-review-body-v1.schema.json
+capability-studio-reviewer-authority-envelope-v1.schema.json
+capability-studio-reviewer-trust-policy-v1.schema.json
+capability-studio-reviewer-revocation-snapshot-v1.schema.json
+capability-studio-gate-a-challenge-trust-pin-v1.schema.json
+capability-studio-gate-a-admission-trust-pin-v1.schema.json
+```
+
+Fingerprint 与签名顺序固定，禁止实现自行选择排除字段。下列及后续公式中的 `H("DOMAIN" || canonical(document))` 是 `Protocol Canonicalization v1` 的简写，规范含义始终是 `rawSha256(ASCII(DOMAIN) || 0x00 || UTF8(JCS(document)))`：
+
+```text
+reviewBodyFingerprint
+  = H("RG-CS-REVIEW-BODY-v1" || canonical(ReviewBody with reviewBodyFingerprint=null))
+
+signaturePayload
+  = H("RG-CS-REVIEW-ENVELOPE-SIGNING-v1"
+      || canonical(EnvelopeClaims excluding signature and envelopeFingerprint))
+
+signature
+  = Sign(reviewer private key corresponding to caller-pinned keyId/public-key policy,
+         signaturePayload)
+
+envelopeFingerprint
+  = H("RG-CS-REVIEW-ENVELOPE-v1"
+      || canonical(Envelope with envelopeFingerprint=null))
+```
+
+这里的 `signaturePayload` 是 SHA-256 的 32 个原始 digest bytes，不是带 `sha256:` 前缀的 ASCII 字符串，也不是其十六进制文本。Ed25519 直接签署这 32 bytes；wire `signature` 使用无 padding 的 base64url。`envelopeFingerprint` 包含已经形成的 signature；signature payload 不包含 signature 和 envelope fingerprint，因此不存在自哈希或自签循环。其余 caller-owned document 的公式固定为：
+
+```text
+reviewerTrustPolicyFingerprint
+  = H("RG-CS-REVIEWER-TRUST-POLICY-v1"
+      || canonical(Policy with reviewerTrustPolicyFingerprint=null))
+
+reviewerRevocationSnapshotFingerprint
+  = H("RG-CS-REVIEWER-REVOCATION-SNAPSHOT-v1"
+      || canonical(Snapshot with reviewerRevocationSnapshotFingerprint=null))
+
+challengeTrustPinFingerprint
+  = H("RG-CS-GATE-A-CHALLENGE-TRUST-PIN-v1"
+      || canonical(ChallengePin with challengeTrustPinFingerprint=null))
+
+admissionTrustPinFingerprint
+  = H("RG-CS-GATE-A-ADMISSION-TRUST-PIN-v1"
+      || canonical(AdmissionPin with admissionTrustPinFingerprint=null))
+```
+
+两类只读 root 的内容身份使用同一 closed tree entry 结构、不同 domain separator：
+
+```text
+TreeEntry = {relativePath, kind=FILE, byteLength, rawFingerprint}
+
+challengeInputRootFingerprint
+  = H("RG-CS-GATE-A-CHALLENGE-INPUT-ROOT-v1"
+      || canonical(TreeEntry[] sorted by relativePath))
+
+admissionEvidenceRootFingerprint
+  = H("RG-CS-GATE-A-ADMISSION-EVIDENCE-ROOT-v1"
+      || canonical(TreeEntry[] sorted by relativePath))
+```
+
+`relativePath` 与既有 GateResult v1 `exactRef.uri` 使用同一 ASCII grammar：`^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$`。拒绝空路径、`.`、`..`、反斜杠、控制字符、大小写折叠碰撞、重复 path、目录/symlink/device/FIFO/socket 和未声明文件。tree fingerprint 证明内容闭包，owner/mode/fileKey/nlink 的前后快照证明本次读取稳定性，两者不能互相替代。Challenge Pin 与 Admission Pin 分别固定对应 root fingerprint；后者在最终 Evidence Root 完成后创建，因此不形成哈希循环。
+
+Revocation Snapshot 不是自由文本名单，固定包含 `snapshotId/issuer/revision/issuedAt/validUntil/revokedKeyIds/revokedAuthorityIds/reviewerRevocationSnapshotFingerprint`，数组排序且无重复。Envelope 和 Trust Policy 都只保存 `revocationSnapshotRawFingerprint`，不保存可由候选解释的文件路径；实际文件只来自 A2 的 `--reviewer-revocation-snapshot` out-of-band 参数。A2 必须验证 snapshot issuer 被 Trust Policy 允许、Envelope 的 `keyId/authorityId` 均未撤销，且 Challenge trust basis 中的 policy/snapshot raw fingerprint 与 CLI exact bytes 相等。时间来自 caller-pinned UTC instant，不读取本机当前时间补值。
+
+A2 必须从最终 Evidence Root 重算 `GATE_TEST_EVIDENCE_AGGREGATE` 与 `PROCESS_MATERIAL_AGGREGATE`，再重算完整 reviewed material root；该值必须同时等于 Review Body、Envelope 和 Admission Pin 的绑定值。A2 还必须验证 Review Body exact raw pin、Envelope exact raw pin，以及 envelope 的 issuer、subject、scope、时间、签名与撤销状态。GateResult 的 `reviewEvidenceRef` 指向 Review Body，`reviewerAuthorityRef` 指向 Envelope；`openP0/openP1=0` 只在这些绑定全部通过后才有语义。候选放在 Evidence Root 中的自签 review、旁附公钥或自报 issuer 一律无效。
+
+`artifactFingerprints[]` 除 exact ref 外还必须携带 canonical `publishedAt`。Replay/Admission Profile 固定 `maxStartDelayMillis=300000`、`maxRunWindowMillis=1800000`、`maxEvidenceAgeMillis=86400000`，完整时间偏序为：
+
+```text
+policy.notBefore <= snapshot.issuedAt <= reviewedAt
+policy.notBefore <= semanticVerificationTime <= min(all process.startedAt)
+min(process.startedAt) - semanticVerificationTime <= maxStartDelayMillis
+max(process.endedAt) - semanticVerificationTime <= maxRunWindowMillis
+max(all artifact.publishedAt, all testRun.endedAt,
+    all verificationProcessRun.endedAt, harnessProcess.endedAt) <= reviewedAt
+reviewedAt <= decidedAt <= admissionVerificationTime
+admissionVerificationTime - max(all process.endedAt) <= maxEvidenceAgeMillis
+admissionVerificationTime <= min(policy.validUntil,
+    snapshot.validUntil, envelope.validUntil)
+```
+
+每个 process/test 都必须 `startedAt <= endedAt`，且不得早于 Implementation Candidate 的 `publishedAt`；TEST_REPORT `publishedAt` 必须位于 Harness process `endedAt` 之后、`reviewedAt` 之前。Gate verifier 不使用文件 mtime 或本机当前时间代替这些内容绑定时间；超过证据年龄只能重新运行 Challenge，不得延长旧 Pin。
 
 每个 `testEvidenceRefs[].evidenceRef` 必须指向 canonical `GateTestEvidence v1`，固定字段如下：
 
@@ -1079,25 +1405,657 @@ evidenceFingerprint
 
 `expectedMechanism` 使用与 12 个 test ID 一一对应的 closed enum，不能以自由文本解释“为什么算通过”。`PLACEHOLDER_REJECTED` 等反例只有在 `observedTerminal=INVALID` 且 verifier 与候选 pin 均匹配时才是测试 `PASS`；`HONEST_INCOMPLETE_ACCEPTED` 的 `observedTerminal` 固定为 `INCOMPLETE`；legacy 完整 Authority 正例固定为 `ACCEPTED`，三个缺失 Authority 反例固定为 `NOT_ACCEPTED`。Gate verifier 必须重算每份 `evidenceFingerprint`，并比较 GateResult 外层的 raw fingerprint。
 
-Independent Verifier 与 Gate Verifier 各自发布 canonical Build Identity：
+12 份 projection 不能由调用方自由解释。所有行的 `candidateRawFingerprint` 都取 Challenge Pin 的 `expectedImplementationCandidateRawFingerprint`，`verifierRawFingerprint` 始终取 `expectedIndependentVerifierRawFingerprint`；Harness 通过 TEST_REPORT、Build Identity 和两份 Pin 单独绑定，不挤占 v1 verifier 字段。`startedAt/endedAt` 逐字复制同 test ID 的 TEST_REPORT run；`skipped=false`；只有 raw material 复算后同时满足下表 terminal/exit 才生成 `status=PASS`，否则生成 `FAIL`：
+
+| Test ID | `expectedMechanism` | `observedTerminal` | exit |
+|---|---|---|---:|
+| `PLACEHOLDER_REJECTED` | `PLACEHOLDER_TYPED_EVIDENCE` | `INVALID` | 2 |
+| `WRONG_KIND_REJECTED` | `KIND_ROLE_MISMATCH` | `INVALID` | 2 |
+| `WRONG_VERIFIER_REVISION_REJECTED` | `VERIFIER_REVISION_MISMATCH` | `INVALID` | 2 |
+| `VERIFIER_DIGEST_MUTATION_REJECTED` | `VERIFIER_DIGEST_MUTATION` | `INVALID` | 2 |
+| `REGISTRY_MUTATION_REJECTED` | `REGISTRY_MUTATION` | `INVALID` | 2 |
+| `VERIFIER_TCK_MISMATCH_REJECTED` | `VERIFIER_TCK_MISMATCH` | `INVALID` | 2 |
+| `LEGACY_ACCEPTED_COMPLETE_AUTHORITY` | `COMPLETE_AUTHORITY` | `ACCEPTED` | 0 |
+| `LEGACY_ACCEPTED_MISSING_STORE_REJECTED` | `MISSING_STORE_AUTHORITY` | `NOT_ACCEPTED` | 3 |
+| `LEGACY_ACCEPTED_MISSING_OWNER_REJECTED` | `MISSING_OWNER_AUTHORITY` | `NOT_ACCEPTED` | 3 |
+| `LEGACY_ACCEPTED_MISSING_TARGET_REJECTED` | `MISSING_TARGET_AUTHORITY` | `NOT_ACCEPTED` | 3 |
+| `MANIFEST_IDENTITY_DRIFT_REJECTED` | `MANIFEST_IDENTITY_DRIFT` | `INVALID` | 2 |
+| `HONEST_INCOMPLETE_ACCEPTED` | `HONEST_INCOMPLETE` | `INCOMPLETE` | 4 |
+
+每行最后计算 `evidenceFingerprint = H("RG-CS-IMPLEMENTATION-GATE-TEST-EVIDENCE-v1" || canonical(Evidence with evidenceFingerprint=null))`。投影器只允许 create-new；目标已存在、12 行顺序/数量不符、字段来源缺失或多个 test ID 指向同一 Evidence 文件时失败关闭。
+
+Independent Verifier、Conformance Harness 与 Gate Verifier 各自发布 canonical Build Identity：
 
 ```text
 messageVersion
 artifactRole
 gateId / gateRevision
-gateProfileRawFingerprint
-sourceFingerprint
-classFingerprint
-registryFingerprint
-tckFingerprint
+replayProfileRawFingerprint | null
+harnessProfileRawFingerprint | null
+admissionProfileRawFingerprint | null
+schemaSetManifestRef / schemaSetFingerprint
+resourceManifestRef / resourceManifestFingerprint
+sourceManifestRef / sourceManifestFingerprint
+classManifestRef / classManifestFingerprint
+dependencyLockManifestRef / dependencyLockManifestFingerprint
+registryRawFingerprint / tckDefinitionRawFingerprint
 identityFingerprint
 ```
 
-Gate verifier 从自身 packaged resource 读取并复算 Gate Verifier Build Identity；Independent Verifier Build Identity 则按调用方 pin 和 Evidence Root 中的制品复算。两者的 `registryFingerprint`、`tckFingerprint` 和 `gateProfileRawFingerprint` 必须分别与 Gate A 固定 profile 一致。这样 `VERIFIER_DIGEST_MUTATION_REJECTED`、`REGISTRY_MUTATION_REJECTED` 和 `VERIFIER_TCK_MISMATCH_REJECTED` 验证的是独立信任边界，而不是三个不同名称指向同一份测试日志。
+| Build Identity role | 必填 profile 字段 | 必须为 `null` 的 profile 字段 |
+|---|---|---|
+| `INDEPENDENT_VERIFIER` | `replayProfileRawFingerprint` | harness、admission |
+| `CONFORMANCE_HARNESS` | `harnessProfileRawFingerprint` | replay、admission |
+| `GATE_VERIFIER` | `admissionProfileRawFingerprint` | replay、harness |
+
+Build Identity 不把整个 JAR digest 写回 JAR。它使用：
+
+```text
+identityFingerprint
+  = H("RG-CS-GATE-A-BUILD-IDENTITY-v1"
+      || canonical(BuildIdentity with identityFingerprint=null))
+```
+
+Wire authority 包含：
+
+```text
+capability-studio-gate-a-build-identity-v1.schema.json
+capability-studio-gate-a-schema-set-manifest-v1.schema.json
+capability-studio-gate-a-build-resource-manifest-v1.schema.json
+capability-studio-gate-a-source-manifest-v1.schema.json
+capability-studio-gate-a-class-manifest-v1.schema.json
+capability-studio-gate-a-dependency-lock-manifest-v1.schema.json
+capability-studio-gate-a-tck-provider-identity-v1.schema.json
+```
+
+Build Identity Schema 通过 `if/then` 固定三种 `artifactRole` 的 profile 非空/null 约束，并用 packaged exact ref 绑定五份 leaf manifest。`PackagedExactRef = {entryPath, rawFingerprint(kind=RAW_BYTES)}`，只能解析实际 CodeSource JAR 内 entry，不能访问外部路径。五种 manifest entry 与顺序固定：
+
+| Manifest | Entry | 排序键 | Fingerprint domain |
+|---|---|---|---|
+| Schema Set | `schemaId, entryPath, rawFingerprint` | `schemaId, entryPath` | `RG-CS-GATE-A-SCHEMA-SET-MANIFEST-v1` |
+| Build Resource | `resourceRole, entryPath, rawFingerprint` | `resourceRole, entryPath` | `RG-CS-GATE-A-BUILD-RESOURCE-MANIFEST-v1` |
+| Source | `relativeSourcePath, entryPath, rawFingerprint` | `relativeSourcePath` | `RG-CS-GATE-A-SOURCE-MANIFEST-v1` |
+| Class | `binaryName, entryPath, rawFingerprint` | `binaryName` | `RG-CS-GATE-A-CLASS-MANIFEST-v1` |
+| Dependency Lock | `coordinate, scope, entryPath, rawFingerprint` | `coordinate, scope` | `RG-CS-GATE-A-DEPENDENCY-LOCK-MANIFEST-v1` |
+
+所有 path 使用 exactRef ASCII grammar；key/path/raw fingerprint 必须唯一。每份 manifest 使用表中 domain 对自身 fingerprint 字段为 null 的 JCS 文档计算 `AGGREGATE_COMMITMENT`。Build Identity 同时保存 manifest exact raw ref 与 manifest semantic fingerprint，A2 两者都复算。
+
+制品把本角色源码快照放在不可加载的 `META-INF/gate-a/sources/`，把构建时依赖 JAR exact bytes 放在不可加载的 `META-INF/gate-a/dependencies/`；ClassLoader 仍只加载 shaded production classes。构建门禁先把 Source/Dependency manifest 与 workspace/Maven resolved artifacts 对照，再打包；A2 从实际 JAR 重算 packaged source/dependency bytes。Schema、profile、Registry、TCK definition、Provider nested JAR、Manifest 和其他非 class entry 由 Resource/Schema manifest 覆盖；outer production classes 由 Class Manifest 覆盖。五份 manifest 文件与 Build Identity 自身是固定例外，由 Build Identity exact refs 绑定；除此之外任一未知 JAR entry 失败关闭。
+
+公共资源是同字节 Schema Set、`gate-a-tck-v1.json` 和 Build Identity Schema；角色专属资源是唯一 profile、唯一 closed Registry、本角色 class/source/dependency 清单，A1 还必须包含 exact Provider JAR/Identity。缺项、多项、重复、摘要漂移、出现另一角色 profile/Registry、Harness/A2 携带 Provider，或 Provider 未被 A1 Resource Manifest 覆盖均失败关闭。整个 outer JAR raw fingerprint 始终由 caller 在制品外计算和 pin，因此不存在制品自哈希循环。
+
+Gate verifier 从自身 actual CodeSource 读取并复算 Gate Verifier Build Identity 和五份 manifest；Independent Verifier 与 Harness Build Identity 则按调用方 pin 和各自 actual CodeSource 复算。三者的 role-specific profile、Schema Set、resource/source/class/dependency manifest、Registry 和 TCK definition 必须分别与 Challenge Pin 一致。这样 digest/Registry/TCK mutation 验证的是独立进程信任边界，而不是不同名称指向同一份摘要声明。
 
 GateResult 自身可位于 Evidence Root 内或外，但验证开始、每份 Evidence 重放后和返回前都必须重读 exact bytes 并复核 file identity。任何替换、删除、hard-link、内容恢复式 ABA 或 inode drift 都失败关闭。
 
-### Phase 0：设计冻结与反例关闭
+### 16.3 Gate A 独立制品与模块边界
+
+新增三个独立进程项目和一个 fixture Provider 构建项目，而不是在同一项目内用 Java package 假装隔离：
+
+```text
+resource-gateway-gate-verifier/
+  pom.xml
+  src/main/java/com/leanowtech/bloge/gateverifier/
+  src/main/resources/schemas/
+  src/main/resources/gate-a/gate-a-replay-profile-v1.json
+  src/main/resources/gate-a/gate-a-replay-registry-v1.json
+  src/main/resources/gate-a/gate-a-tck-v1.json
+  src/main/resources/gate-a/gate-a-tck-provider-v1.jar
+
+resource-gateway-gate-conformance-harness/
+  pom.xml
+  src/main/java/com/leanowtech/bloge/gateharness/
+  src/main/resources/schemas/
+  src/main/resources/gate-a/gate-a-harness-profile-v1.json
+  src/main/resources/gate-a/gate-a-harness-registry-v1.json
+  src/main/resources/gate-a/gate-a-tck-v1.json
+
+resource-gateway-gate-admission/
+  pom.xml
+  src/main/java/com/leanowtech/bloge/gateadmission/
+  src/main/resources/schemas/
+  src/main/resources/gate-a/gate-a-admission-profile-v1.json
+  src/main/resources/gate-a/gate-a-admission-registry-v1.json
+  src/main/resources/gate-a/gate-a-tck-v1.json
+
+resource-gateway-gate-a-tck-provider/
+  pom.xml
+  src/main/java/com/leanowtech/bloge/gatetckprovider/
+  src/main/resources/META-INF/services/
+  src/main/resources/gate-a/gate-a-tck-provider-identity-v1.json
+```
+
+三个进程项目分别构建、分别发布、分别固定 raw digest；Provider 项目先独立构建 thin JAR，再由 A1 按 exact raw bytes 嵌入。三份 `gate-a-tck-v1.json` 与公共 Schema Set Manifest 必须逐字节相同；三个 profile 和三个 Registry 则必须按 role 两两不同。`gate-a-tck-provider-v1.jar` 是 A1 专属 synthetic fixture provider，不属于公共 TCK definition；其 raw fingerprint 必须同时进入 Replay Profile、Challenge Pin 和 A1 Build Resource Manifest，Harness/A2 制品不得把它加入自身 classpath。
+
+三个进程项目运行时都只允许依赖 JDK、Jackson 和 JSON Schema validator，且不能互相形成 Maven 依赖；Harness 只能以固定子进程协议调用 A1。Provider 项目是唯一例外：它可以对包含 `CapabilityStudioStageAcceptanceAuthorityProvider` 的 ordinary Test Kit SPI artifact 使用 `provided` 编译依赖，但生成的 thin JAR 不得包含该依赖。Provider 的依赖树、SPI Maven coordinate、ordinary artifact raw fingerprint 和 SPI class raw fingerprint 都进入 build evidence 与 Replay Profile。下列内容禁止成为三个进程项目的 Maven runtime dependency 或直接 production class；A1 只允许把 exact Provider thin JAR 当作不可加载的 nested resource，直到 candidate child process 启动时才放入其固定 classpath：
+
+```text
+resource-gateway-test-kit
+resource-gateway-examples
+BLOGE runtime / graph / operator / DSL
+Spring Boot
+Provider implementation
+```
+
+Provider thin JAR 使用 closed entry allowlist：Manifest、唯一 `META-INF/services/<SPI-FQCN>`、`com/leanowtech/bloge/gatetckprovider/**` implementation class 和 Provider Identity。它不得携带 SPI interface、Challenge CLI、其他 Test Kit class、第三方 dependency 或第二个 service descriptor。`CapabilityStudioGateATckProviderIdentity v1` 固定 provider FQCN、service descriptor raw fingerprint、唯一 implementation class entry path/raw fingerprint、SPI coordinate/artifact/class fingerprint 和 identity fingerprint；JAR raw fingerprint 由 caller 在制品外计算，避免自哈希。A1 必须从 Provider JAR exact entry 复算 implementation class raw fingerprint，不能只验证一个间接的 class-manifest aggregate。
+
+`A1 Independent Verifier` 的公共 Interface 只包含一个验证命令：
+
+```text
+verify-replay
+  --challenge-input-root <absolute-read-only-path>
+  --challenge-trust-pin <absolute-path-outside-input-root>
+  --challenge-trust-pin-raw-fingerprint <caller-pinned-sha256>
+  --challenge-sandbox-profile <absolute-path-outside-input-root>
+  --implementation-candidate <absolute-path>
+  --candidate-spi-artifact <absolute-path>
+  --independent-verifier-artifact <absolute-path>
+  --material-output-root <caller-owned-empty-path-outside-input-root>
+  --scratch-root <caller-owned-empty-path-outside-input-root>
+  --verification-time <caller-pinned-UTC-instant>
+```
+
+该命令不读取尚未产生的 GateResult。它只读取 Challenge Pin、packaged TCK 和只读 Challenge Input Root，通过固定子进程协议挑战 candidate，再向 stdout 输出 canonical `GateAReplayVerificationResult v1`，其中只包含 9 项 candidate-path 测试：typed replay 3 项、legacy acceptance 4 项、manifest drift 和 honest incomplete。A1 不声称自己通过了 verifier digest/Registry/TCK 三项 trust-plane 负向测试，也不写 Challenge Input Root 或最终 Admission Evidence Root；它只以 create-new 方式写调用方提供的空 `material-output-root`。
+
+`Conformance Harness` 使用第三个制品和固定命令：
+
+```text
+run-gate-a-tck
+  --challenge-input-root <absolute-read-only-path>
+  --challenge-trust-pin <absolute-path-outside-input-root>
+  --challenge-trust-pin-raw-fingerprint <caller-pinned-sha256>
+  --challenge-sandbox-profile <absolute-path-outside-input-root>
+  --implementation-candidate <absolute-path>
+  --candidate-spi-artifact <absolute-path>
+  --independent-verifier-artifact <absolute-path>
+  --conformance-harness-artifact <absolute-path>
+  --material-output-root <caller-owned-empty-path-outside-input-root>
+  --scratch-root <caller-owned-empty-path-outside-input-root>
+  --verification-time <caller-pinned-UTC-instant>
+```
+
+Harness 先把 Challenge Pin 的 exact bytes 与 `--challenge-trust-pin-raw-fingerprint` 比对，再验证自身 actual CodeSource，然后分别启动一个正常 A1、三个 trust-plane negative A1 和一个 Provider collision guard A1。正常进程提供 9 项 candidate-path Evidence；四个负向/guard 进程必须在 bootstrap 阶段 fail-closed。Harness 为五个 A1 进程分配互斥的 `material-output-root/run-material/runs/<runId>/` create-new 子树，把五组原始运行聚合为 canonical `GateAIndependentVerificationResult v1`，并绑定 `runMaterialRootFingerprint`。调用方在 Harness 返回后封存 `run-material/`，只读复核 tree fingerprint，再把该目录按相同 relative path 原样复制进最终 Admission Evidence Root；TEST_REPORT 中的 ref 从产生时就使用固定 `run-material/...` URI，不需要重写。随后调用方按固定 projection 生成 12 个 create-new GateTestEvidence v1 文件和一个 `TEST_REPORT` artifact，并组装候选 GateResult。TCK 解压、mutation 工作副本等临时文件只能使用独立空 scratch root；scratch 不进入证明内容并在调用前后执行泄漏和残留检查，material output 不得落入 scratch。
+
+`material-output-root` 与 scratch、Challenge Input Root、两份 pin、所有 artifact path 和最终 Admission Evidence Root 必须两两无祖先/子孙关系。它只允许 closed `NON_AUTHORITY_TCK_EVIDENCE` 文件集合、总大小/文件数受 Sandbox Profile 限制，调用前必须为空且 file identity 可固定；写入采用 temp + fsync + atomic create-new rename，Harness 返回后调用方立即改为只读并复算 `runMaterialRootFingerprint = H("RG-CS-GATE-A-RUN-MATERIAL-ROOT-v1" || canonical(sorted TreeEntry[]))`。TEST_REPORT 不在该 root 内：Harness 只向 stdout 输出 canonical result，调用方验证后单独 create-new materialize 为 TEST_REPORT，再令它引用最终 Root 中 `run-material/` 的同路径副本。这样材料先于报告，不形成 report/root 自哈希循环。已存在文件、未知文件、hard-link/symlink、越界路径、封存失败或 fingerprint 漂移都使 A1 子门 `INVALID/UNAVAILABLE`，不得复制到最终 Root。
+
+四个负向/guard 进程不改写 caller-owned Challenge Pin。Harness 只能依据 packaged TCK 的 closed mutation vector，在 scratch 中确定性生成“负向派生输入”：wrong digest 使用正确 A1 CodeSource 配合错误 `--independent-verifier-artifact` decoy；Registry mutation 使用 synthetic negative pin 与 mutated verifier artifact；TCK mismatch 使用原 A1 artifact 与只改变 expected TCK fingerprint 的 synthetic pin；Provider collision 使用 synthetic pin 与 derived candidate JAR。它们都只允许得到拒绝 transcript。A2 必须从原 Challenge Pin、TCK vector 和 transcript 重算派生关系；任何派生输入被当作正向 Authority、产生 `VERIFIED`，或逃出 scratch，Harness attempt 必须以 `INVALID` 结束且不得生成 TEST_REPORT。
+
+A1 bootstrap 的 fail-closed 判定顺序固定为：`actual CodeSource/CLI path/pin raw digest -> Build Identity Schema/role/profile -> Schema Set -> Registry raw fingerprint -> TCK definition raw fingerprint -> complete resource/source/class/dependency manifests`。因此三个向量分别只能得到 `VERIFIER_DIGEST_MUTATION`、`REGISTRY_MUTATION`、`VERIFIER_TCK_MISMATCH`，不能因多个不一致随机改变 reason code。未到达的后续检查记录为 bootstrap-short-circuited，不计为 skipped TCK。
+
+`A2 Gate Admission Checker` 使用另一制品和另一命令：
+
+```text
+admit
+  --gate-result <absolute-path>
+  --evidence-root <absolute-path>
+  --challenge-trust-pin <absolute-path-outside-evidence-root>
+  --challenge-trust-pin-raw-fingerprint <caller-pinned-sha256>
+  --admission-trust-pin <absolute-path-outside-evidence-root>
+  --admission-trust-pin-raw-fingerprint <caller-pinned-sha256>
+  --implementation-candidate <absolute-path>
+  --candidate-spi-artifact <absolute-path>
+  --independent-verifier <absolute-path>
+  --conformance-harness-artifact <absolute-path>
+  --reviewer-artifact <absolute-path>
+  --reviewer-trust-policy <absolute-path-outside-evidence-root>
+  --reviewer-revocation-snapshot <absolute-path-outside-evidence-root>
+  --gate-admission-artifact <absolute-path>
+  --verification-time <caller-pinned-UTC-instant>
+```
+
+Admission Checker 不再次执行业务或 candidate，只复算 GateResult、GateTestEvidence、GateAIndependentVerificationResult、artifact/build identity、review 和时间关系。它先将原始 Challenge Pin exact bytes 与 `--challenge-trust-pin-raw-fingerprint` 比对，并要求该值等于 Admission Pin 的 `trustBasis.challengeTrustPinRawFingerprint`；随后比对 Admission Pin exact bytes，再按 trust basis/observed seals 核验所有外置 artifact、Reviewer Trust Policy 和 revocation snapshot。policy、snapshot 和两份 pin 必须位于 Evidence Root 外，防止被审候选携带自己的信任根。调用方 launcher 在启动前先校验 Admission artifact raw digest；`--gate-admission-artifact` 只用于把本次运行身份绑定进结果，不能让进程用自哈希替代外部 pin。
+
+三个命令都不接受 `--command`、`--shell`、`--script`、`--force-pass`、`--ignore-pin` 或从 GateResult 推导 trust pin 的便捷模式。Shell 只能校验调用参数、固定制品摘要并启动 Java 进程，不能实现 canonical JSON、GateResult、TCK 或准入判断。
+
+Schema role 与工程制品固定一一对应：
+
+| Schema role | 子门 | 唯一制品/输出 |
+|---|---|---|
+| `IMPLEMENTATION_CANDIDATE` | A0 | `bloge-resource-gateway-test-kit-*-cli.jar` |
+| `INDEPENDENT_VERIFIER` | A1 | `resource-gateway-gate-verifier` standalone JAR |
+| `GATE_VERIFIER` | A2 | `resource-gateway-gate-admission` standalone JAR |
+| `TEST_REPORT` | Harness 输出 | canonical `GateAIndependentVerificationResult v1` immutable artifact |
+
+Harness 不进入 GateResult 的四角色枚举，但它的 artifact raw fingerprint、Build Identity 和 Harness Profile 必须进入 Challenge Pin，并由 Admission Pin 的 `trustBasis.challengeTrustPinRawFingerprint` 传递绑定；TEST_REPORT 还必须记录其实际 CodeSource 与 Build Identity。Harness artifact 必须与 A0/A1/A2、Reviewer Artifact 和 TEST_REPORT 内容 fingerprint 全部不同。
+
+两份 caller-owned pin 的生命周期固定为：
+
+```text
+Challenge Pin
+  -> caller-pinned Harness
+  -> normal A1 replay + 3 trust-plane negative A1 processes
+     + 1 Provider collision guard process
+  -> TEST_REPORT + raw process material + 12 GateTestEvidence
+  -> reviewed material root + independent Review Body + Reviewer Envelope
+  -> candidate GateResult + final Admission Evidence Root
+  -> caller creates Admission Pin binding all prior raw fingerprints
+  -> A2 admission
+```
+
+Pin 的字段和信任规则以 16.2 为唯一权威，不在 A1/A2 内从文件内容补全 expected value。
+
+制品身份分两层：调用方计算并固定整个 JAR 的 raw fingerprint；JAR 内发布不含自哈希循环的 Build Identity，包含 role、revision、profile、schema set、source、class、dependency lock、registry、TCK 和 identity fingerprint。GateResult 中的任何 digest 都只是待比对值，不能成为 expected value。
+
+`Independent Verifier` 与 `Gate Admission Checker` 可以在同一仓库维护，但不得共享生产代码库、Maven runtime dependency、artifact、build identity、可变 Registry 或调用入口，并由调用方分别 pin。Schema 是两者唯一允许共享的 wire authority，且各自在 packaged resources 中保存副本并与 `docs/schemas` raw fingerprint 对照。若当前部署只有一个独立 verifier artifact，它只能验证 `OPEN/FAIL` 的结构和证据，不能生成可信 Gate A `PASS`。
+
+A1、Harness 和 A2 三个进程都必须证明“实际运行代码就是被 pin 的制品”，不能只读取另一个正确 JAR 的 digest：
+
+1. caller launcher 固定使用 `java -jar <pinned-artifact>`，清除 `CLASSPATH`、`JAVA_TOOL_OPTIONS`、`JDK_JAVA_OPTIONS`、`_JAVA_OPTIONS` 和 javaagent；
+2. JAR Manifest 不得声明外部 `Class-Path`，运行时生产类必须来自一个 CodeSource；
+3. 进程通过自身 `ProtectionDomain.CodeSource` 定位实际 JAR，规范化后必须与 CLI artifact path 是同一 file identity；
+4. 进程启动和返回前复算自身 raw fingerprint、packaged Build Identity、owner/mode/fileKey/nlink，并与 caller pin 三方一致；
+5. exploded classes、普通多项 classpath、无法确定 CodeSource、运行中 artifact drift 或 shaded dependency 漂移均返回 `UNAVAILABLE`。
+
+Challenge Input Root 和最终 Admission Evidence Root 都执行：绝对规范化 root、无网络 URI、无绝对/父级逃逸引用、无 symlink、hard-link 闭包、未知文件拒绝、owner/mode/fileKey/nlink 固定、读取前后 identity 重检和零保护根写入。Challenge Input Root 只允许 packaged TCK 声明的 fixture/manifest 输入，不含 GateResult 或 A1 输出；Admission Evidence Root 只允许 GateResult 闭包引用的最终 Evidence。底层文件系统无法提供这些安全属性时返回 `UNAVAILABLE`，不得静默降级。
+
+构建门禁必须证明：
+
+1. verifier、Harness 与 admission 三棵 runtime dependency tree 都不含禁止依赖且彼此独立；Provider tree 只允许 pinned Test Kit SPI 的 `provided` build dependency，thin JAR 不含它；
+2. 三个制品内 Schema Set Manifest 和 Schema raw bytes 都与 `docs/schemas` 一致；五份 Build leaf manifest 可从 actual JAR entries 完整重算且无未知 entry；
+3. Replay Profile、Harness Profile、Admission Profile、12 项 TCK、Provider/SPI identity 与各自 Build Identity/Challenge Pin 一致；
+4. candidate CLI、candidate SPI artifact、independent verifier、Harness、gate verifier、reviewer artifact 与 TEST_REPORT raw fingerprint 按 profile 要求两两不同，SPI class bytes 则必须精确相同；
+5. A1 运行前后 Challenge Input Root/Challenge Pin 不变，Harness staging root 只 create-new 并可封存，A2 运行前后 Admission Evidence Root/GateResult/两份 Pin 不变；
+6. 任一固定测试向量、五个 outer run、Provider collision guard 或 review-count guard 被删除、重排、跳过或替换时失败关闭；
+7. A1/Harness/A2 的顶层 conclusion 和 CLI 摘要不使用 `ACCEPTED`，且不写入 Evidence Root；该 token 只允许出现在固定正例 `testEvidence[].observedTerminal` 中；
+8. A1/Harness/A2 的实际 CodeSource、CLI artifact path、Build Identity 与 caller pin 三方一致；
+9. Reviewer Authority/Artifact/Evidence/Trust Policy 全部与 Challenge trust basis/observed seals 相等，签名、scope、派生 counts、时间和撤销状态有效；
+10. Provider classpath 顺序、candidate namespace collision scan、Provider closed allowlist、Service descriptor、FQCN/class/actual CodeSource 五重绑定全部成立。
+
+### 16.4 Candidate Challenge Protocol v1
+
+A1 不直接拼接多个历史 CLI。A0 增加一个极薄的 `CapabilityStudioGateAChallengeCli`，只把 strict request 映射到两个固定既有入口；它不能包含业务 Oracle，也不能接受 main class、任意参数或 shell。协议只允许两个 operation：
+
+| Operation | 固定目标 | 固定输入 | 允许终态/退出码 |
+|---|---|---|---|
+| `TYPED_REPLAY_V1` | `CapabilityStudioFormalEvidenceRunVerifyCli` | manifest、bundle root、可选固定 mutation vector | `INVALID=2`、`UNAVAILABLE=3`、`STRUCTURE_VERIFIED/INCOMPLETE=4`；禁止 0 |
+| `LEGACY_STAGE_ACCEPTANCE_V2` | `CapabilityStudioStageAcceptanceCli` | Stage Result v2、TCK provider、Authority binding | 完整 Authority `ACCEPTED=0`；缺事实 `NOT_ACCEPTED=3`；协议错误 `INVALID=2` |
+
+`CandidateChallengeRequest v1` 固定：
+
+```text
+messageVersion / challengeId / operation
+candidateRawFingerprint / replayProfileRawFingerprint / tckVectorId
+fixtureRootRef / inputExactRefs
+semanticVerificationTime
+timeoutMillis = 30000
+stdoutLimitBytes = 8192 / stderrLimitBytes = 8192
+requestFingerprint
+```
+
+`CandidateChallengeResponse v1` 固定：
+
+```text
+challengeId / operation / tckVectorId
+observedTerminal / closedReasonCode
+candidateCodeSourceRawFingerprint
+authorityProviderFqcn | null
+authorityProviderCodeSourceRawFingerprint | null
+authorityProviderClassRawFingerprint | null
+operationResultKind = TYPED_REPLAY_RESULT | LEGACY_ACCEPTANCE_RESULT
+operationResult / operationResultFingerprint(kind=CANONICAL_DOCUMENT)
+responseFingerprint
+```
+
+Response 只声明候选可知的语义事实。它不包含 `processExitCode/stdoutRawFingerprint/stderrRawFingerprint/startedAt/endedAt/timedOut/cancelled`：这些只能由父进程在 `ProcessTranscript v1` 中外部观察，否则会产生 stdout 自哈希循环或让被测进程自报“未超时”。`ProcessTranscript` 区分“协议正常完成”和“准入成功”：`COMPLETED` 可携带冻结的协议退出码 `0/2/3/4`，`FAILED` 只表示非协议异常退出，timeout/cancel/unavailable 分别使用 `143/130/255`。每份 transcript 还记录 CodeSource pre-read/post-read 的 resolved path、fileKey、owner/group、link count、POSIX mode、size 与 raw fingerprint；两次快照、结果投影和 pinned CodeSource 必须一致，link count 必须为 1，group/other 不可写。`operationResult` 是 strict one-of；typed replay 使用完整 `GateACandidateReplayResult v1`，三个 Provider 字段必须为 null；legacy 使用固定 terminal record，三个 Provider 字段必须与 Replay Profile 和实际 Provider `ProtectionDomain.CodeSource` 一致。A1 将 `HONEST_INCOMPLETE_ACCEPTED` 的 typed `operationResult` 以 create-new exact bytes 保存为 reviewed material 中唯一的 `A0_CANDIDATE_RESULT`，其余 mutation 结果只进入对应 test process material。
+
+Request/Response 的 canonical fingerprint 公式固定为：
+
+```text
+requestFingerprint
+  = H("RG-CS-GATE-A-CANDIDATE-CHALLENGE-REQUEST-v1"
+      || canonical(Request with requestFingerprint=null))
+
+operationResultFingerprint
+  = documentFingerprint("RG-CS-GATE-A-OPERATION-RESULT-v1", operationResult)
+
+responseFingerprint
+  = H("RG-CS-GATE-A-CANDIDATE-CHALLENGE-RESPONSE-v1"
+      || canonical(Response with responseFingerprint=null))
+```
+
+A1 对 candidate 同样执行三方身份绑定：调用前后自行读取 `--implementation-candidate` exact bytes，比较 Challenge Pin 的 expected candidate raw fingerprint，并要求每个 Response 的 `candidateCodeSourceRawFingerprint` 相等；同时验证固定 JVM command 中 candidate CLI path 与该文件是同一 file identity。任何 path/pin/Response CodeSource 不一致、运行中漂移或无法取得稳定 identity 都不能记为该 test `PASS`。
+
+Wire authority 分别为 `capability-studio-gate-a-candidate-challenge-request-v1.schema.json`、`capability-studio-gate-a-candidate-challenge-response-v1.schema.json` 和 `capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json`；共享的 typed fingerprint、path、time、terminal 与 reason vocabulary 来自 `capability-studio-gate-a-common-v1.schema.json`，但 common Schema 本身不是可提交的 Evidence object。所有对象 Schema 都必须 `additionalProperties=false`，operation、vector、terminal、reason、exit mapping、环境 allowlist、network 和资源配额均为 closed value。
+
+A1 使用 `ProcessBuilder` 参数数组直接启动固定 main class，不经过 shell。环境变量采用空白起点和 closed allowlist；TCK provider 是 A1 artifact 内嵌、摘要由 Replay Profile、Challenge Pin 与 A1 resource manifest 绑定的独立 fixture JAR，只能解压到 scratch。启动前 A1 扫描 candidate JAR：拒绝 Provider implementation FQCN、该 SPI Service descriptor 或除 pinned SPI interface 外的 Provider namespace entry；同时比较 candidate 内 SPI class、`--candidate-spi-artifact` 中 SPI class 和 Challenge Pin 的 class fingerprint。Provider JAR 则必须通过 closed allowlist 和 Identity 校验。网络默认拒绝；输入只读；进程超时后杀死完整 process tree；stdout/stderr 有界并执行 credential/payload 泄漏扫描。退出码、单行协议和 terminal 不一致时为 `INVALID`。
+
+固定子进程形态为 `java -cp <tck-provider.jar><path-separator><candidate.jar> com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli --request <request.json>`，Provider 必须在 classpath 首位，class、classpath 项数/顺序和参数名均由协议常量决定。Challenge CLI 在调用 legacy Stage Acceptance 前先用同一 SPI `ServiceLoader` 解析唯一 Provider，验证其 FQCN、implementation class raw fingerprint 和 actual CodeSource raw fingerprint，再把三者写入 Response；A1 从父进程侧重新比较 Provider JAR exact bytes。仅调整 classpath 顺序不构成证明，candidate collision scan 与实际 CodeSource 校验必须同时成立。
+
+威胁模型假设 caller launcher、CI image、JVM 和 OS 隔离可信，目标是阻断误配置、自报通过、实现耦合和证据篡改；它不是恶意 candidate 的代码沙箱。若要对抗主动恶意代码，必须在调用方增加不可变容器镜像、`network=none`、只读挂载、隐藏/随机 TCK 和资源配额，且把 sandbox profile/attestation 纳入 caller pin。在环境不能证明网络隔离时，涉及该要求的结果为 `UNAVAILABLE`，不能静默降级。
+
+Harness 不信任 A1 的“测试通过”汇总。TEST_REPORT 的唯一 wire authority 是 `capability-studio-gate-a-independent-verification-result-v1.schema.json`，顶层固定：
+
+```text
+messageVersion / gateId=GATE-A / gateRevision=1
+challengeTrustPinRawFingerprint
+candidate / candidateSpi / A1 / Harness raw fingerprints
+Replay/Harness Profile / Schema Set / TCK / Provider fingerprints
+runMaterialRootFingerprint(kind=TREE_COMMITMENT)
+verificationProcessRuns[5] in fixed order
+testRuns[12] in GateTestEvidence TCK order
+mandatoryGuards.providerNamespaceCollision = REJECTED
+scratchBeforeCount=0 / scratchAfterCount=0
+startedAt / endedAt
+resultFingerprint(kind=CANONICAL_DOCUMENT)
+```
+
+Schema 使用 `prefixItems + items=false` 冻结两个数组，所有 nested object `additionalProperties=false`。同时提交 `gate-a-independent-verification-result-v1.golden.json`、其 JCS bytes/fingerprint，以及缺 invocation、跨 run ref 复用、outer time 漂移、Provider guard 伪通过和 unknown field 反例。`GateAIndependentVerificationResult v1` 的 12 个 `testRuns` 每项至少绑定：
+
+```text
+testId / expectedMechanism / mutationVector
+targetArtifactRawFingerprint / inputPinRawFingerprint
+commandRecordRef / requestRef / responseRef / processTranscriptRef
+derivedPinRef | null / derivedVerifierArtifactRef | null / derivedCandidateArtifactRef | null
+commandFingerprint / requestFingerprint / responseFingerprint
+processExitCode / observedTerminal / closedReasonCode
+stdoutRawFingerprint / stderrRawFingerprint
+startedAt / endedAt / timedOut / cancelled
+transcriptRawFingerprint / harnessRawFingerprint
+status / skipped = false
+```
+
+Harness 固定记录五个 ordered `verificationProcessRuns`：`NORMAL_A1`、`WRONG_VERIFIER_DIGEST_A1`、`REGISTRY_MUTATION_A1`、`TCK_MISMATCH_A1`、`PROVIDER_COLLISION_A1`。每行字段完整冻结为：
+
+```text
+runId / runPurpose
+commandRecordRef / invocationRecordRef / responseRef / processTranscriptRef
+derivedPinRef | null
+derivedVerifierArtifactRef | null
+derivedCandidateArtifactRef | null
+commandRawFingerprint / invocationRawFingerprint / responseRawFingerprint
+stdoutRawFingerprint / stderrRawFingerprint / transcriptRawFingerprint
+processExitCode / observedTerminal / closedReasonCode
+startedAt / endedAt / timedOut / cancelled
+```
+
+`NORMAL_A1` response 是 9 项 `GateAReplayVerificationResult`；digest/Registry/TCK 三行必须是对应 bootstrap `INVALID/2`；Provider collision 行使用由原 candidate 与 closed vector 生成、含 Provider FQCN/Service descriptor 碰撞的 derived candidate 和 synthetic pin，必须 `PROVIDER_NAMESPACE_COLLISION/INVALID/2`。前 9 个 `testRuns` 引用 normal A1 内部 9 个 candidate child-process material，后 3 个引用前三个 trust negative A1 material；Provider collision 是额外 mandatory bootstrap guard，不投影进既有 GateTestEvidence v1 12 项，但 A2 `PASS` 必须验证。每个 outer run 的 command/invocation/response/stdout/transcript 必须按 runId 一一对应，任一 ref 复用、缺失或跨 run 拼接为 `FAIL`。
+
+Harness 自己的进程事实由 caller launcher 外部观察，不能由 Harness 写进自己的 stdout。Caller create-new 生成 `HarnessInvocationRecord v1` 和 `HarnessProcessTranscript v1`，后者绑定 command、invocation、exit、started/ended、timeout/cancel、Harness actual CodeSource、pre/post TOCTOU identity snapshot、stdout/stderr exact refs。Harness stdout 必须恰好为 `UTF8(JCS(TEST_REPORT)) || LF`；GateResult 的 TEST_REPORT artifact exact bytes 与该 stdoutRef 是同一文件内容。Harness transcript 在进程退出后产生，不能被 TEST_REPORT 反向引用；它由 Admission Pin observed seal、process aggregate 和 reviewed material root 绑定。
+
+#### Attempt 与 Proof 分离
+
+进程“运行过”不等于形成了可准入证明。Gate A wire object 按 Authority 强度分为四类，禁止互相冒充：
+
+| 对象类型 | 代表对象 | 可表达失败 | 可进入 GateResult | 规则 |
+|---|---|---:|---:|---|
+| `Semantic Response` | `CandidateChallengeResponse`、`A1BootstrapResponse` | 是 | 否 | 只表达子进程自己知道的语义，不表达 exit/time/stdout |
+| `Observed Attempt` | `ProcessTranscript`、`HarnessProcessTranscript` | 是 | 只作为传递材料 | caller 观察进程事实；失败、超时、取消和未启动都在这里闭合 |
+| `Closed Proof` | `GateAReplayVerificationResult`、`TEST_REPORT` | 仅表达已闭合 Oracle 的 PASS/FAIL | 是 | 固定槽位及其 raw material 全部可达；缺材料时不得生成 |
+| `Admission Decision` | `GateAAdmissionVerificationResult` | 是 | 它本身是 A2 输出 | A2 对固定检查槽归约 `PASS/OPEN/FAIL/UNAVAILABLE` |
+
+因此 `TEST_REPORT` 是 **成功形成的不可变 Proof artifact**，不是 Harness 的通用 attempt envelope。只有下列条件同时满足时 Harness 才能向 stdout 写出 TEST_REPORT 并以 `0` 退出：
+
+1. 五个 outer A1 process slot 全部形成 caller-observed command、invocation、response、stdout/stderr 和 transcript；
+2. 正常 A1 的 9 项 candidate-path test 与三个 trust-plane negative test 共 12 项全部按固定 Oracle 得到 `PASS`；
+3. Provider collision guard 得到预期 `INVALID/2`；
+4. run material root 已 create-new、无未知文件、scratch residue 为零。
+
+Harness 在上述闭包形成前发生 mismatch、timeout、cancel 或观察能力不可用时，不得生成一个“部分 TEST_REPORT”。caller 只保留 `HarnessProcessTranscript` 与已经形成的非 Authority raw material，A2 将缺 TEST_REPORT 归约为 `OPEN`，已验证材料矛盾归约为 `FAIL`，OS/文件身份等安全观察不可得归约为 `UNAVAILABLE`。这避免 partial report 中的 `NOT_RUN` 槽位被误投影成 GateTestEvidence。
+
+`GateAReplayVerificationResult` 允许 `VERIFIED/INVALID/UNAVAILABLE`，但只有九个有序 test slot 的 command/request/response/transcript 全部形成时才可生成；每个 slot 使用 `PASS/FAIL`，不允许 `SKIPPED/NOT_RUN`。若 A1 在材料闭合前失败，outer caller 只接受 `A1BootstrapResponse + ProcessTranscript`，不能伪造 Replay Result。
+
+`GateAAdmissionVerificationResult` 与 Proof artifact 不同，它必须总是显式表达 A2 已经检查到的固定槽位。每个 requirement/artifact/test/guard/review slot 使用 `PASS | FAIL | MISSING | UNAVAILABLE`，Evidence ref 在 `PASS/FAIL` 时必填，在 `MISSING/UNAVAILABLE` 时为 null；A2 按固定优先级归约：
+
+```text
+任一安全观察不可得                         -> UNAVAILABLE / exit 3
+任一已读取事实与 pin、Schema、Oracle 矛盾   -> FAIL        / exit 2
+无矛盾但必需 artifact、Evidence 或 Authority 缺失 -> OPEN   / exit 4
+所有固定槽 PASS                            -> PASS        / exit 0
+```
+
+`nextAllowedGate=GATE-B` 只允许出现在 `PASS`；其余终态固定为 null。该归约由 Schema 冻结槽位与条件结构，由 A2 semantic verifier 复算跨数组优先级，不能依赖生产者自报 count。
+
+所有 process material 都以 create-new 文件进入最终 Admission Evidence Root，并使用 closed role `NON_AUTHORITY_TCK_EVIDENCE`。固定 closure 至少包含：
+
+```text
+ProcessCommandRecord v1
+CandidateChallengeRequest v1 or A1InvocationRecord v1
+CandidateChallengeResponse v1 or A1BootstrapResponse v1
+ProcessTranscript v1 -> stdoutRef + stderrRef
+HarnessInvocationRecord v1 / HarnessProcessTranscript v1（caller-owned observation）
+derived Challenge Pin 仅 Registry/TCK/Provider collision vector 必填
+derived verifier artifact 仅 digest/Registry；derived candidate 仅 Provider collision 必填
+```
+
+上述 material 的 `exactRef` 必须从 TEST_REPORT 可达；A2 逐字节读取并复算 command、request、response、stdout/stderr、exit/terminal、CodeSource、timeout/cancel、derived pin/artifact 和 transcript fingerprint。仅有摘要字段而没有可达 raw material 时为 `OPEN`，摘要与 raw bytes 不一致时为 `FAIL`。`NON_AUTHORITY_TCK_EVIDENCE` 永远不能成为 Challenge/Admission/Reviewer Authority，也不能作为 expected pin 来源。
+
+Wire authority 增加：
+
+```text
+capability-studio-gate-a-process-command-record-v1.schema.json
+capability-studio-gate-a-a1-invocation-record-v1.schema.json
+capability-studio-gate-a-a1-bootstrap-response-v1.schema.json
+capability-studio-gate-a-process-transcript-v1.schema.json
+capability-studio-gate-a-harness-invocation-record-v1.schema.json
+capability-studio-gate-a-harness-process-transcript-v1.schema.json
+capability-studio-gate-a-independent-verification-result-v1.schema.json
+```
+
+新增 material 的 canonical fingerprint domain 分别固定为 `RG-CS-GATE-A-PROCESS-COMMAND-v1`、`RG-CS-GATE-A-A1-INVOCATION-v1`、`RG-CS-GATE-A-A1-BOOTSTRAP-RESPONSE-v1`、`RG-CS-GATE-A-PROCESS-TRANSCRIPT-v1`、`RG-CS-GATE-A-HARNESS-INVOCATION-v1` 和 `RG-CS-GATE-A-HARNESS-PROCESS-TRANSCRIPT-v1`；统一对自身 `*Fingerprint=null` 的 canonical document 计算。`stdoutRef/stderrRef/derived*ArtifactRef` 使用 `RAW_BYTES`，不把被引用文件内容内嵌进自身 fingerprint，也不允许 material 反向引用 TEST_REPORT，因而闭包保持单向。
+
+三个 trust-plane negative run 还必须分别记录 wrong digest、mutated Registry artifact 或 mismatched TCK pin 的 exact raw fingerprint。派生 pin/artifact 只能由原 Challenge Pin、packaged TCK closed vector 和原 A1 artifact 确定性产生；A2 从原始材料重算派生结果，再验证 12 个 `GateTestEvidence v1` 只是 `testRuns` 的固定 projection。稀疏的 GateTestEvidence v1 不能单独成为 Oracle。
+
+两个 review aggregate 的公式固定为：
+
+```text
+gateTestEvidenceAggregateFingerprint
+  = H("RG-CS-GATE-A-TEST-EVIDENCE-AGGREGATE-v1"
+      || canonical([{testId, evidenceRawFingerprint}, ...] in TCK order))
+
+processMaterialAggregateFingerprint
+  = H("RG-CS-GATE-A-PROCESS-MATERIAL-AGGREGATE-v1"
+      || canonical({
+           harnessProcess: {invocationRawFingerprint, commandRawFingerprint,
+             stdoutRawFingerprint, stderrRawFingerprint, transcriptRawFingerprint},
+           verificationProcessRuns: [NORMAL_A1, WRONG_VERIFIER_DIGEST_A1,
+             REGISTRY_MUTATION_A1, TCK_MISMATCH_A1, PROVIDER_COLLISION_A1]
+             each as {runId, commandRawFingerprint, invocationRawFingerprint,
+               responseRawFingerprint, stdoutRawFingerprint, stderrRawFingerprint,
+               transcriptRawFingerprint, derivedPinRawFingerprint|null,
+               derivedVerifierArtifactRawFingerprint|null,
+               derivedCandidateArtifactRawFingerprint|null},
+           testRuns: [{testId, commandRawFingerprint, requestRawFingerprint,
+             responseRawFingerprint, transcriptRawFingerprint,
+             derivedPinRawFingerprint|null,
+             derivedVerifierArtifactRawFingerprint|null,
+             derivedCandidateArtifactRawFingerprint|null}, ...] in TCK order
+         }))
+```
+
+12 项 TCK 与 operation/Oracle 的映射固定如下：
+
+| Test ID | 执行面 | 独立 Oracle |
+|---|---|---|
+| `PLACEHOLDER_REJECTED` | typed replay | 占位 Evidence 必须 `INVALID/2` |
+| `WRONG_KIND_REJECTED` | typed replay | kind 不匹配必须 `INVALID/2` |
+| `WRONG_VERIFIER_REVISION_REJECTED` | typed replay | revision 不匹配必须 `INVALID/2` |
+| `VERIFIER_DIGEST_MUTATION_REJECTED` | Harness -> isolated A1 | actual CodeSource 与 wrong verifier digest pin 不一致，进程必须 `INVALID/2` |
+| `REGISTRY_MUTATION_REJECTED` | Harness -> isolated A1 | mutated Registry artifact 与 Build Identity/pin 不一致，进程必须 `INVALID/2` |
+| `VERIFIER_TCK_MISMATCH_REJECTED` | Harness -> isolated A1 | Replay Profile/TCK fingerprint 与 mismatched pin 不一致，进程必须 `INVALID/2` |
+| `LEGACY_ACCEPTED_COMPLETE_AUTHORITY` | legacy acceptance | 完整 TCK Authority 必须且只能 `ACCEPTED/0` |
+| `LEGACY_ACCEPTED_MISSING_STORE_REJECTED` | legacy acceptance | 缺 Store 必须且只能 `NOT_ACCEPTED/3` |
+| `LEGACY_ACCEPTED_MISSING_OWNER_REJECTED` | legacy acceptance | 缺 Owner 必须且只能 `NOT_ACCEPTED/3` |
+| `LEGACY_ACCEPTED_MISSING_TARGET_REJECTED` | legacy acceptance | 缺 Target 必须且只能 `NOT_ACCEPTED/3` |
+| `MANIFEST_IDENTITY_DRIFT_REJECTED` | typed replay + fixed mutator | 已检测到 file identity 漂移必须 `INVALID/2`；平台无法读取稳定 identity 时 A1 整体 `UNAVAILABLE/3`，本 test 不得记为 PASS |
+| `HONEST_INCOMPLETE_ACCEPTED` | typed replay | 未覆盖 obligation 保持 `NOT_RUN/BLOCKED`，整体必须 `INCOMPLETE/4` |
+
+mutation vector 只能来自 packaged TCK closed enum。它作用于 scratch fixture，不修改原 Evidence Root。A1 输出中记录 vector ID 和结果，不记录业务 Payload。
+
+### 16.5 A0/A1/A2 机器结果与退出条件
+
+三个子门冻结四份 strict Schema，避免把 A1 的中间 replay 结果、Harness 最终报告或日志文案互相冒充：
+
+| 子门结果 | 固定分母 | 允许终态 | 必绑内容 |
+|---|---|---|---|
+| `GateACandidateReplayResult v1` | 3 adapter、14 FELT obligation、formal pass `0/27` | `STRUCTURE_VERIFIED/INCOMPLETE/INVALID/UNAVAILABLE` | candidate/Challenge Pin/manifest/input root/registry、3 adapter results、14 obligation results、derived counts、reason、fingerprint |
+| `GateAReplayVerificationResult v1` + caller-owned Replay Proof Envelope | 9 candidate-path TCK，顺序固定，skipped `0` | result 可为 `VERIFIED/INVALID/UNAVAILABLE`；只有外层 A1 producer transcript、stdout bytes 与 material root 闭合后才成为 diagnostic Proof | Challenge Pin/candidate/A1 actual CodeSource、Replay Profile/TCK/registry、9 complete child transcripts、A1 producer transcript、scratch residue、time、fingerprint |
+| `GateAIndependentVerificationResult v1` / TEST_REPORT | 12 TCK + Provider collision guard，顺序固定，skipped `0` | 仅代表完整 `VERIFIED` Proof；Harness 失败只保留 caller transcript | Challenge Pin/candidate/SPI/Provider/A1/Harness actual CodeSource、Replay/Harness Profile/TCK/registry、run material root、5 outer + 12 child transcripts、scratch residue、time、fingerprint |
+| `GateAAdmissionVerificationResult v1` + caller-owned Admission Proof Envelope | 5 requirement、4 artifact、12 test、2 mandatory guard、1 trusted review；18 项固定 Guard 诊断投影 | result 可为 `PASS/OPEN/FAIL/UNAVAILABLE`；只有父 transcript 与类型化 Envelope 闭合后成为最终进程 Proof | GateResult/Admission Pin/Challenge Pin/Admission Evidence Root/A2 actual CodeSource、pre/post identity、固定 check slots、Guard root cause/raw process material/review trust、rollback、formal `0/27`、next gate、fingerprint |
+
+对应 Schema 文件固定为：
+
+```text
+capability-studio-gate-a-candidate-replay-result-v1.schema.json
+capability-studio-gate-a-replay-verification-result-v1.schema.json
+capability-studio-gate-a-independent-verification-result-v1.schema.json
+capability-studio-gate-a-admission-verification-result-v1.schema.json
+```
+
+`GateAReplayVerificationResult v1` 是 A1 提供给 Harness 的 9 项中间结果，不是 TEST_REPORT，也不具备 admission 语义；Harness 只有在三个独立负向进程 transcript 也闭合后，才能产生 12 项 `GateAIndependentVerificationResult v1`。
+
+#### Schema 与 Semantic Guard 的单一职责
+
+Gate A 不允许 Schema、A1、Harness 和 A2 各自维护一套相似但不相同的判断逻辑：
+
+| 层次 | 负责 | 明确不负责 |
+|---|---|---|
+| strict Schema | object shape、固定槽位与顺序、类型、closed enum、terminal/reason 判别联合 | 派生计数、fingerprint 复算、ref 可达性、跨材料绑定、时间与 CodeSource |
+| Semantic Guard | 从固定槽位和 caller-observed bytes 重算 projection、terminal、closure、identity 与 trust | 发明新分母、接受 producer 自报值作为 expected pin |
+| Process Attempt | 父进程记录 exit/stdout/stderr/time/timeout/cancel/actual CodeSource | 自称 Proof 或 TEST_REPORT |
+| Closed Proof | 仅在全部固定材料闭合后存在，内容不可部分成功 | 表达失败 Harness 的半成品报告 |
+
+机器权威位于 `docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/guard-catalog-v1.json`。每条 Guard 固定 `owner/phase/inputKind/mismatch/unavailable/admissionTarget`；跨材料规则若没有 catalog entry、固定 A2 落槽和 attack vector，不得进入实现。A0 的 `3 + 14` 与 A1 的 `9` 个数组继续由 Schema 固定，但 count 字段只是兼容投影；A1/Harness 用 `A0_SLOT_COUNT_PROJECTION` 和 `A1_SLOT_COUNT_PROJECTION` 一次性重算。这样 Schema 不再用 65 个条件分支模拟加法，Verifier 也无法绕过同一批攻击向量。
+
+Guard 验证分为三层，覆盖率不得混算：
+
+1. `collector-contract-vectors` 只给 pure reducer 输入 `present/available/matches`，证明状态和 admission target 归约，不构成安全攻击证据；
+2. `semantic-guard-vectors` 对真实 wire document 做 Schema-valid mutation，证明 count/terminal/conclusion 等 projection drift 会被拒绝；
+3. `material-attacks` 从 canonical base 生成真实文件、目录、JAR、pin、process material、review signature 和 tree root，再由独立 collector 读取 actual bytes/path/time/identity 得出 Guard 结果。v1 固定 38 个 case：前 18 个按 Catalog 顺序逐条覆盖 Guard；后 20 个补充攻击覆盖 A0 actual-byte closure、A1 Envelope ref/digest/material-root/terminal-exit closure、A2 非 Guard slot precedence，以及 Reviewer key/issuer/authority/revocation/policy、候选绑定、审阅与撤销时间窗、check/finding、findingId、canonical order、`openP1` 与 `skippedCount` projection。
+
+D0 的“18/18 Guard 攻击覆盖”只统计第三层的前 18 个主攻击；20 个补充攻击增加闭包和治理语义深度但不虚增 Guard 覆盖率。第二层可以补充但不能替代 collector；第一层只统计 reducer path。Java test-only independent reference 必须独立物化并复现全部 38 个 case 的同一 `guardId/status/admissionTarget/conclusion/reason/exit`，不能调用 Python/Node runner，也不能接受预归约的 `matches` 布尔值。
+
+#### Authority Matrix 与 Observation Ledger
+
+同一事实出现在多个 wire object 中，不代表存在多个 Authority。机器可读矩阵位于 `semantic-guards/authority-matrix-v1.json`，核心归属冻结如下：
+
+| 事实 | 分类 | 唯一 Authority | 其余字段的性质 |
+|---|---|---|---|
+| TCK 槽位、预期机制、预期 terminal/exit | `EXPECTATION` | caller-pinned TCK + role Profile | A1/TEST_REPORT/A2 中均为 projection |
+| expected artifact identity | `EXPECTATION` | Challenge Pin | Build Identity、Result、CodeSource 只能被比对 |
+| exit、stdout/stderr、time、timeout、cancel、actual CodeSource 与 pre/post file identity | `OBSERVATION` | 直接父进程创建的 ProcessTranscript | child Response 不得自报；非零协议终态不等于 process crash |
+| A0 typed adapter 事实 | `PROOF_ARTIFACT` | A1 对 caller-pinned raw input 的独立 replay | A0 status/count/terminal 均待复算 |
+| A1 slot outcome | `DERIVED_PROJECTION` | TCK expectation + process observation 的独立归约 | producer status/passCount 不是 Oracle |
+| TEST_REPORT | `PROOF_ARTIFACT` | Harness 完整成功后由 caller 对 canonical stdout materialize | 只证明闭合条件；底层 process facts 的 Authority 仍是 parent transcript |
+| review finding | `PROOF_ARTIFACT` | signed Review Body + Envelope + caller trust policy/revocation | 签名证明外部 Authority 声明；三处 count 都是兼容投影 |
+| observed output/root | `OBSERVATION` | Admission Pin + sealed Evidence Root actual bytes | 不能反向修改 Challenge trust basis |
+| Gate A admission | `ADMISSION_DECISION` | caller-pinned A2 + controlled launcher 的 exit/fingerprint 双检 | A1/Harness `0` 或 GateResult 自报 PASS 均无权限 |
+
+每个进程内部只允许一条判断流水线：
+
+```text
+pinned expectation + caller observation + reachable raw material
+  -> immutable Observation Ledger
+  -> ordered Semantic Guard evaluation
+  -> deterministic Derivation Engine
+  -> wire Result Projection
+```
+
+Observation Ledger 是实现内部的 immutable typed model，不新增可被候选伪造的通用 wire document。每条记录必须保留 `factClass/sourceRef/observer/value-or-fingerprint/observedAt`，derived fact 还必须带 `guardId` 和全部 source fact IDs。Result writer 只能读取 Derivation Engine 的输出，不能重新统计或自行改 terminal。
+
+这里的“单一引擎”指每个信任域内部只有一个 derivation path，不指共享一个生产 JAR。A0、A1/Harness 和 A2 必须各自实现同一 machine-readable catalog/vector，仍然不共享 Maven runtime dependency；否则一个公共 bug 会同时污染 producer、independent verifier 和 admission checker。跨实现一致性由共同 Schema、Guard Catalog、Authority Matrix 与 golden vectors证明，而不是由共享业务代码“保证”。
+
+#### A0 的深模块实现结构
+
+A0 不直接提交一个同时解析 JSON、遍历目录、调用 adapter、计算状态和打印 CLI 的大类。现有公共入口保持兼容，但内部按事实所有权收敛为四个深模块；每个模块暴露一个窄输入和一个不可变输出，禁止跨层传递可修改的 `JsonNode` 或用通用 `Map` 表达领域事实：
+
+| 模块 | 输入 | 唯一输出 | 明确禁止 |
+|---|---|---|---|
+| `Manifest Compiler` | bounded exact manifest bytes、packaged Schema | `CompiledReplayPlan`：固定 3 个 adapter slot、14 个 obligation slot、canonical manifest fingerprint、closed refs | 访问文件系统、调用 verifier、推导 terminal |
+| `Evidence Collector` | absolute normalized root、compiled inventory | `BundleObservation`：pre/post file identity、exact bytes fingerprint、size、owner/mode/link count、root closure | 信任 manifest 自报摘要、跟随 symlink、把不可读事实降级为 mismatch |
+| `Typed Replay Registry` | 一个 closed `ReplayRequest` 与已封存 subject observation | `ReplayObservation(VERIFIED/INVALID/UNAVAILABLE, verifier identity)` | 动态类名、任意参数、Provider fallback、写 Evidence Root |
+| `Candidate Deriver` | compiled plan、bundle observation、3 个 replay observation | `CandidateReplayDecision`：全部 projection、terminal、reason、source fact IDs | 重新读文件、重新解析 wire、接受 producer count/terminal 作为 Authority |
+
+编排门面 `CapabilityStudioFormalEvidenceRunVerifier` 只允许执行以下固定流水线：
+
+```text
+read exact bytes once
+  -> compile strict wire
+  -> collect pre-observation
+  -> replay three closed adapters against the same sealed subjects
+  -> collect post-observation
+  -> reject identity / bytes / root drift
+  -> derive once
+  -> project canonical result once
+```
+
+`CapabilityStudioFormalEvidenceRunVerifyCli` 只是 transport adapter：解析固定参数、调用门面、输出 payload-free summary、映射退出码。它不能捕获后改写领域结论，也不能通过日志文本引入第五种状态。package-private mutation observer 仅用于在确定位置制造 TOCTOU 测试，不进入生产 SPI。
+
+为避免“拆成很多小类但复杂度仍外泄”，A0 最多新增两个 package-private 深模块：文件闭包 Collector 和纯 Deriver；严格 wire helper 与 closed Registry 复用现有类名演进。门面目标控制在约 150 行，只保留阶段顺序和 failure mapping。任何只能通过跨模块回调、共享可变状态或第二次读取 manifest 才能实现的功能，视为边界设计错误。
+
+A0 代码开始前再冻结以下实现验收：
+
+1. `Manifest Compiler` 的输入只是一份 exact byte array；duplicate key、trailing JSON、non-canonical encoding、Schema drift 在访问 Evidence Root 前失败。
+2. `Evidence Collector` 对 manifest、root 与每个 subject 保留 pre/post identity；稳定 identity 不可得时返回 `UNAVAILABLE`，不能假定未变化。
+3. 三个 adapter descriptor 构成编译期闭集；role、kind、verifier ID、revision 任一不匹配都不得调用底层 verifier。
+4. `Candidate Deriver` 是无 I/O 纯函数；固定向量覆盖 adapter count、14 obligation count、terminal precedence 与 `formalPassCount=0/27`。
+5. result writer 只序列化 `CandidateReplayDecision`；`STRUCTURE_VERIFIED/INCOMPLETE` 均使用退出码 `4`，生产代码不存在 `PASS/ACCEPTED` 分支。
+6. 现有 placeholder、wrong kind、wrong revision、manifest mutation、hard-link、symlink、identity drift 与 honest incomplete 测试全部通过；全量构建之外，再由独立 A1 对产物重放，A0 自测不能充当 Gate A Proof。
+
+A0 terminal 只表达 typed adapter replay 的结构可信度，不表达 formal acceptance：`UNAVAILABLE > INVALID > STRUCTURE_VERIFIED(any adapter VERIFIED) > INCOMPLETE(all adapters NOT_RUN)`。`FELT-01..14` 的 `FAIL/BLOCKED/NOT_RUN` 是 formal gap projection，不能把 A0 推进为 `ACCEPTED`，也不改变 `formalPassCount=0/27`。A1 terminal 由固定 9 项归约：任一失败且 observation 不可得为 `UNAVAILABLE`，其余失败为 `INVALID`，全 PASS 才是 `VERIFIED`。这些推导表由 `semantic-guard-vectors-v1.json` 覆盖，Schema 只要求 terminal/reason 形成合法判别联合。
+
+`GateAReplayVerificationResult` 自身只是九槽结果，不得单独称为 Proof。Harness 作为 A1 的直接父进程，在 A1 返回后创建 `GateAReplayProofEnvelope v1`，绑定 result exact raw bytes、A1 producer ProcessTranscript、producer material root、Challenge Pin、Replay Profile 和 expected/observed CodeSource。Envelope 对自身 `envelopeFingerprint=null` 使用 `RG-CS-GATE-A1-PROOF-ENVELOPE-v1` 计算；A1 result 不反向引用 Envelope，因此没有 stdout/transcript 自哈希循环。
+
+`INVALID/UNAVAILABLE` result 只有在 A1 自身正常完成协议输出、九个子槽材料完整，且 caller transcript 的 exit/terminal/stdout 与 result 一致时，才能进入 closed diagnostic Envelope。子测试进程失败但 A1 成功收齐材料，允许得到该 Envelope；A1 自身 crash、timeout、cancel、stdout 截断或 material root 未封存时，只保留 outer ProcessTranscript，禁止创建 Envelope。它不是 TEST_REPORT，也不能进入 GateResult 的 `TEST_REPORT` artifact。Harness 必须用 `A1_SLOT_OUTCOME_BINDING` 拒绝“9 项全 PASS 但自报 INVALID/UNAVAILABLE”之类的 Schema-valid semantic drift。
+
+`GateAReplayVerificationResult` 的 Schema 和字段均不得自称 Proof。`GateAReplayProofEnvelope` 必须额外冻结 `closureStatus=CLOSED`、Result/Process 的 expected messageVersion、`replayResultRef`、`observedProcessState=COMPLETED` 以及 terminal/exit 映射；消费者必须读取被引用原始字节并验证类型，不能把任意 rawRef 当作闭合 Result。
+
+A2 的固定业务分母仍是 `5 requirement / 4 artifact / 12 test / 2 mandatory guard / 1 trusted review`。为避免这些粗粒度 slot 把根因压扁，结果额外包含 18 项固定顺序的 `semanticGuardResults`，逐项记录 `guardId/admissionTarget/status/reasonCode/sourceFactIds/observationRefs/collectorRevision/derivationRevision`。`PASS/FAIL/UNAVAILABLE` 必须至少绑定一个 caller-readable observation ref，`MISSING` 的 observation refs 固定为空；不能用同一个通用 GateResult ref 伪装所有 Guard 的观察证据。
+
+Guard 按 Catalog 顺序全部评估，不因首个失败短路。多个 Guard 映射同一 admission slot 时，slot 状态按 `UNAVAILABLE > FAIL > MISSING > PASS` 归约，observation refs 按 canonical URI 排序去重，source fact IDs 按 Authority Matrix 顺序排序去重；所有失败 Guard 仍逐项保留。该数组只是诊断投影，不增加 acceptance denominator；A2 必须复算 Guard 状态与目标 slot 的一致性。Guard Catalog 升级、增删或换序必须提升 Gate revision，不能在同一 revision 动态增长。
+
+`GateAAdmissionVerificationResult` 同样不是最终进程 Proof。controlled launcher 在 A2 结束后创建 `GateAAdmissionProofEnvelope v1`，绑定 A2 result raw bytes、父 `ProcessTranscript`、Challenge/Admission Pin、expected/observed A2 CodeSource 和 expected messageVersion。协议正常完成可闭合 `PASS/0`、`OPEN/4`、`FAIL/2`、`UNAVAILABLE/3` 四种审计结果；只有 `PASS/0` 产生 Gate B permission。A2 crash、timeout、cancel、未启动、stdout 截断、CodeSource TOCTOU drift 或 result/transcript 类型不符时，不得创建 Envelope，只保留 attempt transcript。
+
+四份结果都使用 `additionalProperties=false`。A0/A1 使用 closed terminal/reason 判别联合；TEST_REPORT 是 success-only Proof，没有 terminal/reason；A2 使用 closed conclusion/reason。canonical UTC 仅出现在拥有时间事实的对象中。所有 count 都是待验证投影，不能由生产者升级为 Authority。结果 fingerprint 分别使用互不复用的 domain separator，并对 `resultFingerprint=null` 的 canonical document 计算：
+
+```text
+GateACandidateReplayResult        -> RG-CS-GATE-A0-RESULT-v1
+GateAReplayVerificationResult     -> RG-CS-GATE-A1-REPLAY-RESULT-v1
+GateAIndependentVerificationResult-> RG-CS-GATE-A1-REPORT-v1
+GateAAdmissionVerificationResult  -> RG-CS-GATE-A2-RESULT-v1
+```
+
+CLI 退出码同样冻结，调用方不得把其他阶段的 `0` 当作 Gate A admission：
+
+| 命令 | 终态 | 退出码 |
+|---|---|---:|
+| A0 candidate challenge | `STRUCTURE_VERIFIED/INCOMPLETE` | `4` |
+| A0 candidate challenge | `INVALID` | `2` |
+| A0 candidate challenge | `UNAVAILABLE` | `3` |
+| A1 verifier | 闭合 `GateAReplayVerificationResult.VERIFIED` + diagnostic Envelope | `0` |
+| A1 verifier | 闭合 `INVALID` diagnostic Result + Envelope；父进程仍为 `COMPLETED` | `2` |
+| A1 verifier | 闭合 `UNAVAILABLE` diagnostic Result + Envelope；父进程仍为 `COMPLETED` | `3` |
+| Harness | 闭合 success-only TEST_REPORT；报告自身无 terminal | `0` |
+| A1/Harness non-protocol crash/timeout/cancel | 无 Envelope/TEST_REPORT；caller 只保留父 ProcessTranscript | 实际异常/`143/130/255` |
+| A2 admission | `PASS` | `0` |
+| A2 admission | `OPEN` | `4` |
+| A2 admission | `FAIL` | `2` |
+| A2 admission | `UNAVAILABLE` | `3` |
+
+受控 CI 的 Gate B permission 必须同时满足：执行入口是 caller-pinned A2 actual CodeSource、父 ProcessTranscript 为 `COMPLETED/0` 且 TOCTOU identity 闭合、stdout 的 canonical `GateAAdmissionVerificationResult.conclusion=PASS`、结果 fingerprint 复算正确，并由 caller 创建可复验的 `GateAAdmissionProofEnvelope(PASS/0)`。单独看到 A1/Harness exit `0`、某个 `PASS` 字符串、未闭合 A2 result 或 GateResult 自报 decision 都不能放行。
+
+A2 只有在以下条件全部成立时才可输出 `PASS`：
+
+```text
+requirements = exact 5/5
+artifacts = exact 4/4 and pairwise distinct
+tests = exact 12/12 PASS, skipped = 0, fingerprints pairwise distinct
+mandatoryGuards = provider collision rejected + review count inconsistency rejected
+semanticGuardResults = exact 18/18 PASS and each target slot agrees
+trustedReview = verified, openP0 = 0, openP1 = 0, skipped = 0
+rollbackTarget = resolvable and candidate-bound
+formalPassCount = 0 / formalExpectedCount = 27
+previousGateResultRef = null
+nextAllowedGate = GATE-B
+Challenge Pin -> Admission Pin lifecycle binding = valid
+Admission Evidence Root + TEST_REPORT transitive material closure = valid
+sealed run material root fingerprint = TEST_REPORT = Admission Pin
+reviewed material root = Review Body = Envelope = Admission Pin
+all caller pins, Build Identities, time ordering and GateResult fingerprint = valid
+```
+
+任一 required fact 缺失为 `OPEN`，已验证不一致为 `FAIL`，运行时或安全文件语义不可得为 `UNAVAILABLE`。A0/A1/Harness 的成功终态不是 A2 的 `PASS`，四份结果 fingerprint 逐级绑定但不得反向充当 expected pin。
+
+### Phase 0：Gate A 独立信任闭环
 
 交付：
 
@@ -1106,12 +2064,24 @@ GateResult 自身可位于 Evidence Root 内或外，但验证开始、每份 Ev
 - 现有 FELT manifest verifier 的三项 P1 修复；
 - Formal Input Tree `verify` 模式；
 - 开发/正式 run purpose 语义澄清。
+- `A0` typed replay Implementation Candidate；
+- `A1` standalone Independent Verifier；
+- caller-pinned Conformance Harness、五组 A1 transcript 与 caller-observed Harness transcript；
+- `A2` caller-owned Gate Admission Checker 与 trust pin。
+- Candidate Challenge Protocol v1；
+- A0/A1/Harness/A2 四份 strict result Schema；
+- Reviewer Authority Envelope 与 caller-pinned review trust policy。
 
 退出标准：
 
 - 自写占位 JSON 不能产生 FELT `PASS`；
 - manifest 在验证期间被替换/删除会失败关闭；
 - `NOT_RUN/BLOCKED` 不需要伪造 PASS Evidence；
+- candidate、independent verifier、Harness、gate verifier 不能复用同一 artifact 或 Registry；
+- A1 artifact 重放 9 项 candidate-path TCK，Harness 黑盒完成 3 项 trust-plane TCK，不能只读取自报 `PASS`；
+- GateResult 只从 out-of-band trust pin 和独立复算得到 `PASS/OPEN/FAIL`；
+- A1/Harness/A2 actual CodeSource 与 caller-pinned artifact 三方一致；
+- reviewer 不能使用 Evidence Root 内自签 Authority 或旁附公钥；
 - focused tests 和 Test Kit `clean verify` 全绿。
 
 ### Phase 1：Plan Compiler，先不执行副作用
@@ -1436,22 +2406,23 @@ closedReasonCodes
 | 根因命中 | 15 | 15 | 关闭控制流分散与 Evidence 语义脱节 |
 | 接口深度 | 12 | 11 | 对调用方收敛为 typed run/verify，仍需实现验证 |
 | 合同完整性 | 12 | 12 | 保持 27/9/14 固定分母 |
-| 安全与 Authority 边界 | 14 | 14 | 不允许本地自证外部事实 |
-| 恢复与失败关闭 | 12 | 12 | effect model、action key、exact retry 完整 |
-| Evidence 可复验性 | 13 | 13 | typed proof、Ledger、三层 commitment |
+| 安全与 Authority 边界 | 14 | 14 | C+ 角色、pin、Reviewer candidate/time/revocation 与 38 个真实攻击已闭合 |
+| 恢复与失败关闭 | 12 | 11 | effect model、action key、exact retry 已设计，尚待进程级演练 |
+| Evidence 可复验性 | 13 | 13 | typed proof、Ledger、三层 commitment、44-entry profile 与双实现 reference 已闭合 |
 | 兼容与迁移 | 9 | 8 | 三道可回滚 Gate 已拆分，仍需真实 shadow 数据 |
-| 可测试性 | 8 | 8 | Compiler/Runner/Ledger/Adapter/Compatibility 矩阵明确 |
+| 可测试性 | 8 | 8 | companion Schema、结构负例、语义负例、38 个真实材料攻击与全量构建已闭合 |
 | 运维与容量 | 5 | 5 | 开发参考 SLO、背压、告警和恢复演练已冻结 |
-| **合计** | **100** | **98** | **第二轮自审，仍须独立复审确认** |
+| **合计** | **100** | **97** | **D0 已通过；剩余扣分只属于生产 A0/A1/A2 和 Gate B shadow，不得提前计入完成** |
 
-扣分项不会改变架构方向，但必须在 Gate A/B 关闭：
+当前扣分项必须先按所属门禁关闭，不能笼统留到 Gate A/B 以后：
 
-1. 用真实旧路径结果验证 shadow/differential 的输出粒度和性能成本。
-2. 用 packaged independent verifier mutation/TCK 证明调用方固定制品的信任边界。
+1. `D0`：已完成 companion Schema、golden/negative fixture、44-entry profile、双 reference、38 个真实攻击与独立 `P0/P1=0` 复审。
+2. `A0/A1/A2`：仍需用 packaged independent verifier、独立 admission artifact、Provider collision 与 mutation TCK 证明生产制品的信任边界。
+3. `Gate B`：仍需用真实旧路径结果验证 shadow/differential 的输出粒度和性能成本。
 
 ## 24. 下一步实施卡
 
-下一步只实施 `GATE-A TYPED_REPLAY`：
+下一步严格按 `A0 -> A1 -> A2` 实施 Gate A，不并行偷跑 Gate B：
 
 ```text
 现有 FELT manifest verifier

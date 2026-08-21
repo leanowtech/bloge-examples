@@ -1,0 +1,41 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-challenge-response.v1",
+  "challengeId": "CHALLENGE-LEGACY-002",
+  "operation": "LEGACY_STAGE_ACCEPTANCE_V2",
+  "tckVectorId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+  "observedTerminal": "NOT_ACCEPTED",
+  "closedReasonCode": "MISSING_STORE",
+  "candidateCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "authorityProviderFqcn": "com.leanowtech.bloge.gateway.testkit.tck.PinnedAuthorityProvider",
+  "authorityProviderCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "authorityProviderClassRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
+  },
+  "operationResultKind": "LEGACY_ACCEPTANCE_RESULT",
+  "operationResult": {
+    "messageVersion": "resource-gateway.capability-studio.gate-a.legacy-acceptance-result.v1",
+    "terminal": "NOT_ACCEPTED",
+    "reasonCode": "MISSING_OWNER",
+    "authorityBindingComplete": false
+  },
+  "operationResultFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:4949494949494949494949494949494949494949494949494949494949494949"
+  },
+  "responseFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}

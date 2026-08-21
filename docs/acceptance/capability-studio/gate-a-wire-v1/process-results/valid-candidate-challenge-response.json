@@ -1,0 +1,183 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-challenge-response.v1",
+  "challengeId": "CHALLENGE-DEMO-001",
+  "operation": "TYPED_REPLAY_V1",
+  "tckVectorId": "HONEST_INCOMPLETE_ACCEPTED",
+  "observedTerminal": "INCOMPLETE",
+  "closedReasonCode": "A0_INCOMPLETE",
+  "candidateCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "authorityProviderFqcn": null,
+  "authorityProviderCodeSourceRawFingerprint": null,
+  "authorityProviderClassRawFingerprint": null,
+  "operationResultKind": "TYPED_REPLAY_RESULT",
+  "operationResult": {
+    "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-replay-result.v1",
+    "resultId": "A0-DEMO-001",
+    "gateRevision": 1,
+    "candidateArtifactRef": {
+      "uri": "artifacts/candidate.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "challengeTrustPinRef": {
+      "uri": "pins/challenge.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    },
+    "formalEvidenceManifestRef": {
+      "uri": "inputs/formal-evidence-run-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:3535353535353535353535353535353535353535353535353535353535353535"
+      }
+    },
+    "challengeInputRootRef": {
+      "uri": "inputs/challenge-root.tree",
+      "fingerprint": {
+        "kind": "TREE_COMMITMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:3636363636363636363636363636363636363636363636363636363636363636"
+      }
+    },
+    "registryRef": {
+      "uri": "registries/candidate.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
+      }
+    },
+    "adapterResults": [
+      {
+        "adapterKind": "FORMAL_INPUT_TREE_V1",
+        "verifierId": "CapabilityStudioFormalInputTreeSnapshotter.verify",
+        "verifierRevision": 1,
+        "status": "NOT_RUN",
+        "resultRef": null
+      },
+      {
+        "adapterKind": "EXECUTION_LEASE_DURABLE_WRAPPER_V1",
+        "verifierId": "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify",
+        "verifierRevision": 1,
+        "status": "NOT_RUN",
+        "resultRef": null
+      },
+      {
+        "adapterKind": "STAGE_ACCEPTANCE_RESULT_V2",
+        "verifierId": "CapabilityStudioStageAcceptanceResultV2Verifier.verify",
+        "verifierRevision": 2,
+        "status": "NOT_RUN",
+        "resultRef": null
+      }
+    ],
+    "obligationResults": [
+      {
+        "obligationId": "FELT-01",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-02",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-03",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-04",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-05",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-06",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-07",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-08",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-09",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-10",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-11",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-12",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-13",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      },
+      {
+        "obligationId": "FELT-14",
+        "status": "NOT_RUN",
+        "evidenceRefs": []
+      }
+    ],
+    "adapterVerifiedCount": 0,
+    "adapterInvalidCount": 0,
+    "adapterUnavailableCount": 0,
+    "adapterNotRunCount": 3,
+    "obligationFailedCount": 0,
+    "obligationBlockedCount": 0,
+    "obligationNotRunCount": 14,
+    "formalPassCount": 0,
+    "formalExpectedCount": 27,
+    "terminal": "INCOMPLETE",
+    "reasonCode": "A0_INCOMPLETE",
+    "resultFingerprint": {
+      "kind": "CANONICAL_DOCUMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:4343434343434343434343434343434343434343434343434343434343434343"
+    }
+  },
+  "operationResultFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:4545454545454545454545454545454545454545454545454545454545454545"
+  },
+  "responseFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:4646464646464646464646464646464646464646464646464646464646464646"
+  }
+}

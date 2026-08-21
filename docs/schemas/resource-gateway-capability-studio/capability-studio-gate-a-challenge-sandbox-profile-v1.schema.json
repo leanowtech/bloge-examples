@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+  "title": "Capability Studio Gate A challenge sandbox profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "profileId", "revision", "network", "filesystem", "process", "output", "profileFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.challenge-sandbox-profile.v1"},
+    "profileId": {"const": "GATE-A-CHALLENGE-SANDBOX"},
+    "revision": {"const": 1},
+    "network": {"type": "object", "additionalProperties": false, "required": ["mode", "allowedHosts"], "properties": {"mode": {"const": "DENY_ALL"}, "allowedHosts": {"type": "array", "maxItems": 0, "items": {"type": "string"}}}},
+    "filesystem": {"type": "object", "additionalProperties": false, "required": ["challengeInputReadOnly", "materialOutputEmpty", "scratchEmpty", "allowSymlink", "allowHardLink", "allowUnknownFiles", "maxFiles", "maxBytes"], "properties": {"challengeInputReadOnly": {"const": true}, "materialOutputEmpty": {"const": true}, "scratchEmpty": {"const": true}, "allowSymlink": {"const": false}, "allowHardLink": {"const": false}, "allowUnknownFiles": {"const": false}, "maxFiles": {"const": 512}, "maxBytes": {"const": 67108864}}},
+    "process": {"type": "object", "additionalProperties": false, "required": ["maxRunWindowMillis", "maxStartDelayMillis", "maxStdoutBytes", "maxStderrBytes", "killProcessTree", "environmentMode"], "properties": {"maxRunWindowMillis": {"const": 1800000}, "maxStartDelayMillis": {"const": 300000}, "maxStdoutBytes": {"const": 1048576}, "maxStderrBytes": {"const": 1048576}, "killProcessTree": {"const": true}, "environmentMode": {"const": "EMPTY_ALLOWLIST"}}},
+    "output": {"type": "object", "additionalProperties": false, "required": ["allowedRole", "createNewOnly", "testReportOutsideMaterialRoot"], "properties": {"allowedRole": {"const": "NON_AUTHORITY_TCK_EVIDENCE"}, "createNewOnly": {"const": true}, "testReportOutsideMaterialRoot": {"const": true}}},
+    "profileFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

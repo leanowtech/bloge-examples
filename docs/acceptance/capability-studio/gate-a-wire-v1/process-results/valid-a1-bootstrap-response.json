@@ -1,0 +1,39 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.a1-bootstrap-response.v1",
+  "runId": "RUN-NORMAL-001",
+  "bootstrapStatus": "READY",
+  "reasonCode": "BOOTSTRAP_READY",
+  "actualCodeSource": {
+    "artifactPath": "/opt/a1/verifier.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "fileSize": 2048,
+    "fileKey": "a1-verifier-1"
+  },
+  "checkedArtifacts": [
+    {
+      "uri": "artifacts/verifier.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "uri": "artifacts/provider.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    }
+  ],
+  "responseFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:abababababababababababababababababababababababababababababababab"
+  }
+}

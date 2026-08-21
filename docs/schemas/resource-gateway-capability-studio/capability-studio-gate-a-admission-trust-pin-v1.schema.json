@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+  "title": "Capability Studio Gate A Admission Trust Pin v1",
+  "description": "Caller-created TOCTOU seal. trustBasis is authority input; admissionContext is caller time; observedOutputs are sealed observations and never authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "gateId", "gateRevision", "createdAt", "trustBasis", "admissionContext", "observedOutputs", "admissionTrustPinFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-admission-trust-pin.v1"},
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "createdAt": {"$ref": "#/$defs/time"},
+    "trustBasis": {"type": "object", "additionalProperties": false, "required": ["challengeTrustPinRawFingerprint", "allowedGateRevision"], "properties": {"challengeTrustPinRawFingerprint": {"$ref": "#/$defs/rawFingerprint"}, "allowedGateRevision": {"const": 1}}},
+    "admissionContext": {"type": "object", "additionalProperties": false, "required": ["admissionVerificationTime"], "properties": {"admissionVerificationTime": {"$ref": "#/$defs/time"}}},
+    "observedOutputs": {"type": "object", "additionalProperties": false, "required": ["sealedGateResultRawFingerprint", "sealedAdmissionEvidenceRootFingerprint", "sealedRunMaterialRootFingerprint", "sealedTestReportRawFingerprint", "sealedReviewerAuthorityRawFingerprint", "sealedReviewBodyRawFingerprint", "sealedReviewedMaterialRootFingerprint", "sealedGateTestEvidenceAggregateFingerprint", "sealedProcessMaterialAggregateFingerprint", "sealedHarnessInvocationRawFingerprint", "sealedHarnessProcessTranscriptRawFingerprint"], "properties": {
+      "sealedGateResultRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+      "sealedAdmissionEvidenceRootFingerprint": {"$ref": "#/$defs/treeFingerprint"},
+      "sealedRunMaterialRootFingerprint": {"$ref": "#/$defs/treeFingerprint"},
+      "sealedTestReportRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+      "sealedReviewerAuthorityRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+      "sealedReviewBodyRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+      "sealedReviewedMaterialRootFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+      "sealedGateTestEvidenceAggregateFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+      "sealedProcessMaterialAggregateFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+      "sealedHarnessInvocationRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+      "sealedHarnessProcessTranscriptRawFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+    }},
+    "admissionTrustPinFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "treeFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "TREE_COMMITMENT"}}}]},
+    "aggregateFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "AGGREGATE_COMMITMENT"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]}
+  }
+}

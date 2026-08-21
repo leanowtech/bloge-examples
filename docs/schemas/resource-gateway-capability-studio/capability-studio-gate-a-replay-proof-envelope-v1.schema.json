@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+  "title": "Capability Studio Gate A replay proof envelope v1",
+  "description": "Caller-owned closure around one complete A1 result and its producer process observation. The A1 result cannot create or reference this envelope.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion", "envelopeId", "gateRevision", "challengeTrustPinRawFingerprint",
+    "replayProfileRawFingerprint", "closureStatus", "replayResultMessageVersion",
+    "producerProcessMessageVersion", "replayResultRef", "producerProcessTranscriptRef",
+    "producerMaterialRootRef", "expectedProducerCodeSourceRawFingerprint",
+    "observedProducerCodeSourceRawFingerprint", "observedProcessState", "observedExitCode", "observedTerminal",
+    "createdAt", "envelopeFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1"},
+    "envelopeId": {"type": "string", "pattern": "^A1-ENVELOPE-[A-Z0-9][A-Z0-9-]{2,63}$"},
+    "gateRevision": {"const": 1},
+    "challengeTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "replayProfileRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "closureStatus": {"const": "CLOSED"},
+    "replayResultMessageVersion": {"const": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1"},
+    "producerProcessMessageVersion": {"const": "resource-gateway.capability-studio.gate-a.process-transcript.v1"},
+    "replayResultRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "producerProcessTranscriptRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "producerMaterialRootRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeRef"},
+    "expectedProducerCodeSourceRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "observedProducerCodeSourceRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "observedProcessState": {"const": "COMPLETED"},
+    "observedExitCode": {"enum": [0, 2, 3]},
+    "observedTerminal": {"enum": ["VERIFIED", "INVALID", "UNAVAILABLE"]},
+    "createdAt": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "envelopeFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"observedTerminal": {"const": "VERIFIED"}}, "required": ["observedTerminal"]},
+      "then": {"properties": {"observedExitCode": {"const": 0}}}
+    },
+    {
+      "if": {"properties": {"observedTerminal": {"const": "INVALID"}}, "required": ["observedTerminal"]},
+      "then": {"properties": {"observedExitCode": {"const": 2}}}
+    },
+    {
+      "if": {"properties": {"observedTerminal": {"const": "UNAVAILABLE"}}, "required": ["observedTerminal"]},
+      "then": {"properties": {"observedExitCode": {"const": 3}}}
+    }
+  ]
+}

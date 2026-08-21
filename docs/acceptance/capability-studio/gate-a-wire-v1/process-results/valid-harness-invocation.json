@@ -1,0 +1,40 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.harness-invocation-record.v1",
+  "runId": "RUN-HARNESS-001",
+  "commandRef": {
+    "uri": "run-material/harness/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:1515151515151515151515151515151515151515151515151515151515151515"
+    }
+  },
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  },
+  "candidateRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "verifierRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:1616161616161616161616161616161616161616161616161616161616161616"
+  },
+  "harnessRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
+  },
+  "materialOutputRoot": "/opt/gate-a/material-output",
+  "scratchRoot": "/opt/gate-a/scratch",
+  "verificationTime": "2026-08-21T10:00:00Z",
+  "invocationFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:1818181818181818181818181818181818181818181818181818181818181818"
+  }
+}

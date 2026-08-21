@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+  "title": "Capability Studio Gate A caller-owned Harness invocation record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "runId", "commandRef", "challengeTrustPinRawFingerprint", "candidateRawFingerprint", "verifierRawFingerprint", "harnessRawFingerprint", "materialOutputRoot", "scratchRoot", "verificationTime", "invocationFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.harness-invocation-record.v1"},
+    "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
+    "commandRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "challengeTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "candidateRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "verifierRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "harnessRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "materialOutputRoot": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "scratchRoot": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "verificationTime": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "invocationFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

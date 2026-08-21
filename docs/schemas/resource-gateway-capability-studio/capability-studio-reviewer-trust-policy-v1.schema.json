@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json",
+  "title": "Capability Studio Reviewer Trust Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "policyId", "issuer", "revision", "signatureAlgorithm", "allowedAuthorities", "allowedKeys", "reviewScope", "candidateSubject", "admissionProfileRawFingerprint", "requiredCheckIds", "notBefore", "validUntil", "revocationSnapshotRawFingerprint", "reviewerTrustPolicyFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.reviewer-trust-policy.v1"},
+    "policyId": {"type": "string", "pattern": "^policy:[A-Za-z0-9._:-]{1,120}$"},
+    "issuer": {"type": "string", "pattern": "^issuer:[A-Za-z0-9._:-]{1,120}$"},
+    "revision": {"const": 1},
+    "signatureAlgorithm": {"const": "Ed25519"},
+    "allowedAuthorities": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^authority:[A-Za-z0-9._:-]{1,120}$"}},
+    "allowedKeys": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/key"}},
+    "reviewScope": {"const": "GATE_A_ACCEPTANCE"},
+    "candidateSubject": {"$ref": "#/$defs/rawFingerprint"},
+    "admissionProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "requiredCheckIds": {"type": "array", "minItems": 6, "maxItems": 6, "prefixItems": [{"const": "INDEPENDENCE"}, {"const": "PROTOCOL_CONFORMANCE"}, {"const": "MATERIAL_CLOSURE"}, {"const": "TIME_ORDERING"}, {"const": "REPLAY_SEMANTICS"}, {"const": "ADMISSION_BINDING"}], "items": false},
+    "notBefore": {"$ref": "#/$defs/time"},
+    "validUntil": {"$ref": "#/$defs/time"},
+    "revocationSnapshotRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "reviewerTrustPolicyFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]},
+    "key": {"type": "object", "additionalProperties": false, "required": ["keyId", "publicKeyBase64Url"], "properties": {"keyId": {"type": "string", "pattern": "^key:[A-Za-z0-9._:-]{1,120}$"}, "publicKeyBase64Url": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"}}}
+  },
+  "$comment": "Verifier must reject duplicate key IDs, key IDs not mapped to the envelope, revoked authorities/keys, and any algorithm other than Ed25519."
+}

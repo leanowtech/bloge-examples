@@ -23,7 +23,7 @@
       "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
     },
     "fileSize": 1024,
-    "fileKey": "a1-verifier-1"
+    "fileKey": "dev:1:ino:1002"
   },
   "codeSourceObservation": {
     "preRead": {

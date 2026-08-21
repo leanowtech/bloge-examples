@@ -8,7 +8,7 @@
   "endedAt": "2026-08-21T10:01:01Z",
   "timedOut": true,
   "cancelled": false,
-  "codeSource": {"artifactPath": "/opt/a1-verifier.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, "fileSize": 1024, "fileKey": "a1-verifier-1"},
+  "codeSource": {"artifactPath": "/opt/a1-verifier.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, "fileSize": 1024, "fileKey": "dev:1:ino:1002"},
   "codeSourceObservation": {"preRead": {"resolvedPath": "/opt/a1-verifier.jar", "fileKey": "dev:1:ino:1002", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0644", "fileSize": 1024, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}, "postRead": {"resolvedPath": "/opt/a1-verifier.jar", "fileKey": "dev:1:ino:1002", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0644", "fileSize": 1024, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}},
   "stdoutRef": {"uri": "run-material/runs/RUN-A1-TIMEOUT-001/stdout", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"}},
   "stderrRef": {"uri": "run-material/runs/RUN-A1-TIMEOUT-001/stderr", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"}},

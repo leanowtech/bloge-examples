@@ -1,0 +1,4 @@
+{
+  "schemaVersion":"capability-studio.review-body.v1","gateId":"GATE-A","gateRevision":1,"reviewBodyFingerprint":{"kind":"CANONICAL_DOCUMENT","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000021"},"reviewedMaterialRootFingerprint":{"kind":"AGGREGATE_COMMITMENT","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000022"},
+  "reviewChecks":[{"checkId":"INDEPENDENCE","status":"PASS"},{"checkId":"PROTOCOL_CONFORMANCE","status":"PASS"},{"checkId":"MATERIAL_CLOSURE","status":"PASS"},{"checkId":"TIME_ORDERING","status":"PASS"},{"checkId":"REPLAY_SEMANTICS","status":"PASS"},{"checkId":"ADMISSION_BINDING","status":"PASS"}],"findings":[],"openP0":1,"openP1":0,"skippedCount":0,"reviewedAt":"2026-08-21T09:30:00Z"
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+  "title": "Capability Studio Reviewer Revocation Snapshot v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "snapshotId", "issuer", "revision", "issuedAt", "validUntil", "revokedKeyIds", "revokedAuthorityIds", "reviewerRevocationSnapshotFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.reviewer-revocation-snapshot.v1"},
+    "snapshotId": {"type": "string", "pattern": "^revocation:[A-Za-z0-9._:-]{1,120}$"},
+    "issuer": {"type": "string", "pattern": "^issuer:[A-Za-z0-9._:-]{1,120}$"},
+    "revision": {"type": "integer", "minimum": 1},
+    "issuedAt": {"$ref": "#/$defs/time"},
+    "validUntil": {"$ref": "#/$defs/time"},
+    "revokedKeyIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^key:[A-Za-z0-9._:-]{1,120}$"}},
+    "revokedAuthorityIds": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^authority:[A-Za-z0-9._:-]{1,120}$"}},
+    "reviewerRevocationSnapshotFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]}
+  },
+  "$comment": "Arrays are sets encoded in lexicographic order; the verifier must enforce sorted order and the issuedAt <= validUntil relation."
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+  "title": "Capability Studio Gate A normalized collector contract vectors v1",
+  "$comment": "These vectors test reducer wiring only and are not material attack evidence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "cases"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.collector-contract-vectors.v1"},
+    "cases": {
+      "type": "array", "minItems": 14, "maxItems": 14,
+      "items": {"$ref": "#/$defs/case"}
+    }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["present", "available", "matches"],
+      "properties": {
+        "present": {"type": "boolean"},
+        "available": {"type": "boolean"},
+        "matches": {"type": "boolean"},
+        "slotStatuses": {
+          "type": "array", "minItems": 1, "maxItems": 64,
+          "items": {"enum": ["PASS", "FAIL", "MISSING", "UNAVAILABLE"]}
+        }
+      }
+    },
+    "expected": {
+      "type": "object", "additionalProperties": false,
+      "required": ["guardStatus", "admissionTarget", "conclusion", "reasonCode", "exitCode"],
+      "properties": {
+        "guardStatus": {"enum": ["PASS", "FAIL", "MISSING", "UNAVAILABLE"]},
+        "admissionTarget": {"type": "string", "pattern": "^(requirement|artifact|guard|review):[A-Z0-9][A-Z0-9_-]{2,95}$"},
+        "conclusion": {"enum": ["PASS", "OPEN", "FAIL", "UNAVAILABLE"]},
+        "reasonCode": {"enum": ["GATE_A_ADMITTED", "GATE_A_REQUIRED_MATERIAL_MISSING", "GATE_A_VERIFICATION_FAILED", "GATE_A_VERIFICATION_UNAVAILABLE"]},
+        "exitCode": {"enum": [0, 2, 3, 4]}
+      }
+    },
+    "case": {
+      "type": "object", "additionalProperties": false,
+      "required": ["caseId", "guardId", "observation", "expected"],
+      "properties": {
+        "caseId": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9-]{3,127}$"},
+        "guardId": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]{2,95}$"},
+        "observation": {"$ref": "#/$defs/observation"},
+        "evidenceVector": {"type": "string", "pattern": "^\\.\\./[A-Za-z0-9._/-]+\\.json$"},
+        "expected": {"$ref": "#/$defs/expected"}
+      }
+    }
+  }
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json",
   "title": "Capability Studio Gate A admission verification result v1",
-  "$comment": "A2 MUST recompute the cross-document priority UNAVAILABLE > FAIL > OPEN > PASS, all fingerprints, raw material closure, time ordering, review counts, rollback binding, and candidate independence. The schema freezes slot identity/order, local status/ref consistency, and a non-contradictory conclusion. semanticGuardResults is a fixed diagnostic projection over the Guard Catalog; it does not add a new admission denominator or make producer facts authoritative. sourceFactIds is structurally limited to Authority Matrix facts that are not ADMISSION_DECISION; exact Guard-specific order and the dynamic observationRefs canonical order/uniqueness are Semantic Guard responsibilities. A Schema-valid PASS with a failed diagnostic Guard is intentionally allowed so A2_CONCLUSION_PRECEDENCE, not JSON Schema, rejects the forged conclusion.",
+  "$comment": "A2 MUST recompute the cross-document priority UNAVAILABLE > FAIL > OPEN > PASS, all fingerprints, raw material closure, time ordering, review counts, rollback binding, and candidate independence. The schema freezes slot identity/order, local status/ref consistency, and the conclusion/reason/next-gate discriminant; it intentionally does not derive conclusion from slot values. semanticGuardResults is a fixed diagnostic projection over the Guard Catalog; it does not add a new admission denominator or make producer facts authoritative. sourceFactIds is structurally limited to Authority Matrix facts that are not ADMISSION_DECISION; exact Guard-specific order and the dynamic observationRefs canonical order/uniqueness are Semantic Guard responsibilities. A Schema-valid PASS with any failed or missing slot is intentionally allowed so A2_CONCLUSION_PRECEDENCE, not JSON Schema, rejects the forged conclusion.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -555,66 +555,17 @@
   "allOf": [
     {
       "if": {
-        "properties": {
-          "conclusion": {
-            "const": "PASS"
-          }
-        },
-        "required": [
-          "conclusion"
-        ]
+        "properties": {"conclusion": {"const": "PASS"}},
+        "required": ["conclusion"]
       },
       "then": {
         "properties": {
-          "conclusionReasonCode": {
-            "const": "GATE_A_ADMITTED"
-          },
-          "nextAllowedGate": {
-            "const": "GATE-B"
-          },
+          "conclusionReasonCode": {"const": "GATE_A_ADMITTED"},
+          "nextAllowedGate": {"const": "GATE-B"},
           "rollback": {
             "properties": {
-              "resolvable": {
-                "const": true
-              },
-              "candidateBound": {
-                "const": true
-              }
-            }
-          },
-          "requirements": {
-            "not": {
-              "contains": {
-                "$ref": "#/$defs/nonPassSelector"
-              }
-            }
-          },
-          "artifacts": {
-            "not": {
-              "contains": {
-                "$ref": "#/$defs/nonPassSelector"
-              }
-            }
-          },
-          "tests": {
-            "not": {
-              "contains": {
-                "$ref": "#/$defs/nonPassSelector"
-              }
-            }
-          },
-          "mandatoryGuards": {
-            "not": {
-              "contains": {
-                "$ref": "#/$defs/nonPassSelector"
-              }
-            }
-          },
-          "trustedReview": {
-            "properties": {
-              "status": {
-                "const": "PASS"
-              }
+              "resolvable": {"const": true},
+              "candidateBound": {"const": true}
             }
           }
         }
@@ -622,347 +573,38 @@
     },
     {
       "if": {
-        "properties": {
-          "conclusion": {
-            "const": "OPEN"
-          }
-        },
-        "required": [
-          "conclusion"
-        ]
+        "properties": {"conclusion": {"const": "OPEN"}},
+        "required": ["conclusion"]
       },
       "then": {
         "properties": {
-          "conclusionReasonCode": {
-            "const": "GATE_A_REQUIRED_MATERIAL_MISSING"
-          },
-          "nextAllowedGate": {
-            "type": "null"
-          }
-        },
-        "allOf": [
-          {
-            "anyOf": [
-              {
-                "properties": {
-                  "requirements": {
-                    "contains": {
-                      "$ref": "#/$defs/missingSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "artifacts": {
-                    "contains": {
-                      "$ref": "#/$defs/missingSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "tests": {
-                    "contains": {
-                      "$ref": "#/$defs/missingSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "mandatoryGuards": {
-                    "contains": {
-                      "$ref": "#/$defs/missingSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "trustedReview": {
-                    "properties": {
-                      "status": {
-                        "const": "MISSING"
-                      }
-                    },
-                    "required": [
-                      "status"
-                    ]
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "properties": {
-                    "requirements": {
-                      "contains": {
-                        "$ref": "#/$defs/failOrUnavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "artifacts": {
-                      "contains": {
-                        "$ref": "#/$defs/failOrUnavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "tests": {
-                      "contains": {
-                        "$ref": "#/$defs/failOrUnavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "mandatoryGuards": {
-                      "contains": {
-                        "$ref": "#/$defs/failOrUnavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "trustedReview": {
-                      "properties": {
-                        "status": {
-                          "enum": [
-                            "FAIL",
-                            "UNAVAILABLE"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "status"
-                      ]
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        ]
+          "conclusionReasonCode": {"const": "GATE_A_REQUIRED_MATERIAL_MISSING"},
+          "nextAllowedGate": {"type": "null"}
+        }
       }
     },
     {
       "if": {
-        "properties": {
-          "conclusion": {
-            "const": "FAIL"
-          }
-        },
-        "required": [
-          "conclusion"
-        ]
+        "properties": {"conclusion": {"const": "FAIL"}},
+        "required": ["conclusion"]
       },
       "then": {
         "properties": {
-          "conclusionReasonCode": {
-            "const": "GATE_A_VERIFICATION_FAILED"
-          },
-          "nextAllowedGate": {
-            "type": "null"
-          }
-        },
-        "allOf": [
-          {
-            "anyOf": [
-              {
-                "properties": {
-                  "requirements": {
-                    "contains": {
-                      "$ref": "#/$defs/failSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "artifacts": {
-                    "contains": {
-                      "$ref": "#/$defs/failSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "tests": {
-                    "contains": {
-                      "$ref": "#/$defs/failSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "mandatoryGuards": {
-                    "contains": {
-                      "$ref": "#/$defs/failSelector"
-                    }
-                  }
-                }
-              },
-              {
-                "properties": {
-                  "trustedReview": {
-                    "properties": {
-                      "status": {
-                        "const": "FAIL"
-                      }
-                    },
-                    "required": [
-                      "status"
-                    ]
-                  }
-                }
-              }
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "properties": {
-                    "requirements": {
-                      "contains": {
-                        "$ref": "#/$defs/unavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "artifacts": {
-                      "contains": {
-                        "$ref": "#/$defs/unavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "tests": {
-                      "contains": {
-                        "$ref": "#/$defs/unavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "mandatoryGuards": {
-                      "contains": {
-                        "$ref": "#/$defs/unavailableSelector"
-                      }
-                    }
-                  }
-                },
-                {
-                  "properties": {
-                    "trustedReview": {
-                      "properties": {
-                        "status": {
-                          "const": "UNAVAILABLE"
-                        }
-                      },
-                      "required": [
-                        "status"
-                      ]
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        ]
+          "conclusionReasonCode": {"const": "GATE_A_VERIFICATION_FAILED"},
+          "nextAllowedGate": {"type": "null"}
+        }
       }
     },
     {
       "if": {
-        "properties": {
-          "conclusion": {
-            "const": "UNAVAILABLE"
-          }
-        },
-        "required": [
-          "conclusion"
-        ]
+        "properties": {"conclusion": {"const": "UNAVAILABLE"}},
+        "required": ["conclusion"]
       },
       "then": {
         "properties": {
-          "conclusionReasonCode": {
-            "const": "GATE_A_VERIFICATION_UNAVAILABLE"
-          },
-          "nextAllowedGate": {
-            "type": "null"
-          }
-        },
-        "anyOf": [
-          {
-            "properties": {
-              "requirements": {
-                "contains": {
-                  "$ref": "#/$defs/unavailableSelector"
-                }
-              }
-            }
-          },
-          {
-            "properties": {
-              "artifacts": {
-                "contains": {
-                  "$ref": "#/$defs/unavailableSelector"
-                }
-              }
-            }
-          },
-          {
-            "properties": {
-              "tests": {
-                "contains": {
-                  "$ref": "#/$defs/unavailableSelector"
-                }
-              }
-            }
-          },
-          {
-            "properties": {
-              "mandatoryGuards": {
-                "contains": {
-                  "$ref": "#/$defs/unavailableSelector"
-                }
-              }
-            }
-          },
-          {
-            "properties": {
-              "trustedReview": {
-                "properties": {
-                  "status": {
-                    "const": "UNAVAILABLE"
-                  }
-                },
-                "required": [
-                  "status"
-                ]
-              }
-            }
-          }
-        ]
+          "conclusionReasonCode": {"const": "GATE_A_VERIFICATION_UNAVAILABLE"},
+          "nextAllowedGate": {"type": "null"}
+        }
       }
     }
   ],

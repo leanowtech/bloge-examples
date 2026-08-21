@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-command-record-v1.schema.json",
+  "title": "Capability Studio Gate A process command record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "runId", "executable", "arguments", "environment", "workingDirectory", "commandFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.process-command-record.v1"},
+    "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
+    "executable": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "arguments": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/commandArg"}},
+    "environment": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}=[\\x20-\\x7E]*$"}},
+    "workingDirectory": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "commandFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json",
+  "title": "Capability Studio Reviewer Authority Envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "authorityId", "issuer", "keyId", "signatureAlgorithm", "gateId", "gateRevision", "admissionProfileRawFingerprint", "candidateRawFingerprint", "reviewerArtifactRawFingerprint", "reviewBodyRawFingerprint", "reviewedMaterialRootFingerprint", "openP0", "openP1", "skippedCount", "reviewScope", "reviewedAt", "validUntil", "revocationSnapshotRawFingerprint", "signature", "envelopeFingerprint"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.reviewer-authority-envelope.v1"},
+    "authorityId": {"type": "string", "pattern": "^authority:[A-Za-z0-9._:-]{1,120}$"},
+    "issuer": {"type": "string", "pattern": "^issuer:[A-Za-z0-9._:-]{1,120}$"},
+    "keyId": {"type": "string", "pattern": "^key:[A-Za-z0-9._:-]{1,120}$"},
+    "signatureAlgorithm": {"const": "Ed25519"},
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "admissionProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "candidateRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "reviewerArtifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "reviewBodyRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "reviewedMaterialRootFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "openP0": {"type": "integer", "minimum": 0},
+    "openP1": {"type": "integer", "minimum": 0},
+    "skippedCount": {"type": "integer", "minimum": 0, "maximum": 6},
+    "reviewScope": {"const": "GATE_A_ACCEPTANCE"},
+    "reviewedAt": {"$ref": "#/$defs/time"},
+    "validUntil": {"$ref": "#/$defs/time"},
+    "revocationSnapshotRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+    "envelopeFingerprint": {"$ref": "#/$defs/documentFingerprint"}
+  },
+  "$defs": {
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "fingerprint": {"type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "value"], "properties": {"kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]}, "algorithm": {"const": "SHA-256"}, "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}},
+    "rawFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "RAW_BYTES"}}}]},
+    "aggregateFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "AGGREGATE_COMMITMENT"}}}]},
+    "documentFingerprint": {"allOf": [{"$ref": "#/$defs/fingerprint"}, {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}]}
+  },
+  "$comment": "A2 must verify signature, policy key mapping, revocation, temporal ordering, review-body raw fingerprint, and recomputed review counts; this schema deliberately cannot express those cross-document checks."
+}

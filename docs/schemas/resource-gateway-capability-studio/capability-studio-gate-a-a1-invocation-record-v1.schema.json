@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+  "title": "Capability Studio Gate A A1 invocation record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "runId", "runPurpose", "commandRef", "challengeTrustPinRawFingerprint", "challengeInputRoot", "materialOutputRoot", "scratchRoot", "verificationTime", "invocationFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.a1-invocation-record.v1"},
+    "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
+    "runPurpose": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/outerRunPurpose"},
+    "commandRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "challengeTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "challengeInputRoot": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "materialOutputRoot": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "scratchRoot": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
+    "verificationTime": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "invocationFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

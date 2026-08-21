@@ -11,6 +11,9 @@
     "gateRevision",
     "challengeTrustPinRawFingerprint",
     "admissionTrustPinRawFingerprint",
+    "closureStatus",
+    "admissionResultMessageVersion",
+    "admissionProcessMessageVersion",
     "admissionResultRef",
     "admissionProcessTranscriptRef",
     "expectedAdmissionCodeSource",
@@ -28,21 +31,24 @@
     "gateRevision": {"const": 1},
     "challengeTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
     "admissionTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "closureStatus": {"const": "CLOSED"},
+    "admissionResultMessageVersion": {"const": "resource-gateway.capability-studio.gate-a.admission-verification-result.v1"},
+    "admissionProcessMessageVersion": {"const": "resource-gateway.capability-studio.gate-a.process-transcript.v1"},
     "admissionResultRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
     "admissionProcessTranscriptRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
     "expectedAdmissionCodeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
     "observedAdmissionCodeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
     "observedProcessState": {"const": "COMPLETED"},
-    "observedExitCode": {"const": 0},
+    "observedExitCode": {"enum": [0, 2, 3, 4]},
     "admissionResultConclusion": {"enum": ["PASS", "OPEN", "FAIL", "UNAVAILABLE"]},
     "observedConclusion": {"enum": ["PASS", "OPEN", "FAIL", "UNAVAILABLE"]},
     "createdAt": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
     "envelopeFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
   },
   "oneOf": [
-    {"properties": {"admissionResultConclusion": {"const": "PASS"}, "observedConclusion": {"const": "PASS"}}},
-    {"properties": {"admissionResultConclusion": {"const": "OPEN"}, "observedConclusion": {"const": "OPEN"}}},
-    {"properties": {"admissionResultConclusion": {"const": "FAIL"}, "observedConclusion": {"const": "FAIL"}}},
-    {"properties": {"admissionResultConclusion": {"const": "UNAVAILABLE"}, "observedConclusion": {"const": "UNAVAILABLE"}}}
+    {"properties": {"admissionResultConclusion": {"const": "PASS"}, "observedConclusion": {"const": "PASS"}, "observedExitCode": {"const": 0}}},
+    {"properties": {"admissionResultConclusion": {"const": "OPEN"}, "observedConclusion": {"const": "OPEN"}, "observedExitCode": {"const": 4}}},
+    {"properties": {"admissionResultConclusion": {"const": "FAIL"}, "observedConclusion": {"const": "FAIL"}, "observedExitCode": {"const": 2}}},
+    {"properties": {"admissionResultConclusion": {"const": "UNAVAILABLE"}, "observedConclusion": {"const": "UNAVAILABLE"}, "observedExitCode": {"const": 3}}}
   ]
 }

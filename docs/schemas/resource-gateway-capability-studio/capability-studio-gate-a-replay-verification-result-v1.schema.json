@@ -1,0 +1,1406 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json",
+  "title": "Capability Studio Gate A replay verification result v1",
+  "$comment": "This producer Result is not a Proof. Schema freezes slots, field types, and terminal/reason discriminant. Counts, per-slot outcome consistency, terminal derivation, fingerprints, process closure, and time ordering are untrusted projections until the caller closes this Result and its parent-owned process material in GateAReplayProofEnvelope v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "resultId",
+    "gateRevision",
+    "challengeTrustPinRawFingerprint",
+    "candidateCodeSource",
+    "verifierCodeSource",
+    "replayProfileRef",
+    "tckDefinitionRef",
+    "registryRef",
+    "testRuns",
+    "testCount",
+    "passedCount",
+    "failedCount",
+    "skippedCount",
+    "scratchBeforeCount",
+    "scratchAfterCount",
+    "terminal",
+    "reasonCode",
+    "startedAt",
+    "endedAt",
+    "resultFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1"
+    },
+    "resultId": {
+      "type": "string",
+      "pattern": "^A1-REPLAY-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "gateRevision": {
+      "const": 1
+    },
+    "challengeTrustPinRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "candidateCodeSource": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"
+    },
+    "verifierCodeSource": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"
+    },
+    "replayProfileRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "tckDefinitionRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "registryRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "testRuns": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/placeholder"
+        },
+        {
+          "$ref": "#/$defs/wrongKind"
+        },
+        {
+          "$ref": "#/$defs/wrongRevision"
+        },
+        {
+          "$ref": "#/$defs/legacyComplete"
+        },
+        {
+          "$ref": "#/$defs/missingStore"
+        },
+        {
+          "$ref": "#/$defs/missingOwner"
+        },
+        {
+          "$ref": "#/$defs/missingTarget"
+        },
+        {
+          "$ref": "#/$defs/manifestDrift"
+        },
+        {
+          "$ref": "#/$defs/honestIncomplete"
+        }
+      ],
+      "items": false
+    },
+    "testCount": {
+      "const": 9
+    },
+    "passedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9
+    },
+    "failedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9
+    },
+    "skippedCount": {
+      "const": 0
+    },
+    "scratchBeforeCount": {
+      "const": 0
+    },
+    "scratchAfterCount": {
+      "const": 0
+    },
+    "terminal": {
+      "enum": [
+        "VERIFIED",
+        "INVALID",
+        "UNAVAILABLE"
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "A1_REPLAY_VERIFIED",
+        "A1_REPLAY_INVALID",
+        "A1_REPLAY_UNAVAILABLE"
+      ]
+    },
+    "startedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "endedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "resultFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "VERIFIED"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A1_REPLAY_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "INVALID"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A1_REPLAY_INVALID"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "UNAVAILABLE"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A1_REPLAY_UNAVAILABLE"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "slot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testId",
+        "expectedMechanism",
+        "mutationVector",
+        "expectedTerminal",
+        "expectedExitCode",
+        "expectedReasonCode",
+        "targetArtifactRawFingerprint",
+        "inputPinRawFingerprint",
+        "commandRecordRef",
+        "requestRef",
+        "responseRef",
+        "processTranscriptRef",
+        "derivedPinRef",
+        "derivedVerifierArtifactRef",
+        "derivedCandidateArtifactRef",
+        "commandFingerprint",
+        "requestFingerprint",
+        "responseFingerprint",
+        "processExitCode",
+        "observedTerminal",
+        "closedReasonCode",
+        "stdoutRawFingerprint",
+        "stderrRawFingerprint",
+        "startedAt",
+        "endedAt",
+        "timedOut",
+        "cancelled",
+        "transcriptRawFingerprint",
+        "harnessRawFingerprint",
+        "status",
+        "skipped"
+      ],
+      "properties": {
+        "testId": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/testId"
+        },
+        "expectedMechanism": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/mechanism"
+        },
+        "mutationVector": {
+          "enum": [
+            "NONE",
+            "PLACEHOLDER",
+            "WRONG_KIND",
+            "WRONG_VERIFIER_REVISION",
+            "MANIFEST_IDENTITY_DRIFT",
+            "MISSING_STORE",
+            "MISSING_OWNER",
+            "MISSING_TARGET"
+          ]
+        },
+        "expectedTerminal": {
+          "enum": [
+            "INVALID",
+            "ACCEPTED",
+            "NOT_ACCEPTED",
+            "INCOMPLETE"
+          ]
+        },
+        "expectedExitCode": {
+          "enum": [
+            0,
+            2,
+            3,
+            4
+          ]
+        },
+        "expectedReasonCode": {
+          "enum": [
+            "PLACEHOLDER_REJECTED",
+            "WRONG_KIND",
+            "WRONG_VERIFIER_REVISION",
+            "LEGACY_AUTHORITY_COMPLETE",
+            "MISSING_STORE",
+            "MISSING_OWNER",
+            "MISSING_TARGET",
+            "MANIFEST_IDENTITY_DRIFT",
+            "HONEST_INCOMPLETE"
+          ]
+        },
+        "targetArtifactRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "inputPinRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "commandRecordRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "requestRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "responseRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "processTranscriptRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "derivedPinRef": {
+          "type": "null"
+        },
+        "derivedVerifierArtifactRef": {
+          "type": "null"
+        },
+        "derivedCandidateArtifactRef": {
+          "type": "null"
+        },
+        "commandFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "requestFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "responseFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+        },
+        "processExitCode": {
+          "enum": [
+            0,
+            2,
+            3,
+            4
+          ]
+        },
+        "observedTerminal": {
+          "enum": [
+            "INVALID",
+            "ACCEPTED",
+            "NOT_ACCEPTED",
+            "INCOMPLETE",
+            "UNAVAILABLE"
+          ]
+        },
+        "closedReasonCode": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/reasonCode"
+        },
+        "stdoutRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "stderrRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "startedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "endedAt": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        },
+        "timedOut": {
+          "const": false
+        },
+        "cancelled": {
+          "const": false
+        },
+        "transcriptRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "harnessRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL"
+          ]
+        },
+        "skipped": {
+          "const": false
+        }
+      }
+    },
+    "placeholder": {
+      "$ref": "#/$defs/slotTemplatePlaceholder"
+    },
+    "wrongKind": {
+      "$ref": "#/$defs/slotTemplateWrongKind"
+    },
+    "wrongRevision": {
+      "$ref": "#/$defs/slotTemplateWrongRevision"
+    },
+    "legacyComplete": {
+      "$ref": "#/$defs/slotTemplateLegacyComplete"
+    },
+    "missingStore": {
+      "$ref": "#/$defs/slotTemplateMissingStore"
+    },
+    "missingOwner": {
+      "$ref": "#/$defs/slotTemplateMissingOwner"
+    },
+    "missingTarget": {
+      "$ref": "#/$defs/slotTemplateMissingTarget"
+    },
+    "manifestDrift": {
+      "$ref": "#/$defs/slotTemplateManifestDrift"
+    },
+    "honestIncomplete": {
+      "$ref": "#/$defs/slotTemplateHonestIncomplete"
+    },
+    "slotTemplatePlaceholder": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oraclePlaceholder"
+        }
+      ]
+    },
+    "slotTemplateWrongKind": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleWrongKind"
+        }
+      ]
+    },
+    "slotTemplateWrongRevision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleWrongRevision"
+        }
+      ]
+    },
+    "slotTemplateLegacyComplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleLegacyComplete"
+        }
+      ]
+    },
+    "slotTemplateMissingStore": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleMissingStore"
+        }
+      ]
+    },
+    "slotTemplateMissingOwner": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleMissingOwner"
+        }
+      ]
+    },
+    "slotTemplateMissingTarget": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleMissingTarget"
+        }
+      ]
+    },
+    "slotTemplateManifestDrift": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleManifestDrift"
+        }
+      ]
+    },
+    "slotTemplateHonestIncomplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/slot"
+        },
+        {
+          "$ref": "#/$defs/oracleHonestIncomplete"
+        }
+      ]
+    },
+    "oraclePlaceholder": {
+      "$ref": "#/$defs/oraclePlaceholderBody"
+    },
+    "oracleWrongKind": {
+      "$ref": "#/$defs/oracleWrongKindBody"
+    },
+    "oracleWrongRevision": {
+      "$ref": "#/$defs/oracleWrongRevisionBody"
+    },
+    "oracleLegacyComplete": {
+      "$ref": "#/$defs/oracleLegacyCompleteBody"
+    },
+    "oracleMissingStore": {
+      "$ref": "#/$defs/oracleMissingStoreBody"
+    },
+    "oracleMissingOwner": {
+      "$ref": "#/$defs/oracleMissingOwnerBody"
+    },
+    "oracleMissingTarget": {
+      "$ref": "#/$defs/oracleMissingTargetBody"
+    },
+    "oracleManifestDrift": {
+      "$ref": "#/$defs/oracleManifestDriftBody"
+    },
+    "oracleHonestIncomplete": {
+      "$ref": "#/$defs/oracleHonestIncompleteBody"
+    },
+    "oraclePlaceholderBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBasePlaceholder"
+        },
+        {
+          "$ref": "#/$defs/passFailPlaceholder"
+        }
+      ]
+    },
+    "oracleWrongKindBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseWrongKind"
+        },
+        {
+          "$ref": "#/$defs/passFailWrongKind"
+        }
+      ]
+    },
+    "oracleWrongRevisionBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseWrongRevision"
+        },
+        {
+          "$ref": "#/$defs/passFailWrongRevision"
+        }
+      ]
+    },
+    "oracleLegacyCompleteBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseLegacyComplete"
+        },
+        {
+          "$ref": "#/$defs/passFailLegacyComplete"
+        }
+      ]
+    },
+    "oracleMissingStoreBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseMissingStore"
+        },
+        {
+          "$ref": "#/$defs/passFailMissingStore"
+        }
+      ]
+    },
+    "oracleMissingOwnerBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseMissingOwner"
+        },
+        {
+          "$ref": "#/$defs/passFailMissingOwner"
+        }
+      ]
+    },
+    "oracleMissingTargetBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseMissingTarget"
+        },
+        {
+          "$ref": "#/$defs/passFailMissingTarget"
+        }
+      ]
+    },
+    "oracleManifestDriftBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseManifestDrift"
+        },
+        {
+          "$ref": "#/$defs/passFailManifestDrift"
+        }
+      ]
+    },
+    "oracleHonestIncompleteBody": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/oracleBaseHonestIncomplete"
+        },
+        {
+          "$ref": "#/$defs/passFailHonestIncomplete"
+        }
+      ]
+    },
+    "oracleBasePlaceholder": {
+      "properties": {
+        "testId": {
+          "const": "PLACEHOLDER_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "PLACEHOLDER_TYPED_EVIDENCE"
+        },
+        "mutationVector": {
+          "const": "PLACEHOLDER"
+        },
+        "expectedTerminal": {
+          "const": "INVALID"
+        },
+        "expectedExitCode": {
+          "const": 2
+        },
+        "expectedReasonCode": {
+          "const": "PLACEHOLDER_REJECTED"
+        }
+      }
+    },
+    "oracleBaseWrongKind": {
+      "properties": {
+        "testId": {
+          "const": "WRONG_KIND_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "KIND_ROLE_MISMATCH"
+        },
+        "mutationVector": {
+          "const": "WRONG_KIND"
+        },
+        "expectedTerminal": {
+          "const": "INVALID"
+        },
+        "expectedExitCode": {
+          "const": 2
+        },
+        "expectedReasonCode": {
+          "const": "WRONG_KIND"
+        }
+      }
+    },
+    "oracleBaseWrongRevision": {
+      "properties": {
+        "testId": {
+          "const": "WRONG_VERIFIER_REVISION_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "VERIFIER_REVISION_MISMATCH"
+        },
+        "mutationVector": {
+          "const": "WRONG_VERIFIER_REVISION"
+        },
+        "expectedTerminal": {
+          "const": "INVALID"
+        },
+        "expectedExitCode": {
+          "const": 2
+        },
+        "expectedReasonCode": {
+          "const": "WRONG_VERIFIER_REVISION"
+        }
+      }
+    },
+    "oracleBaseLegacyComplete": {
+      "properties": {
+        "testId": {
+          "const": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY"
+        },
+        "expectedMechanism": {
+          "const": "COMPLETE_AUTHORITY"
+        },
+        "mutationVector": {
+          "const": "NONE"
+        },
+        "expectedTerminal": {
+          "const": "ACCEPTED"
+        },
+        "expectedExitCode": {
+          "const": 0
+        },
+        "expectedReasonCode": {
+          "const": "LEGACY_AUTHORITY_COMPLETE"
+        }
+      }
+    },
+    "oracleBaseMissingStore": {
+      "properties": {
+        "testId": {
+          "const": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "MISSING_STORE_AUTHORITY"
+        },
+        "mutationVector": {
+          "const": "MISSING_STORE"
+        },
+        "expectedTerminal": {
+          "const": "NOT_ACCEPTED"
+        },
+        "expectedExitCode": {
+          "const": 3
+        },
+        "expectedReasonCode": {
+          "const": "MISSING_STORE"
+        }
+      }
+    },
+    "oracleBaseMissingOwner": {
+      "properties": {
+        "testId": {
+          "const": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "MISSING_OWNER_AUTHORITY"
+        },
+        "mutationVector": {
+          "const": "MISSING_OWNER"
+        },
+        "expectedTerminal": {
+          "const": "NOT_ACCEPTED"
+        },
+        "expectedExitCode": {
+          "const": 3
+        },
+        "expectedReasonCode": {
+          "const": "MISSING_OWNER"
+        }
+      }
+    },
+    "oracleBaseMissingTarget": {
+      "properties": {
+        "testId": {
+          "const": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "MISSING_TARGET_AUTHORITY"
+        },
+        "mutationVector": {
+          "const": "MISSING_TARGET"
+        },
+        "expectedTerminal": {
+          "const": "NOT_ACCEPTED"
+        },
+        "expectedExitCode": {
+          "const": 3
+        },
+        "expectedReasonCode": {
+          "const": "MISSING_TARGET"
+        }
+      }
+    },
+    "oracleBaseManifestDrift": {
+      "properties": {
+        "testId": {
+          "const": "MANIFEST_IDENTITY_DRIFT_REJECTED"
+        },
+        "expectedMechanism": {
+          "const": "MANIFEST_IDENTITY_DRIFT"
+        },
+        "mutationVector": {
+          "const": "MANIFEST_IDENTITY_DRIFT"
+        },
+        "expectedTerminal": {
+          "const": "INVALID"
+        },
+        "expectedExitCode": {
+          "const": 2
+        },
+        "expectedReasonCode": {
+          "const": "MANIFEST_IDENTITY_DRIFT"
+        }
+      }
+    },
+    "oracleBaseHonestIncomplete": {
+      "properties": {
+        "testId": {
+          "const": "HONEST_INCOMPLETE_ACCEPTED"
+        },
+        "expectedMechanism": {
+          "const": "HONEST_INCOMPLETE"
+        },
+        "mutationVector": {
+          "const": "NONE"
+        },
+        "expectedTerminal": {
+          "const": "INCOMPLETE"
+        },
+        "expectedExitCode": {
+          "const": 4
+        },
+        "expectedReasonCode": {
+          "const": "HONEST_INCOMPLETE"
+        }
+      }
+    },
+    "passFailPlaceholder": {
+      "$ref": "#/$defs/passFailInvalidPlaceholder"
+    },
+    "passFailWrongKind": {
+      "$ref": "#/$defs/passFailInvalidWrongKind"
+    },
+    "passFailWrongRevision": {
+      "$ref": "#/$defs/passFailInvalidWrongRevision"
+    },
+    "passFailLegacyComplete": {
+      "$ref": "#/$defs/passFailAccepted"
+    },
+    "passFailMissingStore": {
+      "$ref": "#/$defs/passFailMissingStoreBody"
+    },
+    "passFailMissingOwner": {
+      "$ref": "#/$defs/passFailMissingOwnerBody"
+    },
+    "passFailMissingTarget": {
+      "$ref": "#/$defs/passFailMissingTargetBody"
+    },
+    "passFailManifestDrift": {
+      "$ref": "#/$defs/passFailManifestDriftBody"
+    },
+    "passFailHonestIncomplete": {
+      "$ref": "#/$defs/passFailIncomplete"
+    },
+    "passFailInvalidPlaceholder": {
+      "$ref": "#/$defs/passFailInvalidPlaceholderBody"
+    },
+    "passFailInvalidWrongKind": {
+      "$ref": "#/$defs/passFailInvalidWrongKindBody"
+    },
+    "passFailInvalidWrongRevision": {
+      "$ref": "#/$defs/passFailInvalidWrongRevisionBody"
+    },
+    "passFailMissingStoreBody": {
+      "$ref": "#/$defs/passFailNotAcceptedStore"
+    },
+    "passFailMissingOwnerBody": {
+      "$ref": "#/$defs/passFailNotAcceptedOwner"
+    },
+    "passFailMissingTargetBody": {
+      "$ref": "#/$defs/passFailNotAcceptedTarget"
+    },
+    "passFailManifestDriftBody": {
+      "$ref": "#/$defs/passFailManifestInvalid"
+    },
+    "passFailInvalidPlaceholderBody": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "INVALID"
+              },
+              "processExitCode": {
+                "const": 2
+              },
+              "closedReasonCode": {
+                "const": "PLACEHOLDER_REJECTED"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "INVALID"
+                },
+                "processExitCode": {
+                  "const": 2
+                },
+                "closedReasonCode": {
+                  "const": "PLACEHOLDER_REJECTED"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailInvalidWrongKindBody": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "INVALID"
+              },
+              "processExitCode": {
+                "const": 2
+              },
+              "closedReasonCode": {
+                "const": "WRONG_KIND"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "INVALID"
+                },
+                "processExitCode": {
+                  "const": 2
+                },
+                "closedReasonCode": {
+                  "const": "WRONG_KIND"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailInvalidWrongRevisionBody": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "INVALID"
+              },
+              "processExitCode": {
+                "const": 2
+              },
+              "closedReasonCode": {
+                "const": "WRONG_VERIFIER_REVISION"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "INVALID"
+                },
+                "processExitCode": {
+                  "const": 2
+                },
+                "closedReasonCode": {
+                  "const": "WRONG_VERIFIER_REVISION"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailAccepted": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "ACCEPTED"
+              },
+              "processExitCode": {
+                "const": 0
+              },
+              "closedReasonCode": {
+                "const": "LEGACY_AUTHORITY_COMPLETE"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "ACCEPTED"
+                },
+                "processExitCode": {
+                  "const": 0
+                },
+                "closedReasonCode": {
+                  "const": "LEGACY_AUTHORITY_COMPLETE"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailNotAcceptedStore": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "NOT_ACCEPTED"
+              },
+              "processExitCode": {
+                "const": 3
+              },
+              "closedReasonCode": {
+                "const": "MISSING_STORE"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "NOT_ACCEPTED"
+                },
+                "processExitCode": {
+                  "const": 3
+                },
+                "closedReasonCode": {
+                  "const": "MISSING_STORE"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailNotAcceptedOwner": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "NOT_ACCEPTED"
+              },
+              "processExitCode": {
+                "const": 3
+              },
+              "closedReasonCode": {
+                "const": "MISSING_OWNER"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "NOT_ACCEPTED"
+                },
+                "processExitCode": {
+                  "const": 3
+                },
+                "closedReasonCode": {
+                  "const": "MISSING_OWNER"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailNotAcceptedTarget": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "NOT_ACCEPTED"
+              },
+              "processExitCode": {
+                "const": 3
+              },
+              "closedReasonCode": {
+                "const": "MISSING_TARGET"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "NOT_ACCEPTED"
+                },
+                "processExitCode": {
+                  "const": 3
+                },
+                "closedReasonCode": {
+                  "const": "MISSING_TARGET"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailManifestInvalid": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "INVALID"
+              },
+              "processExitCode": {
+                "const": 2
+              },
+              "closedReasonCode": {
+                "const": "MANIFEST_IDENTITY_DRIFT"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "INVALID"
+                },
+                "processExitCode": {
+                  "const": 2
+                },
+                "closedReasonCode": {
+                  "const": "MANIFEST_IDENTITY_DRIFT"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "passFailIncomplete": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "observedTerminal": {
+                "const": "INCOMPLETE"
+              },
+              "processExitCode": {
+                "const": 4
+              },
+              "closedReasonCode": {
+                "const": "HONEST_INCOMPLETE"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "not": {
+              "properties": {
+                "observedTerminal": {
+                  "const": "INCOMPLETE"
+                },
+                "processExitCode": {
+                  "const": 4
+                },
+                "closedReasonCode": {
+                  "const": "HONEST_INCOMPLETE"
+                }
+              },
+              "required": [
+                "observedTerminal",
+                "processExitCode",
+                "closedReasonCode"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

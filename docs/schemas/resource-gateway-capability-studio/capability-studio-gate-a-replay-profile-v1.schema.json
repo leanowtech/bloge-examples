@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-profile-v1.schema.json",
+  "title": "Capability Studio Gate A replay profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "profileId", "revision", "gateRevision", "tckDefinition", "provider", "candidateSpi", "allowedOperations", "timePolicy", "replayProfileFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.replay-profile.v1"},
+    "profileId": {"const": "GATE-A-REPLAY"},
+    "revision": {"const": 1},
+    "gateRevision": {"const": 1},
+    "tckDefinition": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "provider": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "candidateSpi": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "allowedOperations": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"const": "TYPED_REPLAY_V1"}, {"const": "LEGACY_STAGE_ACCEPTANCE_V2"}], "items": false},
+    "timePolicy": {"type": "object", "additionalProperties": false, "required": ["maxStartDelayMillis", "maxRunWindowMillis", "maxEvidenceAgeMillis"], "properties": {"maxStartDelayMillis": {"const": 300000}, "maxRunWindowMillis": {"const": 1800000}, "maxEvidenceAgeMillis": {"const": 86400000}}},
+    "replayProfileFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

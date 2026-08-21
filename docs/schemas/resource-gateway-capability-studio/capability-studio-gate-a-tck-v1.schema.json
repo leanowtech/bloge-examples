@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-tck-v1.schema.json",
+  "title": "Capability Studio Gate A TCK definition v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "tckId",
+    "revision",
+    "tests",
+    "outerRuns",
+    "providerCollisionGuard",
+    "tckFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.tck.v1"
+    },
+    "tckId": {
+      "const": "GATE-A-TCK"
+    },
+    "revision": {
+      "const": 1
+    },
+    "tests": {
+      "type": "array",
+      "const": [
+        {
+          "testId": "PLACEHOLDER_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "PLACEHOLDER_REJECTED"
+        },
+        {
+          "testId": "WRONG_KIND_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "WRONG_KIND"
+        },
+        {
+          "testId": "WRONG_VERIFIER_REVISION_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "WRONG_VERIFIER_REVISION"
+        },
+        {
+          "testId": "VERIFIER_DIGEST_MUTATION_REJECTED",
+          "execution": "WRONG_VERIFIER_DIGEST_A1",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "VERIFIER_DIGEST_MUTATION"
+        },
+        {
+          "testId": "REGISTRY_MUTATION_REJECTED",
+          "execution": "REGISTRY_MUTATION_A1",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "REGISTRY_MUTATION"
+        },
+        {
+          "testId": "VERIFIER_TCK_MISMATCH_REJECTED",
+          "execution": "TCK_MISMATCH_A1",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "VERIFIER_TCK_MISMATCH"
+        },
+        {
+          "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "ACCEPTED",
+          "expectedExitCode": 0,
+          "expectedReasonCode": "LEGACY_AUTHORITY_COMPLETE"
+        },
+        {
+          "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "NOT_ACCEPTED",
+          "expectedExitCode": 3,
+          "expectedReasonCode": "MISSING_STORE"
+        },
+        {
+          "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "NOT_ACCEPTED",
+          "expectedExitCode": 3,
+          "expectedReasonCode": "MISSING_OWNER"
+        },
+        {
+          "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "NOT_ACCEPTED",
+          "expectedExitCode": 3,
+          "expectedReasonCode": "MISSING_TARGET"
+        },
+        {
+          "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "INVALID",
+          "expectedExitCode": 2,
+          "expectedReasonCode": "MANIFEST_IDENTITY_DRIFT"
+        },
+        {
+          "testId": "HONEST_INCOMPLETE_ACCEPTED",
+          "execution": "NORMAL_CHILD",
+          "expectedTerminal": "INCOMPLETE",
+          "expectedExitCode": 4,
+          "expectedReasonCode": "HONEST_INCOMPLETE"
+        }
+      ]
+    },
+    "outerRuns": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "const": "NORMAL_A1"
+        },
+        {
+          "const": "WRONG_VERIFIER_DIGEST_A1"
+        },
+        {
+          "const": "REGISTRY_MUTATION_A1"
+        },
+        {
+          "const": "TCK_MISMATCH_A1"
+        },
+        {
+          "const": "PROVIDER_COLLISION_A1"
+        }
+      ],
+      "items": false
+    },
+    "providerCollisionGuard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testId",
+        "expectedReasonCode",
+        "expectedTerminal",
+        "expectedExitCode"
+      ],
+      "properties": {
+        "testId": {
+          "const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"
+        },
+        "expectedReasonCode": {
+          "const": "PROVIDER_NAMESPACE_COLLISION"
+        },
+        "expectedTerminal": {
+          "const": "INVALID"
+        },
+        "expectedExitCode": {
+          "const": 2
+        }
+      }
+    },
+    "tckFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  }
+}

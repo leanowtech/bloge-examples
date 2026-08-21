@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-profile-v1.schema.json",
+  "title": "Capability Studio Gate A admission profile v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "profileId", "revision", "requirements", "artifactRoles", "testCount", "mandatoryGuards", "reviewPolicy", "timePolicy", "admissionProfileFingerprint"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.admission-profile.v1"},
+    "profileId": {"const": "GATE-A-ADMISSION"},
+    "revision": {"const": 1},
+    "requirements": {"type": "array", "minItems": 5, "maxItems": 5, "prefixItems": [{"const": "REQUIREMENTS"}, {"const": "ARTIFACTS"}, {"const": "TESTS"}, {"const": "MANDATORY_GUARDS"}, {"const": "TRUSTED_REVIEW"}], "items": false},
+    "artifactRoles": {"type": "array", "minItems": 4, "maxItems": 4, "prefixItems": [{"const": "IMPLEMENTATION_CANDIDATE"}, {"const": "INDEPENDENT_VERIFIER"}, {"const": "GATE_VERIFIER"}, {"const": "TEST_REPORT"}], "items": false},
+    "testCount": {"const": 12},
+    "mandatoryGuards": {"type": "array", "minItems": 2, "maxItems": 2, "prefixItems": [{"const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"}, {"const": "REVIEW_COUNT_CONSISTENCY_REJECTED"}], "items": false},
+    "reviewPolicy": {"type": "object", "additionalProperties": false, "required": ["requiredCheckIds", "signatureAlgorithm", "maxOpenP0", "maxOpenP1", "maxSkipped"], "properties": {"requiredCheckIds": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,95}$"}}, "signatureAlgorithm": {"const": "Ed25519"}, "maxOpenP0": {"const": 0}, "maxOpenP1": {"const": 0}, "maxSkipped": {"const": 0}}},
+    "timePolicy": {"type": "object", "additionalProperties": false, "required": ["maxStartDelayMillis", "maxRunWindowMillis", "maxEvidenceAgeMillis"], "properties": {"maxStartDelayMillis": {"const": 300000}, "maxRunWindowMillis": {"const": 1800000}, "maxEvidenceAgeMillis": {"const": 86400000}}},
+    "admissionProfileFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  }
+}

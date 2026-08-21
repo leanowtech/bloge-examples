@@ -1,0 +1,61 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
+  "envelopeId": "A1-ENVELOPE-DEMO-002",
+  "gateRevision": 1,
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+  },
+  "replayProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+  },
+  "closureStatus": "CLOSED",
+  "replayResultMessageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
+  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "replayResultRef": {
+    "uri": "run-material/results/a1-replay-result-unavailable.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    }
+  },
+  "producerProcessTranscriptRef": {
+    "uri": "run-material/transcripts/a1-process-unavailable.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  "producerMaterialRootRef": {
+    "uri": "run-material/a1.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:6969696969696969696969696969696969696969696969696969696969696969"
+    }
+  },
+  "expectedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "observedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "observedProcessState": "COMPLETED",
+  "observedExitCode": 3,
+  "observedTerminal": "UNAVAILABLE",
+  "createdAt": "2026-08-21T11:10:01Z",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+  }
+}

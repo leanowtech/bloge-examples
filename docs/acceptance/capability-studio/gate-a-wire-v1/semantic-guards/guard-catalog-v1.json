@@ -163,7 +163,7 @@
       "owner": "A2",
       "phase": "TRUST",
       "inputKind": "ReviewerAuthorityEnvelopeV1",
-      "rule": "Verify the caller-pinned policy and revocation snapshot, Ed25519 signature payload, scope, time window, reviewer role and reviewed material root.",
+      "rule": "Verify the caller-pinned policy and revocation snapshot, Ed25519 signature payload, Review Body raw-byte binding, scope, time window, reviewer role and reviewed material root; then reject duplicate or non-canonically ordered finding IDs and any PASS/FINDING/SKIPPED check-to-finding inconsistency.",
       "mismatch": "FAIL",
       "unavailable": "UNAVAILABLE",
       "sourceFactIds": ["REVIEW_FINDING"],

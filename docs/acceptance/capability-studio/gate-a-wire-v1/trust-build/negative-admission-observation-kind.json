@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "capability-studio.gate-a-admission-trust-pin.v1",
+  "gateId": "GATE-A",
+  "gateRevision": 1,
+  "createdAt": "2026-08-21T09:31:00Z",
+  "trustBasis": {
+    "challengeTrustPinRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000014"
+    },
+    "allowedGateRevision": 1
+  },
+  "admissionContext": {
+    "admissionVerificationTime": "2026-08-21T09:32:00Z"
+  },
+  "observedOutputs": {
+    "sealedGateResultRawFingerprint": {
+      "kind": "AGGREGATE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000015"
+    },
+    "sealedAdmissionEvidenceRootFingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000016"
+    },
+    "sealedRunMaterialRootFingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000017"
+    },
+    "sealedTestReportRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000018"
+    },
+    "sealedReviewerAuthorityRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000019"
+    },
+    "sealedReviewBodyRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001a"
+    },
+    "sealedReviewedMaterialRootFingerprint": {
+      "kind": "AGGREGATE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001b"
+    },
+    "sealedGateTestEvidenceAggregateFingerprint": {
+      "kind": "AGGREGATE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001c"
+    },
+    "sealedProcessMaterialAggregateFingerprint": {
+      "kind": "AGGREGATE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001d"
+    },
+    "sealedHarnessInvocationRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001e"
+    },
+    "sealedHarnessProcessTranscriptRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000001f"
+    }
+  },
+  "admissionTrustPinFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000020"
+  }
+}

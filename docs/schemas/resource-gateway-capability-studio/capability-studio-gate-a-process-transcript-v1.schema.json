@@ -25,11 +25,11 @@
   "allOf": [
     {
       "if": {"properties": {"processState": {"const": "COMPLETED"}}, "required": ["processState"]},
-      "then": {"properties": {"exitCode": {"const": 0}, "timedOut": {"const": false}, "cancelled": {"const": false}}}
+      "then": {"properties": {"exitCode": {"enum": [0, 2, 3, 4]}, "timedOut": {"const": false}, "cancelled": {"const": false}}}
     },
     {
       "if": {"properties": {"processState": {"const": "FAILED"}}, "required": ["processState"]},
-      "then": {"properties": {"exitCode": {"minimum": 1}, "timedOut": {"const": false}, "cancelled": {"const": false}}}
+      "then": {"properties": {"exitCode": {"minimum": 1, "not": {"enum": [2, 3, 4, 130, 143, 255]}}, "timedOut": {"const": false}, "cancelled": {"const": false}}}
     },
     {
       "if": {"properties": {"processState": {"const": "TIMED_OUT"}}, "required": ["processState"]},

@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "capability-studio.gate-a-build-identity.v1",
+  "artifactRole": "INDEPENDENT_VERIFIER",
+  "gateId": "GATE-A",
+  "gateRevision": 1,
+  "replayProfileRawFingerprint": null,
+  "harnessProfileRawFingerprint": null,
+  "admissionProfileRawFingerprint": null,
+  "schemaSetManifestRef": {
+    "entryPath": "META-INF/gate-a/manifests/schema-set.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000031"
+    }
+  },
+  "schemaSetFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000032"
+  },
+  "resourceManifestRef": {
+    "entryPath": "META-INF/gate-a/manifests/resources.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000033"
+    }
+  },
+  "resourceManifestFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000034"
+  },
+  "sourceManifestRef": {
+    "entryPath": "META-INF/gate-a/manifests/sources.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000035"
+    }
+  },
+  "sourceManifestFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000036"
+  },
+  "classManifestRef": {
+    "entryPath": "META-INF/gate-a/manifests/classes.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000037"
+    }
+  },
+  "classManifestFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000038"
+  },
+  "dependencyLockManifestRef": {
+    "entryPath": "META-INF/gate-a/manifests/dependencies.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000039"
+    }
+  },
+  "dependencyLockManifestFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000003a"
+  },
+  "registryRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000003b"
+  },
+  "tckDefinitionRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000003c"
+  },
+  "identityFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000003d"
+  }
+}

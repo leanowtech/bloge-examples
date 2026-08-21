@@ -1,0 +1,2115 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.material-attack-manifest.v1",
+  "manifestId": "GATE-A-MATERIAL-ATTACKS-D0",
+  "collectorRevision": 1,
+  "normalizedVectorsExcluded": true,
+  "guardCatalog": "docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/guard-catalog-v1.json",
+  "cases": [
+    {
+      "caseId": "REAL-A0-SLOT-COUNT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A0_SLOT_COUNT_PROJECTION",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a0/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-candidate-replay-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "pins/challenge.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/formal-evidence-run-manifest.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/challenge-root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "registries/candidate.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A0-SLOT-COUNT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a0/result.json#/adapterVerifiedCount",
+        "description": "Replace the producer adapter count while leaving all three adapter statuses unchanged.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reason": "A0_SLOT_COUNT_PROJECTION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A0-TERMINAL",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A0_TERMINAL_DERIVATION",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a0/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-candidate-replay-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "pins/challenge.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/formal-evidence-run-manifest.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/challenge-root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "registries/candidate.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A0-TERMINAL",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a0/result.json#/terminal",
+        "description": "Promote an incomplete adapter result to a structural success terminal without evidence.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reason": "A0_TERMINAL_DERIVATION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A0-REFERENCE-URI",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A0_REFERENCE_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a0/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-candidate-replay-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "pins/challenge.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/formal-evidence-run-manifest.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/challenge-root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "registries/candidate.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A0-REFERENCE-URI",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a0/result.json#/candidateArtifactRef/uri",
+        "description": "Point the candidate artifact reference at a material path that is absent from the pinned root.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reason": "A0_REFERENCE_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A0-RESULT-FINGERPRINT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A0_RESULT_FINGERPRINT",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a0/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-candidate-replay-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "pins/challenge.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/formal-evidence-run-manifest.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/challenge-root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "registries/candidate.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A0-RESULT-FP",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a0/result.json#/resultFingerprint/value",
+        "description": "Replace the result fingerprint after all result fields have otherwise remained unchanged.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reason": "A0_RESULT_FINGERPRINT",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-SLOT-COUNT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A1_SLOT_COUNT_PROJECTION",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "profiles/replay.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "tck/gate-a-tck-v1.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "registries/verifier.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-SLOT-COUNT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay.json#/passedCount",
+        "description": "Replace the fixed nine-slot PASS projection with a count that cannot be recounted.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_SLOT_COUNT_PROJECTION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-SLOT-OUTCOME",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A1_SLOT_OUTCOME_BINDING",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "profiles/replay.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "tck/gate-a-tck-v1.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "registries/verifier.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-SLOT-OUTCOME",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay.json#/terminal",
+        "description": "Change the replay terminal while the fixed slot observations still all describe verification.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_SLOT_OUTCOME_BINDING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-OUTER-TRANSCRIPT-CRASH",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-OUTER-CRASH",
+        "operation": "PROCESS_STATE_REPLACE",
+        "target": "run-material/transcripts/a1-process.json#/processState",
+        "description": "Mark the producer process as failed so a Proof cannot be promoted to a closed replay result.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "UNAVAILABLE",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "UNAVAILABLE",
+        "reason": "A1_OUTER_TRANSCRIPT_CRASHED",
+        "exitCode": 3
+      }
+    },
+    {
+      "caseId": "REAL-A1-RESULT-FINGERPRINT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A1_RESULT_FINGERPRINT",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "profiles/replay.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "tck/gate-a-tck-v1.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "registries/verifier.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-RESULT-FP",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay.json#/resultFingerprint/value",
+        "description": "Replace the replay result fingerprint after the nine slot content has been materialized.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_RESULT_FINGERPRINT",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-HARNESS-MISSING-PROOF",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "HARNESS_PROOF_COMPLETENESS",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-HARNESS-MISSING-PROOF",
+        "operation": "RAW_FILE_DELETE",
+        "target": "run-material/results/a1-replay-result.json",
+        "description": "Delete the caller-owned replay result so the Harness cannot manufacture a TEST_REPORT.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_REPLAY_PROOF_MISSING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-PROVIDER-NAMESPACE",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "provider/identity.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/valid-tck-provider-identity.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-tck-provider-identity-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "provider/provider.jar",
+            "kind": "ZIP_ARCHIVE"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "ZIP_ENTRIES",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-PROVIDER-NAMESPACE",
+        "operation": "ZIP_ENTRY_ADD",
+        "target": "provider/provider.jar#com/leanowtech/bloge/gateway/testkit/ShadowProvider.class",
+        "description": "Add a class under the protected test-kit namespace to the candidate provider archive.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED",
+        "conclusion": "FAIL",
+        "reason": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-PIN-LIFECYCLE",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "PIN_LIFECYCLE_BINDING",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "pins/challenge.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/valid-challenge-trust-pin.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-challenge-trust-pin-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-PIN-LIFECYCLE",
+        "operation": "RAW_BYTES_REPLACE",
+        "target": "artifacts/candidate.jar",
+        "description": "Replace the candidate bytes after the Challenge Pin has been bound to the original artifact.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "PIN_LIFECYCLE_BINDING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-ADMISSION-EVIDENCE-ROOT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "admission-evidence/root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "admission-evidence/root.tree/TEST_REPORT.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-ADMISSION-EVIDENCE",
+        "operation": "TREE_FILE_REPLACE",
+        "target": "admission-evidence/root.tree/TEST_REPORT.json",
+        "description": "Replace a file inside the sealed Admission Evidence Root after its tree commitment was recorded.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:TEST_REPORT",
+        "conclusion": "FAIL",
+        "reason": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-CODESOURCE-INDEPENDENCE",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "CODESOURCE_INDEPENDENCE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "process/harness.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/harness.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/harness-alias.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "CODE_SOURCE_PATH",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-CODESOURCE-INDEPENDENCE",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "process/harness.json#/codeSource/artifactPath",
+        "description": "Point the observed Harness code source at a byte-equal but inode-distinct alias artifact.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "CODESOURCE_INDEPENDENCE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-SIGNATURE-TAMPER",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-SIGNATURE",
+        "operation": "SIGNATURE_REPLACE",
+        "target": "review/envelope.json#/signature",
+        "description": "Replace the Ed25519 signature bytes while retaining the signed review claims and policy.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-COUNT-UNDERREPORT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-COUNT",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/openP0",
+        "description": "Under-report the open P0 finding in every signed count projection and re-sign the altered claims.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-ROLLBACK-BINDING",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "ROLLBACK_BINDING",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "rollback/gate-a.md",
+            "kind": "ROLLBACK_INSTRUCTION"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-ROLLBACK-BINDING",
+        "operation": "RAW_BYTES_REPLACE",
+        "target": "rollback/gate-a.md",
+        "description": "Replace the rollback instruction bytes after Admission bound the original instruction fingerprint.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "ROLLBACK_BINDING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A2-SEMANTIC-GUARD",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A2-SEMANTIC-GUARD",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "admission/result.json#/semanticGuardResults/0/status",
+        "description": "Set one catalog Guard outcome to FAIL while leaving the projected conclusion at PASS.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A2_CONCLUSION_PRECEDENCE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A2-RESULT-FINGERPRINT",
+      "caseClass": "PRIMARY_GUARD_ATTACK",
+      "guardId": "A2_RESULT_FINGERPRINT",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A2-RESULT-FP",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "admission/result.json#/resultFingerprint/value",
+        "description": "Replace the A2 result fingerprint after the complete admission document has been materialized.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A2_RESULT_FINGERPRINT",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A0-RAW-FINGERPRINT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A0_REFERENCE_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a0/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-candidate-replay-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "artifacts/candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "pins/challenge.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/formal-evidence-run-manifest.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "inputs/challenge-root.tree",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "registries/candidate.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A0-RAW-FINGERPRINT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a0/result.json#/candidateArtifactRef/rawFingerprint/value",
+        "description": "Replace the candidate artifact digest while keeping the URI inside the caller-pinned root.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reason": "A0_REFERENCE_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-PROOF-WRONG-RESULT-REF",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-WRONG-RESULT-REF",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay-proof-envelope.json#/replayResultRef/uri",
+        "description": "Point the Proof Envelope at a missing result URI instead of its canonical replay result material.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_REPLAY_RESULT_REF_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-PROOF-RESULT-DIGEST",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-RESULT-DIGEST",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay-proof-envelope.json#/replayResultRef/rawFingerprint/value",
+        "description": "Replace the envelope result raw digest while preserving the result URI and JSON schema.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_REPLAY_RESULT_RAW_FINGERPRINT",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-PROOF-TRANSCRIPT-DIGEST",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-TRANSCRIPT-DIGEST",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay-proof-envelope.json#/producerProcessTranscriptRef/rawFingerprint/value",
+        "description": "Replace the envelope transcript raw digest while preserving the actual process transcript bytes.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_PROCESS_TRANSCRIPT_RAW_FINGERPRINT",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-PROOF-MATERIAL-ROOT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-MATERIAL-ROOT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay-proof-envelope.json#/producerMaterialRootRef/fingerprint/value",
+        "description": "Replace the sealed producer material tree digest after all referenced files are closed.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_MATERIAL_ROOT_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A1-PROOF-TERMINAL-EXIT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_WIRE_FIXTURE",
+        "documents": [
+          {
+            "target": "a1/replay-proof-envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-proof-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json"
+          },
+          {
+            "target": "run-material/results/a1-replay-result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-replay-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json"
+          },
+          {
+            "target": "run-material/transcripts/a1-process.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-process-transcript.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "run-material",
+            "kind": "DIRECTORY_TREE"
+          },
+          {
+            "target": "artifacts/a1-candidate.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-verifier.jar",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "artifacts/a1-producer.jar",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "REFERENCE_PATH",
+          "PROCESS_TRANSCRIPT",
+          "DIRECTORY_TREE",
+          "RAW_FINGERPRINT",
+          "CODE_SOURCE_PATH",
+          "EXIT_STATE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A1-TERMINAL-EXIT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "a1/replay-proof-envelope.json#/observedTerminal",
+        "description": "Map the completed zero-exit transcript to INVALID with exit two in the outer Proof Envelope.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A1_TERMINAL_EXIT_MAPPING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-A2-REQUIREMENT-SLOT-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-A2-REQUIREMENT-SLOT",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "admission/result.json#/requirements/0/status",
+        "description": "Set a non-Guard required slot to FAIL while the stored A2 conclusion remains PASS.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reason": "A2_CONCLUSION_PRECEDENCE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-CHECK-FINDING-MISMATCH",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-CHECK-FINDING",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/reviewChecks",
+        "description": "Create a signed review whose FINDING check has no corresponding finding record.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-DUPLICATE-FINDING-ID",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-DUPLICATE-FINDING",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/findings",
+        "description": "Create a signed review with duplicate finding identifiers that cannot be uniquely audited.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-FINDING-ORDER-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-FINDING-ORDER",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/findings",
+        "description": "Create a signed review whose finding identifiers are valid but not in canonical order.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-KEYID-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-KEYID",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "review/envelope.json#/keyId",
+        "description": "Replace the envelope keyId with an unknown key instead of resolving an exact policy key.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-ISSUER-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-ISSUER",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "review/envelope.json#/issuer",
+        "description": "Replace the envelope issuer with an issuer absent from the policy and revocation snapshot.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-AUTHORITY-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-AUTHORITY",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "review/envelope.json#/authorityId",
+        "description": "Replace the envelope authority with an authority not allowed by the trust policy.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-REVOCATION-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-REVOCATION",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "review/envelope.json#/revocationSnapshotRawFingerprint/value",
+        "description": "Replace the envelope revocation snapshot digest without changing the signed review body.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-POLICY-FINGERPRINT-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {
+            "target": "review/body.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/envelope.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/policy.json",
+            "kind": "RAW_BYTES"
+          },
+          {
+            "target": "review/revocation.json",
+            "kind": "RAW_BYTES"
+          }
+        ],
+        "collectorReads": [
+          "JSON_BYTES",
+          "RAW_FINGERPRINT",
+          "ED25519_SIGNATURE"
+        ]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-POLICY-FP",
+        "operation": "JSON_FIELD_REPLACE",
+        "target": "review/policy.json#/reviewerTrustPolicyFingerprint/value",
+        "description": "Replace the reviewer policy fingerprint while retaining the fixture key and algorithm.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-COUNT-OPEN-P1-UNDERREPORT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-COUNT-OPEN-P1",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/openP1",
+        "description": "Create one valid open P1 finding, under-report its signed openP1 projection, and re-sign with the authorized fixture signer.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-COUNT-SKIPPED-UNDERREPORT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {
+            "target": "review/body.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"
+          },
+          {
+            "target": "review/envelope.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"
+          },
+          {
+            "target": "review/policy.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"
+          },
+          {
+            "target": "review/revocation.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-COUNT-SKIPPED",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/skippedCount",
+        "description": "Create one valid skipped review check, under-report its signed skippedCount projection, and re-sign with the authorized fixture signer.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-CANDIDATE-BINDING-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-CANDIDATE-BINDING",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/envelope.json#/candidateRawFingerprint",
+        "description": "Re-sign an envelope whose candidate fingerprint no longer equals the policy subject.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-BODY-ENVELOPE-REVIEWED-AT-DRIFT",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-REVIEWED-AT-BINDING",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/body.json#/reviewedAt",
+        "description": "Re-sign a body with a reviewedAt value different from the envelope reviewedAt.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-REVOCATION-ISSUED-AT",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/revocation.json#/issuedAt",
+        "description": "Re-sign a review against a revocation snapshot issued after the review time.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-challenge-request.v1",
+  "challengeId": "CHALLENGE-DEMO-001",
+  "operation": "TYPED_REPLAY_V1",
+  "candidateRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "replayProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
+  },
+  "tckVectorId": "HONEST_INCOMPLETE_ACCEPTED",
+  "fixtureRootRef": {
+    "uri": "inputs/challenge-root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:3636363636363636363636363636363636363636363636363636363636363636"
+    }
+  },
+  "inputExactRefs": [
+    {
+      "inputRole": "FORMAL_EVIDENCE_MANIFEST",
+      "exactRef": {
+        "uri": "inputs/formal-evidence-run-manifest.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3535353535353535353535353535353535353535353535353535353535353535"
+        }
+      }
+    },
+    {
+      "inputRole": "FORMAL_EVIDENCE_BUNDLE",
+      "exactRef": {
+        "uri": "inputs/formal-evidence-bundle.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3636363636363636363636363636363636363636363636363636363636363636"
+        }
+      }
+    }
+  ],
+  "semanticVerificationTime": "2026-08-21T09:59:58Z",
+  "timeoutMillis": 30000,
+  "stdoutLimitBytes": 8192,
+  "stderrLimitBytes": 8192,
+  "requestFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+  }
+}

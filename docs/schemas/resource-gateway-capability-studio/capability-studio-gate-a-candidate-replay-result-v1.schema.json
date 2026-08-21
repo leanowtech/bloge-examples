@@ -1,0 +1,648 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+  "title": "Capability Studio Gate A candidate replay result v1",
+  "$comment": "Schema freezes the three adapter slots, fourteen FELT slots, field types, and terminal/reason discriminant. All counts, terminal derivation, result fingerprint, and cross-material bindings are untrusted projections until the independent semantic verifier closes the named Gate A guards.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "resultId",
+    "gateRevision",
+    "candidateArtifactRef",
+    "challengeTrustPinRef",
+    "formalEvidenceManifestRef",
+    "challengeInputRootRef",
+    "registryRef",
+    "adapterResults",
+    "obligationResults",
+    "adapterVerifiedCount",
+    "adapterInvalidCount",
+    "adapterUnavailableCount",
+    "adapterNotRunCount",
+    "obligationFailedCount",
+    "obligationBlockedCount",
+    "obligationNotRunCount",
+    "formalPassCount",
+    "formalExpectedCount",
+    "terminal",
+    "reasonCode",
+    "resultFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.candidate-replay-result.v1"
+    },
+    "resultId": {
+      "type": "string",
+      "pattern": "^A0-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "gateRevision": {
+      "const": 1
+    },
+    "candidateArtifactRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "challengeTrustPinRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "formalEvidenceManifestRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "challengeInputRootRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeRef"
+    },
+    "registryRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "adapterResults": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/formalInputTreeAdapter"
+        },
+        {
+          "$ref": "#/$defs/durableWrapperAdapter"
+        },
+        {
+          "$ref": "#/$defs/stageAcceptanceAdapter"
+        }
+      ],
+      "items": false
+    },
+    "obligationResults": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/felt01"
+        },
+        {
+          "$ref": "#/$defs/felt02"
+        },
+        {
+          "$ref": "#/$defs/felt03"
+        },
+        {
+          "$ref": "#/$defs/felt04"
+        },
+        {
+          "$ref": "#/$defs/felt05"
+        },
+        {
+          "$ref": "#/$defs/felt06"
+        },
+        {
+          "$ref": "#/$defs/felt07"
+        },
+        {
+          "$ref": "#/$defs/felt08"
+        },
+        {
+          "$ref": "#/$defs/felt09"
+        },
+        {
+          "$ref": "#/$defs/felt10"
+        },
+        {
+          "$ref": "#/$defs/felt11"
+        },
+        {
+          "$ref": "#/$defs/felt12"
+        },
+        {
+          "$ref": "#/$defs/felt13"
+        },
+        {
+          "$ref": "#/$defs/felt14"
+        }
+      ],
+      "items": false
+    },
+    "adapterVerifiedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "adapterInvalidCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "adapterUnavailableCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "adapterNotRunCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3
+    },
+    "obligationFailedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 14
+    },
+    "obligationBlockedCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 14
+    },
+    "obligationNotRunCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 14
+    },
+    "formalPassCount": {
+      "const": 0
+    },
+    "formalExpectedCount": {
+      "const": 27
+    },
+    "terminal": {
+      "enum": [
+        "STRUCTURE_VERIFIED",
+        "INCOMPLETE",
+        "INVALID",
+        "UNAVAILABLE"
+      ]
+    },
+    "reasonCode": {
+      "enum": [
+        "A0_STRUCTURE_VERIFIED",
+        "A0_INCOMPLETE",
+        "A0_INVALID",
+        "A0_UNAVAILABLE"
+      ]
+    },
+    "resultFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "STRUCTURE_VERIFIED"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A0_STRUCTURE_VERIFIED"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "INCOMPLETE"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A0_INCOMPLETE"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "INVALID"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A0_INVALID"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "terminal": {
+            "const": "UNAVAILABLE"
+          }
+        },
+        "required": [
+          "terminal"
+        ]
+      },
+      "then": {
+        "properties": {
+          "reasonCode": {
+            "const": "A0_UNAVAILABLE"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "adapterKind",
+        "verifierId",
+        "verifierRevision",
+        "status",
+        "resultRef"
+      ],
+      "properties": {
+        "adapterKind": {
+          "enum": [
+            "FORMAL_INPUT_TREE_V1",
+            "EXECUTION_LEASE_DURABLE_WRAPPER_V1",
+            "STAGE_ACCEPTANCE_RESULT_V2"
+          ]
+        },
+        "verifierId": {
+          "enum": [
+            "CapabilityStudioFormalInputTreeSnapshotter.verify",
+            "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify",
+            "CapabilityStudioStageAcceptanceResultV2Verifier.verify"
+          ]
+        },
+        "verifierRevision": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "status": {
+          "enum": [
+            "VERIFIED",
+            "INVALID",
+            "UNAVAILABLE",
+            "NOT_RUN"
+          ]
+        },
+        "resultRef": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "VERIFIED",
+                  "INVALID"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resultRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "UNAVAILABLE",
+                  "NOT_RUN"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "resultRef": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "formalInputTreeAdapter": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/adapter"
+        },
+        {
+          "properties": {
+            "adapterKind": {
+              "const": "FORMAL_INPUT_TREE_V1"
+            },
+            "verifierId": {
+              "const": "CapabilityStudioFormalInputTreeSnapshotter.verify"
+            },
+            "verifierRevision": {
+              "const": 1
+            }
+          }
+        }
+      ]
+    },
+    "durableWrapperAdapter": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/adapter"
+        },
+        {
+          "properties": {
+            "adapterKind": {
+              "const": "EXECUTION_LEASE_DURABLE_WRAPPER_V1"
+            },
+            "verifierId": {
+              "const": "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify"
+            },
+            "verifierRevision": {
+              "const": 1
+            }
+          }
+        }
+      ]
+    },
+    "stageAcceptanceAdapter": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/adapter"
+        },
+        {
+          "properties": {
+            "adapterKind": {
+              "const": "STAGE_ACCEPTANCE_RESULT_V2"
+            },
+            "verifierId": {
+              "const": "CapabilityStudioStageAcceptanceResultV2Verifier.verify"
+            },
+            "verifierRevision": {
+              "const": 2
+            }
+          }
+        }
+      ]
+    },
+    "obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "obligationId",
+        "status",
+        "evidenceRefs"
+      ],
+      "properties": {
+        "obligationId": {
+          "type": "string",
+          "pattern": "^FELT-(0[1-9]|1[0-4])$"
+        },
+        "status": {
+          "enum": [
+            "FAIL",
+            "BLOCKED",
+            "NOT_RUN"
+          ]
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+          }
+        }
+      }
+    },
+    "felt01": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-01"
+            }
+          }
+        }
+      ]
+    },
+    "felt02": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-02"
+            }
+          }
+        }
+      ]
+    },
+    "felt03": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-03"
+            }
+          }
+        }
+      ]
+    },
+    "felt04": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-04"
+            }
+          }
+        }
+      ]
+    },
+    "felt05": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-05"
+            }
+          }
+        }
+      ]
+    },
+    "felt06": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-06"
+            }
+          }
+        }
+      ]
+    },
+    "felt07": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-07"
+            }
+          }
+        }
+      ]
+    },
+    "felt08": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-08"
+            }
+          }
+        }
+      ]
+    },
+    "felt09": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-09"
+            }
+          }
+        }
+      ]
+    },
+    "felt10": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-10"
+            }
+          }
+        }
+      ]
+    },
+    "felt11": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-11"
+            }
+          }
+        }
+      ]
+    },
+    "felt12": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-12"
+            }
+          }
+        }
+      ]
+    },
+    "felt13": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-13"
+            }
+          }
+        }
+      ]
+    },
+    "felt14": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/obligation"
+        },
+        {
+          "properties": {
+            "obligationId": {
+              "const": "FELT-14"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
