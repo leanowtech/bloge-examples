@@ -14,6 +14,7 @@
 - [客户业务能力镜像蓝图差距与技术演进方案](resource-gateway-customer-business-mirror-blueprint-gap-and-technical-evolution-plan.md)
 - [Resource Gateway 产品手册](resource-gateway-product-manual.md)
 - [Resource Gateway 业务能力镜像与保真演练方案](resource-gateway-mock.md)
+- [Capability Studio 收敛式验收引擎技术设计](resource-gateway-capability-studio-convergent-acceptance-engine-technical-design.md)：技术方向评审通过，当前仅允许实施 `GATE-A TYPED_REPLAY`；full runner、stateful Lease 和外部发布仍被门禁阻断。
 
 ## 0. 结论先行
 
