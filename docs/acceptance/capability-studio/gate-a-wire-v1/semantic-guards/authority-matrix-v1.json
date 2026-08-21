@@ -1,0 +1,76 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.authority-matrix.v1",
+  "factClasses": ["EXPECTATION", "OBSERVATION", "DERIVED_PROJECTION", "PROOF_ARTIFACT", "ADMISSION_DECISION"],
+  "facts": [
+    {
+      "factId": "EXPECTED_TCK_SLOT",
+      "class": "EXPECTATION",
+      "soleAuthority": "caller-pinned TCK and role Profile",
+      "allowedProjections": ["A1 testRuns expected fields", "TEST_REPORT testRuns expected fields", "A2 tests.testId"],
+      "forbiddenUse": "A candidate response or GateResult cannot define its own expected mechanism, slot order, terminal or exit code."
+    },
+    {
+      "factId": "EXPECTED_ARTIFACT_IDENTITY",
+      "class": "EXPECTATION",
+      "soleAuthority": "caller-owned Challenge Trust Pin",
+      "allowedProjections": ["process invocation", "A1/Harness/A2 comparison diagnostics"],
+      "forbiddenUse": "No result, Build Identity or observed CodeSource may become its own expected pin."
+    },
+    {
+      "factId": "PROCESS_OBSERVATION",
+      "class": "OBSERVATION",
+      "soleAuthority": "direct parent-owned ProcessTranscript over actual child process and bytes",
+      "allowedProjections": ["A1 slot outcome", "Harness proof", "A2 evidence slot"],
+      "forbiddenUse": "Child stdout cannot self-authorize exit, timeout, cancellation, timestamps or actual CodeSource."
+    },
+    {
+      "factId": "A0_ADAPTER_FACT",
+      "class": "PROOF_ARTIFACT",
+      "soleAuthority": "typed adapter raw output independently replayed by A1 against caller-pinned input bytes",
+      "allowedProjections": ["GateACandidateReplayResult adapterResults", "A1 TCK outcome"],
+      "forbiddenUse": "A0 adapter status, count or terminal is never trusted without replay and guard recomputation."
+    },
+    {
+      "factId": "A0_FELT_GAP",
+      "class": "DERIVED_PROJECTION",
+      "soleAuthority": "A1 recount over the fixed FELT-01..14 obligation slots and reachable evidence",
+      "allowedProjections": ["GateACandidateReplayResult obligationResults", "A2 formal gap fields"],
+      "forbiddenUse": "A FELT count cannot promote formalPassCount above 0 or grant ACCEPTED."
+    },
+    {
+      "factId": "A1_SLOT_OUTCOME",
+      "class": "DERIVED_PROJECTION",
+      "soleAuthority": "independent derivation from pinned TCK expectation plus caller-observed process material",
+      "allowedProjections": ["GateAReplayVerificationResult", "TEST_REPORT", "GateTestEvidence", "A2 test slot"],
+      "forbiddenUse": "Producer status, passedCount or outer terminal is not an Oracle."
+    },
+    {
+      "factId": "TEST_REPORT_CLOSURE",
+      "class": "PROOF_ARTIFACT",
+      "soleAuthority": "caller-materialized canonical Harness success output after all 5 outer runs, 12 child runs, Provider guard and run-material root close",
+      "allowedProjections": ["GateResult TEST_REPORT artifact", "A2 artifact and test slots"],
+      "forbiddenUse": "A failed Harness attempt, partial report or transcript cannot be named TEST_REPORT."
+    },
+    {
+      "factId": "REVIEW_FINDING",
+      "class": "PROOF_ARTIFACT",
+      "soleAuthority": "signed Review Body verified through caller-pinned Trust Policy, revocation snapshot and Authority Envelope",
+      "allowedProjections": ["review counts", "trustedReview slot", "review count mandatory guard"],
+      "forbiddenUse": "Envelope, GateResult and admission counts remain projections and cannot override finding arrays."
+    },
+    {
+      "factId": "OBSERVED_OUTPUT_SEAL",
+      "class": "OBSERVATION",
+      "soleAuthority": "caller-owned Admission Pin plus actual sealed Admission Evidence Root bytes",
+      "allowedProjections": ["A2 closure checks", "A2 result refs"],
+      "forbiddenUse": "Admission Pin records observed outputs only; it cannot mutate pre-run trust from Challenge Pin."
+    },
+    {
+      "factId": "ADMISSION_DECISION",
+      "class": "ADMISSION_DECISION",
+      "soleAuthority": "caller-pinned A2 process result independently fingerprinted and exit-checked by the controlled launcher",
+      "allowedProjections": ["Gate B permission"],
+      "forbiddenUse": "A1/Harness exit 0, TEST_REPORT presence, GateResult self-report or a PASS string cannot grant Gate B."
+    }
+  ]
+}

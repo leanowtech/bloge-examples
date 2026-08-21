@@ -1,0 +1,227 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.semantic-guard-catalog.v1",
+  "evaluationMode": "ALL_GUARDS_NO_SHORT_CIRCUIT",
+  "evaluationOrder": [
+    "STRUCTURE",
+    "IDENTITY",
+    "REFERENCE_CLOSURE",
+    "PROJECTION",
+    "OUTCOME",
+    "FINGERPRINT",
+    "TRUST",
+    "ADMISSION"
+  ],
+  "terminalPriority": ["UNAVAILABLE", "INVALID", "INCOMPLETE", "VERIFIED"],
+  "admissionPriority": ["UNAVAILABLE", "FAIL", "OPEN", "PASS"],
+  "targetAggregationPriority": ["UNAVAILABLE", "FAIL", "MISSING", "PASS"],
+  "guards": [
+    {
+      "guardId": "A0_SLOT_COUNT_PROJECTION",
+      "owner": "A1",
+      "phase": "PROJECTION",
+      "inputKind": "GateACandidateReplayResultV1",
+      "rule": "Recount the 3 adapter statuses and 14 FELT obligation statuses; every producer count must equal the derived value and each family must sum to its fixed denominator.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["A0_ADAPTER_FACT", "A0_FELT_GAP"],
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+    },
+    {
+      "guardId": "A0_TERMINAL_DERIVATION",
+      "owner": "A1",
+      "phase": "OUTCOME",
+      "inputKind": "GateACandidateReplayResultV1",
+      "rule": "Derive terminal and reason from closed adapter facts after count projection using UNAVAILABLE > INVALID > STRUCTURE_VERIFIED(any VERIFIED) > INCOMPLETE(all NOT_RUN). FELT obligation counts remain formal-gap projections and cannot promote the A0 terminal.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["A0_ADAPTER_FACT", "A0_FELT_GAP"],
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+    },
+    {
+      "guardId": "A0_REFERENCE_CLOSURE",
+      "owner": "A1",
+      "phase": "REFERENCE_CLOSURE",
+      "inputKind": "GateACandidateReplayResultV1",
+      "rule": "Resolve every declared ref only beneath the caller-pinned input root and compare exact bytes to the pinned typed fingerprint.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["EXPECTED_ARTIFACT_IDENTITY", "A0_ADAPTER_FACT"],
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+    },
+    {
+      "guardId": "A0_RESULT_FINGERPRINT",
+      "owner": "A1",
+      "phase": "FINGERPRINT",
+      "inputKind": "GateACandidateReplayResultV1",
+      "rule": "Recompute the domain-separated canonical document fingerprint with resultFingerprint set to null.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["A0_ADAPTER_FACT", "A0_FELT_GAP"],
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+    },
+    {
+      "guardId": "A1_SLOT_COUNT_PROJECTION",
+      "owner": "HARNESS",
+      "phase": "PROJECTION",
+      "inputKind": "GateAReplayVerificationResultV1",
+      "rule": "Recount PASS and FAIL across the fixed 9 slots; skipped remains zero and producer counts must equal the derived values.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["PROCESS_OBSERVATION", "A1_SLOT_OUTCOME"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "A1_SLOT_OUTCOME_BINDING",
+      "owner": "HARNESS",
+      "phase": "OUTCOME",
+      "inputKind": "GateAReplayVerificationResultV1",
+      "rule": "For each fixed TCK slot, bind expected mechanism, child exit, observed terminal, reason, transcript and PASS or FAIL; then derive the outer terminal.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["PROCESS_OBSERVATION", "A1_SLOT_OUTCOME"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "owner": "HARNESS",
+      "phase": "REFERENCE_CLOSURE",
+      "inputKind": "GateAReplayVerificationResultV1",
+      "rule": "Require all 9 command, request, response, stdout, stderr and process transcript objects to be reachable and byte-bound before a Proof can exist.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["PROCESS_OBSERVATION", "A1_SLOT_OUTCOME"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "A1_RESULT_FINGERPRINT",
+      "owner": "HARNESS",
+      "phase": "FINGERPRINT",
+      "inputKind": "GateAReplayVerificationResultV1",
+      "rule": "Recompute the domain-separated canonical document fingerprint with resultFingerprint set to null.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["PROCESS_OBSERVATION", "A1_SLOT_OUTCOME"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "HARNESS_PROOF_COMPLETENESS",
+      "owner": "CALLER",
+      "phase": "REFERENCE_CLOSURE",
+      "inputKind": "GateAIndependentVerificationResultV1",
+      "rule": "Materialize TEST_REPORT only after 5 outer runs, 12 child runs, the Provider guard and the sealed run-material root all close; failed Harness attempts never become TEST_REPORT.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["PROCESS_OBSERVATION", "TEST_REPORT_CLOSURE"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "owner": "HARNESS",
+      "phase": "IDENTITY",
+      "inputKind": "GateAIndependentVerificationResultV1",
+      "rule": "Reject a candidate that shadows the pinned TCK Provider implementation, service descriptor or protected namespace.",
+      "mismatch": "INVALID",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["EXPECTED_ARTIFACT_IDENTITY", "PROCESS_OBSERVATION"],
+      "admissionTarget": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED"
+    },
+    {
+      "guardId": "PIN_LIFECYCLE_BINDING",
+      "owner": "A2",
+      "phase": "TRUST",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "Bind Admission Pin to the exact caller-pinned Challenge Pin and reject any output-derived expected value or post-run trust mutation.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["EXPECTED_ARTIFACT_IDENTITY", "OBSERVED_OUTPUT_SEAL"],
+      "admissionTarget": "artifact:GATE_VERIFIER"
+    },
+    {
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "owner": "A2",
+      "phase": "REFERENCE_CLOSURE",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "Resolve all required raw process, TEST_REPORT, GateTestEvidence, build, review and rollback material beneath the sealed Admission Evidence Root and recompute the tree commitment.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["TEST_REPORT_CLOSURE", "OBSERVED_OUTPUT_SEAL"],
+      "admissionTarget": "artifact:TEST_REPORT"
+    },
+    {
+      "guardId": "CODESOURCE_INDEPENDENCE",
+      "owner": "A2",
+      "phase": "IDENTITY",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "Verify caller pins, actual CodeSource and Build Identity for Candidate, A1, Harness and A2; enforce the frozen pairwise-distinct and exact-equality relations.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["EXPECTED_ARTIFACT_IDENTITY", "PROCESS_OBSERVATION"],
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+    },
+    {
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "owner": "A2",
+      "phase": "TRUST",
+      "inputKind": "ReviewerAuthorityEnvelopeV1",
+      "rule": "Verify the caller-pinned policy and revocation snapshot, Ed25519 signature payload, scope, time window, reviewer role and reviewed material root.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["REVIEW_FINDING"],
+      "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW"
+    },
+    {
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "owner": "A2",
+      "phase": "PROJECTION",
+      "inputKind": "ReviewerAuthorityEnvelopeV1",
+      "rule": "Recount signed findings and compare Review Body, Envelope, GateResult and Admission result projections; a valid signature never authorizes a false count.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["REVIEW_FINDING"],
+      "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED"
+    },
+    {
+      "guardId": "ROLLBACK_BINDING",
+      "owner": "A2",
+      "phase": "TRUST",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "Require a resolvable rollback instruction bound to the exact candidate while previousGateResultRef remains null at Gate A.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["EXPECTED_ARTIFACT_IDENTITY", "OBSERVED_OUTPUT_SEAL"],
+      "admissionTarget": "artifact:GATE_VERIFIER"
+    },
+    {
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "owner": "A2",
+      "phase": "ADMISSION",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "Derive the sole conclusion from fixed slots and the eighteen diagnostic Guard outcomes with UNAVAILABLE > FAIL > OPEN > PASS; verify every Guard agrees with its catalog target; only PASS grants GATE-B.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": [
+        "EXPECTED_TCK_SLOT",
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "PROCESS_OBSERVATION",
+        "A0_ADAPTER_FACT",
+        "A0_FELT_GAP",
+        "A1_SLOT_OUTCOME",
+        "TEST_REPORT_CLOSURE",
+        "REVIEW_FINDING",
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "admissionTarget": "artifact:GATE_VERIFIER"
+    },
+    {
+      "guardId": "A2_RESULT_FINGERPRINT",
+      "owner": "CALLER",
+      "phase": "FINGERPRINT",
+      "inputKind": "GateAAdmissionVerificationResultV1",
+      "rule": "The controlled launcher recomputes the A2 document fingerprint and accepts exit 0 only with canonical conclusion PASS.",
+      "mismatch": "FAIL",
+      "unavailable": "UNAVAILABLE",
+      "sourceFactIds": ["OBSERVED_OUTPUT_SEAL"],
+      "admissionTarget": "artifact:GATE_VERIFIER"
+    }
+  ]
+}

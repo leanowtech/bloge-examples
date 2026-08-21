@@ -1,0 +1,850 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+  "title": "Capability Studio Gate A semantic guard catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "evaluationMode",
+    "evaluationOrder",
+    "terminalPriority",
+    "admissionPriority",
+    "targetAggregationPriority",
+    "guards"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.semantic-guard-catalog.v1"
+    },
+    "evaluationMode": {
+      "const": "ALL_GUARDS_NO_SHORT_CIRCUIT"
+    },
+    "evaluationOrder": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "prefixItems": [
+        {
+          "const": "STRUCTURE"
+        },
+        {
+          "const": "IDENTITY"
+        },
+        {
+          "const": "REFERENCE_CLOSURE"
+        },
+        {
+          "const": "PROJECTION"
+        },
+        {
+          "const": "OUTCOME"
+        },
+        {
+          "const": "FINGERPRINT"
+        },
+        {
+          "const": "TRUST"
+        },
+        {
+          "const": "ADMISSION"
+        }
+      ],
+      "items": false
+    },
+    "terminalPriority": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "const": "UNAVAILABLE"
+        },
+        {
+          "const": "INVALID"
+        },
+        {
+          "const": "INCOMPLETE"
+        },
+        {
+          "const": "VERIFIED"
+        }
+      ],
+      "items": false
+    },
+    "admissionPriority": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "const": "UNAVAILABLE"
+        },
+        {
+          "const": "FAIL"
+        },
+        {
+          "const": "OPEN"
+        },
+        {
+          "const": "PASS"
+        }
+      ],
+      "items": false
+    },
+    "targetAggregationPriority": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "const": "UNAVAILABLE"
+        },
+        {
+          "const": "FAIL"
+        },
+        {
+          "const": "MISSING"
+        },
+        {
+          "const": "PASS"
+        }
+      ],
+      "items": false
+    },
+    "guards": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/a0SlotCount"
+        },
+        {
+          "$ref": "#/$defs/a0Terminal"
+        },
+        {
+          "$ref": "#/$defs/a0Reference"
+        },
+        {
+          "$ref": "#/$defs/a0Fingerprint"
+        },
+        {
+          "$ref": "#/$defs/a1SlotCount"
+        },
+        {
+          "$ref": "#/$defs/a1Outcome"
+        },
+        {
+          "$ref": "#/$defs/a1Material"
+        },
+        {
+          "$ref": "#/$defs/a1Fingerprint"
+        },
+        {
+          "$ref": "#/$defs/harnessProof"
+        },
+        {
+          "$ref": "#/$defs/providerCollision"
+        },
+        {
+          "$ref": "#/$defs/pinLifecycle"
+        },
+        {
+          "$ref": "#/$defs/evidenceRoot"
+        },
+        {
+          "$ref": "#/$defs/codeSource"
+        },
+        {
+          "$ref": "#/$defs/reviewSignature"
+        },
+        {
+          "$ref": "#/$defs/reviewCount"
+        },
+        {
+          "$ref": "#/$defs/rollback"
+        },
+        {
+          "$ref": "#/$defs/conclusion"
+        },
+        {
+          "$ref": "#/$defs/a2Fingerprint"
+        }
+      ],
+      "items": false
+    }
+  },
+  "$defs": {
+    "guard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guardId",
+        "owner",
+        "phase",
+        "inputKind",
+        "rule",
+        "mismatch",
+        "unavailable",
+        "sourceFactIds",
+        "admissionTarget"
+      ],
+      "properties": {
+        "guardId": {
+          "type": "string",
+          "pattern": "^[A-Z0-9][A-Z0-9_-]{2,95}$"
+        },
+        "owner": {
+          "enum": [
+            "A1",
+            "HARNESS",
+            "CALLER",
+            "A2"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "STRUCTURE",
+            "IDENTITY",
+            "REFERENCE_CLOSURE",
+            "PROJECTION",
+            "OUTCOME",
+            "FINGERPRINT",
+            "TRUST",
+            "ADMISSION"
+          ]
+        },
+        "inputKind": {
+          "enum": [
+            "GateACandidateReplayResultV1",
+            "GateAReplayVerificationResultV1",
+            "GateAIndependentVerificationResultV1",
+            "GateAAdmissionVerificationResultV1",
+            "ReviewerAuthorityEnvelopeV1"
+          ]
+        },
+        "rule": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 1024
+        },
+        "mismatch": {
+          "enum": [
+            "INVALID",
+            "FAIL"
+          ]
+        },
+        "unavailable": {
+          "const": "UNAVAILABLE"
+        },
+        "sourceFactIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "EXPECTED_TCK_SLOT",
+              "EXPECTED_ARTIFACT_IDENTITY",
+              "PROCESS_OBSERVATION",
+              "A0_ADAPTER_FACT",
+              "A0_FELT_GAP",
+              "A1_SLOT_OUTCOME",
+              "TEST_REPORT_CLOSURE",
+              "REVIEW_FINDING",
+              "OBSERVED_OUTPUT_SEAL"
+            ]
+          }
+        },
+        "admissionTarget": {
+          "type": "string",
+          "pattern": "^(requirement|artifact|guard|review):[A-Z0-9][A-Z0-9_-]{2,95}$"
+        }
+      }
+    },
+    "fixed": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/guard"
+        }
+      ]
+    },
+    "a0SlotCount": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A0_SLOT_COUNT_PROJECTION"
+            },
+            "owner": {
+              "const": "A1"
+            },
+            "phase": {
+              "const": "PROJECTION"
+            },
+            "inputKind": {
+              "const": "GateACandidateReplayResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+            }
+          }
+        }
+      ]
+    },
+    "a0Terminal": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A0_TERMINAL_DERIVATION"
+            },
+            "owner": {
+              "const": "A1"
+            },
+            "phase": {
+              "const": "OUTCOME"
+            },
+            "inputKind": {
+              "const": "GateACandidateReplayResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+            }
+          }
+        }
+      ]
+    },
+    "a0Reference": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A0_REFERENCE_CLOSURE"
+            },
+            "owner": {
+              "const": "A1"
+            },
+            "phase": {
+              "const": "REFERENCE_CLOSURE"
+            },
+            "inputKind": {
+              "const": "GateACandidateReplayResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+            }
+          }
+        }
+      ]
+    },
+    "a0Fingerprint": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A0_RESULT_FINGERPRINT"
+            },
+            "owner": {
+              "const": "A1"
+            },
+            "phase": {
+              "const": "FINGERPRINT"
+            },
+            "inputKind": {
+              "const": "GateACandidateReplayResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+            }
+          }
+        }
+      ]
+    },
+    "a1SlotCount": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A1_SLOT_COUNT_PROJECTION"
+            },
+            "owner": {
+              "const": "HARNESS"
+            },
+            "phase": {
+              "const": "PROJECTION"
+            },
+            "inputKind": {
+              "const": "GateAReplayVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "a1Outcome": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A1_SLOT_OUTCOME_BINDING"
+            },
+            "owner": {
+              "const": "HARNESS"
+            },
+            "phase": {
+              "const": "OUTCOME"
+            },
+            "inputKind": {
+              "const": "GateAReplayVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "a1Material": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A1_PROCESS_MATERIAL_CLOSURE"
+            },
+            "owner": {
+              "const": "HARNESS"
+            },
+            "phase": {
+              "const": "REFERENCE_CLOSURE"
+            },
+            "inputKind": {
+              "const": "GateAReplayVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "a1Fingerprint": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A1_RESULT_FINGERPRINT"
+            },
+            "owner": {
+              "const": "HARNESS"
+            },
+            "phase": {
+              "const": "FINGERPRINT"
+            },
+            "inputKind": {
+              "const": "GateAReplayVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "harnessProof": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "HARNESS_PROOF_COMPLETENESS"
+            },
+            "owner": {
+              "const": "CALLER"
+            },
+            "phase": {
+              "const": "REFERENCE_CLOSURE"
+            },
+            "inputKind": {
+              "const": "GateAIndependentVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "providerCollision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"
+            },
+            "owner": {
+              "const": "HARNESS"
+            },
+            "phase": {
+              "const": "IDENTITY"
+            },
+            "inputKind": {
+              "const": "GateAIndependentVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "INVALID"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "pinLifecycle": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "PIN_LIFECYCLE_BINDING"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "TRUST"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "artifact:GATE_VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "evidenceRoot": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "ADMISSION_EVIDENCE_ROOT_CLOSURE"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "REFERENCE_CLOSURE"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "artifact:TEST_REPORT"
+            }
+          }
+        }
+      ]
+    },
+    "codeSource": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "CODESOURCE_INDEPENDENCE"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "IDENTITY"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "reviewSignature": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "REVIEW_SIGNATURE_AUTHORITY"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "TRUST"
+            },
+            "inputKind": {
+              "const": "ReviewerAuthorityEnvelopeV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "review:INDEPENDENT_TRUSTED_REVIEW"
+            }
+          }
+        }
+      ]
+    },
+    "reviewCount": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "REVIEW_COUNT_CONSISTENCY_REJECTED"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "PROJECTION"
+            },
+            "inputKind": {
+              "const": "ReviewerAuthorityEnvelopeV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "rollback": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "ROLLBACK_BINDING"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "TRUST"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "artifact:GATE_VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "conclusion": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A2_CONCLUSION_PRECEDENCE"
+            },
+            "owner": {
+              "const": "A2"
+            },
+            "phase": {
+              "const": "ADMISSION"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "artifact:GATE_VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "a2Fingerprint": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/fixed"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "A2_RESULT_FINGERPRINT"
+            },
+            "owner": {
+              "const": "CALLER"
+            },
+            "phase": {
+              "const": "FINGERPRINT"
+            },
+            "inputKind": {
+              "const": "GateAAdmissionVerificationResultV1"
+            },
+            "mismatch": {
+              "const": "FAIL"
+            },
+            "unavailable": {
+              "const": "UNAVAILABLE"
+            },
+            "admissionTarget": {
+              "const": "artifact:GATE_VERIFIER"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

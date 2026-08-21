@@ -1,0 +1,240 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.collector-contract-vectors.v1",
+  "cases": [
+    {
+      "caseId": "A0-REFERENCE-ESCAPES-PINNED-ROOT",
+      "guardId": "A0_REFERENCE_CLOSURE",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A0-RESULT-FINGERPRINT-DRIFT",
+      "guardId": "A0_RESULT_FINGERPRINT",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../canonicalization/canonicalization-vectors-v1.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A1-PROCESS-MATERIAL-REF-DRIFT",
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A1-RESULT-FINGERPRINT-DRIFT",
+      "guardId": "A1_RESULT_FINGERPRINT",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../canonicalization/canonicalization-vectors-v1.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "HARNESS-REPORT-NOT-MATERIALIZED",
+      "guardId": "HARNESS_PROOF_COMPLETENESS",
+      "observation": {
+        "present": false,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "MISSING",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "OPEN",
+        "reasonCode": "GATE_A_REQUIRED_MATERIAL_MISSING",
+        "exitCode": 4
+      }
+    },
+    {
+      "caseId": "PROVIDER-NAMESPACE-COLLISION-ACCEPTED",
+      "guardId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../process-results/invalid-provider-guard-accepted.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "ADMISSION-PIN-CHALLENGE-BINDING-DRIFT",
+      "guardId": "PIN_LIFECYCLE_BINDING",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "ADMISSION-EVIDENCE-ROOT-DRIFT",
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "artifact:TEST_REPORT",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "CANDIDATE-AND-VERIFIER-CODESOURCE-ALIAS",
+      "guardId": "CODESOURCE_INDEPENDENCE",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REVIEW-SIGNATURE-OR-AUTHORITY-DRIFT",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../trust-build/signed-review-count-guard/reviewer-authority-envelope.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "SIGNED-REVIEW-COUNT-UNDERREPORT",
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../trust-build/signed-review-count-guard/expectation.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "ROLLBACK-TARGET-NOT-CANDIDATE-BOUND",
+      "guardId": "ROLLBACK_BINDING",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A2-UNAVAILABLE-MUST-BEAT-FAIL-AND-MISSING",
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false,
+        "slotStatuses": [
+          "MISSING",
+          "FAIL",
+          "UNAVAILABLE"
+        ]
+      },
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "UNAVAILABLE",
+        "reasonCode": "GATE_A_VERIFICATION_UNAVAILABLE",
+        "exitCode": 3
+      }
+    },
+    {
+      "caseId": "A2-RESULT-FINGERPRINT-DRIFT",
+      "guardId": "A2_RESULT_FINGERPRINT",
+      "observation": {
+        "present": true,
+        "available": true,
+        "matches": false
+      },
+      "evidenceVector": "../canonicalization/canonicalization-vectors-v1.json",
+      "expected": {
+        "guardStatus": "FAIL",
+        "admissionTarget": "artifact:GATE_VERIFIER",
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "exitCode": 2
+      }
+    }
+  ]
+}

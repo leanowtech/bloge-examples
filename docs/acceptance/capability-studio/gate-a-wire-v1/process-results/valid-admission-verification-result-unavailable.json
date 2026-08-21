@@ -1,0 +1,811 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.admission-verification-result.v1",
+  "gateId": "GATE-A",
+  "gateRevision": 1,
+  "resultId": "A2-DEMO-001",
+  "conclusion": "UNAVAILABLE",
+  "requirements": [
+    {
+      "requirementId": "GATE-A-P0-01-TYPED-EVIDENCE",
+      "status": "UNAVAILABLE",
+      "evidenceRef": null
+    },
+    {
+      "requirementId": "GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "gate-result/requirements/02.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0202020202020202020202020202020202020202020202020202020202020202"
+        }
+      }
+    },
+    {
+      "requirementId": "GATE-A-P0-03-LEGACY-TERMINAL",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "gate-result/requirements/03.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0303030303030303030303030303030303030303030303030303030303030303"
+        }
+      }
+    },
+    {
+      "requirementId": "GATE-A-P1-01-MANIFEST-STABILITY",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "gate-result/requirements/04.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0404040404040404040404040404040404040404040404040404040404040404"
+        }
+      }
+    },
+    {
+      "requirementId": "GATE-A-P1-02-HONEST-INCOMPLETE",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "gate-result/requirements/05.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0505050505050505050505050505050505050505050505050505050505050505"
+        }
+      }
+    }
+  ],
+  "artifacts": [
+    {
+      "role": "IMPLEMENTATION_CANDIDATE",
+      "artifactRef": {
+        "uri": "artifacts/candidate.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "role": "INDEPENDENT_VERIFIER",
+      "artifactRef": {
+        "uri": "artifacts/verifier.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1616161616161616161616161616161616161616161616161616161616161616"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "role": "GATE_VERIFIER",
+      "artifactRef": {
+        "uri": "artifacts/admission.jar",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "role": "TEST_REPORT",
+      "artifactRef": {
+        "uri": "reports/TEST_REPORT.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:3434343434343434343434343434343434343434343434343434343434343434"
+        }
+      },
+      "status": "PASS"
+    }
+  ],
+  "tests": [
+    {
+      "testId": "PLACEHOLDER_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/01.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0606060606060606060606060606060606060606060606060606060606060606"
+        }
+      }
+    },
+    {
+      "testId": "WRONG_KIND_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/02.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0707070707070707070707070707070707070707070707070707070707070707"
+        }
+      }
+    },
+    {
+      "testId": "WRONG_VERIFIER_REVISION_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/03.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0808080808080808080808080808080808080808080808080808080808080808"
+        }
+      }
+    },
+    {
+      "testId": "VERIFIER_DIGEST_MUTATION_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/04.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:0909090909090909090909090909090909090909090909090909090909090909"
+        }
+      }
+    },
+    {
+      "testId": "REGISTRY_MUTATION_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/05.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1010101010101010101010101010101010101010101010101010101010101010"
+        }
+      }
+    },
+    {
+      "testId": "VERIFIER_TCK_MISMATCH_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/06.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/07.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
+        }
+      }
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/08.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"
+        }
+      }
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/09.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1414141414141414141414141414141414141414141414141414141414141414"
+        }
+      }
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/10.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1515151515151515151515151515151515151515151515151515151515151515"
+        }
+      }
+    },
+    {
+      "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/11.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1616161616161616161616161616161616161616161616161616161616161616"
+        }
+      }
+    },
+    {
+      "testId": "HONEST_INCOMPLETE_ACCEPTED",
+      "status": "PASS",
+      "skipped": false,
+      "evidenceRef": {
+        "uri": "evidence/12.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
+        }
+      }
+    }
+  ],
+  "mandatoryGuards": [
+    {
+      "guardId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "guards/provider.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1818181818181818181818181818181818181818181818181818181818181818"
+        }
+      }
+    },
+    {
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "status": "PASS",
+      "evidenceRef": {
+        "uri": "guards/review-count.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:1919191919191919191919191919191919191919191919191919191919191919"
+        }
+      }
+    }
+  ],
+  "trustedReview": {
+    "reviewBodyRef": {
+      "uri": "review/body.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:2020202020202020202020202020202020202020202020202020202020202020"
+      }
+    },
+    "authorityEnvelopeRef": {
+      "uri": "review/envelope.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:2121212121212121212121212121212121212121212121212121212121212121"
+      }
+    },
+    "openP0": 0,
+    "openP1": 0,
+    "skippedCount": 0,
+    "status": "PASS",
+    "reviewRole": "INDEPENDENT_TRUSTED_REVIEW",
+    "evidenceRef": {
+      "uri": "review/verification.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      }
+    }
+  },
+  "formalPassCount": 0,
+  "formalExpectedCount": 27,
+  "nextAllowedGate": null,
+  "startedAt": "2026-08-21T10:01:00Z",
+  "endedAt": "2026-08-21T10:01:10Z",
+  "resultFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "conclusionReasonCode": "GATE_A_VERIFICATION_UNAVAILABLE",
+  "gateResultRef": {
+    "uri": "gate-result/gate-a-result.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:5151515151515151515151515151515151515151515151515151515151515151"
+    }
+  },
+  "admissionTrustPinRef": {
+    "uri": "pins/admission.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:5252525252525252525252525252525252525252525252525252525252525252"
+    }
+  },
+  "challengeTrustPinRef": {
+    "uri": "pins/challenge.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    }
+  },
+  "admissionEvidenceRootRef": {
+    "uri": "admission-evidence/root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:5353535353535353535353535353535353535353535353535353535353535353"
+    }
+  },
+  "gateVerifierCodeSource": {
+    "artifactPath": "/opt/gate-a/admission.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+    },
+    "fileSize": 1048576,
+    "fileKey": "dev:1:ino:3101"
+  },
+  "gateVerifierBuildIdentityRef": {
+    "uri": "identities/admission.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:3232323232323232323232323232323232323232323232323232323232323232"
+    }
+  },
+  "rollback": {
+    "previousGateResultRef": null,
+    "candidateRef": {
+      "uri": "artifacts/candidate.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "instructionRef": {
+      "uri": "rollback/gate-a.md",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:5454545454545454545454545454545454545454545454545454545454545454"
+      }
+    },
+    "resolvable": true,
+    "candidateBound": true
+  },
+  "semanticGuardResults": [
+    {
+      "guardId": "A0_SLOT_COUNT_PROJECTION",
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "A0_ADAPTER_FACT",
+        "A0_FELT_GAP"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/01-A0_SLOT_COUNT_PROJECTION.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:2a45fae10d909732a21b8e996ef45e5ae27f0fcff68f94bbd6bffacfef2fc155"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A0_TERMINAL_DERIVATION",
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "A0_ADAPTER_FACT",
+        "A0_FELT_GAP"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/02-A0_TERMINAL_DERIVATION.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:577c84b6107883edda0d4ff02ec61a8212c653df75130b78bf107a3186f988b7"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A0_REFERENCE_CLOSURE",
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+      "status": "UNAVAILABLE",
+      "reasonCode": "GUARD_OBSERVATION_UNAVAILABLE",
+      "sourceFactIds": [
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "A0_ADAPTER_FACT"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/03-A0_REFERENCE_CLOSURE.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:43c8d607f763dd975c4ab31cc328e076cc0545c268873248cc2f7b1d52308d59"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A0_RESULT_FINGERPRINT",
+      "admissionTarget": "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "A0_ADAPTER_FACT",
+        "A0_FELT_GAP"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/04-A0_RESULT_FINGERPRINT.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:fe42a7ffe86d7f61e02e499ca1c806406b6fd56f0076cae5ba364fc37b16fe0f"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A1_SLOT_COUNT_PROJECTION",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "PROCESS_OBSERVATION",
+        "A1_SLOT_OUTCOME"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/05-A1_SLOT_COUNT_PROJECTION.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:5d5abea04e4819a05b03e0aa4fcca6eba963a92b38a1f3b362ff83ebbd262b1d"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A1_SLOT_OUTCOME_BINDING",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "PROCESS_OBSERVATION",
+        "A1_SLOT_OUTCOME"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/06-A1_SLOT_OUTCOME_BINDING.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:927bb40d6efb66a4945bb790f60e1fbc90f17d511be3af178616d9e00dc010d6"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A1_PROCESS_MATERIAL_CLOSURE",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "PROCESS_OBSERVATION",
+        "A1_SLOT_OUTCOME"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/07-A1_PROCESS_MATERIAL_CLOSURE.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:bc6f7edd97c77788442ca9bf856c11853769836a91fc60804bf4cba8ca609190"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A1_RESULT_FINGERPRINT",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "PROCESS_OBSERVATION",
+        "A1_SLOT_OUTCOME"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/08-A1_RESULT_FINGERPRINT.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:3008ca2264dd053a84502742993fd688b987494d41a7f816e783a56ea64381b7"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "HARNESS_PROOF_COMPLETENESS",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "PROCESS_OBSERVATION",
+        "TEST_REPORT_CLOSURE"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/09-HARNESS_PROOF_COMPLETENESS.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:d664c98ca62f695cdca85166ad8c21206469763b1f6b3053d7cc001ae062590d"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "admissionTarget": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "PROCESS_OBSERVATION"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/10-PROVIDER_NAMESPACE_COLLISION_REJECTED.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:6bc924cdb442c69f8301507f07bcaaf2e00febda49b72ed507ea6bfb500c21a6"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "PIN_LIFECYCLE_BINDING",
+      "admissionTarget": "artifact:GATE_VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/11-PIN_LIFECYCLE_BINDING.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:e73dd99be1740a64289334fc68cda081e43813afa4d989fa9a4515328e9f4145"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "admissionTarget": "artifact:TEST_REPORT",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "TEST_REPORT_CLOSURE",
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/12-ADMISSION_EVIDENCE_ROOT_CLOSURE.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:1bcf615131a69c1901f6a88ab428062aebf04eed06596ff063bed7f3384cdffe"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "CODESOURCE_INDEPENDENCE",
+      "admissionTarget": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "PROCESS_OBSERVATION"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/13-CODESOURCE_INDEPENDENCE.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:6befc07c269e115887bd16081add38b1e17da3e95c53fb5ba2e463eb146c5b73"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "REVIEW_FINDING"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/14-REVIEW_SIGNATURE_AUTHORITY.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:fd25e55f06c00d4ab74d29a8b31d6362279db0f7fcff52c5b19594fc33b351ff"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "admissionTarget": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "REVIEW_FINDING"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/15-REVIEW_COUNT_CONSISTENCY_REJECTED.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:b3b2e23c3ec3cddee4f2fc379b4c3f82cdcaffea6ccdcb78f48c8aa3d4e75426"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "ROLLBACK_BINDING",
+      "admissionTarget": "artifact:GATE_VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/16-ROLLBACK_BINDING.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:e7d24dba1aaaef15f2f7bfd1d803e5066dc67e4c62208c0357aefcceae21074a"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "admissionTarget": "artifact:GATE_VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "EXPECTED_TCK_SLOT",
+        "EXPECTED_ARTIFACT_IDENTITY",
+        "PROCESS_OBSERVATION",
+        "A0_ADAPTER_FACT",
+        "A0_FELT_GAP",
+        "A1_SLOT_OUTCOME",
+        "TEST_REPORT_CLOSURE",
+        "REVIEW_FINDING",
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/17-A2_CONCLUSION_PRECEDENCE.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:6b6521e692fa968abe4de704574af8f269d9f257248a149d531a0213e18cc22a"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    },
+    {
+      "guardId": "A2_RESULT_FINGERPRINT",
+      "admissionTarget": "artifact:GATE_VERIFIER",
+      "status": "PASS",
+      "reasonCode": "GUARD_PASSED",
+      "sourceFactIds": [
+        "OBSERVED_OUTPUT_SEAL"
+      ],
+      "observationRefs": [
+        {
+          "uri": "observations/guards/18-A2_RESULT_FINGERPRINT.json",
+          "rawFingerprint": {
+            "kind": "RAW_BYTES",
+            "algorithm": "SHA-256",
+            "value": "sha256:9922c3a3db21d5625300ec4ef884cfb107967abaa397a15015d39ba20d8975fc"
+          }
+        }
+      ],
+      "collectorRevision": 1,
+      "derivationRevision": 1
+    }
+  ]
+}

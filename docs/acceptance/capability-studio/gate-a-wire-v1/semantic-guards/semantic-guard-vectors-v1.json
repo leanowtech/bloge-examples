@@ -1,0 +1,220 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.semantic-guard-vectors.v1",
+  "terminalDerivationCases": [
+    {
+      "caseId": "A0-ALL-NOT-RUN",
+      "stage": "A0",
+      "adapterStatuses": [
+        "NOT_RUN",
+        "NOT_RUN",
+        "NOT_RUN"
+      ],
+      "expected": {
+        "terminal": "INCOMPLETE",
+        "reasonCode": "A0_INCOMPLETE"
+      }
+    },
+    {
+      "caseId": "A0-ANY-VERIFIED",
+      "stage": "A0",
+      "adapterStatuses": [
+        "VERIFIED",
+        "NOT_RUN",
+        "NOT_RUN"
+      ],
+      "expected": {
+        "terminal": "STRUCTURE_VERIFIED",
+        "reasonCode": "A0_STRUCTURE_VERIFIED"
+      }
+    },
+    {
+      "caseId": "A0-INVALID-BEATS-VERIFIED",
+      "stage": "A0",
+      "adapterStatuses": [
+        "VERIFIED",
+        "INVALID",
+        "NOT_RUN"
+      ],
+      "expected": {
+        "terminal": "INVALID",
+        "reasonCode": "A0_INVALID"
+      }
+    },
+    {
+      "caseId": "A0-UNAVAILABLE-BEATS-INVALID",
+      "stage": "A0",
+      "adapterStatuses": [
+        "INVALID",
+        "UNAVAILABLE",
+        "NOT_RUN"
+      ],
+      "expected": {
+        "terminal": "UNAVAILABLE",
+        "reasonCode": "A0_UNAVAILABLE"
+      }
+    },
+    {
+      "caseId": "A1-ALL-PASS",
+      "stage": "A1",
+      "slotFacts": [
+        {
+          "status": "PASS",
+          "observedTerminal": "INVALID"
+        }
+      ],
+      "expected": {
+        "terminal": "VERIFIED",
+        "reasonCode": "A1_REPLAY_VERIFIED"
+      }
+    },
+    {
+      "caseId": "A1-FAIL-IS-INVALID",
+      "stage": "A1",
+      "slotFacts": [
+        {
+          "status": "FAIL",
+          "observedTerminal": "ACCEPTED"
+        }
+      ],
+      "expected": {
+        "terminal": "INVALID",
+        "reasonCode": "A1_REPLAY_INVALID"
+      }
+    },
+    {
+      "caseId": "A1-UNAVAILABLE-BEATS-INVALID",
+      "stage": "A1",
+      "slotFacts": [
+        {
+          "status": "FAIL",
+          "observedTerminal": "ACCEPTED"
+        },
+        {
+          "status": "FAIL",
+          "observedTerminal": "UNAVAILABLE"
+        }
+      ],
+      "expected": {
+        "terminal": "UNAVAILABLE",
+        "reasonCode": "A1_REPLAY_UNAVAILABLE"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "A0-COUNT-DRIFT-IS-STRUCTURALLY-VALID",
+      "guardId": "A0_SLOT_COUNT_PROJECTION",
+      "baseFixture": "../process-results/valid-candidate-replay-result.json",
+      "schema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+      "mutations": [
+        {
+          "op": "replace",
+          "path": "/adapterVerifiedCount",
+          "value": 2
+        }
+      ],
+      "schemaExpected": "VALID",
+      "semanticExpected": {
+        "terminal": "INVALID",
+        "reasonCode": "A0_INVALID",
+        "failedGuardId": "A0_SLOT_COUNT_PROJECTION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A0-TERMINAL-DRIFT-IS-STRUCTURALLY-VALID",
+      "guardId": "A0_TERMINAL_DERIVATION",
+      "baseFixture": "../process-results/valid-candidate-replay-result.json",
+      "schema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+      "mutations": [
+        {
+          "op": "replace",
+          "path": "/terminal",
+          "value": "STRUCTURE_VERIFIED"
+        },
+        {
+          "op": "replace",
+          "path": "/reasonCode",
+          "value": "A0_STRUCTURE_VERIFIED"
+        }
+      ],
+      "schemaExpected": "VALID",
+      "semanticExpected": {
+        "terminal": "INVALID",
+        "reasonCode": "A0_INVALID",
+        "failedGuardId": "A0_TERMINAL_DERIVATION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A1-COUNT-DRIFT-IS-STRUCTURALLY-VALID",
+      "guardId": "A1_SLOT_COUNT_PROJECTION",
+      "baseFixture": "../process-results/valid-replay-verification-result.json",
+      "schema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json",
+      "mutations": [
+        {
+          "op": "replace",
+          "path": "/passedCount",
+          "value": 8
+        }
+      ],
+      "schemaExpected": "VALID",
+      "semanticExpected": {
+        "terminal": "INVALID",
+        "reasonCode": "A1_REPLAY_INVALID",
+        "failedGuardId": "A1_SLOT_COUNT_PROJECTION",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A1-TERMINAL-DRIFT-IS-STRUCTURALLY-VALID",
+      "guardId": "A1_SLOT_OUTCOME_BINDING",
+      "baseFixture": "../process-results/valid-replay-verification-result.json",
+      "schema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json",
+      "mutations": [
+        {
+          "op": "replace",
+          "path": "/terminal",
+          "value": "INVALID"
+        },
+        {
+          "op": "replace",
+          "path": "/reasonCode",
+          "value": "A1_REPLAY_INVALID"
+        }
+      ],
+      "schemaExpected": "VALID",
+      "semanticExpected": {
+        "terminal": "INVALID",
+        "reasonCode": "A1_REPLAY_INVALID",
+        "failedGuardId": "A1_SLOT_OUTCOME_BINDING",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "A2-PASS-WITH-FAILED-DIAGNOSTIC-IS-STRUCTURALLY-VALID",
+      "guardId": "A2_CONCLUSION_PRECEDENCE",
+      "baseFixture": "../process-results/valid-admission-verification-result.json",
+      "schema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json",
+      "mutations": [
+        {
+          "op": "replace",
+          "path": "/semanticGuardResults/0/status",
+          "value": "FAIL"
+        },
+        {
+          "op": "replace",
+          "path": "/semanticGuardResults/0/reasonCode",
+          "value": "GUARD_MISMATCH"
+        }
+      ],
+      "schemaExpected": "VALID",
+      "semanticExpected": {
+        "conclusion": "FAIL",
+        "reasonCode": "GATE_A_VERIFICATION_FAILED",
+        "failedGuardId": "A2_CONCLUSION_PRECEDENCE",
+        "exitCode": 2
+      }
+    }
+  ]
+}

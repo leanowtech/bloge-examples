@@ -1,0 +1,1890 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json",
+  "title": "Capability Studio Gate A admission verification result v1",
+  "$comment": "A2 MUST recompute the cross-document priority UNAVAILABLE > FAIL > OPEN > PASS, all fingerprints, raw material closure, time ordering, review counts, rollback binding, and candidate independence. The schema freezes slot identity/order, local status/ref consistency, and a non-contradictory conclusion. semanticGuardResults is a fixed diagnostic projection over the Guard Catalog; it does not add a new admission denominator or make producer facts authoritative. sourceFactIds is structurally limited to Authority Matrix facts that are not ADMISSION_DECISION; exact Guard-specific order and the dynamic observationRefs canonical order/uniqueness are Semantic Guard responsibilities. A Schema-valid PASS with a failed diagnostic Guard is intentionally allowed so A2_CONCLUSION_PRECEDENCE, not JSON Schema, rejects the forged conclusion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "gateId",
+    "gateRevision",
+    "resultId",
+    "conclusion",
+    "conclusionReasonCode",
+    "gateResultRef",
+    "admissionTrustPinRef",
+    "challengeTrustPinRef",
+    "admissionEvidenceRootRef",
+    "gateVerifierCodeSource",
+    "gateVerifierBuildIdentityRef",
+    "rollback",
+    "requirements",
+    "artifacts",
+    "tests",
+    "mandatoryGuards",
+    "trustedReview",
+    "semanticGuardResults",
+    "formalPassCount",
+    "formalExpectedCount",
+    "nextAllowedGate",
+    "startedAt",
+    "endedAt",
+    "resultFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.admission-verification-result.v1"
+    },
+    "gateId": {
+      "const": "GATE-A"
+    },
+    "gateRevision": {
+      "const": 1
+    },
+    "resultId": {
+      "type": "string",
+      "pattern": "^A2-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "conclusion": {
+      "enum": [
+        "PASS",
+        "OPEN",
+        "FAIL",
+        "UNAVAILABLE"
+      ]
+    },
+    "conclusionReasonCode": {
+      "enum": [
+        "GATE_A_ADMITTED",
+        "GATE_A_REQUIRED_MATERIAL_MISSING",
+        "GATE_A_VERIFICATION_FAILED",
+        "GATE_A_VERIFICATION_UNAVAILABLE"
+      ]
+    },
+    "gateResultRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "admissionTrustPinRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "challengeTrustPinRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "admissionEvidenceRootRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeRef"
+    },
+    "gateVerifierCodeSource": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"
+    },
+    "gateVerifierBuildIdentityRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "previousGateResultRef",
+        "candidateRef",
+        "instructionRef",
+        "resolvable",
+        "candidateBound"
+      ],
+      "properties": {
+        "previousGateResultRef": {
+          "type": "null"
+        },
+        "candidateRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "instructionRef": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        },
+        "resolvable": {
+          "type": "boolean"
+        },
+        "candidateBound": {
+          "type": "boolean"
+        }
+      }
+    },
+    "requirements": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/requirementTypedEvidence"
+        },
+        {
+          "$ref": "#/$defs/requirementIndependentVerifier"
+        },
+        {
+          "$ref": "#/$defs/requirementLegacyTerminal"
+        },
+        {
+          "$ref": "#/$defs/requirementManifestStability"
+        },
+        {
+          "$ref": "#/$defs/requirementHonestIncomplete"
+        }
+      ],
+      "items": false
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/artifactCandidate"
+        },
+        {
+          "$ref": "#/$defs/artifactIndependentVerifier"
+        },
+        {
+          "$ref": "#/$defs/artifactGateVerifier"
+        },
+        {
+          "$ref": "#/$defs/artifactTestReport"
+        }
+      ],
+      "items": false
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 12,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/testPlaceholder"
+        },
+        {
+          "$ref": "#/$defs/testWrongKind"
+        },
+        {
+          "$ref": "#/$defs/testWrongRevision"
+        },
+        {
+          "$ref": "#/$defs/testVerifierDigest"
+        },
+        {
+          "$ref": "#/$defs/testRegistry"
+        },
+        {
+          "$ref": "#/$defs/testTckMismatch"
+        },
+        {
+          "$ref": "#/$defs/testLegacyComplete"
+        },
+        {
+          "$ref": "#/$defs/testMissingStore"
+        },
+        {
+          "$ref": "#/$defs/testMissingOwner"
+        },
+        {
+          "$ref": "#/$defs/testMissingTarget"
+        },
+        {
+          "$ref": "#/$defs/testManifestDrift"
+        },
+        {
+          "$ref": "#/$defs/testHonestIncomplete"
+        }
+      ],
+      "items": false
+    },
+    "mandatoryGuards": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/guardProviderCollision"
+        },
+        {
+          "$ref": "#/$defs/guardReviewCount"
+        }
+      ],
+      "items": false
+    },
+    "trustedReview": {
+      "$ref": "#/$defs/trustedReviewSlot"
+    },
+    "formalPassCount": {
+      "const": 0
+    },
+    "formalExpectedCount": {
+      "const": 27
+    },
+    "nextAllowedGate": {
+      "oneOf": [
+        {
+          "const": "GATE-B"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "startedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "endedAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "resultFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    },
+    "semanticGuardResults": {
+      "type": "array",
+      "minItems": 18,
+      "maxItems": 18,
+      "prefixItems": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A0_SLOT_COUNT_PROJECTION"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A0_TERMINAL_DERIVATION"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A0_REFERENCE_CLOSURE"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A0_RESULT_FINGERPRINT"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-01-TYPED-EVIDENCE"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A1_SLOT_COUNT_PROJECTION"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A1_SLOT_OUTCOME_BINDING"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A1_PROCESS_MATERIAL_CLOSURE"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A1_RESULT_FINGERPRINT"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "HARNESS_PROOF_COMPLETENESS"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"
+                },
+                "admissionTarget": {
+                  "const": "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "PIN_LIFECYCLE_BINDING"
+                },
+                "admissionTarget": {
+                  "const": "artifact:GATE_VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "ADMISSION_EVIDENCE_ROOT_CLOSURE"
+                },
+                "admissionTarget": {
+                  "const": "artifact:TEST_REPORT"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "CODESOURCE_INDEPENDENCE"
+                },
+                "admissionTarget": {
+                  "const": "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "REVIEW_SIGNATURE_AUTHORITY"
+                },
+                "admissionTarget": {
+                  "const": "review:INDEPENDENT_TRUSTED_REVIEW"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "REVIEW_COUNT_CONSISTENCY_REJECTED"
+                },
+                "admissionTarget": {
+                  "const": "guard:REVIEW_COUNT_CONSISTENCY_REJECTED"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "ROLLBACK_BINDING"
+                },
+                "admissionTarget": {
+                  "const": "artifact:GATE_VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A2_CONCLUSION_PRECEDENCE"
+                },
+                "admissionTarget": {
+                  "const": "artifact:GATE_VERIFIER"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/semanticGuardResult"
+            },
+            {
+              "properties": {
+                "guardId": {
+                  "const": "A2_RESULT_FINGERPRINT"
+                },
+                "admissionTarget": {
+                  "const": "artifact:GATE_VERIFIER"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "conclusion": {
+            "const": "PASS"
+          }
+        },
+        "required": [
+          "conclusion"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conclusionReasonCode": {
+            "const": "GATE_A_ADMITTED"
+          },
+          "nextAllowedGate": {
+            "const": "GATE-B"
+          },
+          "rollback": {
+            "properties": {
+              "resolvable": {
+                "const": true
+              },
+              "candidateBound": {
+                "const": true
+              }
+            }
+          },
+          "requirements": {
+            "not": {
+              "contains": {
+                "$ref": "#/$defs/nonPassSelector"
+              }
+            }
+          },
+          "artifacts": {
+            "not": {
+              "contains": {
+                "$ref": "#/$defs/nonPassSelector"
+              }
+            }
+          },
+          "tests": {
+            "not": {
+              "contains": {
+                "$ref": "#/$defs/nonPassSelector"
+              }
+            }
+          },
+          "mandatoryGuards": {
+            "not": {
+              "contains": {
+                "$ref": "#/$defs/nonPassSelector"
+              }
+            }
+          },
+          "trustedReview": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "conclusion": {
+            "const": "OPEN"
+          }
+        },
+        "required": [
+          "conclusion"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conclusionReasonCode": {
+            "const": "GATE_A_REQUIRED_MATERIAL_MISSING"
+          },
+          "nextAllowedGate": {
+            "type": "null"
+          }
+        },
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "requirements": {
+                    "contains": {
+                      "$ref": "#/$defs/missingSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "artifacts": {
+                    "contains": {
+                      "$ref": "#/$defs/missingSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "tests": {
+                    "contains": {
+                      "$ref": "#/$defs/missingSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "mandatoryGuards": {
+                    "contains": {
+                      "$ref": "#/$defs/missingSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "trustedReview": {
+                    "properties": {
+                      "status": {
+                        "const": "MISSING"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "requirements": {
+                      "contains": {
+                        "$ref": "#/$defs/failOrUnavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "artifacts": {
+                      "contains": {
+                        "$ref": "#/$defs/failOrUnavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "tests": {
+                      "contains": {
+                        "$ref": "#/$defs/failOrUnavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "mandatoryGuards": {
+                      "contains": {
+                        "$ref": "#/$defs/failOrUnavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "trustedReview": {
+                      "properties": {
+                        "status": {
+                          "enum": [
+                            "FAIL",
+                            "UNAVAILABLE"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "conclusion": {
+            "const": "FAIL"
+          }
+        },
+        "required": [
+          "conclusion"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conclusionReasonCode": {
+            "const": "GATE_A_VERIFICATION_FAILED"
+          },
+          "nextAllowedGate": {
+            "type": "null"
+          }
+        },
+        "allOf": [
+          {
+            "anyOf": [
+              {
+                "properties": {
+                  "requirements": {
+                    "contains": {
+                      "$ref": "#/$defs/failSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "artifacts": {
+                    "contains": {
+                      "$ref": "#/$defs/failSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "tests": {
+                    "contains": {
+                      "$ref": "#/$defs/failSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "mandatoryGuards": {
+                    "contains": {
+                      "$ref": "#/$defs/failSelector"
+                    }
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "trustedReview": {
+                    "properties": {
+                      "status": {
+                        "const": "FAIL"
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "requirements": {
+                      "contains": {
+                        "$ref": "#/$defs/unavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "artifacts": {
+                      "contains": {
+                        "$ref": "#/$defs/unavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "tests": {
+                      "contains": {
+                        "$ref": "#/$defs/unavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "mandatoryGuards": {
+                      "contains": {
+                        "$ref": "#/$defs/unavailableSelector"
+                      }
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "trustedReview": {
+                      "properties": {
+                        "status": {
+                          "const": "UNAVAILABLE"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "conclusion": {
+            "const": "UNAVAILABLE"
+          }
+        },
+        "required": [
+          "conclusion"
+        ]
+      },
+      "then": {
+        "properties": {
+          "conclusionReasonCode": {
+            "const": "GATE_A_VERIFICATION_UNAVAILABLE"
+          },
+          "nextAllowedGate": {
+            "type": "null"
+          }
+        },
+        "anyOf": [
+          {
+            "properties": {
+              "requirements": {
+                "contains": {
+                  "$ref": "#/$defs/unavailableSelector"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "artifacts": {
+                "contains": {
+                  "$ref": "#/$defs/unavailableSelector"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "tests": {
+                "contains": {
+                  "$ref": "#/$defs/unavailableSelector"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "mandatoryGuards": {
+                "contains": {
+                  "$ref": "#/$defs/unavailableSelector"
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "trustedReview": {
+                "properties": {
+                  "status": {
+                    "const": "UNAVAILABLE"
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "status": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/admissionStatus"
+    },
+    "nullableRawRef": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+        }
+      ]
+    },
+    "nonPassSelector": {
+      "properties": {
+        "status": {
+          "enum": [
+            "FAIL",
+            "MISSING",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "missingSelector": {
+      "properties": {
+        "status": {
+          "const": "MISSING"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "failSelector": {
+      "properties": {
+        "status": {
+          "const": "FAIL"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "unavailableSelector": {
+      "properties": {
+        "status": {
+          "const": "UNAVAILABLE"
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "failOrUnavailableSelector": {
+      "properties": {
+        "status": {
+          "enum": [
+            "FAIL",
+            "UNAVAILABLE"
+          ]
+        }
+      },
+      "required": [
+        "status"
+      ]
+    },
+    "requirementSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requirementId",
+        "status",
+        "evidenceRef"
+      ],
+      "properties": {
+        "requirementId": {
+          "enum": [
+            "GATE-A-P0-01-TYPED-EVIDENCE",
+            "GATE-A-P0-02-INDEPENDENT-VERIFIER",
+            "GATE-A-P0-03-LEGACY-TERMINAL",
+            "GATE-A-P1-01-MANIFEST-STABILITY",
+            "GATE-A-P1-02-HONEST-INCOMPLETE"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "evidenceRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/evidenceRefByStatus"
+        }
+      ]
+    },
+    "artifactSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "status",
+        "artifactRef"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "IMPLEMENTATION_CANDIDATE",
+            "INDEPENDENT_VERIFIER",
+            "GATE_VERIFIER",
+            "TEST_REPORT"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "artifactRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactRefByStatus"
+        }
+      ]
+    },
+    "testSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "testId",
+        "status",
+        "skipped",
+        "evidenceRef"
+      ],
+      "properties": {
+        "testId": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/testId"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "skipped": {
+          "const": false
+        },
+        "evidenceRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/evidenceRefByStatus"
+        }
+      ]
+    },
+    "guardSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guardId",
+        "status",
+        "evidenceRef"
+      ],
+      "properties": {
+        "guardId": {
+          "enum": [
+            "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+            "REVIEW_COUNT_CONSISTENCY_REJECTED"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "evidenceRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/evidenceRefByStatus"
+        }
+      ]
+    },
+    "trustedReviewSlot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewRole",
+        "status",
+        "evidenceRef",
+        "reviewBodyRef",
+        "authorityEnvelopeRef",
+        "openP0",
+        "openP1",
+        "skippedCount"
+      ],
+      "properties": {
+        "reviewRole": {
+          "const": "INDEPENDENT_TRUSTED_REVIEW"
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "evidenceRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        },
+        "reviewBodyRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        },
+        "authorityEnvelopeRef": {
+          "$ref": "#/$defs/nullableRawRef"
+        },
+        "openP0": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "openP1": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        },
+        "skippedCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              },
+              "reviewBodyRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              },
+              "authorityEnvelopeRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "MISSING",
+                  "UNAVAILABLE"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceRef": {
+                "type": "null"
+              },
+              "reviewBodyRef": {
+                "type": "null"
+              },
+              "authorityEnvelopeRef": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "openP0": {
+                "const": 0
+              },
+              "openP1": {
+                "const": 0
+              },
+              "skippedCount": {
+                "const": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "evidenceRefByStatus": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "MISSING",
+                  "UNAVAILABLE"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidenceRef": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "artifactRefByStatus": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "PASS",
+                  "FAIL"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifactRef": {
+                "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "MISSING",
+                  "UNAVAILABLE"
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "artifactRef": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "requirementTypedEvidence": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/requirementSlot"
+        },
+        {
+          "properties": {
+            "requirementId": {
+              "const": "GATE-A-P0-01-TYPED-EVIDENCE"
+            }
+          }
+        }
+      ]
+    },
+    "requirementIndependentVerifier": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/requirementSlot"
+        },
+        {
+          "properties": {
+            "requirementId": {
+              "const": "GATE-A-P0-02-INDEPENDENT-VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "requirementLegacyTerminal": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/requirementSlot"
+        },
+        {
+          "properties": {
+            "requirementId": {
+              "const": "GATE-A-P0-03-LEGACY-TERMINAL"
+            }
+          }
+        }
+      ]
+    },
+    "requirementManifestStability": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/requirementSlot"
+        },
+        {
+          "properties": {
+            "requirementId": {
+              "const": "GATE-A-P1-01-MANIFEST-STABILITY"
+            }
+          }
+        }
+      ]
+    },
+    "requirementHonestIncomplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/requirementSlot"
+        },
+        {
+          "properties": {
+            "requirementId": {
+              "const": "GATE-A-P1-02-HONEST-INCOMPLETE"
+            }
+          }
+        }
+      ]
+    },
+    "artifactCandidate": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactSlot"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "IMPLEMENTATION_CANDIDATE"
+            }
+          }
+        }
+      ]
+    },
+    "artifactIndependentVerifier": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactSlot"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "INDEPENDENT_VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "artifactGateVerifier": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactSlot"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "GATE_VERIFIER"
+            }
+          }
+        }
+      ]
+    },
+    "artifactTestReport": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/artifactSlot"
+        },
+        {
+          "properties": {
+            "role": {
+              "const": "TEST_REPORT"
+            }
+          }
+        }
+      ]
+    },
+    "testPlaceholder": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "PLACEHOLDER_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testWrongKind": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "WRONG_KIND_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testWrongRevision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "WRONG_VERIFIER_REVISION_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testVerifierDigest": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "VERIFIER_DIGEST_MUTATION_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testRegistry": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "REGISTRY_MUTATION_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testTckMismatch": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "VERIFIER_TCK_MISMATCH_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testLegacyComplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingStore": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingOwner": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testMissingTarget": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testManifestDrift": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "MANIFEST_IDENTITY_DRIFT_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "testHonestIncomplete": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/testSlot"
+        },
+        {
+          "properties": {
+            "testId": {
+              "const": "HONEST_INCOMPLETE_ACCEPTED"
+            }
+          }
+        }
+      ]
+    },
+    "guardProviderCollision": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/guardSlot"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "PROVIDER_NAMESPACE_COLLISION_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "guardReviewCount": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/guardSlot"
+        },
+        {
+          "properties": {
+            "guardId": {
+              "const": "REVIEW_COUNT_CONSISTENCY_REJECTED"
+            }
+          }
+        }
+      ]
+    },
+    "semanticGuardResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guardId",
+        "admissionTarget",
+        "status",
+        "reasonCode",
+        "sourceFactIds",
+        "observationRefs",
+        "collectorRevision",
+        "derivationRevision"
+      ],
+      "properties": {
+        "guardId": {
+          "enum": [
+            "A0_SLOT_COUNT_PROJECTION",
+            "A0_TERMINAL_DERIVATION",
+            "A0_REFERENCE_CLOSURE",
+            "A0_RESULT_FINGERPRINT",
+            "A1_SLOT_COUNT_PROJECTION",
+            "A1_SLOT_OUTCOME_BINDING",
+            "A1_PROCESS_MATERIAL_CLOSURE",
+            "A1_RESULT_FINGERPRINT",
+            "HARNESS_PROOF_COMPLETENESS",
+            "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+            "PIN_LIFECYCLE_BINDING",
+            "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+            "CODESOURCE_INDEPENDENCE",
+            "REVIEW_SIGNATURE_AUTHORITY",
+            "REVIEW_COUNT_CONSISTENCY_REJECTED",
+            "ROLLBACK_BINDING",
+            "A2_CONCLUSION_PRECEDENCE",
+            "A2_RESULT_FINGERPRINT"
+          ]
+        },
+        "admissionTarget": {
+          "enum": [
+            "requirement:GATE-A-P0-01-TYPED-EVIDENCE",
+            "requirement:GATE-A-P0-02-INDEPENDENT-VERIFIER",
+            "guard:PROVIDER_NAMESPACE_COLLISION_REJECTED",
+            "artifact:GATE_VERIFIER",
+            "artifact:TEST_REPORT",
+            "review:INDEPENDENT_TRUSTED_REVIEW",
+            "guard:REVIEW_COUNT_CONSISTENCY_REJECTED"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/status"
+        },
+        "reasonCode": {
+          "enum": [
+            "GUARD_PASSED",
+            "GUARD_MISMATCH",
+            "GUARD_MATERIAL_MISSING",
+            "GUARD_OBSERVATION_UNAVAILABLE"
+          ]
+        },
+        "sourceFactIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 9,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "EXPECTED_TCK_SLOT",
+              "EXPECTED_ARTIFACT_IDENTITY",
+              "PROCESS_OBSERVATION",
+              "A0_ADAPTER_FACT",
+              "A0_FELT_GAP",
+              "A1_SLOT_OUTCOME",
+              "TEST_REPORT_CLOSURE",
+              "REVIEW_FINDING",
+              "OBSERVED_OUTPUT_SEAL"
+            ]
+          }
+        },
+        "observationRefs": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+          }
+        },
+        "collectorRevision": {
+          "const": 1
+        },
+        "derivationRevision": {
+          "const": 1
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "PASS"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "const": "GUARD_PASSED"
+              },
+              "observationRefs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "FAIL"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "const": "GUARD_MISMATCH"
+              },
+              "observationRefs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "MISSING"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "const": "GUARD_MATERIAL_MISSING"
+              },
+              "observationRefs": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "UNAVAILABLE"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasonCode": {
+                "const": "GUARD_OBSERVATION_UNAVAILABLE"
+              },
+              "observationRefs": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}
