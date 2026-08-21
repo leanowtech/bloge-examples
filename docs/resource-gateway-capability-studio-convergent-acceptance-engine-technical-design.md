@@ -105,7 +105,7 @@ D0 已在生产实现继续前完成独立对抗签核，最终结论为 `openP0
 | Guard lineage | 4 份 A2 fixture × 18 Guard = 72 条 ordered source fact 校验 |
 | real-material attacks | 18 primary + 20 supplemental = 38；Python 与独立 Java 逐项一致 |
 | Reviewer adversarial proof | 9 个合法重签语义攻击先独立证明 Ed25519 有效，再由治理 Guard 拒绝 |
-| Test Kit full build | 1308 unit tests + 1 integration test；0 failure / 0 error |
+| Test Kit clean-commit build | 1293 unit tests + 1 integration test；0 failure / 0 error；从 D0 commit 的 detached clean worktree 执行，不含隔离中的 A0 草稿 |
 | Draw.io topology | 0 error、0 warning、0 overlap；图源和 SVG 均标注 38 个真实攻击 |
 | independent review | `openP0=0/openP1=0` |
 
