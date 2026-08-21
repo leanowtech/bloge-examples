@@ -1,0 +1,79 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "runId": "RUN-NORMAL-001",
+  "commandRef": {
+    "uri": "run-material/runs/RUN-NORMAL-001/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  },
+  "processState": "COMPLETED",
+  "exitCode": 0,
+  "startedAt": "2026-08-21T10:00:01Z",
+  "endedAt": "2026-08-21T10:00:02Z",
+  "timedOut": false,
+  "cancelled": false,
+  "codeSource": {
+    "artifactPath": "/opt/candidate.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "fileSize": 1024,
+    "fileKey": "candidate-1"
+  },
+  "codeSourceObservation": {
+    "preRead": {
+      "resolvedPath": "/opt/candidate.jar",
+      "fileKey": "dev:1:ino:1001",
+      "owner": "uid:1000",
+      "group": "gid:1000",
+      "linkCount": 1,
+      "posixMode": "0644",
+      "fileSize": 1024,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    "postRead": {
+      "resolvedPath": "/opt/candidate.jar",
+      "fileKey": "dev:1:ino:1001",
+      "owner": "uid:1000",
+      "group": "gid:1000",
+      "linkCount": 1,
+      "posixMode": "0644",
+      "fileSize": 1024,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "stdoutRef": {
+    "uri": "run-material/runs/RUN-NORMAL-001/stdout",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
+    }
+  },
+  "stderrRef": {
+    "uri": "run-material/runs/RUN-NORMAL-001/stderr",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"
+    }
+  },
+  "transcriptFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:1414141414141414141414141414141414141414141414141414141414141414"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "runId": "RUN-UNAVAILABLE-001",
+  "commandRef": {"uri": "run-material/runs/RUN-UNAVAILABLE-001/command.json", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}},
+  "processState": "UNAVAILABLE",
+  "exitCode": 255,
+  "startedAt": "2026-08-21T10:03:01Z",
+  "endedAt": "2026-08-21T10:03:01Z",
+  "timedOut": false,
+  "cancelled": false,
+  "codeSource": {"artifactPath": "/opt/candidate.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}, "fileSize": 1024, "fileKey": "candidate-1"},
+  "stdoutRef": {"uri": "run-material/runs/RUN-UNAVAILABLE-001/stdout", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"}},
+  "stderrRef": {"uri": "run-material/runs/RUN-UNAVAILABLE-001/stderr", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"}},
+  "transcriptFingerprint": {"kind": "CANONICAL_DOCUMENT", "algorithm": "SHA-256", "value": "sha256:1414141414141414141414141414141414141414141414141414141414141414"}
+}

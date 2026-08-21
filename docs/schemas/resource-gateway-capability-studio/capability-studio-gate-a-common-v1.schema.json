@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-common-v1.schema.json",
+  "title": "Capability Studio Gate A shared vocabulary v1",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value"],
+      "properties": {
+        "kind": {"enum": ["RAW_BYTES", "CANONICAL_DOCUMENT", "TREE_COMMITMENT", "AGGREGATE_COMMITMENT"]},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "rawFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "RAW_BYTES"}}}
+      ]
+    },
+    "documentFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "CANONICAL_DOCUMENT"}}}
+      ]
+    },
+    "treeFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "TREE_COMMITMENT"}}}
+      ]
+    },
+    "aggregateFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "AGGREGATE_COMMITMENT"}}}
+      ]
+    },
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
+    },
+    "absolutePath": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "pattern": "^/(?:[A-Za-z0-9][A-Za-z0-9._-]*)(?:/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "uri": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$"
+    },
+    "rawRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "rawFingerprint"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "documentRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "fingerprint"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "fingerprint": {"$ref": "#/$defs/documentFingerprint"}
+      }
+    },
+    "treeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "fingerprint"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "fingerprint": {"$ref": "#/$defs/treeFingerprint"}
+      }
+    },
+    "aggregateRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uri", "fingerprint"],
+      "properties": {
+        "uri": {"$ref": "#/$defs/uri"},
+        "fingerprint": {"$ref": "#/$defs/aggregateFingerprint"}
+      }
+    },
+    "codeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifactPath", "rawFingerprint", "fileSize", "fileKey"],
+      "properties": {
+        "artifactPath": {"$ref": "#/$defs/absolutePath"},
+        "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+        "fileSize": {"type": "integer", "minimum": 1, "maximum": 1073741824},
+        "fileKey": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,256}$"}
+      }
+    },
+    "codeSourceObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preRead", "postRead"],
+      "properties": {
+        "preRead": {"$ref": "#/$defs/codeSourceObservationSnapshot"},
+        "postRead": {"$ref": "#/$defs/codeSourceObservationSnapshot"}
+      }
+    },
+    "codeSourceObservationSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "resolvedPath",
+        "fileKey",
+        "owner",
+        "group",
+        "linkCount",
+        "posixMode",
+        "fileSize",
+        "readRawFingerprint"
+      ],
+      "properties": {
+        "resolvedPath": {"$ref": "#/$defs/absolutePath"},
+        "fileKey": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,256}$"},
+        "owner": {"type": "string", "pattern": "^[A-Za-z0-9._:@-]{1,256}$"},
+        "group": {"type": "string", "pattern": "^[A-Za-z0-9._:@-]{1,256}$"},
+        "linkCount": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "posixMode": {"type": "string", "pattern": "^0[0-7]{3,4}$"},
+        "fileSize": {"type": "integer", "minimum": 1, "maximum": 1073741824},
+        "readRawFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "processExit": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 255
+    },
+    "processState": {
+      "enum": ["COMPLETED", "FAILED", "TIMED_OUT", "CANCELLED", "UNAVAILABLE"]
+    },
+    "terminal": {
+      "enum": ["VERIFIED", "INVALID", "UNAVAILABLE", "STRUCTURE_VERIFIED", "INCOMPLETE", "ACCEPTED", "NOT_ACCEPTED", "NOT_RUN", "BLOCKED"]
+    },
+    "childTerminal": {
+      "enum": ["VERIFIED", "INVALID", "UNAVAILABLE", "ACCEPTED", "NOT_ACCEPTED", "INCOMPLETE"]
+    },
+    "reasonCode": {
+      "enum": [
+        "A0_TYPED_REPLAY_VERIFIED",
+        "A0_STRUCTURE_VERIFIED",
+        "A0_INCOMPLETE",
+        "A0_INVALID",
+        "A0_UNAVAILABLE",
+        "A1_REPLAY_VERIFIED",
+        "A1_REPLAY_INVALID",
+        "A1_REPLAY_UNAVAILABLE",
+        "BOOTSTRAP_READY",
+        "BOOTSTRAP_REJECTED",
+        "BOOTSTRAP_UNAVAILABLE",
+        "PLACEHOLDER_REJECTED",
+        "WRONG_KIND",
+        "WRONG_VERIFIER_REVISION",
+        "VERIFIER_DIGEST_MUTATION",
+        "REGISTRY_MUTATION",
+        "VERIFIER_TCK_MISMATCH",
+        "LEGACY_AUTHORITY_COMPLETE",
+        "MISSING_STORE",
+        "MISSING_OWNER",
+        "MISSING_TARGET",
+        "MANIFEST_IDENTITY_DRIFT",
+        "HONEST_INCOMPLETE",
+        "PROVIDER_NAMESPACE_COLLISION",
+        "PROCESS_FAILED",
+        "PROCESS_TIMEOUT",
+        "PROCESS_CANCELLED",
+        "OUTPUT_INVALID"
+      ]
+    },
+    "mechanism": {
+      "enum": [
+        "PLACEHOLDER_TYPED_EVIDENCE",
+        "KIND_ROLE_MISMATCH",
+        "VERIFIER_REVISION_MISMATCH",
+        "VERIFIER_DIGEST_MUTATION",
+        "REGISTRY_MUTATION",
+        "VERIFIER_TCK_MISMATCH",
+        "COMPLETE_AUTHORITY",
+        "MISSING_STORE_AUTHORITY",
+        "MISSING_OWNER_AUTHORITY",
+        "MISSING_TARGET_AUTHORITY",
+        "MANIFEST_IDENTITY_DRIFT",
+        "HONEST_INCOMPLETE",
+        "PROVIDER_NAMESPACE_COLLISION"
+      ]
+    },
+    "status": {
+      "enum": ["PASS", "FAIL"]
+    },
+    "admissionStatus": {
+      "enum": ["PASS", "FAIL", "MISSING", "UNAVAILABLE"]
+    },
+    "runId": {
+      "type": "string",
+      "pattern": "^RUN-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "testId": {
+      "enum": [
+        "PLACEHOLDER_REJECTED",
+        "WRONG_KIND_REJECTED",
+        "WRONG_VERIFIER_REVISION_REJECTED",
+        "VERIFIER_DIGEST_MUTATION_REJECTED",
+        "REGISTRY_MUTATION_REJECTED",
+        "VERIFIER_TCK_MISMATCH_REJECTED",
+        "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+        "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+        "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+        "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+        "MANIFEST_IDENTITY_DRIFT_REJECTED",
+        "HONEST_INCOMPLETE_ACCEPTED"
+      ]
+    },
+    "outerRunPurpose": {
+      "enum": ["NORMAL_A1", "WRONG_VERIFIER_DIGEST_A1", "REGISTRY_MUTATION_A1", "TCK_MISMATCH_A1", "PROVIDER_COLLISION_A1"]
+    },
+    "commandArg": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[\\x20-\\x7E]+$"
+    },
+    "refMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "ref"],
+      "properties": {
+        "role": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$"},
+        "ref": {"$ref": "#/$defs/rawRef"}
+      }
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000
+    }
+  }
+}

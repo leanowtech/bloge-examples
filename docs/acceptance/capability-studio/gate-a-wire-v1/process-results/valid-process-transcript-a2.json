@@ -1,0 +1,19 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "runId": "RUN-A2-001",
+  "commandRef": {"uri": "valid-process-transcript-a2-command.json", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"}},
+  "processState": "COMPLETED",
+  "exitCode": 0,
+  "startedAt": "2026-08-21T10:04:01Z",
+  "endedAt": "2026-08-21T10:04:04Z",
+  "timedOut": false,
+  "cancelled": false,
+  "codeSource": {"artifactPath": "/opt/gate-a/admission.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"}, "fileSize": 1048576, "fileKey": "dev:1:ino:3101"},
+  "codeSourceObservation": {
+    "preRead": {"resolvedPath": "/opt/gate-a/admission.jar", "fileKey": "dev:1:ino:3101", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0755", "fileSize": 1048576, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"}},
+    "postRead": {"resolvedPath": "/opt/gate-a/admission.jar", "fileKey": "dev:1:ino:3101", "owner": "uid:1000", "group": "gid:1000", "linkCount": 1, "posixMode": "0755", "fileSize": 1048576, "readRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"}}
+  },
+  "stdoutRef": {"uri": "run-material/runs/RUN-A2-001/stdout", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"}},
+  "stderrRef": {"uri": "run-material/runs/RUN-A2-001/stderr", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"}},
+  "transcriptFingerprint": {"kind": "CANONICAL_DOCUMENT", "algorithm": "SHA-256", "value": "sha256:1414141414141414141414141414141414141414141414141414141414141414"}
+}

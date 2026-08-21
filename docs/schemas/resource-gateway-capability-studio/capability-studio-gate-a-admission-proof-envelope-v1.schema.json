@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+  "title": "Capability Studio Gate A admission proof envelope v1",
+  "description": "Caller-owned closure for a completed A2 admission attempt. A2 result documents do not reference this envelope; a crashed, timed-out, cancelled, or unavailable parent process cannot be enveloped as proof.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "envelopeId",
+    "gateRevision",
+    "challengeTrustPinRawFingerprint",
+    "admissionTrustPinRawFingerprint",
+    "admissionResultRef",
+    "admissionProcessTranscriptRef",
+    "expectedAdmissionCodeSource",
+    "observedAdmissionCodeSource",
+    "observedProcessState",
+    "observedExitCode",
+    "admissionResultConclusion",
+    "observedConclusion",
+    "createdAt",
+    "envelopeFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.admission-proof-envelope.v1"},
+    "envelopeId": {"type": "string", "pattern": "^A2-ENVELOPE-[A-Z0-9][A-Z0-9-]{2,63}$"},
+    "gateRevision": {"const": 1},
+    "challengeTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "admissionTrustPinRawFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"},
+    "admissionResultRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "admissionProcessTranscriptRef": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"},
+    "expectedAdmissionCodeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
+    "observedAdmissionCodeSource": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSource"},
+    "observedProcessState": {"const": "COMPLETED"},
+    "observedExitCode": {"const": 0},
+    "admissionResultConclusion": {"enum": ["PASS", "OPEN", "FAIL", "UNAVAILABLE"]},
+    "observedConclusion": {"enum": ["PASS", "OPEN", "FAIL", "UNAVAILABLE"]},
+    "createdAt": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"},
+    "envelopeFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
+  },
+  "oneOf": [
+    {"properties": {"admissionResultConclusion": {"const": "PASS"}, "observedConclusion": {"const": "PASS"}}},
+    {"properties": {"admissionResultConclusion": {"const": "OPEN"}, "observedConclusion": {"const": "OPEN"}}},
+    {"properties": {"admissionResultConclusion": {"const": "FAIL"}, "observedConclusion": {"const": "FAIL"}}},
+    {"properties": {"admissionResultConclusion": {"const": "UNAVAILABLE"}, "observedConclusion": {"const": "UNAVAILABLE"}}}
+  ]
+}

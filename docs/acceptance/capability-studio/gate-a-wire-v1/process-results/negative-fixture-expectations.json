@@ -1,0 +1,159 @@
+{
+  "invalid-admission-pass-with-missing.json": {
+    "base": "valid-admission-verification-result.json",
+    "schema": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+    "mutationPath": "$.requirements[0]",
+    "expectedKeyword": "not",
+    "expectedPath": "$.requirements",
+    "expectedMessageContains": "should not be valid"
+  },
+  "invalid-candidate-replay-adapter-drift.json": {
+    "base": "valid-candidate-replay-result.json",
+    "schema": "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+    "mutationPath": "$.adapterResults[0].adapterKind",
+    "expectedKeyword": "const",
+    "expectedPath": "$.adapterResults[0].adapterKind",
+    "expectedMessageContains": "FORMAL_INPUT_TREE_V1"
+  },
+  "invalid-candidate-replay-obligation-drift.json": {
+    "base": "valid-candidate-replay-result.json",
+    "schema": "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+    "mutationPath": "$.obligationResults[0].obligationId",
+    "expectedKeyword": "const",
+    "expectedPath": "$.obligationResults[0].obligationId",
+    "expectedMessageContains": "FELT-01"
+  },
+  "invalid-candidate-response-legacy-reason-drift.json": {
+    "base": "valid-candidate-challenge-response-legacy-missing-store.json",
+    "schema": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+    "mutationPath": "$.operationResult.reasonCode",
+    "expectedKeyword": "const",
+    "expectedPath": "$.operationResult.reasonCode",
+    "expectedMessageContains": "MISSING_STORE"
+  },
+  "invalid-candidate-response-self-reported-process-fact.json": {
+    "base": "valid-candidate-challenge-response.json",
+    "schema": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+    "mutationPath": "$.processExitCode",
+    "expectedKeyword": "additionalProperties",
+    "expectedPath": "$",
+    "expectedMessageContains": "processExitCode"
+  },
+  "invalid-independent-report-eleven-child-runs.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.testRuns",
+    "expectedKeyword": "minItems",
+    "expectedPath": "$.testRuns",
+    "expectedMessageContains": "too short"
+  },
+  "invalid-independent-review-guard-intrusion.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.mandatoryGuards.reviewCountConsistency",
+    "expectedKeyword": "additionalProperties",
+    "expectedPath": "$.mandatoryGuards",
+    "expectedMessageContains": "reviewCountConsistency"
+  },
+  "invalid-independent-wrong-exit.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.testRuns[0].processExitCode",
+    "expectedKeyword": "const",
+    "expectedPath": "$.testRuns[0].processExitCode",
+    "expectedMessageContains": "2 was expected"
+  },
+  "invalid-independent-wrong-mechanism.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.testRuns[0].expectedMechanism",
+    "expectedKeyword": "const",
+    "expectedPath": "$.testRuns[0].expectedMechanism",
+    "expectedMessageContains": "PLACEHOLDER_TYPED_EVIDENCE"
+  },
+  "invalid-independent-wrong-terminal.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.testRuns[0].observedTerminal",
+    "expectedKeyword": "const",
+    "expectedPath": "$.testRuns[0].observedTerminal",
+    "expectedMessageContains": "INVALID"
+  },
+  "invalid-process-transcript-missing-stdout.json": {
+    "base": "valid-process-transcript.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$.stdoutRef",
+    "expectedKeyword": "required",
+    "expectedPath": "$",
+    "expectedMessageContains": "stdoutRef"
+  },
+  "invalid-process-transcript-completed-nonzero.json": {
+    "base": "valid-process-transcript.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$",
+    "expectedKeyword": "const",
+    "expectedPath": "$.exitCode",
+    "expectedMessageContains": "0 was expected"
+  },
+  "invalid-process-transcript-timeout-exit-drift.json": {
+    "base": "valid-process-transcript-a1-timeout.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$.exitCode",
+    "expectedKeyword": "const",
+    "expectedPath": "$.exitCode",
+    "expectedMessageContains": "143 was expected"
+  },
+  "invalid-process-transcript-missing-toctou.json": {
+    "base": "valid-process-transcript-unavailable.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$.codeSourceObservation",
+    "expectedKeyword": "required",
+    "expectedPath": "$",
+    "expectedMessageContains": "codeSourceObservation"
+  },
+  "invalid-process-transcript-started-after-ended.json": {
+    "base": "valid-process-transcript.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_STARTED_AFTER_ENDED"
+  },
+  "invalid-admission-proof-envelope-conclusion-drift.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$.observedConclusion",
+    "expectedKeyword": "oneOf",
+    "expectedPath": "$",
+    "expectedMessageContains": "not valid under any of the given schemas"
+  },
+  "invalid-admission-proof-envelope-process-timeout.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_PROCESS_NOT_COMPLETED"
+  },
+  "invalid-admission-proof-envelope-codesource-drift.json": {
+    "base": "valid-admission-proof-envelope.json",
+    "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "mutationPath": "$.expectedAdmissionCodeSource.fileKey",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A2_EXPECTED_OBSERVED_CODESOURCE_DRIFT"
+  },
+  "invalid-provider-guard-accepted.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.mandatoryGuards.providerNamespaceCollision.observedOutcome",
+    "expectedKeyword": "const",
+    "expectedPath": "$.mandatoryGuards.providerNamespaceCollision.observedOutcome",
+    "expectedMessageContains": "REJECTED"
+  },
+  "invalid-tck-shuffled-first-slot.json": {
+    "base": "valid-tck.json",
+    "schema": "capability-studio-gate-a-tck-v1.schema.json",
+    "mutationPath": "$.tests",
+    "expectedKeyword": "const",
+    "expectedPath": "$.tests",
+    "expectedMessageContains": "was expected"
+  }
+}
