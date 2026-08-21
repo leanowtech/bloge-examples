@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-formal-evidence-run-manifest-v1.schema.json",
+  "title": "Capability Studio Formal Evidence Run Manifest v1",
+  "$comment": "Canonical evidencePaths, evidenceInventory, and typedEvidenceReplays ordering is enforced by the semantic verifier; JSON Schema cannot express lexical ordering by a nested property.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractId", "runId", "candidatePinFingerprint", "inputPinFingerprint",
+    "environmentPinFingerprint", "executionWindow", "independentReview",
+    "obligations", "openP0", "openP1", "passed", "failed", "blocked", "notRun",
+    "verificationLevel", "formalPassCount", "formalExpectedCount", "evidenceCount",
+    "evidenceByteSize", "evidenceInventory", "inventoryClosureFingerprint",
+    "typedEvidenceReplays", "manifestFingerprint"
+  ],
+  "properties": {
+    "contractId": {"const": "RG-CS-FELT-v1"},
+    "runId": {"$ref": "#/$defs/fingerprint"},
+    "candidatePinFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "inputPinFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "environmentPinFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "executionWindow": {"$ref": "#/$defs/executionWindow"},
+    "independentReview": {"$ref": "#/$defs/independentReview"},
+    "obligations": {
+      "type": "array", "minItems": 14, "maxItems": 14,
+      "prefixItems": [
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-01"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-02"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-03"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-04"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-05"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-06"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-07"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-08"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-09"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-10"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-11"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-12"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-13"}}}]},
+        {"allOf": [{"$ref": "#/$defs/obligation"}, {"properties": {"id": {"const": "FELT-14"}}}]}
+      ],
+      "items": false
+    },
+    "openP0": {"type": "integer", "minimum": 0, "maximum": 1000},
+    "openP1": {"type": "integer", "minimum": 0, "maximum": 1000},
+    "passed": {"const": 0},
+    "failed": {"type": "integer", "minimum": 0, "maximum": 14},
+    "blocked": {"type": "integer", "minimum": 0, "maximum": 14},
+    "notRun": {"type": "integer", "minimum": 0, "maximum": 14},
+    "verificationLevel": {"enum": ["STRUCTURE_VERIFIED", "INCOMPLETE"]},
+    "formalPassCount": {"const": 0},
+    "formalExpectedCount": {"const": 27},
+    "evidenceCount": {"type": "integer", "minimum": 0, "maximum": 256},
+    "evidenceByteSize": {"type": "integer", "minimum": 0, "maximum": 33554432},
+    "evidenceInventory": {
+      "type": "array", "maxItems": 256, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/evidence"}
+    },
+    "inventoryClosureFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "typedEvidenceReplays": {
+      "type": "array", "maxItems": 3, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/replay"}
+    },
+    "manifestFingerprint": {"$ref": "#/$defs/fingerprint"}
+  },
+  "allOf": [{
+    "if": {
+      "properties": {"typedEvidenceReplays": {"maxItems": 0}},
+      "required": ["typedEvidenceReplays"]
+    },
+    "then": {"properties": {"verificationLevel": {"const": "INCOMPLETE"}}},
+    "else": {"properties": {"verificationLevel": {"const": "STRUCTURE_VERIFIED"}}}
+  }],
+  "$defs": {
+    "fingerprint": {
+      "type": "string", "minLength": 71, "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "dateTime": {
+      "type": "string", "minLength": 20, "maxLength": 30,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$",
+      "format": "date-time"
+    },
+    "executionWindow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["startedAt", "endedAt"],
+      "properties": {"startedAt": {"$ref": "#/$defs/dateTime"}, "endedAt": {"$ref": "#/$defs/dateTime"}}
+    },
+    "independentReview": {
+      "type": "object", "additionalProperties": false,
+      "required": ["reviewerFingerprint", "reviewedAt", "reviewFingerprint"],
+      "properties": {
+        "reviewerFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "reviewedAt": {"$ref": "#/$defs/dateTime"},
+        "reviewFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "relativePath": {
+      "type": "string", "minLength": 1, "maxLength": 1024,
+      "pattern": "^(?!\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+    },
+    "obligation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "evidencePaths"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^FELT-(0[1-9]|1[0-4])$"},
+        "status": {"enum": ["FAIL", "BLOCKED", "NOT_RUN"]},
+        "evidencePaths": {"type": "array", "uniqueItems": true, "maxItems": 256, "items": {"$ref": "#/$defs/relativePath"}}
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relativePath", "byteSize", "rawFingerprint"],
+      "properties": {
+        "relativePath": {"$ref": "#/$defs/relativePath"},
+        "byteSize": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "rawFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "replay": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "role", "kind", "verifierId", "verifierRevision", "subjectPath", "inputs"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,127}$"},
+        "role": {"enum": ["FORMAL_INPUT_TREE", "DURABLE_EVIDENCE_CLOSURE", "STAGE_ACCEPTANCE_RESULT"]},
+        "kind": {"enum": ["FORMAL_INPUT_TREE_V1", "EXECUTION_LEASE_DURABLE_WRAPPER_V1", "STAGE_ACCEPTANCE_RESULT_V2"]},
+        "verifierId": {"type": "string", "enum": [
+          "CapabilityStudioFormalInputTreeSnapshotter.verify",
+          "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify",
+          "CapabilityStudioStageAcceptanceResultV2Verifier.verify"
+        ]},
+        "verifierRevision": {"type": "integer", "minimum": 1, "maximum": 2},
+        "subjectPath": {"$ref": "#/$defs/relativePath"},
+        "inputs": {
+          "oneOf": [
+            {"$ref": "#/$defs/formalInputTreeInputs"},
+            {"$ref": "#/$defs/durableWrapperInputs"},
+            {"$ref": "#/$defs/stageResultInputs"}
+          ]
+        }
+      },
+      "allOf": [{"oneOf": [
+        {"properties": {
+          "role": {"const": "FORMAL_INPUT_TREE"},
+          "kind": {"const": "FORMAL_INPUT_TREE_V1"},
+          "verifierId": {"const": "CapabilityStudioFormalInputTreeSnapshotter.verify"},
+          "verifierRevision": {"const": 1},
+          "inputs": {"$ref": "#/$defs/formalInputTreeInputs"}
+        }},
+        {"properties": {
+          "role": {"const": "DURABLE_EVIDENCE_CLOSURE"},
+          "kind": {"const": "EXECUTION_LEASE_DURABLE_WRAPPER_V1"},
+          "verifierId": {"const": "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify"},
+          "verifierRevision": {"const": 1},
+          "inputs": {"$ref": "#/$defs/durableWrapperInputs"}
+        }},
+        {"properties": {
+          "role": {"const": "STAGE_ACCEPTANCE_RESULT"},
+          "kind": {"const": "STAGE_ACCEPTANCE_RESULT_V2"},
+          "verifierId": {"const": "CapabilityStudioStageAcceptanceResultV2Verifier.verify"},
+          "verifierRevision": {"const": 2},
+          "inputs": {"$ref": "#/$defs/stageResultInputs"}
+        }}
+      ]}]
+    },
+    "formalInputTreeInputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["treeKind", "bundleSemanticFingerprint", "treeFingerprint", "publicationFingerprint", "transactionId"],
+      "properties": {
+        "treeKind": {"enum": ["AUTHORITY_BUNDLE", "TARGET_ADMISSION_BUNDLE"]},
+        "bundleSemanticFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "treeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "publicationFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "transactionId": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "durableWrapperInputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["stageResultRawFingerprint", "formalOuterFingerprint", "publicationFingerprint"],
+      "properties": {
+        "stageResultRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "formalOuterFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "publicationFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "stageResultInputs": {
+      "type": "object", "additionalProperties": false,
+      "required": ["verificationInstant"],
+      "properties": {"verificationInstant": {"$ref": "#/$defs/dateTime"}}
+    }
+  }
+}

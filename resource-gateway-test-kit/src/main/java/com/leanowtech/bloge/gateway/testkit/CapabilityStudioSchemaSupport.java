@@ -117,13 +117,35 @@ final class CapabilityStudioSchemaSupport {
     static final String EXECUTION_LEASE_EVIDENCE_COMMIT_MANIFEST_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-execution-lease-evidence-commit-manifest-v1.schema.json";
+    static final String FORMAL_EVIDENCE_RUN_MANIFEST_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-formal-evidence-run-manifest-v1.schema.json";
+    static final String GATE_A_CANDIDATE_REPLAY_RESULT_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-gate-a-candidate-replay-result-v1.schema.json";
+    private static final String GATE_A_COMMON_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-gate-a-common-v1.schema.json";
+    private static final String GATE_A_COMMON_ID =
+            "https://leanowtech.com/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-gate-a-common-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final SchemaRegistry REGISTRY =
-            SchemaRegistry.withDialect(Dialects.getDraft202012());
+    private static final SchemaRegistry REGISTRY = registry();
     private static final Map<String, Schema> SCHEMAS = new ConcurrentHashMap<>();
 
     private CapabilityStudioSchemaSupport() {
+    }
+
+    private static SchemaRegistry registry() {
+        try {
+            return SchemaRegistry.withDialect(Dialects.getDraft202012(), builder ->
+                    builder.schemas(Map.of(GATE_A_COMMON_ID,
+                            loadSchemaText(GATE_A_COMMON_RESOURCE))));
+        } catch (RuntimeException failure) {
+            throw new IllegalStateException(
+                    "RG.CAPABILITY_STUDIO.VERIFIER_SCHEMA_UNAVAILABLE");
+        }
     }
 
     static List<Error> validate(JsonNode value, String resource) {
@@ -141,16 +163,25 @@ final class CapabilityStudioSchemaSupport {
     }
 
     private static Schema load(String resource) {
+        try {
+            JsonNode schema = JSON.readTree(loadSchemaText(resource));
+            if (schema == null || !schema.isObject()) {
+                throw new IOException("Capability Studio schema is invalid");
+            }
+            return REGISTRY.getSchema(schema.toString(), InputFormat.JSON);
+        } catch (IOException | RuntimeException failure) {
+            throw new IllegalStateException(
+                    "RG.CAPABILITY_STUDIO.VERIFIER_SCHEMA_UNAVAILABLE");
+        }
+    }
+
+    private static String loadSchemaText(String resource) {
         try (InputStream input = CapabilityStudioSchemaSupport.class
                 .getResourceAsStream(resource)) {
             if (input == null) {
                 throw new IOException("Capability Studio schema is absent");
             }
-            JsonNode schema = JSON.readTree(input);
-            if (schema == null || !schema.isObject()) {
-                throw new IOException("Capability Studio schema is invalid");
-            }
-            return REGISTRY.getSchema(schema.toString(), InputFormat.JSON);
+            return new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (IOException | RuntimeException failure) {
             throw new IllegalStateException(
                     "RG.CAPABILITY_STUDIO.VERIFIER_SCHEMA_UNAVAILABLE");

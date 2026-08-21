@@ -35,6 +35,7 @@ discover exact target
 | Verify a self-contained HA/failure certification package | `RuntimeCertificationVerifier.requireReplayBundle` + caller-owned regional, approval, and evidence trust callbacks |
 | Verify ANEKE Package registry and governance exchange | `PackageGovernanceProtocol` + caller-owned ANEKE projection trust callback |
 | Verify a Business Mirror pilot acceptance package | `BusinessMirrorPilotAcceptanceProtocol` + packaged cancellation-fee reference fixture |
+| Replay a Gate A formal evidence bundle locally | `CapabilityStudioFormalEvidenceRunVerifier` + [Gate A0 类型化回放指南](../docs/resource-gateway-capability-studio-gate-a0-typed-replay-guide.md) |
 
 Build the library and start the local test-profile Gateway:
 
@@ -45,6 +46,32 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 
 The local demo uses `http://localhost:8080` and the test-only bearer token
 `bloge-aneke-demo-token`. Do not reuse that credential outside the local demo.
+
+## Replay a Gate A Formal Evidence Bundle
+
+`CapabilityStudioFormalEvidenceRunVerifier` is the local A0 Implementation Candidate. It
+compiles one canonical manifest, seals an exact private Evidence Root, invokes only the three
+closed typed verifier adapters, and derives the result from observed adapter facts. It never
+returns `PASS` or `ACCEPTED`.
+
+```bash
+resource-gateway-test-kit/scripts/generate-formal-evidence-run-demo.sh \
+  /private/tmp/resource-gateway-a0-demo
+
+resource-gateway-test-kit/scripts/verify-formal-evidence-run.sh \
+  --manifest /private/tmp/resource-gateway-a0-demo/manifest.json \
+  --bundle-root /private/tmp/resource-gateway-a0-demo/evidence-root
+```
+
+Expected A0 completion uses exit `4` for both `STRUCTURE_VERIFIED` and `INCOMPLETE`.
+`INVALID` uses exit `2`; `UNAVAILABLE` uses exit `3`. The command is payload-free and
+does not start the Resource Gateway service. See the
+[Gate A0 guide](../docs/resource-gateway-capability-studio-gate-a0-typed-replay-guide.md)
+for the five-minute demo, manifest construction, strict `GateACandidateReplayResult v1`,
+filesystem permissions, adapter tuples, result semantics, and troubleshooting. The CLI line is
+diagnostic output only; protocol integrations use `CapabilityStudioGateACandidateReplayResult`
+and persist the returned exact result and adapter-material bytes create-new. Evidence Root closure
+failure produces no partial strict result; its `2/3` outcome remains a parent-process observation.
 
 ## Verify Capability Studio Acceptance Artifacts
 

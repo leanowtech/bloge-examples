@@ -1993,6 +1993,26 @@ A0 代码开始前再冻结以下实现验收：
 
 A0 terminal 只表达 typed adapter replay 的结构可信度，不表达 formal acceptance：`UNAVAILABLE > INVALID > STRUCTURE_VERIFIED(any adapter VERIFIED) > INCOMPLETE(all adapters NOT_RUN)`。`FELT-01..14` 的 `FAIL/BLOCKED/NOT_RUN` 是 formal gap projection，不能把 A0 推进为 `ACCEPTED`，也不改变 `formalPassCount=0/27`。A1 terminal 由固定 9 项归约：任一失败且 observation 不可得为 `UNAVAILABLE`，其余失败为 `INVALID`，全 PASS 才是 `VERIFIED`。这些推导表由 `semantic-guard-vectors-v1.json` 覆盖，Schema 只要求 terminal/reason 形成合法判别联合。
 
+#### A0 Implementation Candidate 实施记录
+
+当前 Test Kit 已按上述深模块边界实现 A0 Implementation Candidate。该记录只说明本地候选实现可运行，不表示 A1 独立 Proof 或 Gate A admission 已完成。
+
+| 责任 | 生产实现 | 已关闭的边界 |
+|---|---|---|
+| exact wire compile | `CapabilityStudioFormalEvidenceRunManifest` | bounded exact bytes、duplicate/trailing、canonical JSON、packaged Schema、14 obligation、0 至 3 个唯一 adapter slot、inventory/ref/fingerprint |
+| Evidence Root observation | `CapabilityStudioFormalEvidenceBundleCollector` | absolute normalized path、ancestor identity、owner/mode/link count、exact inventory、subject 回放前后 raw bytes 复算、final snapshot、hard-link scope |
+| closed typed replay | `CapabilityStudioTypedEvidenceReplayRegistry` | 三个编译期固定 tuple、typed immutable inputs、真实 verifier adapter、无动态类名或 Provider fallback |
+| single derivation | `CapabilityStudioCandidateReplayDeriver` | adapter facts + final closure + manifest level 单点归约、三槽四态、固定 precedence、14 obligation projection、`passed=0` |
+| strict result projection | `CapabilityStudioGateACandidateReplayResult` | 只在 Evidence Root closure 已验证时生成完整 `GateACandidateReplayResult v1`；3 adapter + 14 obligation 固定槽位、Challenge refs、exact adapter materials、可见 adapter fact 支撑的 terminal、派生计数与域分离 fingerprint |
+| orchestration/transport | `CapabilityStudioFormalEvidenceRunVerifier` / `CapabilityStudioFormalEvidenceRunVerifyCli` | 固定阶段顺序、payload-free failure mapping、`2/3/4` exit contract |
+
+模块之间不再传递可修改的业务 `JsonNode`：Manifest Compiler 将 obligation、inventory 和 replay 输入编译为 immutable typed records；Collector 只接收 typed inventory；Registry 返回 closed `ReplayObservation`；Deriver 是无 I/O 纯函数；Result Writer 只消费 compiled facts 与最终 Decision。门面不再拥有 Schema、文件遍历、adapter、terminal 或 wire projection 规则。
+
+聚焦验证固定覆盖 Manifest Compiler、Collector、Deriver、三个真实 adapter、Facade、CLI、strict Candidate Result 和脚本。除 honest incomplete、wrong kind/revision、manifest/subject TOCTOU、symlink/hard-link、权限、identity drift、exact wire 与四态 precedence 外，还覆盖同大小内容篡改并恢复 mtime、目录 subject 后代篡改、三 adapter 共用一个 exact Evidence Root、adapter exact-byte material、count/fingerprint/terminal mutation、Result/material 引用闭包、三个 adapter admission 后 subject 消失、shaded JAR 相对 Schema 引用，以及 clean-checkout demo 和 `2/3/4` 进程映射。A0 的同 UID 并发攻击剩余边界必须由 A1 隔离身份与父进程材料闭合，不得把本地 A0 提升为生产发布门禁。每次切片提交前重新记录聚焦和全量构建数字；独立 A0 对抗复审仍是提交条件。
+
+操作方法、退出码和故障排查见 [Gate A0 类型化回放指南](resource-gateway-capability-studio-gate-a0-typed-replay-guide.md)。
+实施边界、独立复审闭环和最终绿色构建证据见 [Gate A0 实施与独立复审记录](resource-gateway-capability-studio-gate-a0-implementation-review.md)。
+
 `GateAReplayVerificationResult` 自身只是九槽结果，不得单独称为 Proof。Harness 作为 A1 的直接父进程，在 A1 返回后创建 `GateAReplayProofEnvelope v1`，绑定 result exact raw bytes、A1 producer ProcessTranscript、producer material root、Challenge Pin、Replay Profile 和 expected/observed CodeSource。Envelope 对自身 `envelopeFingerprint=null` 使用 `RG-CS-GATE-A1-PROOF-ENVELOPE-v1` 计算；A1 result 不反向引用 Envelope，因此没有 stdout/transcript 自哈希循环。
 
 `INVALID/UNAVAILABLE` result 只有在 A1 自身正常完成协议输出、九个子槽材料完整，且 caller transcript 的 exit/terminal/stdout 与 result 一致时，才能进入 closed diagnostic Envelope。子测试进程失败但 A1 成功收齐材料，允许得到该 Envelope；A1 自身 crash、timeout、cancel、stdout 截断或 material root 未封存时，只保留 outer ProcessTranscript，禁止创建 Envelope。它不是 TEST_REPORT，也不能进入 GateResult 的 `TEST_REPORT` artifact。Harness 必须用 `A1_SLOT_OUTCOME_BINDING` 拒绝“9 项全 PASS 但自报 INVALID/UNAVAILABLE”之类的 Schema-valid semantic drift。
