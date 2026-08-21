@@ -1,0 +1,178 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-implementation-gate-test-evidence-v1.schema.json",
+  "title": "Capability Studio Implementation Gate Test Evidence v1",
+  "$comment": "evidenceFingerprint = H('RG-CS-IMPLEMENTATION-GATE-TEST-EVIDENCE-v1' || canonical(document with evidenceFingerprint=null))",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "gateId",
+    "gateRevision",
+    "testId",
+    "candidateRawFingerprint",
+    "verifierRawFingerprint",
+    "expectedMechanism",
+    "observedTerminal",
+    "status",
+    "skipped",
+    "startedAt",
+    "endedAt",
+    "evidenceFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "capability-studio.implementation-gate-test-evidence.v1"
+    },
+    "gateId": {"const": "GATE-A"},
+    "gateRevision": {"const": 1},
+    "testId": {
+      "enum": [
+        "PLACEHOLDER_REJECTED",
+        "WRONG_KIND_REJECTED",
+        "WRONG_VERIFIER_REVISION_REJECTED",
+        "VERIFIER_DIGEST_MUTATION_REJECTED",
+        "REGISTRY_MUTATION_REJECTED",
+        "VERIFIER_TCK_MISMATCH_REJECTED",
+        "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+        "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+        "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+        "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+        "MANIFEST_IDENTITY_DRIFT_REJECTED",
+        "HONEST_INCOMPLETE_ACCEPTED"
+      ]
+    },
+    "candidateRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "verifierRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "expectedMechanism": {
+      "enum": [
+        "PLACEHOLDER_TYPED_EVIDENCE",
+        "KIND_ROLE_MISMATCH",
+        "VERIFIER_REVISION_MISMATCH",
+        "VERIFIER_DIGEST_MUTATION",
+        "REGISTRY_MUTATION",
+        "VERIFIER_TCK_MISMATCH",
+        "COMPLETE_AUTHORITY",
+        "MISSING_STORE_AUTHORITY",
+        "MISSING_OWNER_AUTHORITY",
+        "MISSING_TARGET_AUTHORITY",
+        "MANIFEST_IDENTITY_DRIFT",
+        "HONEST_INCOMPLETE"
+      ]
+    },
+    "observedTerminal": {
+      "enum": ["INVALID", "INCOMPLETE", "NOT_ACCEPTED", "ACCEPTED"]
+    },
+    "status": {"enum": ["PASS", "FAIL"]},
+    "skipped": {"const": false},
+    "startedAt": {"$ref": "#/$defs/dateTime"},
+    "endedAt": {"$ref": "#/$defs/dateTime"},
+    "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/placeholderRejected"},
+    {"$ref": "#/$defs/wrongKindRejected"},
+    {"$ref": "#/$defs/wrongVerifierRevisionRejected"},
+    {"$ref": "#/$defs/verifierDigestMutationRejected"},
+    {"$ref": "#/$defs/registryMutationRejected"},
+    {"$ref": "#/$defs/verifierTckMismatchRejected"},
+    {"$ref": "#/$defs/legacyCompleteAuthorityAccepted"},
+    {"$ref": "#/$defs/legacyMissingStoreRejected"},
+    {"$ref": "#/$defs/legacyMissingOwnerRejected"},
+    {"$ref": "#/$defs/legacyMissingTargetRejected"},
+    {"$ref": "#/$defs/manifestIdentityDriftRejected"},
+    {"$ref": "#/$defs/honestIncompleteAccepted"}
+  ],
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "terminalProfile": {
+      "type": "object",
+      "required": ["testId", "expectedMechanism", "observedTerminal"],
+      "properties": {
+        "testId": {"type": "string"},
+        "expectedMechanism": {"type": "string"},
+        "observedTerminal": {"type": "string"}
+      }
+    },
+    "placeholderRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "PLACEHOLDER_REJECTED"}, "expectedMechanism": {"const": "PLACEHOLDER_TYPED_EVIDENCE"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "wrongKindRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "WRONG_KIND_REJECTED"}, "expectedMechanism": {"const": "KIND_ROLE_MISMATCH"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "wrongVerifierRevisionRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "WRONG_VERIFIER_REVISION_REJECTED"}, "expectedMechanism": {"const": "VERIFIER_REVISION_MISMATCH"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "verifierDigestMutationRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "VERIFIER_DIGEST_MUTATION_REJECTED"}, "expectedMechanism": {"const": "VERIFIER_DIGEST_MUTATION"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "registryMutationRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "REGISTRY_MUTATION_REJECTED"}, "expectedMechanism": {"const": "REGISTRY_MUTATION"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "verifierTckMismatchRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "VERIFIER_TCK_MISMATCH_REJECTED"}, "expectedMechanism": {"const": "VERIFIER_TCK_MISMATCH"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "legacyCompleteAuthorityAccepted": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY"}, "expectedMechanism": {"const": "COMPLETE_AUTHORITY"}, "observedTerminal": {"const": "ACCEPTED"}}}
+      ]
+    },
+    "legacyMissingStoreRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED"}, "expectedMechanism": {"const": "MISSING_STORE_AUTHORITY"}, "observedTerminal": {"const": "NOT_ACCEPTED"}}}
+      ]
+    },
+    "legacyMissingOwnerRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED"}, "expectedMechanism": {"const": "MISSING_OWNER_AUTHORITY"}, "observedTerminal": {"const": "NOT_ACCEPTED"}}}
+      ]
+    },
+    "legacyMissingTargetRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED"}, "expectedMechanism": {"const": "MISSING_TARGET_AUTHORITY"}, "observedTerminal": {"const": "NOT_ACCEPTED"}}}
+      ]
+    },
+    "manifestIdentityDriftRejected": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "MANIFEST_IDENTITY_DRIFT_REJECTED"}, "expectedMechanism": {"const": "MANIFEST_IDENTITY_DRIFT"}, "observedTerminal": {"const": "INVALID"}}}
+      ]
+    },
+    "honestIncompleteAccepted": {
+      "allOf": [
+        {"$ref": "#/$defs/terminalProfile"},
+        {"properties": {"testId": {"const": "HONEST_INCOMPLETE_ACCEPTED"}, "expectedMechanism": {"const": "HONEST_INCOMPLETE"}, "observedTerminal": {"const": "INCOMPLETE"}}}
+      ]
+    }
+  }
+}
