@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAutho
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.InputStream;
+import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -19,6 +21,7 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.nio.file.attribute.PosixFilePermission;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -26,8 +29,11 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -214,6 +220,191 @@ class FilesystemDeploymentAdmissionAuthorityTest {
         assertThat(inconsistentAuthority.commit(request(
                 material, LEASE, "1", NOW.plusSeconds(1))).status())
                 .isEqualTo(ExecutionLeaseCommitStatus.UNAVAILABLE);
+    }
+
+    @Test
+    void closureAggregateLimitIsMetadataFirstAndOverflowSafe() throws Exception {
+        AdmissionLifecycleMaterial material = lifecycle(1, null, 1,
+                NOW.minusSeconds(60), NOW.plusSeconds(600));
+        Path exact = stateRoot("closure-exact");
+        authority(exact, material);
+        fillClosureTo(exact, FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES);
+        AtomicInteger exactReads = new AtomicInteger();
+
+        FilesystemDeploymentAdmissionAuthority.validateStoreClosureForTesting(
+                exact, uid(exact), FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                (path, maximumBytes) -> {
+                    exactReads.incrementAndGet();
+                    return Files.readAllBytes(path);
+                });
+
+        assertThat(closureByteSize(exact))
+                .isEqualTo(FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES);
+        assertThat(exactReads).hasValueGreaterThan(4);
+
+        Path over = stateRoot("closure-over");
+        authority(over, material);
+        fillClosureTo(over,
+                FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES + 1);
+        AtomicInteger overReads = new AtomicInteger();
+        List<String> before = storeInventory(over);
+
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateStoreClosureForTesting(over, uid(over),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            overReads.incrementAndGet();
+                            return Files.readAllBytes(path);
+                        }))
+                .isInstanceOf(java.io.IOException.class);
+        assertThat(overReads).hasValue(0);
+        assertThat(storeInventory(over)).isEqualTo(before);
+
+        assertThat(FilesystemDeploymentAdmissionAuthority
+                .checkedAggregateBytesForTesting(0,
+                        FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES))
+                .isEqualTo(FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES);
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .checkedAggregateBytesForTesting(Long.MAX_VALUE, 1))
+                .isInstanceOf(java.io.IOException.class);
+    }
+
+    @Test
+    void closureRejectsReadSizeRaceAndOversizedTransitionWithoutStoreWrites()
+            throws Exception {
+        AdmissionLifecycleMaterial material = lifecycle(1, null, 1,
+                NOW.minusSeconds(60), NOW.plusSeconds(600));
+        Path raced = stateRoot("closure-size-race");
+        authority(raced, material);
+        Path state = raced.resolve(FilesystemDeploymentAdmissionAuthority.STATE_FILE);
+        List<String> before = storeInventory(raced);
+        AtomicBoolean changed = new AtomicBoolean();
+
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateStoreClosureForTesting(raced, uid(raced),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            byte[] bytes = Files.readAllBytes(path);
+                            if (path.equals(state) && changed.compareAndSet(false, true)) {
+                                Files.write(path, new byte[]{0}, StandardOpenOption.APPEND);
+                            }
+                            return bytes;
+                        }))
+                .isInstanceOf(java.io.IOException.class);
+        assertThat(changed).isTrue();
+        List<String> after = storeInventory(raced);
+        assertThat(after.stream().filter(value -> !value.startsWith(
+                FilesystemDeploymentAdmissionAuthority.STATE_FILE + "|")))
+                .containsExactlyElementsOf(before.stream().filter(value -> !value.startsWith(
+                        FilesystemDeploymentAdmissionAuthority.STATE_FILE + "|")).toList());
+        assertThat(raced.resolve(FilesystemDeploymentAdmissionAuthority.TEMP_FILE))
+                .doesNotExist();
+
+        Path oversized = stateRoot("oversized-transition");
+        authority(oversized, material);
+        createSparseTransition(oversized, 1,
+                FilesystemDeploymentAdmissionAuthority.MAX_TRANSITION_EVIDENCE_BYTES + 1L);
+        AtomicInteger reads = new AtomicInteger();
+        List<String> oversizedBefore = storeInventory(oversized);
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateStoreClosureForTesting(oversized, uid(oversized),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            reads.incrementAndGet();
+                            return Files.readAllBytes(path);
+                        }))
+                .isInstanceOf(java.io.IOException.class);
+        assertThat(reads).hasValue(0);
+        assertThat(storeInventory(oversized)).isEqualTo(oversizedBefore);
+    }
+
+    @Test
+    void transitionCountAndPendingRecoveryMaterialRemainBoundedBeforeReads()
+            throws Exception {
+        AdmissionLifecycleMaterial material = lifecycle(1, null, 1,
+                NOW.minusSeconds(60), NOW.plusSeconds(600));
+        Path countRoot = stateRoot("transition-count");
+        authority(countRoot, material);
+        for (int generation = 1;
+                generation <= FilesystemDeploymentAdmissionAuthority.MAX_LEASES;
+                generation++) {
+            createSparseTransition(countRoot, generation, 1);
+        }
+        AtomicInteger exactCountReads = new AtomicInteger();
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateStoreClosureForTesting(countRoot, uid(countRoot),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            exactCountReads.incrementAndGet();
+                            throw new java.io.IOException("TEST_STOP");
+                        }))
+                .isInstanceOf(java.io.IOException.class);
+        assertThat(exactCountReads).hasValue(1);
+
+        createSparseTransition(countRoot,
+                FilesystemDeploymentAdmissionAuthority.MAX_LEASES + 1L, 1);
+        AtomicInteger overflowCountReads = new AtomicInteger();
+        List<String> countBefore = storeInventory(countRoot);
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateStoreClosureForTesting(countRoot, uid(countRoot),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            overflowCountReads.incrementAndGet();
+                            return Files.readAllBytes(path);
+                        }))
+                .isInstanceOf(RuntimeException.class);
+        assertThat(overflowCountReads).hasValue(0);
+        assertThat(storeInventory(countRoot)).isEqualTo(countBefore);
+
+        Path pendingRoot = stateRoot("pending-aggregate");
+        authority(pendingRoot, material);
+        fillClosureTo(pendingRoot,
+                FilesystemDeploymentAdmissionAuthority.MAX_STORE_CLOSURE_BYTES);
+        createSparsePendingTransition(pendingRoot, 999, 1);
+        AtomicInteger pendingReads = new AtomicInteger();
+        List<String> pendingBefore = storeInventory(pendingRoot);
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .validateRecoverableStoreClosureForTesting(pendingRoot, uid(pendingRoot),
+                        FilesystemDeploymentAdmissionAuthorityTest::metadata,
+                        (path, maximumBytes) -> {
+                            pendingReads.incrementAndGet();
+                            return Files.readAllBytes(path);
+                        }))
+                .isInstanceOf(java.io.IOException.class);
+        assertThat(pendingReads).hasValue(0);
+        assertThat(storeInventory(pendingRoot)).isEqualTo(pendingBefore);
+    }
+
+    @Test
+    void protocolCapacityAt1024IsUnavailableAndRetainsCommittedHistory()
+            throws Exception {
+        assertThat(FilesystemDeploymentAdmissionAuthority.capacityExhaustedForTesting(
+                FilesystemDeploymentAdmissionAuthority.MAX_LEASES - 1, 1023, 1023))
+                .isFalse();
+        assertThat(FilesystemDeploymentAdmissionAuthority.capacityExhaustedForTesting(
+                FilesystemDeploymentAdmissionAuthority.MAX_LEASES, 1024, 1024))
+                .isTrue();
+
+        AdmissionLifecycleMaterial material = lifecycle(1, null, 1,
+                NOW.minusSeconds(60), NOW.plusSeconds(600));
+        Path root = stateRoot("capacity-history");
+        var first = authority(root, material, "lease:first",
+                Clock.fixed(NOW, ZoneOffset.UTC), 1);
+        assertThat(first.commit(request(material, "lease:first", "1", NOW)).status())
+                .isEqualTo(ExecutionLeaseCommitStatus.COMMITTED);
+        List<String> before = storeInventory(root);
+        var full = authority(root, material, "lease:second",
+                Clock.fixed(NOW, ZoneOffset.UTC), 1);
+
+        var result = full.commit(request(material, "lease:second", "1", NOW));
+
+        assertThat(result.status()).isEqualTo(ExecutionLeaseCommitStatus.UNAVAILABLE);
+        assertThat(result.reasonCode()).isEqualTo(
+                FilesystemDeploymentAdmissionAuthority.CAPACITY_UNAVAILABLE);
+        assertThat(storeInventory(root)).isEqualTo(before);
+        assertThat(Files.readString(root.resolve(
+                FilesystemDeploymentAdmissionAuthority.STATE_FILE)))
+                .contains("\"fencingSequence\":1");
     }
 
     @Test
@@ -694,6 +885,23 @@ class FilesystemDeploymentAdmissionAuthorityTest {
                         .CapabilityStudioStageAcceptanceAuthorityProvider
                         .DeploymentUnavailableException.class)
                 .hasMessageNotContaining(missing.toString());
+
+        Path existing = stateRoot("existing-unsupported-metadata");
+        FilesystemDeploymentAdmissionAuthority.prepareEvidenceStore(
+                existing, fingerprint('e'), material.revocationAuthority());
+        var runtimeUnsupported = new NativeMetadata() {
+            @Override
+            public long hardLinkCount(Path path) {
+                throw new UnsupportedOperationException("UPPERCASE_METADATA_PAYLOAD");
+            }
+        };
+        assertThatThrownBy(() -> FilesystemDeploymentAdmissionAuthority
+                .openExistingEvidenceRecoveryStore(existing, runtimeUnsupported))
+                .isExactlyInstanceOf(com.leanowtech.bloge.gateway.testkit
+                        .CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentUnavailableException.class)
+                .hasMessageNotContaining("UPPERCASE_METADATA_PAYLOAD")
+                .hasMessageNotContaining(existing.toString());
     }
 
     private FilesystemDeploymentAdmissionAuthority authority(
@@ -775,6 +983,109 @@ class FilesystemDeploymentAdmissionAuthorityTest {
                 "ACTIVE", predecessor, new RevocationAuthoritySnapshot(
                 "registry:test", revocationRevision, fingerprint((char) ('5' + revision)),
                 observedAt, expiresAt));
+    }
+
+    private static void fillClosureTo(Path root, long targetBytes) throws Exception {
+        long remaining = targetBytes - closureByteSize(root);
+        long generation = 1;
+        while (remaining > 0) {
+            long size = Math.min(remaining,
+                    FilesystemDeploymentAdmissionAuthority.MAX_TRANSITION_EVIDENCE_BYTES);
+            createSparseTransition(root, generation++, size);
+            remaining -= size;
+        }
+        assertThat(closureByteSize(root)).isEqualTo(targetBytes);
+    }
+
+    private static void createSparseTransition(Path root, long generation, long size)
+            throws Exception {
+        createSparsePrivate(root.resolve(
+                FilesystemDeploymentAdmissionAuthority.TRANSITION_EVIDENCE_PREFIX
+                        + String.format("%020d", generation)
+                        + FilesystemDeploymentAdmissionAuthority.TRANSITION_EVIDENCE_SUFFIX),
+                size);
+    }
+
+    private static void createSparsePendingTransition(
+            Path root, long generation, long size) throws Exception {
+        createSparsePrivate(root.resolve("."
+                + FilesystemDeploymentAdmissionAuthority.TRANSITION_EVIDENCE_PREFIX
+                + String.format("%020d", generation)
+                + FilesystemDeploymentAdmissionAuthority.TRANSITION_EVIDENCE_SUFFIX
+                + ".tmp"), size);
+    }
+
+    private static void createSparsePrivate(Path path, long size) throws Exception {
+        if (size < 1) {
+            throw new IllegalArgumentException("size must be positive");
+        }
+        try (FileChannel channel = FileChannel.open(path,
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
+            channel.position(size - 1);
+            channel.write(ByteBuffer.wrap(new byte[]{0}));
+        }
+        if (Files.getFileStore(path).supportsFileAttributeView("posix")) {
+            Files.setPosixFilePermissions(path, EnumSet.of(
+                    PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+        }
+    }
+
+    private static long closureByteSize(Path root) throws Exception {
+        long total = 0;
+        try (var children = Files.list(root)) {
+            for (Path child : children.toList()) {
+                total = Math.addExact(total, Files.size(child));
+            }
+        }
+        return total;
+    }
+
+    private static long uid(Path path) throws Exception {
+        return ((Number) Files.getAttribute(path, "unix:uid",
+                java.nio.file.LinkOption.NOFOLLOW_LINKS)).longValue();
+    }
+
+    private static FilesystemDeploymentAdmissionAuthority.ClosureFileMetadata metadata(
+            Path path) throws java.io.IOException {
+        BasicFileAttributes attributes = Files.readAttributes(path,
+                BasicFileAttributes.class, java.nio.file.LinkOption.NOFOLLOW_LINKS);
+        return new FilesystemDeploymentAdmissionAuthority.ClosureFileMetadata(
+                attributes.fileKey(),
+                ((Number) Files.getAttribute(path, "unix:nlink",
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS)).longValue(),
+                ((Number) Files.getAttribute(path, "unix:uid",
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS)).longValue(),
+                ((Number) Files.getAttribute(path, "unix:mode",
+                        java.nio.file.LinkOption.NOFOLLOW_LINKS)).intValue() & 0777,
+                attributes.size(), attributes.lastModifiedTime());
+    }
+
+    private static List<String> storeInventory(Path root) throws Exception {
+        List<String> inventory = new ArrayList<>();
+        try (var children = Files.list(root)) {
+            for (Path child : children.sorted().toList()) {
+                var observed = metadata(child);
+                inventory.add(child.getFileName() + "|" + observed.fileKey()
+                        + "|" + observed.linkCount() + "|" + observed.uid()
+                        + "|" + observed.mode() + "|" + observed.size()
+                        + "|" + observed.modifiedTime() + "|" + digest(child));
+            }
+        }
+        return List.copyOf(inventory);
+    }
+
+    private static String digest(Path path) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] buffer = new byte[8192];
+        try (InputStream input = Files.newInputStream(path)) {
+            int read;
+            while ((read = input.read(buffer)) >= 0) {
+                if (read > 0) {
+                    digest.update(buffer, 0, read);
+                }
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
     }
 
     private Path stateRoot(String name) throws Exception {

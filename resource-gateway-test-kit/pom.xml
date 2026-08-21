@@ -125,6 +125,29 @@
         </resources>
         <plugins>
             <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-evidence-cli-build-identity</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>${project.basedir}/src/build/CapabilityStudioEvidenceCliBuildIdentityGenerator.java</argument>
+                                <argument>${project.basedir}/src/main/java/com/leanowtech/bloge/gateway/testkit/CapabilityStudioExecutionLeaseEvidenceCli.java</argument>
+                                <argument>${project.build.outputDirectory}/com/leanowtech/bloge/gateway/testkit/CapabilityStudioExecutionLeaseEvidenceCli.class</argument>
+                                <argument>${project.build.outputDirectory}/META-INF/bloge/capability-studio-execution-lease-evidence-cli-build-identity-v1.json</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
@@ -139,6 +162,19 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.5.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -414,6 +414,128 @@ CP0-CP6 的重试状态固定为 `COMMITTED`，CP7-CP10 固定为 `RECOVERED`。
 manifest。部署 Authority 后续仍须对批准的 declaration 签发可信材料，并将其绑定到完整 runner 和
 Evidence 闭包。不能把本节 CLI 的 `DECLARED` 或 `SNAPSHOT` 输出当作正式验收结果。
 
+#### 3.5.3 观测既有部署状态并生成 Lease Transcript
+
+Test Kit 新增两份 strict Draft 2020-12 wire contract：
+`capability-studio-deployment-state-observation-v1.schema.json` 与
+`capability-studio-execution-lease-transcript-v1.schema.json`。Observation 使用稳定
+`evidenceTransactionId`。可迁移的 `stateMaterialFingerprint` 绑定 state、checkpoint、revocation
+head、lifecycle head、generation、fencing 与 lease inventory 语义；path、inode、UID、mode、mtime
+和 wall-clock 不进入该指纹。BEFORE/AFTER 只用于交叉验证，不能单独证明某个并发 Lease 造成了
+状态转换。
+
+Mounted Provider 的 v4 full-evidence store 会在 Lease 原子事务中持久化 immutable transition
+witness。state core、witness material、final state 与 checkpoint 采用无循环的分层承诺，解析时重放
+完整 transition chain。witness 精确绑定 pre/post state core/final fingerprint、generation、fencing sequence、checkpoint/head、request
+fingerprint 与 receipt fingerprint。`RECOVERED` 返回原事务保存的 witness；full-evidence 模式不会
+从当前状态反推。旧 v2 store 仍可供现有 `CapabilityStudioStageAcceptanceCli` 使用，但不提供
+`formalEvidenceAuthorityBinding()`，因此 full-evidence 请求会失败关闭。迁移必须使用新的 state
+root，并重新声明与签发 descriptor/formal outer pin，不能原地升级 v2 store。
+
+`MountedCapabilityStudioDeploymentStateObservationCli` 只打开既有 store。它在固定 JVM lock stripe
+和共享 OS descriptor lock 下验证 root/ancestor/descriptor identity、四文件精确闭包、两次完整
+inventory 与每个文件的双读一致性。生产调用链不执行 initialize、repair、force、chmod、create、
+delete 或 move。`state generation=1` 但 `checkpoint generation=0` 的 crash intermediate 返回
+`BLOCKED/UNAVAILABLE`，且 namespace、bytes、mode、UID 与 mtime 保持不变。普通读取可能更新
+atime；若部署要求 atime 也稳定，必须使用只读或 `noatime` 挂载。
+
+`CapabilityStudioExecutionLeaseEvidenceCli` 复用现有正式校验与 Lease commit 路径，但要求 v4
+companion SPI。Provider 在同一个 store 独占锁内持久化 BEFORE、commit/recover、捕获精确 AFTER 并
+持久化 committed journal；Transcript 交叉校验 observation 与 witness 共有的 pre/post commitment、
+generation、fencing、checkpoint/head、request 和 receipt 坐标。仅存在于 observation 的 raw 字段是
+独立交叉检查，不能表述为与 witness 全字段相等；generation 差异本身也不能证明归因。证据父目录
+必须按 wrapper lock -> store lock 的固定顺序，通过稳定 ancestor identity 与
+state root 做物理隔离检查。pending recovery 加载独立 binding，其中 `recovery()` 在独占事务锁内
+读取既有 descriptor/state/checkpoint/head，不得 initialize、repair、force、chmod 或修改 store。
+只有该查询返回可识别的一代 writer crash intermediate 时，`interruptedRecovery()` 才能执行既有
+writer 的固定 predecessor/successor 修复；它不执行当前 admission，也不创建 Lease。稳定 v2 transaction wrapper 绑定 owner、Stage
+raw 与 independently pinned outer，并保留按 generation 编号的 BEFORE journal、`ABSENT` closure、
+committed transcript source 和 durable commit manifest。manifest 绑定 owner、request identity、
+BEFORE raw/journal、transcript raw/canonical、receipt、witness、attempt generation 与前序 closure。
+确定性 part 通过 file force、`0400`、link、target parent force、source unlink、source parent force
+发布；未知或 distinct-BOTH 对象保持原样并阻断。已提交 final 会在 Provider discovery、Stage 时效与
+lifecycle/revocation preflight 之前离线恢复；journal 恢复只读取原事务持久化的历史 transition
+evidence，绝不从当前 state 反推，也不创建第二个 Lease。`ABSENT` 会不可变地关闭旧 attempt，并以新的 generation 和当前时效、
+lifecycle、admission 输入重新执行；`CONFLICT` 映射为 `INVALID`，缺失、不可读、锁或 I/O outage
+映射为 `BLOCKED`。
+持久化字段固定为 `evidencePublicationStatus=COMMITTED`，本次调用的成功行才报告 `RECOVERED`。
+Lease 提交后的证据失败不会回滚，也不会输出 `ACCEPTED`；stdout 部分写失败后可恢复同一 final。
+
+部署操作顺序固定为 provision -> 独立保存 publication pin -> execute/recover -> read-only verify：
+
+```bash
+java -cp '<test-kit-cli-jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidencePublicationProvisioningCli \
+  --publication-parent /absolute/private/execution-lease-evidence \
+  --publication-nonce 'sha256:<deployment-generated 64 lowercase hex>'
+
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<formal outer>' \
+BLOGE_EXPECTED_CAPABILITY_STUDIO_EVIDENCE_PUBLICATION_FINGERPRINT='sha256:<publication pin>' \
+java \
+  -Dbloge.capabilityStudio.authorityBundleRoot=/absolute/path/to/authority-bundle \
+  -Dbloge.capabilityStudio.targetAdmissionBundleRoot=/absolute/path/to/target-admission-bundle \
+  -Dbloge.capabilityStudio.executionLeaseStateRoot=/absolute/path/to/private-lease-state \
+  -cp '<test-kit-cli-jar>:<provider-jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidenceCli \
+  /absolute/path/to/stage-acceptance-result-v2.json \
+  /absolute/private/execution-lease-evidence/execution-lease-transcript-v1.json
+
+java -cp '<test-kit-cli-jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli \
+  --transcript /absolute/private/execution-lease-evidence/execution-lease-transcript-v1.json \
+  --expected-stage-result-raw-fingerprint 'sha256:<Stage Result raw pin>' \
+  --expected-formal-outer-fingerprint 'sha256:<formal outer pin>' \
+  --expected-publication-fingerprint 'sha256:<publication pin>'
+```
+
+Provision 成功为 `PROVISIONED`/exit `0`。Evidence 首次成功为 `ACCEPTED` 且
+`evidencePublicationStatus=COMMITTED`，精确重试为 `RECOVERED`；Bundle verifier 成功为
+`VERIFIED verificationScope=DURABLE_WRAPPER`/exit `0`。结构、Schema、pin 或坐标冲突固定为
+`INVALID`/exit `2`；权限、锁、I/O、metadata、Provider 或 store 不可用固定为
+`BLOCKED|UNAVAILABLE`/exit `3`；治理拒绝保持 `REJECTED`。所有失败输出均为 payload-free 闭集，
+不转发 Provider reason、路径、凭证或业务数据。
+
+一个 provisioned parent 只对应一个事务：declaration 固定绑定 direct-child
+`execution-lease-transcript-v1.json` 与由 publication nonce 派生的 transaction identity。同一
+parent 只允许同一 output 的精确重试；新业务事务必须新建独立 private parent，重新 provision，
+并由部署方独立认证新的 publication pin。
+
+`CapabilityStudioExecutionLeaseTranscriptVerifyCli` 只验证 Transcript 的 strict Schema、canonical
+fingerprint 与嵌套语义自洽，不能作为 FELT-08/FELT-14 的 durable wrapper 证据。
+`CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli` 还要求部署方提供 Stage Result raw 与 formal
+outer 的 out-of-band pin，并以只读方式验证 owner hard-link claim、完整 attempt chain、retained
+committed source、strict commit manifest、final transcript、receipt 与 witness。该 verifier 不创建
+publication lock，也不签发 durability receipt。
+
+`commit-manifest-v1.json` 只是内层制品清单，绑定 owner、request、BEFORE、attempt chain、transcript、
+receipt 与 witness；它不是最终提交标记。外层 `final-commit-v1.json` 还要独立绑定 manifest 的 raw/
+canonical fingerprint、owner 与 final transcript。只有两层都经独立 verifier 闭合，才能认定 durable
+Bundle 完整；单独复制 final 或重算一份自洽 manifest 都不能绕过 owner closure。
+
+参考 store 的完整 closure 上限为 32 MiB，最多保留 1,024 个 immutable Lease；单个 evidence
+transaction 最多保留 1,024 个 attempt。容量耗尽归类为不可用，不会自动删除、覆盖、压缩或归档
+历史。扩容需要显式协议/配置升级和新的 state root，再签发新的 descriptor、component、
+publication 与 formal outer pin，不能原地截断旧 store。普通文件继续要求协议规定的精确 nlink；
+目录只要求稳定正数，因为 APFS 可对目录报告 `nlink=1`，这不放宽普通文件 hard-link 检查。
+
+生产 Test Kit 与 Provider 不读取 ambient crash property，也不存在可由配置触发的 `Runtime.halt`
+路径。测试构建会确定性生成一份 source/class pin 均固定的 shadow overlay，其中 17 个实现检查点完整
+覆盖 FELT-10 冻结的 14 个语义崩溃窗口。strict harness manifest 固定逐点映射，ordinary/shaded Test
+Kit JAR 则携带同一 Evidence CLI source/class identity；测试会独立重算两份 JAR 的 class digest，并在
+执行前与当前源码及 shadow source digest 交叉验证。双进程矩阵必须先观测到第一 JVM 持有 publication
+lock，再观测到第二 JVM 的真实 `tryLock()` miss，才允许释放第一 JVM；随后还要由 production-only JVM
+恢复同一 receipt、witness 与 transcript。READY/LOCK_MISS 主 marker 都必须在 parent force 返回后再
+发布 completion ACK；父进程等待 ACK 并重读主 marker。固定矩阵还会暂停在 marker 已可见但 parent force
+未完成的窗口，证明路径可见不能提前放锁。只有独立 test-harness JAR 能触发这些观测或终止进程。它们是
+实现覆盖，不是 FELT `14/14` 裁决。参考实现还假设受信内核/UID、真实 force 与原子文件系统语义、受保护
+的 out-of-band pin 和诚实部署自动化；同 UID 或特权主体对全部可信对象做一致替换、虚假 durability、
+主机时钟失真，以及外部 Candidate/Environment/Owner Authority 缺失均不在本地参考信任结论内。
+
+当前八参数 runner 尚未编排 input-tree snapshot、BEFORE、formal run、AFTER 与 Transcript
+publication。本轮全量回归与第九轮独立 P0/P1 复审均已闭合，因此组件机制可标记为
+`DEVELOPMENT_VERIFIED`。FELT-01 仍为 `PARTIAL`，FELT-14 仍为 `NOT_RUN`；该开发裁决不是正式验收
+证据，也不改变 `formalPassCount=0/27`。
+
 ### 3.6 CI 与目标环境部署门禁
 
 部署任务必须使用

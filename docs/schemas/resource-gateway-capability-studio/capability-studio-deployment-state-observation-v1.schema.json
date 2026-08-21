@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-deployment-state-observation-v1.schema.json",
+  "title": "Capability Studio Deployment State Observation v1",
+  "description": "Closed, payload-free observation of one existing deployment lease store.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "phase",
+    "evidenceTransactionId",
+    "storeDescriptorFingerprint",
+    "storeDescriptorRawFingerprint",
+    "generation",
+    "previousStateFingerprint",
+    "stateFingerprint",
+    "stateRawFingerprint",
+    "checkpointFingerprint",
+    "checkpointRawFingerprint",
+    "revocationHeadSequence",
+    "revocationHeadFingerprint",
+    "revocationHeadRawFingerprint",
+    "lifecycleHeadFingerprint",
+    "fencingSequence",
+    "leaseCount",
+    "leaseInventoryFingerprint",
+    "stateMaterialFingerprint",
+    "observationFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.deployment-state-observation.v1"
+    },
+    "phase": {"enum": ["BEFORE", "AFTER"]},
+    "evidenceTransactionId": {"$ref": "#/$defs/fingerprint"},
+    "storeDescriptorFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "storeDescriptorRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "generation": {"$ref": "#/$defs/nonNegativeLong"},
+    "previousStateFingerprint": {"$ref": "#/$defs/nullableFingerprint"},
+    "stateFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "stateRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "checkpointRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "revocationHeadSequence": {"$ref": "#/$defs/nonNegativeLong"},
+    "revocationHeadFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "revocationHeadRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "lifecycleHeadFingerprint": {"$ref": "#/$defs/nullableFingerprint"},
+    "fencingSequence": {"$ref": "#/$defs/nonNegativeLong"},
+    "leaseCount": {"type": "integer", "minimum": 0, "maximum": 1024},
+    "leaseInventoryFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "stateMaterialFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "observationFingerprint": {"$ref": "#/$defs/fingerprint"}
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "nullableFingerprint": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]
+    },
+    "nonNegativeLong": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    }
+  }
+}

@@ -9,6 +9,8 @@ import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAutho
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.DeploymentUnavailableException;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseAuthorityBinding;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalEvidenceAuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalEvidenceRecoveryBinding;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.TrustedVerificationClockBinding;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier;
 
@@ -86,18 +88,28 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
             "com.leanowtech.bloge:bloge-capability-studio-mounted-authority-provider:1.0.0";
     private static final String CLOCK_DOMAIN =
             "resource-gateway.capability-studio.mounted-provider-clock.v1";
-    private static final String LIFECYCLE_DOMAIN =
+    private static final String LIFECYCLE_DOMAIN_V2 =
             "resource-gateway.capability-studio.mounted-provider-lifecycle-authority.v2";
-    private static final String LEASE_DOMAIN =
+    private static final String LEASE_DOMAIN_V2 =
             "resource-gateway.capability-studio.mounted-provider-execution-lease-authority.v2";
-    private static final String STORE_DOMAIN =
+    private static final String STORE_DOMAIN_V2 =
             "resource-gateway.capability-studio.mounted-provider-lease-store.v2";
+    private static final String LIFECYCLE_DOMAIN_V5 =
+            "resource-gateway.capability-studio.mounted-provider-lifecycle-authority.v5";
+    private static final String LEASE_DOMAIN_V5 =
+            "resource-gateway.capability-studio.mounted-provider-execution-lease-authority.v5";
+    private static final String STORE_DOMAIN_V5 =
+            "resource-gateway.capability-studio.mounted-provider-lease-store.v5";
     private static final Pattern FINGERPRINT = Pattern.compile("sha256:[0-9a-f]{64}");
 
     private final AuthorityBinding binding;
     private final Clock clock;
     private volatile boolean formalInitialized;
     private FormalTargetBoundAuthorityBinding formalBinding;
+    private FormalEvidenceAuthorityBinding formalEvidenceBinding;
+    private volatile boolean evidenceRecoveryInitialized;
+    private FormalEvidenceRecoveryBinding evidenceRecoveryBinding;
+    private RuntimeException evidenceRecoveryFailure;
     private FormalMaterialDeclaration formalDeclaration;
     private RuntimeException formalFailure;
 
@@ -143,30 +155,55 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
         Path realStateRoot = FilesystemDeploymentAdmissionAuthority.requireStateRoot(stateRoot);
         var lifecycleMaterial = targetBundle.lifecycleMaterial();
         var revocationMaterial = lifecycleMaterial.revocationAuthority();
-        String storeConfigurationFingerprint = componentFingerprint(STORE_DOMAIN,
+        String legacyStoreConfigurationFingerprint = componentFingerprint(STORE_DOMAIN_V2,
                 PROVIDER_ARTIFACT,
                 FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                 revocationMaterial.registryRef(),
                 "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V2");
+        String evidenceStoreConfigurationFingerprint = componentFingerprint(STORE_DOMAIN_V5,
+                PROVIDER_ARTIFACT,
+                FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                revocationMaterial.registryRef(),
+                "IMMUTABLE_DESCRIPTOR_STATE_V4_LAYERED_TRANSITION_COMMITMENT_V2");
+        String existingConfiguration = FilesystemDeploymentAdmissionAuthority
+                .existingConfigurationFingerprint(realStateRoot);
+        boolean evidenceStore;
         FilesystemDeploymentAdmissionAuthority.PreparedStore preparedStore =
-                FilesystemDeploymentAdmissionAuthority.prepareStore(
-                        realStateRoot, storeConfigurationFingerprint,
-                        revocationMaterial);
+                existingConfiguration == null
+                        ? FilesystemDeploymentAdmissionAuthority.prepareEvidenceStore(
+                        realStateRoot, evidenceStoreConfigurationFingerprint,
+                        revocationMaterial)
+                        : existingConfiguration.equals(evidenceStoreConfigurationFingerprint)
+                        ? FilesystemDeploymentAdmissionAuthority.prepareEvidenceStore(
+                        realStateRoot, evidenceStoreConfigurationFingerprint,
+                        revocationMaterial)
+                        : existingConfiguration.equals(legacyStoreConfigurationFingerprint)
+                        ? FilesystemDeploymentAdmissionAuthority.prepareStore(
+                        realStateRoot, legacyStoreConfigurationFingerprint,
+                        revocationMaterial)
+                        : throwInvalidStoreConfiguration();
+        evidenceStore = preparedStore.supportsEvidenceWitness();
 
         String clockFingerprint = componentFingerprint(CLOCK_DOMAIN,
                 PROVIDER_ARTIFACT, "java.time.Clock.systemUTC");
-        String lifecycleFingerprint = componentFingerprint(LIFECYCLE_DOMAIN,
+        String lifecycleFingerprint = componentFingerprint(
+                evidenceStore ? LIFECYCLE_DOMAIN_V5 : LIFECYCLE_DOMAIN_V2,
                 PROVIDER_ARTIFACT, binding.fingerprint(), targetBundle.bundleFingerprint(),
                 lifecycleMaterial.fingerprint(), preparedStore.descriptorFingerprint(),
                 FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                 revocationMaterial.registryRef(),
-                "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V2");
-        String leaseFingerprint = componentFingerprint(LEASE_DOMAIN,
+                evidenceStore
+                        ? "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V5"
+                        : "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V2");
+        String leaseFingerprint = componentFingerprint(
+                evidenceStore ? LEASE_DOMAIN_V5 : LEASE_DOMAIN_V2,
                 PROVIDER_ARTIFACT, binding.fingerprint(), targetBundle.bundleFingerprint(),
                 lifecycleMaterial.fingerprint(), preparedStore.descriptorFingerprint(),
                 FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                 revocationMaterial.registryRef(),
-                "ATOMIC_MOVE_FORCE_GENERATION_CHECKPOINT_EXACT_RECOVERY_V2");
+                evidenceStore
+                        ? "ATOMIC_MOVE_FORCE_STATE_V4_HISTORICAL_CLOSURE_EXACT_RECOVERY_V5"
+                        : "ATOMIC_MOVE_FORCE_GENERATION_CHECKPOINT_EXACT_RECOVERY_V2");
         String deploymentFingerprint = DeploymentAdmissionAuthorityBinding.aggregateFingerprint(
                 clockFingerprint, lifecycleFingerprint, leaseFingerprint);
         String expectedFormalFingerprint = CapabilityStudioStageAcceptanceAuthorityProvider
@@ -195,11 +232,45 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
         if (!expectedFormalFingerprint.equals(formal.fingerprint())) {
             throw new IllegalStateException(TARGET_ADMISSION_BUNDLE_LOAD_FAILED_CODE);
         }
+        if (evidenceStore) {
+            String descriptorFingerprint = preparedStore.descriptorFingerprint();
+            formalEvidenceBinding = new FormalEvidenceAuthorityBinding(formal,
+                    descriptorFingerprint,
+                    (phase, transactionId) -> FilesystemDeploymentAdmissionAuthority
+                            .observeExistingStore(realStateRoot, descriptorFingerprint,
+                                    phase, transactionId),
+                    new CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseTransactionAuthority() {
+                        @Override
+                        public CapabilityStudioStageAcceptanceAuthorityProvider
+                                .EvidenceExecutionLeaseTransactionResult commit(
+                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceExecutionLeaseAttempt attempt,
+                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceTransactionJournal journal) {
+                            return deploymentAuthority.commitEvidenceTransaction(
+                                    attempt, journal);
+                        }
+
+                        @Override
+                        public CapabilityStudioStageAcceptanceAuthorityProvider
+                                .EvidenceExecutionLeaseCommitResult recoverExisting(
+                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .ExecutionLeaseRequest request) {
+                            return deploymentAuthority.recoverExistingWithWitness(request);
+                        }
+                    });
+        }
         formalDeclaration = new FormalMaterialDeclaration(binding.fingerprint(),
                 formal.fingerprint(), targetBundle.bundleFingerprint(), deploymentFingerprint,
                 clockFingerprint, lifecycleFingerprint, leaseFingerprint,
                 preparedStore.descriptorFingerprint());
         return formal;
+    }
+
+    private static FilesystemDeploymentAdmissionAuthority.PreparedStore
+            throwInvalidStoreConfiguration() {
+        throw new IllegalStateException(EXECUTION_LEASE_STATE_ROOT_INVALID_CODE);
     }
 
     /** {@inheritDoc} */
@@ -257,6 +328,64 @@ public final class MountedCapabilityStudioStageAcceptanceAuthorityProvider
             throw formalFailure;
         }
         return formalBinding;
+    }
+
+    /**
+     * Returns the witness-capable v4 evidence snapshot, or null for an ordinary v2 store.
+     *
+     * @return full-evidence capability without fallback to v2
+     */
+    @Override
+    public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+        formalTargetBoundAuthorityBinding();
+        return formalEvidenceBinding;
+    }
+
+    /**
+     * Returns a strictly existing-only recovery binding without formal initialization or repair.
+     *
+     * @return exact recovery binding, or null when no state root is configured
+     */
+    @Override
+    public FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+        if (!evidenceRecoveryInitialized) {
+            synchronized (this) {
+                if (!evidenceRecoveryInitialized) {
+                    try {
+                        String configured = System.getProperty(
+                                EXECUTION_LEASE_STATE_ROOT_PROPERTY);
+                        if (configured != null && !configured.isBlank()) {
+                            Path stateRoot = normalizedAbsoluteRoot(configured,
+                                    EXECUTION_LEASE_STATE_ROOT_INVALID_CODE);
+                            var store = FilesystemDeploymentAdmissionAuthority
+                                    .openExistingEvidenceRecoveryStore(stateRoot);
+                            evidenceRecoveryBinding = new FormalEvidenceRecoveryBinding(
+                                    store.descriptorFingerprint(),
+                                    (phase, transactionId) ->
+                                            FilesystemDeploymentAdmissionAuthority
+                                                    .observeExistingStore(stateRoot,
+                                                    store.descriptorFingerprint(), phase,
+                                                    transactionId),
+                                    (attempt, journal) ->
+                                    FilesystemDeploymentAdmissionAuthority
+                                            .recoverExistingOnly(store, attempt, journal),
+                                    (attempt, journal) ->
+                                    FilesystemDeploymentAdmissionAuthority
+                                            .recoverInterruptedWriter(
+                                                    store, attempt, journal));
+                        }
+                    } catch (RuntimeException failure) {
+                        evidenceRecoveryFailure = failure;
+                    } finally {
+                        evidenceRecoveryInitialized = true;
+                    }
+                }
+            }
+        }
+        if (evidenceRecoveryFailure != null) {
+            throw evidenceRecoveryFailure;
+        }
+        return evidenceRecoveryBinding;
     }
 
     FormalMaterialDeclaration formalMaterialDeclaration() {

@@ -108,6 +108,15 @@ final class CapabilityStudioSchemaSupport {
     static final String FORMAL_INPUT_TREE_V1_RESOURCE =
             "/schemas/resource-gateway-capability-studio/"
                     + "capability-studio-formal-input-tree-v1.schema.json";
+    static final String DEPLOYMENT_STATE_OBSERVATION_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-deployment-state-observation-v1.schema.json";
+    static final String EXECUTION_LEASE_TRANSCRIPT_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-execution-lease-transcript-v1.schema.json";
+    static final String EXECUTION_LEASE_EVIDENCE_COMMIT_MANIFEST_V1_RESOURCE =
+            "/schemas/resource-gateway-capability-studio/"
+                    + "capability-studio-execution-lease-evidence-commit-manifest-v1.schema.json";
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final SchemaRegistry REGISTRY =

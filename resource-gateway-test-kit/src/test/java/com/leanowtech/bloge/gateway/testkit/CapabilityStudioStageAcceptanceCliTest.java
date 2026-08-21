@@ -8,7 +8,15 @@ import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAutho
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ReferenceKind;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ResolutionRequest;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ResolvedEvidence;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.AuthorityBinding;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.EvidenceExecutionLeaseCommitResult;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitStatus;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseTransitionWitness;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider.FormalEvidenceAuthorityBinding;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
@@ -17,7 +25,11 @@ import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -29,6 +41,7 @@ import java.util.ServiceConfigurationError;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -47,6 +60,12 @@ class CapabilityStudioStageAcceptanceCliTest {
 
     @TempDir
     Path temporaryDirectory;
+
+    @AfterEach
+    void clearEvidencePublicationPin() {
+        System.clearProperty(CapabilityStudioExecutionLeaseEvidencePublication
+                .EXPECTED_PUBLICATION_FINGERPRINT_ENV);
+    }
 
     @Test
     void acceptsOnlyAfterTheDeploymentProviderVerifiesEveryAuthority() throws Exception {
@@ -1154,6 +1173,980 @@ class CapabilityStudioStageAcceptanceCliTest {
         assertThat(System.err).isSameAs(originalErr);
     }
 
+    @Test
+    void evidencePublicationProvisioningCliCreatesFixedDeclarationAndLock() throws Exception {
+        Path publicationParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("provisioned-publication"));
+        Files.setPosixFilePermissions(publicationParent,
+                PosixFilePermissions.fromString("rwx------"));
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        int exit = CapabilityStudioExecutionLeaseEvidencePublicationProvisioningCli.run(
+                new String[]{"--publication-parent", publicationParent.toString(),
+                        "--publication-nonce", fingerprint('e')},
+                new PrintStream(output, true, StandardCharsets.UTF_8));
+
+        assertThat(exit).isZero();
+        var declaration = CapabilityStudioExecutionLeaseEvidencePublication.readExisting(
+                publicationParent);
+        assertThat(declaration.transcriptRelativePath()).isEqualTo(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        assertThat(declaration.evidenceTransactionId())
+                .matches("sha256:[0-9a-f]{64}");
+        assertThat(output.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "PROVISIONED status=PROVISIONED publicationFingerprint="
+                        + declaration.publicationFingerprint()
+                        + " ownerBootstrapFingerprint="
+                        + declaration.ownerBootstrapFingerprint()
+                        + " lockRawFingerprint=" + declaration.lockRawFingerprint()
+                        + " reasonCode=RG.CAPABILITY_STUDIO."
+                        + "EXECUTION_LEASE_EVIDENCE_PUBLICATION_CLI.PROVISIONED\n");
+        assertThat(publicationParent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication
+                        .PUBLICATION_DECLARATION_FILE)).isRegularFile();
+        assertThat(publicationParent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.PUBLICATION_LOCK_FILE))
+                .isRegularFile();
+    }
+
+    @Test
+    void publicationDeclarationAdmitsOneFixedTransactionPerPrivateParent()
+            throws Exception {
+        ObjectNode result = passResult();
+        Path stageA = write("single-parent-stage-a.json", result.toString());
+        Path parentA = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("single-parent-a"));
+        Files.setPosixFilePermissions(parentA,
+                PosixFilePermissions.fromString("rwx------"));
+        var declarationA = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parentA, fingerprint('a'));
+        Path outputA = parentA.resolve(declarationA.transcriptRelativePath());
+        Provider ordinaryA = acceptingProvider(result);
+        var formalA = ordinaryA.formalTargetBoundAuthorityBinding();
+        var evidenceA = positiveEvidenceProvider(ordinaryA, formalA);
+        AtomicInteger providerLoads = new AtomicInteger();
+        CapabilityStudioStageAcceptanceCli.ProviderSource sourceA = () -> {
+            providerLoads.incrementAndGet();
+            return List.of(evidenceA);
+        };
+
+        ByteArrayOutputStream committedOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{stageA.toString(), outputA.toString()},
+                new PrintStream(committedOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, sourceA, formalA.fingerprint(), declarationA.publicationFingerprint()))
+                .as(committedOut.toString(StandardCharsets.UTF_8)).isZero();
+        assertThat(committedOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=COMMITTED");
+        int loadsAfterCommit = providerLoads.get();
+        var verifiedA = CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                outputA, rawFingerprint(Files.readAllBytes(stageA)), formalA.fingerprint(),
+                declarationA.publicationFingerprint());
+        assertThat(verifiedA.evidenceTransactionId())
+                .isEqualTo(declarationA.evidenceTransactionId());
+
+        Map<String, UnknownTreeEntry> beforeWrongOutput = observeUnknownTree(parentA);
+        ByteArrayOutputStream wrongOutput = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{stageA.toString(), parentA.resolve("second.json").toString()},
+                new PrintStream(wrongOutput, true, StandardCharsets.UTF_8), System.err,
+                NOW, sourceA, formalA.fingerprint(), declarationA.publicationFingerprint()))
+                .isEqualTo(2);
+        assertThat(wrongOutput.toString(StandardCharsets.UTF_8))
+                .contains("PUBLICATION_INVALID");
+        assertThat(providerLoads).hasValue(loadsAfterCommit);
+        assertThat(observeUnknownTree(parentA)).isEqualTo(beforeWrongOutput);
+
+        Path stageB = write("single-parent-stage-b.json",
+                JSON.writerWithDefaultPrettyPrinter().writeValueAsString(result));
+        Map<String, UnknownTreeEntry> beforeWrongRequest = observeUnknownTree(parentA);
+        ByteArrayOutputStream wrongRequest = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{stageB.toString(), outputA.toString()},
+                new PrintStream(wrongRequest, true, StandardCharsets.UTF_8), System.err,
+                NOW, sourceA, formalA.fingerprint(), declarationA.publicationFingerprint()))
+                .isEqualTo(2);
+        assertThat(wrongRequest.toString(StandardCharsets.UTF_8))
+                .contains("RECOVERY_INVALID");
+        assertThat(providerLoads).hasValue(loadsAfterCommit);
+        assertThat(observeUnknownTree(parentA)).isEqualTo(beforeWrongRequest);
+
+        ByteArrayOutputStream recoveredOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{stageA.toString(), outputA.toString()},
+                new PrintStream(recoveredOut, true, StandardCharsets.UTF_8), System.err,
+                NOW.plusSeconds(1), sourceA, formalA.fingerprint(),
+                declarationA.publicationFingerprint())).isZero();
+        assertThat(recoveredOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=RECOVERED");
+        assertThat(providerLoads).hasValue(loadsAfterCommit);
+
+        Path parentB = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("single-parent-b"));
+        Files.setPosixFilePermissions(parentB,
+                PosixFilePermissions.fromString("rwx------"));
+        var declarationB = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parentB, fingerprint('b'));
+        Path outputB = parentB.resolve(declarationB.transcriptRelativePath());
+        Provider ordinaryB = acceptingProvider(result);
+        var formalB = ordinaryB.formalTargetBoundAuthorityBinding();
+        ByteArrayOutputStream independentOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{stageB.toString(), outputB.toString()},
+                new PrintStream(independentOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> List.of(positiveEvidenceProvider(ordinaryB, formalB)),
+                formalB.fingerprint(), declarationB.publicationFingerprint()))
+                .as(independentOut.toString(StandardCharsets.UTF_8)).isZero();
+        CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                outputB, rawFingerprint(Files.readAllBytes(stageB)), formalB.fingerprint(),
+                declarationB.publicationFingerprint());
+
+        Path copyParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("single-parent-copy"));
+        Files.setPosixFilePermissions(copyParent,
+                PosixFilePermissions.fromString("rwx------"));
+        var copyDeclaration = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                copyParent, fingerprint('c'));
+        Path copied = copyParent.resolve(copyDeclaration.transcriptRelativePath());
+        Files.copy(outputA, copied);
+        Files.setPosixFilePermissions(copied,
+                PosixFilePermissions.fromString("r--------"));
+        Map<String, UnknownTreeEntry> beforeCopyVerify = observeUnknownTree(copyParent);
+        assertThatThrownBy(() -> CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                copied, rawFingerprint(Files.readAllBytes(stageA)), formalA.fingerprint(),
+                copyDeclaration.publicationFingerprint()))
+                .isInstanceOf(CapabilityStudioExecutionLeaseEvidenceBundleVerifier
+                        .VerificationException.class);
+        assertThat(observeUnknownTree(copyParent)).isEqualTo(beforeCopyVerify);
+    }
+
+    @Test
+    void evidenceCliWithoutProvisioningIsUnavailableAndDoesNotWrite() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("unprovisioned-evidence.json", result.toString());
+        Path publicationParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("unprovisioned-publication"));
+        Files.setPosixFilePermissions(publicationParent,
+                PosixFilePermissions.fromString("rwx------"));
+        Path output = publicationParent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        AtomicInteger providerLoads = new AtomicInteger();
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+
+        int exit = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(stdout, true, StandardCharsets.UTF_8), System.err, NOW,
+                () -> {
+                    providerLoads.incrementAndGet();
+                    return List.of();
+                }, fingerprint('a'), fingerprint('e'));
+
+        assertThat(exit).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(stdout.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "NOT_ACCEPTED outcome=BLOCKED reasonCode=RG.CAPABILITY_STUDIO."
+                        + "EXECUTION_LEASE_EVIDENCE_CLI.PUBLICATION_UNAVAILABLE\n");
+        assertThat(providerLoads).hasValue(0);
+        try (var children = Files.list(publicationParent)) {
+            assertThat(children.toList()).isEmpty();
+        }
+    }
+
+    @Test
+    void provisionedEvidenceCliAndOfflineBundleVerifierSucceed() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("provisioned-evidence.json", result.toString());
+        Path publicationParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("evidence-publication"));
+        Files.setPosixFilePermissions(publicationParent,
+                PosixFilePermissions.fromString("rwx------"));
+        var declaration = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                publicationParent, fingerprint('e'));
+        Path output = publicationParent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        Provider ordinary = acceptingProvider(result);
+        var formal = ordinary.formalTargetBoundAuthorityBinding();
+        var evidenceProvider = positiveEvidenceProvider(ordinary, formal);
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+
+        int exit = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(stdout, true, StandardCharsets.UTF_8), System.err, NOW,
+                () -> List.of(evidenceProvider), formal.fingerprint(),
+                declaration.publicationFingerprint());
+
+        assertThat(exit).as(stdout.toString(StandardCharsets.UTF_8)).isZero();
+        assertThat(stdout.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=COMMITTED");
+        var transcript = CapabilityStudioExecutionLeaseTranscript.verify(
+                Files.readAllBytes(output));
+        var verified = CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                output, rawFingerprint(Files.readAllBytes(artifact)), formal.fingerprint(),
+                declaration.publicationFingerprint());
+        assertThat(verified.transcriptFingerprint())
+                .isEqualTo(transcript.transcriptFingerprint());
+        assertThat(verified.leaseReceiptFingerprint())
+                .isEqualTo(transcript.executionLeaseReceipt().fingerprint());
+    }
+
+    @TestFactory
+    Stream<DynamicTest> evidenceExecutePreservesEveryUnknownDeterministicObject() {
+        return Stream.of(UnknownEvidenceObject.values()).flatMap(object ->
+                Stream.of(UnknownVariant.values()).map(variant -> DynamicTest.dynamicTest(
+                        object + "_" + variant,
+                        () -> assertUnknownExecutePreserved(object, variant))));
+    }
+
+    @TestFactory
+    Stream<DynamicTest> evidenceProvisioningPreservesUnknownFixedObjects() {
+        return Stream.of(UnknownEvidenceObject.OWNER_BOOTSTRAP,
+                        UnknownEvidenceObject.PROVISION_DECLARATION,
+                        UnknownEvidenceObject.PUBLICATION_LOCK)
+                .flatMap(object -> Stream.of(UnknownVariant.values()).map(variant ->
+                        DynamicTest.dynamicTest(object + "_" + variant,
+                                () -> assertUnknownProvisioningPreserved(object, variant))));
+    }
+
+    @TestFactory
+    Stream<DynamicTest> evidenceWrongUidMetadataIsInvalidAndSideEffectFree() {
+        return Stream.of(UnknownEvidenceObject.values()).map(object -> DynamicTest.dynamicTest(
+                object.toString(), () -> assertWrongUidMetadataPreserved(object)));
+    }
+
+    @Test
+    void evidenceCliCommitsThenRecoversOneWitnessAndImmutableTranscript() throws Exception {
+        ObjectNode result = passResult();
+        Path artifact = write("evidence-pass.json", result.toString());
+        Path evidenceDirectory = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("evidence-output"));
+        Files.setPosixFilePermissions(evidenceDirectory,
+                PosixFilePermissions.fromString("rwx------"));
+        Path transcriptOutput = evidenceDirectory.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        var publication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                evidenceDirectory, fingerprint('e'));
+        System.setProperty(CapabilityStudioExecutionLeaseEvidencePublication
+                .EXPECTED_PUBLICATION_FINGERPRINT_ENV,
+                publication.publicationFingerprint());
+        Provider ordinary = acceptingProvider(result);
+        var formal = ordinary.formalTargetBoundAuthorityBinding();
+        AtomicReference<CapabilityStudioStageAcceptanceAuthorityProvider
+                .EvidenceExecutionLeaseCommitResult> durable = new AtomicReference<>();
+        AtomicReference<Boolean> committed = new AtomicReference<>(false);
+        AtomicReference<Boolean> failAfterOnce = new AtomicReference<>(false);
+        AtomicReference<Boolean> failBeforeLeaseOnce = new AtomicReference<>(false);
+        java.util.List<Long> attemptGenerations = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.List<Instant> attemptTimes = new java.util.concurrent.CopyOnWriteArrayList<>();
+        CapabilityStudioStageAcceptanceAuthorityProvider evidenceProvider =
+                new CapabilityStudioStageAcceptanceAuthorityProvider() {
+                    @Override
+                    public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                        return new FormalEvidenceAuthorityBinding(formal, fingerprint('6'),
+                                (phase, transactionId) -> {
+                                    return evidenceObservation(
+                                            phase, transactionId, committed.get());
+                                },
+                                new CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceExecutionLeaseTransactionAuthority() {
+                            @Override
+                            public CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .EvidenceExecutionLeaseTransactionResult commit(
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .EvidenceExecutionLeaseAttempt attempt,
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .EvidenceTransactionJournal journal) {
+                                var request = attempt.request();
+                                var current = evidenceObservation(
+                                        CapabilityStudioDeploymentStateObservation.Phase.BEFORE,
+                                        attempt.evidenceTransactionId(), committed.get());
+                                var before = journal.prepareBefore(attempt, current);
+                                attemptGenerations.add(attempt.attemptGeneration());
+                                attemptTimes.add(attempt.semanticVerificationTime());
+                                if (failBeforeLeaseOnce.compareAndSet(true, false)) {
+                                    throw new CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .DeploymentUnavailableException();
+                                }
+                                EvidenceExecutionLeaseCommitResult result;
+                                    var existing = durable.get();
+                                    if (existing != null) {
+                                        result = new EvidenceExecutionLeaseCommitResult(
+                                                ExecutionLeaseCommitStatus.RECOVERED,
+                                                existing.receipt(), existing.transitionWitness(),
+                                                "LEASE_RECOVERED");
+                                    } else {
+                                        var receipt = committedLease(request).receipt();
+                                        var witness = new ExecutionLeaseTransitionWitness(
+                                                fingerprint('6'),
+                                                request.commitIdentityFingerprint(),
+                                                receipt.fingerprint(), fingerprint('1'), 0, 0,
+                                                fingerprint('2'), 0, fingerprint('3'),
+                                                fingerprint('7'), fingerprint('4'), 1, 1,
+                                                fingerprint('5'), 0, fingerprint('3'));
+                                        result = new EvidenceExecutionLeaseCommitResult(
+                                                ExecutionLeaseCommitStatus.COMMITTED, receipt,
+                                                witness, "LEASE_COMMITTED");
+                                        durable.set(result);
+                                        committed.set(true);
+                                    }
+                                var after = evidenceObservation(
+                                        CapabilityStudioDeploymentStateObservation.Phase.AFTER,
+                                        attempt.evidenceTransactionId(), true);
+                                if (failAfterOnce.compareAndSet(true, false)) {
+                                    throw new CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .DeploymentUnavailableException();
+                                }
+                                journal.persistCommitted(attempt, before, after, result);
+                                return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceExecutionLeaseTransactionResult(
+                                        before, after, result);
+                            }
+
+                            @Override
+                            public EvidenceExecutionLeaseCommitResult recoverExisting(
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .ExecutionLeaseRequest request) {
+                                var existing = durable.get();
+                                return existing == null
+                                        ? new EvidenceExecutionLeaseCommitResult(
+                                        ExecutionLeaseCommitStatus.UNAVAILABLE,
+                                        null, null, "LEASE_UNAVAILABLE")
+                                        : new EvidenceExecutionLeaseCommitResult(
+                                        ExecutionLeaseCommitStatus.RECOVERED,
+                                        existing.receipt(), existing.transitionWitness(),
+                                        "LEASE_RECOVERED");
+                            }
+                        });
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityProvider
+                            .FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
+                        return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .FormalEvidenceRecoveryBinding(fingerprint('6'),
+                                (phase, transactionId) -> evidenceObservation(
+                                        phase, transactionId, committed.get()),
+                                (attempt, journal) -> {
+                                    var existing = durable.get();
+                                    if (existing == null) {
+                                        journal.closeAbsent(attempt);
+                                        return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                                .ExistingEvidenceRecoveryResult(
+                                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                                        .ExistingEvidenceRecoveryStatus.ABSENT,
+                                                null, null, "LEASE_ABSENT");
+                                    }
+                                    boolean exact = existing.receipt().requestFingerprint()
+                                            .equals(attempt.request()
+                                                    .commitIdentityFingerprint());
+                                    var historicalBefore = exact ? evidenceObservation(
+                                            CapabilityStudioDeploymentStateObservation.Phase.BEFORE,
+                                            attempt.evidenceTransactionId(), false) : null;
+                                    var historicalAfter = exact ? evidenceObservation(
+                                            CapabilityStudioDeploymentStateObservation.Phase.AFTER,
+                                            attempt.evidenceTransactionId(), true) : null;
+                                    return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .ExistingEvidenceRecoveryResult(
+                                            exact
+                                                    ? CapabilityStudioStageAcceptanceAuthorityProvider
+                                                    .ExistingEvidenceRecoveryStatus.FOUND
+                                                    : CapabilityStudioStageAcceptanceAuthorityProvider
+                                                    .ExistingEvidenceRecoveryStatus.CONFLICT,
+                                            exact ? existing.receipt() : null,
+                                            exact ? existing.transitionWitness() : null,
+                                            historicalBefore, historicalAfter,
+                                            exact ? "LEASE_RECOVERED" : "LEASE_CONFLICT");
+                                });
+                    }
+
+                    @Override
+                    public AuthorityBinding authorityBinding() {
+                        return ordinary.authorityBinding();
+                    }
+
+                    @Override
+                    public EvidenceResolver evidenceResolver() {
+                        return ordinary.resolver();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                            evidenceIssuerPolicy() {
+                        return ordinary.issuer();
+                    }
+
+                    @Override
+                    public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                            ownerAuthority() {
+                        return ordinary.owner();
+                    }
+                };
+        AtomicInteger providerLoads = new AtomicInteger();
+        CapabilityStudioStageAcceptanceCli.ProviderSource evidenceSource = () -> {
+            providerLoads.incrementAndGet();
+            return List.of(evidenceProvider);
+        };
+        ByteArrayOutputStream firstOut = new ByteArrayOutputStream();
+        int first = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), transcriptOutput.toString()},
+                new PrintStream(firstOut, true, StandardCharsets.UTF_8), System.err, NOW,
+                evidenceSource, formal.fingerprint());
+        assertThat(first).as(firstOut.toString(StandardCharsets.UTF_8)).isZero();
+        int loadsAfterCommit = providerLoads.get();
+        byte[] persisted = Files.readAllBytes(transcriptOutput);
+        var transcript = CapabilityStudioExecutionLeaseTranscript.verify(persisted);
+
+        ByteArrayOutputStream retryOut = new ByteArrayOutputStream();
+        int retry = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), transcriptOutput.toString()},
+                new PrintStream(retryOut, true, StandardCharsets.UTF_8), System.err, NOW,
+                evidenceSource, formal.fingerprint());
+
+        assertThat(first).isZero();
+        assertThat(retry).isZero();
+        assertThat(providerLoads).hasValue(loadsAfterCommit);
+        assertThat(firstOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=COMMITTED", "commitStatus=COMMITTED");
+        assertThat(retryOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=RECOVERED", "commitStatus=RECOVERED");
+        assertThat(Files.readAllBytes(transcriptOutput)).isEqualTo(persisted);
+        assertThat(transcript.executionLeaseTransitionWitness())
+                .isEqualTo(durable.get().transitionWitness());
+        assertThat(transcript.beforeStateObservation().generation()).isZero();
+        assertThat(transcript.afterStateObservation().generation()).isEqualTo(1);
+        String firstTransaction = publication.evidenceTransactionId();
+        Path firstWrapper = evidenceDirectory.resolve("." + transcriptOutput.getFileName()
+                + "." + firstTransaction.substring("sha256:".length()) + ".evidence-v3");
+        Path retainedTranscript = firstWrapper.resolve("committed-transcript-v1.json");
+        Path commitManifest = firstWrapper.resolve("commit-manifest-v1.json");
+        assertThat(retainedTranscript).isRegularFile();
+        assertThat(commitManifest).isRegularFile();
+        assertThat(Files.readAttributes(retainedTranscript,
+                java.nio.file.attribute.BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS).fileKey()).isEqualTo(
+                Files.readAttributes(transcriptOutput,
+                        java.nio.file.attribute.BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS).fileKey());
+        assertThat(((Number) Files.getAttribute(retainedTranscript, "unix:nlink",
+                LinkOption.NOFOLLOW_LINKS)).longValue()).isEqualTo(2);
+        var verifiedBundle = CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                transcriptOutput, rawFingerprint(Files.readAllBytes(artifact)),
+                formal.fingerprint(), publication.publicationFingerprint());
+        assertThat(verifiedBundle.transcriptFingerprint())
+                .isEqualTo(transcript.transcriptFingerprint());
+        assertThat(verifiedBundle.leaseReceiptFingerprint())
+                .isEqualTo(transcript.executionLeaseReceipt().fingerprint());
+        ByteArrayOutputStream bundleVerifyOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli.run(new String[]{
+                "--transcript", transcriptOutput.toString(),
+                "--expected-stage-result-raw-fingerprint",
+                rawFingerprint(Files.readAllBytes(artifact)),
+                "--expected-formal-outer-fingerprint", formal.fingerprint(),
+                "--expected-publication-fingerprint", publication.publicationFingerprint()
+        }, new PrintStream(bundleVerifyOut, true, StandardCharsets.UTF_8))).isZero();
+        assertThat(bundleVerifyOut.toString(StandardCharsets.UTF_8))
+                .contains("verificationScope=DURABLE_WRAPPER")
+                .endsWith("reasonCode="
+                        + CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli.VERIFIED_REASON
+                        + "\n");
+        ByteArrayOutputStream semanticOnlyOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseTranscriptVerifyCli.run(
+                new String[]{transcriptOutput.toString()},
+                new PrintStream(semanticOnlyOut, true, StandardCharsets.UTF_8))).isZero();
+        assertThat(semanticOnlyOut.toString(StandardCharsets.UTF_8))
+                .contains("verificationScope=SEMANTIC_ONLY");
+
+        Path copiedFinal = evidenceDirectory.resolve("copied-final-only.json");
+        Files.copy(transcriptOutput, copiedFinal);
+        Files.setPosixFilePermissions(copiedFinal,
+                PosixFilePermissions.fromString("r--------"));
+        assertThatThrownBy(() -> CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                copiedFinal, rawFingerprint(Files.readAllBytes(artifact)),
+                formal.fingerprint()))
+                .isInstanceOf(CapabilityStudioExecutionLeaseEvidenceBundleVerifier
+                        .VerificationException.class);
+
+        byte[] exactManifest = Files.readAllBytes(commitManifest);
+        ObjectNode malformedManifest = (ObjectNode) JSON.readTree(exactManifest);
+        malformedManifest.put("unknownCredential", "UPPERCASE_SECRET_PAYLOAD");
+        Files.setPosixFilePermissions(commitManifest,
+                PosixFilePermissions.fromString("rw-------"));
+        Files.write(commitManifest, JSON.writeValueAsBytes(malformedManifest));
+        Files.setPosixFilePermissions(commitManifest,
+                PosixFilePermissions.fromString("r--------"));
+        assertThatThrownBy(() -> CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify(
+                transcriptOutput, rawFingerprint(Files.readAllBytes(artifact)),
+                formal.fingerprint()))
+                .isInstanceOfSatisfying(
+                        CapabilityStudioExecutionLeaseEvidenceBundleVerifier
+                                .VerificationException.class,
+                        failure -> assertThat(failure.failureKind()).isEqualTo(
+                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceFailureKind.INVALID));
+        ByteArrayOutputStream malformedBundleOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli.run(new String[]{
+                "--transcript", transcriptOutput.toString(),
+                "--expected-stage-result-raw-fingerprint",
+                rawFingerprint(Files.readAllBytes(artifact)),
+                "--expected-formal-outer-fingerprint", formal.fingerprint()
+        }, new PrintStream(malformedBundleOut, true, StandardCharsets.UTF_8)))
+                .isEqualTo(2);
+        assertThat(malformedBundleOut.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "INVALID errorCode=RG.CAPABILITY_STUDIO."
+                        + "EXECUTION_LEASE_EVIDENCE_BUNDLE_VERIFY_CLI.INVALID\n")
+                .doesNotContain("UPPERCASE_SECRET_PAYLOAD", commitManifest.toString());
+        Files.setPosixFilePermissions(commitManifest,
+                PosixFilePermissions.fromString("rw-------"));
+        Files.write(commitManifest, exactManifest);
+        Files.setPosixFilePermissions(commitManifest,
+                PosixFilePermissions.fromString("r--------"));
+        ByteArrayOutputStream expiredRetryOut = new ByteArrayOutputStream();
+        int expiredRetry = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), transcriptOutput.toString()},
+                new PrintStream(expiredRetryOut, true, StandardCharsets.UTF_8), System.err,
+                NOW.plusSeconds(86_400), () -> {
+                    throw new AssertionError("recovery-first loaded Provider");
+                }, formal.fingerprint());
+        assertThat(expiredRetry).isZero();
+        assertThat(expiredRetryOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=RECOVERED",
+                        "commitStatus=RECOVERED");
+
+        Path driftedStage = write("evidence-pass-reformatted.json",
+                JSON.writerWithDefaultPrettyPrinter().writeValueAsString(result));
+        ByteArrayOutputStream driftedOut = new ByteArrayOutputStream();
+        int drifted = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{driftedStage.toString(), transcriptOutput.toString()},
+                new PrintStream(driftedOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, () -> {
+                    throw new AssertionError("raw-drift recovery loaded Provider");
+                }, formal.fingerprint());
+        assertThat(drifted).isEqualTo(2);
+        assertThat(driftedOut.toString(StandardCharsets.UTF_8))
+                .startsWith("INVALID errorCode=");
+
+        Path unknownOutput = evidenceDirectory.resolve("unknown-final.json");
+        Files.writeString(unknownOutput, "UNKNOWN-CREDENTIAL-MATERIAL");
+        Files.setPosixFilePermissions(unknownOutput,
+                PosixFilePermissions.fromString("r--------"));
+        byte[] unknownBytes = Files.readAllBytes(unknownOutput);
+        ByteArrayOutputStream unknownOut = new ByteArrayOutputStream();
+        int unknown = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), unknownOutput.toString()},
+                new PrintStream(unknownOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint());
+        assertThat(unknown).isEqualTo(2);
+        assertThat(Files.readAllBytes(unknownOutput)).isEqualTo(unknownBytes);
+        assertThat(unknownOut.toString(StandardCharsets.UTF_8))
+                .doesNotContain("UNKNOWN-CREDENTIAL-MATERIAL");
+
+        Path unknownStagingOutput = evidenceDirectory.resolve("unknown-staging.json");
+        String unknownTransaction = publication.evidenceTransactionId();
+        Path unknownStaging = evidenceDirectory.resolve("."
+                + unknownStagingOutput.getFileName() + "."
+                + unknownTransaction.substring("sha256:".length()) + ".evidence-v3");
+        Files.createDirectory(unknownStaging);
+        Files.setPosixFilePermissions(unknownStaging,
+                PosixFilePermissions.fromString("rwx------"));
+        Files.writeString(unknownStaging.resolve("unknown.part"), "DO-NOT-DELETE");
+        Map<String, byte[]> unknownClosure;
+        try (var children = Files.list(unknownStaging)) {
+            unknownClosure = children.collect(java.util.stream.Collectors.toMap(
+                        path -> path.getFileName().toString(), path -> {
+                            try {
+                                return Files.readAllBytes(path);
+                            } catch (IOException failure) {
+                                throw new java.io.UncheckedIOException(failure);
+                            }
+                        }));
+        }
+        ByteArrayOutputStream unknownStagingOut = new ByteArrayOutputStream();
+        int unknownStagingExit = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), unknownStagingOutput.toString()},
+                new PrintStream(unknownStagingOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint());
+        assertThat(unknownStagingExit).isEqualTo(2);
+        for (Map.Entry<String, byte[]> entry : unknownClosure.entrySet()) {
+            assertThat(Files.readAllBytes(unknownStaging.resolve(entry.getKey())))
+                    .isEqualTo(entry.getValue());
+        }
+
+        durable.set(null);
+        committed.set(false);
+        Path crashParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("stdout-failure-publication"));
+        Files.setPosixFilePermissions(crashParent,
+                PosixFilePermissions.fromString("rwx------"));
+        var crashPublication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                crashParent, fingerprint('b'));
+        Path crashOutput = crashParent.resolve(crashPublication.transcriptRelativePath());
+        PrintStream broken = new PrintStream(new OutputStream() {
+            private int remaining = 17;
+
+            @Override
+            public void write(int value) throws IOException {
+                if (remaining-- <= 0) {
+                    throw new IOException("broken stdout");
+                }
+            }
+        });
+        int outputFailure = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), crashOutput.toString()}, broken, System.err,
+                NOW, evidenceSource, formal.fingerprint(),
+                crashPublication.publicationFingerprint());
+        ByteArrayOutputStream recoveredOut = new ByteArrayOutputStream();
+        int recoveredAfterOutputFailure = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), crashOutput.toString()},
+                new PrintStream(recoveredOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint(),
+                crashPublication.publicationFingerprint());
+        assertThat(outputFailure).isEqualTo(2);
+        assertThat(crashOutput).exists();
+        assertThat(recoveredAfterOutputFailure).isZero();
+        assertThat(recoveredOut.toString(StandardCharsets.UTF_8))
+                .contains("evidencePublicationStatus=RECOVERED", "commitStatus=RECOVERED");
+
+        durable.set(null);
+        committed.set(false);
+        failAfterOnce.set(true);
+        Path afterFailureParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("after-failure-publication"));
+        Files.setPosixFilePermissions(afterFailureParent,
+                PosixFilePermissions.fromString("rwx------"));
+        var afterFailurePublication =
+                CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                        afterFailureParent, fingerprint('c'));
+        Path afterFailureOutput = afterFailureParent.resolve(
+                afterFailurePublication.transcriptRelativePath());
+        ByteArrayOutputStream blockedOut = new ByteArrayOutputStream();
+        int afterFailure = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), afterFailureOutput.toString()},
+                new PrintStream(blockedOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint(),
+                afterFailurePublication.publicationFingerprint());
+        assertThat(afterFailure).isEqualTo(
+                CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(afterFailureOutput).doesNotExist();
+
+        ByteArrayOutputStream afterRetryOut = new ByteArrayOutputStream();
+        int afterRetry = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), afterFailureOutput.toString()},
+                new PrintStream(afterRetryOut, true, StandardCharsets.UTF_8), System.err,
+                NOW.plusSeconds(86_400), evidenceSource, formal.fingerprint(),
+                afterFailurePublication.publicationFingerprint());
+        assertThat(afterRetry).isZero();
+        assertThat(afterRetryOut.toString(StandardCharsets.UTF_8))
+                .contains("commitStatus=RECOVERED");
+
+        durable.set(null);
+        committed.set(false);
+        failBeforeLeaseOnce.set(true);
+        attemptGenerations.clear();
+        attemptTimes.clear();
+        Path absentParent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("absent-retry-publication"));
+        Files.setPosixFilePermissions(absentParent,
+                PosixFilePermissions.fromString("rwx------"));
+        var absentPublication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                absentParent, fingerprint('d'));
+        Path absentOutput = absentParent.resolve(absentPublication.transcriptRelativePath());
+        ByteArrayOutputStream absentFirstOut = new ByteArrayOutputStream();
+        int absentFirst = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), absentOutput.toString()},
+                new PrintStream(absentFirstOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint(),
+                absentPublication.publicationFingerprint());
+        assertThat(absentFirst).isEqualTo(
+                CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        ByteArrayOutputStream absentRetryOut = new ByteArrayOutputStream();
+        int absentRetry = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), absentOutput.toString()},
+                new PrintStream(absentRetryOut, true, StandardCharsets.UTF_8), System.err,
+                NOW.plusSeconds(60), evidenceSource, formal.fingerprint(),
+                absentPublication.publicationFingerprint());
+        assertThat(absentRetry).isZero();
+        assertThat(attemptGenerations).containsExactly(1L, 2L);
+        assertThat(attemptTimes).containsExactly(NOW, NOW.plusSeconds(60));
+        Path absentWrapper = absentParent.resolve("." + absentOutput.getFileName()
+                + "." + absentPublication.evidenceTransactionId()
+                .substring("sha256:".length()) + ".evidence-v3");
+        assertThat(absentWrapper.resolve(
+                "attempt-closure-v1-g00000000000000000001.json")).isRegularFile();
+        assertThat(absentWrapper.resolve(
+                "before-v2-g00000000000000000002.json")).isRegularFile();
+        String absentManifest = Files.readString(
+                absentWrapper.resolve("commit-manifest-v1.json"));
+        assertThat(absentManifest).contains("\"attemptGeneration\":2",
+                "\"previousAttemptClosureFingerprint\":\"sha256:");
+
+        Path pseudoFinal = evidenceDirectory.resolve("self-consistent-unowned.json");
+        Files.copy(absentOutput, pseudoFinal);
+        Files.setPosixFilePermissions(pseudoFinal,
+                PosixFilePermissions.fromString("r--------"));
+        byte[] pseudoBytes = Files.readAllBytes(pseudoFinal);
+        ByteArrayOutputStream pseudoOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), pseudoFinal.toString()},
+                new PrintStream(pseudoOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint())).isEqualTo(2);
+        assertThat(Files.readAllBytes(pseudoFinal)).isEqualTo(pseudoBytes);
+        assertThat(pseudoOut.toString(StandardCharsets.UTF_8))
+                .contains("PUBLICATION_INVALID").doesNotContain("result:test");
+
+        Path emptyOutput = evidenceDirectory.resolve("preexisting-empty-wrapper.json");
+        Path emptyWrapper = evidenceDirectory.resolve("." + emptyOutput.getFileName()
+                + "." + firstTransaction.substring("sha256:".length()) + ".evidence-v3");
+        Files.createDirectory(emptyWrapper);
+        Files.setPosixFilePermissions(emptyWrapper,
+                PosixFilePermissions.fromString("rwx------"));
+        ByteArrayOutputStream emptyOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), emptyOutput.toString()},
+                new PrintStream(emptyOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint())).isEqualTo(2);
+        try (var children = Files.list(emptyWrapper)) {
+            assertThat(children.toList()).isEmpty();
+        }
+
+        Path claimOutput = evidenceDirectory.resolve("wrong-owner-claim.json");
+        Path wrongClaim = evidenceDirectory.resolve("." + claimOutput.getFileName()
+                + "." + firstTransaction.substring("sha256:".length())
+                + ".owner-claim-v3.json");
+        Files.writeString(wrongClaim, "WRONG_OWNER_CREDENTIAL");
+        Files.setPosixFilePermissions(wrongClaim,
+                PosixFilePermissions.fromString("r--------"));
+        byte[] wrongClaimBytes = Files.readAllBytes(wrongClaim);
+        ByteArrayOutputStream claimOut = new ByteArrayOutputStream();
+        assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), claimOutput.toString()},
+                new PrintStream(claimOut, true, StandardCharsets.UTF_8), System.err,
+                NOW, evidenceSource, formal.fingerprint())).isEqualTo(2);
+        assertThat(Files.readAllBytes(wrongClaim)).isEqualTo(wrongClaimBytes);
+        assertThat(claimOut.toString(StandardCharsets.UTF_8))
+                .doesNotContain("WRONG_OWNER_CREDENTIAL");
+
+        for (String conflictingPart : java.util.List.of(
+                ".owner-v3.json.part",
+                ".before-v2-g00000000000000000001.json.part",
+                ".committed-transcript-v1.json.part",
+                ".commit-manifest-v1.json.part")) {
+            durable.set(null);
+            committed.set(false);
+            String safe = conflictingPart.replace('.', '-');
+            Path conflictParent = Files.createDirectory(temporaryDirectory.toRealPath()
+                    .resolve("conflict" + safe + "-publication"));
+            Files.setPosixFilePermissions(conflictParent,
+                    PosixFilePermissions.fromString("rwx------"));
+            var conflictPublication =
+                    CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                            conflictParent, rawFingerprint(safe.getBytes(StandardCharsets.UTF_8)));
+            Path conflictOutput = conflictParent.resolve(
+                    conflictPublication.transcriptRelativePath());
+            ByteArrayOutputStream seedOut = new ByteArrayOutputStream();
+            assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                    new String[]{artifact.toString(), conflictOutput.toString()},
+                    new PrintStream(seedOut, true, StandardCharsets.UTF_8), System.err,
+                    NOW, evidenceSource, formal.fingerprint(),
+                    conflictPublication.publicationFingerprint()))
+                    .as(seedOut.toString(StandardCharsets.UTF_8)).isZero();
+            Path wrapper = conflictParent.resolve("." + conflictOutput.getFileName()
+                    + "." + conflictPublication.evidenceTransactionId()
+                    .substring("sha256:".length())
+                    + ".evidence-v3");
+            Path conflict = wrapper.resolve(conflictingPart);
+            Files.writeString(conflict, "UNKNOWN_PART_CREDENTIAL");
+            Files.setPosixFilePermissions(conflict,
+                    PosixFilePermissions.fromString("r--------"));
+            Map<String, UnknownTreeEntry> beforeConflict = observeUnknownTree(conflictParent);
+            ByteArrayOutputStream conflictOut = new ByteArrayOutputStream();
+            assertThat(CapabilityStudioExecutionLeaseEvidenceCli.run(
+                    new String[]{artifact.toString(), conflictOutput.toString()},
+                    new PrintStream(conflictOut, true, StandardCharsets.UTF_8), System.err,
+                    NOW, evidenceSource, formal.fingerprint(),
+                    conflictPublication.publicationFingerprint()))
+                    .as(conflictingPart + ": "
+                            + conflictOut.toString(StandardCharsets.UTF_8)).isEqualTo(2);
+            assertThat(observeUnknownTree(conflictParent)).isEqualTo(beforeConflict);
+            assertThat(conflictOut.toString(StandardCharsets.UTF_8))
+                    .doesNotContain("UNKNOWN_PART_CREDENTIAL");
+        }
+    }
+
+    @Test
+    void evidencePublicationInstallsOwnedFileAndPreservesConflicts()
+            throws Exception {
+        byte[] bytes = "payload-free-transcript".getBytes(StandardCharsets.UTF_8);
+        Path sourceParent = Files.createDirectory(temporaryDirectory.resolve("source"));
+        Path targetParent = Files.createDirectory(temporaryDirectory.resolve("target"));
+        Path source = sourceParent.resolve("source.part");
+        Path target = targetParent.resolve("target.json");
+        CapabilityStudioExecutionLeaseEvidenceCli.installOwnedFile(source, target, bytes);
+        assertThat(source).doesNotExist();
+        assertThat(Files.readAllBytes(target)).isEqualTo(bytes);
+        assertThat(((Number) Files.getAttribute(target, "unix:nlink",
+                LinkOption.NOFOLLOW_LINKS)).longValue()).isEqualTo(1);
+
+        Path bothParent = Files.createDirectory(temporaryDirectory.resolve("both"));
+        Path sameSource = bothParent.resolve("same.part");
+        Path sameTarget = bothParent.resolve("same.json");
+        CapabilityStudioExecutionLeaseEvidenceCli.prepareOwnedSource(sameSource, bytes);
+        Files.createLink(sameTarget, sameSource);
+        CapabilityStudioExecutionLeaseEvidenceCli.installOwnedFile(
+                sameSource, sameTarget, bytes);
+        assertThat(sameSource).doesNotExist();
+        assertThat(Files.readAllBytes(sameTarget)).isEqualTo(bytes);
+
+        Path distinctSource = bothParent.resolve("distinct.part");
+        Path distinctTarget = bothParent.resolve("distinct.json");
+        CapabilityStudioExecutionLeaseEvidenceCli.prepareOwnedSource(distinctSource, bytes);
+        CapabilityStudioExecutionLeaseEvidenceCli.prepareOwnedSource(distinctTarget, bytes);
+        Object sourceKey = Files.readAttributes(distinctSource,
+                java.nio.file.attribute.BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS).fileKey();
+        Object targetKey = Files.readAttributes(distinctTarget,
+                java.nio.file.attribute.BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS).fileKey();
+        assertThatThrownBy(() -> CapabilityStudioExecutionLeaseEvidenceCli
+                .installOwnedFile(distinctSource, distinctTarget, bytes))
+                .isInstanceOfSatisfying(
+                        CapabilityStudioExecutionLeaseEvidenceCli
+                                .EvidenceInvalidException.class,
+                        failure -> assertThat(failure.failureKind()).isEqualTo(
+                                CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceFailureKind.INVALID));
+        assertThat(Files.readAttributes(distinctSource,
+                java.nio.file.attribute.BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS).fileKey()).isEqualTo(sourceKey);
+        assertThat(Files.readAttributes(distinctTarget,
+                java.nio.file.attribute.BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS).fileKey()).isEqualTo(targetKey);
+        assertThat(Files.readAllBytes(distinctSource)).isEqualTo(bytes);
+        assertThat(Files.readAllBytes(distinctTarget)).isEqualTo(bytes);
+    }
+
+    @Test
+    void evidencePublicationLockInterruptIsBoundedPreservedAndReentrant()
+            throws Exception {
+        Path parent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve("evidence-interrupt"));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        Path missingStage = parent.resolve("missing-stage.json");
+        Path output = parent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        var publication = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parent, fingerprint('e'));
+        ByteArrayOutputStream interruptedOut = new ByteArrayOutputStream();
+        Thread.currentThread().interrupt();
+        try {
+            long started = System.nanoTime();
+            int interrupted = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                    new String[]{missingStage.toString(), output.toString()},
+                    new PrintStream(interruptedOut, true, StandardCharsets.UTF_8),
+                    System.err, NOW, java.util.List::of, fingerprint('1'),
+                    publication.publicationFingerprint());
+            assertThat(interrupted).isEqualTo(
+                    CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+            assertThat(java.time.Duration.ofNanos(System.nanoTime() - started))
+                    .isLessThan(java.time.Duration.ofSeconds(1));
+            assertThat(interruptedOut.toString(StandardCharsets.UTF_8))
+                    .contains("PUBLICATION_UNAVAILABLE");
+        } finally {
+            Thread.interrupted();
+        }
+
+        ByteArrayOutputStream retryOut = new ByteArrayOutputStream();
+        int retry = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{missingStage.toString(), output.toString()},
+                new PrintStream(retryOut, true, StandardCharsets.UTF_8),
+                System.err, NOW, java.util.List::of, fingerprint('1'),
+                publication.publicationFingerprint());
+        assertThat(retry).as(retryOut.toString(StandardCharsets.UTF_8))
+                .isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(retryOut.toString(StandardCharsets.UTF_8))
+                .contains("RECOVERY_INVALID")
+                .doesNotContain("PUBLICATION_UNAVAILABLE");
+    }
+
+    @Test
+    void evidenceTransactionInventoryStopsAtItsFixedBoundWithoutMutation()
+            throws Exception {
+        Path inventory = temporaryDirectory.resolve("bounded-inventory");
+        Files.createDirectory(inventory);
+        for (int index = 0; index < 2 * 1_024 + 8; index++) {
+            Files.write(inventory.resolve(String.format("entry-%04d.json", index)),
+                    new byte[]{(byte) index});
+        }
+        Set<String> before;
+        try (var children = Files.list(inventory)) {
+            before = children.map(path -> path.getFileName().toString())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+
+        assertThatThrownBy(() -> CapabilityStudioExecutionLeaseEvidenceCli
+                .requireBoundedTransactionInventoryForTesting(inventory))
+                .isInstanceOf(IOException.class);
+
+        Set<String> after;
+        try (var children = Files.list(inventory)) {
+            after = children.map(path -> path.getFileName().toString())
+                    .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        }
+        assertThat(after).isEqualTo(before).hasSize(2 * 1_024 + 8);
+        assertThat(Files.readAllBytes(inventory.resolve("entry-0000.json")))
+                .containsExactly((byte) 0);
+        assertThat(Files.readAllBytes(inventory.resolve("entry-2055.json")))
+                .containsExactly((byte) 7);
+    }
+
+    @Test
+    void evidenceCliClassifiesMissingDependencyUnavailableAndSymlinkConflictInvalid()
+            throws Exception {
+        Path artifact = write("evidence-classification.json", passResult().toString());
+        Path realTemporaryDirectory = temporaryDirectory.toRealPath();
+        Path missingOutput = realTemporaryDirectory
+                .resolve("missing-parent/transcript.json")
+                .toAbsolutePath();
+        ByteArrayOutputStream missingOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream missingErr = new ByteArrayOutputStream();
+        int missing = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), missingOutput.toString()},
+                new PrintStream(missingOut, true, StandardCharsets.UTF_8),
+                new PrintStream(missingErr, true, StandardCharsets.UTF_8), NOW,
+                () -> {
+                    throw new AssertionError("unavailable recovery loaded Provider");
+                }, fingerprint('d'));
+        assertThat(missing).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_NOT_ACCEPTED);
+        assertThat(missingOut.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "NOT_ACCEPTED outcome=BLOCKED reasonCode="
+                        + "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_CLI."
+                        + "PUBLICATION_UNAVAILABLE\n")
+                .doesNotContain(temporaryDirectory.toString());
+        assertThat(missingErr).hasToString("");
+
+        Path realParent = Files.createDirectory(realTemporaryDirectory.resolve("real-parent"));
+        Files.setPosixFilePermissions(realParent,
+                PosixFilePermissions.fromString("rwx------"));
+        Path alias = realTemporaryDirectory.resolve("parent-alias");
+        Files.createSymbolicLink(alias, realParent);
+        Path invalidOutput = alias.resolve("transcript.json").toAbsolutePath().normalize();
+        ByteArrayOutputStream invalidOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream invalidErr = new ByteArrayOutputStream();
+        int invalid = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), invalidOutput.toString()},
+                new PrintStream(invalidOut, true, StandardCharsets.UTF_8),
+                new PrintStream(invalidErr, true, StandardCharsets.UTF_8), NOW,
+                () -> {
+                    throw new AssertionError("invalid recovery loaded Provider");
+                }, fingerprint('d'));
+        assertThat(invalid).isEqualTo(CapabilityStudioStageAcceptanceCli.EXIT_INVALID);
+        assertThat(invalidOut.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "INVALID errorCode="
+                        + "RG.CAPABILITY_STUDIO.EXECUTION_LEASE_EVIDENCE_CLI."
+                        + "PUBLICATION_INVALID\n")
+                .doesNotContain(temporaryDirectory.toString());
+        assertThat(invalidErr).hasToString("");
+    }
+
     private int run(Path artifact,
                     List<CapabilityStudioStageAcceptanceAuthorityProvider> providers,
                     Output output) {
@@ -1174,7 +2167,7 @@ class CapabilityStudioStageAcceptanceCliTest {
         return path;
     }
 
-    private static ObjectNode passResult() {
+    static ObjectNode passResult() {
         ObjectNode result = CapabilityStudioStageAcceptanceAuthorityVerifierTest.validStagePass();
         ObjectNode candidate = candidateAttestation();
         ObjectNode environment = environmentAttestation(result, candidate);
@@ -1217,6 +2210,386 @@ class CapabilityStudioStageAcceptanceCliTest {
         return new Provider(request -> EvidenceResolution.available(facts(request, closure)),
                 (reference, evidence, context) -> verified(),
                 (signoff, signature, context) -> verified(), targetAdmission(result));
+    }
+
+    private void assertUnknownExecutePreserved(
+            UnknownEvidenceObject object, UnknownVariant variant) throws Exception {
+        EvidenceBaseline baseline = committedEvidenceBaseline(object + "-" + variant);
+        Path target = unknownTarget(baseline, object);
+        seedUnknown(target, exactUnknownBytes(baseline, object), object, variant);
+        Map<String, UnknownTreeEntry> before = observeUnknownTree(baseline.parent());
+        AtomicInteger providerLoads = new AtomicInteger();
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+
+        int exit = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{baseline.artifact().toString(),
+                        baseline.output().toString()},
+                new PrintStream(output, true, StandardCharsets.UTF_8), System.err, NOW,
+                () -> {
+                    providerLoads.incrementAndGet();
+                    return List.of(baseline.provider());
+                }, baseline.formalFingerprint(), baseline.publicationFingerprint());
+
+        boolean publicationPreflight = object == UnknownEvidenceObject.OWNER_BOOTSTRAP
+                || object == UnknownEvidenceObject.PROVISION_DECLARATION
+                || object == UnknownEvidenceObject.PUBLICATION_LOCK;
+        assertThat(exit).as(object + " " + variant).isEqualTo(2);
+        assertThat(output.toString(StandardCharsets.UTF_8)).isEqualTo(
+                "INVALID errorCode=RG.CAPABILITY_STUDIO."
+                        + "EXECUTION_LEASE_EVIDENCE_CLI."
+                        + (publicationPreflight ? "PUBLICATION" : "RECOVERY")
+                        + "_INVALID\n");
+        assertThat(providerLoads).hasValue(0);
+        assertThat(observeUnknownTree(baseline.parent()))
+                .as(object + " " + variant).isEqualTo(before);
+    }
+
+    private void assertUnknownProvisioningPreserved(
+            UnknownEvidenceObject object, UnknownVariant variant) throws Exception {
+        String name = "provision-unknown-" + object + "-" + variant;
+        Path parent = Files.createDirectory(temporaryDirectory.toRealPath().resolve(name));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        CapabilityStudioExecutionLeaseEvidencePublication.provision(parent, fingerprint('e'));
+        Path target = switch (object) {
+            case OWNER_BOOTSTRAP -> parent.resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication.OWNER_BOOTSTRAP_FILE);
+            case PROVISION_DECLARATION -> parent.resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication
+                            .PUBLICATION_DECLARATION_FILE);
+            case PUBLICATION_LOCK -> parent.resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication.PUBLICATION_LOCK_FILE);
+            default -> throw new AssertionError("unsupported provisioning object");
+        };
+        byte[] exact = Files.readAllBytes(target);
+        seedUnknown(target, exact, object, variant);
+        Map<String, UnknownTreeEntry> before = observeUnknownTree(parent);
+
+        var failure = org.junit.jupiter.api.Assertions.assertThrows(
+                CapabilityStudioExecutionLeaseEvidencePublication.PublicationException.class,
+                () -> CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                        parent, fingerprint('e')));
+
+        assertThat(failure.failureKind()).isEqualTo(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.INVALID);
+        assertThat(observeUnknownTree(parent)).as(object + " " + variant).isEqualTo(before);
+    }
+
+    private void assertWrongUidMetadataPreserved(UnknownEvidenceObject object) throws Exception {
+        Path parent = Files.createDirectory(temporaryDirectory.toRealPath().resolve(
+                "wrong-uid-" + object.toString().toLowerCase()));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        Files.write(parent.resolve("sentinel"), new byte[]{1});
+        Map<String, UnknownTreeEntry> before = observeUnknownTree(parent);
+
+        if (object == UnknownEvidenceObject.OWNER_BOOTSTRAP
+                || object == UnknownEvidenceObject.PROVISION_DECLARATION
+                || object == UnknownEvidenceObject.PUBLICATION_LOCK) {
+            var failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    CapabilityStudioExecutionLeaseEvidencePublication
+                            .PublicationException.class,
+                    () -> CapabilityStudioExecutionLeaseEvidencePublication
+                            .requireMatchingUidForTesting(1000, 1001));
+            assertThat(failure.failureKind()).isEqualTo(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceFailureKind.INVALID);
+        } else {
+            var failure = org.junit.jupiter.api.Assertions.assertThrows(
+                    CapabilityStudioExecutionLeaseEvidenceCli.EvidenceInvalidException.class,
+                    () -> CapabilityStudioExecutionLeaseEvidenceCli
+                            .requireOwnedUidForTesting(1000, 1001));
+            assertThat(failure.failureKind()).isEqualTo(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceFailureKind.INVALID);
+        }
+        assertThat(observeUnknownTree(parent)).isEqualTo(before);
+    }
+
+    private EvidenceBaseline committedEvidenceBaseline(String caseName) throws Exception {
+        String safe = caseName.toLowerCase().replace('_', '-');
+        ObjectNode result = passResult();
+        Path artifact = write(safe + "-stage.json", result.toString());
+        Path parent = Files.createDirectory(
+                temporaryDirectory.toRealPath().resolve(safe + "-publication"));
+        Files.setPosixFilePermissions(parent,
+                PosixFilePermissions.fromString("rwx------"));
+        var declaration = CapabilityStudioExecutionLeaseEvidencePublication.provision(
+                parent, fingerprint('e'));
+        Path output = parent.resolve(
+                CapabilityStudioExecutionLeaseEvidencePublication.TRANSCRIPT_FILE);
+        Provider ordinary = acceptingProvider(result);
+        var formal = ordinary.formalTargetBoundAuthorityBinding();
+        CapabilityStudioStageAcceptanceAuthorityProvider provider =
+                positiveEvidenceProvider(ordinary, formal);
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        int exit = CapabilityStudioExecutionLeaseEvidenceCli.run(
+                new String[]{artifact.toString(), output.toString()},
+                new PrintStream(stdout, true, StandardCharsets.UTF_8), System.err, NOW,
+                () -> List.of(provider), formal.fingerprint(),
+                declaration.publicationFingerprint());
+        assertThat(exit).as(stdout.toString(StandardCharsets.UTF_8)).isZero();
+        String transactionId = declaration.evidenceTransactionId();
+        Path wrapper = parent.resolve("." + output.getFileName() + "."
+                + transactionId.substring("sha256:".length()) + ".evidence-v3");
+        return new EvidenceBaseline(artifact, parent, output, wrapper, provider,
+                formal.fingerprint(), declaration.publicationFingerprint());
+    }
+
+    private static Path unknownTarget(
+            EvidenceBaseline baseline, UnknownEvidenceObject object) {
+        return switch (object) {
+            case FINAL -> baseline.output();
+            case WRAPPER -> baseline.wrapper();
+            case OWNER_BOOTSTRAP -> baseline.parent().resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication.OWNER_BOOTSTRAP_FILE);
+            case BEFORE_PART -> baseline.wrapper().resolve(
+                    ".before-v2-g00000000000000000001.json.part");
+            case COMMITTED_PART -> baseline.wrapper().resolve(
+                    ".committed-transcript-v1.json.part");
+            case COMMIT_MANIFEST_PART -> baseline.wrapper().resolve(
+                    ".commit-manifest-v1.json.part");
+            case PROVISION_DECLARATION -> baseline.parent().resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication
+                            .PUBLICATION_DECLARATION_FILE);
+            case PUBLICATION_LOCK -> baseline.parent().resolve(
+                    CapabilityStudioExecutionLeaseEvidencePublication.PUBLICATION_LOCK_FILE);
+        };
+    }
+
+    private static byte[] exactUnknownBytes(
+            EvidenceBaseline baseline, UnknownEvidenceObject object) throws IOException {
+        return switch (object) {
+            case FINAL -> Files.readAllBytes(baseline.output());
+            case WRAPPER -> null;
+            case OWNER_BOOTSTRAP -> Files.readAllBytes(unknownTarget(baseline, object));
+            case BEFORE_PART -> Files.readAllBytes(baseline.wrapper().resolve(
+                    "before-v2-g00000000000000000001.json"));
+            case COMMITTED_PART -> Files.readAllBytes(baseline.wrapper().resolve(
+                    "committed-transcript-v1.json"));
+            case COMMIT_MANIFEST_PART -> Files.readAllBytes(baseline.wrapper().resolve(
+                    "commit-manifest-v1.json"));
+            case PROVISION_DECLARATION, PUBLICATION_LOCK ->
+                    Files.readAllBytes(unknownTarget(baseline, object));
+        };
+    }
+
+    private static void seedUnknown(
+            Path target,
+            byte[] exactBytes,
+            UnknownEvidenceObject object,
+            UnknownVariant variant) throws IOException {
+        Path replacement = target.resolveSibling("." + target.getFileName()
+                + ".unknown-replacement");
+        deleteUnknownTree(replacement);
+        if (variant == UnknownVariant.DISTINCT_INODE
+                && object == UnknownEvidenceObject.WRAPPER) {
+            copyUnknownTree(target, replacement);
+        }
+        deleteUnknownTree(target);
+        int expectedMode = object == UnknownEvidenceObject.PUBLICATION_LOCK ? 0600
+                : object == UnknownEvidenceObject.WRAPPER ? 0700 : 0400;
+        switch (variant) {
+            case EMPTY_DIRECTORY -> {
+                Files.createDirectory(target);
+                Files.setPosixFilePermissions(target,
+                        PosixFilePermissions.fromString("rwx------"));
+            }
+            case WRONG_BYTES -> writeUnknownFile(target,
+                    "UNKNOWN_EVIDENCE_BYTES".getBytes(StandardCharsets.UTF_8), expectedMode);
+            case WRONG_MODE -> {
+                if (object == UnknownEvidenceObject.WRAPPER) {
+                    Files.createDirectory(target);
+                    Files.setPosixFilePermissions(target,
+                            PosixFilePermissions.fromString("rwxr-x---"));
+                } else {
+                    writeUnknownFile(target, exactBytes, expectedMode == 0600 ? 0400 : 0600);
+                }
+            }
+            case SYMLINK -> {
+                Path referenced = replacement.resolveSibling(
+                        replacement.getFileName() + ".target");
+                deleteUnknownTree(referenced);
+                if (object == UnknownEvidenceObject.WRAPPER) {
+                    Files.createDirectory(referenced);
+                    Files.setPosixFilePermissions(referenced,
+                            PosixFilePermissions.fromString("rwx------"));
+                } else {
+                    writeUnknownFile(referenced, exactBytes, expectedMode);
+                }
+                Files.createSymbolicLink(target, referenced);
+            }
+            case HARDLINK -> {
+                Path referenced = replacement.resolveSibling(
+                        replacement.getFileName() + ".target");
+                deleteUnknownTree(referenced);
+                writeUnknownFile(referenced,
+                        exactBytes == null ? new byte[]{1} : exactBytes,
+                        object == UnknownEvidenceObject.WRAPPER ? 0400 : expectedMode);
+                Files.createLink(target, referenced);
+            }
+            case DISTINCT_INODE -> {
+                if (object == UnknownEvidenceObject.WRAPPER) {
+                    Files.move(replacement, target);
+                } else {
+                    writeUnknownFile(target, exactBytes, expectedMode);
+                }
+            }
+        }
+    }
+
+    private static void writeUnknownFile(Path path, byte[] bytes, int mode) throws IOException {
+        Files.write(path, bytes);
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(
+                mode == 0600 ? "rw-------" : "r--------"));
+    }
+
+    private static void copyUnknownTree(Path source, Path target) throws IOException {
+        try (var paths = Files.walk(source)) {
+            for (Path path : paths.toList()) {
+                Path destination = target.resolve(source.relativize(path));
+                BasicFileAttributes attributes = Files.readAttributes(path,
+                        BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                int mode = ((Number) Files.getAttribute(path, "unix:mode",
+                        LinkOption.NOFOLLOW_LINKS)).intValue() & 0777;
+                if (attributes.isDirectory()) {
+                    Files.createDirectory(destination);
+                } else {
+                    Files.write(destination, Files.readAllBytes(path));
+                }
+                Files.setPosixFilePermissions(destination,
+                        PosixFilePermissions.fromString(mode == 0700
+                                ? "rwx------" : mode == 0600 ? "rw-------" : "r--------"));
+            }
+        }
+    }
+
+    private static void deleteUnknownTree(Path path) throws IOException {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        try (var paths = Files.walk(path)) {
+            for (Path child : paths.sorted((left, right) -> Integer.compare(
+                    right.getNameCount(), left.getNameCount())).toList()) {
+                Files.delete(child);
+            }
+        }
+    }
+
+    private static Map<String, UnknownTreeEntry> observeUnknownTree(Path root)
+            throws IOException {
+        Map<String, UnknownTreeEntry> entries = new LinkedHashMap<>();
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted().toList()) {
+                BasicFileAttributes attributes = Files.readAttributes(path,
+                        BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+                long device = ((Number) Files.getAttribute(path, "unix:dev",
+                        LinkOption.NOFOLLOW_LINKS)).longValue();
+                long inode = ((Number) Files.getAttribute(path, "unix:ino",
+                        LinkOption.NOFOLLOW_LINKS)).longValue();
+                long links = ((Number) Files.getAttribute(path, "unix:nlink",
+                        LinkOption.NOFOLLOW_LINKS)).longValue();
+                long uid = ((Number) Files.getAttribute(path, "unix:uid",
+                        LinkOption.NOFOLLOW_LINKS)).longValue();
+                int mode = ((Number) Files.getAttribute(path, "unix:mode",
+                        LinkOption.NOFOLLOW_LINKS)).intValue() & 07777;
+                String kind = attributes.isRegularFile() ? "FILE"
+                        : attributes.isDirectory() ? "DIRECTORY"
+                        : attributes.isSymbolicLink() ? "SYMLINK" : "OTHER";
+                String raw = attributes.isRegularFile()
+                        ? rawFingerprint(Files.readAllBytes(path))
+                        : attributes.isSymbolicLink()
+                        ? rawFingerprint(Files.readSymbolicLink(path).toString()
+                        .getBytes(StandardCharsets.UTF_8)) : null;
+                String relative = path.equals(root) ? "."
+                        : root.relativize(path).toString();
+                entries.put(relative, new UnknownTreeEntry(kind,
+                        String.valueOf(attributes.fileKey()), device, inode, links, uid,
+                        mode, attributes.size(), attributes.lastModifiedTime(), raw));
+            }
+        }
+        return Map.copyOf(entries);
+    }
+
+    private static CapabilityStudioStageAcceptanceAuthorityProvider positiveEvidenceProvider(
+            Provider ordinary,
+            CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                    formal) {
+        return new CapabilityStudioStageAcceptanceAuthorityProvider() {
+            @Override
+            public FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+                return new FormalEvidenceAuthorityBinding(formal, fingerprint('6'),
+                        (phase, transactionId) -> evidenceObservation(
+                                phase, transactionId,
+                                phase == CapabilityStudioDeploymentStateObservation.Phase.AFTER),
+                        new CapabilityStudioStageAcceptanceAuthorityProvider
+                                .EvidenceExecutionLeaseTransactionAuthority() {
+                            @Override
+                            public CapabilityStudioStageAcceptanceAuthorityProvider
+                                    .EvidenceExecutionLeaseTransactionResult commit(
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .EvidenceExecutionLeaseAttempt attempt,
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .EvidenceTransactionJournal journal) {
+                                var before = journal.prepareBefore(attempt,
+                                        evidenceObservation(
+                                                CapabilityStudioDeploymentStateObservation
+                                                        .Phase.BEFORE,
+                                                attempt.evidenceTransactionId(), false));
+                                var receipt = committedLease(attempt.request()).receipt();
+                                var witness = new ExecutionLeaseTransitionWitness(
+                                        fingerprint('6'),
+                                        attempt.request().commitIdentityFingerprint(),
+                                        receipt.fingerprint(), fingerprint('1'), 0, 0,
+                                        fingerprint('2'), 0, fingerprint('3'),
+                                        fingerprint('7'), fingerprint('4'), 1, 1,
+                                        fingerprint('5'), 0, fingerprint('3'));
+                                var lease = new EvidenceExecutionLeaseCommitResult(
+                                        ExecutionLeaseCommitStatus.COMMITTED, receipt, witness,
+                                        "LEASE_COMMITTED");
+                                var after = evidenceObservation(
+                                        CapabilityStudioDeploymentStateObservation.Phase.AFTER,
+                                        attempt.evidenceTransactionId(), true);
+                                journal.persistCommitted(attempt, before, after, lease);
+                                return new CapabilityStudioStageAcceptanceAuthorityProvider
+                                        .EvidenceExecutionLeaseTransactionResult(
+                                        before, after, lease);
+                            }
+
+                            @Override
+                            public EvidenceExecutionLeaseCommitResult recoverExisting(
+                                    CapabilityStudioStageAcceptanceAuthorityProvider
+                                            .ExecutionLeaseRequest request) {
+                                return new EvidenceExecutionLeaseCommitResult(
+                                        ExecutionLeaseCommitStatus.UNAVAILABLE,
+                                        null, null, "LEASE_UNAVAILABLE");
+                            }
+                        });
+            }
+
+            @Override
+            public AuthorityBinding authorityBinding() {
+                return ordinary.authorityBinding();
+            }
+
+            @Override
+            public EvidenceResolver evidenceResolver() {
+                return ordinary.resolver();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceIssuerPolicy
+                    evidenceIssuerPolicy() {
+                return ordinary.issuer();
+            }
+
+            @Override
+            public CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerAuthority
+                    ownerAuthority() {
+                return ordinary.owner();
+            }
+        };
     }
 
     private static Provider providerWithCountingPostRunCallbacks(
@@ -1490,6 +2863,21 @@ class CapabilityStudioStageAcceptanceCliTest {
         }
     }
 
+    private static CapabilityStudioDeploymentStateObservation.Observation evidenceObservation(
+            CapabilityStudioDeploymentStateObservation.Phase phase,
+            String transactionId,
+            boolean committed) {
+        boolean post = committed || phase == CapabilityStudioDeploymentStateObservation.Phase.AFTER;
+        return CapabilityStudioDeploymentStateObservation.create(phase, transactionId,
+                fingerprint('6'), fingerprint('e'), post ? 1 : 0,
+                post ? fingerprint('1') : null,
+                post ? fingerprint('4') : fingerprint('1'), fingerprint('a'),
+                post ? fingerprint('5') : fingerprint('2'), fingerprint('b'),
+                0, fingerprint('3'), fingerprint('c'),
+                post ? lifecycleMaterial().fingerprint() : null,
+                post ? 1 : 0, post ? 1 : 0, fingerprint('d'));
+    }
+
     private static CapabilityStudioStageAcceptanceAuthorityProvider.AdmissionLifecycleMaterial
             lifecycleMaterial() {
         var revocation = new CapabilityStudioStageAcceptanceAuthorityProvider
@@ -1581,6 +2969,49 @@ class CapabilityStudioStageAcceptanceCliTest {
 
     private static String fingerprint(char seed) {
         return "sha256:" + String.valueOf(seed).repeat(64);
+    }
+
+    private enum UnknownEvidenceObject {
+        FINAL,
+        WRAPPER,
+        OWNER_BOOTSTRAP,
+        BEFORE_PART,
+        COMMITTED_PART,
+        COMMIT_MANIFEST_PART,
+        PROVISION_DECLARATION,
+        PUBLICATION_LOCK
+    }
+
+    private enum UnknownVariant {
+        EMPTY_DIRECTORY,
+        WRONG_BYTES,
+        WRONG_MODE,
+        SYMLINK,
+        HARDLINK,
+        DISTINCT_INODE
+    }
+
+    private record EvidenceBaseline(
+            Path artifact,
+            Path parent,
+            Path output,
+            Path wrapper,
+            CapabilityStudioStageAcceptanceAuthorityProvider provider,
+            String formalFingerprint,
+            String publicationFingerprint) {
+    }
+
+    private record UnknownTreeEntry(
+            String kind,
+            String fileKey,
+            long device,
+            long inode,
+            long links,
+            long uid,
+            int mode,
+            long size,
+            FileTime modifiedTime,
+            String rawFingerprint) {
     }
 
     private record Provider(

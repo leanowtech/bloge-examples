@@ -67,7 +67,7 @@ public final class CapabilityStudioStageAcceptanceCli {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern AUTHORITY_BINDING_FINGERPRINT =
             Pattern.compile("sha256:[0-9a-f]{64}");
-    private static final String EXPECTED_AUTHORITY_BINDING_ENV =
+    static final String EXPECTED_AUTHORITY_BINDING_ENV =
             "BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT";
 
     private CapabilityStudioStageAcceptanceCli() {
@@ -111,8 +111,44 @@ public final class CapabilityStudioStageAcceptanceCli {
             Instant now,
             ProviderSource providerSource,
             String expectedAuthorityBindingFingerprint) {
+        return run(args, out, err, now, providerSource,
+                expectedAuthorityBindingFingerprint,
+                new StandardAcceptanceFlow(AcceptanceObserver.NONE));
+    }
+
+    static int runWithAcceptanceObserver(
+            String[] args,
+            PrintStream out,
+            PrintStream err,
+            AcceptanceObserver observer) {
+        return run(args, out, err, Instant.now(),
+                CapabilityStudioStageAcceptanceCli::providers,
+                System.getenv(EXPECTED_AUTHORITY_BINDING_ENV),
+                new StandardAcceptanceFlow(observer));
+    }
+
+    static int runWithAcceptanceFlow(
+            String[] args,
+            PrintStream out,
+            PrintStream err,
+            Instant semanticVerificationTime,
+            AcceptanceFlow flow) {
+        return run(args, out, err, semanticVerificationTime,
+                CapabilityStudioStageAcceptanceCli::providers,
+                System.getenv(EXPECTED_AUTHORITY_BINDING_ENV), flow);
+    }
+
+    static int run(
+            String[] args,
+            PrintStream out,
+            PrintStream err,
+            Instant now,
+            ProviderSource providerSource,
+            String expectedAuthorityBindingFingerprint,
+            AcceptanceFlow flow) {
         PrintStream safeOut = out == null ? System.out : out;
         Objects.requireNonNull(now, "now is required");
+        Objects.requireNonNull(flow, "flow is required");
         if (args == null || args.length != 1 || blank(args[0])) {
             invalid(safeOut, "USAGE");
             return EXIT_INVALID;
@@ -185,7 +221,7 @@ public final class CapabilityStudioStageAcceptanceCli {
         CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding binding;
         try {
             binding = CapabilityStudioProviderOutputIsolation.call(
-                    provider::formalTargetBoundAuthorityBinding);
+                    () -> flow.formalBinding(provider));
         } catch (CapabilityStudioStageAcceptanceAuthorityProvider
                  .DeploymentUnavailableException unavailable) {
             blocked(safeOut, REASON_FORMAL_TARGET_BINDING_UNAVAILABLE);
@@ -358,7 +394,7 @@ public final class CapabilityStudioStageAcceptanceCli {
                     lifecycleMaterial, deploymentAuthority.fingerprint(),
                     trustedVerificationTime);
             leaseResult = CapabilityStudioProviderOutputIsolation.call(
-                    () -> deploymentAuthority.executionLeaseAuthority().commit(leaseRequest));
+                    () -> flow.commit(deploymentAuthority, leaseRequest));
             CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseReceipt receipt =
                     requireValidReceipt(leaseResult, leaseRequest);
             if (receipt == null) {
@@ -398,6 +434,10 @@ public final class CapabilityStudioStageAcceptanceCli {
                 invalid(safeOut, "PROVIDER_CONFIGURATION");
                 return EXIT_INVALID;
             }
+            if (!flow.afterValidatedCommit(leaseRequest, leaseResult)) {
+                invalid(safeOut, "TRANSCRIPT_WRITE");
+                return EXIT_INVALID;
+            }
             String accepted = "ACCEPTED outcome=ACCEPTED authorityBindingFingerprint="
                     + binding.fingerprint() + " authorityMaterialFingerprint="
                     + authorityMaterialFingerprint
@@ -433,7 +473,58 @@ public final class CapabilityStudioStageAcceptanceCli {
         List<CapabilityStudioStageAcceptanceAuthorityProvider> load();
     }
 
-    private static CapabilityStudioStageAcceptanceAuthorityProvider loadProvider(
+    @FunctionalInterface
+    interface AcceptanceObserver {
+        AcceptanceObserver NONE = (request, result) -> true;
+
+        boolean afterValidatedCommit(
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request,
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result);
+    }
+
+    interface AcceptanceFlow {
+        CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                formalBinding(CapabilityStudioStageAcceptanceAuthorityProvider provider);
+
+        CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult commit(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAdmissionAuthorityBinding deploymentAuthority,
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request);
+
+        boolean afterValidatedCommit(
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request,
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result);
+    }
+
+    private record StandardAcceptanceFlow(AcceptanceObserver observer)
+            implements AcceptanceFlow {
+        private StandardAcceptanceFlow {
+            Objects.requireNonNull(observer, "observer is required");
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.FormalTargetBoundAuthorityBinding
+                formalBinding(CapabilityStudioStageAcceptanceAuthorityProvider provider) {
+            return provider.formalTargetBoundAuthorityBinding();
+        }
+
+        @Override
+        public CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult commit(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .DeploymentAdmissionAuthorityBinding deploymentAuthority,
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request) {
+            return deploymentAuthority.executionLeaseAuthority().commit(request);
+        }
+
+        @Override
+        public boolean afterValidatedCommit(
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseRequest request,
+                CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result) {
+            return observer.afterValidatedCommit(request, result);
+        }
+    }
+
+    static CapabilityStudioStageAcceptanceAuthorityProvider loadProvider(
             ProviderSource source) {
         if (source == null) {
             return null;
@@ -453,7 +544,7 @@ public final class CapabilityStudioStageAcceptanceCli {
         }
     }
 
-    private static List<CapabilityStudioStageAcceptanceAuthorityProvider> providers() {
+    static List<CapabilityStudioStageAcceptanceAuthorityProvider> providers() {
         List<ServiceLoader.Provider<CapabilityStudioStageAcceptanceAuthorityProvider>> discovered =
                 ServiceLoader.load(CapabilityStudioStageAcceptanceAuthorityProvider.class)
                         .stream().limit(2).toList();
@@ -526,6 +617,10 @@ public final class CapabilityStudioStageAcceptanceCli {
             PrintStream out,
             CapabilityStudioStageAcceptanceAuthorityProvider.ExecutionLeaseCommitResult result) {
         return switch (result.status()) {
+            case INVALID -> {
+                invalid(out, "PROVIDER_CONFIGURATION");
+                yield EXIT_INVALID;
+            }
             case REJECTED -> {
                 out.println("NOT_ACCEPTED outcome=REJECTED reasonCode="
                         + REASON_EXECUTION_LEASE_REJECTED);

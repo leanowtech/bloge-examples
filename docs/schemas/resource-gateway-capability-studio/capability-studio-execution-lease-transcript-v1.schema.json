@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-execution-lease-transcript-v1.schema.json",
+  "title": "Capability Studio Execution Lease Transcript v1",
+  "description": "Closed, payload-free formal-v2 execution lease commit transcript.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "evidenceTransactionId",
+    "evidencePublicationStatus",
+    "beforeStateObservation",
+    "afterStateObservation",
+    "executionLeaseRequest",
+    "commitIdentityFingerprint",
+    "semanticVerificationTime",
+    "trustedVerificationTime",
+    "commitStatus",
+    "reasonCode",
+    "admissionLifecycleMaterial",
+    "atomicAdmissionLifecycleCommitReceipt",
+    "executionLeaseReceipt",
+    "executionLeaseTransitionWitness",
+    "transcriptFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.execution-lease-transcript.v1"
+    },
+    "evidenceTransactionId": {"$ref": "#/$defs/fingerprint"},
+    "evidencePublicationStatus": {"const": "COMMITTED"},
+    "beforeStateObservation": {"$ref": "#/$defs/observation"},
+    "afterStateObservation": {"$ref": "#/$defs/observation"},
+    "executionLeaseRequest": {"$ref": "#/$defs/request"},
+    "commitIdentityFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "semanticVerificationTime": {"$ref": "#/$defs/instant"},
+    "trustedVerificationTime": {"$ref": "#/$defs/instant"},
+    "commitStatus": {"enum": ["COMMITTED", "RECOVERED"]},
+    "reasonCode": {
+      "const": "RG.CAPABILITY_STUDIO.STAGE_ACCEPTANCE_CLI.ACCEPTED"
+    },
+    "admissionLifecycleMaterial": {"$ref": "#/$defs/lifecycleMaterial"},
+    "atomicAdmissionLifecycleCommitReceipt": {"$ref": "#/$defs/atomicReceipt"},
+    "executionLeaseReceipt": {"$ref": "#/$defs/leaseReceipt"},
+    "executionLeaseTransitionWitness": {"$ref": "#/$defs/transitionWitness"},
+    "transcriptFingerprint": {"$ref": "#/$defs/fingerprint"}
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "reference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/@+\\-]{0,511}$"
+    },
+    "instant": {
+      "type": "string",
+      "minLength": 20,
+      "maxLength": 35,
+      "format": "date-time"
+    },
+    "revocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registryRef", "revision", "snapshotFingerprint", "observedAt", "expiresAt"],
+      "properties": {
+        "registryRef": {"$ref": "#/$defs/reference"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "snapshotFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "observedAt": {"$ref": "#/$defs/instant"},
+        "expiresAt": {"$ref": "#/$defs/instant"}
+      }
+    },
+    "lifecycleMaterial": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundleFingerprint", "bundleId", "revision", "lifecycleState", "predecessorBundleFingerprint", "revocationAuthority", "lifecycleMaterialFingerprint"],
+      "properties": {
+        "bundleFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "bundleId": {"$ref": "#/$defs/reference"},
+        "revision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "lifecycleState": {"const": "ACTIVE"},
+        "predecessorBundleFingerprint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]},
+        "revocationAuthority": {"$ref": "#/$defs/revocation"},
+        "lifecycleMaterialFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultId", "resultRevision", "stageResultRawFingerprint", "evidenceClosureFingerprint", "contractId", "contractRevision", "executionLeaseId", "providerOuterFingerprint", "targetRawFingerprint", "targetCanonicalFingerprint", "lifecycleMaterial", "deploymentAdmissionAuthorityMaterialFingerprint", "trustedVerificationTime"],
+      "properties": {
+        "resultId": {"$ref": "#/$defs/reference"},
+        "resultRevision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "stageResultRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidenceClosureFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "contractId": {"$ref": "#/$defs/reference"},
+        "contractRevision": {"$ref": "#/$defs/reference"},
+        "executionLeaseId": {"$ref": "#/$defs/reference"},
+        "providerOuterFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "targetRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "targetCanonicalFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "lifecycleMaterial": {"$ref": "#/$defs/lifecycleMaterial"},
+        "deploymentAdmissionAuthorityMaterialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "trustedVerificationTime": {"$ref": "#/$defs/instant"}
+      }
+    },
+    "atomicReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "deploymentAdmissionAuthorityMaterialFingerprint", "lifecycleMaterialFingerprint", "revocationRegistryRef", "revocationRegistryRevision", "revocationSnapshotFingerprint", "fencingSequence", "committedAt", "requestFingerprint"],
+      "properties": {
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "deploymentAdmissionAuthorityMaterialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "lifecycleMaterialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "revocationRegistryRef": {"$ref": "#/$defs/reference"},
+        "revocationRegistryRevision": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "revocationSnapshotFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "fencingSequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "committedAt": {"$ref": "#/$defs/instant"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "leaseReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "requestFingerprint", "lifecycleMaterial", "lifecycleCommitReceipt"],
+      "properties": {
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "lifecycleMaterial": {"$ref": "#/$defs/lifecycleMaterial"},
+        "lifecycleCommitReceipt": {"$ref": "#/$defs/atomicReceipt"}
+      }
+    },
+    "transitionWitness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fingerprint", "materialFingerprint", "storeDescriptorFingerprint", "requestFingerprint", "receiptFingerprint", "preStateFingerprint", "preGeneration", "preFencingSequence", "preCheckpointFingerprint", "preRevocationHeadSequence", "preRevocationHeadFingerprint", "postStateCoreFingerprint", "postStateFingerprint", "postGeneration", "postFencingSequence", "postCheckpointFingerprint", "postRevocationHeadSequence", "postRevocationHeadFingerprint"],
+      "properties": {
+        "fingerprint": {"$ref": "#/$defs/fingerprint"},
+        "materialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "storeDescriptorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "requestFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "preStateFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "preGeneration": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "preFencingSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "preCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "preRevocationHeadSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "preRevocationHeadFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "postStateCoreFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "postStateFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "postGeneration": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "postFencingSequence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
+        "postCheckpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "postRevocationHeadSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "postRevocationHeadFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messageVersion", "phase", "evidenceTransactionId", "storeDescriptorFingerprint", "storeDescriptorRawFingerprint", "generation", "previousStateFingerprint", "stateFingerprint", "stateRawFingerprint", "checkpointFingerprint", "checkpointRawFingerprint", "revocationHeadSequence", "revocationHeadFingerprint", "revocationHeadRawFingerprint", "lifecycleHeadFingerprint", "fencingSequence", "leaseCount", "leaseInventoryFingerprint", "stateMaterialFingerprint", "observationFingerprint"],
+      "properties": {
+        "messageVersion": {"const": "resource-gateway.capability-studio.deployment-state-observation.v1"},
+        "phase": {"enum": ["BEFORE", "AFTER"]},
+        "evidenceTransactionId": {"$ref": "#/$defs/fingerprint"},
+        "storeDescriptorFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "storeDescriptorRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "generation": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "previousStateFingerprint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]},
+        "stateFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "stateRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "checkpointFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "checkpointRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "revocationHeadSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "revocationHeadFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "revocationHeadRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "lifecycleHeadFingerprint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]},
+        "fencingSequence": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "leaseCount": {"type": "integer", "minimum": 0, "maximum": 1024},
+        "leaseInventoryFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "stateMaterialFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "observationFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    }
+  }
+}

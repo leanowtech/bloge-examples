@@ -549,6 +549,141 @@ Provider throws. The isolation layer does not convert or swallow `Error`. Run th
 one-shot process: a Provider must not start unmanaged asynchronous writers, and the process-wide
 window can temporarily suppress output from unrelated threads in the same JVM.
 
+### Capture a complete execution-lease transcript
+
+`CapabilityStudioDeploymentStateObservation` and
+`CapabilityStudioExecutionLeaseTranscript` implement the strict
+`capability-studio-deployment-state-observation-v1.schema.json` and
+`capability-studio-execution-lease-transcript-v1.schema.json` wire contracts. The observation has a
+stable `evidenceTransactionId`; its portable material fingerprint binds complete state, checkpoint,
+revocation-head, lifecycle-head, fencing, and lease-inventory semantics without binding paths,
+inode, UID, mode, mtime, or wall-clock time. It does bind the exact raw descriptor, state,
+checkpoint, and revocation-head bytes. BEFORE and AFTER observations are cross-checks only. Atomic
+attribution comes from the immutable layered transition witness persisted by the lease transaction,
+which binds its exact pre/post state core and final commitments, generation, fencing,
+checkpoint/head, request, and receipt.
+
+Full evidence is additive. `FormalEvidenceAuthorityBinding` requires an existing-only state observer
+and a descriptor-bound transaction authority that holds one store lock across journaled BEFORE,
+commit, exact AFTER, and committed-journal persistence. Pending recovery uses the separate
+`FormalEvidenceRecoveryBinding`. Its `recovery()` callback is strictly existing-only and MUST NOT
+initialize, prepare, repair, force, or mutate the store. The separately named
+`interruptedRecovery()` callback may run only the store writer's fixed one-generation
+predecessor/successor reconciliation; it never performs current admission or creates a lease. Both
+callbacks return `FOUND|ABSENT|CONFLICT|UNAVAILABLE`, distinguishing an exact durable receipt from
+an uncommitted attempt, a coordinate conflict, and an operational outage. A Provider that
+only supports the ordinary v2 formal binding continues to work with
+`CapabilityStudioStageAcceptanceCli`, but is unavailable to the full-evidence command; the Test Kit
+never reconstructs a witness from current state. The transcript serializes the complete stable
+lease request identity, lifecycle material, lease receipt, atomic lifecycle receipt, witness, and
+the invocation-local semantic/trusted times and `COMMITTED|RECOVERED` status. Attempt times do not
+change the stable commit identity.
+
+```bash
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidencePublicationProvisioningCli \
+  --publication-parent /private/execution-lease-evidence \
+  --publication-nonce 'sha256:<deployment-generated 64 lowercase hex>'
+
+BLOGE_EXPECTED_AUTHORITY_BINDING_FINGERPRINT='sha256:<formal outer>' \
+BLOGE_EXPECTED_CAPABILITY_STUDIO_EVIDENCE_PUBLICATION_FINGERPRINT='sha256:<provisioned publication fingerprint>' \
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar:<provider.jar>' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidenceCli \
+  <stage-acceptance-result-v2.json> \
+  /private/execution-lease-evidence/execution-lease-transcript-v1.json
+
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseTranscriptVerifyCli \
+  </private/execution-lease-transcript-v1.json>
+
+java -cp 'bloge-resource-gateway-test-kit-1.0.0-cli.jar' \
+  com.leanowtech.bloge.gateway.testkit.CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli \
+  --transcript </private/execution-lease-transcript-v1.json> \
+  --expected-stage-result-raw-fingerprint 'sha256:<64 lowercase hex>' \
+  --expected-formal-outer-fingerprint 'sha256:<64 lowercase hex>' \
+  --expected-publication-fingerprint 'sha256:<provisioned publication fingerprint>'
+```
+
+Provisioning is a separate deployment action. Exit `0` emits one `PROVISIONED` line; the
+deployment records and authenticates its `publicationFingerprint` out of band before execution.
+One provisioned parent is one transaction: its declaration binds the fixed direct-child
+`execution-lease-transcript-v1.json` and a transaction identity derived from the publication
+nonce. Only an exact retry may reuse that parent and output; every new business transaction must
+use a new private parent, run provisioning again, and receive a new independently authenticated
+publication pin.
+Malformed coordinates return `INVALID` with exit `2`; missing metadata, permissions, or storage
+capability return `NOT_PROVISIONED outcome=BLOCKED` with exit `3`. The production Evidence CLI
+opens only those pre-existing objects. Its success line reports `ACCEPTED`, invocation-local
+`evidencePublicationStatus=COMMITTED|RECOVERED`, and `commitStatus=COMMITTED|RECOVERED`. An exact
+retry recovers the durable transaction; it does not provision or consume a second lease.
+
+`CapabilityStudioExecutionLeaseTranscriptVerifyCli` proves only the transcript's strict schema,
+canonical fingerprints, and nested semantic consistency. It does not prove wrapper ownership or
+durable publication and is not FELT-08/FELT-14 evidence. The Bundle verifier is read-only and also
+requires the owner hard-link claim, complete attempt chain, retained committed source, strict
+commit manifest, final transcript, and all three out-of-band Stage-raw, formal-outer, and
+publication pins. It returns one `VERIFIED status=VERIFIED verificationScope=DURABLE_WRAPPER` line
+with exit `0`; malformed or conflicting closure is `INVALID`/exit `2`, while missing, unreadable,
+lock, I/O, or required-metadata unavailability is `NOT_VERIFIED outcome=BLOCKED`/exit `3`.
+
+The evidence CLI uses a stable owner claim and an owner-bound v2 transaction directory. The
+directory retains immutable generation-numbered BEFORE journals, ABSENT attempt-closure records,
+the canonical transcript source, an inner commit manifest, and an outer `final-commit-v1.json`.
+The manifest is the artifact-inventory layer: it binds the owner, request identity, BEFORE
+raw/journal fingerprints, transcript raw/canonical fingerprints, receipt, witness, attempt
+generation, and previous attempt closure. It is not the terminal commit marker. The outer final
+commit independently binds the manifest's raw and canonical fingerprints, owner, and final
+transcript; only this second layer closes the durable Bundle. The implementation checks
+at most `2 * 1024 + 7` direct transaction children and stops before admitting another name, so
+attacker-selected attempt objects cannot grow the in-memory inventory without bound. It also checks
+that the publication parent is physically disjoint from the mounted state store before journaling or
+lease commit. File publication recovers source-only, target-only, and verified same-inode BOTH
+states with explicit file and parent durability barriers; distinct or unknown objects are preserved
+and blocked. A failure after the lease commits never rolls the lease back and never emits
+`ACCEPTED`. An exact final is recovered from the original Stage raw digest and pinned formal outer
+before Provider loading or mutable Stage/lifecycle checks. A committed journal first uses the
+existing-only callback. Only an exact recognized store writer intermediate may invoke
+`interruptedRecovery()`; it repairs that intermediate under the store transaction lock and never
+creates a new lease. `ABSENT` durably closes the old
+attempt and reruns current Stage, lifecycle, and admission checks under a new attempt generation;
+the old journal and its semantic/trusted times are never reused or overwritten. `CONFLICT` is
+`INVALID`, while missing or unreadable dependencies and lock/I/O outages are `BLOCKED`. Persisted
+`evidencePublicationStatus=COMMITTED` describes initial durable publication; invocation-local CLI
+output reports `RECOVERED` on retry. The existing eight-argument deployment runner does not yet
+orchestrate input-tree snapshots, BEFORE, acceptance, AFTER, or transcript publication. The current
+full regression and ninth independent P0/P1 rereview are green, so the component mechanism is
+`DEVELOPMENT_VERIFIED`. FELT-01 remains `PARTIAL` and FELT-14 remains `NOT_RUN`; this result does not
+change `formalPassCount=0/27`.
+
+The mounted reference store admits at most 1,024 immutable leases and applies a 32 MiB aggregate
+ceiling to descriptor, state, checkpoint, revocation-head, and transition-evidence closure before
+content allocation. One evidence transaction admits at most 1,024 attempts and `2 * 1024 + 7`
+direct wrapper entries. Capacity exhaustion is unavailable, never a governance rejection. There is
+no automatic retention, deletion, compaction, or archive policy. Raising a limit requires an
+explicit protocol/configuration change and a newly declared store with new descriptor, component,
+publication, and formal-outer pins; operators must not edit or truncate an existing store in place.
+
+Regular managed files require exact owner UID, mode, stable identity, and protocol-specific
+`nlink=1` or authenticated same-inode `nlink=2`. Directory link counts are checked for stability and
+positivity rather than a Linux-specific value of two because APFS commonly reports `nlink=1` for a
+directory. This exception does not relax regular-file hard-link rejection.
+
+Production Test Kit and Provider sources contain no ambient crash property or process-termination
+switch. A deterministic test-only build generates a source- and class-pinned shadow overlay with
+17 abrupt-termination checkpoints; those implementation checkpoints are a strict coverage superset
+of the 14 semantic crash windows frozen by FELT-10. Only the separately packaged harness can select
+or terminate at a checkpoint. A strict harness manifest maps every checkpoint exactly once onto the
+exact 14-window set and rejects missing, duplicate, reordered, or extra fields. The ordinary and
+shaded Test Kit JARs also carry the same deterministic Evidence CLI source/class identity; packaged
+tests recompute both class digests and require the shadow source digest to match before any crash or
+concurrency result is admitted. The concurrency matrix does not use process liveness as its Oracle:
+the first JVM durably proves it holds the publication lock, the second durably proves a real
+`tryLock()` miss before the first is released, and a production-only JVM then recovers the same
+receipt, witness, and transcript. Each main marker is followed by a completion ACK only after its
+parent-directory force returns. The parent waits for that ACK and rereads the main marker; the fixed
+matrix also pauses between marker installation and parent force to prove that path visibility alone
+cannot release the first JVM. This is implementation coverage, not a formal FELT `14/14` result.
+
 ### Declare and snapshot formal input trees
 
 `CapabilityStudioFormalInputTreeSnapshotter` applies the strict

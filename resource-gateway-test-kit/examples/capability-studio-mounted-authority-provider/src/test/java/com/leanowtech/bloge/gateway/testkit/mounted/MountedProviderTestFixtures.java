@@ -7,6 +7,16 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioAuthorityEvidenceResolver;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioMountedAuthorityBundle;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioMountedTargetAdmissionBundle;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioPinnedEvidenceIssuerPolicy;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioPinnedOwnerAuthority;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.AcceptanceContext;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceCoordinate;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.EvidenceKind;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.OwnerSignoff;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ReferenceKind;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.ResolvedEvidence;
+import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityVerifier.SignoffDecision;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceTargetBindingVerifier;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceTargetBindingVerifier.AdmissionWindow;
 import com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceTargetBindingVerifier.CandidateAttestationFacts;
@@ -52,6 +62,344 @@ final class MountedProviderTestFixtures {
         writeTargetBundle(targetRoot, now, name);
         return new Fixture(authorityRoot.toAbsolutePath(), targetRoot.toAbsolutePath(),
                 stateRoot.toAbsolutePath());
+    }
+
+    static FullEvidenceFixture writeFullEvidence(Path parent, String name) throws Exception {
+        Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
+        Path authorityRoot = Files.createDirectory(parent.resolve(name + "-authority"));
+        Path targetRoot = Files.createDirectory(parent.resolve(name + "-target"));
+        Path stateRoot = privateDirectory(parent.resolve(name + "-state"));
+        writeTargetBundle(targetRoot, now, name);
+        ObjectNode stage = fullStageResult(targetRoot, now);
+        writeFullAuthorityBundle(authorityRoot, stage, now, name);
+        Path stageResult = parent.resolve(name + "-stage-result.json").toAbsolutePath();
+        write(stageResult, stage);
+        return new FullEvidenceFixture(
+                new Fixture(authorityRoot.toAbsolutePath(), targetRoot.toAbsolutePath(),
+                        stateRoot.toAbsolutePath()), stageResult);
+    }
+
+    private static ObjectNode fullStageResult(Path targetRoot, Instant now) throws Exception {
+        ObjectNode candidate = (ObjectNode) JSON.readTree(
+                targetRoot.resolve("candidate.json").toFile());
+        ObjectNode environment = (ObjectNode) JSON.readTree(
+                targetRoot.resolve("environment.json").toFile());
+        String environmentRaw = sha256(Files.readAllBytes(
+                targetRoot.resolve("environment.json")));
+        Instant started = now.minusSeconds(500);
+        Instant completed = now.minusSeconds(120);
+        Instant decided = now.minusSeconds(60);
+        ObjectNode result = JSON.createObjectNode();
+        result.put("schemaVersion", "bloge.capabilityStudioStageAcceptanceResult.v2");
+        result.put("resultId", "SAR-mounted-provider");
+        result.put("revision", 1);
+        result.put("contractId", "contract:mounted-provider");
+        result.put("contractRevision", "1");
+        result.put("resultKind", "STAGE_EXIT");
+        result.put("status", "PASS");
+        result.put("decidedAt", decided.toString());
+        ObjectNode binding = result.putObject("candidateExecutionBinding");
+        binding.putObject("candidateBuild")
+                .put("buildRef", candidate.path("buildRef").textValue())
+                .put("revision", candidate.path("revision").textValue())
+                .put("sourceCommit", candidate.path("sourceCommit").textValue())
+                .put("sourceTreeStatus", "CLEAN")
+                .put("artifactFingerprint", candidate.path("artifactDigest").textValue());
+        binding.put("candidateIntentFingerprint",
+                candidate.path("executionIntentFingerprint").textValue());
+        binding.set("baselineRef", candidate.path("baselineRef").deepCopy());
+        binding.set("demoPackRef", candidate.path("demoPackRef").deepCopy());
+        binding.put("environmentFingerprint",
+                environment.path("environmentFingerprint").textValue());
+        binding.put("executionStartedAt", started.toString());
+        binding.put("evidenceCompletedAt", completed.toString());
+        result.putObject("environmentAttestation")
+                .put("exactRef", environment.path("environmentRef").textValue())
+                .put("fingerprint", environmentRaw)
+                .put("environmentFingerprint",
+                        environment.path("environmentFingerprint").textValue())
+                .put("profile", environment.path("targetProfile").textValue())
+                .put("scope", environment.path("scope").textValue())
+                .put("issuer", environment.path("issuer").textValue())
+                .put("issuedAt", environment.path("issuedAt").textValue())
+                .put("expiresAt", environment.path("expiresAt").textValue())
+                .put("candidateArtifactFingerprint",
+                        candidate.path("artifactDigest").textValue());
+        result.putObject("deploymentEgressObservation")
+                .put("exactRef", "egress:mounted-provider")
+                .put("fingerprint", fingerprint('b'))
+                .put("candidateIntentFingerprint",
+                        candidate.path("executionIntentFingerprint").textValue())
+                .put("observationStartedAt", started.toString())
+                .put("observationCompletedAt", completed.toString())
+                .put("networkPolicyRef", environment.path("networkPolicy").textValue())
+                .put("observedExternalCallCount", 0)
+                .put("deniedAttemptCount", 0)
+                .put("status", "PASS");
+        ArrayNode references = result.putArray("evidenceRefs");
+        references.addObject().put("evidenceId", "environment")
+                .put("exactRef", environment.path("environmentRef").textValue())
+                .put("fingerprint", environmentRaw).put("status", "AVAILABLE");
+        references.addObject().put("evidenceId", "egress")
+                .put("exactRef", "egress:mounted-provider")
+                .put("fingerprint", fingerprint('b')).put("status", "AVAILABLE");
+        ArrayNode checks = result.putArray("acceptanceChecks");
+        for (int index = 1; index <= 9; index++) {
+            String evidenceId = "check-" + index;
+            references.addObject().put("evidenceId", evidenceId)
+                    .put("exactRef", "evidence:mounted-provider:" + index)
+                    .put("fingerprint", fingerprint((char) ('0' + index)))
+                    .put("status", "AVAILABLE");
+            checks.addObject().put("checkId", "AC-STD-0" + index)
+                    .put("status", "PASS").putArray("evidenceIds").add(evidenceId);
+        }
+        ArrayNode signoffs = result.putArray("signoffs");
+        addSignoff(signoffs, "CORRECTNESS_OWNER", "actor:correctness", 'c', decided);
+        addSignoff(signoffs, "RUNTIME_OWNER", "actor:runtime", 'd', decided);
+        addSignoff(signoffs, "QA_OWNER", "actor:qa", 'e', decided);
+        result.putArray("diagnostics");
+        String closure = fullClosureFingerprint(result);
+        result.put("evidenceClosureFingerprint", closure);
+        signoffs.forEach(value -> ((ObjectNode) value)
+                .put("evidenceClosureFingerprint", closure));
+        return result;
+    }
+
+    private static void addSignoff(
+            ArrayNode signoffs, String role, String actor, char seed, Instant signedAt) {
+        ObjectNode value = signoffs.addObject().put("role", role)
+                .put("actorRef", actor).put("decision", "APPROVED")
+                .put("signedAt", signedAt.toString());
+        value.putObject("signatureRef")
+                .put("exactRef", "signature:mounted-provider:" + role.toLowerCase())
+                .put("fingerprint", fingerprint(seed));
+        value.put("evidenceClosureFingerprint", fingerprint('0'));
+    }
+
+    private static String fullClosureFingerprint(ObjectNode result) throws Exception {
+        ObjectNode material = JSON.createObjectNode();
+        material.put("schemaVersion", result.path("schemaVersion").textValue());
+        material.put("resultId", result.path("resultId").textValue());
+        material.put("revision", result.path("revision").intValue());
+        material.put("resultKind", result.path("resultKind").textValue());
+        material.put("status", result.path("status").textValue());
+        material.set("candidateExecutionBinding",
+                result.path("candidateExecutionBinding").deepCopy());
+        material.put("contractId", result.path("contractId").textValue());
+        material.put("contractRevision", result.path("contractRevision").textValue());
+        material.set("environmentAttestation",
+                result.path("environmentAttestation").deepCopy());
+        material.set("deploymentEgressObservation",
+                result.path("deploymentEgressObservation").deepCopy());
+        java.util.List<JsonNode> checks = new ArrayList<>();
+        result.path("acceptanceChecks").forEach(checks::add);
+        checks.sort(Comparator.comparing(value -> value.path("checkId").textValue()));
+        ArrayNode checkMaterial = material.putArray("acceptanceChecks");
+        for (JsonNode check : checks) {
+            ObjectNode normalized = checkMaterial.addObject();
+            normalized.put("checkId", check.path("checkId").textValue());
+            normalized.put("status", check.path("status").textValue());
+            java.util.List<String> ids = new ArrayList<>();
+            check.path("evidenceIds").forEach(value -> ids.add(value.textValue()));
+            ids.sort(Comparator.naturalOrder());
+            ArrayNode evidenceIds = normalized.putArray("evidenceIds");
+            ids.forEach(evidenceIds::add);
+        }
+        java.util.List<JsonNode> references = new ArrayList<>();
+        result.path("evidenceRefs").forEach(references::add);
+        references.sort(Comparator.comparing(value ->
+                value.path("evidenceId").textValue()));
+        ArrayNode catalog = material.putArray("evidenceRefs");
+        for (JsonNode reference : references) {
+            catalog.addObject().put("evidenceId", reference.path("evidenceId").textValue())
+                    .put("exactRef", reference.path("exactRef").textValue())
+                    .put("fingerprint", reference.path("fingerprint").textValue())
+                    .put("status", reference.path("status").textValue());
+        }
+        return canonicalSha256(material);
+    }
+
+    private static void writeFullAuthorityBundle(
+            Path root, ObjectNode stage, Instant now, String name) throws Exception {
+        KeyPair pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+        ObjectNode keySet = keySet(pair, "authority-key", "authority-provider", now);
+        write(root.resolve("keys.json"), keySet);
+        String keySetFingerprint = keySet.path("snapshotFingerprint").textValue();
+        AcceptanceContext context = acceptanceContext(stage);
+        ArrayNode artifacts = JSON.createArrayNode();
+        int fileIndex = 0;
+        for (JsonNode reference : stage.path("evidenceRefs")) {
+            String id = reference.path("evidenceId").textValue();
+            EvidenceKind kind = "environment".equals(id)
+                    ? EvidenceKind.ENVIRONMENT_ATTESTATION
+                    : "egress".equals(id)
+                    ? EvidenceKind.DEPLOYMENT_EGRESS_OBSERVATION
+                    : EvidenceKind.ACCEPTANCE_EVIDENCE;
+            Instant from = "environment".equals(id)
+                    ? Instant.parse(stage.path("environmentAttestation")
+                    .path("issuedAt").textValue()) : context.executionStartedAt();
+            Instant through = "environment".equals(id)
+                    ? Instant.parse(stage.path("environmentAttestation")
+                    .path("expiresAt").textValue()) : context.evidenceCompletedAt();
+            ResolvedEvidence raw = rawEvidence(reference, kind, context, from, through,
+                    context.decidedAt(), now.plusSeconds(300));
+            String material = CapabilityStudioPinnedEvidenceIssuerPolicy
+                    .canonicalFingerprint(raw, context, keySetFingerprint);
+            ResolvedEvidence signed = signedEvidence(raw, material, pair);
+            String file = String.format("artifact-%02d.json", fileIndex++);
+            ObjectNode envelope = envelope(ReferenceKind.EVIDENCE, id, signed);
+            byte[] bytes = JSON.writeValueAsBytes(envelope);
+            Files.write(root.resolve(file), bytes);
+            artifacts.addObject().put("referenceKind", "EVIDENCE")
+                    .put("referenceKey", id)
+                    .put("exactRef", reference.path("exactRef").textValue())
+                    .put("fingerprint", reference.path("fingerprint").textValue())
+                    .put("artifactFile", file).put("artifactFileFingerprint", sha256(bytes));
+        }
+        for (JsonNode value : stage.path("signoffs")) {
+            OwnerSignoff signoff = new OwnerSignoff(value.path("role").textValue(),
+                    value.path("actorRef").textValue(), SignoffDecision.APPROVED,
+                    Instant.parse(value.path("signedAt").textValue()),
+                    new EvidenceCoordinate(value.path("signatureRef").path("exactRef")
+                            .textValue(), value.path("signatureRef").path("fingerprint")
+                            .textValue()), stage.path("evidenceClosureFingerprint").textValue());
+            ObjectNode coordinate = (ObjectNode) value.path("signatureRef");
+            ResolvedEvidence raw = rawEvidence(coordinate, EvidenceKind.OWNER_SIGNATURE,
+                    context, context.executionStartedAt(), context.evidenceCompletedAt(),
+                    signoff.signedAt(), now.plusSeconds(300));
+            String material = CapabilityStudioPinnedOwnerAuthority.canonicalFingerprint(
+                    signoff, raw, context, keySetFingerprint);
+            ResolvedEvidence signed = signedEvidence(raw, material, pair);
+            String file = String.format("artifact-%02d.json", fileIndex++);
+            ObjectNode envelope = envelope(ReferenceKind.SIGNATURE, signoff.role(), signed);
+            byte[] bytes = JSON.writeValueAsBytes(envelope);
+            Files.write(root.resolve(file), bytes);
+            artifacts.addObject().put("referenceKind", "SIGNATURE")
+                    .put("referenceKey", signoff.role())
+                    .put("exactRef", signoff.signatureCoordinate().exactRef())
+                    .put("fingerprint", signoff.signatureCoordinate().fingerprint())
+                    .put("artifactFile", file).put("artifactFileFingerprint", sha256(bytes));
+        }
+        java.util.List<JsonNode> ordered = new ArrayList<>();
+        artifacts.forEach(ordered::add);
+        ordered.sort(Comparator.comparing((JsonNode value) ->
+                value.path("referenceKind").textValue()).thenComparing(
+                value -> value.path("referenceKey").textValue()));
+        ObjectNode manifest = JSON.createObjectNode();
+        manifest.put("schemaVersion",
+                "resource-gateway.capability-studio.mounted-authority-bundle.v1");
+        manifest.put("bundleId", "bundle:" + safeName(name));
+        manifest.put("revision", 1);
+        manifest.put("generatedAt", now.minusSeconds(600).toString());
+        manifest.put("expiresAt", now.plusSeconds(1200).toString());
+        manifest.put("bundleFingerprint", fingerprint('0'));
+        ArrayNode manifestArtifacts = manifest.putArray("artifacts");
+        ordered.forEach(manifestArtifacts::add);
+        ObjectNode issuer = manifest.putArray("issuerPolicies").addObject();
+        issuer.put("issuerRef", "issuer:deployment-control-plane");
+        issuer.put("scope", SCOPE);
+        issuer.putArray("allowedEvidenceKinds").add("ACCEPTANCE_EVIDENCE")
+                .add("DEPLOYMENT_EGRESS_OBSERVATION").add("ENVIRONMENT_ATTESTATION");
+        issuer.put("keySetFile", "keys.json");
+        issuer.put("pinnedKeySetFingerprint", keySetFingerprint);
+        issuer.put("maxProofTtlSeconds", 600);
+        ArrayNode owners = manifest.putArray("ownerPolicies");
+        java.util.List<JsonNode> signoffs = new ArrayList<>();
+        stage.path("signoffs").forEach(signoffs::add);
+        signoffs.sort(Comparator.comparing(value -> value.path("role").textValue()));
+        for (JsonNode signoff : signoffs) {
+            ObjectNode owner = owners.addObject();
+            owner.put("role", signoff.path("role").textValue());
+            owner.putArray("allowedActorRefs").add(signoff.path("actorRef").textValue());
+            owner.put("signatureIssuerRef", "issuer:deployment-control-plane");
+            owner.put("scope", SCOPE);
+            owner.put("keySetFile", "keys.json");
+            owner.put("pinnedKeySetFingerprint", keySetFingerprint);
+            owner.put("maxSignatureTtlSeconds", 600);
+        }
+        ObjectNode material = manifest.deepCopy();
+        material.putNull("bundleFingerprint");
+        manifest.put("bundleFingerprint", canonicalSha256(material));
+        write(root.resolve(CapabilityStudioMountedAuthorityBundle.MANIFEST_FILE), manifest);
+    }
+
+    private static AcceptanceContext acceptanceContext(ObjectNode stage) {
+        JsonNode binding = stage.path("candidateExecutionBinding");
+        JsonNode environment = stage.path("environmentAttestation");
+        return new AcceptanceContext(stage.path("resultId").textValue(),
+                stage.path("revision").intValue(), stage.path("contractId").textValue(),
+                stage.path("contractRevision").textValue(),
+                binding.path("candidateBuild").path("artifactFingerprint").textValue(),
+                binding.path("candidateIntentFingerprint").textValue(),
+                binding.path("environmentFingerprint").textValue(),
+                Instant.parse(binding.path("executionStartedAt").textValue()),
+                Instant.parse(binding.path("evidenceCompletedAt").textValue()),
+                Instant.parse(stage.path("decidedAt").textValue()),
+                stage.path("evidenceClosureFingerprint").textValue(),
+                environment.path("profile").textValue(),
+                environment.path("scope").textValue(),
+                environment.path("issuer").textValue());
+    }
+
+    private static ResolvedEvidence rawEvidence(
+            JsonNode coordinate,
+            EvidenceKind kind,
+            AcceptanceContext context,
+            Instant observedFrom,
+            Instant observedThrough,
+            Instant signedAt,
+            Instant expiresAt) {
+        return new ResolvedEvidence(new EvidenceCoordinate(
+                coordinate.path("exactRef").textValue(),
+                coordinate.path("fingerprint").textValue()), kind,
+                "issuer:deployment-control-plane", SCOPE,
+                context.candidateArtifactFingerprint(),
+                context.candidateIntentFingerprint(), context.environmentFingerprint(),
+                observedFrom, observedThrough, context.evidenceClosureFingerprint(),
+                "authority-key", "Ed25519", null, signedAt, expiresAt, null);
+    }
+
+    private static ResolvedEvidence signedEvidence(
+            ResolvedEvidence raw, String material, KeyPair pair) throws Exception {
+        return new ResolvedEvidence(raw.coordinate(), raw.evidenceKind(), raw.issuerRef(),
+                raw.scope(), raw.candidateArtifactFingerprint(),
+                raw.candidateIntentFingerprint(), raw.environmentFingerprint(),
+                raw.observedFrom(), raw.observedThrough(),
+                raw.evidenceClosureFingerprint(), raw.keyId(), raw.algorithm(), material,
+                raw.signedAt(), raw.expiresAt(), sign(pair, material));
+    }
+
+    private static ObjectNode envelope(
+            ReferenceKind kind, String key, ResolvedEvidence evidence) {
+        ObjectNode artifact = JSON.createObjectNode();
+        artifact.put("schemaVersion", CapabilityStudioAuthorityEvidenceResolver.SCHEMA_VERSION);
+        artifact.put("referenceKind", kind.name());
+        artifact.put("referenceKey", key);
+        artifact.putObject("coordinate")
+                .put("exactRef", evidence.coordinate().exactRef())
+                .put("fingerprint", evidence.coordinate().fingerprint());
+        artifact.put("evidenceKind", evidence.evidenceKind().name());
+        artifact.put("issuerRef", evidence.issuerRef());
+        artifact.put("scope", evidence.scope());
+        artifact.putObject("bindings")
+                .put("candidateArtifactFingerprint",
+                        evidence.candidateArtifactFingerprint())
+                .put("candidateIntentFingerprint",
+                        evidence.candidateIntentFingerprint())
+                .put("environmentFingerprint", evidence.environmentFingerprint())
+                .put("evidenceClosureFingerprint",
+                        evidence.evidenceClosureFingerprint());
+        artifact.putObject("observationWindow")
+                .put("from", evidence.observedFrom().toString())
+                .put("through", evidence.observedThrough().toString());
+        artifact.putObject("seal")
+                .put("keyId", evidence.keyId())
+                .put("algorithm", evidence.algorithm())
+                .put("materialFingerprint", evidence.materialFingerprint())
+                .put("signedAt", evidence.signedAt().toString())
+                .put("expiresAt", evidence.expiresAt().toString())
+                .put("signature", evidence.signature());
+        return artifact;
     }
 
     static void replaceDirectoryContents(Path target, Path source) throws Exception {
@@ -418,7 +766,7 @@ final class MountedProviderTestFixtures {
                 .put("logicalClock", now.minusSeconds(300).toString())
                 .put("issuer", "issuer:deployment-control-plane")
                 .put("issuedAt", now.minusSeconds(600).toString())
-                .put("expiresAt", now.plusSeconds(1800).toString());
+                .put("expiresAt", now.plusSeconds(120).toString());
         environment.putObject("candidateAttestation")
                 .put("candidateRef", candidate.path("candidateRef").textValue())
                 .put("attestationRevision", 1)
@@ -571,4 +919,6 @@ final class MountedProviderTestFixtures {
     }
 
     record Fixture(Path authorityRoot, Path targetRoot, Path stateRoot) { }
+
+    record FullEvidenceFixture(Fixture fixture, Path stageResult) { }
 }

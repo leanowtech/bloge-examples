@@ -390,6 +390,143 @@ class CapabilityStudioStageAcceptanceAuthorityProviderTest {
         }
     }
 
+    @Test
+    void failedEvidenceTransactionAndExistingRecoveryResultsAreClosedWithoutMaterial() {
+        for (ExecutionLeaseCommitStatus status : Set.of(
+                ExecutionLeaseCommitStatus.INVALID,
+                ExecutionLeaseCommitStatus.REJECTED,
+                ExecutionLeaseCommitStatus.UNAVAILABLE)) {
+            var lease = new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .EvidenceExecutionLeaseCommitResult(status, null, null, "CLOSED_RESULT");
+            var transaction = new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .EvidenceExecutionLeaseTransactionResult(null, null, lease);
+            assertThat(transaction.beforeObservation()).isNull();
+            assertThat(transaction.afterObservation()).isNull();
+            assertThat(transaction.leaseResult().status()).isEqualTo(status);
+            assertThat(transaction.failureKind()).contains(switch (status) {
+                case INVALID -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.INVALID;
+                case REJECTED -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.REJECTED;
+                case UNAVAILABLE -> CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.UNAVAILABLE;
+                case COMMITTED, RECOVERED -> throw new AssertionError();
+            });
+            assertThat(transaction.toString()).doesNotContain("CLOSED_RESULT");
+        }
+        for (var status : CapabilityStudioStageAcceptanceAuthorityProvider
+                .ExistingEvidenceRecoveryStatus.values()) {
+            if (status == CapabilityStudioStageAcceptanceAuthorityProvider
+                    .ExistingEvidenceRecoveryStatus.FOUND) {
+                continue;
+            }
+            var result = new CapabilityStudioStageAcceptanceAuthorityProvider
+                    .ExistingEvidenceRecoveryResult(status, null, null, "CLOSED_RECOVERY");
+            assertThat(result.receipt()).isNull();
+            assertThat(result.transitionWitness()).isNull();
+            assertThat(result.toString()).doesNotContain("CLOSED_RECOVERY");
+            if (status == CapabilityStudioStageAcceptanceAuthorityProvider
+                    .ExistingEvidenceRecoveryStatus.CONFLICT) {
+                assertThat(result.failureKind()).contains(
+                        CapabilityStudioStageAcceptanceAuthorityProvider
+                                .EvidenceFailureKind.INVALID);
+            } else if (status == CapabilityStudioStageAcceptanceAuthorityProvider
+                    .ExistingEvidenceRecoveryStatus.UNAVAILABLE) {
+                assertThat(result.failureKind()).contains(
+                        CapabilityStudioStageAcceptanceAuthorityProvider
+                                .EvidenceFailureKind.UNAVAILABLE);
+            } else {
+                assertThat(result.failureKind()).isEmpty();
+            }
+        }
+
+        var rejected = DeploymentAuthorityDecision.rejected("UPPERCASE_CREDENTIAL_PAYLOAD");
+        var unavailable = DeploymentAuthorityDecision.unavailable("PROVIDER_PATH_SECRET");
+        assertThat(rejected.failureKind()).contains(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.REJECTED);
+        assertThat(unavailable.failureKind()).contains(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.UNAVAILABLE);
+        assertThat(rejected.toString()).doesNotContain("UPPERCASE_CREDENTIAL_PAYLOAD");
+        assertThat(unavailable.toString()).doesNotContain("PROVIDER_PATH_SECRET");
+    }
+
+    @Test
+    void evidenceJournalTypedDefaultsPreserveLegacyImplementationsAndRedactFailures() {
+        var legacy = new CapabilityStudioStageAcceptanceAuthorityProvider
+                .EvidenceTransactionJournal() {
+            @Override
+            public CapabilityStudioDeploymentStateObservation.Observation prepareBefore(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseAttempt attempt,
+                    CapabilityStudioDeploymentStateObservation.Observation current) {
+                return current;
+            }
+
+            @Override
+            public void persistCommitted(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseAttempt attempt,
+                    CapabilityStudioDeploymentStateObservation.Observation before,
+                    CapabilityStudioDeploymentStateObservation.Observation after,
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseCommitResult result) {
+            }
+        };
+        assertThat(legacy.prepareBeforeResult(null, null).status()).isEqualTo(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceJournalStatus.COMPLETED);
+        assertThat(legacy.persistCommittedResult(null, null, null, null).status())
+                .isEqualTo(CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceJournalStatus.COMPLETED);
+
+        var runtimeOutage = new CapabilityStudioStageAcceptanceAuthorityProvider
+                .EvidenceTransactionJournal() {
+            @Override
+            public CapabilityStudioDeploymentStateObservation.Observation prepareBefore(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseAttempt attempt,
+                    CapabilityStudioDeploymentStateObservation.Observation current) {
+                throw new IllegalStateException("UPPERCASE_CREDENTIAL_PAYLOAD");
+            }
+
+            @Override
+            public void persistCommitted(
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseAttempt attempt,
+                    CapabilityStudioDeploymentStateObservation.Observation before,
+                    CapabilityStudioDeploymentStateObservation.Observation after,
+                    CapabilityStudioStageAcceptanceAuthorityProvider
+                            .EvidenceExecutionLeaseCommitResult result) {
+                throw new IllegalStateException("PROVIDER_PATH_SECRET");
+            }
+        };
+        var unavailableBefore = runtimeOutage.prepareBeforeResult(null, null);
+        var unavailableAfter = runtimeOutage.persistCommittedResult(
+                null, null, null, null);
+        assertThat(unavailableBefore.failureKind()).contains(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.UNAVAILABLE);
+        assertThat(unavailableAfter.failureKind()).contains(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.UNAVAILABLE);
+        assertThat(unavailableBefore.toString())
+                .doesNotContain("UPPERCASE_CREDENTIAL_PAYLOAD");
+        assertThat(unavailableAfter.toString()).doesNotContain("PROVIDER_PATH_SECRET");
+
+        CapabilityStudioStageAcceptanceAuthorityProvider.ExistingEvidenceRecoveryJournal
+                recoveryOutage = attempt -> {
+                    throw new IllegalStateException("RECOVERY_CREDENTIAL_PAYLOAD");
+                };
+        assertThat(recoveryOutage.closeAbsentResult(null).failureKind()).contains(
+                CapabilityStudioStageAcceptanceAuthorityProvider
+                        .EvidenceFailureKind.UNAVAILABLE);
+        assertThat(CapabilityStudioStageAcceptanceAuthorityProvider
+                .EvidenceJournalResult.invalid().toString())
+                .doesNotContain("CREDENTIAL", "PAYLOAD", "PATH");
+    }
+
     private static String[] componentNames(Class<?> recordType) {
         return Arrays.stream(recordType.getRecordComponents())
                 .map(RecordComponent::getName).toArray(String[]::new);

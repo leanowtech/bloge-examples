@@ -308,11 +308,11 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
         var revocation = lifecycle.revocationAuthority();
         String expectedStoreConfiguration =
                 MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
-                        "resource-gateway.capability-studio.mounted-provider-lease-store.v2",
+                        "resource-gateway.capability-studio.mounted-provider-lease-store.v5",
                         PROVIDER_ARTIFACT,
                         FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                         revocation.registryRef(),
-                        "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V2");
+                        "IMMUTABLE_DESCRIPTOR_STATE_V4_LAYERED_TRANSITION_COMMITMENT_V2");
         var descriptor = MountedProviderTestFixtures.JSON.readTree(base.stateRoot().resolve(
                 FilesystemDeploymentAdmissionAuthority.LOCK_FILE).toFile());
 
@@ -321,23 +321,23 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
         assertThat(initial.admissionLifecycleAuthorityMaterialFingerprint()).isEqualTo(
                 MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
                         "resource-gateway.capability-studio."
-                                + "mounted-provider-lifecycle-authority.v2",
+                                + "mounted-provider-lifecycle-authority.v5",
                         PROVIDER_ARTIFACT, initial.authorityMaterialFingerprint(),
                         targetBundle.bundleFingerprint(), lifecycle.fingerprint(),
                         initial.storeDescriptorFingerprint(),
                         FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                         revocation.registryRef(),
-                        "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V2"));
+                        "ACTIVE_STRICT_MONOTONIC_PREDECESSOR_EXACT_REVOCATION_V5"));
         assertThat(initial.executionLeaseAuthorityMaterialFingerprint()).isEqualTo(
                 MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
                         "resource-gateway.capability-studio."
-                                + "mounted-provider-execution-lease-authority.v2",
+                                + "mounted-provider-execution-lease-authority.v5",
                         PROVIDER_ARTIFACT, initial.authorityMaterialFingerprint(),
                         targetBundle.bundleFingerprint(),
                         lifecycle.fingerprint(), initial.storeDescriptorFingerprint(),
                         FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
                         revocation.registryRef(),
-                        "ATOMIC_MOVE_FORCE_GENERATION_CHECKPOINT_EXACT_RECOVERY_V2"));
+                        "ATOMIC_MOVE_FORCE_STATE_V4_HISTORICAL_CLOSURE_EXACT_RECOVERY_V5"));
 
         Path authorityCopy = temporaryDirectory.resolve("authority-copy").toAbsolutePath();
         MountedProviderTestFixtures.copyDirectory(base.authorityRoot(), authorityCopy);
@@ -390,6 +390,36 @@ class MountedCapabilityStudioStageAcceptanceAuthorityProviderTest {
                 .isNotEqualTo(targetChanged.deploymentAdmissionAuthorityMaterialFingerprint());
         assertThat(descriptorChanged.formalOuterFingerprint())
                 .isNotEqualTo(targetChanged.formalOuterFingerprint());
+    }
+
+    @Test
+    void legacyV2StoreRemainsOrdinaryFormalButBlocksFullEvidenceWithoutFallback()
+            throws Exception {
+        Fixture fixture = MountedProviderTestFixtures.write(temporaryDirectory, "legacy-v2");
+        var targetBundle = CapabilityStudioMountedTargetAdmissionBundle.load(
+                fixture.targetRoot(), Clock.systemUTC());
+        var revocation = targetBundle.lifecycleMaterial().revocationAuthority();
+        String legacyConfiguration =
+                MountedCapabilityStudioStageAcceptanceAuthorityProvider.componentFingerprint(
+                        "resource-gateway.capability-studio.mounted-provider-lease-store.v2",
+                        PROVIDER_ARTIFACT,
+                        FilesystemDeploymentAdmissionAuthority.REVOCATION_HEAD_VERSION,
+                        revocation.registryRef(),
+                        "IMMUTABLE_DESCRIPTOR_GENERATION_CHECKPOINT_V2");
+        FilesystemDeploymentAdmissionAuthority.prepareStore(
+                fixture.stateRoot(), legacyConfiguration, revocation);
+        configure(fixture);
+
+        var provider = new MountedCapabilityStudioStageAcceptanceAuthorityProvider();
+
+        assertThat(provider.formalTargetBoundAuthorityBinding()).isNotNull();
+        assertThat(provider.formalEvidenceAuthorityBinding()).isNull();
+        var formal = provider.formalTargetBoundAuthorityBinding();
+        var time = formal.targetAdmissionBinding().deploymentAuthorityBinding()
+                .trustedClock().verificationTime();
+        assertThat(formal.targetAdmissionBinding().deploymentAuthorityBinding()
+                .executionLeaseAuthority().commit(request(formal, time, "1")).status())
+                .isEqualTo(ExecutionLeaseCommitStatus.COMMITTED);
     }
 
     @Test

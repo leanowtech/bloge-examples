@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-execution-lease-evidence-commit-manifest-v1.schema.json",
+  "title": "Capability Studio Execution Lease Evidence Commit Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "ownerFingerprint",
+    "attemptGeneration",
+    "previousAttemptClosureFingerprint",
+    "requestCommitIdentityFingerprint",
+    "beforeRawFingerprint",
+    "beforeJournalFingerprint",
+    "transcriptRawFingerprint",
+    "transcriptFingerprint",
+    "receiptFingerprint",
+    "witnessFingerprint",
+    "artifacts",
+    "commitManifestFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.execution-lease-evidence-commit-manifest.v1"
+    },
+    "ownerFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "attemptGeneration": {"type": "integer", "minimum": 1, "maximum": 1024},
+    "previousAttemptClosureFingerprint": {
+      "oneOf": [{"type": "null"}, {"$ref": "#/$defs/fingerprint"}]
+    },
+    "requestCommitIdentityFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "beforeRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "beforeJournalFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "transcriptRawFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "transcriptFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "receiptFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "witnessFingerprint": {"$ref": "#/$defs/fingerprint"},
+    "artifacts": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 2049,
+      "items": {"$ref": "#/$defs/artifact"}
+    },
+    "commitManifestFingerprint": {"$ref": "#/$defs/fingerprint"}
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "minLength": 71,
+      "maxLength": 71,
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relativePath",
+        "role",
+        "byteSize",
+        "rawFingerprint",
+        "canonicalAbsent",
+        "canonicalFingerprint"
+      ],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:OWNER|RETAINED_TRANSCRIPT|BEFORE_JOURNAL_G[0-9]{20}|ATTEMPT_CLOSURE_G[0-9]{20})$"
+        },
+        "byteSize": {"type": "integer", "minimum": 0, "maximum": 1048576},
+        "rawFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "canonicalAbsent": {"const": false},
+        "canonicalFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    }
+  }
+}

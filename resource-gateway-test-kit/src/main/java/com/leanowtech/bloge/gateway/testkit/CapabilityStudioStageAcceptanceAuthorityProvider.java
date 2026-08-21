@@ -1,11 +1,14 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -47,9 +50,63 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
     String EXECUTION_LEASE_RECEIPT_MESSAGE_VERSION =
             "resource-gateway.capability-studio.execution-lease-receipt.v1";
 
+    /** Canonical message version for persistent atomic lease transition witnesses. */
+    String EXECUTION_LEASE_TRANSITION_WITNESS_MESSAGE_VERSION =
+            "resource-gateway.capability-studio.execution-lease-transition-witness.v2";
+
+    /** Canonical message version for the non-circular witness material commitment. */
+    String EXECUTION_LEASE_TRANSITION_WITNESS_MATERIAL_MESSAGE_VERSION =
+            "resource-gateway.capability-studio.execution-lease-transition-witness-material.v1";
+
     /** Canonical message version for deployment admission authority binding fingerprints. */
     String DEPLOYMENT_ADMISSION_AUTHORITY_BINDING_MESSAGE_VERSION =
             "resource-gateway.capability-studio.deployment-admission-authority-binding.v1";
+
+    /** Shared monotonic lock budget for one in-process full-evidence transaction. */
+    final class EvidenceLeaseBudget {
+        /** Maximum production budget shared by wrapper and store lock acquisition. */
+        public static final long MAXIMUM_NANOS = TimeUnit.SECONDS.toNanos(5);
+
+        private long lastTick;
+        private long remainingNanos;
+
+        private EvidenceLeaseBudget(long now, long remainingNanos) {
+            this.lastTick = now;
+            this.remainingNanos = remainingNanos;
+        }
+
+        /**
+         * Starts one production-budget transaction using the JVM monotonic clock.
+         *
+         * @return fresh shared budget
+         */
+        public static EvidenceLeaseBudget start() {
+            return new EvidenceLeaseBudget(System.nanoTime(), MAXIMUM_NANOS);
+        }
+
+        /**
+         * Returns and consumes elapsed budget; time never replenishes.
+         *
+         * @return remaining nanoseconds, or zero when exhausted or invalid
+         */
+        public synchronized long remainingNanos() {
+            long current = System.nanoTime();
+            long elapsed = current - lastTick;
+            if (elapsed < 0) {
+                remainingNanos = 0;
+                return 0;
+            }
+            lastTick = current;
+            remainingNanos = elapsed >= remainingNanos ? 0 : remainingNanos - elapsed;
+            return remainingNanos;
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "EvidenceLeaseBudget[material=REDACTED]";
+        }
+    }
 
     /**
      * Immutable target admission material for one formal verification attempt.
@@ -305,6 +362,16 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
         UNAVAILABLE
     }
 
+    /** Payload-free closed failure category shared by the formal evidence SPIs. */
+    enum EvidenceFailureKind {
+        /** Input, schema, durable structure, or governed coordinate material is invalid. */
+        INVALID,
+        /** A required filesystem, lock, metadata, I/O, or Provider dependency is unavailable. */
+        UNAVAILABLE,
+        /** A deployment governance authority rejected otherwise well-formed material. */
+        REJECTED
+    }
+
     /**
      * Payload-free formal lifecycle preflight decision.
      *
@@ -355,6 +422,19 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
         public static DeploymentAuthorityDecision unavailable(String reasonCode) {
             return new DeploymentAuthorityDecision(
                     DeploymentDecisionStatus.UNAVAILABLE, reasonCode);
+        }
+
+        /**
+         * Returns the closed failure category without exposing the Provider reason.
+         *
+         * @return empty for verified, otherwise rejected or unavailable
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return switch (status) {
+                case VERIFIED -> Optional.empty();
+                case REJECTED -> Optional.of(EvidenceFailureKind.REJECTED);
+                case UNAVAILABLE -> Optional.of(EvidenceFailureKind.UNAVAILABLE);
+            };
         }
 
         /** Redacted representation. */
@@ -920,12 +1000,273 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
         }
     }
 
+    /**
+     * Persistent evidence of the exact state transition that atomically committed one lease.
+     *
+     * <p>The witness is stored with the immutable lease entry and recovered verbatim on an exact
+     * retry. It is not inferred from external before/after observations. Its reproducible
+     * fingerprint proves internal consistency only; deployment durability and authenticity come
+     * from the externally pinned evidence authority implementation and store.</p>
+     *
+     * @param fingerprint reproducible final witness fingerprint
+     * @param materialFingerprint non-circular transition material commitment
+     * @param storeDescriptorFingerprint immutable store descriptor coordinate
+     * @param requestFingerprint stable execution-lease request identity
+     * @param receiptFingerprint immutable execution-lease receipt fingerprint
+     * @param preStateFingerprint state fingerprint immediately before the commit
+     * @param preGeneration state generation immediately before the commit
+     * @param preFencingSequence fencing sequence immediately before the commit
+     * @param preCheckpointFingerprint checkpoint fingerprint immediately before the commit
+     * @param preRevocationHeadSequence revocation-head sequence revalidated by the commit
+     * @param preRevocationHeadFingerprint revocation-head fingerprint revalidated by the commit
+     * @param postStateCoreFingerprint post-state core commitment before witness anchoring
+     * @param postStateFingerprint state fingerprint immediately after the commit
+     * @param postGeneration state generation immediately after the commit
+     * @param postFencingSequence fencing sequence issued by the commit
+     * @param postCheckpointFingerprint checkpoint fingerprint atomically persisted after state
+     * @param postRevocationHeadSequence revocation-head sequence committed with the lease
+     * @param postRevocationHeadFingerprint revocation-head fingerprint committed with the lease
+     */
+    record ExecutionLeaseTransitionWitness(
+            String fingerprint,
+            String materialFingerprint,
+            String storeDescriptorFingerprint,
+            String requestFingerprint,
+            String receiptFingerprint,
+            String preStateFingerprint,
+            long preGeneration,
+            long preFencingSequence,
+            String preCheckpointFingerprint,
+            long preRevocationHeadSequence,
+            String preRevocationHeadFingerprint,
+            String postStateCoreFingerprint,
+            String postStateFingerprint,
+            long postGeneration,
+            long postFencingSequence,
+            String postCheckpointFingerprint,
+            long postRevocationHeadSequence,
+            String postRevocationHeadFingerprint) {
+        /**
+         * Creates a witness with its fixed canonical fingerprint.
+         *
+         * @param storeDescriptorFingerprint immutable store descriptor coordinate
+         * @param requestFingerprint stable request identity
+         * @param receiptFingerprint immutable receipt fingerprint
+         * @param preStateFingerprint pre-commit state fingerprint
+         * @param preGeneration pre-commit generation
+         * @param preFencingSequence pre-commit fencing sequence
+         * @param preCheckpointFingerprint pre-commit checkpoint fingerprint
+         * @param preRevocationHeadSequence pre-commit revocation-head sequence
+         * @param preRevocationHeadFingerprint pre-commit revocation-head fingerprint
+         * @param postStateCoreFingerprint post-state core commitment
+         * @param postStateFingerprint post-commit state fingerprint
+         * @param postGeneration post-commit generation
+         * @param postFencingSequence post-commit fencing sequence
+         * @param postCheckpointFingerprint post-commit checkpoint fingerprint
+         * @param postRevocationHeadSequence post-commit revocation-head sequence
+         * @param postRevocationHeadFingerprint post-commit revocation-head fingerprint
+         */
+        public ExecutionLeaseTransitionWitness(
+                String storeDescriptorFingerprint,
+                String requestFingerprint,
+                String receiptFingerprint,
+                String preStateFingerprint,
+                long preGeneration,
+                long preFencingSequence,
+                String preCheckpointFingerprint,
+                long preRevocationHeadSequence,
+                String preRevocationHeadFingerprint,
+                String postStateCoreFingerprint,
+                String postStateFingerprint,
+                long postGeneration,
+                long postFencingSequence,
+                String postCheckpointFingerprint,
+                long postRevocationHeadSequence,
+                String postRevocationHeadFingerprint) {
+            this(witnessFingerprint(materialFingerprint(storeDescriptorFingerprint,
+                                    requestFingerprint, receiptFingerprint,
+                                    preStateFingerprint, preGeneration,
+                                    preFencingSequence, preCheckpointFingerprint,
+                                    preRevocationHeadSequence,
+                                    preRevocationHeadFingerprint,
+                                    postStateCoreFingerprint, postGeneration,
+                                    postFencingSequence, postRevocationHeadSequence,
+                                    postRevocationHeadFingerprint),
+                            postStateFingerprint, postCheckpointFingerprint),
+                    materialFingerprint(storeDescriptorFingerprint, requestFingerprint,
+                            receiptFingerprint, preStateFingerprint, preGeneration,
+                            preFencingSequence, preCheckpointFingerprint,
+                            preRevocationHeadSequence, preRevocationHeadFingerprint,
+                            postStateCoreFingerprint, postGeneration,
+                            postFencingSequence, postRevocationHeadSequence,
+                            postRevocationHeadFingerprint),
+                    storeDescriptorFingerprint, requestFingerprint, receiptFingerprint,
+                    preStateFingerprint, preGeneration, preFencingSequence,
+                    preCheckpointFingerprint, preRevocationHeadSequence,
+                    preRevocationHeadFingerprint, postStateCoreFingerprint,
+                    postStateFingerprint, postGeneration, postFencingSequence,
+                    postCheckpointFingerprint, postRevocationHeadSequence,
+                    postRevocationHeadFingerprint);
+        }
+
+        /** Validates the exact one-generation, one-fence transition and fingerprint. */
+        public ExecutionLeaseTransitionWitness {
+            validateFingerprint(storeDescriptorFingerprint, "storeDescriptorFingerprint");
+            validateFingerprint(requestFingerprint, "requestFingerprint");
+            validateFingerprint(receiptFingerprint, "receiptFingerprint");
+            validateFingerprint(preStateFingerprint, "preStateFingerprint");
+            validateFingerprint(preCheckpointFingerprint, "preCheckpointFingerprint");
+            if (preRevocationHeadSequence < 0) {
+                throw new IllegalArgumentException("execution lease transition is invalid");
+            }
+            validateFingerprint(preRevocationHeadFingerprint,
+                    "preRevocationHeadFingerprint");
+            validateFingerprint(postStateCoreFingerprint, "postStateCoreFingerprint");
+            validateFingerprint(postStateFingerprint, "postStateFingerprint");
+            validateFingerprint(postCheckpointFingerprint, "postCheckpointFingerprint");
+            if (postRevocationHeadSequence < 0) {
+                throw new IllegalArgumentException("execution lease transition is invalid");
+            }
+            validateFingerprint(postRevocationHeadFingerprint,
+                    "postRevocationHeadFingerprint");
+            if (preGeneration < 0 || preFencingSequence < 0
+                    || preGeneration == Long.MAX_VALUE
+                    || preFencingSequence == Long.MAX_VALUE
+                    || postGeneration != preGeneration + 1
+                    || postFencingSequence != preFencingSequence + 1
+                    || postRevocationHeadSequence != preRevocationHeadSequence
+                    || !preRevocationHeadFingerprint.equals(
+                    postRevocationHeadFingerprint)) {
+                throw new IllegalArgumentException("execution lease transition is invalid");
+            }
+            String expectedMaterial = materialFingerprint(storeDescriptorFingerprint,
+                    requestFingerprint, receiptFingerprint, preStateFingerprint,
+                    preGeneration, preFencingSequence, preCheckpointFingerprint,
+                    preRevocationHeadSequence, preRevocationHeadFingerprint,
+                    postStateCoreFingerprint, postGeneration, postFencingSequence,
+                    postRevocationHeadSequence,
+                    postRevocationHeadFingerprint);
+            if (!expectedMaterial.equals(materialFingerprint)
+                    || !witnessFingerprint(materialFingerprint, postStateFingerprint,
+                    postCheckpointFingerprint).equals(fingerprint)) {
+                throw new IllegalArgumentException(
+                        "execution lease transition witness fingerprint is invalid");
+            }
+        }
+
+        /**
+         * Computes the non-circular fixed-field transition material fingerprint.
+         *
+         * @param storeDescriptorFingerprint immutable store descriptor coordinate
+         * @param requestFingerprint stable request identity
+         * @param receiptFingerprint immutable receipt fingerprint
+         * @param preStateFingerprint pre-commit state fingerprint
+         * @param preGeneration pre-commit generation
+         * @param preFencingSequence pre-commit fencing sequence
+         * @param preCheckpointFingerprint pre-commit checkpoint fingerprint
+         * @param preRevocationHeadSequence pre-commit revocation-head sequence
+         * @param preRevocationHeadFingerprint pre-commit revocation-head fingerprint
+         * @param postStateCoreFingerprint post-commit state core fingerprint
+         * @param postGeneration post-commit generation
+         * @param postFencingSequence post-commit fencing sequence
+         * @param postRevocationHeadSequence post-commit revocation-head sequence
+         * @param postRevocationHeadFingerprint post-commit revocation-head fingerprint
+         * @return lowercase SHA-256 transition material fingerprint
+         */
+        public static String materialFingerprint(
+                String storeDescriptorFingerprint,
+                String requestFingerprint,
+                String receiptFingerprint,
+                String preStateFingerprint,
+                long preGeneration,
+                long preFencingSequence,
+                String preCheckpointFingerprint,
+                long preRevocationHeadSequence,
+                String preRevocationHeadFingerprint,
+                String postStateCoreFingerprint,
+                long postGeneration,
+                long postFencingSequence,
+                long postRevocationHeadSequence,
+                String postRevocationHeadFingerprint) {
+            validateFingerprint(storeDescriptorFingerprint, "storeDescriptorFingerprint");
+            validateFingerprint(requestFingerprint, "requestFingerprint");
+            validateFingerprint(receiptFingerprint, "receiptFingerprint");
+            validateFingerprint(preStateFingerprint, "preStateFingerprint");
+            validateFingerprint(preCheckpointFingerprint, "preCheckpointFingerprint");
+            validateFingerprint(preRevocationHeadFingerprint,
+                    "preRevocationHeadFingerprint");
+            validateFingerprint(postStateCoreFingerprint, "postStateCoreFingerprint");
+            validateFingerprint(postRevocationHeadFingerprint,
+                    "postRevocationHeadFingerprint");
+            if (preGeneration < 0 || preFencingSequence < 0
+                    || preRevocationHeadSequence < 0 || postGeneration < 1
+                    || postFencingSequence < 1 || postRevocationHeadSequence < 0) {
+                throw new IllegalArgumentException("execution lease transition is invalid");
+            }
+            String message = "{\"messageVersion\":\""
+                    + EXECUTION_LEASE_TRANSITION_WITNESS_MATERIAL_MESSAGE_VERSION
+                    + "\",\"storeDescriptorFingerprint\":\""
+                    + storeDescriptorFingerprint
+                    + "\",\"requestFingerprint\":\"" + requestFingerprint
+                    + "\",\"receiptFingerprint\":\"" + receiptFingerprint
+                    + "\",\"preStateFingerprint\":\"" + preStateFingerprint
+                    + "\",\"preGeneration\":" + preGeneration
+                    + ",\"preFencingSequence\":" + preFencingSequence
+                    + ",\"preCheckpointFingerprint\":\"" + preCheckpointFingerprint
+                    + "\",\"preRevocationHeadSequence\":"
+                    + preRevocationHeadSequence
+                    + "\",\"preRevocationHeadFingerprint\":\""
+                    + preRevocationHeadFingerprint
+                    + "\",\"postStateCoreFingerprint\":\""
+                    + postStateCoreFingerprint
+                    + "\",\"postGeneration\":" + postGeneration
+                    + ",\"postFencingSequence\":" + postFencingSequence
+                    + ",\"postRevocationHeadSequence\":"
+                    + postRevocationHeadSequence
+                    + "\",\"postRevocationHeadFingerprint\":\""
+                    + postRevocationHeadFingerprint + "\"}";
+            return sha256(message.getBytes(StandardCharsets.UTF_8));
+        }
+
+        /**
+         * Computes the final witness fingerprint after state and checkpoint persistence.
+         *
+         * @param materialFingerprint non-circular transition material commitment
+         * @param postStateFingerprint final post-state commitment
+         * @param postCheckpointFingerprint final post-checkpoint commitment
+         * @return lowercase SHA-256 final witness fingerprint
+         */
+        public static String witnessFingerprint(
+                String materialFingerprint,
+                String postStateFingerprint,
+                String postCheckpointFingerprint) {
+            validateFingerprint(materialFingerprint, "materialFingerprint");
+            validateFingerprint(postStateFingerprint, "postStateFingerprint");
+            validateFingerprint(postCheckpointFingerprint, "postCheckpointFingerprint");
+            String message = "{\"messageVersion\":\""
+                    + EXECUTION_LEASE_TRANSITION_WITNESS_MESSAGE_VERSION
+                    + "\",\"materialFingerprint\":\"" + materialFingerprint
+                    + "\",\"postStateFingerprint\":\"" + postStateFingerprint
+                    + "\",\"postCheckpointFingerprint\":\""
+                    + postCheckpointFingerprint + "\"}";
+            return sha256(message.getBytes(StandardCharsets.UTF_8));
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "ExecutionLeaseTransitionWitness[material=REDACTED]";
+        }
+    }
+
     /** Closed durable execution-lease commit outcome. */
     enum ExecutionLeaseCommitStatus {
         /** This invocation durably created the one lease commit. */
         COMMITTED,
         /** An exact retry recovered the immutable existing receipt. */
         RECOVERED,
+        /** The request, journal, or durable evidence structure was invalid. */
+        INVALID,
         /** The lease was already bound to a different request or policy rejected it. */
         REJECTED,
         /** The durable commit store or required lifecycle authority was unavailable. */
@@ -1006,10 +1347,749 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
                     ExecutionLeaseCommitStatus.UNAVAILABLE, null, reasonCode);
         }
 
+        /**
+         * Returns the closed failure category without exposing the Provider reason.
+         *
+         * @return empty for committed or recovered, otherwise rejected or unavailable
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return switch (status) {
+                case COMMITTED, RECOVERED -> Optional.empty();
+                case INVALID -> Optional.of(EvidenceFailureKind.INVALID);
+                case REJECTED -> Optional.of(EvidenceFailureKind.REJECTED);
+                case UNAVAILABLE -> Optional.of(EvidenceFailureKind.UNAVAILABLE);
+            };
+        }
+
         /** Redacted representation. */
         @Override
         public String toString() {
             return "ExecutionLeaseCommitResult[status=" + status + ", material=REDACTED]";
+        }
+    }
+
+    /**
+     * Successful full-evidence lease result with its persistent transition witness.
+     *
+     * @param status closed commit status
+     * @param receipt immutable receipt for success, otherwise null
+     * @param transitionWitness persistent witness for success, otherwise null
+     * @param reasonCode payload-free Provider-internal reason
+     */
+    record EvidenceExecutionLeaseCommitResult(
+            ExecutionLeaseCommitStatus status,
+            ExecutionLeaseReceipt receipt,
+            ExecutionLeaseTransitionWitness transitionWitness,
+            String reasonCode) {
+        /** Validates the closed full-evidence result shape and cross-bindings. */
+        public EvidenceExecutionLeaseCommitResult {
+            status = Objects.requireNonNull(status, "status is required");
+            if (reasonCode == null || !reasonCode.matches("[A-Z][A-Z0-9_.-]{0,254}")) {
+                throw new IllegalArgumentException("reasonCode is invalid");
+            }
+            boolean success = status == ExecutionLeaseCommitStatus.COMMITTED
+                    || status == ExecutionLeaseCommitStatus.RECOVERED;
+            if (success != (receipt != null && transitionWitness != null)) {
+                throw new IllegalArgumentException("evidence lease result is invalid");
+            }
+            if (success && (!receipt.fingerprint().equals(
+                    transitionWitness.receiptFingerprint())
+                    || !receipt.requestFingerprint().equals(
+                    transitionWitness.requestFingerprint()))) {
+                throw new IllegalArgumentException("evidence lease witness is invalid");
+            }
+        }
+
+        /**
+         * Returns the closed failure category without exposing the Provider reason.
+         *
+         * @return empty for committed or recovered, otherwise rejected or unavailable
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return switch (status) {
+                case COMMITTED, RECOVERED -> Optional.empty();
+                case INVALID -> Optional.of(EvidenceFailureKind.INVALID);
+                case REJECTED -> Optional.of(EvidenceFailureKind.REJECTED);
+                case UNAVAILABLE -> Optional.of(EvidenceFailureKind.UNAVAILABLE);
+            };
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "EvidenceExecutionLeaseCommitResult[status=" + status
+                    + ", material=REDACTED]";
+        }
+    }
+
+    /**
+     * One full-evidence transaction attempt passed to the mounted coordinator.
+     *
+     * @param request exact validated lease request
+     * @param evidenceTransactionId stable evidence transaction identity
+     * @param semanticVerificationTime Stage semantic verification time for the first attempt
+     * @param evidencePublicationParent authenticated publication parent outside the state store
+     * @param attemptGeneration monotonic evidence attempt generation, starting at one
+     * @param previousAttemptClosureFingerprint prior immutable attempt closure, or null
+     * @param lockBudget shared monotonic wrapper/store lock budget
+     */
+    record EvidenceExecutionLeaseAttempt(
+            ExecutionLeaseRequest request,
+            String evidenceTransactionId,
+            Instant semanticVerificationTime,
+            Path evidencePublicationParent,
+            long attemptGeneration,
+            String previousAttemptClosureFingerprint,
+            EvidenceLeaseBudget lockBudget) {
+        /**
+         * Compatibility constructor for the first evidence attempt.
+         *
+         * @param request exact validated lease request
+         * @param evidenceTransactionId stable evidence transaction identity
+         * @param semanticVerificationTime Stage semantic verification time
+         * @param evidencePublicationParent authenticated publication parent
+         */
+        public EvidenceExecutionLeaseAttempt(
+                ExecutionLeaseRequest request,
+                String evidenceTransactionId,
+                Instant semanticVerificationTime,
+                Path evidencePublicationParent) {
+            this(request, evidenceTransactionId, semanticVerificationTime,
+                    evidencePublicationParent, 1, null, EvidenceLeaseBudget.start());
+        }
+
+        /**
+         * Compatibility constructor using one fresh bounded lock budget.
+         *
+         * @param request exact validated lease request
+         * @param evidenceTransactionId stable evidence transaction identity
+         * @param semanticVerificationTime Stage semantic verification time
+         * @param evidencePublicationParent authenticated publication parent
+         * @param attemptGeneration monotonic evidence attempt generation
+         * @param previousAttemptClosureFingerprint prior attempt closure, or null
+         */
+        public EvidenceExecutionLeaseAttempt(
+                ExecutionLeaseRequest request,
+                String evidenceTransactionId,
+                Instant semanticVerificationTime,
+                Path evidencePublicationParent,
+                long attemptGeneration,
+                String previousAttemptClosureFingerprint) {
+            this(request, evidenceTransactionId, semanticVerificationTime,
+                    evidencePublicationParent, attemptGeneration,
+                    previousAttemptClosureFingerprint, EvidenceLeaseBudget.start());
+        }
+
+        /** Validates the exact attempt coordinates without reading the filesystem. */
+        public EvidenceExecutionLeaseAttempt {
+            request = Objects.requireNonNull(request, "request is required");
+            validateFingerprint(evidenceTransactionId, "evidenceTransactionId");
+            semanticVerificationTime = Objects.requireNonNull(
+                    semanticVerificationTime, "semanticVerificationTime is required");
+            evidencePublicationParent = Objects.requireNonNull(
+                    evidencePublicationParent, "evidencePublicationParent is required");
+            lockBudget = Objects.requireNonNull(lockBudget, "lockBudget is required");
+            if (!evidencePublicationParent.isAbsolute()
+                    || !evidencePublicationParent.equals(
+                    evidencePublicationParent.toAbsolutePath().normalize())) {
+                throw new IllegalArgumentException("evidence publication parent is invalid");
+            }
+            if (attemptGeneration < 1
+                    || (attemptGeneration == 1) != (previousAttemptClosureFingerprint == null)) {
+                throw new IllegalArgumentException("evidence attempt generation is invalid");
+            }
+            if (previousAttemptClosureFingerprint != null) {
+                validateFingerprint(previousAttemptClosureFingerprint,
+                        "previousAttemptClosureFingerprint");
+            }
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "EvidenceExecutionLeaseAttempt[material=REDACTED]";
+        }
+    }
+
+    /** Closed outcome for one synchronous evidence journal callback. */
+    enum EvidenceJournalStatus {
+        /** The callback completed durably. */
+        COMPLETED,
+        /** The callback found invalid structure or governed coordinates. */
+        INVALID,
+        /** The callback dependency, lock, metadata, or I/O was unavailable. */
+        UNAVAILABLE
+    }
+
+    /**
+     * Payload-free typed result from one synchronous evidence journal callback.
+     *
+     * @param status closed callback status
+     * @param value callback value only for {@link EvidenceJournalStatus#COMPLETED}
+     * @param <T> callback value type
+     */
+    record EvidenceJournalResult<T>(EvidenceJournalStatus status, T value) {
+        /** Validates that failures never carry callback material. */
+        public EvidenceJournalResult {
+            status = Objects.requireNonNull(status, "status is required");
+            if (status != EvidenceJournalStatus.COMPLETED && value != null) {
+                throw new IllegalArgumentException("failed journal result must be empty");
+            }
+        }
+
+        /**
+         * Returns a completed callback result.
+         *
+         * @param value callback value
+         * @param <T> callback value type
+         * @return completed result
+         */
+        public static <T> EvidenceJournalResult<T> completed(T value) {
+            return new EvidenceJournalResult<>(EvidenceJournalStatus.COMPLETED, value);
+        }
+
+        /**
+         * Returns a completed callback result without a value.
+         *
+         * @return completed result without a value
+         */
+        public static EvidenceJournalResult<Void> completed() {
+            return completed(null);
+        }
+
+        /**
+         * Returns an invalid callback result.
+         *
+         * @param <T> callback value type
+         * @return invalid result
+         */
+        public static <T> EvidenceJournalResult<T> invalid() {
+            return new EvidenceJournalResult<>(EvidenceJournalStatus.INVALID, null);
+        }
+
+        /**
+         * Returns an unavailable callback result.
+         *
+         * @param <T> callback value type
+         * @return unavailable result
+         */
+        public static <T> EvidenceJournalResult<T> unavailable() {
+            return new EvidenceJournalResult<>(EvidenceJournalStatus.UNAVAILABLE, null);
+        }
+
+        /**
+         * Returns the closed failure category.
+         *
+         * @return the closed failure category, or empty for completion
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return switch (status) {
+                case COMPLETED -> Optional.empty();
+                case INVALID -> Optional.of(EvidenceFailureKind.INVALID);
+                case UNAVAILABLE -> Optional.of(EvidenceFailureKind.UNAVAILABLE);
+            };
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "EvidenceJournalResult[status=" + status + ", material=REDACTED]";
+        }
+    }
+
+    /** Durable journal callbacks invoked synchronously while the store transaction lock is held. */
+    interface EvidenceTransactionJournal {
+        /**
+         * Persists the authenticated pre-commit observation before any lease is created.
+         *
+         * @param attempt exact evidence transaction attempt
+         * @param current current exact observation captured under the store transaction lock
+         * @return the newly persisted or exact previously persisted pre-commit observation
+         */
+        CapabilityStudioDeploymentStateObservation.Observation prepareBefore(
+                EvidenceExecutionLeaseAttempt attempt,
+                CapabilityStudioDeploymentStateObservation.Observation current);
+
+        /**
+         * Typed additive form of {@link #prepareBefore}.
+         *
+         * <p>The default preserves existing implementations. An untyped runtime failure from a
+         * legacy callback is treated as unavailable; implementations that can prove invalid
+         * structure should override this method and return {@link EvidenceJournalStatus#INVALID}.
+         * The result carries no Provider reason, path, or payload.</p>
+         *
+         * @param attempt exact evidence transaction attempt
+         * @param current current exact observation
+         * @return completed, invalid, or unavailable result
+         */
+        default EvidenceJournalResult<CapabilityStudioDeploymentStateObservation.Observation>
+                prepareBeforeResult(
+                EvidenceExecutionLeaseAttempt attempt,
+                CapabilityStudioDeploymentStateObservation.Observation current) {
+            try {
+                return EvidenceJournalResult.completed(prepareBefore(attempt, current));
+            } catch (RuntimeException unavailable) {
+                return EvidenceJournalResult.unavailable();
+            }
+        }
+
+        /**
+         * Persists the exact committed result and post-state before the store lock is released.
+         *
+         * @param attempt exact evidence transaction attempt
+         * @param before exact pre-state observation
+         * @param after exact post-state observation
+         * @param result durable receipt and witness
+         */
+        void persistCommitted(
+                EvidenceExecutionLeaseAttempt attempt,
+                CapabilityStudioDeploymentStateObservation.Observation before,
+                CapabilityStudioDeploymentStateObservation.Observation after,
+                EvidenceExecutionLeaseCommitResult result);
+
+        /**
+         * Typed additive form of {@link #persistCommitted}.
+         *
+         * <p>The compatibility default maps an untyped legacy runtime failure to unavailable.
+         * Implementations should override when they can distinguish invalid durable structure.</p>
+         *
+         * @param attempt exact evidence transaction attempt
+         * @param before exact pre-state observation
+         * @param after exact post-state observation
+         * @param result durable receipt and witness
+         * @return completed, invalid, or unavailable result
+         */
+        default EvidenceJournalResult<Void> persistCommittedResult(
+                EvidenceExecutionLeaseAttempt attempt,
+                CapabilityStudioDeploymentStateObservation.Observation before,
+                CapabilityStudioDeploymentStateObservation.Observation after,
+                EvidenceExecutionLeaseCommitResult result) {
+            try {
+                persistCommitted(attempt, before, after, result);
+                return EvidenceJournalResult.completed();
+            } catch (RuntimeException unavailable) {
+                return EvidenceJournalResult.unavailable();
+            }
+        }
+    }
+
+    /**
+     * Exact atomic full-evidence transaction result.
+     *
+     * @param beforeObservation exact persisted pre-state for success, otherwise null
+     * @param afterObservation exact durable post-state for success, otherwise null
+     * @param leaseResult closed lease result
+     */
+    record EvidenceExecutionLeaseTransactionResult(
+            CapabilityStudioDeploymentStateObservation.Observation beforeObservation,
+            CapabilityStudioDeploymentStateObservation.Observation afterObservation,
+            EvidenceExecutionLeaseCommitResult leaseResult) {
+        /** Validates exact descriptor and witness attribution. */
+        public EvidenceExecutionLeaseTransactionResult {
+            leaseResult = Objects.requireNonNull(leaseResult, "leaseResult is required");
+            boolean success = leaseResult.status() == ExecutionLeaseCommitStatus.COMMITTED
+                    || leaseResult.status() == ExecutionLeaseCommitStatus.RECOVERED;
+            if (!success) {
+                if (beforeObservation != null || afterObservation != null) {
+                    throw new IllegalArgumentException(
+                            "failed evidence transaction must not expose observations");
+                }
+            } else {
+                beforeObservation = Objects.requireNonNull(
+                        beforeObservation, "beforeObservation is required");
+                afterObservation = Objects.requireNonNull(
+                        afterObservation, "afterObservation is required");
+                if (beforeObservation.phase()
+                        != CapabilityStudioDeploymentStateObservation.Phase.BEFORE
+                        || afterObservation.phase()
+                        != CapabilityStudioDeploymentStateObservation.Phase.AFTER
+                        || !beforeObservation.evidenceTransactionId().equals(
+                        afterObservation.evidenceTransactionId())) {
+                    throw new IllegalArgumentException(
+                            "evidence transaction result is invalid");
+                }
+            }
+            if (success) {
+                ExecutionLeaseTransitionWitness witness = leaseResult.transitionWitness();
+                if (!beforeObservation.storeDescriptorFingerprint().equals(
+                        witness.storeDescriptorFingerprint())
+                        || !afterObservation.storeDescriptorFingerprint().equals(
+                        witness.storeDescriptorFingerprint())
+                        || beforeObservation.generation() != witness.preGeneration()
+                        || beforeObservation.fencingSequence()
+                        != witness.preFencingSequence()
+                        || beforeObservation.revocationHeadSequence()
+                        != witness.preRevocationHeadSequence()
+                        || !beforeObservation.stateFingerprint().equals(
+                        witness.preStateFingerprint())
+                        || !beforeObservation.checkpointFingerprint().equals(
+                        witness.preCheckpointFingerprint())
+                        || !beforeObservation.revocationHeadFingerprint().equals(
+                        witness.preRevocationHeadFingerprint())
+                        || afterObservation.generation() != witness.postGeneration()
+                        || afterObservation.fencingSequence()
+                        != witness.postFencingSequence()
+                        || afterObservation.revocationHeadSequence()
+                        != witness.postRevocationHeadSequence()
+                        || !afterObservation.stateFingerprint().equals(
+                        witness.postStateFingerprint())
+                        || !afterObservation.checkpointFingerprint().equals(
+                        witness.postCheckpointFingerprint())
+                        || !afterObservation.revocationHeadFingerprint().equals(
+                        witness.postRevocationHeadFingerprint())) {
+                    throw new IllegalArgumentException(
+                            "evidence transaction witness is invalid");
+                }
+            }
+        }
+
+        /**
+         * Returns the closed transaction failure category.
+         *
+         * @return the lease failure, or empty for committed/recovered success
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return leaseResult.failureKind();
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "EvidenceExecutionLeaseTransactionResult[material=REDACTED]";
+        }
+    }
+
+    /**
+     * Descriptor-bound full-evidence transaction authority.
+     *
+     * <p>{@link #commit(EvidenceExecutionLeaseAttempt, EvidenceTransactionJournal)} captures both
+     * observations and commits under one exclusive store transaction lock. The journal callbacks
+     * run synchronously under that lock. {@link #recoverExisting(ExecutionLeaseRequest)} may return
+     * only an already durable exact receipt/witness and MUST NOT create a lease, run current
+     * lifecycle policy, repair state, or mutate store material.</p>
+     */
+    interface EvidenceExecutionLeaseTransactionAuthority {
+        /**
+         * Commits one exact transaction and journals its exact observations.
+         *
+         * @param attempt exact evidence attempt
+         * @param journal synchronous durable evidence journal
+         * @return exact success observations or a closed failed result
+         */
+        EvidenceExecutionLeaseTransactionResult commit(
+                EvidenceExecutionLeaseAttempt attempt,
+                EvidenceTransactionJournal journal);
+
+        /**
+         * Recovers only an already durable exact receipt and witness.
+         *
+         * @param request exact previously committed request
+         * @return recovered receipt and witness, or a closed failed result
+         */
+        EvidenceExecutionLeaseCommitResult recoverExisting(ExecutionLeaseRequest request);
+    }
+
+    /** Closed result status for a strictly existing-only evidence lease lookup. */
+    enum ExistingEvidenceRecoveryStatus {
+        /** The exact durable receipt and witness were found. */
+        FOUND,
+        /** The store is valid but contains no lease for the requested lease identity. */
+        ABSENT,
+        /** The lease identity exists with different governed coordinates. */
+        CONFLICT,
+        /** The existing store cannot be read or proved consistent without mutation. */
+        UNAVAILABLE
+    }
+
+    /**
+     * Result of one strictly existing-only evidence recovery lookup.
+     *
+     * @param status closed lookup status
+     * @param receipt exact durable receipt only for {@link ExistingEvidenceRecoveryStatus#FOUND}
+     * @param transitionWitness exact durable witness only for
+     *                          {@link ExistingEvidenceRecoveryStatus#FOUND}
+     * @param beforeObservation exact historical pre-state only for FOUND
+     * @param afterObservation exact historical post-state only for FOUND
+     * @param reasonCode payload-free Provider-internal reason
+     */
+    record ExistingEvidenceRecoveryResult(
+            ExistingEvidenceRecoveryStatus status,
+            ExecutionLeaseReceipt receipt,
+            ExecutionLeaseTransitionWitness transitionWitness,
+            CapabilityStudioDeploymentStateObservation.Observation beforeObservation,
+            CapabilityStudioDeploymentStateObservation.Observation afterObservation,
+            String reasonCode) {
+        /**
+         * Compatibility constructor for non-FOUND closed outcomes.
+         *
+         * @param status closed lookup status
+         * @param receipt exact receipt, normally absent for this compatibility shape
+         * @param transitionWitness exact witness, normally absent for this compatibility shape
+         * @param reasonCode payload-free Provider-internal reason
+         */
+        public ExistingEvidenceRecoveryResult(
+                ExistingEvidenceRecoveryStatus status,
+                ExecutionLeaseReceipt receipt,
+                ExecutionLeaseTransitionWitness transitionWitness,
+                String reasonCode) {
+            this(status, receipt, transitionWitness, null, null, reasonCode);
+        }
+
+        /** Validates the closed recovery shape and exact receipt/witness binding. */
+        public ExistingEvidenceRecoveryResult {
+            status = Objects.requireNonNull(status, "status is required");
+            if (reasonCode == null || !reasonCode.matches("[A-Z][A-Z0-9_.-]{0,254}")) {
+                throw new IllegalArgumentException("reasonCode is invalid");
+            }
+            boolean found = status == ExistingEvidenceRecoveryStatus.FOUND;
+            if (found != (receipt != null && transitionWitness != null
+                    && beforeObservation != null && afterObservation != null)) {
+                throw new IllegalArgumentException("existing evidence recovery is invalid");
+            }
+            if (!found && (beforeObservation != null || afterObservation != null)) {
+                throw new IllegalArgumentException("existing evidence recovery is invalid");
+            }
+            if (found && (!receipt.fingerprint().equals(
+                    transitionWitness.receiptFingerprint())
+                    || !receipt.requestFingerprint().equals(
+                    transitionWitness.requestFingerprint())
+                    || beforeObservation.phase()
+                    != CapabilityStudioDeploymentStateObservation.Phase.BEFORE
+                    || afterObservation.phase()
+                    != CapabilityStudioDeploymentStateObservation.Phase.AFTER
+                    || !beforeObservation.evidenceTransactionId().equals(
+                    afterObservation.evidenceTransactionId())
+                    || !beforeObservation.storeDescriptorFingerprint().equals(
+                    transitionWitness.storeDescriptorFingerprint())
+                    || !afterObservation.storeDescriptorFingerprint().equals(
+                    transitionWitness.storeDescriptorFingerprint())
+                    || beforeObservation.generation() != transitionWitness.preGeneration()
+                    || beforeObservation.fencingSequence()
+                    != transitionWitness.preFencingSequence()
+                    || !beforeObservation.stateFingerprint().equals(
+                    transitionWitness.preStateFingerprint())
+                    || !beforeObservation.checkpointFingerprint().equals(
+                    transitionWitness.preCheckpointFingerprint())
+                    || afterObservation.generation() != transitionWitness.postGeneration()
+                    || afterObservation.fencingSequence()
+                    != transitionWitness.postFencingSequence()
+                    || !afterObservation.stateFingerprint().equals(
+                    transitionWitness.postStateFingerprint())
+                    || !afterObservation.checkpointFingerprint().equals(
+                    transitionWitness.postCheckpointFingerprint()))) {
+                throw new IllegalArgumentException("existing evidence witness is invalid");
+            }
+        }
+
+        /**
+         * Returns the closed recovery failure category without exposing the Provider reason.
+         *
+         * <p>{@code CONFLICT} is an invalid durable/request structure. {@code ABSENT} is a valid
+         * negative lookup and therefore is not a failure.</p>
+         *
+         * @return invalid, unavailable, or empty for found/absent
+         */
+        public Optional<EvidenceFailureKind> failureKind() {
+            return switch (status) {
+                case FOUND, ABSENT -> Optional.empty();
+                case CONFLICT -> Optional.of(EvidenceFailureKind.INVALID);
+                case UNAVAILABLE -> Optional.of(EvidenceFailureKind.UNAVAILABLE);
+            };
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "ExistingEvidenceRecoveryResult[status=" + status
+                    + ", material=REDACTED]";
+        }
+    }
+
+    /**
+     * Durable journal callback used only while an existing-store recovery transaction owns the
+     * deployment store's exclusive transaction lock.
+     */
+    @FunctionalInterface
+    interface ExistingEvidenceRecoveryJournal {
+        /**
+         * Immutably closes an attempt for which the locked store contains no lease.
+         *
+         * <p>The callback is synchronous and MUST finish its durable no-replace publication before
+         * returning. It MUST NOT call Provider or deployment-store callbacks and therefore cannot
+         * invert the wrapper-lock then store-lock ordering.</p>
+         *
+         * @param attempt exact pending evidence attempt
+         */
+        void closeAbsent(EvidenceExecutionLeaseAttempt attempt);
+
+        /**
+         * Typed additive form of {@link #closeAbsent}.
+         *
+         * <p>The compatibility default maps an untyped legacy runtime failure to unavailable.
+         * Implementations should override when they can prove an invalid journal structure.</p>
+         *
+         * @param attempt exact pending evidence attempt
+         * @return completed, invalid, or unavailable result
+         */
+        default EvidenceJournalResult<Void> closeAbsentResult(
+                EvidenceExecutionLeaseAttempt attempt) {
+            try {
+                closeAbsent(attempt);
+                return EvidenceJournalResult.completed();
+            } catch (RuntimeException unavailable) {
+                return EvidenceJournalResult.unavailable();
+            }
+        }
+    }
+
+    /**
+     * Strictly existing-only receipt/witness authority.
+     *
+     * <p>The callback MUST NOT create, initialize, repair, rewrite, force, chmod, move, delete,
+     * or otherwise mutate deployment store material. Missing or inconsistent existing material
+     * is reported through the closed result and never repaired.</p>
+     */
+    @FunctionalInterface
+    interface ExistingEvidenceExecutionLeaseRecovery {
+        /**
+         * Looks up one exact already durable receipt and witness.
+         *
+         * <p>The Provider performs the lookup under one exclusive existing-store transaction. A
+         * {@link ExistingEvidenceRecoveryStatus#FOUND FOUND} result contains the historical
+         * observations persisted with that lease; it is never reconstructed from current state.
+         * For {@link ExistingEvidenceRecoveryStatus#ABSENT ABSENT}, the Provider invokes
+         * {@code journal} before releasing the store lock.</p>
+         *
+         * @param attempt exact prior pending attempt
+         * @param journal synchronous immutable absent-attempt closure
+         * @return found, absent, conflict, or unavailable
+         */
+        ExistingEvidenceRecoveryResult recoverExisting(
+                EvidenceExecutionLeaseAttempt attempt,
+                ExistingEvidenceRecoveryJournal journal);
+    }
+
+    /**
+     * Formal-writer recovery for one interrupted evidence lease transaction.
+     *
+     * <p>Unlike {@link ExistingEvidenceExecutionLeaseRecovery}, this callback may execute the
+     * deployment store's fixed crash-recovery protocol under its exclusive transaction lock. It
+     * MUST only reconcile an already durable predecessor/successor intermediate, MUST NOT admit a
+     * new lease, and invokes the absent-attempt journal before releasing that lock when recovery
+     * proves that the interrupted request was never committed.</p>
+     */
+    @FunctionalInterface
+    interface InterruptedEvidenceExecutionLeaseRecovery {
+        /**
+         * Reconciles one exact interrupted writer transaction without current admission checks.
+         *
+         * @param attempt exact durable pending attempt
+         * @param journal synchronous immutable absent-attempt closure
+         * @return found, absent, conflict, or unavailable after fixed writer recovery
+         */
+        ExistingEvidenceRecoveryResult recoverInterrupted(
+                EvidenceExecutionLeaseAttempt attempt,
+                ExistingEvidenceRecoveryJournal journal);
+    }
+
+    /** Synchronous existing-only observer that performs no explicit store write or repair. */
+    @FunctionalInterface
+    interface ExistingDeploymentStateObserver {
+        /**
+         * Captures one strict observation under the store's shared read lock.
+         *
+         * @param phase before or after phase
+         * @param evidenceTransactionId stable evidence transaction identity
+         * @return verified existing-only observation
+         */
+        CapabilityStudioDeploymentStateObservation.Observation observe(
+                CapabilityStudioDeploymentStateObservation.Phase phase,
+                String evidenceTransactionId);
+    }
+
+    /**
+     * Additive full-evidence Provider capability.
+     *
+     * <p>The formal binding must bind a v4 evidence lease authority material coordinate. A v2
+     * store or Provider returns no binding and the evidence path blocks without falling back to
+     * ordinary formal admission.</p>
+     *
+     * @param formalBinding exact formal snapshot used by the evidence acceptance attempt
+     * @param stateObserver existing-only observer for cross-check observations
+     * @param storeDescriptorFingerprint descriptor shared by observer and transaction authority
+     * @param transactionAuthority witness-producing atomic transaction authority
+     */
+    record FormalEvidenceAuthorityBinding(
+            FormalTargetBoundAuthorityBinding formalBinding,
+            String storeDescriptorFingerprint,
+            ExistingDeploymentStateObserver stateObserver,
+            EvidenceExecutionLeaseTransactionAuthority transactionAuthority) {
+        /** Validates the complete synchronous evidence capability. */
+        public FormalEvidenceAuthorityBinding {
+            formalBinding = Objects.requireNonNull(formalBinding,
+                    "formalBinding is required");
+            validateFingerprint(storeDescriptorFingerprint, "storeDescriptorFingerprint");
+            stateObserver = Objects.requireNonNull(stateObserver,
+                    "stateObserver is required");
+            transactionAuthority = Objects.requireNonNull(transactionAuthority,
+                    "transactionAuthority is required");
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "FormalEvidenceAuthorityBinding[material=REDACTED]";
+        }
+    }
+
+    /**
+     * Additive strictly existing-only recovery capability.
+     *
+     * <p>Constructing or invoking this binding MUST NOT initialize or repair formal state. The
+     * descriptor fingerprint lets a recovery consumer prove that the callback addresses the
+     * same mounted store as its durable BEFORE journal. The exact prior request and its
+     * out-of-band Provider outer pin are validated against the durable receipt and witness.</p>
+     *
+     * @param storeDescriptorFingerprint immutable store descriptor fingerprint
+     * @param stateObserver strictly existing-only standalone state observer
+     * @param recovery atomic existing-store receipt/witness/history lookup
+     * @param interruptedRecovery fixed formal-writer crash recovery, never new admission
+     */
+    record FormalEvidenceRecoveryBinding(
+            String storeDescriptorFingerprint,
+            ExistingDeploymentStateObserver stateObserver,
+            ExistingEvidenceExecutionLeaseRecovery recovery,
+            InterruptedEvidenceExecutionLeaseRecovery interruptedRecovery) {
+        /**
+         * Compatibility constructor for Providers that expose only strictly existing lookup.
+         *
+         * @param storeDescriptorFingerprint immutable store descriptor fingerprint
+         * @param stateObserver strictly existing-only state observer
+         * @param recovery strictly existing-only recovery callback
+         */
+        public FormalEvidenceRecoveryBinding(
+                String storeDescriptorFingerprint,
+                ExistingDeploymentStateObserver stateObserver,
+                ExistingEvidenceExecutionLeaseRecovery recovery) {
+            this(storeDescriptorFingerprint, stateObserver, recovery,
+                    (attempt, journal) -> new ExistingEvidenceRecoveryResult(
+                            ExistingEvidenceRecoveryStatus.UNAVAILABLE,
+                            null, null, null, null, "INTERRUPTED_RECOVERY_UNAVAILABLE"));
+        }
+
+        /** Validates the immutable existing-only binding. */
+        public FormalEvidenceRecoveryBinding {
+            validateFingerprint(storeDescriptorFingerprint, "storeDescriptorFingerprint");
+            stateObserver = Objects.requireNonNull(stateObserver, "stateObserver is required");
+            recovery = Objects.requireNonNull(recovery, "recovery is required");
+            interruptedRecovery = Objects.requireNonNull(interruptedRecovery,
+                    "interruptedRecovery is required");
+        }
+
+        /** Redacted representation. */
+        @Override
+        public String toString() {
+            return "FormalEvidenceRecoveryBinding[material=REDACTED]";
         }
     }
 
@@ -1566,6 +2646,33 @@ public interface CapabilityStudioStageAcceptanceAuthorityProvider {
      * @throws DeploymentUnavailableException when a configured deployment dependency is down
      */
     default FormalTargetBoundAuthorityBinding formalTargetBoundAuthorityBinding() {
+        return null;
+    }
+
+    /**
+     * Returns one atomic v3 full-evidence capability snapshot.
+     *
+     * <p>The default preserves all existing Provider compatibility. Evidence consumers block on
+     * a missing value and never fall back to the ordinary v2 formal binding.</p>
+     *
+     * @return full-evidence snapshot, or null when unsupported
+     * @throws DeploymentUnavailableException when the configured evidence store is unavailable
+     */
+    default FormalEvidenceAuthorityBinding formalEvidenceAuthorityBinding() {
+        return null;
+    }
+
+    /**
+     * Returns one strictly existing-only full-evidence recovery binding.
+     *
+     * <p>The default preserves Provider compatibility. Implementations MUST NOT initialize,
+     * create, repair, or otherwise mutate deployment state while constructing or invoking this
+     * binding.</p>
+     *
+     * @return existing-only recovery binding, or null when unsupported
+     * @throws DeploymentUnavailableException when existing recovery dependencies are unavailable
+     */
+    default FormalEvidenceRecoveryBinding formalEvidenceRecoveryBinding() {
         return null;
     }
 
