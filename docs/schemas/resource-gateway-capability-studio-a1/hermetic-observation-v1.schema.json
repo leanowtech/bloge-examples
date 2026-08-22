@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:hermetic-observation:v1",
+  "title": "Hermetic Observation v1",
+  "description": "Hermetic execution observation for Gate A1. It records process, input-tree, sandbox-authority, output-tree, duration, exit, and stdout/stderr facts. Interpretation belongs to the independent reducer. clockUsage, randomUsage, and networkUsage are closed execution-profile declarations and remain const false.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observationId",
+    "executionMode",
+    "capabilityProbe",
+    "probeTimestamp",
+    "probeKernelVersion",
+    "sandboxAuthority",
+    "sandboxProfile",
+    "inputTreeFP",
+    "inputSnapshotManifestFP",
+    "inputSnapshotError",
+    "outputTreeFP",
+    "outputMaterialFP",
+    "outputMaterialError",
+    "codeSourceBeforeDigest",
+    "codeSourceAfterDigest",
+    "codeSourceManifestDigest",
+    "codeSourceError",
+    "processResidue",
+    "processResidueError",
+    "toctouDetected",
+    "toctouError",
+    "escapeDetected",
+    "detachedChildEscaped",
+    "quiescenceUnprovable",
+    "quiescenceError",
+    "terminationReason",
+    "exitCode",
+    "exitSignal",
+    "durationMillis",
+    "stdoutHash",
+    "stdoutLength",
+    "stderrHash",
+    "stderrLength",
+    "logFileDetected",
+    "secretInStdoutStderr",
+    "spiMaterializationNonUnique",
+    "spiMaterializationError",
+    "pathLeakDetected",
+    "pathLeakError"
+  ],
+  "properties": {
+    "observationId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+    },
+    "executionMode": {
+      "description": "Execution release marker assigned by the harness from the observed sandbox authority. A dev PGID run or unavailable external isolation is recorded as NON_RELEASE.",
+      "enum": ["RELEASE", "NON_RELEASE"]
+    },
+    "capabilityProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mountNamespace", "cgroupV2", "userNamespace", "seccomp", "landlock", "immutableAttr"],
+      "properties": {
+        "mountNamespace": {
+          "enum": ["supported", "unsupported"]
+        },
+        "cgroupV2": {
+          "enum": ["supported", "unsupported"]
+        },
+        "userNamespace": {
+          "enum": ["supported", "unsupported"]
+        },
+        "seccomp": {
+          "enum": ["supported", "unsupported"]
+        },
+        "landlock": {
+          "enum": ["supported", "unsupported"]
+        },
+        "immutableAttr": {
+          "enum": ["supported", "unsupported"]
+        }
+      }
+    },
+    "probeTimestamp": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/Instant"
+    },
+    "probeKernelVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "sandboxAuthority": {
+      "enum": ["PRESENT", "INSUFFICIENT", "CAPABILITY_INSUFFICIENT", "UNAVAILABLE"]
+    },
+    "sandboxProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clockUsage",
+        "randomUsage",
+        "networkUsage",
+        "mountMode",
+        "hardlinkPolicy",
+        "symlinkPolicy",
+        "userNamespace",
+        "capabilityMode"
+      ],
+      "properties": {
+        "clockUsage": {
+          "const": false,
+          "description": "Verifier capability declaration: clock must not be used for entropy or timing side-channels. const false because clock access is a capability, not an observed fact."
+        },
+        "randomUsage": {
+          "const": false,
+          "description": "Verifier capability declaration: random must derive from sandbox-controlled entropy source only. const false because random access is a capability, not an observed fact."
+        },
+        "networkUsage": {
+          "const": false,
+          "description": "Verifier capability declaration: network access is prohibited. const false because network access is a capability, not an observed fact."
+        },
+        "mountMode": {
+          "enum": ["MINIMAL_ALLOWLIST", "READ_ONLY_INPUTS", "NONE"]
+        },
+        "hardlinkPolicy": {
+          "enum": ["DENY_ALL", "DENY_EXTERNAL", "ALLOW_WITH_MANIFEST", "UNSUPPORTED_PROFILE"]
+        },
+        "symlinkPolicy": {
+          "enum": ["DENY_ALL", "ALLOW_PREVERIFIED", "UNSUPPORTED"]
+        },
+        "userNamespace": {
+          "enum": ["REQUIRED", "PREFERRED", "UNAVAILABLE"]
+        },
+        "capabilityMode": {
+          "enum": ["NONE", "MINIMAL", "STANDARD"]
+        }
+      }
+    },
+    "inputTreeFP": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "inputSnapshotManifestFP": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "inputSnapshotError": {
+      "type": ["null", "string"],
+      "enum": [null, "SYMLINK_REJECTED", "MANIFEST_VERIFICATION_FAILED", "PATH_LEAK", "NONE"]
+    },
+    "outputTreeFP": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "outputMaterialFP": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "outputMaterialError": {
+      "type": ["null", "string"],
+      "enum": [null, "SYMLINK_REJECTED", "HARDLINK_DENIED", "HARDLINK_POLICY_UNSUPPORTED", "INODE_REUSE", "NONE"]
+    },
+    "codeSourceBeforeDigest": {
+      "allOf": [
+        {"$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"}
+      ],
+      "description": "ContentDigest (SHA256 raw bytes) of JAR before class loading."
+    },
+    "codeSourceAfterDigest": {
+      "allOf": [
+        {"$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"}
+      ],
+      "description": "ContentDigest (SHA256 raw bytes) of JAR after class loading, before close."
+    },
+    "codeSourceManifestDigest": {
+      "allOf": [
+        {"$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"}
+      ],
+      "description": "ContentDigest of Manifest.mf for the JAR."
+    },
+    "codeSourceError": {
+      "type": ["null", "string"],
+      "enum": [null, "PRE_DIGEST_MISMATCH", "POST_DIGEST_MISMATCH", "MANIFEST_MISMATCH", "INODE_MISMATCH", "NONE"]
+    },
+    "processResidue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openFileDescriptors", "cgroupMembers", "childProcesses"],
+      "properties": {
+        "openFileDescriptors": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of file descriptors still open at the quiescence observation point."
+        },
+        "cgroupMembers": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of processes remaining in the cgroup at the quiescence observation point."
+        },
+        "childProcesses": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of unreaped child processes at the quiescence observation point."
+        }
+      }
+    },
+    "processResidueError": {
+      "type": ["null", "string"],
+      "enum": [null, "RESIDUE_DETECTED", "NONE"]
+    },
+    "toctouDetected": {
+      "type": "boolean",
+      "description": "Boolean fact: true if a TOCTOU condition was observed during execution. Per 03 §7 A1_Hermetic_013."
+    },
+    "toctouError": {
+      "type": ["null", "string"],
+      "enum": [null, "TOCTOU_DETECTED", "NONE"]
+    },
+    "escapeDetected": {
+      "type": "boolean",
+      "description": "Boolean fact: true if the process escaped the sandbox via setsid or a PGID change. Per 03 §7 A1_Hermetic_007."
+    },
+    "detachedChildEscaped": {
+      "type": "boolean",
+      "description": "Boolean fact: true if a detached child continued after the pipe closed. Per 03 §7 A1_Hermetic_010."
+    },
+    "quiescenceUnprovable": {
+      "type": "boolean",
+      "description": "Boolean fact: true if the Observer could not establish quiescence for this execution. Per 03 §7 A1_Hermetic_009."
+    },
+    "quiescenceError": {
+      "type": ["null", "string"],
+      "enum": [null, "QUIESCENCE_UNPROVABLE", "NONE"]
+    },
+    "terminationReason": {
+      "enum": ["EXITED", "SIGNALED", "TIMEOUT", "KILLED", "UNKNOWN"]
+    },
+    "exitCode": {
+      "type": ["integer", "null"],
+      "description": "Process exit code; null if not exited normally."
+    },
+    "exitSignal": {
+      "type": ["integer", "null"],
+      "description": "Signal number if terminated by signal; null otherwise."
+    },
+    "durationMillis": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stdoutHash": {
+      "allOf": [
+        {"$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"}
+      ],
+      "description": "ContentDigest of stdout bytes."
+    },
+    "stdoutLength": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of stdout bytes covered by stdoutHash."
+    },
+    "stderrHash": {
+      "allOf": [
+        {"$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"}
+      ],
+      "description": "ContentDigest of stderr bytes."
+    },
+    "stderrLength": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of stderr bytes covered by stderrHash."
+    },
+    "logFileDetected": {
+      "type": "boolean",
+      "description": "Boolean fact: true if log files were observed in the sandbox. Per 03 §7 A1_Hermetic_016."
+    },
+    "secretInStdoutStderr": {
+      "type": "boolean",
+      "description": "Boolean fact: true if a configured sensitive prefix was observed in stdout or stderr. Per 03 §7 A1_Hermetic_017."
+    },
+    "spiMaterializationNonUnique": {
+      "type": "boolean",
+      "description": "Boolean fact: true if ServiceLoader materialization was not unique. Per 03 §7 A1_Hermetic_014."
+    },
+    "spiMaterializationError": {
+      "type": ["null", "string"],
+      "enum": [null, "SPI_NON_UNIQUE", "SPI_MISSING", "NONE"]
+    },
+    "pathLeakDetected": {
+      "type": "boolean",
+      "description": "Boolean fact: true if the process accessed a path outside the snapshot tree. Per 03 §7 A1_Hermetic_019."
+    },
+    "pathLeakError": {
+      "type": ["null", "string"],
+      "enum": [null, "PATH_LEAK_DETECTED", "NONE"]
+    }
+  }
+}

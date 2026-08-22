@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provider-probe-result-v1.schema.json",
+  "title": "Capability Studio Gate A provider probe result v1",
+  "description": "Caller-observed ServiceLoader result for the actual TCK Provider artifact.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "providerCount", "providerClass", "serviceDescriptor", "providerJarRawFingerprint", "status"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.provider-probe-result.v1"},
+    "providerCount": {"const": 1},
+    "providerClass": {"const": "com.leanowtech.bloge.gatetckprovider.GateATckProvider"},
+    "serviceDescriptor": {"const": "META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider"},
+    "providerJarRawFingerprint": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "status": {"const": "PASS"}
+  }
+}

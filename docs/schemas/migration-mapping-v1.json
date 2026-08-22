@@ -1,0 +1,693 @@
+{
+  "schemaVersion": "1.0",
+  "transformationVersion": "1.0.0",
+  "legacyAuthorityRoot": "docs/schemas/resource-gateway-capability-studio",
+  "targetAuthorityRoot": "docs/schemas/resource-gateway-capability-studio-a1",
+  "mappings": [
+    {
+      "legacySchemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-observation-v1.schema.json",
+      "legacyRawDigest": "sha256:61eb6e90cf95eae0b5c4bd146667fe572b0e5984b936ebaf112f840746c51219",
+      "targetSchemaId": "urn:studio:schema:hermetic-observation:v1",
+      "targetWireDigest": "sha256:85e5fadcfd81b25160d6d185e7ce084cd4cf6a4a314c400543da41914c751457",
+      "transformationVersion": "1.0.0"
+    },
+    {
+      "legacySchemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+      "legacyRawDigest": "sha256:88a35d32b5332e36570934f6d8a04f4f50b422bfe190eae776b87be1db4248bc",
+      "targetSchemaId": "urn:studio:schema:compiler-manifest:v1",
+      "targetWireDigest": "sha256:a20c47a03aa24d5f7b18507af9fa08b2324ad02216865f6150eaed9522af8038",
+      "transformationVersion": "1.0.0"
+    },
+    {
+      "legacySchemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+      "legacyRawDigest": "sha256:4248853d734bb0ccfa20adb7b6964ca6a1f0bf4f6950516c3b2c7e87d95b2817",
+      "targetSchemaId": "urn:studio:schema:acceptance-receipt:v1",
+      "targetWireDigest": "sha256:9c0fb12fa77a256726616a91ac0d7c495c8067d40baa7e550361067d10c27c03",
+      "transformationVersion": "1.0.0"
+    }
+  ],
+  "legacyDispositions": [
+    {
+      "schemaId": "https://bloge.dev/schema/resource-gateway-capability-studio/feature-rehearsal-v1.schema.json",
+      "digest": "sha256:23f62cc7fefe087385637c4fc80317a8cabfa2a0e60b9f20c6ac6d7d7cf36d70",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/browser-evidence-bundle-manifest-v1.schema.json",
+      "digest": "sha256:d1c373604ce34f17d4b67088fb4ac3dba97176f7e7663cdb85e86a93cd15a7f2",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-browser-anomaly-matrix-result-v1.schema.json",
+      "digest": "sha256:25927b5633d3e7bd2934bb4358f09ae966cf26490f7807642bbb881661c252ce",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-browser-matrix-result-v1.schema.json",
+      "digest": "sha256:ad4dc80529d0e3090d5df5f03ac6a19fd72ff6bc11bf5146ac6ba76454866c4d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v1.schema.json",
+      "digest": "sha256:e2970d330ecbf611a6adf93685537bd791e28628c4085c85fe6aea927cda4e00",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-provider-conformance-result-v2.schema.json",
+      "digest": "sha256:07ccdf7f821051d12d6a068acc41620edf91936d4aa67ab169cacc776f7528fd",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v1.schema.json",
+      "digest": "sha256:c7df2a88371ad0b90a72ea7d234d1abf29319b464857054558aa7822d1543d32",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://bloge.dev/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-result-v2.schema.json",
+      "digest": "sha256:35d21ea4abbb390a1d81f89c70d6e7c4257aa1074d264656874d5944569b847d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-acceptance-baseline-v1.schema.json",
+      "digest": "sha256:7bc08f7c74a5f4d33bd0cfdb2edeaa72a9d2580998e5977b4ac9ae978be27390",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-authority-evidence-envelope-v1.schema.json",
+      "digest": "sha256:2ba25b2e53a1b57a63806bf696fb1821e36528be7ffb3ac6514221da231ba3ba",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-branch-projection-v1.schema.json",
+      "digest": "sha256:5e50d44e2058a73d01de6b7b26266edcbb06538a5088b4d8fa215e05e27a7818",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-branch-update-request-v1.schema.json",
+      "digest": "sha256:874d957f73bdc3ecc8d04f52bd0d820b9d54d08635706da73596b620a3f65293",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-candidate-attestation-v1.schema.json",
+      "digest": "sha256:6496dce08e6805fab33e0b80e5b9293849d1b8893fffe714092640231f5bef7d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-candidate-target-admission-proof-v1.schema.json",
+      "digest": "sha256:1bb88474b89b18825b1c351f5552b9859c76d1d0dcff5a8cc3f53522dcb290aa",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-deployment-state-observation-v1.schema.json",
+      "digest": "sha256:f3ba058b87bf19f5e662bf3bce2f7ace16a4df4929f8ed42310aeb5b9d68b18c",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-environment-attestation-v1.schema.json",
+      "digest": "sha256:3cb30d0d73c65b8f35ce5d10ff3a1adb267f72c7baed0ed48de3200dddbf64d3",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-environment-target-admission-proof-v1.schema.json",
+      "digest": "sha256:198eec0a2a53d934d5fa100aaea40c40d969b5929727f56258e675d84a9490fb",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-error-v1.schema.json",
+      "digest": "sha256:e9612e1302c67e3f4f4940fd98895e5b8a03a1704c1fc9357dcab966fafc2140",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-execution-lease-evidence-commit-manifest-v1.schema.json",
+      "digest": "sha256:b072ebab8827dadb5cb5e987977d90692ab495c998789de972cf1df6d427fdce",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-execution-lease-transcript-v1.schema.json",
+      "digest": "sha256:dab73516ba98b58b8e2218bad0c55a4d52059c85d2d977c08f1c841869b39011",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-feature-rehearsal-baseline-v1.schema.json",
+      "digest": "sha256:ed029d6db5523b9f3515efab0f8df1767cc7bfabd21af68f40efdc308ad8c3f1",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-formal-evidence-run-manifest-v1.schema.json",
+      "digest": "sha256:30a8e9e546699a94b8f7988ae2d8cd5c0cb79c2256b9e804033af746e179ecf2",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-formal-input-tree-v1.schema.json",
+      "digest": "sha256:91b313259aa6a782912c2e76478be17ac2adec5109b8e00c1845f341a1fa6e0a",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+      "digest": "sha256:dc503526ef89196cda38a7bf021df1cbccf803cfac4a1f7746bef78e24ce6416",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+      "digest": "sha256:fc23ddc83be9c4d1ff247d3f4e3ef70083845dc1d7377476c05d47115ef67482",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+      "digest": "sha256:7bd8864c1878611cc78a2a98752698e5bc2207020064b914447a882d1b759b09",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-profile-v1.schema.json",
+      "digest": "sha256:36995874c8497ce403923831e2fad462d94cd9b3bd90c1472eb9eb98ed9c5898",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+      "digest": "sha256:28c143c994b6b0b5072ab3b4f9ed8eef2296590c553356507855c9c5c00ef466",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+      "digest": "sha256:bd182f91ad76c0f228cc18e7fc8030467147a5de755f4a04d6558ef2a7eeb98c",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json",
+      "digest": "sha256:97e203a1b0602d9162fd74b109ba9822bea4d954269cddb301a83683fecd9ef1",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-authority-matrix-v1.schema.json",
+      "digest": "sha256:7c67c717d8f14d3beb77aeef6bf884dd71e324e1861662ec0304ef5101baefdc",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-build-identity-v1.schema.json",
+      "digest": "sha256:4fe8569f9ee36e8243eb6aebb1b8eb82a13a898554bf5fd0baecbd043c4b5b59",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+      "digest": "sha256:e177b0afa3cd722bc30fa9cbc6513f884305db7d397d2b15f5ff738745c44492",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+      "digest": "sha256:4f473187876bbda7203f308b3331f695d69b78a7d5dd43870c2370adadc8a59c",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+      "digest": "sha256:c164635023d456775d35eb62523baf7287710601d2f107e596b053cd4409e156",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+      "digest": "sha256:d6d3da72d771fc8ee8dc24e9e854dad43b562c2646e7d6b5957d84f96195956d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+      "digest": "sha256:5def9fa6b5f82c0a109c2e53f58535e2f1dedc0ec17de8a8cdff7574cfb9c7d7",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+      "digest": "sha256:7853c398a5d927b648a417f0dc15bfc538bbaa441b2238b0bd2a1b59a5e05734",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+      "digest": "sha256:7c2a339a44c76851168b128dc4b395e0a9f1e677816a4489893cb489b43b2bed",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+      "digest": "sha256:a40dedb3b835969ecfedc7e26103e08a650958e7c2e19c4f04f6d7327c99d336",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-class-manifest-v1.schema.json",
+      "digest": "sha256:057f4d8ac34a7da9332e3258282265b7630848a5ec2b38f9933d3774bc653ef3",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+      "digest": "sha256:7468826a25e7e7a50bd045008afe2d42437602221acdd81e19f9d8f2a8ee6b77",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-common-v1.schema.json",
+      "digest": "sha256:eb7cddd28c2f22fe87d1a1d7c7c71ea36b3c876e8f0a43661524c1584723eb06",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-conformance-handoff-v1.schema.json",
+      "digest": "sha256:833342cd5f8c5510c12e4a661efad569744c1720a1b1810080da516226645442",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-dependency-authority-v1.schema.json",
+      "digest": "sha256:d70381cb93f554875c346751cc1cfe4956a0eba4b201632ed06371ed404aa4ff",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+      "digest": "sha256:da29b7f4e10160b2a45d4fdce27107de6708121111f04e4c1d68b2e4571c97af",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-dependency-rebind-evidence-v1.schema.json",
+      "digest": "sha256:f747febecbd01939edeb78f5ec093003ef99064e6bd0b23799683b1fabd9ffb8",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+      "digest": "sha256:b7e651816bb53b738c174f9df6ec7e30d8fdd9c6dc88cdd53295abfff6422757",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+      "digest": "sha256:2de04d5662145751e13051915cd4134fa736c8daec9ec041b3b99180d0c73741",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+      "digest": "sha256:37e934a4bba118c52b7feb7295ea099abfe4a08dba059c2fdf844f7501f00751",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-profile-v1.schema.json",
+      "digest": "sha256:62a00da928081b8567054ea7ceaeeb36a76374526902ce8a9e54843fed97ccf9",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-harness-proof-structure-evidence-v1.schema.json",
+      "digest": "sha256:88f1187505b69258fb6605928af744cbd7f80333db8cb4d02b892ba3248b4745",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-hermetic-launcher-observation-evidence-v1.schema.json",
+      "digest": "sha256:a407e9adb6e6df350e5b4c3ac56d437e9562a6b119d0e56965265810c07258e8",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+      "digest": "sha256:ea3a0092b9cee832d2641464bdb6782ef093998cd10a54d652ecd68515b9a929",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+      "digest": "sha256:eca257d6942e18f23d3b88318334b253d30fa0c553c2a8cde8a0dd9b12c42b75",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-independent-verification-result-v1.schema.json",
+      "digest": "sha256:3fafae7cb3033a58232c60a6e43de99f75ea85e37a471f1974b3fbb5c2f9364e",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+      "digest": "sha256:cd3fe345d7301c2f09d3778a6ef9a78322c985a33e6ba89c37232c0a1108931d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-material-closure-evidence-v1.schema.json",
+      "digest": "sha256:9d72363c9b981b8083e3f48e1c4a1d8b011ec391c49c9d4e691292166d7c0c1d",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-command-record-v1.schema.json",
+      "digest": "sha256:66dac459ea14754bddc980fc874af961aafd695c58d25687ec7129aaa6883150",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-transcript-v1.schema.json",
+      "digest": "sha256:610925ab0003af7007d19afd58bebaf8c12515ba658d49913073c4e883786a1a",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-authority-v1.schema.json",
+      "digest": "sha256:e024c0641f0af6eb18294400f705c835ae0d431e3fdcb2ad3a76b3a78f826676",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-projection-v1.schema.json",
+      "digest": "sha256:7664bcbd06319574fd9dfa67f8f3b494c89e1d97972a4350e5ea1b3906b50987",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+      "digest": "sha256:c39a23638a9568b72e4009068c796e55f31bc869347f338bccad3689f1669e52",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provided-abi-evidence-v1.schema.json",
+      "digest": "sha256:52f952e181f3a8e0ee0c35c25315896e7c9b63e3d6bea79bf6db39d879d5479e",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+      "digest": "sha256:4817f9b35fe8eaccd0f67e4b119cc6d8c79e366ab7b6e5305657ee052ea2272f",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provider-probe-result-v1.schema.json",
+      "digest": "sha256:d8d359b3d7a8c9f9545c6d81679fe7d2abc0cf7118b2b490cad4c61afc579fff",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+      "digest": "sha256:51e7080699b2f489d86e69860a6aa10f9b258a883428a51a24dc15a61e3fc393",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-release-gate-receipt-v1.schema.json",
+      "digest": "sha256:9409046e59eaa069a83fe9e8ed453fef80ec49b4c67a47f44fb6b2ee67b3bc2c",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-profile-v1.schema.json",
+      "digest": "sha256:a8d3faf4a07e5178161cccddab92c0bdc361dc1d317df65b354cd5399d236b3a",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+      "digest": "sha256:3cc87e9ba0e6004d068ec684a9de33e4cc01baa55445c1d861d9491b24b76144",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-replay-verification-result-v1.schema.json",
+      "digest": "sha256:5816376bdfc4f3dff37e1938193013933f5e8b5abf0c55db1f9b02cc263cd1ac",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-role-registry-v1.schema.json",
+      "digest": "sha256:b4c7a53a64896c0fbd56473c862cdce4b987a9bc4f98df565f91f13feb05f471",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+      "digest": "sha256:91d99c8f8cac123a03f59678c1aaa4b48daa934a8fe04c72d798bd07a033170b",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-runtime-closure-evidence-v1.schema.json",
+      "digest": "sha256:8bf834a828dd543fad63d2812fc43c7536b992d261a04291012957fa22c15163",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+      "digest": "sha256:bf589d80987083bfd37a356e527baca812f497d004b27d2fb3dfddf6487926b1",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+      "digest": "sha256:2f701eec8f8cf7048dd24000ec8e6755d449043646065e58ec2ca1d924619a9a",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+      "digest": "sha256:2bae77004cedc5bc8f5a8e43cc9eed518583033c9d145dec7738cab128b0fae5",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-consumption-ledger-head-v1.schema.json",
+      "digest": "sha256:4b821a3f4a4302dce2dff5d79e0e300351c63c3fcc57a8778c6feb251054bdb4",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-evidence-v1.schema.json",
+      "digest": "sha256:f2c2b5fdf3ebf6ca3b0feeca0718e598fa1ded9b7d4fc14ccadb024ee85d6a49",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-source-manifest-v1.schema.json",
+      "digest": "sha256:b9659ae354c24034e157495b7c89d21b3003bde6bb8fb70f7b806790acbcc026",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+      "digest": "sha256:143f4f1c20c3699f805b88c9db90e969315c4a8e0c02ab6d4494a34b23d74730",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-tck-v1.schema.json",
+      "digest": "sha256:f278c8a7be68c91bc0e5aac8f8a9340da4890f5a3d7efd0e51fae44e72fb84ca",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-golden-path-acceptance-manifest-v1.schema.json",
+      "digest": "sha256:c558c02f4b4fb91c9b520ff73c5f6ced0e5c8390149cc8bb1c735c88aed976d2",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v1.schema.json",
+      "digest": "sha256:d4ebe0f07f73716e6026f5144b853a96d532cf17f87a84014421fcd92726bdf3",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v2.schema.json",
+      "digest": "sha256:dcf212bdc2605a70fa1b4f3881e917a2eb0aabf903f788aa6578702b6d9eade8",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-baseline-v3.schema.json",
+      "digest": "sha256:2d9ada9737c872ff3c2b697f87571ce0eb45e9c67757bb7efa0e45f981f1feaa",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-governed-run-evidence-v1.schema.json",
+      "digest": "sha256:551dc953c04fbfe83f7affb47f4598620fb5bada8af2adcbb44beb2ecbd50527",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-implementation-gate-result-v1.schema.json",
+      "digest": "sha256:f12412ae3a4a241158f410867d696d92850eb23c95348272ecb57b59eba0b9b3",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-implementation-gate-test-evidence-v1.schema.json",
+      "digest": "sha256:37f3e37566be9b22b57043a85fcf7ba02dc5b5126b5d016bbc2f1024b09e71eb",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-mounted-authority-bundle-v1.schema.json",
+      "digest": "sha256:a2695b417eee308179c72df859865a312ad49d61d2cbe44b60a0a10867000987",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-mounted-target-admission-bundle-v1.schema.json",
+      "digest": "sha256:0cefc4e5eb4574998a042be6a5df54677991cd988a3ac98f9f95e4fda596a3a2",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-preflight-v1.schema.json",
+      "digest": "sha256:96f2551029df04d50dc67489fa78ac0b4838e2edae94c92b141a88509a42e737",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json",
+      "digest": "sha256:22692609a22328a7365d86f7f1c2ccdeb226a7028afca67ac3a3786844ff6f72",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json",
+      "digest": "sha256:570564414e296a1aa59e93d28be3bc5bcf2cfe97721849555caf787ce69d16e1",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+      "digest": "sha256:5beae9c61c88526fce38fcf9304c09df6840a9fc758d6c2b92941986ae3b218a",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json",
+      "digest": "sha256:5e4e9c4933ca3edb60870f68c5563905c1b8b034a901d91622c15ea5d04128e9",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-scenario-dataset-projection-v1.schema.json",
+      "digest": "sha256:e04a0fe61f77f7d6ef8b6c50b467d65139255728722083ee79bd08e30433fec8",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-scenario-quality-impact-v1.schema.json",
+      "digest": "sha256:d9a9e1f67311328491ae9c87af4e9543bc10bdb98a0ca84bae2a1997bb56a6cb",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-stage-acceptance-target-binding-v1.schema.json",
+      "digest": "sha256:47bbd2f51e82428d17d4e1a6989c582c1feb0fc1f4a7ac92bc1ea5901f6e573e",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    },
+    {
+      "schemaId": "https://schemas.leanowtech.com/bloge/capability-studio/gate-a/role-black-box-fixture-bindings/v1",
+      "digest": "sha256:dfa9b76f5d31c659e4d933c4a24f970c48c32395c91ccf2e7c4b4d7b94a6ee97",
+      "disposition": "NO_TARGET_EQUIVALENT",
+      "reason": "Legacy Gate A wire schema without semantic equivalent in Target A1 schema set"
+    }
+  ],
+  "targetDispositions": [
+    {
+      "schemaId": "urn:studio:schema:attack-case:v1",
+      "digest": "sha256:5394cc14b7e83cd041faf48b4c29d9fd64b260741d3fb01f4450077eaba80c8e",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:evidence-catalog-entry:v1",
+      "digest": "sha256:47a1aed2bafed04e879afc7c1aa33c577c75c17e4c5efbaae0ead039823e69e8",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:ledger-entry:v1",
+      "digest": "sha256:b0f3b5b4ae30e0143ba9551d4519864f0e8c2aec67af5428f605970760431042",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:normative-primitives:v1",
+      "digest": "sha256:61c32fa051c69f190ad23e2b4e28d3215242a5f562352cfd73c3ce564a391bdb",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:observation-receipt:v1",
+      "digest": "sha256:6aa76de4efe1af8ef1cf306a6c75b2bb3cead56d38dad0a9f2694081ebb91719",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:observer-failure:v1",
+      "digest": "sha256:3ede2bb0deb283355e45404ec4c93b9901a9dd6264cf17d951a3eabb230ac670",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:oracle-manifest:v1",
+      "digest": "sha256:3d07e5a13de2431e82dd94afeb0e589cdf354d8a7437dea0a41d17840d7724f8",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:revocation-record:v1",
+      "digest": "sha256:1b05a73ab6cd46181a223d5e74c4beda406674f69386b759f4afdb5b7c12f74e",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:source-package:v1",
+      "digest": "sha256:c14a1e38928d7416128d7f40e748f39d6915a8d8107e8fed18e0d0a16947d925",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    },
+    {
+      "schemaId": "urn:studio:schema:source-unit:v1",
+      "digest": "sha256:1f0032e4466a37e4c0ef4aadfe95f4dd074e72ded705a567ae96d2fad6c223cc",
+      "disposition": "TARGET_ONLY",
+      "reason": "Target A1 schema without legacy equivalent"
+    }
+  ]
+}

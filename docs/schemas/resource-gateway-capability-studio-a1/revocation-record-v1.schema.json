@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:revocation-record:v1",
+  "title": "Revocation Record v1",
+  "description": "Append-only revocation record defined by 02-evidence-receipt-and-ledger.md section 6.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "revocationRecordFP",
+    "payload",
+    "revocationPayloadFP",
+    "packageFP",
+    "raListFP",
+    "raSignature",
+    "authorityId"
+  ],
+  "properties": {
+    "revocationRecordFP": {
+      "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest",
+      "description": "TypedFP('rg.gatea.revocation-record.v1', RevocationRecordPayload) as WireDigest."
+    },
+    "payload": {
+      "$ref": "#/$defs/RevocationRecordPayload"
+    },
+    "revocationPayloadFP": {
+      "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest",
+      "description": "TypedFP('rg.gatea.revocation-payload.v1', RevocationRecordPayload) as WireDigest."
+    },
+    "packageFP": {
+      "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+    },
+    "raListFP": {
+      "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+    },
+    "raSignature": {
+      "$ref": "#/$defs/RASignature"
+    },
+    "authorityId": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "$defs": {
+    "RevocationRecordPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerId",
+        "ledgerEntryFP",
+        "reasonCode",
+        "timestamp",
+        "previousRevocationHeadFP"
+      ],
+      "properties": {
+        "ledgerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ledgerEntryFP": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+        },
+        "reasonCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/timestampISO8601"
+        },
+        "previousRevocationHeadFP": {
+          "description": "Previous revocationRecordFP, or null for the first revocation.",
+          "oneOf": [
+            {
+              "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "RASignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "keyId",
+        "signatureBase64"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "minLength": 1
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signatureBase64": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:observer-failure:v1",
+  "title": "Observer Failure Receipt v1",
+  "description": "Closed ObserverFailureReceipt defined by Gate A1 design 03 §6.3 and §9.2. observerFailureFP uses the registered rg.gatea.observer-failure.v1 domain and excludes itself from the fingerprint payload.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observerFailureFP",
+    "observerId",
+    "producerOwner",
+    "failureReason",
+    "observedAt",
+    "status",
+    "visibility"
+  ],
+  "properties": {
+    "observerFailureFP": {
+      "description": "TypedFP('rg.gatea.observer-failure.v1', receipt fields excluding observerFailureFP), encoded as a WireDigest.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "observerId": {
+      "description": "PrincipalId of the Observer that attempted the observation.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "producerOwner": {
+      "description": "Caller-owned ObserverAuthority PrincipalId; it must equal the producerOwner in the corresponding Evidence Catalog entry.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "failureReason": {
+      "description": "Closed Gate A1 hermetic failure code observed by the Observer or its recovery boundary.",
+      "enum": [
+        "A1_Hermetic_001",
+        "A1_Hermetic_002",
+        "A1_Hermetic_003",
+        "A1_Hermetic_004",
+        "A1_Hermetic_005",
+        "A1_Hermetic_006",
+        "A1_Hermetic_007",
+        "A1_Hermetic_008",
+        "A1_Hermetic_009",
+        "A1_Hermetic_010",
+        "A1_Hermetic_011",
+        "A1_Hermetic_012",
+        "A1_Hermetic_013",
+        "A1_Hermetic_014",
+        "A1_Hermetic_015",
+        "A1_Hermetic_016",
+        "A1_Hermetic_017",
+        "A1_Hermetic_018",
+        "A1_Hermetic_019",
+        "A1_Hermetic_020"
+      ]
+    },
+    "observedAt": {
+      "description": "Instant at which the failure was observed.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/Instant"
+    },
+    "status": {
+      "const": "OBSERVER_FAILURE"
+    },
+    "visibility": {
+      "description": "Visibility projection determined by the Evidence Catalog visibilityPolicyRef; authorization defaults to deny.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    }
+  }
+}

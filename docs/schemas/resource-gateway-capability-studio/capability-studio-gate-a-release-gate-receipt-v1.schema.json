@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-release-gate-receipt-v1.schema.json",
+  "title": "Capability Studio Gate A release gate receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "messageVersion",
+    "gateReceiptFingerprint",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-release-gate-receipt.v1"
+    },
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.release-gate-receipt.v1"
+    },
+    "gateReceiptFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "PASSED",
+        "ACCEPTED"
+      ]
+    }
+  }
+}

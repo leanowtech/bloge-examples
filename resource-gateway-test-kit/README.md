@@ -47,6 +47,25 @@ mvn -f resource-gateway-test-kit/pom.xml clean verify
 The local demo uses `http://localhost:8080` and the test-only bearer token
 `bloge-aneke-demo-token`. Do not reuse that credential outside the local demo.
 
+## Verify the Gate A1 Step0 Candidate
+
+Gate A1 Step0 is currently `STEP0_IMPLEMENTED_REVIEW_PENDING`; it has not been accepted. Run the workspace and capture checks from the repository root:
+
+```bash
+./scripts/oracle/verify-step0.sh
+./scripts/oracle/verify-step0.sh --capture-check
+```
+
+`STEP0_PASS` means only that the current workspace is internally consistent. It does not prove that the candidate is bound to Git or that independent review has passed. After staging the complete Step0 authority set, run:
+
+```bash
+./scripts/oracle/verify-step0.sh --index-check
+```
+
+Only `STEP0_INDEX_PASS` establishes the Git index attestation. Step0 still requires two independent fresh reviews with P0 = 0 and P1 = 0 before it may be declared accepted.
+
+The Maven build attaches `bloge-resource-gateway-test-kit-<version>-a1-protocol.jar`. This `a1-protocol` classifier is the isolated A1 protocol candidate and contains the 13 target schema definitions. The ordinary test-kit JAR and shaded `cli` JAR retain Legacy schemas for compatibility and are not A1 release products. The Oracle manifest schema definition may be present in `a1-protocol`; Oracle instances, executables, fixtures, expected outputs, signatures, quarantine material, and Legacy `.pyc` are NON_RELEASE and must not be packaged. Step0 never executes or imports the Legacy `.pyc`.
+
 ## Replay a Gate A Formal Evidence Bundle
 
 `CapabilityStudioFormalEvidenceRunVerifier` is the local A0 Implementation Candidate. It

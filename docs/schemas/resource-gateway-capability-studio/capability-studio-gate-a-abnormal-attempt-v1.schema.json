@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+  "title": "Capability Studio Gate A abnormal process attempt v1",
+  "description": "A caller-owned closure for an Authority abnormal transition. It preserves only the formed attempt and cannot carry a semantic Result or later material.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "attemptId",
+    "runId",
+    "event",
+    "firstErrorReason",
+    "a1ExitCode",
+    "observedProcessState",
+    "observedExitCode",
+    "observedTimedOut",
+    "observedCancelled",
+    "codeSourceObservationAvailable",
+    "stopRemainingSlots",
+    "drainStreams",
+    "reapProcessTree",
+    "formedMaterialPolicy",
+    "remainingMaterialPolicy",
+    "resultPolicy",
+    "stdoutPolicy",
+    "harnessProjection",
+    "commandRef",
+    "processObservationRef",
+    "processTranscriptRef",
+    "formedMaterialRefs",
+    "semanticResultRef",
+    "laterMaterialRefs",
+    "attemptFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.abnormal-attempt.v1"
+    },
+    "attemptId": {
+      "type": "string",
+      "pattern": "^ABNORMAL-[A-Z0-9][A-Z0-9-]{2,95}$"
+    },
+    "runId": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"
+    },
+    "event": {
+      "enum": [
+        "CHILD_CRASH",
+        "CHILD_TIMEOUT",
+        "CHILD_CANCELLED",
+        "STDOUT_TRUNCATED",
+        "PROCESS_TREE_RESIDUE",
+        "CODESOURCE_OBSERVATION_UNAVAILABLE"
+      ]
+    },
+    "firstErrorReason": {
+      "enum": [
+        "CHILD_CRASH",
+        "CHILD_TIMEOUT",
+        "CHILD_CANCELLED",
+        "STDOUT_TRUNCATED",
+        "PROCESS_TREE_RESIDUE",
+        "CODESOURCE_OBSERVATION_UNAVAILABLE"
+      ]
+    },
+    "a1ExitCode": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255
+    },
+    "observedProcessState": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processState"
+    },
+    "observedExitCode": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/processExit"
+    },
+    "observedTimedOut": {
+      "type": "boolean"
+    },
+    "observedCancelled": {
+      "type": "boolean"
+    },
+    "codeSourceObservationAvailable": {
+      "type": "boolean"
+    },
+    "stopRemainingSlots": {
+      "const": true
+    },
+    "drainStreams": {
+      "const": true
+    },
+    "reapProcessTree": {
+      "const": true
+    },
+    "formedMaterialPolicy": {
+      "const": "PRESERVE_ATTEMPT_ONLY"
+    },
+    "remainingMaterialPolicy": {
+      "const": "FORBIDDEN"
+    },
+    "resultPolicy": {
+      "const": "NO_REPLAY_RESULT"
+    },
+    "stdoutPolicy": {
+      "const": "EMPTY"
+    },
+    "harnessProjection": {
+      "const": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+    },
+    "commandRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "processObservationRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "processTranscriptRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "formedMaterialRefs": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+      }
+    },
+    "semanticResultRef": {
+      "type": "null"
+    },
+    "laterMaterialRefs": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "attemptFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"event": {"const": "CHILD_CRASH"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "CHILD_CRASH"}, "a1ExitCode": {"const": 255}, "observedProcessState": {"const": "UNAVAILABLE"}, "observedExitCode": {"const": 255}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": false}, "codeSourceObservationAvailable": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"event": {"const": "CHILD_TIMEOUT"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "CHILD_TIMEOUT"}, "a1ExitCode": {"const": 124}, "observedProcessState": {"const": "FAILED"}, "observedExitCode": {"const": 124}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": false}, "codeSourceObservationAvailable": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"event": {"const": "CHILD_CANCELLED"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "CHILD_CANCELLED"}, "a1ExitCode": {"const": 130}, "observedProcessState": {"const": "CANCELLED"}, "observedExitCode": {"const": 130}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": true}, "codeSourceObservationAvailable": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"event": {"const": "STDOUT_TRUNCATED"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "STDOUT_TRUNCATED"}, "a1ExitCode": {"const": 255}, "observedProcessState": {"const": "UNAVAILABLE"}, "observedExitCode": {"const": 255}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": false}, "codeSourceObservationAvailable": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"event": {"const": "PROCESS_TREE_RESIDUE"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "PROCESS_TREE_RESIDUE"}, "a1ExitCode": {"const": 255}, "observedProcessState": {"const": "UNAVAILABLE"}, "observedExitCode": {"const": 255}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": false}, "codeSourceObservationAvailable": {"const": true}}}
+    },
+    {
+      "if": {"properties": {"event": {"const": "CODESOURCE_OBSERVATION_UNAVAILABLE"}}, "required": ["event"]},
+      "then": {"properties": {"firstErrorReason": {"const": "CODESOURCE_OBSERVATION_UNAVAILABLE"}, "a1ExitCode": {"const": 255}, "observedProcessState": {"const": "UNAVAILABLE"}, "observedExitCode": {"const": 255}, "observedTimedOut": {"const": false}, "observedCancelled": {"const": false}, "codeSourceObservationAvailable": {"const": false}}}
+    }
+  ]
+}

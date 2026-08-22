@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+  "title": "Capability Studio Gate A independent proof envelope v1",
+  "description": "Caller-owned closure around an exact independent TEST_REPORT and the Harness process that produced it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "envelopeId",
+    "gateRevision",
+    "challengeTrustPinRawFingerprint",
+    "harnessProfileRawFingerprint",
+    "closureStatus",
+    "independentResultMessageVersion",
+    "harnessProcessMessageVersion",
+    "independentResultRef",
+    "harnessProcessTranscriptRef",
+    "harnessMaterialRootRef",
+    "expectedHarnessCodeSourceRawFingerprint",
+    "observedHarnessCodeSourceRawFingerprint",
+    "observedProcessState",
+    "observedExitCode",
+    "createdAt",
+    "envelopeFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.independent-proof-envelope.v1"
+    },
+    "envelopeId": {
+      "type": "string",
+      "pattern": "^A1-INDEPENDENT-ENVELOPE-[A-Z0-9][A-Z0-9-]{2,63}$"
+    },
+    "gateRevision": {
+      "const": 1
+    },
+    "challengeTrustPinRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "harnessProfileRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "closureStatus": {
+      "const": "CLOSED"
+    },
+    "independentResultMessageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.independent-verification-result.v1"
+    },
+    "harnessProcessMessageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.harness-process-transcript.v1"
+    },
+    "independentResultRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "harnessProcessTranscriptRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawRef"
+    },
+    "harnessMaterialRootRef": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeRef"
+    },
+    "expectedHarnessCodeSourceRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "observedHarnessCodeSourceRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "observedProcessState": {
+      "const": "COMPLETED"
+    },
+    "observedExitCode": {
+      "const": 0
+    },
+    "createdAt": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+    },
+    "envelopeFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"
+    }
+  }
+}

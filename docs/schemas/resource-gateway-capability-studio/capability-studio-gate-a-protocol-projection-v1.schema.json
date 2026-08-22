@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-projection-v1.schema.json",
+  "title": "Capability Studio Gate A protocol projection v1",
+  "description": "Strict envelope for a deterministic projection of the caller-pinned Protocol Authority. Content is validated by resolving sourceSelectors against the Authority and requiring exact JSON equality.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "projectionId",
+    "authorityId",
+    "authorityRevision",
+    "sourceRawFingerprint",
+    "sourceSelectors",
+    "content"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-protocol-projection.v1"},
+    "projectionId": {
+      "enum": [
+        "ROLE_CONTRACT",
+        "LAUNCH_CONTRACT",
+        "REPLAY_VECTOR_REGISTRY",
+        "CHECK_STATE_MACHINE",
+        "MATERIAL_OWNERSHIP",
+        "CANONICALIZATION_CONTRACT",
+        "AUTHORITY_MATRIX",
+        "DELIVERY_CONTRACT"
+      ]
+    },
+    "authorityId": {"const": "GATE-A-PROTOCOL-AUTHORITY"},
+    "authorityRevision": {"const": 1},
+    "sourceRawFingerprint": {"$ref": "#/$defs/sha256"},
+    "sourceSelectors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/selector"}
+    },
+    "content": {
+      "oneOf": [
+        {"type": "array"},
+        {"type": "object"}
+      ]
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "sourcePointer"],
+      "properties": {
+        "key": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"},
+            {"type": "null"}
+          ]
+        },
+        "sourcePointer": {
+          "type": "string",
+          "pattern": "^(/[A-Za-z0-9_-]+)+$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+  "title": "Capability Studio Gate A canonicalization oracle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "results", "profileResults"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-canonicalization-oracle.v1"},
+    "revision": {"const": 1},
+    "results": {"type": "array", "minItems": 7, "items": {"$ref": "#/$defs/result"}},
+    "profileResults": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/rejection"}}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+    "rejection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "reason"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "status": {"const": "REJECTED"},
+        "reason": {"$ref": "#/$defs/id"}
+      }
+    },
+    "pass": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "canonical", "canonicalUtf8Hex", "documentFingerprint", "rawFingerprint"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "status": {"const": "PASS"},
+        "canonical": {"type": "string"},
+        "canonicalUtf8Hex": {"type": "string", "pattern": "^([0-9a-f]{2})+$"},
+        "documentFingerprint": {"$ref": "#/$defs/sha256"},
+        "rawFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "result": {"oneOf": [{"$ref": "#/$defs/pass"}, {"$ref": "#/$defs/rejection"}]}
+  }
+}

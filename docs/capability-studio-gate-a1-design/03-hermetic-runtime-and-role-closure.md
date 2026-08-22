@@ -18,7 +18,9 @@ Hermetic Observer（以下简称 Observer）是 A1 运行时的唯一观察节�
 
 1. **观察**：采集 process-facts、input-tree、sandbox-authority、output-tree、duration、exit-code、stdout/stderr 的 ContentDigest（SHA256(raw bytes)，不含元数据，见 00 §2.2）；
 2. **不判定**：Observation Receipt 不包含 decision、pass/fail 结论或 Policy Judgment；
-3. **报告**：输出 `observationReceiptFP`，供 02 规范的 Decision Reducer 独立判定。
+3. **报告**：输出纯事实 `HermeticObservation` artifact；通用 `ObservationReceipt.artifactRef` 引用该 artifact，并由 02 规范的 Decision Reducer 独立判定。
+
+`HermeticObservation` 不包含、也不得复用 `observationReceiptFP`。`rg.gatea.observation-receipt.v1` 只用于 02 定义的通用 Observation Receipt envelope，避免同一 TypedFP domain 承载两套 payload 语义。
 
 **dev PGID 强制 NON_RELEASE**：无独立 cgroup/job boundary、无外部 sandbox authority 的每次执行必须标记 `executionMode: NON_RELEASE`，Observer 不得将其升级为发布级 evidence。
 
@@ -129,6 +131,7 @@ ObserverFailureReceipt {
   failureReason:          FailureReason
   observedAt:             Instant
   status:                 "OBSERVER_FAILURE"
+  visibility:             Visibility
 }
 ```
 
@@ -136,7 +139,7 @@ ObserverFailureReceipt {
 
 ## 7. Capability Probe 与错误码
 
-启动角色进程前，Observer 执行 capability probe：`mountNamespace`、`cgroupV2`、`userNamespace`、`seccomp`、`landlock`、`immutableAttr` 均返回 `supported | unsupported`；probe 结果写入 Observation Receipt 的 `capabilityProbe` 字段，连同 `probeTimestamp` 和 `probeKernelVersion`；禁止将 probe 结果注入被测进程 environment。任一 (`mountNamespace` 或 `cgroupV2`) 为 `unsupported`，运行时必须 `NON_RELEASE`。
+启动角色进程前，Observer 执行 capability probe：`mountNamespace`、`cgroupV2`、`userNamespace`、`seccomp`、`landlock`、`immutableAttr` 均返回 `supported | unsupported`；probe 结果及 `probeTimestamp`、`probeKernelVersion` 写入 `HermeticObservation` artifact，通用 Observation Receipt 仅通过 `artifactRef` 引用该事实构件；禁止将 probe 结果注入被测进程 environment。任一 (`mountNamespace` 或 `cgroupV2`) 为 `unsupported`，运行时必须 `NON_RELEASE`。
 
 **错误码表**（全部 NON_RELEASE，observer internal failure 标记 UNRELIABLE）：
 
@@ -192,7 +195,7 @@ ObserverFailureReceipt {
 
 catalog 中必须包含 Observer 专用的 EvidenceCatalogEntry（来自 Source Package 的 authority 源单元）：
 
-**Schema identity**: urn:studio:schema:observer-failure:v1（01 §10.2 第13个 planned target schema）；
+**Schema identity**: urn:studio:schema:observer-failure:v1（01 §10.2 第 13 个 target schema candidate）；
 **Schema ownership**：ObserverFailureReceipt payload/envelope 所有权归属本文档 §9.1/§9.2；
 **Scope distinction**：hermetic-observation-v1 用于通用 hermetic run observations，与本 schema 严格区分。
 ```
@@ -217,9 +220,11 @@ EvidenceCatalogEntry {
 ```
 ObserverFailureReceipt {
   observerFailureFP:   WireDigest<TypedFP>  // TypedFP('rg.gatea.observer-failure.v1', failurePayload)，不含 FP 自身
+  observerId:           PrincipalId
   producerOwner:        PrincipalId     // 必须等于 catalog 中 ObserverAuthority.producerOwner
   failureReason:        FailureReason
   observedAt:           Instant
+  status:               "OBSERVER_FAILURE"
   visibility:           Visibility      // 由 visibilityPolicyRef 决定
 }
 ```

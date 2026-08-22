@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+  "title": "Capability Studio Gate A protocol compilation manifest v1",
+  "description": "Byte-exact index of every projection produced from one caller-pinned Protocol Authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorityId",
+    "authorityRevision",
+    "sourceRawFingerprint",
+    "authoritySchemaRawFingerprint",
+    "projectionSchemaRawFingerprint",
+    "projections"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-protocol-compilation-manifest.v1"},
+    "authorityId": {"const": "GATE-A-PROTOCOL-AUTHORITY"},
+    "authorityRevision": {"const": 1},
+    "sourceRawFingerprint": {"$ref": "#/$defs/sha256"},
+    "authoritySchemaRawFingerprint": {"$ref": "#/$defs/sha256"},
+    "projectionSchemaRawFingerprint": {"$ref": "#/$defs/sha256"},
+    "projections": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {"$ref": "#/$defs/projection"}
+    }
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "projection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["projectionId", "path", "jarEntryPath", "rawFingerprint"],
+      "properties": {
+        "projectionId": {
+          "enum": [
+            "ROLE_CONTRACT",
+            "LAUNCH_CONTRACT",
+            "REPLAY_VECTOR_REGISTRY",
+            "CHECK_STATE_MACHINE",
+            "MATERIAL_OWNERSHIP",
+            "CANONICALIZATION_CONTRACT",
+            "AUTHORITY_MATRIX",
+            "DELIVERY_CONTRACT"
+          ]
+        },
+        "path": {"type": "string", "pattern": "^[a-z0-9-]+-v1\\.json$"},
+        "jarEntryPath": {"type": "string", "pattern": "^META-INF/gate-a/projections/[a-z0-9-]+-v1\\.json$"},
+        "rawFingerprint": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

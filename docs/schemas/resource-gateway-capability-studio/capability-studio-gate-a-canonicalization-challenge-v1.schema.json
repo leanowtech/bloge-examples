@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+  "title": "Capability Studio Gate A canonicalization challenge v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "contract", "vectors", "profileRejections"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-canonicalization-challenge.v1"},
+    "revision": {"const": 1},
+    "contract": {"$ref": "#/$defs/contract"},
+    "vectors": {"type": "array", "minItems": 7, "items": {"$ref": "#/$defs/vector"}},
+    "profileRejections": {"type": "array", "minItems": 2, "items": {"$ref": "#/$defs/profile"}}
+  },
+  "$defs": {
+    "contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "canonicalization", "objectKeyOrdering", "unicode", "utf8", "duplicateObjectMembers", "numberPolicy", "nonFiniteNumbers", "rejectionCodes"],
+      "properties": {
+        "id": {"const": "GATE_A_RFC8785_COMPATIBLE_SUBSET_V1"},
+        "canonicalization": {"const": "RFC_8785_JCS"},
+        "objectKeyOrdering": {"const": "UTF16_CODE_UNITS"},
+        "unicode": {"const": "UNICODE_SCALARS_NO_LONE_SURROGATES"},
+        "utf8": {"const": "UTF8_NO_BOM_EXACT_BYTES"},
+        "duplicateObjectMembers": {"const": "REJECT_AT_PARSE_BOUNDARY"},
+        "numberPolicy": {"const": "FINITE_IEEE754_BINARY64_CANONICAL_DECIMAL_ROUNDTRIP_SAFE_INTEGER_V1"},
+        "nonFiniteNumbers": {"const": "REJECT"},
+        "rejectionCodes": {"type": "array", "minItems": 7, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"}}
+      }
+    },
+    "nullableText": {"oneOf": [{"type": "string"}, {"type": "null"}]},
+    "vector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "domain", "selfField", "sourceText"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "domain": {"$ref": "#/$defs/nullableText"},
+        "selfField": {"$ref": "#/$defs/nullableText"},
+        "sourceText": {"type": "string"}
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "objectKind", "domain", "selfField", "fingerprintKind", "sourceText"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "objectKind": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "domain": {"type": "string"},
+        "selfField": {"type": "string"},
+        "fingerprintKind": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]+$"},
+        "sourceText": {"type": "string"}
+      }
+    }
+  }
+}

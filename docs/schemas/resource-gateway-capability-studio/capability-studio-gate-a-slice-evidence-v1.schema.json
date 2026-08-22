@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-evidence-v1.schema.json",
+  "title": "Capability Studio Gate A slice evidence envelope v1",
+  "description": "Strict typed evidence envelope for slice consumption. All slice evidence records must conform to their specific evidence type schema as declared in the Authority evidenceContracts catalog.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "messageVersion",
+    "evidenceId",
+    "sliceId",
+    "producerOwner",
+    "semanticVerifierId",
+    "testIds",
+    "artifactBindings",
+    "roleViewBindings",
+    "launcherObservationFingerprint",
+    "observed",
+    "evidenceFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-slice-evidence.v1"
+    },
+    "messageVersion": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9.-]{10,128}$"
+    },
+    "evidenceId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique identifier for this evidence record."
+    },
+    "sliceId": {
+      "type": "string",
+      "enum": [
+        "A1.1",
+        "A1.2",
+        "A1.3",
+        "A1.4",
+        "A1.5",
+        "A1.6",
+        "A1.7"
+      ],
+      "description": "Slice identifier within the Gate A taxonomy."
+    },
+    "producerOwner": {
+      "type": "string",
+      "enum": [
+        "CALLER",
+        "CANDIDATE",
+        "PROVIDER",
+        "A1",
+        "HARNESS"
+      ],
+      "description": "Role that produced this evidence."
+    },
+    "semanticVerifierId": {
+      "type": "string",
+      "enum": [
+        "ROLE_SELF_TEST_RECEIPT_V1",
+        "SLICE_TEST_EXECUTION_V1"
+      ],
+      "description": "Semantic verification strategy applied to this evidence."
+    },
+    "testIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "Non-empty unique set of test identifiers associated with this evidence."
+    },
+    "artifactBindings": {
+      "type": "array",
+      "description": "Artifact bindings ordered by role.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "path",
+          "rawFingerprint"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rawFingerprint": {
+            "type": "string",
+            "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+            "description": "SHA-256 fingerprint: lowercase \"sha256:\" prefix + 64 lowercase hex; all-zero is rejected."
+          }
+        }
+      }
+    },
+    "roleViewBindings": {
+      "type": "array",
+      "description": "Role view bindings ordered by role.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "roleViewFingerprint",
+          "inputTreeFingerprint"
+        ],
+        "properties": {
+          "role": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roleViewFingerprint": {
+            "type": "string",
+            "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+            "description": "SHA-256 fingerprint: lowercase \"sha256:\" prefix + 64 lowercase hex; all-zero is rejected."
+          },
+          "inputTreeFingerprint": {
+            "type": "string",
+            "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+            "description": "SHA-256 fingerprint: lowercase \"sha256:\" prefix + 64 lowercase hex; all-zero is rejected."
+          }
+        }
+      }
+    },
+    "launcherObservationFingerprint": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+          "description": "SHA-256 fingerprint: lowercase \"sha256:\" prefix + 64 lowercase hex; all-zero is rejected."
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Launcher observation fingerprint: raw SHA-256 string or null."
+    },
+    "observed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exitCode",
+        "terminal",
+        "status"
+      ],
+      "properties": {
+        "exitCode": {
+          "type": "integer",
+          "const": 0
+        },
+        "terminal": {
+          "type": "string",
+          "const": "SUCCESS"
+        },
+        "status": {
+          "type": "string",
+          "const": "VERIFIED"
+        }
+      }
+    },
+    "evidenceFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "CANONICAL_DOCUMENT"
+        },
+        "algorithm": {
+          "type": "string",
+          "const": "SHA-256"
+        },
+        "domain": {
+          "type": "string",
+          "const": "RG-CS-GATE-A-SLICE-EVIDENCE-DOCUMENT-v1"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$",
+          "description": "SHA-256 fingerprint: lowercase \"sha256:\" prefix + 64 lowercase hex; all-zero is rejected."
+        },
+        "selfNullPolicy": {
+          "type": "string",
+          "const": "VALUE_NULL_DURING_HASH"
+        }
+      }
+    }
+  }
+}

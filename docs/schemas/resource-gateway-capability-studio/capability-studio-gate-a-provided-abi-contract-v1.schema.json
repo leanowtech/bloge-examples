@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+  "title": "Capability Studio Gate A provided ABI contract v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "contractId", "providedAbiDependencies"],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-provided-abi-contract.v1"},
+    "contractId": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"},
+    "providedAbiDependencies": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/providedAbiDependency"}}
+  },
+  "$defs": {
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["groupId", "artifactId", "version", "classifier"],
+      "properties": {
+        "groupId": {"type": "string", "pattern": "^[a-z][a-z0-9.]+$"},
+        "artifactId": {"type": "string", "pattern": "^[a-z][a-z0-9-]+$"},
+        "version": {"const": "1.0.0"},
+        "classifier": {"type": "string", "const": "gate-a-candidate"}
+      }
+    },
+    "providedAbiDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["providedId", "candidateRole", "candidateCoordinate", "candidateSpiInterfaceClassEntryPath", "candidateSpiInterfaceClass", "providerServiceDescriptorEntryPath", "providerServiceDescriptorInterfaceClass", "candidateArtifactFingerprintPinField", "candidateClassEntryPath", "candidateClassFingerprintPinField", "embeddingPolicy"],
+      "properties": {
+        "providedId": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"},
+        "candidateRole": {"const": "IMPLEMENTATION_CANDIDATE"},
+        "candidateCoordinate": {"$ref": "#/$defs/coordinate"},
+        "candidateSpiInterfaceClassEntryPath": {"type": "string", "pattern": "^[A-Za-z0-9_/$]+\\.class$"},
+        "candidateSpiInterfaceClass": {"type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]+$"},
+        "providerServiceDescriptorEntryPath": {"type": "string", "pattern": "^META-INF/services/[A-Za-z0-9_.$]+$"},
+        "providerServiceDescriptorInterfaceClass": {"type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]+$"},
+        "candidateArtifactFingerprintPinField": {"const": "expectedImplementationCandidateRawFingerprint"},
+        "candidateClassEntryPath": {"type": "string", "pattern": "^[A-Za-z0-9_/$]+\\.class$"},
+        "candidateClassFingerprintPinField": {"const": "expectedCandidateSpiClassRawFingerprint"},
+        "embeddingPolicy": {"const": "PROVIDED_ABI_NOT_EMBEDDED"}
+      }
+    }
+  }
+}

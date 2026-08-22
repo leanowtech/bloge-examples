@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:normative-primitives:v1",
+  "title": "Normative Primitives for Capability Studio Gate A1",
+  "description": "Defines WireDigest, genesis-zero sentinel, TypedFP, ContentDigest, Instant, SemanticVersion, and closed domain registry for Target A1. Draft 2020-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "WireDigest": {
+      "description": "WireDigest format: sha256: prefix + 64 lowercase hex chars. Excludes all-zeros by pattern constraint. Per 00 §2.1.",
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "not": {
+        "const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "genesisZero": {
+      "description": "Sentinel for uninitialized state. Distinct from any valid WireDigest.",
+      "enum": ["genesis-zero"]
+    },
+    "WireDigestOrGenesis": {
+      "description": "Either a valid WireDigest or the genesis-zero sentinel.",
+      "oneOf": [
+        {"$ref": "#/$defs/WireDigest"},
+        {"$ref": "#/$defs/genesisZero"}
+      ]
+    },
+    "domainLabel": {
+      "description": "Closed registry of registered domain labels for TypedFP computation. Exactly the 19 v1 domains per 00 §4.1. Case-sensitive; no regex.",
+      "type": "string",
+      "enum": [
+        "rg.gatea.package.v1",
+        "rg.gatea.merkle-node.v1",
+        "rg.gatea.merkle-leaf.v1",
+        "rg.gatea.artifact-closure.v1",
+        "rg.gatea.slice.v1",
+        "rg.gatea.compiler-manifest.v1",
+        "rg.gatea.observation-receipt.v1",
+        "rg.gatea.decision-input.v1",
+        "rg.gatea.reducer-output.v1",
+        "rg.gatea.result.v1",
+        "rg.gatea.ledger-entry.v1",
+        "rg.gatea.invocation-key.v1",
+        "rg.gatea.revocation-payload.v1",
+        "rg.gatea.revocation-record.v1",
+        "rg.gatea.ra-list.v1",
+        "rg.gatea.ledger-head.v1",
+        "rg.gatea.genesis.v1",
+        "rg.gatea.observer-failure.v1",
+        "rg.gatea.artifact.v1"
+      ]
+    },
+    "unitType": {
+      "description": "Closed registry of source unit types. Per 01 §1.2.",
+      "enum": [
+        "schema",
+        "role",
+        "rule",
+        "evidence",
+        "authority",
+        "visibility-policy"
+      ]
+    },
+    "oracleType": {
+      "description": "Closed registry of oracle types. Per 04 §2.1.",
+      "enum": [
+        "CompilerGoldenOracle",
+        "TrustBehaviorOracle"
+      ]
+    },
+    "releaseStatus": {
+      "description": "Release status. NON_RELEASE is the only allowed value for Target A1 oracles. Per 04 §2.1.",
+      "enum": ["NON_RELEASE"]
+    },
+    "expectedOutcome": {
+      "description": "Expected outcome for attack case validation. Per 04 §3.4.1.",
+      "enum": ["PASS", "REJECT"]
+    },
+    "actualOutcome": {
+      "description": "Actual observed outcome during attack case execution. Per 04 §3.4.1.",
+      "enum": ["PASS", "REJECT", "ERROR", "TIMEOUT"]
+    },
+    "timestampISO8601": {
+      "description": "ISO-8601 timestamp with UTC timezone.",
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+    },
+    "Instant": {
+      "description": "ISO-8601 instant with UTC timezone. Aliases timestampISO8601 for semantic clarity in hermetic timestamps.",
+      "$ref": "#/$defs/timestampISO8601"
+    },
+    "SemanticVersion": {
+      "description": "Strict Semantic Version 2.0.0 string. Per 01 §3 and §4.1.",
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$",
+      "minLength": 5,
+      "maxLength": 64
+    },
+    "relativePath": {
+      "description": "Relative path within a source package. No leading /, no .., no absolute paths. Per 00 §3.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*(/[a-zA-Z0-9][a-zA-Z0-9._-]*)*$",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "unitId": {
+      "description": "URN-style identifier for a source unit. Per 01 §1.2.",
+      "type": "string",
+      "pattern": "^urn:[a-z][a-z0-9]*(-[a-z0-9]+)*:[a-zA-Z0-9][a-zA-Z0-9._-]*:[a-zA-Z0-9][a-zA-Z0-9._-]*:[a-zA-Z0-9][a-zA-Z0-9._-]*$",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "roleVisibility": {
+      "description": "Array of role names that can see this unit. Per 01 §1.2.",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9]*$",
+        "minLength": 1,
+        "maxLength": 64
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "TypedFP": {
+      "description": "Domain-labeled semantic fingerprint. SHA256(ENC(domain) || ENC(JCS(payload))) as WireDigest. Per 00 §2.3. Domain must be in the closed domain registry.",
+      "$ref": "#/$defs/WireDigest"
+    },
+    "ContentDigest": {
+      "description": "Raw content digest. SHA256(raw bytes) as WireDigest. No ENC encoding. Used for stdout, stderr, jar, treeFile. Per 00 §2.2.",
+      "$ref": "#/$defs/WireDigest"
+    }
+  }
+}

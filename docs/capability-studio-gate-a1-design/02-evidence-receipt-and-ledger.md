@@ -539,4 +539,4 @@ AdapterMode = EXTERNAL_CAS_RELEASE | NON_RELEASE_ROLLBACKABLE_ADAPTER
 
 - LEGACY_GATE_A_WIRE_V1 的 adapter wrapper objects 可能包含 `adapterMode` 的 legacy 字段名称。
 - Legacy wrapper 仅在 Oracle 内部被接受；target 生产路径**仅接受** `EXTERNAL_CAS_RELEASE` 或 `NON_RELEASE_ROLLBACKABLE_ADAPTER` 二元 enum。
-- 迁移映射（见 04 §2.2）必须将 legacy adapterMode 值显式映射到 target enum 值。
+- 五字段 authority pair mapping（见 04 §14.1）只绑定 schema 身份与摘要，不承载 `adapterMode` 字段语义。legacy `adapterMode` 到 target enum 的转换必须由独立 field mapping artifact 定义、版本化并验收。

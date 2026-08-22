@@ -1,0 +1,26 @@
+{
+  "releaseStatus": "NON_RELEASE",
+  "parentCommitSha": "936066621700c6626ce657fa2d5d2b7f01df6bac",
+  "generatedAt": "2026-08-23T00:00:00Z",
+  "artifacts": [
+    {
+      "contentDigest": "sha256:e5713160988cb9d193f130267d2619c24d6447c79908aecbb7b6c564880be090",
+      "quarantinePath": "docs/acceptance/capability-studio/gate-a1-step0/non-release/quarantine/fragments/e5713160988cb9d193f130267d2619c24d6447c79908aecbb7b6c564880be090/compile-protocol-authority.py",
+      "size": 998,
+      "sourcePath": "docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/compile-protocol-authority.py"
+    },
+    {
+      "contentDigest": "sha256:d6dab90a53ea9b353c1e6ebabca7660eb34324d57bf8526d9e0f7539901de280",
+      "quarantinePath": "docs/acceptance/capability-studio/gate-a1-step0/non-release/quarantine/fragments/d6dab90a53ea9b353c1e6ebabca7660eb34324d57bf8526d9e0f7539901de280/validate-fixtures.cpython-314.pyc",
+      "size": 247211,
+      "sourcePath": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/__pycache__/validate-fixtures.cpython-314.pyc"
+    },
+    {
+      "contentDigest": "sha256:a03fa97d7e280054f6578f1dd366de9af66474bf745b2aa1302a072408c04b45",
+      "quarantinePath": "docs/acceptance/capability-studio/gate-a1-step0/non-release/quarantine/fragments/a03fa97d7e280054f6578f1dd366de9af66474bf745b2aa1302a072408c04b45/validate-fixtures.py",
+      "size": 5683,
+      "sourcePath": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/validate-fixtures.py"
+    }
+  ],
+  "corpusRootDigest": "sha256:a6dc65cd84507b3184c46bb3ce726b443faad5613ac63ca800f82b2094e0aaac"
+}

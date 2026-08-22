@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:source-package:v1",
+  "title": "Source Package Manifest for Capability Studio Gate A1",
+  "description": "Root-level packageFP and manifestEnvelope separated per Design 00/01. manifestEnvelope contains algorithmVersion, orderedDescriptors, treeRoot — it excludes packageFP. Draft 2020-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packageFP", "manifestEnvelope"],
+  "properties": {
+    "packageFP": {
+      "description": "Package fingerprint as WireDigest. TypedFP('rg.gatea.package.v1', manifestEnvelope). Per 00 §2.3.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "manifestEnvelope": {
+      "description": "Package-level metadata envelope. Does NOT contain packageFP; contains algorithmVersion, orderedDescriptors, treeRoot instead. Per Design 00/01.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithmVersion", "orderedDescriptors", "treeRoot"],
+      "properties": {
+        "algorithmVersion": {
+          "description": "Merkle algorithm version identifier.",
+          "enum": ["1.0"]
+        },
+        "orderedDescriptors": {
+          "description": "Sorted list of source unit descriptors (UTF-8 byte order ascending).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/sourceDescriptor"
+          },
+          "minItems": 1
+        },
+        "treeRoot": {
+          "description": "Merkle tree root as WireDigest. Single leaf: treeRoot = leaf. Multiple leaves: treeRoot = top-level node.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sourceDescriptor": {
+      "description": "Descriptor for a single source unit within the package.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "unitId"],
+      "properties": {
+        "type": {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/unitType"
+        },
+        "path": {
+          "description": "Relative path to the source unit file (UTF-8 normalized, no leading /).",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+        },
+        "unitId": {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/unitId"
+        }
+      }
+    }
+  }
+}

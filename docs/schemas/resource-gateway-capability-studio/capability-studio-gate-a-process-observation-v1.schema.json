@@ -1,0 +1,525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-process-observation-v1.schema.json",
+  "title": "Capability Studio Gate A parent process observation v1",
+  "description": "Exact parent-owned runtime, class-origin, process-tree and output-capture observations. The containing ProcessTranscript binds these canonical bytes by raw reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "runId",
+    "launchKind",
+    "sandboxProfileRawFingerprint",
+    "javaExecutableObservation",
+    "javaRuntime",
+    "effectiveClasspath",
+    "admittedClassOrigins",
+    "jvmInputArguments",
+    "environmentNames",
+    "processTree",
+    "stdoutCapture",
+    "stderrCapture"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.process-observation.v1"
+    },
+    "runId": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"
+    },
+    "launchKind": {
+      "enum": [
+        "CANDIDATE_CHILD",
+        "A1_VERIFIER",
+        "CONFORMANCE_HARNESS",
+        "GATE_ADMISSION"
+      ]
+    },
+    "sandboxProfileRawFingerprint": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+    },
+    "javaExecutableObservation": {
+      "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/codeSourceObservation"
+    },
+    "javaRuntime": {
+      "$ref": "#/$defs/javaRuntime"
+    },
+    "effectiveClasspath": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "items": {
+        "$ref": "#/$defs/classpathEntry"
+      }
+    },
+    "admittedClassOrigins": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/classOrigin"
+      }
+    },
+    "jvmInputArguments": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "environmentNames": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "processTree": {
+      "$ref": "#/$defs/processTree"
+    },
+    "stdoutCapture": {
+      "$ref": "#/$defs/outputCapture"
+    },
+    "stderrCapture": {
+      "$ref": "#/$defs/outputCapture"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "launchKind": {
+            "const": "CANDIDATE_CHILD"
+          }
+        },
+        "required": [
+          "launchKind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effectiveClasspath": {
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "properties": {
+                  "ordinal": {
+                    "const": 1
+                  },
+                  "role": {
+                    "const": "TCK_PROVIDER"
+                  }
+                },
+                "required": [
+                  "ordinal",
+                  "role"
+                ]
+              },
+              {
+                "properties": {
+                  "ordinal": {
+                    "const": 2
+                  },
+                  "role": {
+                    "const": "CANDIDATE"
+                  }
+                },
+                "required": [
+                  "ordinal",
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          },
+          "admittedClassOrigins": {
+            "minItems": 3,
+            "maxItems": 3,
+            "prefixItems": [
+              {
+                "properties": {
+                  "role": {
+                    "const": "CANDIDATE_CHALLENGE_CLI"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              },
+              {
+                "properties": {
+                  "role": {
+                    "const": "CANDIDATE_SPI"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              },
+              {
+                "properties": {
+                  "role": {
+                    "const": "TCK_PROVIDER"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "launchKind": {
+            "enum": [
+              "A1_VERIFIER",
+              "CONFORMANCE_HARNESS",
+              "GATE_ADMISSION"
+            ]
+          }
+        },
+        "required": [
+          "launchKind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "effectiveClasspath": {
+            "minItems": 1,
+            "maxItems": 1,
+            "prefixItems": [
+              {
+                "properties": {
+                  "ordinal": {
+                    "const": 1
+                  },
+                  "role": {
+                    "const": "APPLICATION"
+                  }
+                },
+                "required": [
+                  "ordinal",
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          },
+          "admittedClassOrigins": {
+            "minItems": 1,
+            "maxItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "launchKind": {
+            "const": "A1_VERIFIER"
+          }
+        },
+        "required": [
+          "launchKind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admittedClassOrigins": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "role": {
+                    "const": "A1_MAIN"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "launchKind": {
+            "const": "CONFORMANCE_HARNESS"
+          }
+        },
+        "required": [
+          "launchKind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admittedClassOrigins": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "role": {
+                    "const": "HARNESS_MAIN"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "launchKind": {
+            "const": "GATE_ADMISSION"
+          }
+        },
+        "required": [
+          "launchKind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "admittedClassOrigins": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "role": {
+                    "const": "ADMISSION_MAIN"
+                  }
+                },
+                "required": [
+                  "role"
+                ]
+              }
+            ],
+            "items": false
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "javaRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendor",
+        "version",
+        "vmName",
+        "runtimeImageFingerprint"
+      ],
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\x20-\\x7E]+$"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[A-Za-z0-9._+:-]+$"
+        },
+        "vmName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[\\x20-\\x7E]+$"
+        },
+        "runtimeImageFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/treeFingerprint"
+        }
+      }
+    },
+    "classpathEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "role",
+        "artifactPath",
+        "rawFingerprint"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "role": {
+          "enum": [
+            "APPLICATION",
+            "TCK_PROVIDER",
+            "CANDIDATE"
+          ]
+        },
+        "artifactPath": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"
+        },
+        "rawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        }
+      }
+    },
+    "classOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "binaryName",
+        "classRawFingerprint",
+        "codeSourceRawFingerprint"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "CANDIDATE_CHALLENGE_CLI",
+            "CANDIDATE_SPI",
+            "TCK_PROVIDER",
+            "A1_MAIN",
+            "HARNESS_MAIN",
+            "ADMISSION_MAIN"
+          ]
+        },
+        "binaryName": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)+$",
+          "maxLength": 512
+        },
+        "classRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "codeSourceRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        }
+      }
+    },
+    "processIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pid",
+        "startInstant"
+      ],
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "startInstant": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/timestamp"
+        }
+      }
+    },
+    "processTree": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rootProcess",
+        "descendantsBeforeTermination",
+        "terminationAction",
+        "descendantsAfterTermination",
+        "quiescenceWindowMillis",
+        "processTreeQuiescent"
+      ],
+      "properties": {
+        "rootProcess": {
+          "$ref": "#/$defs/processIdentity"
+        },
+        "descendantsBeforeTermination": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/processIdentity"
+          }
+        },
+        "terminationAction": {
+          "enum": [
+            "NONE",
+            "GRACEFUL",
+            "FORCED",
+            "GRACEFUL_THEN_FORCED"
+          ]
+        },
+        "descendantsAfterTermination": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/processIdentity"
+          }
+        },
+        "quiescenceWindowMillis": {
+          "const": 250
+        },
+        "processTreeQuiescent": {
+          "type": "boolean"
+        }
+      }
+    },
+    "outputCapture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "limitBytes",
+        "observedBytes",
+        "complete",
+        "overflow",
+        "leakScan",
+        "scannerId",
+        "scannerRevision",
+        "scannerProfileRawFingerprint",
+        "quarantineStatus"
+      ],
+      "properties": {
+        "limitBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1048576
+        },
+        "observedBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "complete": {
+          "type": "boolean"
+        },
+        "overflow": {
+          "type": "boolean"
+        },
+        "leakScan": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNAVAILABLE"
+          ]
+        },
+        "scannerId": {
+          "const": "GATE_A_OUTPUT_HYGIENE"
+        },
+        "scannerRevision": {
+          "const": 1
+        },
+        "scannerProfileRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "quarantineStatus": {
+          "enum": [
+            "NOT_REQUIRED",
+            "ATTEMPT_ONLY"
+          ]
+        }
+      }
+    }
+  }
+}

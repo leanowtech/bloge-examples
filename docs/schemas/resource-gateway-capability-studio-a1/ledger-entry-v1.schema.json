@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:ledger-entry:v1",
+  "title": "Ledger Entry v1",
+  "description": "Immutable Gate A1 ledger entry defined by 02-evidence-receipt-and-ledger.md section 8.1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ledgerEntryFP",
+    "payload"
+  ],
+  "properties": {
+    "ledgerEntryFP": {
+      "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest",
+      "description": "TypedFP('rg.gatea.ledger-entry.v1', LedgerEntryPayload) as WireDigest."
+    },
+    "payload": {
+      "$ref": "#/$defs/LedgerEntryPayload"
+    }
+  },
+  "$defs": {
+    "LedgerEntryPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ledgerId",
+        "invocationKey",
+        "decisionInputFP",
+        "reducerOutputFP",
+        "resultFP",
+        "status",
+        "effectiveStatus",
+        "nonce",
+        "predecessorHeadFP",
+        "packageFP"
+      ],
+      "properties": {
+        "ledgerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "invocationKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decisionInputFP": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+        },
+        "reducerOutputFP": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+        },
+        "resultFP": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ACCEPTED",
+            "REJECTED",
+            "ERROR"
+          ]
+        },
+        "effectiveStatus": {
+          "type": "string",
+          "enum": [
+            "ACCEPTED",
+            "REJECTED",
+            "ERROR",
+            "ACCEPTED/REVOKED",
+            "REJECTED/REVOKED",
+            "ERROR/REVOKED"
+          ]
+        },
+        "nonce": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 24,
+          "description": "Base64-encoded nonce containing at least 128 bits."
+        },
+        "retryOf": {
+          "description": "Optional invocationKeyFP of the ledger entry being retried.",
+          "oneOf": [
+            {
+              "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "predecessorHeadFP": {
+          "description": "Previous ledgerEntryFP, or null for genesis.",
+          "oneOf": [
+            {
+              "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packageFP": {
+          "$ref": "normative-primitives-v1.schema.json#/$defs/WireDigest"
+        }
+      }
+    }
+  }
+}

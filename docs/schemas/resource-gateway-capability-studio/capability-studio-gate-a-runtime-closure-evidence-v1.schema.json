@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-runtime-closure-evidence-v1.schema.json",
+  "title": "Capability Studio Gate A runtime closure evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "messageVersion",
+    "artifactFingerprint",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-runtime-closure-evidence.v1"
+    },
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.runtime-closure-evidence.v1"
+    },
+    "artifactFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "status": {
+      "enum": [
+        "CLOSED",
+        "ACCEPTED"
+      ]
+    }
+  }
+}

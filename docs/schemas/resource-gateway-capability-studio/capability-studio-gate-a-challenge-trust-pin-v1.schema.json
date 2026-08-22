@@ -5,7 +5,7 @@
   "description": "Caller-created trust inputs fixed before any Gate A run. Cross-field equality and raw-byte verification are mandatory verifier semantics.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "gateId", "gateRevision", "createdAt", "semanticVerificationTime", "allowedGateRevision", "expectedDesignRawFingerprint", "expectedReplayProfileRawFingerprint", "expectedAdmissionProfileRawFingerprint", "expectedImplementationCandidateRawFingerprint", "expectedIndependentVerifierRawFingerprint", "expectedConformanceHarnessRawFingerprint", "expectedHarnessProfileRawFingerprint", "expectedGateVerifierRawFingerprint", "expectedSchemaSetManifestRawFingerprint", "expectedTckDefinitionRawFingerprint", "expectedTckProviderRawFingerprint", "expectedCandidateSpiArtifactRawFingerprint", "expectedCandidateSpiClassRawFingerprint", "expectedReviewerArtifactRawFingerprint", "expectedReviewerTrustPolicyRawFingerprint", "expectedReviewerRevocationSnapshotRawFingerprint", "expectedChallengeInputRootFingerprint", "expectedChallengeSandboxProfileRawFingerprint", "challengeTrustPinFingerprint"],
+  "required": ["schemaVersion", "gateId", "gateRevision", "createdAt", "semanticVerificationTime", "allowedGateRevision", "expectedDesignRawFingerprint", "expectedReplayProfileRawFingerprint", "expectedAdmissionProfileRawFingerprint", "expectedImplementationCandidateRawFingerprint", "expectedIndependentVerifierRawFingerprint", "expectedConformanceHarnessRawFingerprint", "expectedHarnessProfileRawFingerprint", "expectedGateVerifierRawFingerprint", "expectedSchemaSetManifestRawFingerprint", "expectedTckDefinitionRawFingerprint", "expectedTckProviderRawFingerprint", "expectedCandidateSpiArtifactRawFingerprint", "expectedCandidateSpiClassRawFingerprint", "expectedReviewerArtifactRawFingerprint", "expectedReviewerTrustPolicyRawFingerprint", "expectedReviewerRevocationSnapshotRawFingerprint", "expectedProtocolAuthorityRawFingerprint", "expectedChallengeInputRootFingerprint", "expectedChallengeSandboxProfileRawFingerprint", "challengeTrustPinFingerprint"],
   "properties": {
     "schemaVersion": {"const": "capability-studio.gate-a-challenge-trust-pin.v1"},
     "gateId": {"const": "GATE-A"},
@@ -29,6 +29,7 @@
     "expectedReviewerArtifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
     "expectedReviewerTrustPolicyRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
     "expectedReviewerRevocationSnapshotRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "expectedProtocolAuthorityRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
     "expectedChallengeInputRootFingerprint": {"$ref": "#/$defs/treeFingerprint"},
     "expectedChallengeSandboxProfileRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
     "challengeTrustPinFingerprint": {"$ref": "#/$defs/documentFingerprint"}

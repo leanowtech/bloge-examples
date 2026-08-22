@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-consumption-ledger-head-v1.schema.json",
+  "title": "Capability Studio Gate A slice consumption ledger head v1",
+  "description": "Monotonic ledger head for rollback-resistant slice consumption ledger. GENESIS sentinel is the only value for revision 0. Every subsequent revision increments by exactly 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "adapterMode",
+    "ledgerRevision",
+    "previousHeadMarkerFingerprint",
+    "previousHeadRevision",
+    "markerKeyFingerprint",
+    "timestampISO8601"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-slice-consumption-ledger-head.v1"
+    },
+    "adapterMode": {
+      "description": "NON_RELEASE_ROLLBACKABLE_ADAPTER: file-based ledger without external CAS. Never claim release semantics until external CAS is integrated.",
+      "enum": ["NON_RELEASE_ROLLBACKABLE_ADAPTER", "EXTERNAL_CAS_RELEASE"]
+    },
+    "ledgerRevision": {
+      "description": "Integer revision counter. 0 = GENESIS sentinel (never produced by verifier; only used as expected_previous_revision in genesis ledger). Increments by 1 per accepted consumption.",
+      "$ref": "#/$defs/revisionCounter"
+    },
+    "previousHeadMarkerFingerprint": {
+      "description": "sha256:0000000000000000000000000000000000000000000000000000000000000000 when ledgerRevision is 0 (GENESIS sentinel). Otherwise, the keyFingerprint.value of the previous consumption marker.",
+      "$ref": "#/$defs/markerFingerprint"
+    },
+    "previousHeadRevision": {
+      "description": "Previous ledger revision. Must equal ledgerRevision - 1, or 0 when ledgerRevision is 0.",
+      "$ref": "#/$defs/revisionCounter"
+    },
+    "markerKeyFingerprint": {
+      "description": "The keyFingerprint.value of the marker committed in this head.",
+      "$ref": "#/$defs/markerFingerprint"
+    },
+    "timestampISO8601": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    }
+  },
+  "$defs": {
+    "revisionCounter": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "markerFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "ledgerRevision": { "const": 0 } } },
+      "then": {
+        "properties": {
+          "previousHeadMarkerFingerprint": {
+            "const": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "previousHeadRevision": { "const": 0 }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "ledgerRevision": { "minimum": 1 } } },
+      "then": {
+        "properties": {
+          "previousHeadRevision": {
+            "enum": [0]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:observation-receipt:v1",
+  "title": "Observation Receipt v1",
+  "description": "Physical fact voucher for observed artifacts. Payload contains no self-referential fingerprint; envelope holds the TypedFP as WireDigest. Four-state model: SOURCE -> COMPILED -> OBSERVED (no decision). Per 02-evidence-receipt-and-ledger.md §2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "observationReceiptFP",
+    "payload"
+  ],
+  "properties": {
+    "observationReceiptFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.observation-receipt.v1', ObservationReceiptPayload) as WireDigest. Payload structure excludes this field to prevent self-referential hashing."
+    },
+    "payload": {
+      "$ref": "#/$defs/ObservationReceiptPayload"
+    }
+  },
+  "$defs": {
+    "ObservationReceiptPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifactRef",
+        "observedAt",
+        "observerId",
+        "status"
+      ],
+      "properties": {
+        "artifactRef": {
+          "type": "string",
+          "description": "Reference to the observed artifact"
+        },
+        "observedAt": {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/Instant",
+          "description": "Observation timestamp; observable only, not used by verifier for decision"
+        },
+        "observerId": {
+          "type": "string",
+          "description": "Principal ID of the observer"
+        },
+        "status": {
+          "const": "OBSERVED",
+          "description": "Four-state model: OBSERVED state with no decision field. Semantic verifier: clockUsage=false, randomUsage=false, networkUsage=false per READ_CATALOG_ONLY policy."
+        }
+      }
+    }
+  }
+}

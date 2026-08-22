@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-hermetic-launcher-observation-evidence-v1.schema.json",
+  "title": "Capability Studio Gate A hermetic launcher observation evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "messageVersion",
+    "launcherFingerprint",
+    "exitCode",
+    "status"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-hermetic-launcher-observation-evidence.v1"
+    },
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.hermetic-launcher-observation-evidence.v1"
+    },
+    "launcherFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "exitCode": {
+      "type": "integer"
+    },
+    "status": {
+      "enum": [
+        "LAUNCHED",
+        "ACCEPTED"
+      ]
+    }
+  }
+}

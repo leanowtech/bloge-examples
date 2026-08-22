@@ -1,0 +1,3277 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-protocol-authority-v1.schema.json",
+  "title": "Capability Studio Gate A protocol authority v1",
+  "description": "Caller-pinned build-time source for role, launch, vector, state-machine, material, canonicalization and delivery contracts. It generates data projections only, never role decision code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "authorityId",
+    "revision",
+    "trustBoundary",
+    "schemaInventoryPolicy",
+    "compilerContract",
+    "releaseAuthorityBundleContract",
+    "sliceAcceptanceReceiptContract",
+    "dependencyAuthority",
+    "hermeticExecutionContract",
+    "roleContracts",
+    "launchContracts",
+    "inputSets",
+    "replayVectors",
+    "orderedChecks",
+    "abnormalTransitions",
+    "materialOwnership",
+    "canonicalizationGate",
+    "authorityRelations",
+    "deliverySlices",
+    "timeDerivation",
+    "evidenceContracts"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-protocol-authority.v1"
+    },
+    "authorityId": {
+      "const": "GATE-A-PROTOCOL-AUTHORITY"
+    },
+    "revision": {
+      "const": 1
+    },
+    "trustBoundary": {
+      "$ref": "#/$defs/trustBoundary"
+    },
+    "schemaInventoryPolicy": {
+      "$ref": "#/$defs/schemaInventoryPolicy"
+    },
+    "compilerContract": {
+      "$ref": "#/$defs/compilerContract"
+    },
+    "releaseAuthorityBundleContract": {
+      "$ref": "#/$defs/releaseAuthorityBundleContract"
+    },
+    "sliceAcceptanceReceiptContract": {
+      "$ref": "#/$defs/sliceAcceptanceReceiptContract"
+    },
+    "roleContracts": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/roleContract"
+      }
+    },
+    "launchContracts": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "$ref": "#/$defs/launchContract"
+      }
+    },
+    "inputSets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/inputSet"
+      }
+    },
+    "replayVectors": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "$ref": "#/$defs/replayVector"
+      }
+    },
+    "orderedChecks": {
+      "type": "array",
+      "minItems": 17,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/orderedCheck"
+      }
+    },
+    "abnormalTransitions": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 16,
+      "items": {
+        "$ref": "#/$defs/abnormalTransition"
+      }
+    },
+    "materialOwnership": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/materialOwnership"
+      }
+    },
+    "canonicalizationGate": {
+      "$ref": "#/$defs/canonicalizationGate"
+    },
+    "authorityRelations": {
+      "type": "array",
+      "minItems": 12,
+      "maxItems": 48,
+      "items": {
+        "$ref": "#/$defs/authorityRelation"
+      }
+    },
+    "deliverySlices": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "$ref": "#/$defs/deliverySlice"
+      }
+    },
+    "timeDerivation": {
+      "$ref": "#/$defs/timeDerivation"
+    },
+    "dependencyAuthority": {
+      "$ref": "#/$defs/dependencyAuthority"
+    },
+    "hermeticExecutionContract": {
+      "$ref": "#/$defs/hermeticExecutionContract"
+    },
+    "evidenceContracts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 48,
+      "items": {
+        "$ref": "#/$defs/evidenceContract"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+    },
+    "safeText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "repoPath": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*//)(?!.*(?:^|/)\\.(?:/|$))(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\/$)[A-Za-z0-9._*-]+(?:/[A-Za-z0-9._*-]+)*$"
+    },
+    "stringList": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 2048
+      }
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "artifactId",
+        "version",
+        "classifier"
+      ],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.]+$"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "classifier": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "dependencyCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "artifactId",
+        "version",
+        "classifier"
+      ],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.]+$"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "classifier": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "trustBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "trusted",
+        "hostile",
+        "outOfScope",
+        "observationAuthority",
+        "maliciousVerifierPolicy"
+      ],
+      "properties": {
+        "trusted": {
+          "$ref": "#/$defs/stringList"
+        },
+        "hostile": {
+          "$ref": "#/$defs/stringList"
+        },
+        "outOfScope": {
+          "$ref": "#/$defs/stringList"
+        },
+        "observationAuthority": {
+          "const": "CALLER_PINNED_A1_IS_DIRECT_PARENT_OF_CANDIDATE"
+        },
+        "maliciousVerifierPolicy": {
+          "const": "REQUIRES_HIGHER_REVISION_TRUSTED_LAUNCHER_OBSERVATION"
+        }
+      }
+    },
+    "schemaInventoryPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "closed",
+        "gateASchemas",
+        "requiredReviewerSchemas",
+        "unknownSchemaPolicy",
+        "gateASchemaPattern",
+        "reviewerSchemaPattern",
+        "schemaRoleVisibility"
+      ],
+      "properties": {
+        "closed": {
+          "const": true
+        },
+        "gateASchemas": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/repoPath"
+          }
+        },
+        "requiredReviewerSchemas": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/repoPath"
+          }
+        },
+        "unknownSchemaPolicy": {
+          "const": "REJECT"
+        },
+        "gateASchemaPattern": {
+          "const": "capability-studio-gate-a-*.schema.json"
+        },
+        "reviewerSchemaPattern": {
+          "const": "capability-studio-(review-body-v1|reviewer-.*).schema.json"
+        },
+        "schemaRoleVisibility": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "maxItems": 5,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "perRolePackagedSchemas": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "maxItems": 64,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "visibleSchemaIds": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "compilerContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionPlan",
+        "phaseContracts",
+        "trustedJavaExecutable",
+        "workingDirectoryTemplate",
+        "emptyEnvironmentRequired",
+        "compilationManifestEntryPath",
+        "protocolAuthorityEntryPath"
+      ],
+      "properties": {
+        "projectionPlan": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/projectionPlanEntry"
+          }
+        },
+        "phaseContracts": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/phaseContract"
+          }
+        },
+        "trustedJavaExecutable": {
+          "const": "/opt/jdk/bin/java"
+        },
+        "workingDirectoryTemplate": {
+          "const": "/tmp/gate-a/{runId}"
+        },
+        "emptyEnvironmentRequired": {
+          "const": true
+        },
+        "compilationManifestEntryPath": {
+          "const": "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json"
+        },
+        "protocolAuthorityEntryPath": {
+          "const": "META-INF/gate-a/protocol/gate-a-protocol-authority.json"
+        }
+      }
+    },
+    "releaseAuthorityBundleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "manifestName",
+        "messageVersion",
+        "purpose",
+        "releaseAdmissionPolicy",
+        "targetSlicePolicy",
+        "releaseTargetSliceId",
+        "artifactClosurePolicy",
+        "bundleRootFingerprintDomain",
+        "closedTreeDomain",
+        "roleViewDomain",
+        "roleInputTreeDomain",
+        "schemaSetDomain",
+        "projectionSetDomain",
+        "toolchainPolicyDomain",
+        "fixtureBindingDomain",
+        "bundleRootSelfNullPolicy",
+        "roleViewPolicy",
+        "oracleCompartmentPolicy",
+        "limits",
+        "preflightPolicy"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "capability-studio.gate-a-release-authority-bundle.v1"
+        },
+        "manifestName": {
+          "const": "release-authority-bundle-v1.json"
+        },
+        "messageVersion": {
+          "const": "capability-studio.gate-a.release-authority-bundle.v1"
+        },
+        "purpose": {
+          "const": "FROZEN_CALLER_INPUT_NOT_RELEASE_EVIDENCE"
+        },
+        "releaseAdmissionPolicy": {
+          "const": "EXTERNAL_PINS_HERMETIC_EXECUTION_AND_SLICE_RECEIPT_REQUIRED"
+        },
+        "targetSlicePolicy": {
+          "const": "CALLER_EXPLICIT_DELIVERY_SLICE"
+        },
+        "releaseTargetSliceId": {
+          "const": "A1.7"
+        },
+        "artifactClosurePolicy": {
+          "const": "REQUIRED_ARTIFACT_PATH_TO_ROLE_EXACT_CLOSURE"
+        },
+        "bundleRootFingerprintDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-v1"
+        },
+        "closedTreeDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-CLOSED-TREE-v1"
+        },
+        "roleViewDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-ROLE-VIEW-v1"
+        },
+        "roleInputTreeDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-ROLE-INPUTS-v1"
+        },
+        "schemaSetDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-SCHEMA-SET-v1"
+        },
+        "projectionSetDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-PROJECTION-SET-v1"
+        },
+        "toolchainPolicyDomain": {
+          "const": "RG-CS-GATE-A-RELEASE-AUTHORITY-BUNDLE-TOOLCHAIN-v1"
+        },
+        "fixtureBindingDomain": {
+          "const": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1"
+        },
+        "bundleRootSelfNullPolicy": {
+          "const": "NESTED_VALUE_NULL_DURING_HASH"
+        },
+        "roleViewPolicy": {
+          "const": "ROLE_INPUTS_ONLY_EXPLICIT_VISIBLE_REFS"
+        },
+        "oracleCompartmentPolicy": {
+          "const": "PARENT_ONLY_NOT_ROLE_VISIBLE"
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "maxFiles",
+            "maxFileBytes",
+            "maxTotalBytes",
+            "maxJsonBytes"
+          ],
+          "properties": {
+            "maxFiles": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4096
+            },
+            "maxFileBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16777216
+            },
+            "maxTotalBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
+            },
+            "maxJsonBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8388608
+            }
+          }
+        },
+        "preflightPolicy": {
+          "const": "ALL_SOURCES_AND_SCHEMA_VALIDATED_BEFORE_CREATE_NEW_OUTPUT"
+        }
+      }
+    },
+    "sliceAcceptanceReceiptContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "acceptanceContractFingerprintDomain",
+        "receiptFingerprintDomain",
+        "artifactAggregateDomain",
+        "evidenceAggregateDomain",
+        "consumptionKeyDomain",
+        "canonicalizationPolicy",
+        "noncePolicy",
+        "buildInvocationPolicy",
+        "ledgerPolicy",
+        "predecessorPolicy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json"
+        },
+        "acceptanceContractFingerprintDomain": {
+          "const": "RG-CS-GATE-A-SLICE-ACCEPTANCE-CONTRACT-v1"
+        },
+        "receiptFingerprintDomain": {
+          "const": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1"
+        },
+        "artifactAggregateDomain": {
+          "const": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1"
+        },
+        "evidenceAggregateDomain": {
+          "const": "RG-CS-GATE-A-SLICE-EVIDENCE-v1"
+        },
+        "consumptionKeyDomain": {
+          "const": "RG-CS-GATE-A-SLICE-CONSUMPTION-KEY-v1"
+        },
+        "canonicalizationPolicy": {
+          "const": "RFC8785_DOMAIN_NUL_CANONICAL_DOCUMENT"
+        },
+        "noncePolicy": {
+          "const": "CALLER_ISSUED_UNIQUE_128_BIT_LOWERCASE_HEX"
+        },
+        "buildInvocationPolicy": {
+          "const": "CALLER_PINNED_EXACT"
+        },
+        "ledgerPolicy": {
+          "const": "CALLER_OWNED_FLOCK_SERIALIZED_O_EXCL_FSYNC"
+        },
+        "predecessorPolicy": {
+          "const": "IMMEDIATE_PREDECESSOR_CONSUMED_MARKER_REQUIRED"
+        }
+      }
+    },
+    "projectionPlanEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionId",
+        "outputPath",
+        "jarEntryPath",
+        "selectors"
+      ],
+      "properties": {
+        "projectionId": {
+          "$ref": "#/$defs/projectionId"
+        },
+        "outputPath": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]+-v1\\.json$"
+        },
+        "jarEntryPath": {
+          "type": "string",
+          "pattern": "^META-INF/gate-a/projections/[a-z0-9-]+-v1\\.json$"
+        },
+        "selectors": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/projectionSelector"
+          }
+        }
+      }
+    },
+    "projectionSelector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "sourcePointer"
+      ],
+      "properties": {
+        "key": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z][A-Za-z0-9]{0,63}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourcePointer": {
+          "type": "string",
+          "pattern": "^(/[A-Za-z0-9_-]+)+$"
+        }
+      }
+    },
+    "projectionId": {
+      "enum": [
+        "ROLE_CONTRACT",
+        "LAUNCH_CONTRACT",
+        "REPLAY_VECTOR_REGISTRY",
+        "CHECK_STATE_MACHINE",
+        "MATERIAL_OWNERSHIP",
+        "CANONICALIZATION_CONTRACT",
+        "AUTHORITY_MATRIX",
+        "DELIVERY_CONTRACT"
+      ]
+    },
+    "phaseContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "allowedOwners",
+        "expectedCount"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "A1_BOOTSTRAP",
+            "CHILD_PROCESS",
+            "HARNESS_OUTER"
+          ]
+        },
+        "allowedOwners": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "items": {
+            "enum": [
+              "A1",
+              "HARNESS",
+              "CALLER"
+            ]
+          }
+        },
+        "expectedCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        }
+      }
+    },
+    "roleContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "buildIdentityRole",
+        "modulePath",
+        "pomPath",
+        "groupId",
+        "artifactId",
+        "artifactVersion",
+        "classifier",
+        "artifactPath",
+        "packaging",
+        "launchMode",
+        "mainClass",
+        "profilePath",
+        "registryPath",
+        "profileFingerprintField",
+        "providerEntryPath",
+        "providerIdentityEntryPath",
+        "buildCommand",
+        "blackBoxCommand",
+        "buildProfile",
+        "blackBoxContract",
+        "blackBoxFixtureContract",
+        "runtimeDependencyLockIds",
+        "packagingContract",
+        "artifactLimits",
+        "compileDependencyAllowlist",
+        "runtimeDependencyAllowlist",
+        "forbiddenProjectDependencies",
+        "requiredJarEntries",
+        "compilationManifestEntryPath",
+        "canonicalizationProfileEntryPath",
+        "packagedProjections",
+        "releaseGate",
+        "requiredRuntimeArtifactRoles"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "IMPLEMENTATION_CANDIDATE",
+            "TCK_PROVIDER",
+            "INDEPENDENT_VERIFIER",
+            "CONFORMANCE_HARNESS",
+            "GATE_ADMISSION_CHECKER"
+          ]
+        },
+        "buildIdentityRole": {
+          "oneOf": [
+            {
+              "enum": [
+                "INDEPENDENT_VERIFIER",
+                "CONFORMANCE_HARNESS",
+                "GATE_VERIFIER"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modulePath": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "pomPath": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.]+$"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "artifactVersion": {
+          "const": "1.0.0"
+        },
+        "classifier": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactPath": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "packaging": {
+          "const": "jar"
+        },
+        "launchMode": {
+          "enum": [
+            "CLASSPATH_MAIN",
+            "SERVICE_LOADER_PROBE",
+            "EXECUTABLE_JAR"
+          ]
+        },
+        "mainClass": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profilePath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "registryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "profileFingerprintField": {
+          "oneOf": [
+            {
+              "enum": [
+                "replayProfileRawFingerprint",
+                "harnessProfileRawFingerprint",
+                "admissionProfileRawFingerprint"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerIdentityEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildCommand": {
+          "$ref": "#/$defs/stringList"
+        },
+        "blackBoxCommand": {
+          "$ref": "#/$defs/stringList"
+        },
+        "blackBoxContract": {
+          "$ref": "#/$defs/blackBoxContract"
+        },
+        "blackBoxFixtureContract": {
+          "$ref": "#/$defs/blackBoxFixtureContract"
+        },
+        "packagingContract": {
+          "$ref": "#/$defs/packagingContract"
+        },
+        "artifactLimits": {
+          "$ref": "#/$defs/artifactLimits"
+        },
+        "compileDependencyAllowlist": {
+          "$ref": "#/$defs/stringList"
+        },
+        "runtimeDependencyAllowlist": {
+          "$ref": "#/$defs/stringList"
+        },
+        "forbiddenProjectDependencies": {
+          "$ref": "#/$defs/stringList"
+        },
+        "requiredJarEntries": {
+          "$ref": "#/$defs/stringList"
+        },
+        "compilationManifestEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "canonicalizationProfileEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "packagedProjections": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/packagedProjection"
+          }
+        },
+        "releaseGate": {
+          "const": "STRUCTURE_AND_BLACK_BOX_REQUIRED"
+        },
+        "buildProfile": {
+          "type": "string",
+          "pattern": "^gate-a-[a-z0-9-]{1,48}$"
+        },
+        "legacyCompatibility": {
+          "$ref": "#/$defs/legacyCompatibility"
+        },
+        "runtimeDependencyLockIds": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+          }
+        },
+        "requiredRuntimeArtifactRoles": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "visibleSchemaIds": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "packagedProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "projectionId",
+        "entryPath"
+      ],
+      "properties": {
+        "projectionId": {
+          "$ref": "#/$defs/projectionId"
+        },
+        "entryPath": {
+          "type": "string",
+          "pattern": "^META-INF/gate-a/projections/[a-z0-9-]+-v1\\.json$"
+        }
+      }
+    },
+    "blackBoxContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractKind",
+        "fixtureSetId",
+        "receiptSchema",
+        "receiptFingerprintDomain",
+        "capabilities",
+        "authorityInputPolicy",
+        "artifactInputPolicy",
+        "profileInputPolicy",
+        "expectedExitCode",
+        "stdoutMessageVersion",
+        "stdoutAuthority",
+        "stderrPolicy",
+        "timeoutMillis"
+      ],
+      "properties": {
+        "contractKind": {
+          "const": "DETERMINISTIC_ROLE_SELF_TEST"
+        },
+        "fixtureSetId": {
+          "const": "GATE_A_ROLE_BLACK_BOX_V1"
+        },
+        "receiptSchema": {
+          "const": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json"
+        },
+        "receiptFingerprintDomain": {
+          "const": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "authorityInputPolicy": {
+          "const": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT"
+        },
+        "artifactInputPolicy": {
+          "const": "ACTUAL_ROLE_JAR_RAW_BYTES"
+        },
+        "profileInputPolicy": {
+          "enum": [
+            "PACKAGED_PROFILE_RAW_BYTES",
+            "NO_PROFILE"
+          ]
+        },
+        "expectedExitCode": {
+          "const": 0
+        },
+        "stdoutMessageVersion": {
+          "type": "string",
+          "pattern": "^resource-gateway\\.capability-studio\\.gate-a\\.[a-z0-9.-]+\\.v1$"
+        },
+        "stdoutAuthority": {
+          "const": "CALLER_PINNED_FIXTURE_ORACLE"
+        },
+        "stderrPolicy": {
+          "const": "EMPTY"
+        },
+        "timeoutMillis": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1800000
+        }
+      }
+    },
+    "artifactLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxRawBytes",
+        "maxZipEntries",
+        "maxSingleEntryBytes",
+        "maxTotalUncompressedBytes",
+        "maxCompressionRatio"
+      ],
+      "properties": {
+        "maxRawBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxZipEntries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxSingleEntryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxTotalUncompressedBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxCompressionRatio": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "blackBoxFixtureContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fixtureSetId",
+        "bindingManifestName",
+        "bindingManifestMessageVersion",
+        "bindingFingerprintKind",
+        "bindingFingerprintDomain",
+        "fixtureLimits",
+        "fixtures",
+        "oracle",
+        "oracleCompilationPolicy"
+      ],
+      "properties": {
+        "fixtureSetId": {
+          "const": "GATE_A_ROLE_BLACK_BOX_V1"
+        },
+        "bindingManifestName": {
+          "const": "fixture-bindings-v1.json"
+        },
+        "bindingManifestMessageVersion": {
+          "const": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1"
+        },
+        "bindingFingerprintKind": {
+          "const": "AGGREGATE_COMMITMENT"
+        },
+        "bindingFingerprintDomain": {
+          "const": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1"
+        },
+        "fixtureLimits": {
+          "$ref": "#/$defs/fixtureLimits"
+        },
+        "fixtures": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/blackBoxFixtureEntry"
+          }
+        },
+        "oracle": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "commitmentKind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "FILE"
+            },
+            "commitmentKind": {
+              "const": "RAW_BYTES"
+            }
+          }
+        },
+        "oracleCompilationPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "inputs",
+            "testedRoleExecution"
+          ],
+          "properties": {
+            "mode": {
+              "const": "CALLER_INDEPENDENT"
+            },
+            "inputs": {
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 4,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "AUTHORITY_SNAPSHOT",
+                  "ROLE_ARTIFACT",
+                  "PACKAGED_PROFILE",
+                  "ROLE_CONTRACT"
+                ]
+              }
+            },
+            "testedRoleExecution": {
+              "const": "FORBIDDEN"
+            }
+          }
+        }
+      }
+    },
+    "packagingContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "classManifestEntryPath",
+        "resourceManifestEntryPath",
+        "dependencyLockManifestEntryPath",
+        "embeddedDependencyEntries",
+        "closurePolicy",
+        "dependencyLockAuthority",
+        "dependencyLockManifestMode",
+        "providedAbiDependencies"
+      ],
+      "properties": {
+        "model": {
+          "enum": [
+            "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+            "THIN_SERVICE_PROVIDER"
+          ]
+        },
+        "classManifestEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resourceManifestEntryPath": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/repoPath"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dependencyLockManifestEntryPath": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "embeddedDependencyEntries": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/embeddedDependencyEntry"
+          }
+        },
+        "closurePolicy": {
+          "enum": [
+            "EVERY_UNPACKED_ENTRY_REACHABLE_FROM_CLOSED_MANIFEST_GRAPH",
+            "THIN_SERVICE_DESCRIPTOR_AND_IMPLEMENTATION_ONLY"
+          ]
+        },
+        "dependencyLockAuthority": {
+          "const": "TOP_LEVEL_DEPENDENCY_AUTHORITY"
+        },
+        "dependencyLockManifestMode": {
+          "enum": [
+            "EXTERNAL_LOCK_IDS_ONLY",
+            "PROVIDED_ABI_ONLY_NO_EMBEDDED_RUNTIME"
+          ]
+        },
+        "providedAbiDependencies": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/providedAbiDependency"
+          }
+        }
+      }
+    },
+    "embeddedDependencyEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lockId",
+        "scope",
+        "entryPath",
+        "rawFingerprintSource"
+      ],
+      "properties": {
+        "scope": {
+          "enum": [
+            "compile",
+            "runtime"
+          ]
+        },
+        "entryPath": {
+          "type": "string",
+          "pattern": "^META-INF/gate-a/dependencies/[A-Za-z0-9._-]+\\.jar$"
+        },
+        "rawFingerprintSource": {
+          "const": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+        },
+        "lockId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        }
+      }
+    },
+    "fixtureLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxBindingManifestBytes",
+        "maxFileBytes",
+        "maxTreeEntries",
+        "maxTreeEntryBytes",
+        "maxTreeTotalBytes"
+      ],
+      "properties": {
+        "maxBindingManifestBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxFileBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxTreeEntries": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxTreeEntryBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maxTreeTotalBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "blackBoxFixtureEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "commitmentKind"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+        },
+        "kind": {
+          "enum": [
+            "FILE",
+            "DIRECTORY"
+          ]
+        },
+        "commitmentKind": {
+          "enum": [
+            "RAW_BYTES",
+            "TREE_COMMITMENT"
+          ]
+        },
+        "commitmentDomain": {
+          "const": "RG-CS-GATE-A-ROLE-BLACK-BOX-FIXTURE-TREE-v1"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "FILE"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "commitmentKind": {
+                "const": "RAW_BYTES"
+              }
+            },
+            "not": {
+              "required": [
+                "commitmentDomain"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "DIRECTORY"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "commitmentKind": {
+                "const": "TREE_COMMITMENT"
+              }
+            },
+            "required": [
+              "commitmentDomain"
+            ]
+          }
+        }
+      ]
+    },
+    "launchContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launchKind",
+        "launcherRole",
+        "launchedRole",
+        "executable",
+        "argumentTemplate",
+        "workingDirectoryTemplate",
+        "environmentNames",
+        "requestBinding",
+        "classpathOrder",
+        "actualArgumentObservationRequired",
+        "timeoutMillis",
+        "terminateSignal",
+        "killAfterMillis",
+        "stdoutLimitBytes",
+        "stderrLimitBytes"
+      ],
+      "properties": {
+        "launchKind": {
+          "enum": [
+            "CANDIDATE_CHILD",
+            "A1_VERIFIER",
+            "CONFORMANCE_HARNESS",
+            "A2_ADMISSION"
+          ]
+        },
+        "launcherRole": {
+          "enum": [
+            "CALLER",
+            "INDEPENDENT_VERIFIER"
+          ]
+        },
+        "launchedRole": {
+          "enum": [
+            "IMPLEMENTATION_CANDIDATE",
+            "INDEPENDENT_VERIFIER",
+            "CONFORMANCE_HARNESS",
+            "GATE_ADMISSION_CHECKER"
+          ]
+        },
+        "executable": {
+          "const": "/opt/jdk/bin/java"
+        },
+        "argumentTemplate": {
+          "$ref": "#/$defs/stringList"
+        },
+        "workingDirectoryTemplate": {
+          "type": "string",
+          "pattern": "^/tmp/gate-a/\\{runId\\}$"
+        },
+        "environmentNames": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "requestBinding": {
+          "enum": [
+            "CHILD_REQUEST_ROLE_PATH",
+            "COMMAND_ARGUMENTS_ARE_INVOCATION",
+            "HARNESS_ARGUMENTS_ARE_INVOCATION",
+            "ADMISSION_ARGUMENTS_ARE_INVOCATION"
+          ]
+        },
+        "classpathOrder": {
+          "$ref": "#/$defs/stringList"
+        },
+        "actualArgumentObservationRequired": {
+          "const": true
+        },
+        "timeoutMillis": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 1800000
+        },
+        "terminateSignal": {
+          "const": "SIGTERM"
+        },
+        "killAfterMillis": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 10000
+        },
+        "stdoutLimitBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 16777216
+        },
+        "stderrLimitBytes": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 16777216
+        }
+      }
+    },
+    "rawRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "uri",
+        "rawFingerprint"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/identifier"
+        },
+        "uri": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "rawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "inputSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "inputSetId",
+        "fixtureRootUri",
+        "fixtureRootFingerprint",
+        "exactRefs",
+        "additionalInputPolicy"
+      ],
+      "properties": {
+        "inputSetId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "fixtureRootUri": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "fixtureRootFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "exactRefs": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/rawRef"
+          }
+        },
+        "additionalInputPolicy": {
+          "const": "REJECT"
+        }
+      }
+    },
+    "replayVector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "testId",
+        "operation",
+        "mutationVector",
+        "mutationRecipe",
+        "inputSetId",
+        "allowedExtraMaterial",
+        "expectedMechanism",
+        "expectedTerminal",
+        "expectedExitCode",
+        "expectedReasonCode"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9
+        },
+        "testId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "operation": {
+          "enum": [
+            "TYPED_REPLAY_V1",
+            "LEGACY_STAGE_ACCEPTANCE_V2"
+          ]
+        },
+        "mutationVector": {
+          "$ref": "#/$defs/identifier"
+        },
+        "mutationRecipe": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "driver",
+            "variantId",
+            "fieldEffects",
+            "unlistedFieldPolicy"
+          ],
+          "properties": {
+            "driver": {
+              "const": "PINNED_TCK_PROVIDER"
+            },
+            "variantId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "fieldEffects": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 8,
+              "items": {
+                "$ref": "#/$defs/identifier"
+              }
+            },
+            "unlistedFieldPolicy": {
+              "const": "PRESERVE_PINNED_BASELINE"
+            }
+          }
+        },
+        "inputSetId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "allowedExtraMaterial": {
+          "$ref": "#/$defs/stringList"
+        },
+        "expectedMechanism": {
+          "$ref": "#/$defs/identifier"
+        },
+        "expectedTerminal": {
+          "enum": [
+            "ACCEPTED",
+            "NOT_ACCEPTED",
+            "INVALID",
+            "INCOMPLETE"
+          ]
+        },
+        "expectedExitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "expectedReasonCode": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "orderedCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "ordinal",
+        "checkId",
+        "owner",
+        "onMismatch",
+        "onUnavailable",
+        "exitCode",
+        "allowedWritesAfterPass"
+      ],
+      "properties": {
+        "phase": {
+          "enum": [
+            "A1_BOOTSTRAP",
+            "CHILD_PROCESS",
+            "HARNESS_OUTER"
+          ]
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "checkId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "owner": {
+          "enum": [
+            "CALLER",
+            "A1",
+            "HARNESS"
+          ]
+        },
+        "onMismatch": {
+          "$ref": "#/$defs/identifier"
+        },
+        "onUnavailable": {
+          "$ref": "#/$defs/identifier"
+        },
+        "exitCode": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 255
+        },
+        "allowedWritesAfterPass": {
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "abnormalTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event",
+        "stopRemainingSlots",
+        "drainStreams",
+        "reapProcessTree",
+        "formedMaterialPolicy",
+        "remainingMaterialPolicy",
+        "resultPolicy",
+        "stdoutPolicy",
+        "a1ExitCode",
+        "harnessProjection"
+      ],
+      "properties": {
+        "event": {
+          "enum": [
+            "CHILD_CRASH",
+            "CHILD_TIMEOUT",
+            "CHILD_CANCELLED",
+            "STDOUT_TRUNCATED",
+            "PROCESS_TREE_RESIDUE",
+            "CODESOURCE_OBSERVATION_UNAVAILABLE"
+          ]
+        },
+        "stopRemainingSlots": {
+          "const": true
+        },
+        "drainStreams": {
+          "const": true
+        },
+        "reapProcessTree": {
+          "const": true
+        },
+        "formedMaterialPolicy": {
+          "const": "PRESERVE_ATTEMPT_ONLY"
+        },
+        "remainingMaterialPolicy": {
+          "const": "FORBIDDEN"
+        },
+        "resultPolicy": {
+          "const": "NO_REPLAY_RESULT"
+        },
+        "stdoutPolicy": {
+          "const": "EMPTY"
+        },
+        "a1ExitCode": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 255
+        },
+        "harnessProjection": {
+          "const": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+        }
+      }
+    },
+    "materialOwnership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact",
+        "pathTemplate",
+        "writer",
+        "writePhase",
+        "createMode",
+        "sealer",
+        "handoffCondition"
+      ],
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/identifier"
+        },
+        "pathTemplate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "writer": {
+          "enum": [
+            "CALLER",
+            "A1",
+            "HARNESS",
+            "A2"
+          ]
+        },
+        "writePhase": {
+          "$ref": "#/$defs/identifier"
+        },
+        "createMode": {
+          "const": "CREATE_NEW"
+        },
+        "sealer": {
+          "enum": [
+            "CALLER",
+            "HARNESS",
+            "A2"
+          ]
+        },
+        "handoffCondition": {
+          "$ref": "#/$defs/safeText"
+        }
+      }
+    },
+    "canonicalizationGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "parserPolicy",
+        "profileRef",
+        "vectorRef",
+        "challengeInputRef",
+        "oracleRef",
+        "profileRawFingerprint",
+        "vectorRawFingerprint",
+        "challengeInputRawFingerprint",
+        "oracleRawFingerprint",
+        "selfTestCommand",
+        "expectedExitCode",
+        "outputPolicy",
+        "requiredRoleModes",
+        "releaseRule"
+      ],
+      "properties": {
+        "parserPolicy": {
+          "const": "UTF8_STRICT_DUPLICATE_REJECT_TRAILING_REJECT_NONFINITE_REJECT"
+        },
+        "profileRef": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "vectorRef": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "challengeInputRef": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "oracleRef": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "profileRawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "vectorRawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "challengeInputRawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "oracleRawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "selfTestCommand": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "expectedExitCode": {
+          "const": 0
+        },
+        "outputPolicy": {
+          "const": "STDOUT_EXACT_ORACLE_FILE_BYTES"
+        },
+        "requiredRoleModes": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "releaseRule": {
+          "const": "ACTUAL_ROLE_JAR_MUST_PASS_BYTE_EXACT_SELF_TEST"
+        }
+      }
+    },
+    "authorityRelation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact",
+        "authority",
+        "consumer",
+        "comparisonTime",
+        "equalityPolicy",
+        "forbiddenSource"
+      ],
+      "properties": {
+        "fact": {
+          "$ref": "#/$defs/identifier"
+        },
+        "authority": {
+          "$ref": "#/$defs/identifier"
+        },
+        "consumer": {
+          "$ref": "#/$defs/identifier"
+        },
+        "comparisonTime": {
+          "$ref": "#/$defs/identifier"
+        },
+        "equalityPolicy": {
+          "enum": [
+            "EXACT_RAW_EQUAL",
+            "MUST_DIFFER",
+            "ROLE_SPECIFIC",
+            "DERIVED_ONLY"
+          ]
+        },
+        "forbiddenSource": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "deliverySlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sliceId",
+        "owner",
+        "modules",
+        "prerequisiteSliceIds",
+        "implementationRoles",
+        "allowedPaths",
+        "acceptanceCommand",
+        "requiredArtifacts",
+        "handoffArtifacts",
+        "outputArtifacts",
+        "acceptanceContract",
+        "handoffGate",
+        "requiredEvidenceIds",
+        "evidenceContractRefs"
+      ],
+      "properties": {
+        "sliceId": {
+          "type": "string",
+          "pattern": "^A1\\.[1-7]$"
+        },
+        "owner": {
+          "enum": [
+            "CALLER",
+            "CANDIDATE",
+            "PROVIDER",
+            "VERIFIER",
+            "HARNESS"
+          ]
+        },
+        "modules": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repoPath"
+          }
+        },
+        "prerequisiteSliceIds": {
+          "type": "array",
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^A1\\.[1-7]$"
+          }
+        },
+        "implementationRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "items": {
+            "enum": [
+              "IMPLEMENTATION_CANDIDATE",
+              "TCK_PROVIDER",
+              "INDEPENDENT_VERIFIER",
+              "CONFORMANCE_HARNESS"
+            ]
+          }
+        },
+        "allowedPaths": {
+          "$ref": "#/$defs/stringList"
+        },
+        "acceptanceCommand": {
+          "$ref": "#/$defs/stringList"
+        },
+        "requiredArtifacts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/sliceArtifact"
+          }
+        },
+        "handoffArtifacts": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/sliceArtifact"
+          }
+        },
+        "outputArtifacts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/sliceArtifact"
+          }
+        },
+        "handoffGate": {
+          "$ref": "#/$defs/safeText"
+        },
+        "acceptanceContract": {
+          "$ref": "#/$defs/acceptanceContract"
+        },
+        "requiredEvidenceIds": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "evidenceContractRefs": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "sliceArtifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "coordinate",
+        "path"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "IMPLEMENTATION_CANDIDATE",
+            "TCK_PROVIDER",
+            "INDEPENDENT_VERIFIER",
+            "CONFORMANCE_HARNESS",
+            "GATE_ADMISSION_CHECKER"
+          ]
+        },
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "path": {
+          "$ref": "#/$defs/repoPath"
+        }
+      }
+    },
+    "timeDerivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "clockAuthority",
+        "childContainment",
+        "replayStartedAt",
+        "replayEndedAt",
+        "outerContainment",
+        "reportStartedAt",
+        "reportEndedAt"
+      ],
+      "properties": {
+        "clockAuthority": {
+          "const": "DIRECT_PARENT_PROCESS_OBSERVATION"
+        },
+        "childContainment": {
+          "const": "OUTER_STARTED_AT_LE_CHILD_STARTED_AT_LE_CHILD_ENDED_AT_LE_OUTER_ENDED_AT"
+        },
+        "replayStartedAt": {
+          "const": "MIN_CHILD_STARTED_AT"
+        },
+        "replayEndedAt": {
+          "const": "MAX_CHILD_ENDED_AT"
+        },
+        "outerContainment": {
+          "const": "HARNESS_STARTED_AT_LE_A1_STARTED_AT_LE_A1_ENDED_AT_LE_HARNESS_ENDED_AT"
+        },
+        "reportStartedAt": {
+          "const": "MIN_OUTER_STARTED_AT"
+        },
+        "reportEndedAt": {
+          "const": "MAX_OUTER_ENDED_AT"
+        }
+      }
+    },
+    "dependencyAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "lockSetId",
+        "lockRevision",
+        "parentLockFingerprint",
+        "authorityMode",
+        "sourcePolicy",
+        "closed",
+        "allowedPackagingModes",
+        "manifestSelfAssertionPolicy",
+        "sourceRepositorySnapshotId",
+        "dependencyTreeFingerprint",
+        "sourcePomRawFingerprint",
+        "toolchainPluginLockRefs",
+        "changeReason",
+        "status",
+        "dependencyAuthorityFingerprint",
+        "dependencies"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "capability-studio.gate-a-dependency-authority.v1"
+        },
+        "lockSetId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        },
+        "lockRevision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parentLockFingerprint": {
+          "type": "null"
+        },
+        "authorityMode": {
+          "const": "CALLER_OWNED_EXTERNAL_RAW_LOCK"
+        },
+        "sourcePolicy": {
+          "const": "REQUIRED_EXTERNAL_MAVEN_REPOSITORY_SNAPSHOT_AND_POM_PIN"
+        },
+        "closed": {
+          "const": true
+        },
+        "allowedPackagingModes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+              "THIN_SERVICE_PROVIDER"
+            ]
+          }
+        },
+        "manifestSelfAssertionPolicy": {
+          "const": "CANNOT_ESTABLISH_RAW_FINGERPRINT"
+        },
+        "sourceRepositorySnapshotId": {
+          "$ref": "#/$defs/externalPin"
+        },
+        "dependencyTreeFingerprint": {
+          "$ref": "#/$defs/dependencyExternalFingerprint"
+        },
+        "sourcePomRawFingerprint": {
+          "$ref": "#/$defs/pomExternalFingerprint"
+        },
+        "toolchainPluginLockRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/externalLockRef"
+          }
+        },
+        "changeReason": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 256,
+          "pattern": "^[A-Z0-9][A-Z0-9_. -]*$"
+        },
+        "status": {
+          "enum": [
+            "DRAFT_UNPINNED",
+            "ACTIVE",
+            "REVOKED"
+          ]
+        },
+        "dependencyAuthorityFingerprint": {
+          "$ref": "#/$defs/dependencyAuthorityFingerprint"
+        },
+        "dependencies": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/dependencyLock"
+          }
+        },
+        "previousHeadFingerprint": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/dependencyFingerprintValue"
+            }
+          ]
+        }
+      }
+    },
+    "externalPin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "requiredExternalPinId",
+            "status"
+          ],
+          "properties": {
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "UNAVAILABLE_UNTIL_CALLER_PINNED"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "requiredExternalPinId",
+            "status",
+            "fingerprint"
+          ],
+          "properties": {
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "PINNED"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "externalLockRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lockId",
+            "mode",
+            "requiredExternalPinId",
+            "status"
+          ],
+          "properties": {
+            "lockId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "UNAVAILABLE_UNTIL_CALLER_PINNED"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lockId",
+            "mode",
+            "requiredExternalPinId",
+            "status",
+            "fingerprint"
+          ],
+          "properties": {
+            "lockId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "PINNED"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "dependencyFingerprintValue": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "dependencyExternalFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "const": "AGGREGATE_COMMITMENT"
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-DEPENDENCY-TREE-v1"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_PIN"
+        },
+        "value": {
+          "$ref": "#/$defs/dependencyFingerprintValue"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        }
+      }
+    },
+    "pomExternalFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "const": "RAW_BYTES"
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-SOURCE-POM-v1"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_PIN"
+        },
+        "value": {
+          "$ref": "#/$defs/dependencyFingerprintValue"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        }
+      }
+    },
+    "dependencyAuthorityFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "const": "CANONICAL_DOCUMENT"
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-DEPENDENCY-AUTHORITY-v1"
+        },
+        "source": {
+          "const": "THIS_DEPENDENCY_AUTHORITY_EXACT_RAW_BYTES"
+        },
+        "value": {
+          "$ref": "#/$defs/dependencyFingerprintValue"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_DURING_HASH"
+        }
+      }
+    },
+    "dependencyLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lockId",
+        "coordinate",
+        "scope",
+        "rawFingerprint",
+        "allowedRoles",
+        "packagingModes",
+        "source"
+      ],
+      "properties": {
+        "lockId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        },
+        "coordinate": {
+          "$ref": "#/$defs/dependencyCoordinate"
+        },
+        "scope": {
+          "const": "runtime"
+        },
+        "rawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+        },
+        "allowedRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "IMPLEMENTATION_CANDIDATE",
+              "INDEPENDENT_VERIFIER",
+              "CONFORMANCE_HARNESS",
+              "GATE_ADMISSION_CHECKER"
+            ]
+          }
+        },
+        "packagingModes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES"
+          }
+        },
+        "source": {
+          "const": "CALLER_PINNED_MAVEN_LOCAL_REPOSITORY"
+        }
+      }
+    },
+    "providedAbiDependency": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "providedId",
+        "candidateRole",
+        "candidateCoordinate",
+        "candidateSpiInterfaceClassEntryPath",
+        "candidateSpiInterfaceClass",
+        "providerServiceDescriptorEntryPath",
+        "providerServiceDescriptorInterfaceClass",
+        "candidateArtifactFingerprintPinField",
+        "candidateClassEntryPath",
+        "candidateClassFingerprintPinField",
+        "embeddingPolicy"
+      ],
+      "properties": {
+        "providedId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        },
+        "candidateRole": {
+          "const": "IMPLEMENTATION_CANDIDATE"
+        },
+        "candidateCoordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "candidateArtifactFingerprintPinField": {
+          "const": "expectedImplementationCandidateRawFingerprint"
+        },
+        "candidateClassEntryPath": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_/$]+\\.class$"
+        },
+        "candidateClassFingerprintPinField": {
+          "const": "expectedCandidateSpiClassRawFingerprint"
+        },
+        "embeddingPolicy": {
+          "const": "PROVIDED_ABI_NOT_EMBEDDED"
+        },
+        "candidateSpiInterfaceClassEntryPath": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_/$]+\\.class$"
+        },
+        "candidateSpiInterfaceClass": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]+$"
+        },
+        "providerServiceDescriptorEntryPath": {
+          "type": "string",
+          "pattern": "^META-INF/services/[A-Za-z0-9_.$]+$"
+        },
+        "providerServiceDescriptorInterfaceClass": {
+          "type": "string",
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$.]+$"
+        }
+      }
+    },
+    "legacyCompatibility": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "preserve",
+        "previousClassifier",
+        "previousMainClass",
+        "migration",
+        "legacyBuildContract"
+      ],
+      "properties": {
+        "preserve": {
+          "const": true
+        },
+        "previousClassifier": {
+          "const": "cli"
+        },
+        "previousMainClass": {
+          "const": "com.leanowtech.bloge.gateway.testkit.ResourceGatewaySuiteCli"
+        },
+        "migration": {
+          "const": "ADD_GATE_A_CANDIDATE_WITHOUT_RENAMING_LEGACY_CLI"
+        },
+        "legacyBuildContract": {
+          "const": "EXISTING_CLI_CLASSIFIER_REMAINS_PUBLISHED"
+        }
+      }
+    },
+    "hermeticExecutionContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "contractId",
+        "required",
+        "launcherPolicy",
+        "missingLauncherPolicy",
+        "identity",
+        "mounts",
+        "network",
+        "processControl",
+        "capture",
+        "toolchainIdentity",
+        "observation"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "capability-studio.gate-a-protocol-authority.v1#hermetic-execution-contract"
+        },
+        "contractId": {
+          "const": "GATE_A_HERMETIC_EXECUTION_V1"
+        },
+        "required": {
+          "const": true
+        },
+        "launcherPolicy": {
+          "const": "CALLER_DIRECT_TRUSTED_PARENT_LAUNCHER_ONLY"
+        },
+        "missingLauncherPolicy": {
+          "const": "FAIL_CLOSED"
+        },
+        "identity": {
+          "$ref": "#/$defs/hermeticIdentity"
+        },
+        "mounts": {
+          "$ref": "#/$defs/hermeticMounts"
+        },
+        "network": {
+          "$ref": "#/$defs/hermeticNetwork"
+        },
+        "processControl": {
+          "$ref": "#/$defs/hermeticProcessControl"
+        },
+        "capture": {
+          "$ref": "#/$defs/hermeticCapture"
+        },
+        "toolchainIdentity": {
+          "$ref": "#/$defs/toolchainIdentity"
+        },
+        "observation": {
+          "$ref": "#/$defs/hermeticObservationBinding"
+        }
+      }
+    },
+    "hermeticIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "launcherIdentity",
+        "differentFromCallerIdentity",
+        "userNamespace",
+        "oracleWorkspaceVisibility",
+        "repositoryWorkspaceVisibility"
+      ],
+      "properties": {
+        "launcherIdentity": {
+          "const": "DEDICATED_NON_ROOT_UID"
+        },
+        "differentFromCallerIdentity": {
+          "const": true
+        },
+        "userNamespace": {
+          "const": "REQUIRED"
+        },
+        "oracleWorkspaceVisibility": {
+          "const": "DENY"
+        },
+        "repositoryWorkspaceVisibility": {
+          "const": "DENY"
+        }
+      }
+    },
+    "hermeticMounts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "policy",
+        "readOnlyInputs",
+        "writableMounts",
+        "forbiddenMounts",
+        "workingDirectory"
+      ],
+      "properties": {
+        "policy": {
+          "const": "MINIMAL_ALLOWLIST"
+        },
+        "readOnlyInputs": {
+          "const": true
+        },
+        "writableMounts": {
+          "const": [
+            "CAPABILITY_OUTPUT_ROOT",
+            "EMPTY_SCRATCH_ROOT"
+          ]
+        },
+        "forbiddenMounts": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "AUTHORITY_WORKSPACE",
+              "ORACLE_ROOT",
+              "REPOSITORY_ROOT",
+              "CALLER_HOME"
+            ]
+          }
+        },
+        "workingDirectory": {
+          "const": "EMPTY_SCRATCH_ROOT"
+        }
+      }
+    },
+    "hermeticNetwork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "dns",
+        "unixSockets"
+      ],
+      "properties": {
+        "mode": {
+          "const": "NONE"
+        },
+        "dns": {
+          "const": "DENY"
+        },
+        "unixSockets": {
+          "const": "DENY"
+        }
+      }
+    },
+    "hermeticProcessControl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "controller",
+        "termination",
+        "killAfterMillis",
+        "residuePolicy"
+      ],
+      "properties": {
+        "controller": {
+          "const": "CGROUP_V2_OR_OS_JOB_OBJECT"
+        },
+        "termination": {
+          "const": "PROCESS_GROUP_AND_DESCENDANT_CONTAINER"
+        },
+        "killAfterMillis": {
+          "const": 2000
+        },
+        "residuePolicy": {
+          "const": "UNAVAILABLE_NO_RESULT_NO_ENVELOPE"
+        }
+      }
+    },
+    "hermeticCapture": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "strategy",
+        "absoluteDeadlineRequired",
+        "stdoutLimitBytes",
+        "stderrLimitBytes",
+        "unboundedJoinPolicy",
+        "eofPolicy"
+      ],
+      "properties": {
+        "strategy": {
+          "const": "SELECTOR_NONBLOCKING"
+        },
+        "absoluteDeadlineRequired": {
+          "const": true
+        },
+        "stdoutLimitBytes": {
+          "const": 1048576
+        },
+        "stderrLimitBytes": {
+          "const": 1048576
+        },
+        "unboundedJoinPolicy": {
+          "const": "FORBIDDEN"
+        },
+        "eofPolicy": {
+          "const": "INCOMPLETE_IS_UNAVAILABLE"
+        }
+      }
+    },
+    "toolchainIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "imageId",
+        "javaExecutable",
+        "javaMajorVersion",
+        "javaRuntimeVersion",
+        "runtimeImageFingerprint",
+        "requiredExternalPinId",
+        "externalPinStatus",
+        "missingPinPolicy",
+        "resolutionPolicy"
+      ],
+      "properties": {
+        "imageId": {
+          "const": "temurin-25.0.3+9-hermetic-v1"
+        },
+        "javaExecutable": {
+          "const": "/opt/jdk/bin/java"
+        },
+        "javaMajorVersion": {
+          "const": 25
+        },
+        "javaRuntimeVersion": {
+          "const": "25.0.3+9"
+        },
+        "runtimeImageFingerprint": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+            }
+          ]
+        },
+        "requiredExternalPinId": {
+          "const": "GATE_A_HERMETIC_TOOLCHAIN_IMAGE_V1"
+        },
+        "externalPinStatus": {
+          "const": "UNAVAILABLE_UNTIL_CALLER_PINNED"
+        },
+        "missingPinPolicy": {
+          "const": "FAIL_CLOSED"
+        },
+        "resolutionPolicy": {
+          "const": "EXACT_IMAGE_AND_RUNTIME_BYTES"
+        }
+      }
+    },
+    "hermeticObservationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "messageVersion",
+        "noncePolicy",
+        "invocationBinding",
+        "replayPolicy",
+        "requiredFields",
+        "callerPinPolicy",
+        "producerPolicy",
+        "persistencePolicy",
+        "consumerPolicy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json"
+        },
+        "requiredFields": {
+          "const": [
+            "authorityRawFingerprint",
+            "challengeNonce",
+            "invocationId",
+            "bundleRootFingerprint",
+            "launcherArtifactRawFingerprint",
+            "roleInputViewCommitments",
+            "processObservationCommitment",
+            "issuedBinding",
+            "toolchainIdentity",
+            "launcherIdentity",
+            "mountPolicy",
+            "networkPolicy",
+            "processControlPolicy"
+          ]
+        },
+        "callerPinPolicy": {
+          "const": "OBSERVATION_MUST_BIND_AUTHORITY_BUNDLE_AND_DIRECT_PARENT_RUN"
+        },
+        "messageVersion": {
+          "const": "resource-gateway.capability-studio.gate-a.hermetic-launcher-observation.v1"
+        },
+        "noncePolicy": {
+          "const": "CALLER_ISSUED_UNIQUE_128_BIT_NONCE"
+        },
+        "invocationBinding": {
+          "const": "ONE_INVOCATION_ONE_CONSUMPTION"
+        },
+        "replayPolicy": {
+          "const": "REJECT_REUSED_NONCE_OR_INVOCATION"
+        },
+        "producerPolicy": {
+          "const": "CALLER_DIRECT_TRUSTED_PARENT"
+        },
+        "persistencePolicy": {
+          "const": "CREATE_NEW_IMMUTABLE_OBSERVATION"
+        },
+        "consumerPolicy": {
+          "const": "RELEASE_CONTROL_PLANE_AND_SLICE_RECEIPT_VERIFIER_ONLY"
+        }
+      }
+    },
+    "acceptanceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "acceptanceId",
+        "buildProfile",
+        "buildProperties",
+        "testIds",
+        "receiptPath",
+        "messageVersion",
+        "requiredArtifactPaths",
+        "requiredEvidenceIds",
+        "handoff",
+        "sliceId",
+        "authorityRevision",
+        "authorityRawFingerprint",
+        "sourceTreeCommitment",
+        "toolchainIdentityFingerprint",
+        "buildInvocationId",
+        "predecessorReceiptFingerprint",
+        "artifactAggregate",
+        "evidenceAggregate",
+        "receiptFingerprint"
+      ],
+      "properties": {
+        "acceptanceId": {
+          "type": "string",
+          "pattern": "^RG-CS-GATE-A-A1-[1-7]-[A-Z0-9-]+-V1$"
+        },
+        "buildProfile": {
+          "type": "string",
+          "pattern": "^gate-a-[a-z0-9-]{1,48}$"
+        },
+        "buildProperties": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9.-]{0,63}=[A-Za-z0-9_.-]{1,96}$"
+          }
+        },
+        "testIds": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^A1\\.[1-7]_[A-Z0-9_]{3,96}$"
+          }
+        },
+        "receiptPath": {
+          "$ref": "#/$defs/repoPath"
+        },
+        "messageVersion": {
+          "type": "string",
+          "pattern": "^resource-gateway\\.capability-studio\\.gate-a\\.slice-acceptance-receipt\\.a1-[1-7]\\.v1$"
+        },
+        "requiredArtifactPaths": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repoPath"
+          }
+        },
+        "requiredEvidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "handoff": {
+          "$ref": "#/$defs/acceptanceHandoff"
+        },
+        "sliceId": {
+          "type": "string",
+          "pattern": "^A1\\.[1-7]$"
+        },
+        "authorityRevision": {
+          "const": 1
+        },
+        "authorityRawFingerprint": {
+          "$ref": "#/$defs/fingerprintPolicy"
+        },
+        "sourceTreeCommitment": {
+          "$ref": "#/$defs/fingerprintPolicy"
+        },
+        "toolchainIdentityFingerprint": {
+          "$ref": "#/$defs/externalToolchainFingerprintPolicy"
+        },
+        "buildInvocationId": {
+          "$ref": "#/$defs/buildInvocationBinding"
+        },
+        "predecessorReceiptFingerprint": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/predecessorReceiptPolicy"
+            }
+          ]
+        },
+        "artifactAggregate": {
+          "$ref": "#/$defs/fingerprintPolicy"
+        },
+        "evidenceAggregate": {
+          "$ref": "#/$defs/fingerprintPolicy"
+        },
+        "receiptFingerprint": {
+          "$ref": "#/$defs/fingerprintPolicy"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "sliceId": {
+                "const": "A1.1"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "predecessorReceiptFingerprint": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "sliceId": {
+                "pattern": "^A1\\.[2-7]$"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "predecessorReceiptFingerprint": {
+                "$ref": "#/$defs/predecessorReceiptPolicy"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "acceptanceHandoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "receiver",
+        "receiptRequired",
+        "artifactPaths",
+        "evidenceIds"
+      ],
+      "properties": {
+        "required": {
+          "const": true
+        },
+        "receiver": {
+          "enum": [
+            "CALLER",
+            "CANDIDATE",
+            "PROVIDER",
+            "VERIFIER",
+            "HARNESS"
+          ]
+        },
+        "receiptRequired": {
+          "const": true
+        },
+        "artifactPaths": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/repoPath"
+          }
+        },
+        "evidenceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "externalToolchainFingerprintPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "const": "RAW_BYTES"
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN"
+        },
+        "value": {
+          "type": "null"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        }
+      }
+    },
+    "typedFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "RAW_BYTES",
+            "TREE_COMMITMENT",
+            "AGGREGATE_COMMITMENT",
+            "CANONICAL_DOCUMENT"
+          ]
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^RG-CS-[A-Z0-9-]{3,96}-v1$"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "fingerprintPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "RAW_BYTES",
+            "TREE_COMMITMENT",
+            "AGGREGATE_COMMITMENT",
+            "CANONICAL_DOCUMENT"
+          ]
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^RG-CS-[A-Z0-9-]{3,96}-v1$"
+        },
+        "source": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        },
+        "value": {
+          "type": "null"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_DURING_HASH"
+        }
+      }
+    },
+    "buildInvocationBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "pattern",
+        "uniquePerInvocation"
+      ],
+      "properties": {
+        "mode": {
+          "const": "CALLER_ISSUED"
+        },
+        "pattern": {
+          "const": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$"
+        },
+        "uniquePerInvocation": {
+          "const": true
+        }
+      }
+    },
+    "predecessorReceiptPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "sourceSliceId",
+        "source"
+      ],
+      "properties": {
+        "mode": {
+          "const": "REQUIRED"
+        },
+        "sourceSliceId": {
+          "type": "string",
+          "pattern": "^A1\\.[1-7]$"
+        },
+        "source": {
+          "const": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        }
+      }
+    },
+    "evidenceContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "schemaName",
+        "messageVersion",
+        "producerOwner",
+        "semanticVerifierId",
+        "allowedSliceIds",
+        "requiredArtifactRoles",
+        "requiredRoleViewRoles",
+        "outcomeDerivationPolicy"
+      ],
+      "properties": {
+        "evidenceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "schemaName": {
+          "type": "string",
+          "pattern": "^capability-studio-gate-a-[a-z0-9-]+v1\\.schema\\.json$"
+        },
+        "messageVersion": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.-]{10,128}$"
+        },
+        "producerOwner": {
+          "type": "string",
+          "pattern": "^(CANDIDATE|PROVIDER|HARNESS|VERIFIER|CALLER)$"
+        },
+        "semanticVerifierId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,48}$"
+        },
+        "allowedSliceIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^A1\\.[1-7]$"
+          }
+        },
+        "requiredArtifactRoles": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "requiredRoleViewRoles": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "outcomeDerivationPolicy": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{4,128}$"
+        }
+      }
+    },
+    "schemaRoleVisibilityEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaName",
+        "allowedRoles"
+      ],
+      "properties": {
+        "schemaName": {
+          "type": "string"
+        },
+        "allowedRoles": {
+          "type": "array",
+          "maxItems": 5,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        }
+      }
+    },
+    "perRolePackagedSchemasEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "schemas"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/identifier"
+        },
+        "schemas": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

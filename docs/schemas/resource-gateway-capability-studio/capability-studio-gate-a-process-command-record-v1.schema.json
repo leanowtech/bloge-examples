@@ -10,7 +10,7 @@
     "runId": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/runId"},
     "executable": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
     "arguments": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/commandArg"}},
-    "environment": {"type": "array", "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,63}=[\\x20-\\x7E]*$"}},
+    "environment": {"type": "array", "maxItems": 0},
     "workingDirectory": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/absolutePath"},
     "commandFingerprint": {"$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/documentFingerprint"}
   }

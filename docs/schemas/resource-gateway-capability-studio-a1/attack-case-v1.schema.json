@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:attack-case:v1",
+  "title": "Attack Case for Capability Studio Gate A1",
+  "description": "Known attack vector test case structure. Each case has a closed attack enum, expected outcome (PASS | REJECT), and optional expected error code. payload may carry arbitrary JSON objects (not closed empty). Per 04 §3.4. Draft 2020-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "caseId", "attack", "description", "expectedOutcome", "expectedErrorCode", "payload"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Schema version identifier.",
+      "const": "1.0"
+    },
+    "caseId": {
+      "description": "Unique case identifier. Used in AttackRunReport perCase to cross-reference. Per 04 §3.4.1.",
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,62}$",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "attack": {
+      "description": "Closed attack type enum. Derived from 00 §6 error codes and 04 §3.4.2 blocking conditions. Per 04 §3.4.",
+      "$ref": "#/$defs/attackType"
+    },
+    "description": {
+      "description": "Human-readable description of the attack vector.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024
+    },
+    "expectedOutcome": {
+      "description": "Expected verdict when this case is executed. Closed enum. Per 04 §3.4.1.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/expectedOutcome"
+    },
+    "expectedErrorCode": {
+      "description": "Expected error code on REJECT. null if expectedOutcome is PASS. Per 04 §3.4.1.",
+      "oneOf": [
+        {"type": "string", "minLength": 1, "maxLength": 64},
+        {"type": "null"}
+      ]
+    },
+    "payload": {
+      "description": "Attack case payload. May carry arbitrary JSON objects (not closed empty); structure depends on attack type. Per 04 §3.4.",
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "expectedOutcome": {
+            "const": "PASS"
+          }
+        },
+        "required": ["expectedOutcome"]
+      },
+      "then": {
+        "properties": {
+          "expectedErrorCode": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "expectedOutcome": {
+            "const": "REJECT"
+          }
+        },
+        "required": ["expectedOutcome"]
+      },
+      "then": {
+        "properties": {
+          "expectedErrorCode": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "attackType": {
+      "description": "Closed attack type enum derived from 00 §6 error codes and 04 §3.4.2 blocking conditions. REPLAY: old proof/state reuse. DIGEST_MANIPULATION: tampering digest in transit. FINGERPRINT_TRUNCATION: truncating TypedFP. WIRE_FORMAT_BYPASS: omitting sha256: prefix. MERKLE_MANIPULATION: tree structure tampering. CONTENT_DIGEST_COLLISION: SHA256 collision. CANONICALIZATION_BYPASS: JCS canonicalization bypass. FRAMING: attributing digest to wrong principal. REENTRANCY: re-entrancy on stateful operations. INJECTION: injecting hostile content. AMPLIFICATION: resource amplification. Per 04 §3.4.",
+      "enum": [
+        "REPLAY",
+        "DIGEST_MANIPULATION",
+        "FINGERPRINT_TRUNCATION",
+        "WIRE_FORMAT_BYPASS",
+        "MERKLE_MANIPULATION",
+        "CONTENT_DIGEST_COLLISION",
+        "CANONICALIZATION_BYPASS",
+        "FRAMING",
+        "REENTRANCY",
+        "INJECTION",
+        "AMPLIFICATION"
+      ]
+    }
+  }
+}

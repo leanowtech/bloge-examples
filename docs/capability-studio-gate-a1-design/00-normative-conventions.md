@@ -15,11 +15,20 @@
 **实现要求**：
 - UTF-8 编码作为唯一字符集；禁止 BOM（`\uFEFF`）。
 - 对象成员名称按 RFC 8785 §3.1 递归排序：成员名以 UTF-16 代码单元升序排列，不保留源文件顺序。
-- 数字采用 IEEE 754 双精度小数表示；不得使用科学计数法、尾随零或省略小数点。
+- 数字按 RFC 8785 引用的 ECMAScript `NumberToString` 规则序列化；整数可无小数点，算法要求时允许指数形式，不保留非规范尾随零。
 - 字符串中的转义序列按 JCS 规范严格展开；`\u0000` 替代控制字符。
 - `null` 是明确值，与缺失键不同；不得将 `null` 等价于缺失键处理。
 
 > **实现约束**：任何将 JCS 输出与手动拼接字符串混合的行为均视为违反本规范。
+
+### 1.1.1 Authority Numeric Input Profile
+
+RFC 8785 仍是 Gate A1 结构化负载的规范序列化规则。Step0 authority 验证器采用更窄的输入剖面，以避免不同语言在 JSON number 解析阶段产生不可见的精度分歧：
+
+- 仅接受 IEEE 754 可安全精确表示的整数，即 `[-9007199254740991, 9007199254740991]`。
+- 拒绝浮点数，以及超出上述范围的整数；拒绝发生在 JCS 序列化之前。
+- 对于被该剖面接受的文档，authority 产生的规范字节必须与 RFC 8785 实现产生的字节完全一致。
+- 该输入剖面不是对 RFC 8785 的替代算法，也不得被解释为允许非 JCS 输出。
 
 ### 1.2 ENC — Length-Prefixed Binary Encoding
 
@@ -254,7 +263,7 @@ manifest.treeRoot = WireDigest(MerkleNode(...))
 | Authority | 路径 | 作用域 | 状态 |
 |-----------|------|--------|------|
 | **LEGACY_GATE_A_WIRE_V1** | `docs/schemas/resource-gateway-capability-studio/` | Oracle 内部 byte-compatible 签封 | 兼容性保留，禁止扩展 |
-| **PLANNED TARGET A1** | `docs/schemas/resource-gateway-capability-studio-a1/` | 生产路径 schema 事实源 | Step0/Source 阶段，待创建 |
+| **TARGET A1 CANDIDATE** | `docs/schemas/resource-gateway-capability-studio-a1/` | 生产路径 schema 候选事实源 | 13 个 candidate schema 已创建，待 Step0 index attestation 与 fresh review |
 
 ### 9.2 LEGACY_GATE_A_WIRE_V1 约束
 
@@ -264,6 +273,9 @@ manifest.treeRoot = WireDigest(MerkleNode(...))
 - `capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json` 明确为 **CompilerGoldenOracle 签封 artifact**，其 shape 属于 legacy 兼容性结构，不构成 target A1 compilerManifest 规范。
 - JCS test 或acles（如 `canonicalization-oracle` 相关 schema）是独立的 **TrustBehaviorOracle test artifact**，不是 TrustBehaviorOracle manifest 的 schema 事实源。
 - **禁止行为**：生产路径不得将 legacy wrapper object 直接 reinterpret 为 target type，必须通过 §9.3 定义的显式迁移映射。
+- 普通 test-kit JAR 与 `cli` shaded JAR 继续携带 Legacy schema，以维持现有兼容行为；它们是 Legacy 兼容产品，不是 A1 release product。
+- Target A1 schema 通过独立的 `a1-protocol` classifier 分发。该发布物只承载协议定义，不承载 Oracle 实例、可执行文件、fixture、expected output 或签名材料。
+- `oracle-manifest-v1.schema.json` 仅定义 NON_RELEASE Oracle manifest 的合法结构。分发该 schema definition 不等于分发 Oracle 实例；Oracle 实例及其可执行和数据材料仍严格禁止进入 release artifact。
 
 ### 9.3 迁移映射记录格式
 
@@ -273,7 +285,7 @@ manifest.treeRoot = WireDigest(MerkleNode(...))
 {
   "legacySchemaId": "string (LEGACY schema identifier)",
   "legacyRawDigest": "string (WireDigest of legacy serialized form)",
-  "targetSchemaId": "string (PLANNED TARGET schema identifier)",
+  "targetSchemaId": "string (TARGET A1 candidate schema identifier)",
   "targetWireDigest": "string (WireDigest of target wire form)",
   "transformationVersion": "string (SemVer, e.g. '1.0.0')"
 }
@@ -285,7 +297,7 @@ manifest.treeRoot = WireDigest(MerkleNode(...))
 
 ### 9.4 WireDigest 与 Legacy Wrapper 边界
 
-- **Target schemas**（PLANNED TARGET A1）：所有摘要字段使用 **bare WireDigest** 字符串（`sha256:` + 64 字符 lowerhex）。
+- **Target schemas**（TARGET A1 candidate）：所有摘要字段使用 **bare WireDigest** 字符串（`sha256:` + 64 字符 lowerhex）。
 - **Legacy wrapper objects**（LEGACY_GATE_A_WIRE_V1）：可能包含指纹包装对象（如 `{ "algorithm": "SHA256", "value": "..." }`），仅 Oracle 内部接受。
 - 生产路径的 JSON Schema 验证必须拒绝 legacy wrapper 格式；target enum 和 pattern 约束确保 bare digest 格式。
 - **Domain unknown rejection**：target schema enum 明确列出允许的 schemaId；运行时遇到未登记 schemaId 必须拒绝（错误码：`E_DOMAIN_UNKNOWN`）。

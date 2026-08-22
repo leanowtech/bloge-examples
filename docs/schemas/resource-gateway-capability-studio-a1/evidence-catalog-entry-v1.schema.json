@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:evidence-catalog-entry:v1",
+  "title": "Evidence Catalog Entry v1",
+  "description": "Strict evidence catalog entry for Capability Studio Gate A1. REDUCTOR_DERIVED is the frozen reducer-derived spelling; OBSERVER_GENERATED is reserved for observer-produced evidence such as ObserverFailure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidenceId",
+    "schemaRef",
+    "producerOwner",
+    "semanticVerifier",
+    "artifactRelation",
+    "relatedEvidenceRefs"
+  ],
+  "properties": {
+    "evidenceId": {
+      "type": "string",
+      "description": "Unique evidence identifier within the catalog"
+    },
+    "schemaRef": {
+      "type": "string",
+      "format": "uri",
+      "description": "JSON Schema Draft 2020-12 URI reference for the evidence structure"
+    },
+    "producerOwner": {
+      "type": "string",
+      "description": "Principal ID of the evidence producing entity"
+    },
+    "visibilityPolicyRef": {
+      "type": "string",
+      "format": "uri",
+      "description": "Optional URI or URN reference to the visibility policy applied to observer-produced evidence"
+    },
+    "semanticVerifier": {
+      "$ref": "#/$defs/SemanticVerifierSpec"
+    },
+    "artifactRelation": {
+      "$ref": "#/$defs/ArtifactRelation"
+    },
+    "relatedEvidenceRefs": {
+      "type": "array",
+      "description": "Required IDs for exact closure; no orphans or renames. Runtime rejects with E_EVIDENCE_REF_LIMIT if exceeds policy.maxEvidenceRefs (1..10000).",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "minItems": 0,
+      "maxItems": 10000,
+      "uniqueItems": true
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "semanticVerifier": {
+            "properties": {
+              "outcomeSource": {
+                "const": "OBSERVER_GENERATED"
+              }
+            },
+            "required": ["outcomeSource"]
+          }
+        },
+        "required": ["semanticVerifier"]
+      },
+      "then": {
+        "$ref": "#/$defs/ObserverFailureCatalogShape"
+      }
+    },
+    {
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "evidenceId": {
+                "const": "urn:studio:a1:observer-failure"
+              }
+            },
+            "required": ["evidenceId"]
+          },
+          {
+            "properties": {
+              "schemaRef": {
+                "const": "urn:studio:schema:observer-failure:v1"
+              }
+            },
+            "required": ["schemaRef"]
+          }
+        ]
+      },
+      "then": {
+        "$ref": "#/$defs/ObserverFailureCatalogShape"
+      }
+    },
+    {
+      "if": {
+        "not": {
+          "allOf": [
+            {
+              "properties": {
+                "evidenceId": {
+                  "const": "urn:studio:a1:observer-failure"
+                }
+              },
+              "required": ["evidenceId"]
+            },
+            {
+              "properties": {
+                "schemaRef": {
+                  "const": "urn:studio:schema:observer-failure:v1"
+                }
+              },
+              "required": ["schemaRef"]
+            }
+          ]
+        }
+      },
+      "then": {
+        "properties": {
+          "semanticVerifier": {
+            "properties": {
+              "outcomeSource": {
+                "const": "REDUCTOR_DERIVED"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "ObserverFailureCatalogShape": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidenceId",
+        "schemaRef",
+        "producerOwner",
+        "visibilityPolicyRef",
+        "semanticVerifier",
+        "artifactRelation",
+        "relatedEvidenceRefs"
+      ],
+      "properties": {
+        "evidenceId": {
+          "const": "urn:studio:a1:observer-failure"
+        },
+        "schemaRef": {
+          "const": "urn:studio:schema:observer-failure:v1"
+        },
+        "producerOwner": {
+          "type": "string"
+        },
+        "visibilityPolicyRef": {
+          "const": "urn:studio:visibility:observer-failure:v1"
+        },
+        "semanticVerifier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "verifierId",
+            "inputs",
+            "policy",
+            "clockUsage",
+            "randomUsage",
+            "networkUsage",
+            "outcomeSource",
+            "version"
+          ],
+          "properties": {
+            "verifierId": {
+              "const": "builtin:observer-failure"
+            },
+            "inputs": {
+              "type": "array",
+              "maxItems": 0
+            },
+            "policy": {
+              "const": "READ_CATALOG_ONLY"
+            },
+            "clockUsage": {
+              "const": false
+            },
+            "randomUsage": {
+              "const": false
+            },
+            "networkUsage": {
+              "const": false
+            },
+            "outcomeSource": {
+              "const": "OBSERVER_GENERATED"
+            },
+            "version": {
+              "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/SemanticVersion"
+            }
+          }
+        },
+        "artifactRelation": {
+          "const": "RELATES_TO"
+        },
+        "relatedEvidenceRefs": {
+          "type": "array",
+          "maxItems": 0
+        }
+      }
+    },
+    "SemanticVerifierSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verifierId",
+        "inputs",
+        "policy",
+        "clockUsage",
+        "randomUsage",
+        "networkUsage",
+        "outcomeSource",
+        "version"
+      ],
+      "properties": {
+        "verifierId": {
+          "type": "string",
+          "description": "Verifier identifier"
+        },
+        "inputs": {
+          "type": "array",
+          "description": "Declarative inputs; verifier reads only frozen catalog values",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "policy": {
+          "const": "READ_CATALOG_ONLY",
+          "description": "Verifier must not access external resources"
+        },
+        "clockUsage": {
+          "const": false,
+          "description": "Verifier prohibited from wall/monotonic clock access"
+        },
+        "randomUsage": {
+          "const": false,
+          "description": "Verifier prohibited from CSPRNG/PRNG access (constrains verifier process only)"
+        },
+        "networkUsage": {
+          "const": false,
+          "description": "Verifier prohibited from HTTP/gRPC/file network access"
+        },
+        "outcomeSource": {
+          "type": "string",
+          "enum": [
+            "REDUCTOR_DERIVED",
+            "OBSERVER_GENERATED"
+          ],
+          "description": "REDUCTOR_DERIVED applies to reducer-derived outcomes; OBSERVER_GENERATED applies only to observer-produced evidence such as ObserverFailure."
+        },
+        "version": {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/SemanticVersion"
+        }
+      }
+    },
+    "ArtifactRelation": {
+      "type": "string",
+      "enum": [
+        "RELATES_TO",
+        "PROVES",
+        "DISPROVES",
+        "EXTENDS"
+      ],
+      "description": "Frozen relation between this evidence artifact and its related evidence."
+    }
+  }
+}

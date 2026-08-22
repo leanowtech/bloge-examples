@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+  "title": "Capability Studio Gate A one-time slice acceptance receipt v1",
+  "description": "A closed, caller-issued receipt that binds one delivery slice to one sealed Release Authority Bundle and one physical execution.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "messageVersion", "sliceId", "acceptanceId", "bundleRootFingerprint",
+    "authority", "dependencyAuthorityFingerprint", "acceptanceContractFingerprint", "challengeNonce", "receiptPath",
+    "buildInvocation", "sourceTreeCommitment", "toolchainIdentityFingerprint", "launcherObservationFingerprint", "observedCommandFingerprint", "testSourceFingerprint", "testIds",
+    "roleViewBindings", "predecessorSliceId", "predecessorReceiptFingerprint", "artifactRecords", "evidenceRecords",
+    "artifactAggregate", "evidenceAggregate", "handoff", "observed", "receiptFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-slice-acceptance-receipt.v1"},
+    "messageVersion": {"type": "string", "pattern": "^resource-gateway\\.capability-studio\\.gate-a\\.slice-acceptance-receipt\\.a1-[1-7]\\.v1$"},
+    "sliceId": {"type": "string", "pattern": "^A1\\.[1-7]$"},
+    "acceptanceId": {"type": "string", "pattern": "^RG-CS-GATE-A-A1-[1-7]-[A-Z0-9-]+-V1$"},
+    "bundleRootFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "authority": {"$ref": "#/$defs/authority"},
+    "dependencyAuthorityFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "acceptanceContractFingerprint": {"$ref": "#/$defs/contractFingerprint"},
+    "challengeNonce": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "receiptPath": {"$ref": "#/$defs/repoPath"},
+    "buildInvocation": {"$ref": "#/$defs/buildInvocation"},
+    "sourceTreeCommitment": {"$ref": "#/$defs/sourceTreeCommitment"},
+    "toolchainIdentityFingerprint": {"$ref": "#/$defs/toolchainIdentityFingerprint"},
+    "launcherObservationFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "observedCommandFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "testSourceFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "testIds": {"type": "array", "minItems": 2, "maxItems": 16, "uniqueItems": true, "items": {"type": "string", "pattern": "^A1\\.[1-7]_[A-Z0-9_]{3,96}$"}},
+    "roleViewBindings": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/roleViewBinding"}},
+    "predecessorSliceId": {"oneOf": [{"type": "null"}, {"type": "string", "pattern": "^A1\\.[1-7]$"}]},
+    "predecessorReceiptFingerprint": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/rawFingerprint"}]},
+    "artifactRecords": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/artifactRecord"}},
+    "evidenceRecords": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/evidenceRecord"}},
+    "artifactAggregate": {"$ref": "#/$defs/artifactAggregate"},
+    "evidenceAggregate": {"$ref": "#/$defs/evidenceAggregate"},
+    "handoff": {"$ref": "#/$defs/handoff"},
+    "observed": {"$ref": "#/$defs/observed"},
+    "receiptFingerprint": {"$ref": "#/$defs/receiptFingerprint"}
+  },
+  "$defs": {
+    "rawFingerprint": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
+    "repoPath": {"type": "string", "pattern": "^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*$"},
+    "authority": {
+      "type": "object", "additionalProperties": false, "required": ["revision", "rawFingerprint"],
+      "properties": {"revision": {"type": "integer", "minimum": 1}, "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"}}
+    },
+    "contractFingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "source", "value"],
+      "properties": {
+        "kind": {"const": "CANONICAL_DOCUMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-SLICE-ACCEPTANCE-CONTRACT-v1"},
+        "source": {"const": "BUNDLE_AUTHORITY_ACCEPTANCE_CONTRACT"}, "value": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "buildInvocation": {
+      "type": "object", "additionalProperties": false, "required": ["id", "profile", "properties"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$"},
+        "profile": {"type": "string", "pattern": "^gate-a-[a-z0-9-]{1,48}$"},
+        "properties": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Za-z0-9_.=-]{1,128}$"}}
+      }
+    },
+    "sourceTreeCommitment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "source", "value", "selfNullPolicy"],
+      "properties": {
+        "kind": {"const": "TREE_COMMITMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-SOURCE-TREE-v1"}, "source": {"const": "CALLER_PINNED_SOURCE_TREE"},
+        "value": {"$ref": "#/$defs/rawFingerprint"}, "selfNullPolicy": {"const": "VALUE_NULL_DURING_HASH"}
+      }
+    },
+    "toolchainIdentityFingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "source", "value", "selfNullPolicy"],
+      "properties": {
+        "kind": {"const": "RAW_BYTES"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1"}, "source": {"const": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN"},
+        "value": {"$ref": "#/$defs/rawFingerprint"}, "selfNullPolicy": {"const": "VALUE_NULL_UNTIL_EXTERNAL_PIN"}
+      }
+    },
+    "roleViewBinding": {
+      "type": "object", "additionalProperties": false, "required": ["role", "roleViewFingerprint", "inputTreeFingerprint"],
+      "properties": {
+        "role": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+        "roleViewFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+        "inputTreeFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "artifactRecord": {
+      "type": "object", "additionalProperties": false, "required": ["role", "path", "byteLength", "rawFingerprint"],
+      "properties": {
+        "role": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,63}$"}, "path": {"$ref": "#/$defs/repoPath"},
+        "byteLength": {"type": "integer", "minimum": 0, "maximum": 16777216}, "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "evidenceRecord": {
+      "type": "object", "additionalProperties": false, "required": ["id", "path", "byteLength", "rawFingerprint"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"}, "path": {"$ref": "#/$defs/repoPath"},
+        "byteLength": {"type": "integer", "minimum": 0, "maximum": 16777216}, "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "aggregate": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "domain", "source", "value"],
+      "properties": {
+        "kind": {"const": "AGGREGATE_COMMITMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"type": "string", "pattern": "^RG-CS-GATE-A-SLICE-[A-Z]+-v1$"},
+        "source": {"enum": ["REQUIRED_ARTIFACT_RAW_BYTES", "REQUIRED_EVIDENCE_EXACT_BYTES"]}, "value": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "artifactAggregate": {"allOf": [{"$ref": "#/$defs/aggregate"}, {"properties": {"domain": {"const": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1"}, "source": {"const": "REQUIRED_ARTIFACT_RAW_BYTES"}}}]},
+    "evidenceAggregate": {"allOf": [{"$ref": "#/$defs/aggregate"}, {"properties": {"domain": {"const": "RG-CS-GATE-A-SLICE-EVIDENCE-v1"}, "source": {"const": "REQUIRED_EVIDENCE_EXACT_BYTES"}}}]},
+    "handoff": {
+      "type": "object", "additionalProperties": false, "required": ["required", "receiver", "receiptRequired", "artifactPaths", "evidenceIds"],
+      "properties": {
+        "required": {"const": true},
+        "receiver": {"enum": ["CALLER", "CANDIDATE", "PROVIDER", "VERIFIER", "HARNESS"]},
+        "receiptRequired": {"const": true},
+        "artifactPaths": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/repoPath"}},
+        "evidenceIds": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"}}
+      }
+    },
+    "observed": {
+      "type": "object", "additionalProperties": false, "required": ["exitCode", "terminal", "status"],
+      "properties": {"exitCode": {"const": 0}, "terminal": {"const": "SUCCESS"}, "status": {"const": "ACCEPTED"}}
+    },
+    "receiptFingerprint": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "domain", "value", "selfNullPolicy"],
+      "properties": {
+        "kind": {"const": "CANONICAL_DOCUMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1"}, "value": {"$ref": "#/$defs/rawFingerprint"},
+        "selfNullPolicy": {"const": "VALUE_NULL_DURING_HASH"}
+      }
+    }
+  },
+  "allOf": [
+    {"if": {"properties": {"sliceId": {"const": "A1.1"}}}, "then": {"properties": {"predecessorSliceId": {"type": "null"}, "predecessorReceiptFingerprint": {"type": "null"}}}},
+    {"if": {"properties": {"sliceId": {"pattern": "^A1\\.[2-7]$"}}}, "then": {"properties": {"predecessorSliceId": {"type": "string"}, "predecessorReceiptFingerprint": {"$ref": "#/$defs/rawFingerprint"}}}}
+  ]
+}

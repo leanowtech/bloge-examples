@@ -47,6 +47,7 @@ RA List Snapshot 作为 authority 源单元包含在 Source Package 中，packag
   "apiVersion": "studio.a1/v1",
   "unitType": "schema|role|rule|evidence|authority|visibility-policy",
   "unitId": "urn:example:schema:auth-token:1.0",
+  "relationHandle": "0123456789abcdef0123456789abcdef",
   "roleVisibility": ["admin", "provider"],   // 必填，进入 packageFP
   "content": { /* 实际业务内容 */ }
 }
@@ -187,6 +188,8 @@ CSPRNG128() -> relationHandle   // 128 bit 密码学安全随机数
 写入: source unit 含 relationHandle 字段，进入 packageFP
 ```
 
+`relationHandle` 是 Source Unit 的必填字段，wire 表示为 32 个小写十六进制字符（128 bit）；大写、长度不足、长度超出或非十六进制字符均必须拒绝。
+
 - 每 **package version** 重生成 relationHandle（不跨版本复用）。
 - relationHandle source unit 只被 packageFP 承诺；不写循环绑定 packageFP。
 - 不得从数据内容派生（防逆向）。
@@ -254,7 +257,7 @@ CSPRNG128() -> relationHandle   // 128 bit 密码学安全随机数
 
 ---
 
-## 10. Target Schema Authority：PLANNED_A1_SCHEMA
+## 10. Target Schema Authority：TARGET_A1_SCHEMA_CANDIDATE
 
 ### 10.1 Schema 权威路径
 
@@ -264,28 +267,28 @@ CSPRNG128() -> relationHandle   // 128 bit 密码学安全随机数
 
 **禁止**：不得在 `docs/schemas/resource-gateway-capability-studio-a1/` 下放置任何 legacy wrapper object 或 legacy 算法实现。所有文件必须使用 bare WireDigest 和本文档 §1-§9 定义的规范。
 
-### 10.2 必需初始 Target Schemas（Step0/Source 计划产出）
+### 10.2 必需初始 Target Schemas（Step0 实现候选）
 
 以下 schema 文件在 Step0/Source 阶段必须创建于 `docs/schemas/resource-gateway-capability-studio-a1/` 路径下：
 
 | Schema ID | 文件名 | 说明 | 当前状态 |
 |-----------|--------|------|----------|
-| `normative-primitives-v1` | `normative-primitives-v1.schema.json` | WireDigest 模式（排除全零）、closed domain enum、genesis-zero sentinel 类型 | **待创建** |
-| `source-unit-v1` | `source-unit-v1.schema.json` | Source Unit 结构（含 unitType、unitId、roleVisibility、content） | **待创建** |
-| `source-package-v1` | `source-package-v1.schema.json` | Source Package manifest 结构（algorithmVersion、orderedDescriptors、treeRoot、packageFP） | **待创建** |
-| `compiler-manifest-v1` | `compiler-manifest-v1.schema.json` | Compiler Manifest（packageFP、compilerVersion、optionsFP、products[]） | **待创建** |
-| `oracle-manifest-v1` | `oracle-manifest-v1.schema.json` | Oracle Manifest（oracleId、oracleType、releaseStatus、fixtureCorpusRoot） | **待创建** |
-| `attack-case-v1` | `attack-case-v1.schema.json` | 已知攻击向量测试用例结构 | **待创建** |
-| `evidence-catalog-entry-v1` | `evidence-catalog-entry-v1.schema.json` | Evidence Catalog 条目（evidenceId、schemaRef、semanticVerifier、policy.READ_CATALOG_ONLY） | **待创建** |
-| `observation-receipt-v1` | `observation-receipt-v1.schema.json` | Observation Receipt Payload 结构 | **待创建** |
-| `acceptance-receipt-v1` | `acceptance-receipt-v1.schema.json` | Acceptance Receipt（invocationKeyFP、decisionInputFP、reducerOutputFP、resultFP、ledgerEntryFP、status） | **待创建** |
-| `ledger-entry-v1` | `ledger-entry-v1.schema.json` | Ledger Entry（ledgerId、packageFP、sliceFP、frozenInputs、effectiveStatus） | **待创建** |
-| `revocation-record-v1` | `revocation-record-v1.schema.json` | Revocation Record（raSignature、revocationPayloadFP、authorityId） | **待创建** |
-| `hermetic-observation-v1` | `hermetic-observation-v1.schema.json` | Hermetic Observation（clockUsage=false、randomUsage=false、networkUsage=false） | **待创建** |
-| `observer-failure-v1` | `observer-failure-v1.schema.json` | ObserverFailureReceipt payload/envelope（producerOwner、failureReason、observedAt、visibility），由 03 §9.1/§9.2 定义；schema identity = `urn:studio:schema:observer-failure:v1`；与 `hermetic-observation-v1`（通用 hermetic run observations）严格区分 | **待创建** |
+| `normative-primitives-v1` | `normative-primitives-v1.schema.json` | WireDigest 模式（排除全零）、closed domain enum、genesis-zero sentinel 类型 | **candidate created** |
+| `source-unit-v1` | `source-unit-v1.schema.json` | Source Unit 结构（含 unitType、unitId、roleVisibility、relationHandle、content） | **candidate created** |
+| `source-package-v1` | `source-package-v1.schema.json` | Source Package manifest 结构（algorithmVersion、orderedDescriptors、treeRoot、packageFP） | **candidate created** |
+| `compiler-manifest-v1` | `compiler-manifest-v1.schema.json` | Compiler Manifest（packageFP、compilerVersion、optionsFP、products[]） | **candidate created** |
+| `oracle-manifest-v1` | `oracle-manifest-v1.schema.json` | Oracle Manifest（oracleId、oracleType、releaseStatus、fixtureCorpusRoot） | **candidate created** |
+| `attack-case-v1` | `attack-case-v1.schema.json` | 已知攻击向量测试用例结构 | **candidate created** |
+| `evidence-catalog-entry-v1` | `evidence-catalog-entry-v1.schema.json` | Evidence Catalog 条目；`OBSERVER_GENERATED` 仅允许 ObserverFailure 双向闭合形态 | **candidate created** |
+| `observation-receipt-v1` | `observation-receipt-v1.schema.json` | 通用 Observation Receipt Payload 结构，通过 `artifactRef` 引用事实 artifact | **candidate created** |
+| `acceptance-receipt-v1` | `acceptance-receipt-v1.schema.json` | Acceptance Receipt（invocationKeyFP、decisionInputFP、reducerOutputFP、resultFP、ledgerEntryFP、status） | **candidate created** |
+| `ledger-entry-v1` | `ledger-entry-v1.schema.json` | Ledger Entry：`ledgerEntryFP` + payload；payload 含 `ledgerId`、`invocationKey`、decision/reducer/result FP、status/effectiveStatus、nonce、predecessorHeadFP、packageFP，可选 retryOf | **candidate created** |
+| `revocation-record-v1` | `revocation-record-v1.schema.json` | Revocation Record（raSignature、revocationPayloadFP、authorityId） | **candidate created** |
+| `hermetic-observation-v1` | `hermetic-observation-v1.schema.json` | 纯 Hermetic 运行事实 artifact，不自带 Observation Receipt FP | **candidate created** |
+| `observer-failure-v1` | `observer-failure-v1.schema.json` | 封闭根结构：observerFailureFP、observerId、producerOwner、failureReason、observedAt、status、visibility | **candidate created** |
 
 
-**当前状态**：以上 schema 文件均**不存在**于 `docs/schemas/resource-gateway-capability-studio-a1/` 路径下。它们是 Step0/Source 的计划产出。
+**当前状态**：以上 13 个 schema candidate 已创建于目标路径。其 Draft 2020-12 和工作区一致性验证已通过，但 Step0 index attestation 与两轮独立 fresh review 尚未完成；因此它们尚未获得 Step0 accepted 状态。
 
 **实现约束**：任何消费 target schema 产出的实现必须在对应 schema 创建并通过验证后，方可将产出纳入生产路径。不得消费 prose 推导的 ad-hoc JSON。
 
@@ -303,14 +306,15 @@ Target `evidence-catalog-entry-v1` schema 必须满足以下约束：
 
 1. `policy` 字段必须显式声明 `READ_CATALOG_ONLY`（无 clock/random/network 访问）。
 2. `semanticVerifier.clockUsage == false`、`randomUsage == false`、`networkUsage == false`。
-3. **Cross-field 时间排序**：由语义验证器逻辑处理（见 02 §1.1），JSON Schema 无法直接比较两个字段值；必须提供 mandatory negative test 验证跨字段约束违反时正确拒绝。
+3. `OBSERVER_GENERATED` 必须与 ObserverFailure 的固定 `evidenceId`、`schemaRef`、verifier、inputs 和 relation 形态双向闭合；任一普通 Evidence 使用该 outcome source 都必须拒绝。
+4. `expectedOutcome` / `expectedErrorCode` 的双向条件属于 `attack-case-v1`，不得错误地下沉到 Evidence Catalog Entry。
 
 ### 10.5 与 LEGACY_GATE_A_WIRE_V1 的关系
 
-| 维度 | LEGACY_GATE_A_WIRE_V1 | PLANNED TARGET A1 |
+| 维度 | LEGACY_GATE_A_WIRE_V1 | TARGET A1 candidate |
 |------|----------------------|-------------------|
 | 路径 | `docs/schemas/resource-gateway-capability-studio/` | `docs/schemas/resource-gateway-capability-studio-a1/` |
-| Schema 状态 | 已存在（Oracle 签封） | **待创建** |
+| Schema 状态 | 已存在（Oracle 签封） | **13 个 candidate 已创建，待验收** |
 | Digest 格式 | 可能包含 wrapper object | bare WireDigest 字符串 |
 | 算法 | 可能不含 ENC | ENC + JCS（RFC 8785） |
 | 生产路径 | 禁止消费 | **唯一合法 schema 源** |

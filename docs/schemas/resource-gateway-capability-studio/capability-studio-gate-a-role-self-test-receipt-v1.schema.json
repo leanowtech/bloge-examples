@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+  "title": "Capability Studio Gate A role self-test receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "role",
+    "authority",
+    "artifactRawFingerprint",
+    "profileRawFingerprint",
+    "fixtureSetId",
+    "capabilities",
+    "status",
+    "roleViewFingerprint",
+    "inputTreeFingerprint",
+    "receiptFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1"
+    },
+    "role": {
+      "enum": [
+        "IMPLEMENTATION_CANDIDATE",
+        "TCK_PROVIDER",
+        "INDEPENDENT_VERIFIER",
+        "CONFORMANCE_HARNESS",
+        "GATE_ADMISSION_CHECKER"
+      ]
+    },
+    "authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rawFingerprint", "revision"],
+      "properties": {
+        "rawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+        "revision": {"type": "integer", "minimum": 1}
+      }
+    },
+    "artifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "profileRawFingerprint": {
+      "oneOf": [
+        {"$ref": "#/$defs/rawFingerprint"},
+        {"type": "null"}
+      ]
+    },
+    "fixtureSetId": {
+      "const": "GATE_A_ROLE_BLACK_BOX_V1"
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "CANONICALIZATION",
+          "PROTOCOL_PROJECTION",
+          "PROVIDER_IDENTITY",
+          "SHADED_CLOSED_JAR",
+          "THIN_SERVICE_PROVIDER"
+        ]
+      }
+    },
+    "status": {
+      "const": "READY"
+    },
+    "roleViewFingerprint": {
+      "$ref": "#/$defs/treeFingerprint"
+    },
+    "inputTreeFingerprint": {
+      "$ref": "#/$defs/treeFingerprint"
+    },
+    "receiptFingerprint": {
+      "$ref": "#/$defs/selfNullReceiptFingerprint"
+    }
+  },
+  "$defs": {
+    "rawFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value"],
+      "properties": {
+        "kind": {"const": "RAW_BYTES"},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "treeFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value"],
+      "properties": {
+        "kind": {"const": "TREE_COMMITMENT"},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "selfNullReceiptFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value", "selfNullField"],
+      "properties": {
+        "kind": {"const": "SELF_NULL_RECEIPT"},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "selfNullField": {"const": "receiptFingerprint"}
+      }
+    }
+  }
+}

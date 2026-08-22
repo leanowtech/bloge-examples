@@ -207,6 +207,7 @@
         "responseRawFingerprint",
         "stdoutRawFingerprint",
         "stderrRawFingerprint",
+        "processObservationRawFingerprint",
         "transcriptRawFingerprint",
         "processExitCode",
         "observedTerminal",
@@ -280,6 +281,9 @@
         "stderrRawFingerprint": {
           "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
         },
+        "processObservationRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
         "transcriptRawFingerprint": {
           "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
         },
@@ -333,6 +337,7 @@
         "closedReasonCode",
         "stdoutRawFingerprint",
         "stderrRawFingerprint",
+        "processObservationRawFingerprint",
         "startedAt",
         "endedAt",
         "timedOut",
@@ -453,6 +458,9 @@
           "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
         },
         "stderrRawFingerprint": {
+          "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
+        },
+        "processObservationRawFingerprint": {
           "$ref": "./capability-studio-gate-a-common-v1.schema.json#/$defs/rawFingerprint"
         },
         "startedAt": {

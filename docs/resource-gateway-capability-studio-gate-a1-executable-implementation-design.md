@@ -1,8 +1,8 @@
 # Resource Gateway Capability Studio — Gate A1 Executable Implementation Design
 
-**Status:** `A1_DESIGN_PASS`
+**Status:** `STEP0_INDEX_ATTESTED_REVIEW_PASS`
 **Effective:** 2026-08-23
-**Scope:** Gate A1 design freeze; Step0 Baseline Preservation now permitted
+**Scope:** Gate A1 design freeze and Step0 implementation candidate; no Step0 acceptance claim
 
 ---
 
@@ -81,9 +81,12 @@ it does not gate production. Production gates are CI + signed review record.
 - LEGACY sealed golden in `docs/acceptance/…/compiled/` are permanent and byte-identical;
   no regeneration of LEGACY sealed artifacts.
 - Oracle bundle is NON_RELEASE; never enters release artifact.
+- Ordinary test-kit and `cli` artifacts retain Legacy schemas as compatibility products; neither is the A1 release product. Target A1 protocol definitions are isolated in the `a1-protocol` classifier.
+- The NON_RELEASE Oracle manifest schema definition may be distributed as protocol metadata; Oracle instances, executables, fixtures, expected outputs, and signature material remain NON_RELEASE.
 - Migration map format: `legacySchemaId / legacyRawDigest → targetSchemaId / targetWireDigest`
   with explicit `transformationVersion`; in-place reinterpretation prohibited.
 - pyc artifact retained NON_RELEASE until all three conditions in 04 §1.2 are met.
+- Step0 never executes or imports the Legacy pyc; it verifies only the captured raw bytes and ContentDigest.
 - `docs/schemas/resource-gateway-capability-studio-a1/` target schema artifacts are Step0 outputs,
   not A1_DESIGN_PASS prerequisites.
 
@@ -102,13 +105,13 @@ Prerequisite: `A1_DESIGN_PASS` (passed 2026-08-23)
 |-------|-------|
 | **Input** | A1_DESIGN_PASS record; `compile-protocol-authority.py` (998 B); `validate-fixtures.py` (5,683 B); pyc (247,211 B / SHA-256 `d6dab90a…`) |
 | **Output** | (a) Digest-named copies in NON_RELEASE quarantine (`quarantine/fragments/{digest}/…`); (b) `docs/schemas/resource-gateway-capability-studio-a1/` — 13 schemas; (c) Migration map record工件 |
-| **Gate** | (a) Digest-named copies confirmed on disk; audit log entry written; (b) 13 schema files schema-valid (Draft 2020-12); (c) Migration map工件 created |
+| **Gate** | (a) Digest-named copies confirmed; (b) 13 schema candidates schema-valid; (c) 5-field authority mapping created; (d) index attestation; (e) two independent fresh reviews with P0/P1 = 0 |
 | **Rollback** | Delete new quarantine copies and Step0 output artifacts; original artifact bytes on disk are not modified; original file paths unchanged |
 | **Commit** | All three output artifacts present and verified |
 
 13 schemas (01 §10.2):
 - `normative-primitives-v1` — WireDigest 模式、closed enum、genesis-zero sentinel
-- `source-unit-v1` — SourceUnit 结构（unitType/unitId/roleVisibility/content）
+- `source-unit-v1` — SourceUnit 结构（unitType/unitId/roleVisibility/relationHandle/content）
 - `source-package-v1` — SourcePackage manifest（treeRoot、packageFP）
 - `compiler-manifest-v1` — Compiler Manifest（packageFP/compilerVersion/products[]）
 - `oracle-manifest-v1` — Oracle Manifest（oracleId/oracleType/releaseStatus）
@@ -116,10 +119,10 @@ Prerequisite: `A1_DESIGN_PASS` (passed 2026-08-23)
 - `evidence-catalog-entry-v1` — Evidence Catalog 条目（policy.READ_CATALOG_ONLY）
 - `observation-receipt-v1` — ObservationReceipt payload/envelope 结构
 - `acceptance-receipt-v1` — AcceptanceReceipt（invocationKeyFP/decisionInputFP/status）
-- `ledger-entry-v1` — LedgerEntry（packageFP/sliceFP/frozenInputs/effectiveStatus）
+- `ledger-entry-v1` — LedgerEntry（ledgerEntryFP + 02 §8.1 payload）
 - `revocation-record-v1` — RevocationRecord（raSignature/revocationPayloadFP）
-- `hermetic-observation-v1` — Hermetic Observation（clock/random/network 全 false）
-- `observer-failure-v1` — ObserverFailureReceipt payload/envelope（03 §9.1/§9.2）
+- `hermetic-observation-v1` — 纯 Hermetic 事实 artifact，由通用 ObservationReceipt.artifactRef 引用
+- `observer-failure-v1` — ObserverFailureReceipt 封闭根结构（03 §9.1/§9.2）
 
 ### Step1 — Compiler
 
@@ -189,12 +192,12 @@ Prerequisite: `A1_DESIGN_PASS` (passed 2026-08-23)
 |------|-------|
 | `compile-protocol-authority.py` | **998 bytes**, damaged, 无可信构建轨迹 |
 | `validate-fixtures.py` | **5,683 bytes**, sealed in NON_RELEASE |
-| `validate-fixtures.cpython-314.pyc` | **247,211 bytes**, SHA-256 `d6dab90a53ea9b353c1e6ebabca7660eb34324d57bf8526d9e0f7539901de280`, Python 3.14+ only |
+| `validate-fixtures.cpython-314.pyc` | **247,211 bytes**, SHA-256 `d6dab90a53ea9b353c1e6ebabca7660eb34324d57bf8526d9e0f7539901de280`; retained NON_RELEASE and never executed/imported by Step0 |
 | Dependency authority | `DRAFT_UNPINNED` — fail-closed on any unresolved draft dep |
 | Broken/pending blockers | damaged compiler; pending conformance; DRAFT_UNPINNED — all fail-closed |
-| Planned artifacts | None claimed; all schema artifacts are Step0 outputs |
+| Step0 candidate artifacts | quarantine baseline, 13 target schema candidates, authority mapping, verifier, and `a1-protocol` classifier candidate exist |
 | A1_DESIGN_PASS | **PASSED 2026-08-23** |
-| Step0 status | **May begin**; not yet started; not yet passed |
+| Step0 status | `STEP0_INDEX_ATTESTED_REVIEW_PASS`; workspace/index checks and two independent P0/P1-clean reviews pass; post-commit HEAD/CI attestation pending |
 
 ---
 
@@ -207,11 +210,14 @@ Prerequisite: `A1_DESIGN_PASS` (passed 2026-08-23)
 | Damaged compiler | **BLOCKER** | No | Step0 does not execute the legacy compiler; it copies artifacts and creates schemas/migration map |
 | Pending conformance | **BLOCKER** | No | Step0 does not admit production conformance |
 | DRAFT_UNPINNED authority | **BLOCKER** | No | Step0 artifact isolation only; no conformance enforcement |
-| Step0 exit | **PENDING** | Yes (Step1+) | quarantine + 13 schemas + migration map not yet created |
+| Step0 candidate | **INDEX_ATTESTED_REVIEW_PASS** | Yes (Step1+) | artifacts exist; ordinary `STEP0_PASS` remains workspace consistency only |
+| Step0 index attestation | **PASS** | No | `STEP0_INDEX_PASS` binds the closed Legacy/Target authority roots and Step0 authority inputs |
+| Step0 fresh review | **PASS** | No | two independent reviews both report P0 = 0 and P1 = 0 |
+| Step0 post-commit attestation | **PENDING** | Yes (Step1+) | commit SHA must be recorded by HEAD/CI attestation before Step1 |
 | A1_IMPLEMENTATION_PASS | **PENDING** | Yes (Step6+) | Requires Step5 pass first |
 | Step6 Oracle Excision | **PENDING** | Yes (release) | Requires Step5 pass first |
 
-Step0 gate is open. Broken/pending blockers do not block Step0 initiation; they block admission to Step1 and later steps.
+Step0 implementation has index attestation and two clean fresh reviews, but is not yet a production gate. Post-commit HEAD/CI attestation still blocks admission to Step1 and later steps.
 
 ---
 

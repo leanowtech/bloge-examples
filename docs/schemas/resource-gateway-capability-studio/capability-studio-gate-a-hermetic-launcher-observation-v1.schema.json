@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+  "title": "Capability Studio Gate A hermetic launcher observation v1",
+  "description": "A caller-trusted direct-parent observation. It is not a remote attestation or a Candidate/A1 replay-wire object.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "observationId", "authorityRawFingerprint", "dependencyAuthorityFingerprint",
+    "challengeNonce", "invocationId", "bundleRootFingerprint", "launcherArtifactRawFingerprint",
+    "roleInputViewCommitments", "processObservationCommitment", "issuedBinding",
+    "toolchainIdentity", "launcherIdentity", "mountPolicy", "networkPolicy", "processControlPolicy",
+    "observationFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {"const": "capability-studio.gate-a-hermetic-launcher-observation.v1"},
+    "observationId": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"},
+    "authorityRawFingerprint": {"$ref": "#/$defs/bindingFingerprint"},
+    "dependencyAuthorityFingerprint": {"$ref": "#/$defs/dependencyBindingFingerprint"},
+    "challengeNonce": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "invocationId": {"type": "string", "pattern": "^RG-CS-INV-[A-Z0-9-]{8,64}$"},
+    "bundleRootFingerprint": {"$ref": "#/$defs/rootFingerprint"},
+    "launcherArtifactRawFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+    "roleInputViewCommitments": {
+      "type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/roleInputViewCommitment"}
+    },
+    "processObservationCommitment": {"$ref": "#/$defs/processCommitment"},
+    "issuedBinding": {"$ref": "#/$defs/issuedBinding"},
+    "toolchainIdentity": {"$ref": "#/$defs/toolchainIdentity"},
+    "launcherIdentity": {"$ref": "#/$defs/launcherIdentity"},
+    "mountPolicy": {"$ref": "#/$defs/mountPolicy"},
+    "networkPolicy": {"$ref": "#/$defs/networkPolicy"},
+    "processControlPolicy": {"$ref": "#/$defs/processControlPolicy"},
+    "observationFingerprint": {"$ref": "#/$defs/selfFingerprint"}
+  },
+  "$defs": {
+    "rawFingerprint": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
+    "rootFingerprint": {"type": "string", "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"},
+    "bindingFingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "source", "value"],
+      "properties": {
+        "kind": {"const": "RAW_BYTES"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1"},
+        "source": {"const": "CALLER_CHALLENGE_PIN"}, "value": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "dependencyBindingFingerprint": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "source", "value"],
+      "properties": {
+        "kind": {"const": "CANONICAL_DOCUMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-DEPENDENCY-AUTHORITY-v1"},
+        "source": {"const": "CALLER_CHALLENGE_PIN"}, "value": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "commitment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "algorithm", "domain", "value"],
+      "properties": {
+        "kind": {"enum": ["RAW_BYTES", "AGGREGATE_COMMITMENT", "PROCESS_OBSERVATION"]},
+        "algorithm": {"const": "SHA-256"},
+        "domain": {"type": "string", "pattern": "^RG-CS-GATE-A-[A-Z0-9-]+-v1$"},
+        "value": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "roleInputViewCommitment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["role", "inputViewId", "commitment"],
+      "properties": {
+        "role": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"},
+        "inputViewId": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]{1,95}$"},
+        "commitment": {"$ref": "#/$defs/commitment"}
+      }
+    },
+    "processCommitment": {
+      "allOf": [
+        {"$ref": "#/$defs/commitment"},
+        {"properties": {"kind": {"const": "PROCESS_OBSERVATION"}, "domain": {"const": "RG-CS-GATE-A-PROCESS-OBSERVATION-v1"}}}
+      ]
+    },
+    "issuedBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "runId", "challengeNonce", "invocationId", "authorityRawFingerprint", "dependencyAuthorityFingerprint"],
+      "properties": {
+        "kind": {"const": "ISSUED_RUN_BINDING"},
+        "runId": {"type": "string", "pattern": "^RG-CS-RUN-[A-Z0-9-]{8,64}$"},
+        "challengeNonce": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+        "invocationId": {"type": "string", "pattern": "^RG-CS-INV-[A-Z0-9-]{8,64}$"},
+        "authorityRawFingerprint": {"$ref": "#/$defs/bindingFingerprint"},
+        "dependencyAuthorityFingerprint": {"$ref": "#/$defs/dependencyBindingFingerprint"}
+      }
+    },
+    "toolchainIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["imageId", "javaExecutable", "javaMajorVersion", "javaRuntimeVersion", "runtimeImageFingerprint", "requiredExternalPinId", "externalPinStatus", "missingPinPolicy"],
+      "properties": {
+        "imageId": {"const": "temurin-25.0.3+9-hermetic-v1"}, "javaExecutable": {"const": "/opt/jdk/bin/java"},
+        "javaMajorVersion": {"const": 25}, "javaRuntimeVersion": {"const": "25.0.3+9"},
+        "runtimeImageFingerprint": {"$ref": "#/$defs/rawFingerprint"},
+        "requiredExternalPinId": {"const": "GATE_A_HERMETIC_TOOLCHAIN_IMAGE_V1"},
+        "externalPinStatus": {"const": "CALLER_PINNED"},
+        "missingPinPolicy": {"const": "FAIL_CLOSED"}
+      }
+    },
+    "launcherIdentity": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "differentFromCallerIdentity", "userNamespace"],
+      "properties": {"kind": {"const": "DEDICATED_NON_ROOT_UID"}, "differentFromCallerIdentity": {"const": true}, "userNamespace": {"const": "REQUIRED"}}
+    },
+    "mountPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "readOnlyInputs", "writableMounts", "forbiddenMounts", "workingDirectory"],
+      "properties": {
+        "mode": {"const": "MINIMAL_ALLOWLIST"}, "readOnlyInputs": {"const": true},
+        "writableMounts": {"const": ["CAPABILITY_OUTPUT_ROOT", "EMPTY_SCRATCH_ROOT"]},
+        "forbiddenMounts": {"type": "array", "minItems": 4, "uniqueItems": true, "items": {"enum": ["AUTHORITY_WORKSPACE", "ORACLE_ROOT", "REPOSITORY_ROOT", "CALLER_HOME"]}},
+        "workingDirectory": {"const": "EMPTY_SCRATCH_ROOT"}
+      }
+    },
+    "networkPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["mode", "dns", "unixSockets"],
+      "properties": {"mode": {"const": "NONE"}, "dns": {"const": "DENY"}, "unixSockets": {"const": "DENY"}}
+    },
+    "processControlPolicy": {
+      "type": "object", "additionalProperties": false, "required": ["controller", "termination", "killAfterMillis", "residuePolicy"],
+      "properties": {"controller": {"const": "CGROUP_V2_OR_OS_JOB_OBJECT"}, "termination": {"const": "PROCESS_GROUP_AND_DESCENDANT_CONTAINER"}, "killAfterMillis": {"const": 2000}, "residuePolicy": {"const": "UNAVAILABLE_NO_RESULT_NO_ENVELOPE"}}
+    },
+    "selfFingerprint": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "algorithm", "domain", "value", "selfNullPolicy"],
+      "properties": {
+        "kind": {"const": "CANONICAL_DOCUMENT"}, "algorithm": {"const": "SHA-256"},
+        "domain": {"const": "RG-CS-GATE-A-HERMETIC-LAUNCHER-OBSERVATION-v1"},
+        "value": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/rawFingerprint"}]},
+        "selfNullPolicy": {"const": "VALUE_NULL_DURING_HASH"}
+      }
+    }
+  }
+}

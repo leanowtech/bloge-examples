@@ -2,7 +2,7 @@
 
 ## Capability Studio Gate A1 — Migration Oracle and Acceptance
 
-> **当前状态：A1_DESIGN_PASS（2026-08-23）。Step0 Baseline + Source Authority 现已允许执行；禁止在 Step0 完成前提交 Step1+ 代码。Python 3.14.6 已确认安装，trust pyc 可通过 `python3` 直接执行。**
+> **当前状态：`STEP0_IMPLEMENTED_REVIEW_PENDING`。Step0 实现候选、13 个 target schema、quarantine baseline 与 authority mapping 已产出，工作区验证通过；index attestation 和两轮独立 fresh review 尚未完成。不得宣称 Step0 PASS，也不得提交 Step1+ 代码。**
 
 ---
 
@@ -21,7 +21,7 @@
 - **精确路径**：`docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/__pycache__/validate-fixtures.cpython-314.pyc`
 - **文件大小**：247,211 字节
 - **SHA-256**：`d6dab90a53ea9b353c1e6ebabca7660eb34324d57bf8526d9e0f7539901de280`
-- 该 pyc 在 Python 3.14 以下版本不可运行；当前本机 Python 版本为 3.14.6，trust pyc 可通过 `python3` 直接执行验证。
+- 该 pyc 是 Python 3.14 编译产物。本次 Step0 从未执行、导入或反编译该文件；验证器只读取其原始字节并核对 ContentDigest。
 - **禁止写入**：受控归档路径（包括 `quarantine/`、`compiled/`、`__pycache__/` 下所有 NON_RELEASE 文件）**禁止写入任何未发布内容**；写入操作违反 NON_RELEASE 封存约束。
 
 - **pyc 保留策略**：该 pyc 文件在以下条件**全部满足之前**必须保留，不得删除：
@@ -60,11 +60,11 @@
 - **CompilerGoldenOracle 判决规则**：逐条目比对 `contentDigest`（精确原始 fixture/output 字节的 WireDigest<ContentDigest>）。完全匹配视为 PASS；任一条目失配视为 FAIL。
 - **TrustBehaviorOracle 判决规则**：精确 Python 3.14 runtime 可自行重算 expectedOutcome/expectedErrorCode/contentDigest；其他 runtime 仅验证 detachedSignature 签封的字节，不得重算。
 - **Oracle 不驱动生产判决**：Ledger 或 CI 中的 production verdict 由 CI gate + signed review record 决定，不由 oracle 结果决定。
-- **迁移映射**：[planned] 显式迁移映射工件：
+- **迁移映射**：已产生显式 authority pair mapping 工件：
   ```
   oldDomain/oldDigest -> newDomain/newWireDigest
   ```
-  不得使用 in-place 重新解释（no in-place reinterpretation）。
+  该工件使用 §14.1 冻结的 5 字段格式，只证明 Legacy 与 Target authority artifact 的显式对应关系；它不声明逐字段转换、默认值注入或信息损失语义。不得使用 in-place 重新解释（no in-place reinterpretation）。
 - **dependencyAuthority**：当前为 `DRAFT_UNPINNED`；release gate 预期 **fail-closed**（任意 DRAFT_UNPINNED 依赖触发 CI gate 拒绝，不得自动放行）。
 - 所有回退策略：production path 为 fail-closed（oracle 验证失败即拒绝上线）；oracle 路径仅离线执行。
 
@@ -84,9 +84,9 @@
 
 ## 3. Machine-Readable Oracle Manifest
 
-### 3.1 [planned] Schema 顶层字段
+### 3.1 Candidate Schema 顶层字段
 
-[planned] Schema：
+Candidate Schema：
 
 ```json5
 {
@@ -123,7 +123,6 @@
   ],
   "detachedSignature": {
     "algorithm": "Ed25519",  // const: Ed25519
-    "keyId": "string",
     "keyId": "string",
     "signatureBase64": "string (Ed25519 signature over JCS(manifest payload excluding detachedSignature))"
   }
@@ -222,7 +221,7 @@ Step1/Compiler 执行 attack corpus 验证后，输出以下格式的 signed CI 
 
 ---
 
-## 4. 执行阶段（Execution Phases）[planned]
+## 4. 执行阶段（Execution Phases）
 
 完整流水线包含 1 个前置 Gate 和 7 个 implementation steps：
 
@@ -231,7 +230,7 @@ Step1/Compiler 执行 attack corpus 验证后，输出以下格式的 signed CI 
 | 阶段 | 名称 | 描述 | 状态 |
 |---|---|---|---|
 | Gate | **Design Freeze / A1_DESIGN_PASS** | 2026-08-23 已通过；不是 implementation step | [current] **已通过** |
-| Step0 | **Baseline + Source Authority** | quarantine legacy fragments/pyc + 创建 13 个 target schemas + migration mapping | [planned] |
+| Step0 | **Baseline + Source Authority** | quarantine legacy fragments/pyc + 创建 13 个 target schemas + authority mapping | `STEP0_IMPLEMENTED_REVIEW_PENDING` |
 | Step1 | **Compiler** | 新 compiler 替代 | [planned] |
 | Step2 | **Evidence** | Sealed evidence package 生成 | [planned] |
 | Step3 | **Receipt/Ledger** | Ledger 或 artifact registry 记录 | [planned] |
@@ -239,13 +238,13 @@ Step1/Compiler 执行 attack corpus 验证后，输出以下格式的 signed CI 
 | Step5 | **Fresh Review / A1_IMPLEMENTATION_PASS** | 重新评审 + A1_IMPLEMENTATION_PASS | [planned] |
 | Step6 | **Oracle Excision** | Oracle 隔离（NON_RELEASE 封存；Step5 pass 后方可执行） | [planned] |
 
-> **设计顺序约束**：A1_DESIGN_PASS（2026-08-23）已通过，前置条件已满足，Step0 Baseline + Source Authority 现已允许执行，历史约束已解除。
+> **设计顺序约束**：A1_DESIGN_PASS（2026-08-23）已通过。Step0 实现候选已产出，但在 index attestation 与两轮独立 fresh review 完成前，不得进入 Step1。
 
 ### 4.1 各步骤评审要求
 
 | Step | P0/P1 | Reviewer | 其他 |
 |---|---|---|---|
-| Step0 | 任何 P0 | [planned] 两名独立 reviewer | Gate 已通过 |
+| Step0 | 任何 P0/P1 | 两名独立 fresh reviewer | index attestation + 工作区验证；尚待完成 |
 | Step1 | 任何 P0 | [planned] 两名独立 reviewer | Step0 ACCEPTED 记录 |
 | Step2 | 任何 P0 | [planned] 两名独立 reviewer | Step1 ACCEPTED 记录 |
 | Step3 | 任何 P0 | [planned] 两名独立 reviewer | Step2 ACCEPTED 记录 |
@@ -266,18 +265,18 @@ Step1/Compiler 执行 attack corpus 验证后，输出以下格式的 signed CI 
 
 ---
 
-## 6. Baseline Preservation [planned]
+## 6. Baseline Preservation
 
 ### 6.1 Step0 Baseline + Source Authority 步骤
 
 1. [completed] 确认 A1_DESIGN_PASS 已通过。
-2. [planned] 精确字节复制 `compile-protocol-authority.py`（998 字节）到 quarantine artifact。
-3. [planned] 生成 Step0 manifest（含 corpusRootDigest + parentCommitSha + generatedAt，不含 commitSha）。
-4. [planned] 创建 `docs/schemas/resource-gateway-capability-studio-a1/` 路径并写入 13 个 target schema 文件（按 01 §10.2 列表）。
-5. [planned] 对 13 个 target schema 文件执行 JSON Schema Draft 2020-12 验证，确保所有字段类型、enum closedness、WireDigest pattern 符合 00 规范。
-6. [planned] 编写 `docs/schemas/migration-mapping-v1.json`，记录 LEGACY_GATE_A_WIRE_V1 → PLANNED TARGET A1 的每个 schema 的 oldDigest → newWireDigest 映射（格式见 04 §14.1）。
-7. [planned] 执行 Step0 unified verification：对 quarantine artifact 完整性、schema validation、NON_RELEASE 封存路径执行 CI-level 检查。
-8. [planned] 记录 Step0 commit SHA 于外部 signed review/CI attestation。
+2. [implemented candidate] 精确字节复制 Legacy fragments（包括 998 字节 compiler fragment 与 pyc 原始字节）到 digest-named NON_RELEASE quarantine；从未执行或导入 pyc。
+3. [implemented candidate] 生成 Step0 manifest（含 corpusRootDigest + parentCommitSha + generatedAt，不含 commitSha）。
+4. [implemented candidate] 创建 13 个 target schema candidate（按 01 §10.2 列表）。
+5. [implemented candidate] 对 13 个 schema 执行 Draft 2020-12、引用闭包、字段闭合和负例验证。
+6. [implemented candidate] 创建 `docs/schemas/migration-mapping-v1.json`，记录 3 个 5 字段 authority pair mapping；该工件不声称逐字段转换语义。
+7. [verified in workspace] `verify-step0.sh` 与 `--capture-check` 已通过工作区一致性验证。
+8. [pending] 运行 `--index-check` 建立 index attestation，并完成两轮独立 fresh review；两项完成前不得声明 Step0 PASS。
 ## 7. Compatibility Corpus [planned]
 
 ### 7.1 字节全等要求
@@ -336,13 +335,19 @@ Step1/Compiler 执行 attack corpus 验证后，输出以下格式的 signed CI 
 
 ---
 
-## 10. 测试命令占位符 [planned]
+## 10. 验证命令
 
-以下命令为 planned command（尚未实现）；对应 Step 实现落地时必须验证可执行性（`bash -n` / `python -m py_compile`），禁止冒充已可运行。
+以下 Step0 命令已实现。普通成功令牌只证明工作区内部一致；`STEP0_INDEX_PASS` 才证明 candidate 与 Git index 绑定，但仍不能替代两轮独立 fresh review。
 
 ```bash
-# [planned] Step0 baseline verification — requires implementation
-./scripts/oracle/verify-baseline.sh
+# 工作区 authority 一致性
+./scripts/oracle/verify-step0.sh
+
+# 同时核对 live Legacy source 与 quarantine capture
+./scripts/oracle/verify-step0.sh --capture-check
+
+# 绑定 Git index；未暂存或 index blob 不一致时 fail-closed
+./scripts/oracle/verify-step0.sh --index-check
 
 # Step1+ Maven verify
 mvn -f resource-gateway-test-kit/pom.xml clean verify
@@ -357,7 +362,7 @@ python -m pytest tests/integration/ --oracle-manifest=oracle/manifest.schema.jso
 curl -s "${LEDGER_URL}/api/v1/status?oracleId=${ORACLE_ID}" | jq .state
 ```
 
-> 所有 planned command 在对应 Step 实现前必须通过语法检查（bash -n / python -m py_compile）；禁止在实际不可执行时声称可运行。
+> Step2+ 与 Step6 命令仍为 planned，不构成当前可用能力。Step0 验证从未执行或导入 Legacy `.pyc`。
 
 ---
 
@@ -387,9 +392,9 @@ P0 / P1 是 finding severity 分级（不指代 Reviewer 角色）[planned]。
 ## 13. 本文档元数据
 
 - **版本**：0.1-draft
-- **状态**：A1_DESIGN_PASS（2026-08-23）；Step0 现已允许执行
-- **Scope**：仅定义框架，不编码任何功能
-- **Next Action**：执行 Step0 Baseline + Source Authority（设计已通过）
+- **状态**：`STEP0_IMPLEMENTED_REVIEW_PENDING`
+- **Scope**：记录 Gate A1 迁移、Oracle 隔离、Step0 candidate 与验收边界
+- **Next Action**：完成 index attestation 和两轮独立 fresh review；P0/P1 清零前不得声明 Step0 PASS
 
 ---
 
@@ -397,7 +402,7 @@ P0 / P1 是 finding severity 分级（不指代 Reviewer 角色）[planned]。
 
 ### 14.1 迁移映射记录格式（强制性）
 
-所有从 LEGACY_GATE_A_WIRE_V1 到 PLANNED TARGET A1 的转换**必须**产生以下格式的显式映射记录：
+所有从 LEGACY_GATE_A_WIRE_V1 到 TARGET A1 candidate 的 authority 对应关系**必须**产生以下格式的显式映射记录：
 
 ```json5
 {
@@ -413,8 +418,9 @@ P0 / P1 是 finding severity 分级（不指代 Reviewer 角色）[planned]。
 - `legacyRawDigest`：legacy payload 经 JCS 序列化后的 WireDigest。
 - `targetWireDigest`：target payload 经 JCS 序列化后的 WireDigest。
 - **禁止 in-place reinterpretation**：不得将 legacy wrapper object 的字段直接映射为 target type，而不产生映射记录。
-- 映射记录写入独立工件（如 `docs/schemas/migration-map-v1.json`），不修改 source artifact。
+- 映射记录写入独立工件 `docs/schemas/migration-mapping-v1.json`，不修改 source artifact。
 - `transformationVersion` 记录迁移逻辑版本，用于审计和回滚。
+- 该 5 字段记录是 authority pair mapping，不是逐字段转换规范。需要字段级迁移时，必须另行定义并验收 field mapping artifact，不得从本记录推导不存在的转换语义。
 
 ### 14.2 A1_DESIGN_PASS Gate 与 Step0 关系澄清
 
@@ -426,29 +432,29 @@ P0 / P1 是 finding severity 分级（不指代 Reviewer 角色）[planned]。
 **Target schema artifacts 作为 Step0 退出条件，非前置条件**：
 
 - Step0/Source 的退出条件**包含**创建 `docs/schemas/resource-gateway-capability-studio-a1/` 下的 target schema 文件。
-- A1_DESIGN_PASS 通过前，这些 schema 文件**尚未创建**；设计文档本身（00、01、02、04）构成 A1_DESIGN_PASS 的评审对象。
-- 设计通过后，Step0 实现者按设计文档创建 target schema artifacts；schema 创建本身是 Step0 的一部分，不是设计冻结的前置要求。
+- A1_DESIGN_PASS 通过后，Step0 已按设计创建 target schema candidate；schema 创建本身是 Step0 的一部分，不是设计冻结的前置要求。
+- candidate 文件存在不等于 Step0 accepted。index attestation 与两轮独立 fresh review 仍是强制退出条件。
 
-### 14.3 当前/planned 状态真值表（Step0 产出：共 13 个 target schema）
+### 14.3 当前状态真值表（Step0 candidate：共 13 个 target schema）
 
-| 项目 | 当前状态 | Planned |
-|------|----------|---------|
-| `docs/schemas/resource-gateway-capability-studio-a1/` | **不存在**（路径待建） | Step0 产出 |
-| `normative-primitives-v1.schema.json` | **不存在** | Step0 产出 |
-| `source-unit-v1.schema.json` | **不存在** | Step0 产出 |
-| `source-package-v1.schema.json` | **不存在** | Step0 产出 |
-| `compiler-manifest-v1.schema.json` | **不存在** | Step0 产出 |
-| `oracle-manifest-v1.schema.json` | **不存在** | Step0 产出 |
-| `attack-case-v1.schema.json` | **不存在** | Step0 产出 |
-| `evidence-catalog-entry-v1.schema.json` | **不存在** | Step0 产出 |
-| `observation-receipt-v1.schema.json` | **不存在** | Step0 产出 |
-| `acceptance-receipt-v1.schema.json` | **不存在** | Step0 产出 |
-| `ledger-entry-v1.schema.json` | **不存在** | Step0 产出 |
-| `revocation-record-v1.schema.json` | **不存在** | Step0 产出 |
-| `observer-failure-v1.schema.json` | **不存在** | Step0 产出 |
-| `hermetic-observation-v1.schema.json` | **不存在** | Step0 产出 |
-| LEGACY schema (`docs/schemas/resource-gateway-capability-studio/`) | **已存在**，Oracle 签封 | 兼容性保留 |
-| `capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json` | **已存在** | 明确为 Legacy CompilerGoldenOracle artifact |
+| 项目 | 当前状态 | 验收缺口 |
+|------|----------|----------|
+| `docs/schemas/resource-gateway-capability-studio-a1/` | **13 个 candidate 已创建** | index attestation + 两轮 fresh review |
+| `normative-primitives-v1.schema.json` | candidate created | 同上 |
+| `source-unit-v1.schema.json` | candidate created | 同上 |
+| `source-package-v1.schema.json` | candidate created | 同上 |
+| `compiler-manifest-v1.schema.json` | candidate created | 同上 |
+| `oracle-manifest-v1.schema.json` | candidate created；仅定义 NON_RELEASE manifest shape | 同上；Oracle instance 不得发布 |
+| `attack-case-v1.schema.json` | candidate created | 同上 |
+| `evidence-catalog-entry-v1.schema.json` | candidate created | 同上 |
+| `observation-receipt-v1.schema.json` | candidate created | 同上 |
+| `acceptance-receipt-v1.schema.json` | candidate created | 同上 |
+| `ledger-entry-v1.schema.json` | candidate created | 同上 |
+| `revocation-record-v1.schema.json` | candidate created | 同上 |
+| `observer-failure-v1.schema.json` | candidate created | 同上 |
+| `hermetic-observation-v1.schema.json` | candidate created | 同上 |
+| LEGACY schema (`docs/schemas/resource-gateway-capability-studio/`) | 已存在；普通/CLI JAR 的兼容资源 | 不属于 A1 release product |
+| `a1-protocol` classifier | implementation candidate | 需验证只含 13 个 schema 与允许的 Maven metadata |
 
 ### 14.4 Oracle manifest 与 Target schema 关系澄清
 
@@ -456,23 +462,25 @@ P0 / P1 是 finding severity 分级（不指代 Reviewer 角色）[planned]。
 
 - `capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json` 是 **CompilerGoldenOracle** 的 sealed artifact。
 - 该 schema 定义了 legacy `protocol-compilation-manifest` 的 shape，供 Oracle 内部增量 diff 使用。
-- **Target `compilerManifest` 结构** 由 01 §10.2 的 `compiler-manifest-v1.schema.json` 定义（Step0 计划产出）。
+- **Target `compilerManifest` 结构** 由 01 §10.2 的 `compiler-manifest-v1.schema.json` candidate 定义。
 - 两者**不可混淆**：Oracle manifest 是兼容性签封，不是 target compiler manifest 的前身。
 
 **TrustBehaviorOracle Test Artifact**：
 
 - `canonicalization-oracle` 相关 schema（如 JCS 测试向量）是 **TrustBehaviorOracle** 的独立 test artifact。
 - 明确**不属于** TrustBehaviorOracle manifest 的 schema 事实源。
-- TrustBehaviorOracle manifest schema 见 04 §3.1 planned `oracle-manifest-v1.schema.json`。
+- TrustBehaviorOracle manifest schema 见 04 §3.1 的 `oracle-manifest-v1.schema.json` candidate。schema definition 可进入独立协议发布物，但 Oracle instance、可执行文件、fixture、expected output 和签名材料仍为 NON_RELEASE。
 
 ### 14.5 Step0 退出条件（澄清版）
 
 Step0 Baseline + Source Authority 的退出条件：
 
 1. [completed] A1_DESIGN_PASS 已通过（2026-08-23）。
-2. [planned] 原始 `compile-protocol-authority.py` 和 `trust source` 已精确字节复制到 NON_RELEASE 隔离工件（digest 命名）。
-3. [planned] pyc 文件在受控归档路径（NON_RELEASE）保留，直至条件满足（见 04 §1.2）。
-4. [planned] `docs/schemas/resource-gateway-capability-studio-a1/` 下 13 个 target schema artifacts 创建（按 01 §10.2 列表）+ migration mapping。
-5. [planned] 迁移映射记录工件已创建（格式见 04 §14.1）。
+2. [implemented candidate] 原始 Legacy fragments 已精确字节复制到 digest-named NON_RELEASE 隔离工件。
+3. [implemented candidate] pyc 原始字节在受控归档路径保留；本次从未执行或导入 pyc。
+4. [implemented candidate] 13 个 target schema candidate 与 authority mapping 已创建。
+5. [workspace verified] 普通工作区验证与 capture-check 已通过；这两个结果不等于 Step0 accepted。
+6. [pending] `--index-check` 形成 index attestation。
+7. [pending] 两轮独立 fresh review 均确认 P0 = 0、P1 = 0。
 
 **Schema artifacts 是 Step0 退出条件的一部分，不是 A1_DESIGN_PASS Gate 的前置条件。**

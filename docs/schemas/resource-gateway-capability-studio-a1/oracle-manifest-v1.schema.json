@@ -1,0 +1,246 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:oracle-manifest:v1",
+  "title": "Oracle Manifest for Capability Studio Gate A1",
+  "description": "Oracle Manifest structure for Gate A1. Full expression of 04 §3.1: fixtureCorpusRoot, ciRoot, instance, launcher, runtimeIdentity, expectedOutputs, detachedSignature. releaseStatus is NON_RELEASE only. Payload/signature boundary is clear. NON_RELEASE only. Draft 2020-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "oracleId",
+    "oracleType",
+    "releaseStatus",
+    "fixtureCorpusRoot",
+    "ciRoot",
+    "instance",
+    "launcher",
+    "runtimeIdentity",
+    "expectedOutputs",
+    "detachedSignature"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "description": "Schema version identifier. Per 04 §3.4.1.",
+      "const": "1.0"
+    },
+    "oracleId": {
+      "description": "Unique identifier for this oracle instance.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "oracleType": {
+      "description": "Type of oracle. Closed enum. Per 04 §2.1.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/oracleType"
+    },
+    "releaseStatus": {
+      "description": "Release status. NON_RELEASE is the only allowed value for Target A1 oracles. Per 04 §2.1.",
+      "const": "NON_RELEASE"
+    },
+    "fixtureCorpusRoot": {
+      "description": "Relative path to the fixture corpus root within the source package. Per 04 §3.1.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+    },
+    "ciRoot": {
+      "description": "Relative path to the CI Merkle tree root artifact. Per 04 §3.1.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+    },
+    "instance": {
+      "description": "Oracle instance metadata. Per 04 §3.1.",
+      "$ref": "#/$defs/oracleInstance"
+    },
+    "launcher": {
+      "description": "How the oracle is launched. Per 04 §3.1.",
+      "$ref": "#/$defs/oracleLauncher"
+    },
+    "runtimeIdentity": {
+      "description": "Runtime identity of the oracle execution environment. Per 04 §3.1.",
+      "$ref": "#/$defs/oracleRuntimeIdentity"
+    },
+    "expectedOutputs": {
+      "description": "Expected outputs of the oracle execution. Per 04 §3.1.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/oracleExpectedOutput"
+      },
+      "minItems": 0
+    },
+    "detachedSignature": {
+      "description": "Ed25519 detached signature over the oracle payload, excluding this detachedSignature field itself. Payload/signature boundary is explicit. NON_RELEASE only. Per 04 §3.1.",
+      "$ref": "#/$defs/ed25519DetachedSignature"
+    }
+  },
+  "$defs": {
+    "oracleInstance": {
+      "description": "Oracle instance metadata. Per 04 §3.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["corpusRootDigest", "parentCommitSha", "generatedAt", "snapshotTimestamp"],
+      "properties": {
+        "corpusRootDigest": {
+          "description": "Content digest of the corpus root this instance was built from. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/ContentDigest"
+        },
+        "parentCommitSha": {
+          "description": "Git commit SHA of the parent oracle this was derived from. Per 04 §3.1.",
+          "type": "string",
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+        },
+        "generatedAt": {
+          "description": "ISO-8601 instant when this instance was generated. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/Instant"
+        },
+        "snapshotTimestamp": {
+          "description": "ISO-8601 instant of the runtime snapshot used by this instance. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/Instant"
+        }
+      }
+    },
+    "oracleLauncher": {
+      "description": "Oracle launcher configuration. Per 04 §3.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["command", "args", "env", "corpusRoot"],
+      "properties": {
+        "command": {
+          "description": "Primary launch command. Per 04 §3.1.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "args": {
+          "description": "Command-line arguments. Per 04 §3.1.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 0
+        },
+        "env": {
+          "description": "Environment variables for the launcher. Key-value pairs of string to string. Per 04 §3.1.",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^[a-zA-Z_][a-zA-Z0-9_]*$": {
+              "type": "string"
+            }
+          }
+        },
+        "corpusRoot": {
+          "description": "Relative path to the corpus root used by the launcher. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+        }
+      }
+    },
+    "oracleRuntimeIdentity": {
+      "description": "Runtime identity of the oracle execution environment. Per 04 §3.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interpreterVersion", "sha256", "platform"],
+      "properties": {
+        "interpreterVersion": {
+          "description": "Semantic version of the runtime interpreter. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/SemanticVersion"
+        },
+        "sha256": {
+          "description": "Content digest of the interpreter/runtime binary. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/ContentDigest"
+        },
+        "platform": {
+          "description": "Platform identifier (e.g. linux-x64). Per 04 §3.1.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "oracleExpectedOutput": {
+      "description": "A single expected output entry from oracle execution. Per 04 §3.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixturePath", "contentDigest", "expectedOutcome", "expectedErrorCode"],
+      "properties": {
+        "fixturePath": {
+          "description": "Relative path to the expected fixture artifact. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+        },
+        "contentDigest": {
+          "description": "Expected content digest of the output artifact. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/ContentDigest"
+        },
+        "expectedOutcome": {
+          "description": "Expected outcome for this output. Per 04 §3.1.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/expectedOutcome"
+        },
+        "expectedErrorCode": {
+          "description": "Expected error code string when outcome is REJECT; null if outcome is PASS. Per 04 §3.1.",
+          "oneOf": [
+            {"type": "string", "minLength": 1, "maxLength": 64},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "expectedOutcome": {
+                "const": "PASS"
+              }
+            },
+            "required": ["expectedOutcome"]
+          },
+          "then": {
+            "properties": {
+              "expectedErrorCode": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "expectedOutcome": {
+                "const": "REJECT"
+              }
+            },
+            "required": ["expectedOutcome"]
+          },
+          "then": {
+            "properties": {
+              "expectedErrorCode": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ed25519DetachedSignature": {
+      "description": "Ed25519 detached signature. algorithm=Ed25519, keyId identifies the signing key, signatureBase64 is the Base64-encoded Ed25519 signature over the oracle payload (excluding this detachedSignature field). NON_RELEASE only. Per 04 §3.1.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["algorithm", "keyId", "signatureBase64"],
+      "properties": {
+        "algorithm": {
+          "description": "Signing algorithm identifier. Must be Ed25519. Per 04 §3.1.",
+          "const": "Ed25519"
+        },
+        "keyId": {
+          "description": "Identifier of the signing key used. Per 04 §3.1.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "signatureBase64": {
+          "description": "Ed25519 signature as Base64-encoded bytes (R||S, 64 bytes). Per 04 §3.1.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}

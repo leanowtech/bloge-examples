@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.leanowtech.com/bloge/capability-studio/gate-a/role-black-box-fixture-bindings/v1",
+  "title": "Gate A role black-box fixture bindings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["messageVersion", "fixtureSetId", "bindingFingerprint", "bindings"],
+  "properties": {
+    "messageVersion": {"const": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1"},
+    "fixtureSetId": {"const": "GATE_A_ROLE_BLACK_BOX_V1"},
+    "bindingFingerprint": {"$ref": "#/$defs/aggregateFingerprint"},
+    "bindings": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 8,
+      "propertyNames": {"pattern": "^[A-Z][A-Z0-9_]{1,63}$"},
+      "additionalProperties": {"$ref": "#/$defs/roleBinding"}
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value"],
+      "properties": {
+        "kind": {"enum": ["RAW_BYTES", "TREE_COMMITMENT"]},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "rawFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "RAW_BYTES"}}}
+      ]
+    },
+    "treeFingerprint": {
+      "allOf": [
+        {"$ref": "#/$defs/fingerprint"},
+        {"properties": {"kind": {"const": "TREE_COMMITMENT"}}}
+      ]
+    },
+    "aggregateFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "algorithm", "value"],
+      "properties": {
+        "kind": {"const": "AGGREGATE_COMMITMENT"},
+        "algorithm": {"const": "SHA-256"},
+        "value": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "relativePath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"
+    },
+    "rawFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "kind", "fingerprint"],
+      "properties": {
+        "relativePath": {"$ref": "#/$defs/relativePath"},
+        "kind": {"const": "FILE"},
+        "fingerprint": {"$ref": "#/$defs/rawFingerprint"}
+      }
+    },
+    "treeDirectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "kind", "fingerprint"],
+      "properties": {
+        "relativePath": {"$ref": "#/$defs/relativePath"},
+        "kind": {"const": "DIRECTORY"},
+        "fingerprint": {"$ref": "#/$defs/treeFingerprint"}
+      }
+    },
+    "fixtureResource": {
+      "oneOf": [
+        {"$ref": "#/$defs/rawFile"},
+        {"$ref": "#/$defs/treeDirectory"}
+      ]
+    },
+    "roleBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtures", "oracle"],
+      "properties": {
+        "fixtures": {
+          "type": "object",
+          "maxProperties": 8,
+          "patternProperties": {
+            "^[A-Z][A-Z0-9_]{1,63}$": {"$ref": "#/$defs/fixtureResource"}
+          },
+          "additionalProperties": false
+        },
+        "oracle": {"$ref": "#/$defs/rawFile"},
+        "values": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "RUN_ID": {"type": "string", "minLength": 1, "maxLength": 128},
+            "RUN_PURPOSE": {"type": "string", "minLength": 1, "maxLength": 128}
+          }
+        }
+      }
+    }
+  }
+}

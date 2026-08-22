@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:compiler-manifest:v1",
+  "title": "Compiler Manifest for Capability Studio Gate A1",
+  "description": "Compiler Manifest output by the protocol compiler. products exact-set elements: type, path, rawFP. Per Design 01.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["packageFP", "compilerVersion", "optionsFP", "products"],
+  "properties": {
+    "packageFP": {
+      "description": "Source package fingerprint. WireDigest of TypedFP('rg.gatea.package.v1', manifestEnvelope).",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "compilerVersion": {
+      "description": "Version of the compiler that produced this manifest. Strict SemVer.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/SemanticVersion"
+    },
+    "optionsFP": {
+      "description": "Fingerprint of the complete compiler options object, including an empty options object.",
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+    },
+    "products": {
+      "description": "List of compilation products produced by the compiler.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/compilerProduct"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "compilerProduct": {
+      "description": "A single compilation product output. Exact-set elements: type, path, rawFP. Per Design 01.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "path", "rawFP"],
+      "properties": {
+        "type": {
+          "description": "Closed product registry from 01 §4.2. Only ir and projection have normative product semantics; schema, fixture, and assertion are excluded until a specification revision defines them.",
+          "enum": ["ir", "projection"]
+        },
+        "path": {
+          "description": "Path to the product artifact (normative reference).",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/relativePath"
+        },
+        "rawFP": {
+          "description": "Raw content digest of the product (normative reference). WireDigest<ContentDigest>.",
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/ContentDigest"
+        }
+      }
+    }
+  }
+}

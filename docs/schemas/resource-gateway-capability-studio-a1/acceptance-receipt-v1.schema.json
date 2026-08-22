@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:acceptance-receipt:v1",
+  "title": "Acceptance Receipt v1",
+  "description": "Gate verdict receipt with closed status enum (ACCEPTED/REJECTED/ERROR). Caller-owned; captures reducer output and ledger binding. Payload-envelope does not self-hash: all WireDigest fields are at root level, payload contains no self-referential fingerprints. Per 02-evidence-receipt-and-ledger.md §3.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invocationKey",
+    "invocationKeyFP",
+    "decisionInputFP",
+    "reducerOutputFP",
+    "resultFP",
+    "ledgerEntryFP",
+    "status",
+    "issuedAt",
+    "issuerId"
+  ],
+  "properties": {
+    "invocationKey": {
+      "type": "string",
+      "description": "Ledger-unique invocation key; uniqueness constrained by (ledgerId, invocationKey)"
+    },
+    "invocationKeyFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.invocation-key.v1', { ledgerId, invocationKey }) as WireDigest. Cross-ledger isolation via domain-labeled FP."
+    },
+    "decisionInputFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.decision-input.v1', DecisionInput) as WireDigest"
+    },
+    "reducerOutputFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.reducer-output.v1', ReducerOutput) as WireDigest"
+    },
+    "resultFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.result.v1', Result) as WireDigest"
+    },
+    "ledgerEntryFP": {
+      "allOf": [
+        {
+          "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/WireDigest"
+        }
+      ],
+      "description": "TypedFP('rg.gatea.ledger-entry.v1', LedgerEntryPayload) as WireDigest"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "ACCEPTED",
+        "REJECTED",
+        "ERROR"
+      ],
+      "description": "Closed terminal decision status. Per §12.3 R3: domain unknown rejection via target schema enum. NON_RELEASE is not a valid target status."
+    },
+    "issuedAt": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/timestampISO8601",
+      "description": "Receipt issuance timestamp in ISO-8601 UTC"
+    },
+    "issuerId": {
+      "type": "string",
+      "description": "Principal ID of the caller who owns and holds this receipt"
+    }
+  }
+}

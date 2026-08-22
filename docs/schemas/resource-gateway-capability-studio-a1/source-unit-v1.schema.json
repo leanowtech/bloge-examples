@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:studio:schema:source-unit:v1",
+  "title": "Source Unit Structure for Capability Studio Gate A1",
+  "description": "source-unit.content may carry arbitrary JSON objects (not closed empty). Structure depends on unitType. Draft 2020-12.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "unitType", "unitId", "roleVisibility", "relationHandle", "content"],
+  "properties": {
+    "apiVersion": {
+      "description": "API version identifier for Target A1.",
+      "const": "studio.a1/v1"
+    },
+    "unitType": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/unitType"
+    },
+    "unitId": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/unitId"
+    },
+    "roleVisibility": {
+      "$ref": "urn:studio:schema:normative-primitives:v1#/$defs/roleVisibility"
+    },
+    "relationHandle": {
+      "$ref": "#/$defs/CSPRNG128"
+    },
+    "content": {
+      "description": "The actual business content of the source unit. May carry arbitrary JSON objects; structure depends on unitType. Not closed empty.",
+      "type": "object",
+      "minProperties": 1
+    }
+  },
+  "$defs": {
+    "CSPRNG128": {
+      "description": "A 128-bit cryptographically secure random relation handle encoded as 32 lowercase hexadecimal characters.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    }
+  }
+}

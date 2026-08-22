@@ -123,7 +123,46 @@
                 </includes>
             </resource>
         </resources>
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <directory>../docs/schemas/resource-gateway-capability-studio-a1</directory>
+                <targetPath>schemas/resource-gateway-capability-studio-a1</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>*.schema.json</include>
+                </includes>
+            </testResource>
+        </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
+                <executions>
+                    <execution>
+                        <id>stage-a1-protocol-resources</id>
+                        <phase>process-resources</phase>
+                        <goals>
+                            <goal>copy-resources</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/a1-protocol-classes/schemas/resource-gateway-capability-studio-a1</outputDirectory>
+                            <resources>
+                                <resource>
+                                    <directory>../docs/schemas/resource-gateway-capability-studio-a1</directory>
+                                    <filtering>false</filtering>
+                                    <includes>
+                                        <include>*.schema.json</include>
+                                    </includes>
+                                </resource>
+                            </resources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
@@ -142,6 +181,23 @@
                                 <argument>${project.basedir}/src/main/java/com/leanowtech/bloge/gateway/testkit/CapabilityStudioExecutionLeaseEvidenceCli.java</argument>
                                 <argument>${project.build.outputDirectory}/com/leanowtech/bloge/gateway/testkit/CapabilityStudioExecutionLeaseEvidenceCli.class</argument>
                                 <argument>${project.build.outputDirectory}/META-INF/bloge/capability-studio-execution-lease-evidence-cli-build-identity-v1.json</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>verify-step0</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>${project.basedir}/src/build/CapabilityStudioA1ReleaseArchiveVerifier.java</argument>
+                                <argument>${project.build.directory}/${project.artifactId}-${project.version}.jar</argument>
+                                <argument>${project.build.directory}/${project.artifactId}-${project.version}-cli.jar</argument>
+                                <argument>${project.build.directory}/${project.artifactId}-${project.version}-a1-protocol.jar</argument>
+                                <argument>${project.basedir}/../docs/schemas/resource-gateway-capability-studio</argument>
                             </arguments>
                         </configuration>
                     </execution>
@@ -205,6 +261,19 @@
                         </manifestEntries>
                     </archive>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>a1-protocol-jar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                        <configuration>
+                            <classifier>a1-protocol</classifier>
+                            <classesDirectory>${project.build.directory}/a1-protocol-classes</classesDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

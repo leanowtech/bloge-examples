@@ -1,0 +1,434 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-gate-a-dependency-authority-v1.schema.json",
+  "title": "Capability Studio Gate A caller-owned dependency authority v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "lockSetId",
+    "lockRevision",
+    "parentLockFingerprint",
+    "authorityMode",
+    "sourcePolicy",
+    "closed",
+    "allowedPackagingModes",
+    "manifestSelfAssertionPolicy",
+    "sourceRepositorySnapshotId",
+    "dependencyTreeFingerprint",
+    "sourcePomRawFingerprint",
+    "toolchainPluginLockRefs",
+    "changeReason",
+    "status",
+    "dependencyAuthorityFingerprint",
+    "dependencies"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "capability-studio.gate-a-dependency-authority.v1"
+    },
+    "lockSetId": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+    },
+    "lockRevision": {
+      "minimum": 1
+    },
+    "parentLockFingerprint": {
+      "type": "null"
+    },
+    "authorityMode": {
+      "const": "CALLER_OWNED_EXTERNAL_RAW_LOCK"
+    },
+    "sourcePolicy": {
+      "const": "REQUIRED_EXTERNAL_MAVEN_REPOSITORY_SNAPSHOT_AND_POM_PIN"
+    },
+    "closed": {
+      "const": true
+    },
+    "allowedPackagingModes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+          "THIN_SERVICE_PROVIDER"
+        ]
+      }
+    },
+    "manifestSelfAssertionPolicy": {
+      "const": "CANNOT_ESTABLISH_RAW_FINGERPRINT"
+    },
+    "sourceRepositorySnapshotId": {
+      "$ref": "#/$defs/externalPin"
+    },
+    "dependencyTreeFingerprint": {
+      "$ref": "#/$defs/externalFingerprint",
+      "properties": {
+        "kind": {
+          "const": "AGGREGATE_COMMITMENT"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-DEPENDENCY-TREE-v1"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_PIN"
+        }
+      }
+    },
+    "sourcePomRawFingerprint": {
+      "$ref": "#/$defs/externalFingerprint",
+      "properties": {
+        "kind": {
+          "const": "RAW_BYTES"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-SOURCE-POM-v1"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_PIN"
+        }
+      }
+    },
+    "toolchainPluginLockRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/externalLockRef"
+      }
+    },
+    "changeReason": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 256,
+      "pattern": "^[A-Z0-9][A-Z0-9_. -]*$"
+    },
+    "status": {
+      "enum": [
+        "DRAFT_UNPINNED",
+        "ACTIVE",
+        "REVOKED"
+      ]
+    },
+    "dependencyAuthorityFingerprint": {
+      "$ref": "#/$defs/selfFingerprint",
+      "properties": {
+        "kind": {
+          "const": "CANONICAL_DOCUMENT"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-DEPENDENCY-AUTHORITY-v1"
+        },
+        "source": {
+          "const": "THIS_DEPENDENCY_AUTHORITY_EXACT_RAW_BYTES"
+        }
+      }
+    },
+    "dependencies": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/dependencyLock"
+      }
+    },
+    "previousHeadFingerprint": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "externalPin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "requiredExternalPinId",
+            "status"
+          ],
+          "properties": {
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "status": {
+              "const": "UNAVAILABLE_UNTIL_CALLER_PINNED"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "requiredExternalPinId",
+            "status",
+            "fingerprint"
+          ],
+          "properties": {
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "status": {
+              "const": "PINNED"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "externalLockRef": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lockId",
+            "mode",
+            "requiredExternalPinId",
+            "status"
+          ],
+          "properties": {
+            "lockId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "status": {
+              "const": "UNAVAILABLE_UNTIL_CALLER_PINNED"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "lockId",
+            "mode",
+            "requiredExternalPinId",
+            "status",
+            "fingerprint"
+          ],
+          "properties": {
+            "lockId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "mode": {
+              "const": "REQUIRED_EXTERNAL_PIN"
+            },
+            "requiredExternalPinId": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+            },
+            "status": {
+              "const": "PINNED"
+            },
+            "fingerprint": {
+              "type": "string",
+              "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "hashOrNull": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+        }
+      ]
+    },
+    "externalFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "RAW_BYTES",
+            "AGGREGATE_COMMITMENT"
+          ]
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "type": "string",
+          "pattern": "^RG-CS-GATE-A-[A-Z0-9-]+-v1$"
+        },
+        "source": {
+          "const": "REQUIRED_EXTERNAL_PIN"
+        },
+        "value": {
+          "$ref": "#/$defs/hashOrNull"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        }
+      }
+    },
+    "selfFingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "algorithm",
+        "domain",
+        "source",
+        "value",
+        "selfNullPolicy"
+      ],
+      "properties": {
+        "kind": {
+          "const": "CANONICAL_DOCUMENT"
+        },
+        "algorithm": {
+          "const": "SHA-256"
+        },
+        "domain": {
+          "const": "RG-CS-GATE-A-DEPENDENCY-AUTHORITY-v1"
+        },
+        "source": {
+          "const": "THIS_DEPENDENCY_AUTHORITY_EXACT_RAW_BYTES"
+        },
+        "value": {
+          "$ref": "#/$defs/hashOrNull"
+        },
+        "selfNullPolicy": {
+          "const": "VALUE_NULL_DURING_HASH"
+        }
+      }
+    },
+    "coordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "groupId",
+        "artifactId",
+        "version",
+        "classifier"
+      ],
+      "properties": {
+        "groupId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9.]+$"
+        },
+        "artifactId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]+$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+        },
+        "classifier": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]+$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "dependencyLock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lockId",
+        "coordinate",
+        "scope",
+        "rawFingerprint",
+        "allowedRoles",
+        "packagingModes",
+        "source"
+      ],
+      "properties": {
+        "lockId": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]{1,95}$"
+        },
+        "coordinate": {
+          "$ref": "#/$defs/coordinate"
+        },
+        "scope": {
+          "const": "runtime"
+        },
+        "rawFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:(?!0{64}$)[0-9a-f]{64}$"
+        },
+        "allowedRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "IMPLEMENTATION_CANDIDATE",
+              "INDEPENDENT_VERIFIER",
+              "CONFORMANCE_HARNESS",
+              "GATE_ADMISSION_CHECKER"
+            ]
+          }
+        },
+        "packagingModes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "const": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES"
+          }
+        },
+        "source": {
+          "const": "CALLER_PINNED_MAVEN_LOCAL_REPOSITORY"
+        }
+      }
+    }
+  }
+}
