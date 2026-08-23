@@ -66,7 +66,7 @@ byte[] canonicalBytes     // 见 §2.5 仓库 canonicalization 规则
 String planSourceSemanticFingerprint  // sha256:domain-separated(plan semantic canonical bytes)
 ```
 
-禁止字段：`className`、`script`、`url`、`expression`、`serviceLoader`、`produces`、`requiredRoles`。Plan Source 只允许 `id`/`type`/`revision`/`dependsOn[]`/`inputSlot`；`produces`/`requiredRoles` 等产出和角色由唯一 Registry + Catalog 派生不由调用方声明。
+禁止字段：`className`、`script`、`url`、`expression`、`serviceLoader`、`produces`、`requiredRoles`、`type`（旧字段）。Plan Source 只允许 root 字段和 primitive 实例字段：`id`、`typeId`、`revision`、`dependsOn[]`、`inputSlot`；`produces`/`requiredRoles` 等产出和角色由唯一 Registry + Catalog 派生，不由调用方声明。
 
 ### 2.3 Fingerprint 语义与 Domain-Separated 公式
 
@@ -148,31 +148,15 @@ verificationFingerprint =
 
 ### 2.4 `CompiledAcceptancePlan`
 
-Compiler 的唯一权威输出，至少包含：
+Compiler 的唯一权威输出。字段列表与 §5.3 Compiled Plan Schema 完全一致，不得自行发明 schema 中不存在的字段。
 
-```text
-planId
-planRevision
-planFingerprint
-compilerFingerprint
-catalogRawFingerprint
-catalogSemanticFingerprint
-stageExitContractCount = 27
-expandedObligationIds
-canonicalMatrixCellCount
-matrixCellIds
-suiteRunIds
-stableExecutionOrder
-primitiveContracts
-expectedEvidenceRoles
-oracleBindings
-factRequirements
-resumeGraph
-terminalGate
-primitiveRegistryFingerprint   // Domain 6；Compiler 重算并写入 wire
-```
+**23 个 root required 字段（与 schema 一致）：**
 
-`stageExitContractCount`、`canonicalMatrixCellCount` 和 `matrixCellIds` 是三套独立字段。Canonical 9 Case x 3 轮的计划必须同时给出 27 个稳定 `matrixCellId` 和 3 个稳定 suite run identity；它们不能从 `stageExitContractCount` 推导，也不能写入裸 `expectedCount=27` 后由消费者猜测语义。
+`schemaVersion`、`planId`、`revision`、`planSourceSemanticFingerprint`、`catalogRawFingerprint`、`catalogSemanticFingerprint`、`compilerProfileRawFingerprint`、`primitiveRegistryFingerprint`、`stageExitContractCount`、`acStdCount`、`feltObligationCount`、`canonicalMatrixCellCount`、`suiteRunCount`、`matrixCellIds`、`suiteRunIds`、`exactContractIds`、`primitiveContracts`、`phaseBarriers`、`executionOrder`、`expectedEvidenceRoles`、`oracleBindings`、`terminalGate`、`compiledPlanFingerprint`
+
+**Counter const（schema `const` 约束）：** `stageExitContractCount=27`、`acStdCount=9`、`feltObligationCount=14`、`canonicalMatrixCellCount=27`、`suiteRunCount=3`
+
+**`stageExitContractCount`、`canonicalMatrixCellCount` 和 `matrixCellIds` 是三套独立字段。** Canonical 9 Case x 3 轮的计划必须同时给出 27 个稳定 `matrixCellId` 和 3 个稳定 suite run identity；它们不能从 `stageExitContractCount` 推导，也不能写入裸 `expectedCount=27` 后由消费者猜测语义。
 
 ### 2.5 Canonicalization（仓库既有规则 + duplicate detection）
 
@@ -186,26 +170,23 @@ Phase 1 补充规则：
 
 - **重复字段检测**：必须显式启用 `Jackson StreamReadFeature.STRICT_DUPLICATE_DETECTION`；Parser 在遇到重复键时直接抛出 `JsonParseException`（非 Schema 层面拒绝），因此 Schema validation 不会看到任何重复键
 
-### 2.6 `PrimitiveDescriptor`
+### 2.6 `PrimitiveDescriptor` 与 Phase 1 编译投影
 
-Primitive 是引擎唯一可执行动作。每个 primitive 必须声明：
+**Registry 以 `typeId` 为 key**，非 primitiveId。每个 Descriptor 声明完整的 input/output/effect/phase/verifier/binding 信息。
+
+**Phase 1 compiled primitive 只投影 5 个字段**（与 compiled plan schema `compiledPrimitive` required 一致）：
 
 ```text
-primitiveId + revision
-effectClass
-inputKinds
-outputEvidenceKinds
-typedVerifierId + revision
-retryPolicy
-failureMapping
-capabilityRequirements
+primitiveId   // 来自 plan source
+typeId        // 查 Registry 的 key
+revision      // plan source 中声明的 revision
+effectClass  // 来自 Registry 投影
+phase         // 来自 Registry 投影
 ```
 
-`primitiveId` 来自 Test Kit 内建 closed registry。Plan 不能指定 Java class，也不能通过反射发现任意实现。
+**typedVerifierId、typedVerifierRevision、retryPolicy、failureMapping、capabilityRequirements 均属 packaged profile（compilerProfileRawFingerprint 绑定）和 closed Registry，不写入 compiled plan wire。** Compiler 通过 `primitiveRegistryFingerprint`（Domain 6）绑定 Registry 内容，Verifier 独立重算验证。
 
-`PrimitiveDescriptor` 是 Compiler 与 Proof Verifier 唯一共享的声明来源。Compiler 读取其中的 input/output/effect/phase 定义做静态检查，Verifier 读取其中的 verifier artifact/profile 绑定做 proof replay；两边不得各自维护一份 role、Oracle 或 failure mapping 表。业务 Oracle 的实现仍只存在于既有 typed verifier/Runtime，Descriptor 只保存 exact ref，不能内嵌表达式。
-
-**Phase 1 绑定范围：** `typedVerifierId` 和 `revision` 字段在 Phase 1 写入 wire；`verifierArtifactFingerprint` 和 `verifierPolicyFingerprint` 留 Phase 2 Proof Registry 实现，不在本设计范围内声称已闭合。
+Plan 不能指定 Java class，不能通过反射发现任意实现。
 
 ## 3. Corr. / ADR — Phase 顺序矛盾冻结
 
@@ -280,7 +261,7 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 | `revision` | integer, ≥1 | Plan 修订版本号 |
 | `compilerProfile` | `const` = `formal-evidence-v1` | Phase 1 仅此值 |
 | `catalogId` | string, 1–128 字 | Catalog 标识（如 `builtin-contract-catalog-v1`） |
-| `catalogRef` | string, 1–256 字 | Catalog raw fingerprint（`sha256:...`，由调用方提供） |
+| `catalogRef` | string, 1–256 字 | Catalog raw fingerprint，格式 `<catalogId>@sha256:<64 lowercase hex>`（如 `builtin-contract-catalog-v1@sha256:abc...`，由调用方提供，与 plan 一起传入） |
 | `obligationSet` | `const` = `RG-CS-FELT-v1` | 义务集常量 |
 | `primitives` | array[1–64] | Primitive 实例列表 |
 | `primitives[].id` | string, 1–128 字, pattern: `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | Primitive 实例 ID |
@@ -292,7 +273,7 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 
 > 禁止字段：`className`、`script`、`url`、`expression`、`serviceLoader`、`produces`、`requiredRoles`、`type`（旧字段）。Plan 不声明产出和角色，由唯一 Registry + Catalog 派生，不由调用方声明。
 
-权威文件：[capability-studio-acceptance-plan-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-acceptance-plan-v1.schema.json)
+权威文件：[capability-studio-acceptance-plan-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-acceptance-plan-v1.schema.json)
 
 ### 5.2 `bloge.capability-studio.contract-catalog.v1`
 
@@ -305,153 +286,77 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 | 字段 | 精确数量 | contractEntry/entry 字段 |
 |---|---|---|
 | `stageExitContracts` | 27 | `contractId`（STAGE_EXIT, stage=0–5, 无 name）, `category`（STAGE_EXIT）, `stage`（integer 0–5）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
-| `acStandards` | 9 | `contractId`（AC_STANDARD, stage=null）, `category`（AC_STANDARD）, `name`（如 `AC-STD-01`）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
+| `acStandards` | 9 | `contractId`（AC_STANDARD, stage=null）, `category`（AC_STANDARD）, `name`（如 `CANDIDATE_IDENTITY`）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
 | `feltObligations` | 14 | `contractId`（FELT_OBLIGATION, stage=null）, `category`（FELT_OBLIGATION）, `name`, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
 | `canonicalCases` | **9** | `canonicalCaseId`, `title`, `description`（三字段，minItems=9, maxItems=9） |
 | `suiteRuns` | 3 | `suiteRunId`, `suiteRunNumber`（1–3）, `label` |
-| `matrixCells` | **27** | `matrixCellId`, `canonicalCaseId`, `suiteRunId`（不在 catalog root required 中，但 Schema 约束 minItems=27, maxItems=27） |
+| `matrixCells` | **27** | `matrixCellId`, `canonicalCaseId`, `suiteRunId`（root required，Schema `minItems=27, maxItems=27`） |
 
 **contractEntry category 条件：** `STAGE_EXIT` → `stage` 为 integer 0–5，`name` 禁止出现；其他 category → `stage=null`，`name` 必须存在。
 
 **Schema 不含 `catalogRawFingerprint` / `catalogSemanticFingerprint`（不自指）。**
 
-权威文件：[capability-studio-contract-catalog-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-contract-catalog-v1.schema.json)
+权威文件：[capability-studio-contract-catalog-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-contract-catalog-v1.schema.json)
 
 ### 5.3 `bloge.capability-studio.compiled-plan.v1`
 
 文件名：`capability-studio-compiled-acceptance-plan-v1.schema.json`
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leanowtech.com/schemas/bloge.capability-studio.compiled-plan.v1",
-  "title": "Capability Studio Compiled Acceptance Plan v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion", "planId", "revision",
-    "planSourceSemanticFingerprint", "catalogRawFingerprint", "catalogSemanticFingerprint",
-    "compilerProfileRawFingerprint", "primitiveRegistryFingerprint",
-    "stageExitContractCount", "acStdCount", "feltObligationCount",
-    "canonicalMatrixCellCount", "suiteRunCount",
-    "matrixCellIds", "suiteRunIds", "exactContractIds",
-    "primitiveContracts", "phaseBarriers", "executionOrder",
-    "expectedEvidenceRoles", "oracleBindings",
-    "terminalGate", "compiledPlanFingerprint"
-  ],
-  "properties": {
-    "schemaVersion": { "const": "bloge.capability-studio.compiled-plan.v1" },
-    "planId": { "type": "string", "maxLength": 128 },
-    "revision": { "type": "integer", "minimum": 1 },
-    "planSourceSemanticFingerprint": { "$ref": "#/$defs/sha256" },
-    "catalogRawFingerprint": { "$ref": "#/$defs/sha256" },
-    "catalogSemanticFingerprint": { "$ref": "#/$defs/sha256" },
-    "compilerProfileRawFingerprint": { "$ref": "#/$defs/sha256" },
-    "primitiveRegistryFingerprint": { "$ref": "#/$defs/sha256" },
-    "stageExitContractCount": { "type": "integer", "const": 27 },
-    "acStdCount": { "type": "integer", "const": 9 },
-    "feltObligationCount": { "type": "integer", "const": 14 },
-    "canonicalMatrixCellCount": { "type": "integer", "const": 27 },
-    "suiteRunCount": { "type": "integer", "const": 3 },
-    "matrixCellIds": {
-      "type": "array",
-      "minItems": 27,
-      "maxItems": 27,
-      "uniqueItems": true,
-      "items": { "type": "string", "maxLength": 128 }
-    },
-    "suiteRunIds": {
-      "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
-      "uniqueItems": true,
-      "items": { "type": "string", "maxLength": 128 }
-    },
-    "exactContractIds": {
-      "type": "array",
-      "minItems": 50,
-      "maxItems": 50,
-      "uniqueItems": true,
-      "items": { "type": "string", "maxLength": 128 }
-    },
-    "primitiveContracts": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 64,
-      "items": { "$ref": "#/$defs/compiledPrimitive" }
-    },
-    "phaseBarriers": {
-      "type": "array",
-      "maxItems": 32,
-      "items": { "$ref": "#/$defs/phaseBarrier" }
-    },
-    "executionOrder": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 64,
-      "items": { "type": "string", "maxLength": 128 }
-    },
-    "expectedEvidenceRoles": {
-      "type": "array",
-      "maxItems": 64,
-      "items": { "$ref": "#/$defs/evidenceRoleBinding" }
-    },
-    "oracleBindings": {
-      "type": "array",
-      "maxItems": 64,
-      "items": { "$ref": "#/$defs/oracleBinding" }
-    },
-    "terminalGate": { "enum": ["DEVELOPMENT_VERIFIED_ONLY"] },
-    "compiledPlanFingerprint": { "$ref": "#/$defs/sha256" }
-  },
-  "$defs": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
-    },
-    "compiledPrimitive": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["primitiveId", "typeId", "effectClass", "phase", "revision"],
-      "properties": {
-        "primitiveId": { "type": "string", "maxLength": 128 },
-        "typeId": { "type": "string", "maxLength": 128 },
-        "effectClass": { "enum": ["PURE_VERIFY", "AUTHORITY_LEASE", "LOCAL_IMMUTABLE_WRITE"] },
-        "phase": { "enum": ["BOOTSTRAP_FACTS", "MATERIAL_SNAPSHOT", "READ_ONLY_PREFLIGHT", "PROVIDER_CONFORMANCE", "STATEFUL_EXECUTION", "INDEPENDENT_VERIFICATION", "MATERIAL_POSTFLIGHT", "DURABLE_LOCAL_COMMIT", "EXTERNAL_PUBLICATION", "EXTERNAL_ADJUDICATION"] },
-        "revision": { "type": "integer", "minimum": 1 }
-      }
-    },
-    "phaseBarrier": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["barrierId", "phase"],
-      "properties": {
-        "barrierId": { "type": "string" },
-        "phase": { "type": "string" }
-      }
-    },
-    "evidenceRoleBinding": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["role", "producerPrimitiveId"],
-      "properties": {
-        "role": { "type": "string" },
-        "producerPrimitiveId": { "type": "string" }
-      }
-    },
-    "oracleBinding": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["oracleId", "primitiveId"],
-      "properties": {
-        "oracleId": { "type": "string" },
-        "primitiveId": { "type": "string" }
-      }
-    }
-  }
-}
-```
+**23 个 root required 字段（与真实 schema 完全一致，不得多于或少于）：**
 
+| 字段 | 类型/约束 | 说明 |
+|---|---|---|
+| `schemaVersion` | `const` = `bloge.capability-studio.compiled-plan.v1` | |
+| `planId` | string, maxLength=128 | |
+| `revision` | integer, ≥1 | |
+| `planSourceSemanticFingerprint` | sha256 pattern | Domain 1 |
+| `catalogRawFingerprint` | sha256 pattern | Domain 2 |
+| `catalogSemanticFingerprint` | sha256 pattern | Domain 2.5 |
+| `compilerProfileRawFingerprint` | sha256 pattern | Domain 3 |
+| `primitiveRegistryFingerprint` | sha256 pattern | Domain 6 |
+| `stageExitContractCount` | `const`=27 | |
+| `acStdCount` | `const`=9 | |
+| `feltObligationCount` | `const`=14 | |
+| `canonicalMatrixCellCount` | `const`=27 | |
+| `suiteRunCount` | `const`=3 | |
+| `matrixCellIds` | array[27], unique | |
+| `suiteRunIds` | array[3], unique | |
+| `exactContractIds` | array[50], unique | 27+9+14 |
+| `primitiveContracts` | array[1–64] | items = compiledPrimitive |
+| `phaseBarriers` | array[0–32] | items = phaseBarrier；从 profile `barriers[].phases` 数组的首个 phase 作为锚点 phase，barrierId 从 profile 投影（现有 authority fixtures 即此语义） |
+| `executionOrder` | array[1–64], unique | |
+| `expectedEvidenceRoles` | array[0–64] | items = evidenceRoleBinding |
+| `oracleBindings` | array[0–64] | items = oracleBinding |
+| `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` | |
+| `compiledPlanFingerprint` | sha256 pattern | Domain 4；wire 中非 null |
+
+**compiledPrimitive（`primitiveContracts` items）：**
+
+| 字段 | required | 类型/约束 |
+|---|---|---|
+| `primitiveId` | **是** | string, maxLength=128 |
+| `typeId` | **是** | string, maxLength=128 |
+| `effectClass` | **是** | closed enum: `PURE_VERIFY` \| `AUTHORITY_LEASE` \| `LOCAL_IMMUTABLE_WRITE` |
+| `phase` | **是** | closed enum: `BOOTSTRAP_FACTS` … `EXTERNAL_ADJUDICATION`（以 schema 权威 enum 为准） |
+| `revision` | **是** | integer, ≥1 |
+
+> 不存在：dependsOn、retryPolicy、failureMapping、typedVerifierId、typedVerifierRevision、capabilityRequirements（属 packaged profile/Registry）。
+
+**phaseBarrier（`phaseBarriers` items）：**
+
+`barrierId`（closed enum，以 schema 权威值为准）+ `phase`（取 profile `barriers[].phases` 数组的首个 phase 作为锚点 phase；现有 authority fixtures 即此语义）。
+
+**evidenceRoleBinding（`expectedEvidenceRoles` items）：**
+
+`role`（closed enum）+ `producerPrimitiveId`（string）。
+
+**oracleBinding（`oracleBindings` items）：**
+
+`oracleId`（string）+ `primitiveId`（string）。
+
+权威文件：[capability-studio-compiled-acceptance-plan-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-compiled-acceptance-plan-v1.schema.json)
+
+### 5.4
 ### 5.4 `bloge.capability-studio.compiled-plan-verification-result.v1`
 
 文件名：`capability-studio-compiled-plan-verification-result-v1.schema.json`
@@ -482,7 +387,7 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 
 **不出现 `verifiedResult` / `invalidResult` / `unavailableResult` 嵌套对象；不出现 PASS / ACCEPTED / COMPILED 状态。**
 
-权威文件：[capability-studio-compiled-plan-verification-result-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-compiled-plan-verification-result-v1.schema.json)
+权威文件：[capability-studio-compiled-plan-verification-result-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-compiled-plan-verification-result-v1.schema.json)
 
 ## 6. Golden Vectors
 
@@ -1040,7 +945,7 @@ docs/
 |---|---|---|
 | AC1 | 四个 Schema 均为 Draft 2020-12、additionalProperties=false | JSON Schema validator |
 | AC2 | Schema fingerprint 均为 `sha256:[0-9a-f]{64}` | Schema 内置 regex |
-| AC3 | Catalog schema 含 required arrays：stageExitContracts=27, acStandards=9, feltObligations=14, canonicalCases=9, suiteRuns=3, matrixCells=27 | Schema required + const 字段验证 |
+| AC3 | Catalog schema 含 required arrays：stageExitContracts=27, acStandards=9, feltObligations=14, canonicalCases=9, suiteRuns=3, matrixCells=27（由 minItems/maxItems + required 验证；非 const） | Schema minItems/maxItems + required 字段验证 |
 | AC4 | catalogRawFingerprint = raw bytes hash（Domain 2）；catalogSemanticFingerprint = 领域语义 hash（Domain 2.5）；catalogRefVerified 由 plan.catalogRef 与 catalogRawFingerprint 精确比较决定 | POS-DET-004, POS-DET-007 |
 | AC5 | 禁止字段 className/script/url/expression/serviceLoader 在 Schema 层面拒绝 | NEG-WIRE-001..005 |
 | AC4b | catalog contractEntry 字段内容漂移 → catalogSemanticFingerprintVerified=false → INVALID_CATALOG_SEMANTICS | POS-DET-007 |
