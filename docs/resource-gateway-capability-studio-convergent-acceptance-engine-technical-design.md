@@ -111,6 +111,25 @@ D0 已在生产实现继续前完成独立对抗签核，最终结论为 `openP0
 
 该结论只表示实现问题已经可判定，并授权按本文的 A0 深模块结构开始生产代码；它不表示 A0、Gate A 或 27 项 formal acceptance 已通过。
 
+### 1.5 EPT_DOMAIN 与 RG-CS-EPT-v1 分母隔离
+
+**EPT_DOMAIN**（Evidence Publication Transaction）定义于 `evidence-publication-transaction-design-v1.md §C.1`：
+
+```
+EPT_DOMAIN = "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+```
+
+**RG-CS-EPT-v1** 是 EPT 的 27 项开发分母，与其他分母严格隔离：
+
+| 分母来源 | 值 | 增加 formalPassCount？ |
+|---|---|---|
+| Stage 1（ENGINE-DESIGN §1058）| 27 | **是** |
+| FELT（RG-CS-FELT-v1）| 14 | 否 |
+| S0 fixture-generator-transaction | 26 | 否 |
+| **RG-CS-EPT-v1（本文）** | **27** | **否** |
+
+EPT 27 项（EPT-H01..05、EPT-FS01..06、EPT-CP01..08、EPT-CN01..03、EPT-PR01..02、EPT-ST01..02、EPT-VR01）不增加 `formalPassCount`，属于 Development design denominator。B0/B1/R1 是 EPT 的 artifacts 设计要素（B0=committed bundle inner manifest、B1=Store immutable receipt、R1=final outer commitment），在 EPT 矩阵中作为 evidence 引用。
+
 ## 2. 为什么此前推进慢
 
 ### 2.1 事实盘点
@@ -807,7 +826,10 @@ capability-studio-evidence-store-receipt-v1.schema.json
 capability-studio-acceptance-adjudication-envelope-v1.schema.json
 ```
 
-哈希域固定为：
+> **B0/B1/R1 设计规范（本文 §10 与 EPT design §D.4 同步）**：
+> 以下公式是设计规范，不是实现声明。EPT 实现（`RG-CS-EPT-v1`）的 B0/B1/R1 语义以 `evidence-publication-transaction-design-v1.md` §D.4 为准。本文仅记录与 FELT/Stage 集成的统一视图。
+
+哈希域固定为（设计规范，非实现）：
 
 ```text
 B0 = H("RG-CS-LOCAL-PROOF-COMMIT-v1" || canonical({
@@ -819,13 +841,24 @@ B0 = H("RG-CS-LOCAL-PROOF-COMMIT-v1" || canonical({
   proofGraphFingerprint
 }))
 
+# EPT B0 三层 fingerprint（详见 EPT design §D.4）：
+# b0RawFingerprint = SHA256(exact raw bytes)
+# b0CanonicalFingerprint = SHA256(strict canonical)
+# b0ClosureFingerprint = SHA256(EPT_DOMAIN || stableRequestId || transactionId ||
+#                              b0RawFingerprint || b0CanonicalFingerprint ||
+#                              evidenceContentTreeFingerprint || ownerEpoch ||
+#                              fencingTokenFingerprint)
+
 R1.context = H("RG-CS-STORE-PUBLICATION-v1" || canonical({
   B0,
+  b0ClosureFingerprint,
   immutableObjectRef,
   generation,
   storeIdentity,
   publishedAt
 }))
+
+# R1 绑定 b0ClosureFingerprint + B1 + transaction + owner（见 EPT design §D.4.3）
 
 E2 = H("RG-CS-ACCEPTANCE-ADJUDICATION-v1" || canonical({
   B0,
@@ -836,7 +869,7 @@ E2 = H("RG-CS-ACCEPTANCE-ADJUDICATION-v1" || canonical({
 }))
 ```
 
-所有数组有固定顺序，所有对象使用 strict canonical JSON。E2 只能由部署方拥有的外部 adjudicator 产生；Runner 只能生成 B0、请求 R1 并输出 `READY_FOR_ADJUDICATION`。receipt replay、错 generation、B0 substitution、把 E2 放回 B0、signoff 早于 R1 和 adjudicator issuer 不受信均为固定负向测试。
+**实现状态**：以上公式为设计规范；B0/B1/R1 三层 commitment 尚未实现。Gate A (A0/A1/A2) 完成后才能声称实现。
 
 ## 11. 执行与恢复状态机
 
@@ -1046,6 +1079,19 @@ Resolver 由部署方提供。Plan 只能声明需要什么事实，不能选择
 - 子进程输出进入有界隔离文件并经过泄漏扫描；
 - Evidence role 只能来自 closed enum；
 - ProofRecord 不复制业务 Payload。
+
+### 15.1 EPT 与 B0/B1/R1 artifacts
+
+EPT（Evidence Publication Transaction）产生三个 artifacts：
+- **B0**：committed bundle inner manifest（`b0-inner-manifest.json`）；B0 三层指纹：
+  - `b0RawFingerprint = SHA256(inner manifest raw exact bytes)`
+  - `b0CanonicalFingerprint = SHA256(strict canonical(inner manifest))`
+  - `b0ClosureFingerprint = SHA256(EPT_DOMAIN || stableRequestId || transactionId || b0RawFingerprint || b0CanonicalFingerprint || evidenceContentTreeFingerprint || ownerEpoch || fencingTokenFingerprint)`
+  - inner manifest 不含自身派生指纹
+- **B1**：Store immutable receipt（`b1-receipt.json`）
+- **R1**：final outer commitment（`r1-receipt.json`），绑定 B0+B1+transaction/owner
+
+EPT 矩阵中 B0/B1/R1 作为 evidence 字段引用，不改变现有 Stage 27 合同或 formalPassCount。
 
 ## 15. 与 27 个 Stage-exit contract 的关系
 
