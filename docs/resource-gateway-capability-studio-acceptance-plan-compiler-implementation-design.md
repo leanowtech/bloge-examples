@@ -92,7 +92,7 @@ catalogRawFingerprint =
 
 - Domain 1: plan source semantic — canonical plan body（不含 planSourceSemanticFingerprint 自身）
 - Domain 2.5: catalog semantic — canonical catalog body（不含 catalogSemanticFingerprint 自身）
-- Domain 3: compiler profile raw — packaged profile 的 exact canonical bytes（不含 compilerProfileRawFingerprint 自身）
+- Domain 3: compiler profile raw — packaged profile 的 exact raw bytes（不含 compilerProfileRawFingerprint 自身）
 - Domain 4: compiled plan — compiled canonical body 自指（不含 compiledPlanFingerprint 自身）
 - Domain 5: primitive registry — 内建 fixed closed registry 的 exact canonical bytes
 
@@ -238,7 +238,7 @@ Catalog root 字段：
 
 **evidenceRoles / ownerRoles / externalFactRequirements 在每个 contractEntry 内**，不是 catalog root 字段。
 
-### 5.3 `bloge.capability-studio.compiled-acceptance-plan.v1`
+### 5.3 `bloge.capability-studio.compiled-plan.v1`
 
 文件名：`capability-studio-compiled-acceptance-plan-v1.schema.json`
 
@@ -246,7 +246,7 @@ Catalog root 字段：
 
 | 字段 | 类型/约束 |
 |---|---|
-| `schemaVersion` | `const` = `bloge.capability-studio.compiled-acceptance-plan.v1` |
+| `schemaVersion` | `const` = `bloge.capability-studio.compiled-plan.v1` |
 | `planId` | string |
 | `revision` | integer, ≥1 |
 | `planSourceSemanticFingerprint` | sha256 pattern | Domain 1 |
@@ -263,10 +263,10 @@ Catalog root 字段：
 | `suiteRunIds` | array[3], unique |
 | `exactContractIds` | array[50], unique | 27+9+14 |
 | `primitiveContracts` | array[1–64] | items = compiledPrimitive |
-| `phaseBarriers` | array[0–32] | items = phaseBarrier；barrierId 和完整 phases 数组均来自 profile barriers[] |
+| `phaseBarriers` | array[7] | items = phaseBarrier；barrierId 和完整 phases 数组均来自 profile barriers[] |
 | `executionOrder` | array[1–64], unique |
-| `expectedEvidenceRoles` | array[0–64] | items = evidenceRoleBinding |
-| `oracleBindings` | array[0–64] | items = oracleBinding |
+| `expectedEvidenceRoles` | array[1–8] | items = evidenceRoleBinding |
+| `oracleBindings` | array[50] | items = oracleBinding |
 | `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` |
 | `compiledPlanFingerprint` | sha256 pattern | Domain 4；wire 中非 null |
 

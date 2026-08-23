@@ -302,7 +302,7 @@ VERIFIED 仅表示：Verifier 独立重算的派生结果与 IR 中声明值字�
 sha256:f20774c84f7f34cb0f95c9bb6f5061e048d94b2463da3ca20b560e338cdb7b4d
 ```
 
-来源：catalog 按 §7.3 规范化后（含 contractEntry 内 evidenceRoles/ownerRoles/externalFactRequirements 排序）的 Domain2。
+来源：catalog 按 §7.3 规范化后（含 contractEntry 内 evidenceRoles/ownerRoles/externalFactRequirements 排序）的 Domain 2.5（catalog semantic）
 
 ### 9.2 Registry
 
@@ -310,7 +310,7 @@ sha256:f20774c84f7f34cb0f95c9bb6f5061e048d94b2463da3ca20b560e338cdb7b4d
 sha256:15ea38ddeda10a7befb280efc4fdefb74503036cc06d55775da09665ae4c2686
 ```
 
-来源：registry descriptor canonical JSON array（typeId 升序，3 个 set-like 数组升序）的 Domain2。
+来源：registry descriptor canonical JSON array（typeId 升序，3 个 set-like 数组升序）的 Domain 5（primitive registry）
 
 ### 9.3 CatalogRef 同步规则
 
