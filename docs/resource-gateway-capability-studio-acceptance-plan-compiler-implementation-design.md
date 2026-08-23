@@ -8,8 +8,6 @@
 >
 > **相位归属**：Phase 1 = §16 GATE-B COMPILE_ONLY。Gate A（typed replay + independent verify + gate admission）是独立信任闭环，作为 Phase 0 前置；Gate A 与 Phase 1 属于不同纵切，不在本设计范围内。
 
-
-
 ## 1. 设计决策冻结
 
 ### 1.1 明确拒绝：直接硬编码 Runner
@@ -29,7 +27,7 @@ Phase 1 后才能引入 Phase 3 Scheduler 和 stateful Runner。
 | Compiler 与 Verifier 分离 | 两独立类，不共享 verdict | Verifier 必须独立重算，不能把 Compiler 输出当信任根 |
 | Registry/Profile/Protocol 为 package-private 内部固定 | Compiler/Verifier 构造器不接受 Registry/Profile 注入 | 防止调用方替换信任根 |
 | Wire Schema 先行 | 4 个 Draft 2020-12 Schema 先于 Java 实现 | Schema 冻结后实现才可判定正确性 |
-| Plan/Catalog 输入均为 bounded bytes | Compiler.compile(planBytes, catalogBytes)；Verifier.verify(planBytes, catalogBytes, compiledPlanBytes)；Compiler/Verifier 内部独立加载 packaged profile 和 closed registry | 不解析网络/文件路径；bounded 字节由调用方提供 |
+| Plan/Catalog 输入均为 bounded bytes | public compile/verify API 接收 caller bounded planBytes/catalogBytes；Compiler/Verifier 内部独立加载 packaged profile 和 closed registry | 不解析网络/文件路径；bounded 字节由调用方提供 |
 | Catalog 为 bounded 独立 wire | Catalog 有独立 Schema、raw bytes 与 domain-separated fingerprint；Compiler 必须验证传入 bytes 的 Schema 合规性、catalogRef 与 fingerprint 精确匹配 | 不能只用代码 Map 把 catalog wire 变摆设 |
 | formalPassCount 在 Phase 1 始终为 0/27 | Compiler/Verifier 不生成 PASS | PASS 只能由 typed verifier ProofRecord 推导，不在编译阶段产生 |
 
@@ -72,79 +70,31 @@ String planSourceSemanticFingerprint  // sha256:domain-separated(plan semantic c
 
 **不使用 RFC 8785 JCS。不声称 EvidenceVerificationSupport 直接提供 domain separation。Protocol 自己实现长度前缀 SHA-256，可复用 EvidenceVerificationSupport 递归键排序思想。**
 
-六个隔离 domain，公式如下：
-
-所有 fingerprint 使用 big-endian 32-bit unsigned length prefix（I32BE，4 字节无符号整数）。I32BE 前缀用于防止字段拼接时的字节边界歧义，不依赖其防碰撞属性。
+六个隔离 domain，每个使用统一公式结构（Domain 2 为例）：
 
 ```
-// Domain 1: plan source — 对领域语义规范化后的 canonical bytes 做 hash
-planSourceSemanticFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-PLAN-SOURCE-SEMANTIC-v1")
-    + I32BE(byteLength(canonicalPlanSourceBytes))
-    + canonicalPlanSourceBytes
-  )
-// 注意：primitive/dependsOn 等集合排列变化可通过语义规范化保持稳定
-
-// Domain 2: catalog raw — 对调用方 exact catalogBytes 原始字节做 hash
-// 不 canonicalize；空白变化、对象键顺序变化、换行符变化必须改变 raw fingerprint
+Domain 2: catalog raw fingerprint — catalogBytes 的 exact bytes
 catalogRawFingerprint =
   "sha256:" + SHA256(
     UTF8("RG-CS-CATALOG-RAW-v1")
     + I32BE(byteLength(catalogBytes))
     + catalogBytes
   )
+```
 
-// Domain 2.5: catalog semantic — 对 catalog 领域语义规范化后的 canonical bytes 做 hash
-// 与 catalogRawFingerprint 不同：空白变化、对象键顺序变化、换行符变化不改变 catalogSemanticFingerprint
-// 只有 contractEntry 字段内容变化才改变
-catalogSemanticFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-CATALOG-SEMANTIC-v1")
-    + I32BE(byteLength(canonicalCatalogBytes))
-    + canonicalCatalogBytes
-  )
-// canonicalCatalogBytes = canonicalize(完整 Catalog wire，catalog wire 本身不含 catalogSemanticFingerprint 字段)
-
-// Domain 3: compiler profile — 绑定 packaged exact raw bytes
-compilerProfileRawFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-COMPILER-PROFILE-RAW-v1")
-    + I32BE(byteLength(compilerProfileBytes))
-    + compilerProfileBytes
-  )
-
-// Domain 4: compiled plan — compiled canonical body 自指（不含 compiledPlanFingerprint 自身）
-compiledPlanFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-COMPILED-PLAN-v1")
-    + I32BE(byteLength(canonicalCompiledBodyBytes))
-    + canonicalCompiledBodyBytes
-  )
-// 其中 canonicalCompiledBodyBytes = canonicalize(CompiledAcceptancePlan with compiledPlanFingerprint=null)
-// catalog canonicalization: 集合型字段（contractEntry 按 contractId 排序）做领域排序；所有数组内字段递归键排序
-
-// Domain 6: primitive registry — 内建 fixed closed registry 的 exact canonical bytes
-// Phase 1：仅绑定 verifierId/revision；verifier artifact/profile fingerprint 留 Phase 2 Proof Registry，不在 Phase 1 声称已闭合
-// preimage = 8 个 Descriptor 按 typeId 升序排列后各自 canonicalize，再拼接
-primitiveRegistryFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-PRIMITIVE-REGISTRY-v1")
-    + I32BE(byteLength(canonicalRegistryBytes))
-    + canonicalRegistryBytes
-  )
-// canonicalRegistryBytes = 按 typeId 升序拼接 eachDescriptorCanonicalBytes；每个 Descriptor canonicalize 时移除 outputEvidenceKinds 中的 nullable field 差异
-
-// verificationFingerprint（Verifier 输出）同样自指：
-verificationFingerprint =
-  "sha256:" + SHA256(
-    UTF8("RG-CS-COMPILED-PLAN-VERIFICATION-v1")
-    + I32BE(byteLength(canonicalResultBytes))
-    + canonicalResultBytes
-  )
-// 其中 canonicalResultBytes = canonicalize(VerificationResult with verificationFingerprint=null)
+- `UTF8(domain)`：直接 UTF-8 编码，无额外长度前缀
+- `I32BE(length)`：payload 字节长度的 big-endian 32-bit unsigned 整数（4 字节）
+- `payload`：紧跟其后的实际字节内容
 
 所有 fingerprint 使用 `I32BE`（big-endian 32-bit unsigned length prefix）。
+
+**其余五个 domain：**
+
+- Domain 1: plan source semantic — canonical plan body（不含 planSourceSemanticFingerprint 自身）
+- Domain 2.5: catalog semantic — canonical catalog body（不含 catalogSemanticFingerprint 自身）
+- Domain 3: compiler profile raw — packaged profile 的 exact canonical bytes（不含 compilerProfileRawFingerprint 自身）
+- Domain 4: compiled plan — compiled canonical body 自指（不含 compiledPlanFingerprint 自身）
+- Domain 5: primitive registry — 内建 fixed closed registry 的 exact canonical bytes
 
 ### 2.4 `CompiledAcceptancePlan`
 
@@ -174,17 +124,19 @@ Phase 1 补充规则：
 
 **Registry 以 `typeId` 为 key**，非 primitiveId。每个 Descriptor 声明完整的 input/output/effect/phase/verifier/binding 信息。
 
-**Phase 1 compiled primitive 只投影 5 个字段**（与 compiled plan schema `compiledPrimitive` required 一致）：
+**Phase 1 compiled primitive 只投影 6 个字段（与 compiled plan schema `compiledPrimitive` required 一致）：**
 
-```text
+```
 primitiveId   // 来自 plan source
 typeId        // 查 Registry 的 key
 revision      // plan source 中声明的 revision
 effectClass  // 来自 Registry 投影
 phase         // 来自 Registry 投影
+dependsOn    // required 数组，可空
+inputSlot    // optional
 ```
 
-**typedVerifierId、typedVerifierRevision、retryPolicy、failureMapping、capabilityRequirements 均属 packaged profile（compilerProfileRawFingerprint 绑定）和 closed Registry，不写入 compiled plan wire。** Compiler 通过 `primitiveRegistryFingerprint`（Domain 6）绑定 Registry 内容，Verifier 独立重算验证。
+**typedVerifierId、typedVerifierRevision、retryPolicy、failureMapping、capabilityRequirements 均属 packaged profile（compilerProfileRawFingerprint 绑定）和 closed Registry，不写入 compiled plan wire。** Compiler 通过 `primitiveRegistryFingerprint`（Domain 5）绑定 Registry 内容，Verifier 独立重算验证。
 
 Plan 不能指定 Java class，不能通过反射发现任意实现。
 
@@ -261,73 +213,61 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 | `revision` | integer, ≥1 | Plan 修订版本号 |
 | `compilerProfile` | `const` = `formal-evidence-v1` | Phase 1 仅此值 |
 | `catalogId` | string, 1–128 字 | Catalog 标识（如 `builtin-contract-catalog-v1`） |
-| `catalogRef` | string, 1–256 字 | Catalog raw fingerprint，格式 `<catalogId>@sha256:<64 lowercase hex>`（如 `builtin-contract-catalog-v1@sha256:abc...`，由调用方提供，与 plan 一起传入） |
-| `obligationSet` | `const` = `RG-CS-FELT-v1` | 义务集常量 |
-| `primitives` | array[1–64] | Primitive 实例列表 |
-| `primitives[].id` | string, 1–128 字, pattern: `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | Primitive 实例 ID |
-| `primitives[].typeId` | **closed enum**：`VERIFY_FIXED_MATERIAL_V1` \| `VERIFY_FORMAL_INPUT_TREE_V1` \| `RUN_PROVIDER_CONFORMANCE_V2` \| `EXECUTE_LEASE_EVIDENCE_V1` \| `VERIFY_DURABLE_WRAPPER_V1` \| `VERIFY_PACKAGED_FELT_MATRICES_V1` \| `VERIFY_MATERIAL_POSTFLIGHT_V1` \| `COMMIT_LOCAL_PROOF_BUNDLE_V1` | 8 个 closed primitive type |
-| `primitives[].revision` | integer, ≥1 | Type revision |
+| `catalogRef` | string, 1–256 字 | Catalog raw fingerprint，格式 `sha256:[0-9a-f]{64}` |
+| `primitives` | array[1–64], unique by id | items = planPrimitive |
+| `primitives[].id` | string, 1–128 字 | primitive 唯一标识 |
+| `primitives[].typeId` | string, 1–128 字 | Registry 中的 typeId |
+| `primitives[].revision` | integer, ≥1 | |
 | `primitives[].dependsOn` | string[], max 64, unique | 依赖的 primitive id 列表 |
-| `primitives[].inputSlot` | enum: `AUTHORITY` \| `TARGET`（可选） | 指定 `VERIFY_FORMAL_INPUT_TREE_V1` 两实例的槽位 |
-| `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` | 终端门常量 |
-
-> 禁止字段：`className`、`script`、`url`、`expression`、`serviceLoader`、`produces`、`requiredRoles`、`type`（旧字段）。Plan 不声明产出和角色，由唯一 Registry + Catalog 派生，不由调用方声明。
-
-权威文件：[capability-studio-acceptance-plan-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-acceptance-plan-v1.schema.json)
+| `primitives[].inputSlot` | enum（optional） | |
 
 ### 5.2 `bloge.capability-studio.contract-catalog.v1`
 
 文件名：`capability-studio-contract-catalog-v1.schema.json`
 
-**Catalog 不自含 fingerprint 字段。** raw/semantic fingerprint 由 Compiler/Verifier 从调用方提供的 bounded bytes 独立计算。
+Catalog root 字段：
 
-**Catalog wire 不变量（精确集合）：**
+| 字段 | 类型/约束 |
+|---|---|
+| `stageExitContracts` | array[27], unique by contractId |
+| `acStandards` | array[9], unique by contractId |
+| `feltObligations` | array[14], unique by contractId |
+| `canonicalCases` | array[9], unique by canonicalCaseId |
+| `suiteRuns` | array[3], unique by suiteRunId |
+| `matrixCells` | array[27], unique by matrixCellId |
 
-| 字段 | 精确数量 | contractEntry/entry 字段 |
-|---|---|---|
-| `stageExitContracts` | 27 | `contractId`（STAGE_EXIT, stage=0–5, 无 name）, `category`（STAGE_EXIT）, `stage`（integer 0–5）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
-| `acStandards` | 9 | `contractId`（AC_STANDARD, stage=null）, `category`（AC_STANDARD）, `name`（如 `CANDIDATE_IDENTITY`）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
-| `feltObligations` | 14 | `contractId`（FELT_OBLIGATION, stage=null）, `category`（FELT_OBLIGATION）, `name`, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
-| `canonicalCases` | **9** | `canonicalCaseId`, `title`, `description`（三字段，minItems=9, maxItems=9） |
-| `suiteRuns` | 3 | `suiteRunId`, `suiteRunNumber`（1–3）, `label` |
-| `matrixCells` | **27** | `matrixCellId`, `canonicalCaseId`, `suiteRunId`（root required，Schema `minItems=27, maxItems=27`） |
+**evidenceRoles / ownerRoles / externalFactRequirements 在每个 contractEntry 内**，不是 catalog root 字段。
 
-**contractEntry category 条件：** `STAGE_EXIT` → `stage` 为 integer 0–5，`name` 禁止出现；其他 category → `stage=null`，`name` 必须存在。
-
-**Schema 不含 `catalogRawFingerprint` / `catalogSemanticFingerprint`（不自指）。**
-
-权威文件：[capability-studio-contract-catalog-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-contract-catalog-v1.schema.json)
-
-### 5.3 `bloge.capability-studio.compiled-plan.v1`
+### 5.3 `bloge.capability-studio.compiled-acceptance-plan.v1`
 
 文件名：`capability-studio-compiled-acceptance-plan-v1.schema.json`
 
-**23 个 root required 字段（与真实 schema 完全一致，不得多于或少于）：**
+**Root required（23 个）：**
 
-| 字段 | 类型/约束 | 说明 |
-|---|---|---|
-| `schemaVersion` | `const` = `bloge.capability-studio.compiled-plan.v1` | |
-| `planId` | string, maxLength=128 | |
-| `revision` | integer, ≥1 | |
+| 字段 | 类型/约束 |
+|---|---|
+| `schemaVersion` | `const` = `bloge.capability-studio.compiled-acceptance-plan.v1` |
+| `planId` | string |
+| `revision` | integer, ≥1 |
 | `planSourceSemanticFingerprint` | sha256 pattern | Domain 1 |
 | `catalogRawFingerprint` | sha256 pattern | Domain 2 |
 | `catalogSemanticFingerprint` | sha256 pattern | Domain 2.5 |
 | `compilerProfileRawFingerprint` | sha256 pattern | Domain 3 |
-| `primitiveRegistryFingerprint` | sha256 pattern | Domain 6 |
-| `stageExitContractCount` | `const`=27 | |
-| `acStdCount` | `const`=9 | |
-| `feltObligationCount` | `const`=14 | |
-| `canonicalMatrixCellCount` | `const`=27 | |
-| `suiteRunCount` | `const`=3 | |
-| `matrixCellIds` | array[27], unique | |
-| `suiteRunIds` | array[3], unique | |
+| `primitiveRegistryFingerprint` | sha256 pattern | Domain 5 |
+| `stageExitContractCount` | `const`=27 |
+| `acStdCount` | `const`=9 |
+| `feltObligationCount` | `const`=14 |
+| `canonicalMatrixCellCount` | `const`=27 |
+| `suiteRunCount` | `const`=3 |
+| `matrixCellIds` | array[27], unique |
+| `suiteRunIds` | array[3], unique |
 | `exactContractIds` | array[50], unique | 27+9+14 |
 | `primitiveContracts` | array[1–64] | items = compiledPrimitive |
-| `phaseBarriers` | array[0–32] | items = phaseBarrier；从 profile `barriers[].phases` 数组的首个 phase 作为锚点 phase，barrierId 从 profile 投影（现有 authority fixtures 即此语义） |
-| `executionOrder` | array[1–64], unique | |
+| `phaseBarriers` | array[0–32] | items = phaseBarrier；barrierId 和完整 phases 数组均来自 profile barriers[] |
+| `executionOrder` | array[1–64], unique |
 | `expectedEvidenceRoles` | array[0–64] | items = evidenceRoleBinding |
 | `oracleBindings` | array[0–64] | items = oracleBinding |
-| `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` | |
+| `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` |
 | `compiledPlanFingerprint` | sha256 pattern | Domain 4；wire 中非 null |
 
 **compiledPrimitive（`primitiveContracts` items）：**
@@ -336,27 +276,28 @@ Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已�
 |---|---|---|
 | `primitiveId` | **是** | string, maxLength=128 |
 | `typeId` | **是** | string, maxLength=128 |
+| `revision` | **是** | integer, ≥1 |
 | `effectClass` | **是** | closed enum: `PURE_VERIFY` \| `AUTHORITY_LEASE` \| `LOCAL_IMMUTABLE_WRITE` |
 | `phase` | **是** | closed enum: `BOOTSTRAP_FACTS` … `EXTERNAL_ADJUDICATION`（以 schema 权威 enum 为准） |
-| `revision` | **是** | integer, ≥1 |
+| `dependsOn` | **是** | string[], required 数组，可空 |
+| `inputSlot` | **否** | enum（optional） |
 
-> 不存在：dependsOn、retryPolicy、failureMapping、typedVerifierId、typedVerifierRevision、capabilityRequirements（属 packaged profile/Registry）。
+> 不存在：retryPolicy、failureMapping、typedVerifierId、typedVerifierRevision、capabilityRequirements（属 packaged profile/Registry）。
 
 **phaseBarrier（`phaseBarriers` items）：**
 
-`barrierId`（closed enum，以 schema 权威值为准）+ `phase`（取 profile `barriers[].phases` 数组的首个 phase 作为锚点 phase；现有 authority fixtures 即此语义）。
+`barrierId`（closed enum，以 schema 权威值为准）+ `phases` 数组（按 profile `barriers[].phases` 完整保留；unique、minItems:1、maxItems:10、ordered）。
 
 **evidenceRoleBinding（`expectedEvidenceRoles` items）：**
 
-`role`（closed enum）+ `producerPrimitiveId`（string）。
+`role`（closed enum）+ `contractIds[]`（required nonempty unique 升序数组，minLength:1，maxLength:50，max 50 items）。
 
 **oracleBinding（`oracleBindings` items）：**
 
-`oracleId`（string）+ `primitiveId`（string）。
+`contractId`（string）+ `oracleId`（string）；精确 50 项（当前 catalog 每 contract 一 oracle）。
 
 权威文件：[capability-studio-compiled-acceptance-plan-v1.schema.json](docs/schemas/resource-gateway-capability-studio/capability-studio-compiled-acceptance-plan-v1.schema.json)
 
-### 5.4
 ### 5.4 `bloge.capability-studio.compiled-plan-verification-result.v1`
 
 文件名：`capability-studio-compiled-plan-verification-result-v1.schema.json`
@@ -445,6 +386,7 @@ Phase 1 内建 plan 精确 9 个 primitive instance（按 §3 ADR 冻结的 phas
   "expectedPrimitiveRegistryFingerprint": "sha256:...",
   "phaseOrder": [...],
   "allowedEffectClasses": [...],
+  "primitiveDescriptors": [...],
   "barriers": [...]
 }
 ```
@@ -464,8 +406,7 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 
 见 §7 内建 Registry 表。
 
----
-
+## 11. 测试矩阵
 
 ### 11.1 Wire Schema 负例
 
@@ -486,46 +427,66 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 | `NEG-WIRE-013` | verification result 含 reasonCode=`PASS`（INVALID reasonCode enum 不含此值） | Schema `reasonCode` enum 拒绝 |
 | `NEG-WIRE-014` | plan 只含 stageExitContractCount=27，缺少 canonicalMatrixCellCount 字段 | Schema required 拒绝 |
 | `NEG-WIRE-015` | verification result VERIFIED 时 reasonCode 非 null | Schema oneOf 拒绝 |
-| `NEG-WIRE-016` | verification result INVALID 时 reasonField=null | Schema oneOf 拒绝 |
-| `NEG-WIRE-017` | verification result UNAVAILABLE 时含 reasonField | Schema oneOf 拒绝 |
-| `NEG-WIRE-018` | plan.json schemaVersion = `bloge.capability-studio.contract-catalog.v1`（catalog 专用的 key） | Schema const `bloge.capability-studio.acceptance-plan.v1` 拒绝 |
-| `NEG-WIRE-019` | catalog.json schemaVersion 值正确但 `const` discriminator 为 `wrong-value` | Schema const 拒绝（验证 discriminator 必须 exact match，不接受"值类型正确但不等"） |
+| `NEG-WIRE-016` | verification result VERIFIED 时 reasonField 非 null | Schema oneOf 拒绝 |
+| `NEG-WIRE-017` | compiled plan 无 compiledPlanFingerprint | Schema required 拒绝 |
+| `NEG-WIRE-018` | verification result UNAVAILABLE 时含 reasonField | Schema `not: {required:["reasonField"]}` 拒绝 |
 
-### 11.1.5 Positive Compilation（内建 plan）
-
-| 测试 ID | 场景 | 预期 |
-|---|---|---|
-| `POS-BUILTIN-001` | 内建 plan（9 个 primitive）用内建 catalog 编译 | Compiler 返回 CompilationResult（Phase 1 status=COMPILED）；compiledPlanFingerprint 与 golden fixture exact match；Verifier 独立验证通过（status=VERIFIED） |
-
-### 11.2 集合精确性
-
-| 测试 ID | 输入 | 预期 |
-|---|---|---|
-| `POS-COLLECT-001` | exact 50 contract IDs（S0-5:27 + AC-STD:9 + FELT:14 = 50） | COMPILED |
-| `POS-COLLECT-002` | matrixCellIds 精确 27 个不同 ID | COMPILED |
-| `POS-COLLECT-003` | suiteRunIds 精确 3 个不同 ID | COMPILED |
-| `NEG-COLLECT-001` | 49 个 contract ID（缺一个 FELT） | INVALID_COLLECTION_SIZE |
-| `NEG-COLLECT-002` | matrixCellIds 含重复 | Schema uniqueItems 拒绝 |
-| `NEG-COLLECT-003` | stageExitContractCount=27 但 FELT 含 13 个 | INVALID_COLLECTION_SIZE |
-| `NEG-COLLECT-004` | plan 只含 stageExitContractCount=27，缺少 canonicalMatrixCellCount | Schema required 拒绝 |
-| `NEG-COLLECT-005` | catalog.json 缺少 acStandards 字段 | Schema required 拒绝 |
-
-### 11.3 两个 27 分母隔离
+### 11.2 Fingerprint
 
 | 测试 ID | 描述 | 预期 |
 |---|---|---|
-| `POS-27ISOLATE-001` | stageExitContractCount=27 + canonicalMatrixCellCount=27 + 各 required array size 正确 | COMPILED |
-| `NEG-27ISOLATE-001` | plan 缺少两个 required 字段 | Schema required 拒绝 |
-| `NEG-27ISOLATE-002` | compiled plan 中 stageExitContractCount 字段缺失 | Schema required 拒绝 |
-| `NEG-27ISOLATE-003` | compiled plan 中 canonicalMatrixCellCount 字段缺失 | Schema required 拒绝 |
+| `NEG-FP-001` | catalogRawFingerprint 使用错误 domain 前缀 | 与 golden 不等 |
+| `NEG-FP-002` | catalogRawFingerprint 直接 hash catalogBytes（无 domain prefix） | 与 golden 不等 |
+| `NEG-FP-003` | compiledPlanFingerprint 自指时未排除自身 | 与 golden 不等 |
+| `POS-FP-001` | catalogRawFingerprint = SHA256(UTF8(domain)+I32BE(len)+catalogBytes) | 与 golden exact match |
+| `POS-FP-002` | Domain 2–5 各使用独立 domain 字符串 | 各 fingerprint 不冲突 |
 
-### 11.4 拓扑与 Dependency
+### 11.3 Determinism
 
 | 测试 ID | 输入 | 预期 |
 |---|---|---|
-| `POS-TOPO-001` | 无循环、依赖完整，9 个 instance 按 §3 顺序 | COMPILED |
-| `NEG-TOPO-CYCLE-001` | A→B→C→A | INVALID_TOPOLOGY_CYCLE |
-| `NEG-TOPO-CYCLE-002` | 自环 A→A | INVALID_TOPOLOGY_CYCLE |
+| `POS-DET-001` | T1 同语义 plan，executionOrder 不同 | same compiledPlanFingerprint |
+| `POS-DET-002` | T2-catalog-raw catalogBytes 变更 | 不同 catalogRawFingerprint | compiler |
+| `POS-DET-003` | T3-catalog-raw catalogBytes 变更 | 不同 catalogRawFingerprint | compiler |
+| `POS-DET-004` | T4-catalog-semantic catalog semantic 变更 | 不同 catalogSemanticFingerprint | compiler |
+| `NEG-DET-005` | T5-dup-id duplicate primitiveId | INVALID_PLAN_STRUCTURE | compiler |
+| `NEG-DET-006` | T6-cycle cyclic dependsOn | INVALID_TOPOLOGY_CYCLE | compiler |
+| `NEG-DET-007` | T7-unknown-type typeId 未在 registry | INVALID_REGISTRY_TYPE_NOT_FOUND | compiler |
+| `NEG-DET-008` | T8-rev-mismatch revision 不符 | INVALID_REGISTRY_REVISION_MISMATCH | compiler |
+| `NEG-DET-009` | T9-size-plan planBytes >1MiB | reject | compiler |
+| `NEG-DET-010` | T10-size-catalog catalogBytes >1MiB | reject | compiler |
+| `POS-DET-011` | T11-order-topo plan primitives | executionOrder 拓扑排序 | compiler |
+| `POS-DET-012` | T12-permutation source primitive order permuted | same executionOrder+fingerprint | compiler |
+| `POS-DET-013` | T13-phases-complete profile barriers | 完整保留 barrierId/phases[] 保序 | compiler |
+| `POS-DET-014` | T14-count-27 catalog.stageExitContracts | stageExitContractCount==27 | compiler |
+| `POS-DET-015` | T15-count-9 catalog.acStandards | acStdCount==9 | compiler |
+| `POS-DET-016` | T16-count-14 catalog.feltObligations | feltObligationCount==14 | compiler |
+| `POS-DET-017` | T17-count-cases catalog.canonicalCases | canonicalCases==9 | compiler |
+| `POS-DET-018` | T18-count-runs catalog.suiteRuns | suiteRuns==3 | compiler |
+| `POS-DET-019` | T19-count-cells catalog.matrixCells | canonicalMatrixCellCount==27 | compiler |
+| `POS-DET-020` | T20-keys-sorted IR body | object keys 升序 | compiler |
+| `POS-DET-021` | T21-primitive-sorted primitiveContracts | primitiveId 升序；dependsOn 升序 | compiler |
+| `POS-DET-022` | T22-barrier-order phaseBarriers | 保持 profile.barriers 声明顺序；phases 保序 | compiler |
+| `POS-DET-023` | T23-ids-sorted exactContractIds | contractId 升序 | compiler |
+| `POS-DET-024` | T24-role-sorted expectedEvidenceRoles | role 升序；contractIds 升序 | compiler |
+| `POS-DET-025` | T25-oracle-sorted oracleBindings | contractId 升序 | compiler |
+| `POS-DET-026` | T26-domain2 IR body | Domain2(compiledPlanFingerprint) | compiler |
+| `POS-DET-027` | T27-reason-max512 Invalid reasonField | reasonField length ≤512 | verifier |
+| `POS-DET-028` | T28-role-contractids catalog contracts | expectedEvidenceRoles.role -> contractIds[] | compiler |
+| `POS-DET-029` | T29-oracle-contractid catalog contracts | oracleBindings.contractId -> oracleId | compiler |
+| `POS-DET-030` | T30-no-guess-producer catalog 无 evidenceRoles | 禁止派生 producerPrimitiveId | compiler |
+| `POS-DET-031` | T31-raw-fingerprint catalogBytes | catalogRawFingerprint == Domain2 | compiler |
+| `NEG-DET-032` | T32-whitespace-ref catalog whitespace 变，plan.catalogRef 未更新 | INVALID_FINGERPRINT_MISMATCH，拒绝 | compiler |
+| `POS-DET-033` | T33-ref-sync plan.catalogRef 同步更新 | semantic 不变；raw/plan/compiled fingerprint 变化 | compiler |
+| `POS-DET-034` | T34-formal-0-27 IR output | 无 formalPassCount 字段 | compiler |
+| `POS-DET-035` | T35-verified Valid IR | status=VERIFIED | verifier |
+| `NEG-DET-036` | T36-invalid-pointer Invalid IR | status=INVALID, reasonField 非空 | verifier |
+| `POS-DET-037` | T37-schema-valid IR output | JSON Schema validation pass | compiler |
+
+### 11.4 Topology
+
+| 测试 ID | 场景 | 预期 |
+|---|---|---|
 | `NEG-TOPO-UNKNOWN-001` | B 依赖不存在的 C | INVALID_TOPOLOGY_UNKNOWN_NODE |
 | `NEG-TOPO-UNKNOWN-002` | plan 引用 registry 中不存在的 primitive type | INVALID_REGISTRY_TYPE_NOT_FOUND |
 | `NEG-TOPO-REVISION-001` | plan 中 primitive revision 与 registry 不符 | INVALID_REGISTRY_REVISION_MISMATCH |
@@ -615,8 +576,6 @@ capability-studio-compiled-acceptance-plan-v1.schema.json
 capability-studio-compiled-plan-verification-result-v1.schema.json
 ```
 
-
-
 **Authority 清单（Phase 1）：**
 
 ```
@@ -641,7 +600,9 @@ docs/acceptance/capability-studio/acceptance-engine-v1/
 </resource>
 ```
 
-此配置**不得**放入 a1 JAR 的 testResource；a1 JAR 继续严格只包含 `resource-gateway-capability-studio-a1/` 下的 schema。**Fixture 路径（`resource-gateway-test-kit/src/test/resources/`）：**
+此配置**不得**放入 a1 JAR 的 testResource；a1 JAR 继续严格只包含 `resource-gateway-capability-studio-a1/` 下的 schema。
+
+**Fixture 路径（`resource-gateway-test-kit/src/test/resources/`）：**
 
 ```
 acceptance/
@@ -681,8 +642,6 @@ acceptance/
 
 此配置**不得**放入 a1 JAR 的 testResource；a1 JAR 继续严格只包含 `resource-gateway-capability-studio-a1/` 下的 schema。
 
----
-
 ## 13. Java Public API 草图
 
 ### 13.1 CapabilityStudioAcceptancePlanCompiler（public）
@@ -695,8 +654,8 @@ package com.leanowtech.bloge.gateway.testkit.acceptance;
  * CompiledAcceptancePlan.
  *
  * Phase 1 contract:
- * - INPUT:  bounded planBytes + catalogBytes
- *           (内部独立加载 packaged compiler profile 和 closed registry)
+ * - INPUT:  bounded planBytes + catalogBytes（均由 public API caller 提供）
+ *           （内部独立加载 packaged compiler profile 和 closed registry）
  * - OUTPUT: CompiledAcceptancePlan with status=COMPILED
  * - DOES NOT: execute primitives；除有界读取 packaged schema/catalog/profile resources 外不做外部 I/O，
  *             generate PASS/ACCEPTED, or modify formalPassCount (remains 0/27)
@@ -707,7 +666,6 @@ public final class CapabilityStudioAcceptancePlanCompiler {
 
     /** Static factory: returns compiler with built-in internals. */
     public static CapabilityStudioAcceptancePlanCompiler withBuiltInInternals() {
-        // 内部加载 packaged profile/registry（closed schema + profile）；catalogBytes 始终由 public API compile() caller 注入
         return new CapabilityStudioAcceptancePlanCompiler(
             CapabilityStudioAcceptancePrimitiveRegistry.builtIn(),
             CapabilityStudioAcceptancePlanProtocol.instance()
@@ -716,7 +674,6 @@ public final class CapabilityStudioAcceptancePlanCompiler {
 
     // Package-private constructor; public callers use withBuiltInInternals()
     CapabilityStudioAcceptancePlanCompiler(
-        CapabilityStudioAcceptancePlanProtocol.Catalog catalog,
         CapabilityStudioAcceptancePrimitiveRegistry registry,
         CapabilityStudioAcceptancePlanProtocol protocol
     ) {}
@@ -744,7 +701,8 @@ package com.leanowtech.bloge.gateway.testkit.acceptance;
  * without calling the Compiler as a shortcut.
  *
  * Phase 1 contract:
- * - INPUT:  bounded planSourceBytes + catalogBytes + compiledPlanBytes
+ * - INPUT:  bounded planSourceBytes + catalogBytes + compiledPlanBytes（均由 public API caller 提供）
+ *           （内部独立加载 packaged compiler profile 和 closed registry）
  * - OUTPUT: VerificationResult with status=VERIFIED|INVALID|UNAVAILABLE
  * - DOES NOT: call Compiler, use Compiler verdict as trust root；除有界读取 packaged schema/catalog/profile/resources 外不做外部 I/O，
  *             generate PASS, or modify formalPassCount (remains 0/27)
@@ -755,7 +713,6 @@ package com.leanowtech.bloge.gateway.testkit.acceptance;
 public final class CapabilityStudioCompiledPlanVerifier {
 
     public static CapabilityStudioCompiledPlanVerifier withBuiltInInternals() {
-        // 内部加载 packaged profile/registry（closed schema + profile）；catalogBytes 始终由 public API verify() caller 注入
         return new CapabilityStudioCompiledPlanVerifier(
             CapabilityStudioAcceptancePrimitiveRegistry.builtIn(),
             CapabilityStudioAcceptancePlanProtocol.instance()
@@ -763,7 +720,6 @@ public final class CapabilityStudioCompiledPlanVerifier {
     }
 
     CapabilityStudioCompiledPlanVerifier(
-        CapabilityStudioAcceptancePlanProtocol.Catalog catalog,
         CapabilityStudioAcceptancePrimitiveRegistry registry,
         CapabilityStudioAcceptancePlanProtocol protocol
     ) {}
@@ -783,7 +739,7 @@ package com.leanowtech.bloge.gateway.testkit.acceptance;
 
 /**
  * Built-in immutable primitive descriptor registry.
- * 8 primitive types, 9 instances in Phase 1 plan.
+ * 8 primitive type descriptors (type definitions), 9 primitive instances (concrete uses) in Phase 1 plan.
  * Package-private: only accessed by Compiler and Verifier via their static factories.
  */
 final class CapabilityStudioAcceptancePrimitiveRegistry {
@@ -938,7 +894,6 @@ docs/
   (更新 README 相关章节)
 ```
 
-## 15. 验收标准汇总
 ## 15. 验收标准汇总
 
 | # | 标准 | 验证方式 |

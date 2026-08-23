@@ -314,11 +314,16 @@ sha256:15ea38ddeda10a7befb280efc4fdefb74503036cc06d55775da09665ae4c2686
 
 ### 9.3 CatalogRef 同步规则
 
+catalog 有两种变化的语义场景：
+1. catalog 仅 whitespace/key-order 变化 → semantic 不变、raw 变化
+2. catalog 内容变化 → semantic 变化、raw 变化
+
 | 场景 | catalogSemanticFingerprint | catalogRawFingerprint | planSourceSemanticFingerprint | compiledPlanFingerprint |
 |------|--------------------------|---------------------|----------------------------|-------------------------|
-| catalog whitespace 改变，plan.catalogRef 未更新 | 不变 | 变化 | 不变 | 不变（被 INVALID_FINGERPRINT_MISMATCH 拒绝） |
-| plan.catalogRef 同步更新 | 变化 | 不变 | 变化 | 变化 |
-| catalog semantic 改变 | 变化 | 不变 | 变化 | 变化 |
+| catalog 仅 whitespace/key-order 变化，plan.catalogRef 未同步 | 不变 | 变化 | 不变 | —（catalogRefVerified=false，编译被拒绝，无 compiled plan 输出） |
+| catalog 仅 whitespace/key-order 变化，plan.catalogRef 同步更新 | 不变 | 变化 | 变化（plan.catalogRef 已改） | 变化 |
+| catalog 内容变化，plan.catalogRef 未同步 | 变化 | 变化 | 不变 | —（catalogRefVerified=false，编译被拒绝，无 compiled plan 输出） |
+| catalog 内容变化，plan.catalogRef 同步更新 | 变化 | 变化 | 变化（plan.catalogRef 已改） | 变化 |
 
 ### 9.4 Profile Expected 值更新
 
