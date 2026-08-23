@@ -42,7 +42,7 @@ Caller 负责边界检查；Compiler 内部再次验证 size。
 以下由 Compiler/Verifier 各自独立从 packaged resources 加载，Caller 不提供：
 
 - `profile`：`builtin-compiler-profile-formal-v1.json`，schemaVersion = `bloge.capability-studio.compiler-profile-formal.v1`，profileId = `formal-evidence-v1`
-- `registry`：从 profile primitiveDescriptors 构建的 closed OperatorRegistry snapshot（不通过网络）
+- `registry`：从 profile primitiveDescriptors 构建的 closed primitive registry snapshot（不通过网络）
 - 4 个 JSON Schema：acceptance-plan-v1、contract-catalog-v1、compiled-acceptance-plan-v1、compiled-plan-verification-result-v1
 
 ### B.3 Authority Resources 不是隐式输入
@@ -147,9 +147,6 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 - `stageExitContracts[].contractId`
 - `acStandards[].contractId`
 - `feltObligations[].contractId`
-- `canonicalCases[].contractId`
-- `suiteRuns[].contractId`
-- `matrixCells[].contractId`
 
 **catalog 角色数组（各自内部升序）：**
 - `evidenceRoles[]`：升序
@@ -165,7 +162,6 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 - `primitiveDescriptors[].typeId`
 - `primitiveDescriptors[].allowedEffectClasses[]`
 - `primitiveDescriptors[].phaseOrder[]`
-- `primitiveDescriptors[].allowedFactTypes[]`
 
 **compiled plan 数组：**
 - `primitiveContracts[].primitiveId`：升序
@@ -257,22 +253,22 @@ Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6�
 
 以下条件在 compile 阶段静态验证，不依赖 Runner runtime：
 
-1. **unknown dependency**：dependsOn ID 引用不存在的 primitive.id → `INVALID_UNKNOWN_DEPENDENCY`
+1. **unknown dependency**：dependsOn ID 引用不存在的 primitive.id → `INVALID_TOPOLOGY_UNKNOWN_NODE`
 2. **cyclic dependency**：DAG cycle → `INVALID_TOPOLOGY_CYCLE`
-3. **phase reverse dependency**：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_PHASE_ORDER`
-4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_EFFECT_CLASS`
-5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_DESCRIPTOR_PHASE`
+3. **phase reverse dependency**：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_TOPOLOGY_CYCLE`
+4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_REGISTRY_REVISION_MISMATCH`
+5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_REGISTRY_TYPE_NOT_FOUND`
 6. **profile vocabulary**：
-   - barrier 集合漂移（compiled phaseBarriers 集合 ≠ profile.barriers 集合）→ `INVALID_BARRIER_SET`
-   - barrier 顺序漂移（compiled phaseBarriers 顺序 ≠ profile.barriers 声明顺序）→ `INVALID_BARRIER_ORDER`
-   - 7 个 barrierId closed set：`PURE_VERIFY_GATE`、`LEASE_GATE`、`NO_DELETE_AFTER_LEASE`、`DURABLE_COMMIT_GATE`、`STORE_RECEIPT_GATE`、`OWNER_SIGNOFF_GATE`、`NO_ACCEPTED_FROM_LOCAL`
-   - phaseBarriers 投影到 plan primitives 依赖链上的 barrier 出现顺序必须与 profile.barriers 一致且无重
+   - barrier 集合漂移（compiled phaseBarriers 集合 ≠ profile.barriers 集合）→ `INVALID_BARRIER_BYPASS`
+   - barrier 顺序漂移（compiled phaseBarriers 顺序 ≠ profile.barriers 声明顺序）→ `INVALID_COLLECTION_SIZE`
+   - Protocol 验证 compiled phaseBarriers 精确为 7 个 closed barrierId、唯一、顺序与 profile.barriers 一致、各 barrier.phase 在 phaseOrder 内
+   - Compiler 无损投影 plan primitives 到 compiled phaseBarriers
 
 ### G.2 Compiler 不验证的条件（由 Verifier/Runtime 负责）
 
 以下不在 compile 阶段验证：
 
-- tampered compiled 输入漂移（由 Verifier 在独立路径拒绝）
+- tampered compiled 输出漂移（由 Verifier 在独立路径拒绝；Compiler 无 compiled 输入）
 - primitive 实际执行顺序
 - EXTERNAL_PUBLICATION phase 的 runtime 效果闭包
 - formalPassCount 写入逻辑
@@ -285,14 +281,14 @@ Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6�
 
 ```java
 public final class CapabilityStudioAcceptancePlanCompiler {
-    private CapabilityStudioAcceptancePlanCompiler(OperatorRegistry registry,
-                                                   CapabilityStudioCompilerProtocol protocol) { ... }
+    private CapabilityStudioAcceptancePlanCompiler(CapabilityStudioAcceptancePrimitiveRegistry registry,
+                                                   CapabilityStudioAcceptancePlanProtocol protocol) { ... }
 
     // 直接返回 Compiler 实例，无需 Builder
     public static CapabilityStudioAcceptancePlanCompiler withBuiltInInternals() {
         return new CapabilityStudioAcceptancePlanCompiler(
-            OperatorRegistry.fromBuiltinProfile(),
-            CapabilityStudioCompilerProtocol.getInstance()
+            CapabilityStudioAcceptancePrimitiveRegistry.builtIn(),
+            CapabilityStudioAcceptancePlanProtocol.instance()
         );
     }
 
@@ -316,23 +312,28 @@ public CompilationResult compile(byte[] planBytes, byte[] catalogBytes) throws C
 
 ```java
 public final class CompilationResult {
-    private final byte[] compiledPlanBytes;           // defensive copy
-    private final String compiledPlanFingerprint;     // Domain2 hex
-    private final List<CompilerWarning> warnings;    // List.copyOf
+    private final byte[] compiledPlanBytes;           // NOT immutable; clone on save and on access
+    private final String compiledPlanFingerprint;     // String is immutable
+    // NO warnings field
 
-    public byte[] compiledPlanBytes() {
-        return compiledPlanBytes.clone();            // defensive copy
+    public CompilationResult(byte[] compiledPlanBytes, String compiledPlanFingerprint) {
+        this.compiledPlanBytes = compiledPlanBytes.clone(); // constructor clone 保存
+        this.compiledPlanFingerprint = compiledPlanFingerprint;
     }
 
-    public String compiledPlanFingerprint() { ... }
-    public List<CompilerWarning> warnings() { ... }  // unmodifiable view
+    public byte[] compiledPlanBytes() {
+        return compiledPlanBytes.clone();             // accessor clone
+    }
+
+    public String compiledPlanFingerprint() { return compiledPlanFingerprint; }
+    // NO warnings() accessor
 }
 ```
 
-**设计原则**：不保存输入 bytes，不暴露 mutable JsonNode。immutability 通过：
-- 核心字段为 `byte[]`/`String` 原始类型（天然 immutable）
-- `compiledPlanBytes` accessor 返回 defensive copy
-- `warnings` 为 `List.copyOf` 的 unmodifiable view
+**设计原则**：不保存输入 bytes，不暴露 mutable JsonNode。
+- `byte[]` 不是 immutable；constructor clone 保存，accessor clone 返回
+- `String` 字段天然 immutable，直接返回
+
 
 ### H.4 CompilerException
 
@@ -346,20 +347,20 @@ public final class CompilerException extends Exception {
 
 reasonCode 枚举仅使用 compiled-plan-verification-result-v1 schema 已闭合的 INVALID_* reason codes（可用其中子集）：
 
-- `INVALID_PLAN_SCHEMA`
-- `INVALID_CATALOG_SCHEMA`
+- `INVALID_SCHEMA`
+- `INVALID_PLAN_STRUCTURE`
 - `INVALID_TOPOLOGY_CYCLE`
-- `INVALID_UNKNOWN_DEPENDENCY`
-- `INVALID_PHASE_ORDER`
-- `INVALID_EFFECT_CLASS`
-- `INVALID_DESCRIPTOR_PHASE`
-- `INVALID_BARRIER_SET`
-- `INVALID_BARRIER_ORDER`
-- `INVALID_FINGERPRINT_MISMATCH`
+- `INVALID_TOPOLOGY_UNKNOWN_NODE`
 - `INVALID_REGISTRY_TYPE_NOT_FOUND`
 - `INVALID_REGISTRY_REVISION_MISMATCH`
+- `INVALID_BARRIER_BYPASS`
+- `INVALID_COLLECTION_SIZE`
+- `INVALID_CATALOG_SEMANTICS`
+- `INVALID_FINGERPRINT_MISMATCH`
+- `INVALID_STAGE_EXIT_CONTRACT_COUNT`
+- `INVALID_TAMPERED_PLAN`
 
-不得使用 schema 未闭合的 invented reason codes（如 `INVALID_PLAN_SCHEMA_CATALOG_ID_MISMATCH`、`UNKNOWN_DEPENDENCY` 等非 schema 定义的 codes）。
+不得使用 schema 未闭合的 invented reason codes。
 
 ### H.5 Constructor Constraint
 
@@ -398,7 +399,7 @@ public final class CapabilityStudioCompiledPlanVerifier {
 
 ## J. Authority Goldens
 
-### J.1 4 个已知 Authority Fingerprint
+### J.1 4 个已固化 Authority Fingerprint（Material Fixed）
 
 | Fingerprint | 值 | 说明 |
 |-------------|-----|------|
@@ -419,6 +420,8 @@ catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalo
 
 - `planSourceSemanticFingerprint`：authority plan semantic canonical 的 Domain2（待 Compiler 生成）
 - `compiledPlanFingerprint`：authority plan/catalog 编译后的 Domain2（待 Compiler 生成）
+- schema fingerprint 不声称固定
+- 3 个 authority fingerprints（catalogRaw/catalogSemantic/registrySemantic）已固化；profileRaw 已固化；共 4 个 material fingerprint 固定
 
 ### J.3 Compiled-Plan-Valid Fixture 说明
 
@@ -487,8 +490,8 @@ catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalo
 
 - G7-1: DAG 无 cycle → 编译通过
 - G7-2: cyclic dependsOn → INVALID_TOPOLOGY_CYCLE
-- G7-3: unknown dependsOn ID → INVALID_UNKNOWN_DEPENDENCY
-- G7-4: A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → INVALID_PHASE_ORDER
+- G7-3: unknown dependsOn ID → INVALID_TOPOLOGY_UNKNOWN_NODE
+- G7-4: A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → INVALID_TOPOLOGY_CYCLE
 
 ### K.2 附加边界测试（超出 37 条）
 
@@ -497,7 +500,7 @@ catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalo
 - G10-1: null inputs → reject（planBytes == null / catalogBytes == null）
 - G10-2: defensive-copy mutation → input array 被 Caller 修改不影响编译结果
 - G10-3: catalog semantic 变更即使 catalogRef 同步更新也拒绝（profile expected catalogSemanticFingerprint pin 未更新）
-- G10-4: authority 9/7/6/50 边界值精确验证（stageExitContractCount=9/acStdCount=9/feltObligationCount=14/exactContractIds=50/oracleBindings=50/phaseBarriers=7）
+- G10-4: authority primitives=9/barriers=7/roles=6/oracles=50；stageExit=27 精确验证（stageExitContractCount=27/acStdCount=9/feltObligationCount=14/exactContractIds=50/oracleBindings=50/phaseBarriers=7）
 - G10-5: Verifier 不调用 Compiler（NEG-ARCH-001）
 - G10-6: final schema 验证通过
 - G10-7: inputSlot lossless（从 plan 到 compiled）
@@ -540,8 +543,8 @@ wire 序列化、packaged profile、3 个 authority resources、compiled-plan-va
 
 以下 design gate 条件已满足：
 
-1. ✅ 4 schemas 已提交且 fingerprint 已固化
-2. ✅ 3 authority resources 已提交且 fingerprint 已固化
+1. ✅ 4 schemas 已提交且 fingerprint 已固化（schema fingerprint 非 plan/catalog semantic）
+2. ✅ 3 authority resources 已提交；4 个 material fingerprint（catalogRaw/catalogSemantic/profileRaw/registrySemantic）已固化；schema fingerprint 和 plan semantic/compiled fingerprint 待 Compiler 生成
 3. ✅ wire 序列化、profile、fixtures 已完成
 4. ✅ compile-only、无 PASS/ACCEPTED 字段、IR 无 formalPassCount、外部正式进度 0/27 已明确
 
