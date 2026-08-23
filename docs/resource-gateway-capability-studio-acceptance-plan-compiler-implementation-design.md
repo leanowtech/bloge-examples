@@ -63,7 +63,7 @@ Root discriminator: `schemaVersion` 字段。
 
 ```
 catalogRef = catalogId + "@" + computed catalogRawFingerprint
-computed catalogRawFingerprint = SHA256(raw catalogBytes)
+computed catalogRawFingerprint = Domain2("RG-CS-CATALOG-RAW-v1", exact catalogBytes)
 ```
 
 Compiler 必须验证 `plan.catalogId == catalog.catalogId`。
@@ -125,6 +125,7 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 | 4 | `RG-CS-COMPILER-PROFILE-RAW-v1` | raw profile bytes |
 | 5 | `RG-CS-PRIMITIVE-REGISTRY-v1` | registry descriptor canonical JSON array（typeId 升序，3 个 set-like 数组升序） |
 | 6 | `RG-CS-COMPILED-PLAN-v1` | compiled IR body（compiledPlanFingerprint 字段 self-excluding）在内序列化后的 canonical bytes |
+| 7 | `RG-CS-COMPILED-PLAN-VERIFICATION-v1` | verification result self-excluding canonical bytes |
 
 ---
 
@@ -134,12 +135,46 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 
 所有对象键按 Jackson UTF-16 code unit 升序排列（JSON Object 序列化特性）。
 
-### E.2 Array 排序
+### E.2 Array 排序精确规范
 
-- `set-like arrays`（含 uniqueItems 约束的数组）：元素升序排列
-- `dependsOn`（semantic plan/compiled primitive）：升序
-- `source primitive permutation` 不改变语义（Compiler 重新拓扑排序）
-- `phaseBarriers` 和 `profile order` 和 `phases` 数组：**保序**（不重新排序）
+以下为各数组类型的排序规则，不存在统一规则：
+
+**plan primitives：**
+- `primitives[]` 本身： Compiler 拓扑排序，不按原始顺序输出
+- 每个 primitive 的 `dependsOn[]`：升序（primitive id）
+
+**catalog contract 数组（按 contractId 升序；每个 entry 的三个角色数组升序）：**
+- `stageExitContracts[].contractId`
+- `acStandards[].contractId`
+- `feltObligations[].contractId`
+- `canonicalCases[].contractId`
+- `suiteRuns[].contractId`
+- `matrixCells[].contractId`
+
+**catalog 角色数组（各自内部升序）：**
+- `evidenceRoles[]`：升序
+- `ownerRoles[]`：升序
+- `externalFactRequirements[]`：升序
+
+**catalog ID 聚合数组（升序）：**
+- `canonicalCases[].canonicalCaseId`
+- `suiteRuns[].suiteRunId`
+- `matrixCells[].matrixCellId`
+
+**registry descriptor 数组（按 typeId 升序；三个 set-like 数组各自升序）：**
+- `primitiveDescriptors[].typeId`
+- `primitiveDescriptors[].allowedEffectClasses[]`
+- `primitiveDescriptors[].phaseOrder[]`
+- `primitiveDescriptors[].allowedFactTypes[]`
+
+**compiled plan 数组：**
+- `primitiveContracts[].primitiveId`：升序
+- `primitiveContracts[].dependsOn[]`：升序
+- `exactContractIds[]`：升序
+- `expectedEvidenceRoles[].role`：升序；每个 role 的 `contractIds[]` 升序
+- `oracleBindings[].contractId`：升序
+
+**phaseBarriers / profile / phases 数组：保序**（不重新排序，与 lossless IR §7.6 一致）
 
 ### E.3 禁止 JSON Comments
 
@@ -155,11 +190,16 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 1. bounded parse: planBytes/catalogBytes 各 ≤ 1MiB，defensive copy
 2. strict duplicate KEY detection (Jackson StreamReadFeature.STRICT_DUPLICATE_DETECTION)
 3. JSON Schema validation (planBytes, catalogBytes)
-4. semantic duplicate ID detection across all six catalog arrays (exact 50 contracts)
+4. semantic duplicate ID detection:
+   — contractId 在 stageExitContracts / acStandards / feltObligations 三个数组的合并集合内全局唯一且 exact 50
+   — canonicalCaseId 在 canonicalCases 数组内唯一
+   — suiteRunId 在 suiteRuns 数组内唯一
+   — matrixCellId 在 matrixCells 数组内唯一
+   — primitive.id 全局唯一
    — separate step from schema validation
 5. catalog id/ref/raw/semantic/profile/registry checks:
    a. plan.catalogId == catalog.catalogId
-   b. catalogRef semantic binding: catalogId + "@" + computed catalogRawFingerprint
+   b. catalogRef semantic binding: catalogId + "@" + catalogRawFingerprint
    c. catalog raw fingerprint == Domain2(RG-CS-CATALOG-RAW-v1, raw catalogBytes)
    d. catalog semantic fingerprint == Domain2(RG-CS-CATALOG-SEMANTIC-v1, semantic catalog canonical bytes)
    e. catalog semantic fingerprint == profile.expectedCatalogSemanticFingerprint
@@ -170,27 +210,21 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
    b. profile.profileId == "formal-evidence-v1"
    c. each plan primitive.typeId in registry (strict)
    d. each plan primitive.revision matches descriptor revision
-   e. each plan primitive.effectClass matches allowedEffectClasses
-   f. each plan primitive.phase matches descriptor phase
+   e. descriptor.effectClass ∈ allowedEffectClasses
+   f. descriptor.phase ∈ phaseOrder
 7. unknown dep detection: each dependsOn ID must reference an existing primitive.id
 8. cycle detection: DAG 构建 + 检测
-9. forward phase barrier: dependsOn phase index 必须 <= 被依赖 primitive phase index
-10. stable topological sort: Kahn's algorithm，PQ 以 phase index 为 primary key、primitiveId 为 secondary key（zero-indegree 时）
+9. dependency direction: A dependsOn B ⇒ phaseIndex(B) ≤ phaseIndex(A)
+10. stable topological sort: Kahn's algorithm，PQ 以 phase index 为 primary key、primitiveId 为 secondary key（zero-degree 时）
 11. primitiveContracts: 按 primitiveId 升序输出；每个 primitive 的 dependsOn 升序
 12. exactContractIds: 50 个 contractId 升序
 13. expectedEvidenceRoles: role 升序；每个 role 的 contractIds 升序
 14. oracleBindings: contractId 升序
 15. phaseBarriers: **保序**（按 profile.barriers 声明顺序，不重新排序）
-16. IR body assembly: 按 §E 规范化
-17. 派生 23-field CompiledAcceptancePlan IR（无 formalPassCount）
-18. final schema validation: compiled IR against compiled-acceptance-plan-v1 schema
-19. fingerprint:
-    a. planSourceSemanticFingerprint = Domain2(RG-CS-PLAN-SOURCE-SEMANTIC-v1, plan semantic canonical bytes)
-    b. catalogRawFingerprint = Domain2(RG-CS-CATALOG-RAW-v1, raw catalogBytes)
-    c. catalogSemanticFingerprint = Domain2(RG-CS-CATALOG-SEMANTIC-v1, catalog semantic canonical bytes)
-    d. compilerProfileRawFingerprint = Domain2(RG-CS-COMPILER-PROFILE-RAW-v1, raw profile bytes)
-    e. primitiveRegistryFingerprint = Domain2(RG-CS-PRIMITIVE-REGISTRY-v1, registry canonical bytes)
-    f. compiledPlanFingerprint = Domain2(RG-CS-COMPILED-PLAN-v1, self-excluding body canonical bytes)
+16. IR body assembly: 按 §E 规范化，生成除 compiledPlanFingerprint 外的 22 个字段
+17. 计算 compiledPlanFingerprint = Domain2(RG-CS-COMPILED-PLAN-v1, self-excluding body canonical bytes)
+18. 写入 compiledPlanFingerprint 为第 23 字段，组装完整 23-field body
+19. final compiled schema validation: 完整 IR body（含 compiledPlanFingerprint） against compiled-acceptance-plan-v1 schema
 ```
 
 ### F.2 8 Descriptors / 9 Primitives
@@ -205,49 +239,65 @@ Authority plan `primitives` 数组含 9 个 primitive 实例：`verify-fixed-mat
 
 Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6）。Compiled schema evidenceRoles 允许 1..8（minItems: 1, maxItems: 8）。
 
-### F.4 Oracles Exact 50
+### F.4 ID Uniqueness 精确约束
 
-oracleBindings 精确 50 项（每个 contract 一个 oracleId）。
+- `contractId` 在 stageExitContracts / acStandards / feltObligations 三个数组的合并集合内全局唯一且 exact 50
+- `canonicalCaseId` 在 canonicalCases 数组内唯一
+- `suiteRunId` 在 suiteRuns 数组内唯一
+- `matrixCellId` 在 matrixCells 数组内唯一
+- `primitive.id` 全局唯一
+- oracleBindings `contractId` 按 contract 聚合（每个 contractId 对应一个 oracleId）
+- expectedEvidenceRoles `contractIds` 按 role 聚合（每个 role 对应若干 contractIds）
 
 ---
 
-## G. Barrier Semantics（当前 profile/schema 可静态证明的条件）
+## G. Barrier Semantics（Compiler 静态可证条件）
 
-### G.1 静态拒绝条件
+### G.1 静态可证条件
 
 以下条件在 compile 阶段静态验证，不依赖 Runner runtime：
 
-1. **dependency phase 逆序**：若 primitive A dependsOn B，则 `phase(A) index >= phase(B) index`，否则拒绝
-2. **effectClass 不匹配**：primitive.effectClass 必须在 profile allowedEffectClasses 内
-3. **profile barrier 集合漂移**：compiled phaseBarriers 集合必须等于 profile.barriers 集合（相同 7 个 barrierId）
-4. **profile barrier 顺序漂移**：compiled phaseBarriers 顺序必须等于 profile.barriers 声明顺序
+1. **unknown dependency**：dependsOn ID 引用不存在的 primitive.id → `INVALID_UNKNOWN_DEPENDENCY`
+2. **cyclic dependency**：DAG cycle → `INVALID_TOPOLOGY_CYCLE`
+3. **phase reverse dependency**：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_PHASE_ORDER`
+4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_EFFECT_CLASS`
+5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_DESCRIPTOR_PHASE`
+6. **profile vocabulary**：
+   - barrier 集合漂移（compiled phaseBarriers 集合 ≠ profile.barriers 集合）→ `INVALID_BARRIER_SET`
+   - barrier 顺序漂移（compiled phaseBarriers 顺序 ≠ profile.barriers 声明顺序）→ `INVALID_BARRIER_ORDER`
+   - 7 个 barrierId closed set：`PURE_VERIFY_GATE`、`LEASE_GATE`、`NO_DELETE_AFTER_LEASE`、`DURABLE_COMMIT_GATE`、`STORE_RECEIPT_GATE`、`OWNER_SIGNOFF_GATE`、`NO_ACCEPTED_FROM_LOCAL`
+   - phaseBarriers 投影到 plan primitives 依赖链上的 barrier 出现顺序必须与 profile.barriers 一致且无重
 
-### G.2 Runner Runtime 效果闭包（不在本阶段）
+### G.2 Compiler 不验证的条件（由 Verifier/Runtime 负责）
 
-以下属于 Runner runtime 职责，不在 compile 阶段验证：
+以下不在 compile 阶段验证：
 
+- tampered compiled 输入漂移（由 Verifier 在独立路径拒绝）
 - primitive 实际执行顺序
-- EXTERNAL_PUBLICATION phase 的运行时效果闭包
-- PURE_VERIFY_GATE / LEASE_GATE 的实际执行期隔离
+- EXTERNAL_PUBLICATION phase 的 runtime 效果闭包
+- formalPassCount 写入逻辑
 
 ---
 
 ## H. Public API
 
-### H.1 Builder
+### H.1 Factory
 
 ```java
 public final class CapabilityStudioAcceptancePlanCompiler {
     private CapabilityStudioAcceptancePlanCompiler(OperatorRegistry registry,
                                                    CapabilityStudioCompilerProtocol protocol) { ... }
 
-    // 受保护构造器：仅接受 internal registry/protocol
-    public static Builder withBuiltInInternals() { return new Builder(); }
-
-    public static final class Builder {
-        Builder() { /* 注入 internal registry + protocol */ }
-        public CapabilityStudioAcceptancePlanCompiler build() { ... }
+    // 直接返回 Compiler 实例，无需 Builder
+    public static CapabilityStudioAcceptancePlanCompiler withBuiltInInternals() {
+        return new CapabilityStudioAcceptancePlanCompiler(
+            OperatorRegistry.fromBuiltinProfile(),
+            CapabilityStudioCompilerProtocol.getInstance()
+        );
     }
+
+    // package-private constructor：仅供 internal factory
+    // 不接受 Catalog 参数；Catalog 来自 bounded wire bytes
 }
 ```
 
@@ -259,22 +309,30 @@ public CompilationResult compile(byte[] planBytes, byte[] catalogBytes) throws C
 
 - `planBytes`：defensive copy 后解析
 - `catalogBytes`：defensive copy 后解析
-- `CompilationResult`：immutable snapshot，不暴露可变 JsonNode
-- `CompilerException`：`reasonCode`（RFC6901 pointer + human-readable） + RFC6901 pointer
+- `CompilationResult`：immutable，不暴露可变 JsonNode
+- `CompilerException`：`reasonCode` + `reasonField`（RFC6901 pointer）
 
-### H.3 CompilationResult
+### H.3 CompilationResult（immutable record）
 
 ```java
 public final class CompilationResult {
-    private final byte[] planBytes;          // defensive copy of input
-    private final byte[] catalogBytes;        // defensive copy of input
-    private final JsonNode compiledPlan;     // immutable snapshot (ObjectMapper.readValue copy)
-    private final List<CompilerWarning> warnings;
+    private final byte[] compiledPlanBytes;           // defensive copy
+    private final String compiledPlanFingerprint;     // Domain2 hex
+    private final List<CompilerWarning> warnings;    // List.copyOf
 
-    // 无 formalPassCount 字段
-    // 返回 JSON bytes 时返回 defensive copy
+    public byte[] compiledPlanBytes() {
+        return compiledPlanBytes.clone();            // defensive copy
+    }
+
+    public String compiledPlanFingerprint() { ... }
+    public List<CompilerWarning> warnings() { ... }  // unmodifiable view
 }
 ```
+
+**设计原则**：不保存输入 bytes，不暴露 mutable JsonNode。immutability 通过：
+- 核心字段为 `byte[]`/`String` 原始类型（天然 immutable）
+- `compiledPlanBytes` accessor 返回 defensive copy
+- `warnings` 为 `List.copyOf` 的 unmodifiable view
 
 ### H.4 CompilerException
 
@@ -282,11 +340,26 @@ public final class CompilationResult {
 public final class CompilerException extends Exception {
     CompilerException(String reasonCode, String rfc6901Pointer, String message) { ... }
     public String reasonCode() { ... }
-    public String rfc6901Pointer() { ... }
+    public String reasonField() { ... }   // RFC6901 JSON Pointer
 }
 ```
 
-reasonCode 枚举（部分）：`INVALID_PLAN_SCHEMA`、`INVALID_CATALOG_SCHEMA`、`CATALOG_ID_MISMATCH`、`CATALOG_REF_MISMATCH`、`CATALOG_SEMANTIC_FINGERPRINT_MISMATCH`、`INVALID_TOPOLOGY_CYCLE`、`UNKNOWN_DEPENDENCY`、`INVALID_REGISTRY_TYPE_NOT_FOUND`、`INVALID_REGISTRY_REVISION_MISMATCH`、`INVALID_EFFECT_CLASS`。
+reasonCode 枚举仅使用 compiled-plan-verification-result-v1 schema 已闭合的 INVALID_* reason codes（可用其中子集）：
+
+- `INVALID_PLAN_SCHEMA`
+- `INVALID_CATALOG_SCHEMA`
+- `INVALID_TOPOLOGY_CYCLE`
+- `INVALID_UNKNOWN_DEPENDENCY`
+- `INVALID_PHASE_ORDER`
+- `INVALID_EFFECT_CLASS`
+- `INVALID_DESCRIPTOR_PHASE`
+- `INVALID_BARRIER_SET`
+- `INVALID_BARRIER_ORDER`
+- `INVALID_FINGERPRINT_MISMATCH`
+- `INVALID_REGISTRY_TYPE_NOT_FOUND`
+- `INVALID_REGISTRY_REVISION_MISMATCH`
+
+不得使用 schema 未闭合的 invented reason codes（如 `INVALID_PLAN_SCHEMA_CATALOG_ID_MISMATCH`、`UNKNOWN_DEPENDENCY` 等非 schema 定义的 codes）。
 
 ### H.5 Constructor Constraint
 
@@ -294,7 +367,7 @@ reasonCode 枚举（部分）：`INVALID_PLAN_SCHEMA`、`INVALID_CATALOG_SCHEMA`
 
 ---
 
-## I. Independent Verifier API（下一提交设计，不在 Phase 1 实现）
+## I. Independent Verifier API
 
 ### I.1 隔离契约
 
@@ -304,13 +377,22 @@ Verifier 不调用 Compiler，在独立执行路径中重新计算所有 fingerp
 
 ```java
 public final class CapabilityStudioCompiledPlanVerifier {
-    public static Builder withBuiltInInternals() { return new Builder(); }
+    // 直接返回 Verifier 实例，无需 Builder
+    public static CapabilityStudioCompiledPlanVerifier withBuiltInInternals() {
+        return new CapabilityStudioCompiledPlanVerifier(...);
+    }
 
-    public VerificationResult verify(CompiledAcceptancePlan compiled, byte[] catalogBytes) { ... }
+    public VerificationResult verify(byte[] planBytes,
+                                    byte[] catalogBytes,
+                                    byte[] compiledPlanBytes) { ... }
 }
 ```
 
-注：Verifier 实现在 Phase 1 之后单独提交（见 §L）。
+**输入**：三者各 bounded defensive copy；Verifier 内部独立加载 schema/profile/registry（不从 Caller 继承任何资源）。
+
+**Verifier 不调用 Compiler**：Architectural constraint，违反则 CompilationResult/CompilerException 语义循环依赖。
+
+注：Verifier 实现在独立提交（见 §L），但属于本交付范围。
 
 ---
 
@@ -322,14 +404,14 @@ public final class CapabilityStudioCompiledPlanVerifier {
 |-------------|-----|------|
 | catalogRaw | `sha256:b14c3ee599a87e0c10a94f4e0237455bcae93ff2c9fcc8a6a82ab9145942990c` | authority catalog 字节的 Domain2 |
 | catalogSemantic | `sha256:f20774c84f7f34cb0f95c9bb6f5061e048d94b2463da3ca20b560e338cdb7b4d` | profile.expectedCatalogSemanticFingerprint |
-| profileRaw | `sha256:113f89e746a87d7e9fc662f2466d49e143797501d07edeb67a3b419773d10c46` | profile 字节的 Domain2 |
+| profileRaw | `sha256:1bf4cc98feeb3c12ed413d50240f0799385efdb755139ba0375200096a672337` | profile 字节的 Domain2 |
 | registrySemantic | `sha256:15ea38ddeda10a7befb280efc4fdefb74503036cc06d55775da09665ae4c2686` | profile.expectedPrimitiveRegistryFingerprint |
 
 catalogRaw 值从 authority plan (`rg-cs-felt-v1.acceptance.plan.json`) 的 `catalogRef` 解析：`builtin-contract-catalog-v1@sha256:b14c3...`。
 
 catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalogSemanticFingerprint` 和 `expectedPrimitiveRegistryFingerprint` 字段提取。
 
-profileRaw 由 Compiler 对 packaged profile 字节计算。
+**注意**：现有 `compiled-plan-valid.json` fixture 中的 `catalogRawFingerprint = sha256:07b8...` 来自 test fixture catalog（用于 schema validation 测试向量），不是 authority catalog，不是 fingerprint authority。
 
 ### J.2 待 Compiler 生成的 Fingerprint
 
@@ -346,16 +428,18 @@ profileRaw 由 Compiler 对 packaged profile 字节计算。
 
 ## K. 精确测试门
 
-### K.1 Lossless IR Matrix（37 条，分组）
+### K.1 Lossless IR Matrix（37 条规范必须全部实现，以下为覆盖分组与附加边界）
 
-**分组 1：Schema 验证**
+覆盖范围引用 lossless IR §12。
+
+**分组 1：Schema 验证（4 条）**
 
 - G1-1: acceptance-plan-v1 schema 验证通过
 - G1-2: contract-catalog-v1 schema 验证通过（27+9+14+9+3+27 cardinality）
 - G1-3: compiled-acceptance-plan-v1 schema 验证通过（50+50+7+exact const）
 - G1-4: compiled-plan-verification-result-v1 schema 验证通过
 
-**分组 2：Canonicalization 确定性**
+**分组 2：Canonicalization 确定性（7 条）**
 
 - G2-1: plan primitive 顺序 permutation → 相同 planSourceSemanticFingerprint
 - G2-2: catalog 空白变化（whitespace）→ 不同 catalogRawFingerprint，catalogSemanticFingerprint 不变
@@ -365,7 +449,7 @@ profileRaw 由 Compiler 对 packaged profile 字节计算。
 - G2-6: compiled body object key 升序 → deterministic fingerprint
 - G2-7: phaseBarriers 保序（不等于 phase 升序）
 
-**分组 3：Catalog 结构完整性**
+**分组 3：Catalog 结构完整性（8 条）**
 
 - G3-1: stageExitContracts 27（含 6 stages 各若干）
 - G3-2: acStandards 9
@@ -376,70 +460,68 @@ profileRaw 由 Compiler 对 packaged profile 字节计算。
 - G3-7: exactContractIds 50（unique）
 - G3-8: oracleBindings 50（unique）
 
-**分组 4：Semantic ID 一致性**
+**分组 4：Semantic ID 一致性（4 条）**
 
 - G4-1: 9 个 primitive 实例 + 8 个 descriptor typeId/typeId 匹配
 - G4-2: duplicate primitive.id → INVALID
 - G4-3: duplicate catalog contractId → INVALID
-- G4-4: duplicate semantic IDs across all six catalog arrays → INVALID
+- G4-4: contractId 在 3 个 contract 数组的合并集合内全局唯一且 exact 50；canonicalCaseId/suiteRunId/matrixCellId 各自在自身数组唯一；primitive.id 全局唯一；role 聚合和 oracle 按 contract
 
-**分组 5：Profile Binding**
+**分组 5：Profile Binding（7 条）**
 
 - G5-1: plan primitive.typeId in registry
 - G5-2: plan primitive.revision == descriptor.revision
-- G5-3: plan primitive.effectClass ∈ allowedEffectClasses
-- G5-4: plan primitive.phase == descriptor.phase
-- G5-5: VERIFY_FIXED_MATERIAL_V1 phase == MATERIAL_SNAPSHOT
+- G5-3: descriptor.effectClass ∈ allowedEffectClasses
+- G5-4: descriptor.phase ∈ phaseOrder
+- G5-5: VERIFY_FIXED_MATERIAL_V1 descriptor.phase == MATERIAL_SNAPSHOT
 - G5-6: catalogSemanticFingerprint == profile.expectedCatalogSemanticFingerprint
 - G5-7: primitiveRegistryFingerprint == profile.expectedPrimitiveRegistryFingerprint
 
-**分组 6：CatalogRef 同步**
+**分组 6：CatalogRef 同步（3 条）**
 
 - G6-1: plan.catalogRef 与 catalogRawFingerprint 匹配（catalogRefVerified=true）
 - G6-2: catalog whitespace 变，plan.catalogRef 未更新 → INVALID_FINGERPRINT_MISMATCH
 - G6-3: catalog whitespace 变，plan.catalogRef 同步更新 → 编译通过（semantic 不变）
 
-**分组 7：Topology**
+**分组 7：Topology（4 条）**
 
 - G7-1: DAG 无 cycle → 编译通过
 - G7-2: cyclic dependsOn → INVALID_TOPOLOGY_CYCLE
-- G7-3: unknown dependsOn ID → UNKNOWN_DEPENDENCY
-- G7-4: forward phase 依赖逆序 → REJECT
+- G7-3: unknown dependsOn ID → INVALID_UNKNOWN_DEPENDENCY
+- G7-4: A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → INVALID_PHASE_ORDER
 
-**分组 8：Barrier 静态验证**
+### K.2 附加边界测试（超出 37 条）
 
-- G8-1: dependency phase 逆序 → REJECT
-- G8-2: effectClass 不匹配 → REJECT
-- G8-3: profile barrier 集合漂移 → REJECT
-- G8-4: profile barrier 顺序漂移 → REJECT
+以下为 lossless IR §12 覆盖的附加边界：
 
-**分组 9：其他**
-
-- G9-1: planBytes > 1MiB → reject
-- G9-2: catalogBytes > 1MiB → reject
-- G9-3: duplicate JSON keys → reject（STRICT_DUPLICATE_DETECTION）
-- G9-4: Verifier 不调用 Compiler（NEG-ARCH-001）
-- G9-5: final schema 验证通过
-- G9-6: inputSlot lossless（从 plan 到 compiled）
-- G9-7: compiled IR 无 formalPassCount 字段
+- G10-1: null inputs → reject（planBytes == null / catalogBytes == null）
+- G10-2: defensive-copy mutation → input array 被 Caller 修改不影响编译结果
+- G10-3: catalog semantic 变更即使 catalogRef 同步更新也拒绝（profile expected catalogSemanticFingerprint pin 未更新）
+- G10-4: authority 9/7/6/50 边界值精确验证（stageExitContractCount=9/acStdCount=9/feltObligationCount=14/exactContractIds=50/oracleBindings=50/phaseBarriers=7）
+- G10-5: Verifier 不调用 Compiler（NEG-ARCH-001）
+- G10-6: final schema 验证通过
+- G10-7: inputSlot lossless（从 plan 到 compiled）
+- G10-8: compiled IR 无 formalPassCount 字段
 
 ---
 
 ## L. 提交拆分
 
-### L.1 提交 1（本文档）
+### L.1 已完成（提交 1）
 
 ```
 docs/resource-gateway-capability-studio-acceptance-plan-compiler-implementation-design.md
 docs/resource-gateway-capability-studio-compiled-acceptance-ir-design.md
 ```
 
+wire 序列化、packaged profile、3 个 authority resources、compiled-plan-valid fixture 已在前序 commit 完成。
+
 ### L.2 后续提交
 
-- **提交 2**：4 schemas + 3 authority resources + pom.xml resource 配置
-- **提交 3**：Compiler + Registry + Protocol（package-private）
-- **提交 4**：Verifier（独立，不调用 Compiler）
-- **提交 5**：Tests + JAR inventory 验证
+- **提交 2**：Compiler + Registry + Protocol（package-private）
+- **提交 3**：Verifier（独立，不调用 Compiler）
+- **提交 4**：Tests + JAR inventory 验证 + full 37+8 条门验证
+- **提交 5**：docs/（如有最终调整）
 
 ### L.3 JAR 边界
 
@@ -450,23 +532,34 @@ docs/resource-gateway-capability-studio-compiled-acceptance-ir-design.md
 
 ## M. Definition of Done
 
-### M.1 冻结条件
+### M.1 状态声明
 
-所有以下条件满足后本文档 Frozen：
+本文档为 Frozen Implementation Contract（FROZEN_IMPLEMENTATION_CONTRACT）。Frozen 文档不依赖代码实现已完成；其约束在实现阶段必须满足。
 
-1. 4 schemas 已提交且通过 JSON Schema Draft 2020-12 validator
-2. 3 authority resources 已提交且 fingerprint 已固化
-3. Compiler 实现通过全部 37 条 lossless IR test gates
-4. Verifier 实现通过隔离性测试（不调用 Compiler）
-5. `git diff --check` 无警告
-6. Javadoc doclint 全通过
+### M.2 Design Gate（已满足）
 
-### M.2 开放边界
+以下 design gate 条件已满足：
+
+1. ✅ 4 schemas 已提交且 fingerprint 已固化
+2. ✅ 3 authority resources 已提交且 fingerprint 已固化
+3. ✅ wire 序列化、profile、fixtures 已完成
+4. ✅ compile-only、无 PASS/ACCEPTED 字段、IR 无 formalPassCount、外部正式进度 0/27 已明确
+
+### M.3 Implementation Gate（待满足）
+
+以下 implementation gate 条件在对应代码提交后方可关闭：
+
+1. ⬜ Compiler 实现通过全部 37 条 lossless IR test gates
+2. ⬜ Verifier 实现通过隔离性测试（不调用 Compiler）
+3. ⬜ 全部 8 条附加边界测试通过
+4. ⬜ `git diff --check` 无警告
+5. ⬜ Javadoc doclint 全通过
+
+### M.4 开放边界（Phase 2+）
 
 以下不在 Phase 1 范围内：
 
-1. Verifier 实现（Phase 2）
-2. Runner / Scheduler / stateful 执行（Phase 3+）
-3. EXTERNAL_PUBLICATION phase runtime 效果闭包
-4. formalPassCount 写入逻辑
-5. catalogSemanticFingerprint / primitiveRegistryFingerprint 之外的 profile expected 值动态验证机制
+1. Runner / Scheduler / stateful 执行（Phase 3+）
+2. EXTERNAL_PUBLICATION phase runtime 效果闭包
+3. formalPassCount 写入逻辑
+4. catalogSemanticFingerprint / primitiveRegistryFingerprint 之外的 profile expected 值动态验证机制
