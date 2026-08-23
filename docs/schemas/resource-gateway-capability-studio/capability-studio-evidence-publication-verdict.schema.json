@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-evidence-publication-verdict.schema.json",
+  "title": "Capability Studio Evidence Publication Transaction Verdict v1",
+  "description": "Closed verdict for one EPT execute round-trip. Outcome is one of COMMITTED, RECOVERED, or CLOSED.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "outcome",
+    "transactionId",
+    "stableRequestId"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "outcome": {
+      "enum": ["COMMITTED", "RECOVERED", "CLOSED"]
+    },
+    "closedCategory": {
+      "type": "string",
+      "description": "Required when outcome is CLOSED. One of INVALID, CONFLICT, UNAVAILABLE, BLOCKED, ABORTED, INTERNAL."
+    },
+    "closedReasonCode": {
+      "type": "string",
+      "description": "Stable failure code without credentials. Required when outcome is CLOSED."
+    },
+    "transactionId": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Stable transaction identity derived from stableRequestId + publicationNonce."
+    },
+    "stableRequestId": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Stable transaction identity without nonce."
+    },
+    "b0Receipt": {
+      "$ref": "#/$defs/b0Receipt",
+      "description": "B0 receipt present when outcome is COMMITTED or RECOVERED."
+    }
+  },
+  "if": {
+    "properties": { "outcome": { "const": "CLOSED" } },
+    "required": ["outcome"]
+  },
+  "then": {
+    "required": ["closedCategory", "closedReasonCode"],
+    "properties": {
+      "closedCategory": {
+        "enum": ["INVALID", "CONFLICT", "UNAVAILABLE", "BLOCKED", "ABORTED", "INTERNAL"]
+      }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "b0Receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "b0RawFingerprint",
+        "b0CanonicalFingerprint",
+        "b0ClosureFingerprint",
+        "b1ReceiptFingerprint",
+        "r1Fingerprint",
+        "authorityFingerprint",
+        "authorityEpoch"
+      ],
+      "properties": {
+        "b0RawFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Exact raw SHA-256 fingerprint of b0-inner-manifest.json."
+        },
+        "b0CanonicalFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "Exact canonical SHA-256 fingerprint of b0-inner-manifest.json."
+        },
+        "b0ClosureFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "B0 closure fingerprint over stableRequestId, transactionId, raw, canonical, tree, and fencing token."
+        },
+        "b1ReceiptFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "B1 Store immutable receipt fingerprint."
+        },
+        "r1Fingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "R1 final outer commitment fingerprint."
+        },
+        "authorityFingerprint": {
+          "$ref": "#/$defs/fingerprint",
+          "description": "FencingAuthority token fingerprint."
+        },
+        "authorityEpoch": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

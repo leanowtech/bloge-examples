@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-evidence-publication-request.schema.json",
+  "title": "Capability Studio Evidence Publication Transaction Request v1",
+  "description": "Closed request for one idempotent EPT publication or recovery round-trip.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "expectedStableRequestId",
+    "publicationNonce",
+    "authorityInputTreeFingerprint",
+    "targetInputTreeFingerprint",
+    "planFingerprint",
+    "targetBindingFingerprint",
+    "declarationFingerprint",
+    "candidateFingerprint",
+    "evidenceRoot",
+    "privateParent"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "expectedStableRequestId": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Stable transaction identity without nonce; SHA256 of caller semantic inputs."
+    },
+    "publicationNonce": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deployment-generated high-entropy stable transaction nonce coordinate."
+    },
+    "authorityInputTreeFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "FencingAuthority, StorePublisher, and Authority-injected verifier input tree fingerprint."
+    },
+    "targetInputTreeFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Target input tree fingerprint."
+    },
+    "planFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Plan fingerprint."
+    },
+    "targetBindingFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Target binding fingerprint."
+    },
+    "declarationFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Declaration fingerprint."
+    },
+    "candidateFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deterministic sealed candidate digest produced by bounded child."
+    },
+    "evidenceRoot": {
+      "type": "string",
+      "format": "uri",
+      "description": "URI of the evidence root (optional; producer's path used if null)."
+    },
+    "privateParent": {
+      "type": "string",
+      "format": "uri",
+      "description": "URI of the private parent."
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

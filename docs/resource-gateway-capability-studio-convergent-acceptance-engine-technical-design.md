@@ -207,6 +207,48 @@ EPT 27 项（EPT-H01..05、EPT-FS01..06、EPT-CP01..08、EPT-CN01..03、EPT-PR01
 - 不在第一阶段删除旧 CLI；旧入口先变成兼容适配器。
 - 不通过增加自动化测试数量改变 `formalPassCount=0/27`。
 
+### 3.7 ExactKeyLockRegistry + .ept-locks 跨进程 File Lock
+
+主类是 `ExactKeyLockRegistry`，含 private nested class `LockEntry`。
+
+**JVM 内 registry**：
+- `ConcurrentHashMap<String, LockEntry>`
+- `LockEntry = { refcount: int, lock: ReentrantLock }`
+- map key = `committedRoot.normalize() + "|" + stableHex`
+- `acquire(key, budgetNanos)`：
+  - refcount == 0 → 创建 `LockEntry` → `lock.tryLock(remainingBudget, NANOSECONDS)`
+  - refcount > 0 → `lock.tryLock(remainingBudget, NANOSECONDS)` 阻塞等待
+  - tryLock 返回 false（timeout）→ 立即 `CLOSED(UNAVAILABLE)`
+- `release(handle)`：
+  - `lock.unlock()`
+  - ref--
+  - ref == 0 → `map.remove(key, entry)`（compare-and-remove）
+- 同 key 串行；不同 key 并行
+
+**跨进程 file lock**（`committedRoot/.ept-locks/<stableRequestId>.lock`）：
+- 在 budget 循环内调用 `FileChannel.open(...).tryLock()`
+- `tryLock()` 返回 `null` → 在 budget 内等待后重试；budget 耗尽 → `CLOSED(UNAVAILABLE)`
+- `tryLock()` 抛 `OverlappingFileLockException` → 在 budget 内等待后重试；budget 耗尽 → `CLOSED(UNAVAILABLE)`
+- `tryLock()` 抛 `IOException` → `CLOSED(UNAVAILABLE)`
+
+**lock 持有期**：从 acquire 成功起，覆盖整个 execute() 调用，直到 Verdict 返回前才 release。
+
+**与 Owner lease 的区别**：
+
+| 维度 | Owner Lease | EPT Lock |
+|---|---|---|
+| 粒度 | owner identity | stableRequestId |
+| 目的 | Owner fencing | 幂等发布序列化 |
+| refcount | 无 | 有 |
+| 进程间 | Owner epoch 文件 | `.ept-locks/` file lock |
+| 持有期 | Lease duration | acquire → Verdict 返回 |
+
+**B1/R1 发布与 Files.createLink 异常映射（§F.5 同步）**：
+- B1/R1 经 `.ept-locks/` 私有 staging 后 `Files.createLink(target, staging)`
+- `FileAlreadyExistsException` → `CLOSED(CONFLICT)`
+- `RuntimeException` / `IOException` → `CLOSED(UNAVAILABLE)`
+- EXTERNAL_PENDING 分段恢复见 EPT design §K.5
+
 ## 4. Design It Twice 结论
 
 ### 4.1 方案 A：硬编码 Full Runner

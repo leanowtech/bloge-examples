@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-evidence-publication-b0-inner-manifest.schema.json",
+  "title": "Capability Studio EPT B0 Inner Manifest v1",
+  "description": "Closed B0 inner manifest installed atomically as the LOCAL_COMMITTED commit marker. Must not contain self-referential b0RawFingerprint, b0CanonicalFingerprint, or b0ClosureFingerprint fields.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "stableRequestId",
+    "transactionId",
+    "boundedChildDigest",
+    "entryCount",
+    "totalByteSize",
+    "entries",
+    "treeFingerprint"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "stableRequestId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "transactionId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "boundedChildDigest": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deterministic sealed candidate digest produced by bounded child."
+    },
+    "entryCount": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512
+    },
+    "totalByteSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 33554432
+    },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/entry"
+      }
+    },
+    "treeFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Canonical tree fingerprint over sorted entries."
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relativePath", "byteSize", "rawFingerprint"],
+      "properties": {
+        "relativePath": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$"
+        },
+        "byteSize": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 33554432
+        },
+        "rawFingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      }
+    }
+  }
+}

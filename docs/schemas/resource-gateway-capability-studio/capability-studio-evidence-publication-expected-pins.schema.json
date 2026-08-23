@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-evidence-publication-expected-pins.schema.json",
+  "title": "Capability Studio Evidence Publication Expected Pins v1",
+  "description": "Closed expected pins for EPT verify round-trip. Contains all fingerprints for B0, B1, R1, and authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "stableRequestId",
+    "transactionId",
+    "b0RawFingerprint",
+    "b0CanonicalFingerprint",
+    "b0ClosureFingerprint",
+    "b1ReceiptFingerprint",
+    "r1Fingerprint",
+    "authorityFingerprint",
+    "authorityEpoch"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "stableRequestId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "transactionId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "b0RawFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected raw fingerprint of b0-inner-manifest.json."
+    },
+    "b0CanonicalFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected canonical fingerprint of b0-inner-manifest.json."
+    },
+    "b0ClosureFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected closure fingerprint of B0."
+    },
+    "b1ReceiptFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected B1 Store immutable receipt fingerprint."
+    },
+    "r1Fingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected R1 final outer commitment fingerprint."
+    },
+    "authorityFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Expected FencingAuthority token fingerprint."
+    },
+    "authorityEpoch": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

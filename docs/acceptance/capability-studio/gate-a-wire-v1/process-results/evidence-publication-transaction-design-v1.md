@@ -85,6 +85,34 @@ ABORTED           — durable abort closure 存在；需要 explicit recovery
 
 ---
 
+### B.4 ExactKeyLockRegistry + .ept-locks 跨进程 File Lock
+
+主类是 `ExactKeyLockRegistry`，含 private nested class `LockEntry`。
+
+**JVM 内 registry**：
+- `ConcurrentHashMap<String, LockEntry>`
+- `LockEntry = { refcount: int, lock: ReentrantLock }`
+- map key = `committedRoot.normalize() + "|" + stableHex`
+- `acquire(key, budgetNanos)`：
+  - refcount == 0 → 创建 `LockEntry` → `lock.tryLock(remainingBudget, NANOSECONDS)`
+  - refcount > 0 → `lock.tryLock(remainingBudget, NANOSECONDS)` 阻塞等待
+  - tryLock 返回 false（timeout）→ 立即 `CLOSED(UNAVAILABLE)`
+- `release(handle)`：
+  - `lock.unlock()`
+  - ref--
+  - ref == 0 → `map.remove(key, entry)`（compare-and-remove）
+- 同 key 串行；不同 key 并行
+
+**跨进程 file lock**（`committedRoot/.ept-locks/<stableRequestId>.lock`）：
+- 在 budget 循环内调用 `FileChannel.open(...).tryLock()`
+- `tryLock()` 返回 `null` → 在 budget 内等待后重试；budget 耗尽 → `CLOSED(UNAVAILABLE)`
+- `tryLock()` 抛 `OverlappingFileLockException` → 在 budget 内等待后重试；budget 耗尽 → `CLOSED(UNAVAILABLE)`
+- `tryLock()` 抛 `IOException` → `CLOSED(UNAVAILABLE)`
+
+**lock 持有期**：从 acquire 成功起，覆盖整个 execute() 调用，直到 Verdict 返回前才 release。
+
+---
+
 ## C. Frozen Identity
 
 ### C.1 唯一 transaction domain
@@ -444,6 +472,69 @@ Transcript overflow:
 ```
 
 ---
+### F.5 B1/R1 发布协议：.ept-locks/ 私有 staging + Files.createLink
+
+**staging 目录**：`committedRoot/.ept-locks/`（0700，EPT 私有 shared path）
+**平面文件名**：`stableHex.receiptName.staging.UUID`
+- `stableHex` = stableRequestId 的十六进制表示
+- `receiptName` = `b1-receipt.json` 或 `r1-receipt.json`
+- 无 nonce 子目录
+
+**B1 发布序列**：
+
+```
+Step 1  FileChannel.open(staging, CREATE_NEW, WRITE)  # 原子 open
+Step 2  loop: write(content) + force(true)           # 直到全部写完
+Step 3  Files.createLink(target/b1-receipt.json, staging)
+Step 4  force(target/b1-receipt.json 的父目录)
+Step 5  delete(staging)
+Step 6  force(committedRoot/.ept-locks/)
+```
+
+**R1 发布序列**（与 B1 相同结构，`receiptName = r1-receipt.json`）：
+
+```
+Step 1  FileChannel.open(staging, CREATE_NEW, WRITE)
+Step 2  loop: write(content) + force(true)
+Step 3  Files.createLink(target/r1-receipt.json, staging)
+Step 4  force(target/r1-receipt.json 的父目录)
+Step 5  delete(staging)
+Step 6  force(committedRoot/.ept-locks/)
+```
+
+**Files.createLink 异常映射（RG-CS-EPT-v1）**：
+- `FileAlreadyExistsException` → `CLOSED(CONFLICT)`
+- `RuntimeException` → `CLOSED(UNAVAILABLE)`
+- `IOException` → `CLOSED(UNAVAILABLE)`
+
+---
+
+### F.6 same-stable / different-nonce = CONFLICT（external call 前检测）
+
+**transactionId 来源**：`committed/<stableRequestId>/b0-inner-manifest.json` 内的 `transactionId` 字段。
+
+**处理流程**：
+
+```
+1. acquire(stableRequestId) → lock acquired
+2. 读取 committed/<stableRequestId>/b0-inner-manifest.json.transactionId
+   - absent → fresh path：允许继续（首次发布）
+   - present && equals(incoming transactionId) → same-nonce recovery：COMPLETE/RECOVERED path
+   - present && NOT equals(incoming transactionId) → release(lock) → CLOSED(CONFLICT)
+3. CLOSED(CONFLICT) 在任何 Store / Authority / external call 之前返回
+```
+
+**关键约束（RG-CS-EPT-v1）**：
+- transactionId 比较使用精确字节相等（不 normalize）
+- 检查在 **文件 lock 持有期间**完成，避免 TOCTOU 窗口
+- CLOSED(CONFLICT) 不调用 StorePublisher、Authority 或任何外部服务
+- CLOSED(CONFLICT) 仍需 release(lock)，使另一个竞争者有机会继续
+
+---
+
+---
+
+
 
 ## G. 双维结果分类
 
@@ -484,31 +575,28 @@ INTERNAL    — 内部错误
 | CLOSED | CONFLICT | stableRequestId 相同 + boundedChildDigest 不同 或 nonce 不同 |
 | CLOSED | BLOCKED | child exit non-zero / capacity exceeded / missing required authority / output overflow |
 | CLOSED | UNAVAILABLE | lock timeout / Store 503 / Store timeout / parent missing / metadata unavailable / interrupt / process tree not quiescent |
-| CLOSED | ABORTED | durable abort closure 存在；需要 explicit recovery |
-| CLOSED | INTERNAL | 内部错误 |
+| 条件 | 检查位置 |
+|---|---|
+| stableRequestId 相同 | acquire lock 成功后立即检查 |
+| transactionId 不同（nonce 不同）| 解析 stored transactionId |
+| 任一请求在 EXTERNAL_PENDING 或之后状态 | — |
 
-### G.3 CLI Exit Code
+**处理流程**：
 
-| Exit | Public Outcome | ClosedCategory |
-|---|---|---|
-| 0 | COMMITTED 或 RECOVERED | — |
-| 2 | CLOSED | INVALID |
-| 3 | CLOSED | CONFLICT |
-| 4 | CLOSED | UNAVAILABLE |
-| 5 | CLOSED | BLOCKED |
-| 6 | CLOSED | ABORTED / INTERNAL |
+```
+1. acquire(stableRequestId) → lock acquired
+2. 读取 committed/<stableRequestId>/b0-inner-manifest.json.transactionId
+   - absent → fresh path：允许继续（首次发布）
+   - present && equals(incoming transactionId) → same-nonce recovery：COMPLETE/RECOVERED path
+   - present && NOT equals(incoming transactionId) → release(lock) → CLOSED(CONFLICT)
+3. CLOSED(CONFLICT) 在任何 Store / Authority / external call 之前返回
+```
 
----
-
-## H. 方案比较
-
-### H.1 方案 A：CLI 内修复 — 拒绝（6/25）
-
-3189 行混合类；bounded child JVM 逻辑与 CLI 入口纠缠；TranscriptPublication 的 journal 接口与 bounded child 语义不兼容。
-
-### H.2 方案 B：通用事务框架 — 拒绝（11/25）
-
-引入不必要通用性；违反"不创建通用事务框架"；bounded child SIGKILL 是 OS 行为，通用框架未覆盖。
+**关键约束（RG-CS-EPT-v1）**：
+- transactionId 比较使用精确字节相等（不 normalize）
+- 检查在 **文件 lock 持有期间**完成，避免 TOCTOU 窗口
+- CLOSED(CONFLICT) 不调用 StorePublisher、Authority 或任何外部服务
+- CLOSED(CONFLICT) 仍需 release(lock)，使另一个竞争者有机会继续
 
 ### H.3 方案 C：嵌入 DB — 有条件拒绝（14/25）
 
@@ -960,6 +1048,30 @@ EPT-VR01
 Grace period 到期 **不自动删除/过期/回收**任何对象；仅使 stale owner 成为 takeover eligibility 候选。Takeover 必须满足：fencing authority 确认 + lock acquisition + owner identity check（三者缺一不可）。
 
 ---
+### K.5 EXTERNAL_PENDING 分段恢复（RG-CS-EPT-v1 约束）
+
+**EXTERNAL_PENDING 进入条件**：B0 durable；B1/R1 absent；Store publish in-flight。
+
+**Store recoverable exception** → `CLOSED(UNAVAILABLE)`；recoverable = Store 返回 5xx / timeout / connection failure。
+
+**Store non-recoverable exception** → `CLOSED(INVALID)`；non-recoverable = receipt schema invalid / canonical bytes mismatch / idempotency violation。
+
+**EXTERNAL_PENDING 分段恢复触发**：调用方以 `EXTERNAL_PENDING` 状态重新调用 `execute()`。
+
+**B1 absent 时的恢复序列**：
+1. Store query（同 idempotency key）
+   - receipt present → local B1 写入 → 进入 R1 absent 处理
+   - absent → Store publish（B1）
+2. B1 publish 成功后 R1 absent 处理
+
+**B1 present / R1 absent 时的恢复序列**：
+- query：B1 已存在，跳过 query 和 publish
+- issue：StorePublisher.issue(R1)
+- R1 成功后 metadata.lifecycleState → COMPLETE
+
+**R1 absent / B1 present** 不会触发 Store idempotency key 重新 publish，只 issue R1。
+
+
 
 ## L. Definition of Ready 和 Definition of Done
 
@@ -1010,3 +1122,25 @@ Grace period 到期 **不自动删除/过期/回收**任何对象；仅使 stale
 | D-12 | Stream overflow 65537 → CLOSED(BLOCKED)；partial digest not in localCommitId |
 | D-13 | FencingAuthority token 含 authority fingerprint/epoch |
 | D-14 | ExpectedPins verification 验证 authority fingerprint/epoch |
+### K.5 EXTERNAL_PENDING 分段恢复（RG-CS-EPT-v1 约束）
+
+**EXTERNAL_PENDING 进入条件**：B0 durable；B1/R1 absent；Store publish in-flight。
+
+**EXTERNAL_PENDING 分段恢复触发**：调用方以 `EXTERNAL_PENDING` 状态重新调用 `execute()`。
+
+**B1 absent 时的恢复序列**：
+1. Store query（同 idempotency key）
+   - receipt present → 跳过 publish，进入 R1 absent 处理
+   - absent → Store publish（B1）
+2. B1 publish 成功后进入 R1 absent 处理
+
+**B1 present / R1 absent 时的恢复序列**：
+- query：B1 已存在，跳过 query 和 publish
+- issue：StorePublisher.issue(R1)
+- R1 成功后 lifecycleState → COMPLETE
+
+**R1 absent / B1 present** 不会触发 Store idempotency key 重新 publish，只 issue R1。
+
+**Store exception 映射**：
+- Store recoverable（5xx / timeout / connection failure）→ `CLOSED(UNAVAILABLE)`
+- Store non-recoverable（receipt schema invalid / canonical bytes mismatch / idempotency violation）→ `CLOSED(INVALID)`

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-evidence-publication-b1-receipt.schema.json",
+  "title": "Capability Studio EPT B1 Store Immutable Receipt v1",
+  "description": "Closed B1 Store immutable receipt installed at EXTERNAL_PENDING. Produced by StorePublisher.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "messageVersion",
+    "schemaVersion",
+    "stableRequestId",
+    "transactionId",
+    "b0ClosureFingerprint",
+    "receiptFingerprint",
+    "issuer",
+    "idempotencyKey"
+  ],
+  "properties": {
+    "messageVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "schemaVersion": {
+      "const": "resource-gateway.capability-studio.evidence-publication-transaction.v1"
+    },
+    "stableRequestId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "transactionId": {
+      "$ref": "#/$defs/fingerprint"
+    },
+    "b0ClosureFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "B0 closure fingerprint used as Store idempotency anchor."
+    },
+    "receiptFingerprint": {
+      "$ref": "#/$defs/fingerprint",
+      "description": "Deterministic receipt fingerprint of this B1 receipt. Fingerprint is computed from the body projection: all fields in this receipt EXCEPT receiptFingerprint itself, canonicalised as JSON with recursively sorted keys. The receiptFingerprint field is NOT part of its own computation — no circular dependency."
+    },
+    "issuer": {
+      "type": "string",
+      "description": "Store publisher issuer identity."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "description": "Store idempotency key used for EXTERNAL_PENDING recovery."
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}
