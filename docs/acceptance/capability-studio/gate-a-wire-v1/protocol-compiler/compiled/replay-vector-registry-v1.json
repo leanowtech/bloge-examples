@@ -1,0 +1,231 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "REPLAY_VECTOR_REGISTRY",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": "inputSets",
+      "sourcePointer": "/inputSets"
+    },
+    {
+      "key": "replayVectors",
+      "sourcePointer": "/replayVectors"
+    }
+  ],
+  "content": {
+    "inputSets": [
+      {
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "fixtureRootUri": "inputs/challenge-root.tree",
+        "fixtureRootFingerprint": "sha256:15189c1d34dae72c81f6620536df0f4806ecdd5f0535382661176af1df167c41",
+        "exactRefs": [
+          {
+            "role": "FORMAL_EVIDENCE_MANIFEST",
+            "uri": "inputs/formal-evidence-run-manifest.json",
+            "rawFingerprint": "sha256:53fd0b3fe817c7cec7512812f57a8f8dd7d14712cee583e199609b422d5efae6"
+          },
+          {
+            "role": "FORMAL_EVIDENCE_BUNDLE",
+            "uri": "inputs/formal-evidence-bundle.json",
+            "rawFingerprint": "sha256:6be2e8608e481d1ecbec0326a16cfa2bb35f9757786c7ce12b422e6ee074da1f"
+          }
+        ],
+        "additionalInputPolicy": "REJECT"
+      }
+    ],
+    "replayVectors": [
+      {
+        "ordinal": 1,
+        "testId": "PLACEHOLDER_REJECTED",
+        "operation": "TYPED_REPLAY_V1",
+        "mutationVector": "PLACEHOLDER",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "PLACEHOLDER_REJECTED",
+          "fieldEffects": [
+            "RETURN_PLACEHOLDER_TYPED_EVIDENCE"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "PLACEHOLDER_TYPED_EVIDENCE",
+        "expectedTerminal": "INVALID",
+        "expectedExitCode": 2,
+        "expectedReasonCode": "PLACEHOLDER_REJECTED"
+      },
+      {
+        "ordinal": 2,
+        "testId": "WRONG_KIND_REJECTED",
+        "operation": "TYPED_REPLAY_V1",
+        "mutationVector": "WRONG_KIND",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "WRONG_KIND_REJECTED",
+          "fieldEffects": [
+            "SUBSTITUTE_WRONG_EVIDENCE_KIND_ONLY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "KIND_ROLE_MISMATCH",
+        "expectedTerminal": "INVALID",
+        "expectedExitCode": 2,
+        "expectedReasonCode": "WRONG_KIND"
+      },
+      {
+        "ordinal": 3,
+        "testId": "WRONG_VERIFIER_REVISION_REJECTED",
+        "operation": "TYPED_REPLAY_V1",
+        "mutationVector": "WRONG_VERIFIER_REVISION",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "WRONG_VERIFIER_REVISION_REJECTED",
+          "fieldEffects": [
+            "SUBSTITUTE_WRONG_VERIFIER_REVISION_ONLY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "VERIFIER_REVISION_MISMATCH",
+        "expectedTerminal": "INVALID",
+        "expectedExitCode": 2,
+        "expectedReasonCode": "WRONG_VERIFIER_REVISION"
+      },
+      {
+        "ordinal": 4,
+        "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+        "operation": "LEGACY_STAGE_ACCEPTANCE_V2",
+        "mutationVector": "NONE",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+          "fieldEffects": [
+            "PRESENT_STORE_AUTHORITY",
+            "PRESENT_OWNER_AUTHORITY",
+            "PRESENT_TARGET_AUTHORITY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "COMPLETE_AUTHORITY",
+        "expectedTerminal": "ACCEPTED",
+        "expectedExitCode": 0,
+        "expectedReasonCode": "LEGACY_AUTHORITY_COMPLETE"
+      },
+      {
+        "ordinal": 5,
+        "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+        "operation": "LEGACY_STAGE_ACCEPTANCE_V2",
+        "mutationVector": "MISSING_STORE",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+          "fieldEffects": [
+            "OMIT_STORE_AUTHORITY_ONLY",
+            "PRESENT_OWNER_AUTHORITY",
+            "PRESENT_TARGET_AUTHORITY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "MISSING_STORE_AUTHORITY",
+        "expectedTerminal": "NOT_ACCEPTED",
+        "expectedExitCode": 3,
+        "expectedReasonCode": "MISSING_STORE"
+      },
+      {
+        "ordinal": 6,
+        "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+        "operation": "LEGACY_STAGE_ACCEPTANCE_V2",
+        "mutationVector": "MISSING_OWNER",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+          "fieldEffects": [
+            "PRESENT_STORE_AUTHORITY",
+            "OMIT_OWNER_AUTHORITY_ONLY",
+            "PRESENT_TARGET_AUTHORITY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "MISSING_OWNER_AUTHORITY",
+        "expectedTerminal": "NOT_ACCEPTED",
+        "expectedExitCode": 3,
+        "expectedReasonCode": "MISSING_OWNER"
+      },
+      {
+        "ordinal": 7,
+        "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+        "operation": "LEGACY_STAGE_ACCEPTANCE_V2",
+        "mutationVector": "MISSING_TARGET",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+          "fieldEffects": [
+            "PRESENT_STORE_AUTHORITY",
+            "PRESENT_OWNER_AUTHORITY",
+            "OMIT_TARGET_AUTHORITY_ONLY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "MISSING_TARGET_AUTHORITY",
+        "expectedTerminal": "NOT_ACCEPTED",
+        "expectedExitCode": 3,
+        "expectedReasonCode": "MISSING_TARGET"
+      },
+      {
+        "ordinal": 8,
+        "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+        "operation": "TYPED_REPLAY_V1",
+        "mutationVector": "MANIFEST_IDENTITY_DRIFT",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+          "fieldEffects": [
+            "SUBSTITUTE_MANIFEST_IDENTITY_ONLY"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [],
+        "expectedMechanism": "MANIFEST_IDENTITY_DRIFT",
+        "expectedTerminal": "INVALID",
+        "expectedExitCode": 2,
+        "expectedReasonCode": "MANIFEST_IDENTITY_DRIFT"
+      },
+      {
+        "ordinal": 9,
+        "testId": "HONEST_INCOMPLETE_ACCEPTED",
+        "operation": "TYPED_REPLAY_V1",
+        "mutationVector": "NONE",
+        "mutationRecipe": {
+          "driver": "PINNED_TCK_PROVIDER",
+          "variantId": "HONEST_INCOMPLETE_ACCEPTED",
+          "fieldEffects": [
+            "RETURN_HONEST_INCOMPLETE_WITHOUT_SYNTHESIS"
+          ],
+          "unlistedFieldPolicy": "PRESERVE_PINNED_BASELINE"
+        },
+        "inputSetId": "GATE_A_FORMAL_EVIDENCE_INPUTS",
+        "allowedExtraMaterial": [
+          "a0-candidate-result.json"
+        ],
+        "expectedMechanism": "HONEST_INCOMPLETE",
+        "expectedTerminal": "INCOMPLETE",
+        "expectedExitCode": 4,
+        "expectedReasonCode": "HONEST_INCOMPLETE"
+      }
+    ]
+  }
+}

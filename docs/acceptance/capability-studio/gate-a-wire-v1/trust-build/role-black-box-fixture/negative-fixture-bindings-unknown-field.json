@@ -1,0 +1,17 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+  "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+  "bindingFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  "bindings": {
+    "IMPLEMENTATION_CANDIDATE": {"fixtures": {}, "oracle": {"relativePath": "candidate/oracle.json", "kind": "FILE", "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"}}},
+    "TCK_PROVIDER": {"fixtures": {}, "oracle": {"relativePath": "provider/oracle.json", "kind": "FILE", "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000003"}}},
+    "INDEPENDENT_VERIFIER": {"fixtures": {}, "oracle": {"relativePath": "verifier/oracle.json", "kind": "FILE", "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000004"}}},
+    "CONFORMANCE_HARNESS": {"fixtures": {}, "oracle": {"relativePath": "harness/oracle.json", "kind": "FILE", "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"}}},
+    "GATE_ADMISSION_CHECKER": {"fixtures": {}, "oracle": {"relativePath": "admission/oracle.json", "kind": "FILE", "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"}}}
+  },
+  "unexpected": true
+}

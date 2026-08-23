@@ -1,0 +1,74 @@
+{
+  "schemaVersion": "capability-studio.gate-a-canonicalization-oracle.v1",
+  "revision": 1,
+  "results": [
+    {
+      "id": "PROPERTY_ORDER_ESCAPE_AND_SELF_FIELD",
+      "status": "PASS",
+      "canonical": "{\"escaped\":\"line\\\\nquoted\\\\\\\"\",\"nested\":{\"a\":1,\"β\":\"lambda\"},\"selfFingerprint\":null,\"z\":3}",
+      "canonicalUtf8Hex": "7b2265736361706564223a226c696e655c5c6e71756f7465645c5c5c22222c226e6573746564223a7b2261223a312c22ceb2223a226c616d626461227d2c2273656c6646696e6765727072696e74223a6e756c6c2c227a223a337d",
+      "documentFingerprint": "sha256:16c3502d9c89c372d5858d129720d321b8ca64a0cefd2b5c0cf3eefcd23c4aaa",
+      "rawFingerprint": "sha256:d42b51704d8e675fa9d1232c593059d674674e3acd3f836f4893823c238b2705"
+    },
+    {
+      "id": "DOCUMENT_WITHOUT_STDOUT_LF",
+      "status": "PASS",
+      "canonical": "{\"selfFingerprint\":null,\"value\":\"same\"}",
+      "canonicalUtf8Hex": "7b2273656c6646696e6765727072696e74223a6e756c6c2c2276616c7565223a2273616d65227d",
+      "documentFingerprint": "sha256:f093bdbeaf7c00148913891178c7d478cd8d0438ec81a67b9868bfb945ca3cae",
+      "rawFingerprint": "sha256:16cc5ddb21d241ffc360da3724ef836386de86a105473b998cb149700e1154fa"
+    },
+    {
+      "id": "SAME_DOCUMENT_WITH_STDOUT_LF",
+      "status": "PASS",
+      "canonical": "{\"selfFingerprint\":null,\"value\":\"same\"}",
+      "canonicalUtf8Hex": "7b2273656c6646696e6765727072696e74223a6e756c6c2c2276616c7565223a2273616d65227d",
+      "documentFingerprint": "sha256:f093bdbeaf7c00148913891178c7d478cd8d0438ec81a67b9868bfb945ca3cae",
+      "rawFingerprint": "sha256:db5f303f0dc420d5b4e52383d256aea2447aee6c3d1fb5cd0b66356b84a2c94f"
+    },
+    {
+      "id": "UTF16_PROPERTY_ORDER",
+      "status": "PASS",
+      "canonical": "{\"selfFingerprint\":null,\"values\":{\"\\r\":\"CR\",\"1\":\"One\",\"€\":\"Euro\",\"😀\":\"Emoji\"}}",
+      "canonicalUtf8Hex": "7b2273656c6646696e6765727072696e74223a6e756c6c2c2276616c756573223a7b225c72223a224352222c2231223a224f6e65222c22e282ac223a224575726f222c22f09f9880223a22456d6f6a69227d7d",
+      "documentFingerprint": "sha256:f493a42ce31a3b7204852f75d32cf05c80ab7f4ac6381f5d0cd654ce0f6fba6b",
+      "rawFingerprint": "sha256:a551e4ac6ba09432c15647054c9130e5bb6500d08d6ce7677c6dd426921b828c"
+    },
+    {
+      "id": "TYPED_AGGREGATE_ENTRIES",
+      "status": "PASS",
+      "canonical": "[{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"RAW_BYTES\",\"value\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"},\"role\":\"DESIGN\"},{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"TREE_COMMITMENT\",\"value\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"},\"role\":\"RUN_MATERIAL_ROOT\"}]",
+      "canonicalUtf8Hex": "5b7b2266696e6765727072696e74223a7b22616c676f726974686d223a225348412d323536222c226b696e64223a225241575f4259544553222c2276616c7565223a227368613235363a30303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030227d2c22726f6c65223a2244455349474e227d2c7b2266696e6765727072696e74223a7b22616c676f726974686d223a225348412d323536222c226b696e64223a22545245455f434f4d4d49544d454e54222c2276616c7565223a227368613235363a31313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131313131227d2c22726f6c65223a2252554e5f4d4154455249414c5f524f4f54227d5d",
+      "documentFingerprint": "sha256:a7b0bcdb6b32770a8705ed8ea81d9d60ac9e3e08fa5f7200dc4bebb0482dc550",
+      "rawFingerprint": "sha256:23bcba531fee9106d3a239792a2e3c89ac79cfdf4eb2895dd7c3bfb025484f02"
+    },
+    {
+      "id": "JCS_NUMBER_BOUNDARIES",
+      "status": "PASS",
+      "canonical": "{\"decimal\":0.1,\"half\":0.5,\"maxSafe\":9007199254740991,\"minSafe\":-9007199254740991,\"selfFingerprint\":null,\"subnormal\":5e-324}",
+      "canonicalUtf8Hex": "7b22646563696d616c223a302e312c2268616c66223a302e352c226d617853616665223a393030373139393235343734303939312c226d696e53616665223a2d393030373139393235343734303939312c2273656c6646696e6765727072696e74223a6e756c6c2c227375626e6f726d616c223a35652d3332347d",
+      "documentFingerprint": "sha256:c447eea0f0dd5862317a19590d170e7811e48c81baaff6c6e07ed1c5a055cd04",
+      "rawFingerprint": "sha256:abb63632dec65187cb6289ccdf797c605e348ec358d1ea093fba3f773867e286"
+    },
+    {
+      "id": "UTF16_CODE_UNIT_ORDER_AND_SCALARS",
+      "status": "PASS",
+      "canonical": "{\"selfFingerprint\":null,\"values\":{\"퟿\":\"before\",\"𐀀\":\"first non-BMP\",\"😀\":\"grinning\",\"\":\"BMP private\"}}",
+      "canonicalUtf8Hex": "7b2273656c6646696e6765727072696e74223a6e756c6c2c2276616c756573223a7b22ed9fbf223a226265666f7265222c22f0908080223a226669727374206e6f6e2d424d50222c22f09f9880223a226772696e6e696e67222c22ee8080223a22424d502070726976617465227d7d",
+      "documentFingerprint": "sha256:f3d2080519f80dab0a9018af02506b4a8c72d681cab47c75d12f8502ea313350",
+      "rawFingerprint": "sha256:cd51d9a9aabdc8a6b138a0c286b92e37426515755fe83b2e3922cff46df8c762"
+    }
+  ],
+  "profileResults": [
+    {
+      "id": "PROFILE_WRONG_DOMAIN_REJECTED",
+      "status": "REJECTED",
+      "reason": "FINGERPRINT_PROFILE_DOMAIN_MISMATCH"
+    },
+    {
+      "id": "PROFILE_WRONG_SELF_FIELD_REJECTED",
+      "status": "REJECTED",
+      "reason": "FINGERPRINT_PROFILE_SELF_FIELD_MISMATCH"
+    }
+  ]
+}

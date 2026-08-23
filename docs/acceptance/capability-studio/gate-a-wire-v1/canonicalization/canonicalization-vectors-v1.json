@@ -2,6 +2,25 @@
   "revision": 1,
   "fingerprintProfile": "fingerprint-profile-v1.json",
   "fingerprintProfileSchema": "../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+  "contract": {
+    "id": "GATE_A_RFC8785_COMPATIBLE_SUBSET_V1",
+    "canonicalization": "RFC_8785_JCS",
+    "objectKeyOrdering": "UTF16_CODE_UNITS",
+    "unicode": "UNICODE_SCALARS_NO_LONE_SURROGATES",
+    "utf8": "UTF8_NO_BOM_EXACT_BYTES",
+    "duplicateObjectMembers": "REJECT_AT_PARSE_BOUNDARY",
+    "numberPolicy": "FINITE_IEEE754_BINARY64_CANONICAL_DECIMAL_ROUNDTRIP_SAFE_INTEGER_V1",
+    "nonFiniteNumbers": "REJECT",
+    "rejectionCodes": [
+      "DUPLICATE_KEY",
+      "INVALID_UTF8",
+      "LONE_SURROGATE",
+      "NON_FINITE_NUMBER",
+      "NUMBER_NOT_EXACT",
+      "UNSAFE_INTEGER",
+      "UTF8_BOM_REJECTED"
+    ]
+  },
   "vectors": [
     {
       "id": "PROPERTY_ORDER_ESCAPE_AND_SELF_FIELD",
@@ -47,6 +66,26 @@
       "expectedCanonical": "[{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"RAW_BYTES\",\"value\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"},\"role\":\"DESIGN\"},{\"fingerprint\":{\"algorithm\":\"SHA-256\",\"kind\":\"TREE_COMMITMENT\",\"value\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"},\"role\":\"RUN_MATERIAL_ROOT\"}]",
       "expectedDocumentFingerprint": "sha256:a7b0bcdb6b32770a8705ed8ea81d9d60ac9e3e08fa5f7200dc4bebb0482dc550",
       "expectedRawFingerprint": "sha256:23bcba531fee9106d3a239792a2e3c89ac79cfdf4eb2895dd7c3bfb025484f02"
+    },
+    {
+      "id": "JCS_NUMBER_BOUNDARIES",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":-0,\"minSafe\":-9007199254740991,\"maxSafe\":9007199254740991,\"half\":0.5,\"decimal\":0.1,\"subnormal\":5e-324}",
+      "expectedCanonical": "{\"decimal\":0.1,\"half\":0.5,\"maxSafe\":9007199254740991,\"minSafe\":-9007199254740991,\"selfFingerprint\":null,\"subnormal\":5e-324}",
+      "expectedCanonicalUtf8Hex": "7b22646563696d616c223a302e312c2268616c66223a302e352c226d617853616665223a393030373139393235343734303939312c226d696e53616665223a2d393030373139393235343734303939312c2273656c6646696e6765727072696e74223a6e756c6c2c227375626e6f726d616c223a35652d3332347d",
+      "expectedDocumentFingerprint": "sha256:c447eea0f0dd5862317a19590d170e7811e48c81baaff6c6e07ed1c5a055cd04",
+      "expectedRawFingerprint": "sha256:abb63632dec65187cb6289ccdf797c605e348ec358d1ea093fba3f773867e286"
+    },
+    {
+      "id": "UTF16_CODE_UNIT_ORDER_AND_SCALARS",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"values\":{\"\\ue000\":\"BMP private\",\"\\ud800\\udc00\":\"first non-BMP\",\"😀\":\"grinning\",\"\\ud7ff\":\"before\"}}",
+      "expectedCanonical": "{\"selfFingerprint\":null,\"values\":{\"퟿\":\"before\",\"𐀀\":\"first non-BMP\",\"😀\":\"grinning\",\"\":\"BMP private\"}}",
+      "expectedCanonicalUtf8Hex": "7b2273656c6646696e6765727072696e74223a6e756c6c2c2276616c756573223a7b22ed9fbf223a226265666f7265222c22f0908080223a226669727374206e6f6e2d424d50222c22f09f9880223a226772696e6e696e67222c22ee8080223a22424d502070726976617465227d7d",
+      "expectedDocumentFingerprint": "sha256:f3d2080519f80dab0a9018af02506b4a8c72d681cab47c75d12f8502ea313350",
+      "expectedRawFingerprint": "sha256:cd51d9a9aabdc8a6b138a0c286b92e37426515755fe83b2e3922cff46df8c762"
     }
   ],
   "rejections": [
@@ -78,6 +117,41 @@
     {
       "id": "NON_FINITE_NUMBER_REJECTED",
       "sourceText": "{\"value\":1e400}",
+      "expectedReason": "NON_FINITE_NUMBER"
+    },
+    {
+      "id": "DUPLICATE_ESCAPED_KEY_REJECTED",
+      "sourceText": "{\"a\":1,\"\\u0061\":2}",
+      "expectedReason": "DUPLICATE_KEY"
+    },
+    {
+      "id": "NEGATIVE_UNSAFE_INTEGER_REJECTED",
+      "sourceText": "{\"value\":-9007199254740992}",
+      "expectedReason": "UNSAFE_INTEGER"
+    },
+    {
+      "id": "NUMBER_ROUNDING_REJECTED",
+      "sourceText": "{\"value\":9007199254740991.1}",
+      "expectedReason": "NUMBER_NOT_EXACT"
+    },
+    {
+      "id": "NUMBER_UNDERFLOW_REJECTED",
+      "sourceText": "{\"value\":1e-324}",
+      "expectedReason": "NUMBER_NOT_EXACT"
+    },
+    {
+      "id": "NAN_REJECTED",
+      "sourceText": "{\"value\":NaN}",
+      "expectedReason": "NON_FINITE_NUMBER"
+    },
+    {
+      "id": "INFINITY_REJECTED",
+      "sourceText": "{\"value\":Infinity}",
+      "expectedReason": "NON_FINITE_NUMBER"
+    },
+    {
+      "id": "NEGATIVE_INFINITY_REJECTED",
+      "sourceText": "{\"value\":-Infinity}",
       "expectedReason": "NON_FINITE_NUMBER"
     }
   ],

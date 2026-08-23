@@ -1,0 +1,102 @@
+[
+  {
+    "vectorId": "RESPONSE_PROVIDER_ORIGIN_REBOUND",
+    "source": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/04-legacy-accepted-complete-authority/response.json",
+    "expectedCode": "A1_RESPONSE_PROVIDER_ORIGIN_DRIFT"
+  },
+  {
+    "vectorId": "REPLAY_CROSS_RUN_RESPONSE_STITCHING",
+    "source": "valid-replay-verification-result.json",
+    "expectedCode": "A1_RUN_ROOT_DRIFT"
+  },
+  {
+    "vectorId": "INDEPENDENT_OBSERVATION_REBOUND",
+    "source": "valid-independent-verification-result.json",
+    "expectedCode": "A1_PROCESS_OBSERVATION_FINGERPRINT_MISMATCH"
+  },
+  {
+    "vectorId": "INDEPENDENT_EXIT_REBOUND",
+    "source": "valid-independent-verification-result.json",
+    "expectedCode": "A1_CASE_EXIT_DRIFT"
+  },
+  {
+    "vectorId": "INDEPENDENT_PROVIDER_AUTHORITY_REBOUND",
+    "source": "valid-independent-verification-result.json",
+    "expectedCode": "A1_REPORT_AUTHORITY_DRIFT"
+  },
+  {
+    "vectorId": "INDEPENDENT_RESPONSE_REF_REUSE",
+    "source": "valid-independent-verification-result.json",
+    "expectedCode": "A1_INDEPENDENT_REF_REUSED"
+  },
+  {
+    "vectorId": "HARNESS_REPLAY_PROOF_DIGEST_REBOUND",
+    "source": "run-material/reports/A1-REPORT-GENERATED-001/derived/replay-proof-envelope.json",
+    "expectedCode": "A1_RAW_FINGERPRINT_MISMATCH"
+  },
+  {
+    "vectorId": "RUN_TREE_HARD_LINK_ALIAS",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_TREE_HARD_LINK_REJECTED"
+  },
+  {
+    "vectorId": "CHILD_LAUNCH_REQUEST_ORDINAL_STITCH",
+    "source": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/01-placeholder-rejected/command.json",
+    "expectedCode": "A1_LAUNCH_ARGUMENTS_DRIFT"
+  },
+  {
+    "vectorId": "OUTER_LAUNCH_ARGUMENT_STITCH",
+    "source": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/command.json",
+    "expectedCode": "A1_LAUNCH_ARGUMENTS_DRIFT"
+  },
+  {
+    "vectorId": "PROVIDER_DESTINATION_IDENTITY_REPLACEMENT",
+    "source": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/provider-materialization.json",
+    "expectedCode": "A1_PROVIDER_DESTINATION_IDENTITY_DRIFT"
+  },
+  {
+    "vectorId": "PROTOCOL_SOURCE_PROJECTION_REBOUND",
+    "source": "valid-challenge-sandbox-profile.json",
+    "expectedCode": "A1_PROTOCOL_AUTHORITY_PIN_DRIFT"
+  },
+  {
+    "vectorId": "REPLAY_VECTOR_RECIPE_INPUTSET_REBOUND",
+    "source": "valid-challenge-sandbox-profile.json",
+    "expectedCode": "A1_REPLAY_VECTOR_REGISTRY_DRIFT"
+  },
+  {
+    "vectorId": "REPLAY_PROOF_MISSING_MESSAGE_VERSION",
+    "source": "run-material/reports/A1-REPORT-GENERATED-001/derived/replay-proof-envelope.json",
+    "expectedCode": "A1_MISSING_MESSAGE_VERSION"
+  },
+  {
+    "vectorId": "MATERIAL_FILE_BUDGET",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_MATERIAL_FILE_SIZE_LIMIT_EXCEEDED"
+  },
+  {
+    "vectorId": "MATERIAL_TREE_ENTRY_BUDGET",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_MATERIAL_TREE_ENTRY_COUNT_LIMIT_EXCEEDED"
+  },
+  {
+    "vectorId": "MATERIAL_TREE_TOTAL_BUDGET",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_MATERIAL_TREE_TOTAL_BYTES_LIMIT_EXCEEDED"
+  },
+  {
+    "vectorId": "MATERIAL_PARENT_DIRECTORY_SYMLINK",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_MATERIAL_SYMLINK_REJECTED"
+  },
+  {
+    "vectorId": "MATERIAL_PARENT_DIRECTORY_REPLACEMENT",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_TREE_ENTRY_SET_DRIFT"
+  },
+  {
+    "vectorId": "MATERIAL_POST_INVENTORY_ENTRY_DRIFT",
+    "source": "valid-replay-proof-envelope.json",
+    "expectedCode": "A1_TREE_ENTRY_SET_DRIFT"
+  }
+]

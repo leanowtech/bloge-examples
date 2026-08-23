@@ -17,6 +17,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -32,6 +33,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[4]
 MANIFEST = HERE / "manifest.json"
 MANIFEST_SCHEMA = REPO / "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-material-attack-manifest-v1.schema.json"
+ADMISSION_TRUST_PIN = REPO / "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/valid-admission-trust-pin.json"
 SCHEMA_DIR = REPO / "docs/schemas/resource-gateway-capability-studio"
 GUARD_CATALOG = HERE.parent / "semantic-guards" / "guard-catalog-v1.json"
 GUARDS: list[str] = []
@@ -54,6 +56,22 @@ TREE_DOMAINS = {
     "admission": "RG-CS-GATE-A-ADMISSION-EVIDENCE-ROOT-v1",
     "runMaterial": "RG-CS-GATE-A-RUN-MATERIAL-ROOT-v1",
 }
+MAX_TREE_FILE_BYTES = 16 * 1024 * 1024
+MAX_ADMISSION_TRUST_PIN_BYTES = 64 * 1024
+RESIGNED_REVIEW_SEMANTIC_ATTACKS = {
+    "REAL-REVIEW-COUNT-UNDERREPORT",
+    "REAL-REVIEW-CHECK-FINDING-MISMATCH",
+    "REAL-REVIEW-DUPLICATE-FINDING-ID",
+    "REAL-REVIEW-FINDING-ORDER-DRIFT",
+    "REAL-REVIEW-COUNT-OPEN-P1-UNDERREPORT",
+    "REAL-REVIEW-COUNT-SKIPPED-UNDERREPORT",
+    "REAL-REVIEW-CANDIDATE-BINDING-DRIFT",
+    "REAL-REVIEW-BODY-ENVELOPE-REVIEWED-AT-DRIFT",
+    "REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW",
+    "REAL-REVIEW-EXPIRED-REVIEW",
+    "REAL-REVIEW-EXPIRED-POLICY",
+    "REAL-REVIEW-EXPIRED-REVOCATION",
+}
 
 
 def fail(message: str) -> None:
@@ -62,6 +80,64 @@ def fail(message: str) -> None:
 
 def read_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _strict_json_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    document: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in document:
+            raise json.JSONDecodeError(f"duplicate JSON member: {key}", "", 0)
+        document[key] = value
+    return document
+
+
+def _parse_strict_json_snapshot(content: bytes) -> Any:
+    text = content.decode("utf-8")
+    decoder = json.JSONDecoder(object_pairs_hook=_strict_json_pairs)
+    start = len(text) - len(text.lstrip())
+    value, end = decoder.raw_decode(text, start)
+    if text[end:].strip():
+        raise json.JSONDecodeError("trailing JSON content", text, end)
+    return value
+
+
+def _stable_file_identity(before: os.stat_result, after: os.stat_result) -> bool:
+    return (
+        (before.st_dev, before.st_ino, before.st_mode, before.st_nlink,
+         before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        == (after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+    )
+
+
+def read_stable_admission_trust_pin(path: Path) -> dict[str, Any]:
+    before = os.lstat(path)
+    if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_ADMISSION_TRUST_PIN_BYTES:
+        fail(f"trusted admission pin is not a bounded regular file: {path}")
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode) or not _stable_file_identity(before, opened):
+            fail(f"trusted admission pin changed while opening: {path}")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = os.read(fd, min(8192, MAX_ADMISSION_TRUST_PIN_BYTES - total + 1))
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_ADMISSION_TRUST_PIN_BYTES:
+                fail(f"trusted admission pin exceeds bounded read limit: {path}")
+            chunks.append(chunk)
+        after = os.fstat(fd)
+        if not _stable_file_identity(opened, after) or total != after.st_size:
+            fail(f"trusted admission pin changed during read: {path}")
+        document = _parse_strict_json_snapshot(b"".join(chunks))
+        if not isinstance(document, dict):
+            fail("trusted admission pin must be a JSON object")
+        return document
+    finally:
+        os.close(fd)
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -127,24 +203,118 @@ def document_fingerprint(document: dict[str, Any], field: str | None, domain: st
 
 
 def tree_fingerprint(root: Path, domain: str = TREE_DOMAINS["admission"]) -> dict[str, str]:
-    if not root.is_dir() or root.is_symlink():
+    root_stat = os.lstat(root)
+    if not stat.S_ISDIR(root_stat.st_mode) or stat.S_ISLNK(root_stat.st_mode):
         fail(f"tree root is not a real directory: {root}")
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | os.O_NOFOLLOW
+    root_fd = os.open(root, flags)
     entries: list[dict[str, str]] = []
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink():
-            fail(f"tree contains a symbolic link: {path}")
-        if not path.is_file():
-            continue
-        relative = path.relative_to(root).as_posix()
-        content = path.read_bytes()
-        entries.append({
-            "relativePath": relative,
-            "kind": "FILE",
-            "byteLength": len(content),
-            "rawFingerprint": raw_ref(content),
-        })
+    canonical_root = os.path.realpath(root)
+    canonical_paths = {canonical_root}
+    relative_paths: set[str] = set()
+    file_keys: set[tuple[int, int]] = set()
+    try:
+        stack: list[tuple[str, int, str, Any]] = [("enter", root_fd, "", None)]
+        while stack:
+            operation, directory_fd, relative_directory, state = stack.pop()
+            if operation == "enter":
+                before = os.fstat(directory_fd)
+                if not stat.S_ISDIR(before.st_mode):
+                    fail(f"tree contains a non-directory: {root / relative_directory}")
+                with os.scandir(directory_fd) as scan:
+                    names = [entry.name for entry in scan]
+                stack.append(("exit", directory_fd, relative_directory, before))
+                for name in reversed(names):
+                    stack.append(("child", directory_fd, relative_directory, name))
+                continue
+            if operation == "exit":
+                after = os.fstat(directory_fd)
+                stable = _tree_identity(before=state, after=after)
+                if directory_fd != root_fd:
+                    os.close(directory_fd)
+                if stable:
+                    continue
+                fail(f"unstable tree directory identity: {root / relative_directory}")
+
+            name = state
+            child_relative = f"{relative_directory}/{name}" if relative_directory else name
+            child_path = root / child_relative
+            child_stat = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+            if stat.S_ISLNK(child_stat.st_mode):
+                fail(f"tree contains a symbolic link: {child_path}")
+            canonical = os.path.realpath(child_path)
+            if os.path.commonpath((canonical_root, canonical)) != canonical_root:
+                fail(f"tree canonical path escapes root: {child_path}")
+            if canonical in canonical_paths or child_relative in relative_paths:
+                fail(f"tree contains a duplicate canonical path: {child_path}")
+            canonical_paths.add(canonical)
+            relative_paths.add(child_relative)
+
+            if stat.S_ISDIR(child_stat.st_mode):
+                child_fd = os.open(name, flags, dir_fd=directory_fd)
+                opened = os.fstat(child_fd)
+                if not _tree_identity(child_stat, opened):
+                    os.close(child_fd)
+                    fail(f"unstable tree directory identity: {child_path}")
+                stack.append(("enter", child_fd, child_relative, None))
+                continue
+            if not stat.S_ISREG(child_stat.st_mode):
+                fail(f"tree contains a non-regular file: {child_path}")
+            if child_stat.st_nlink != 1 or (child_stat.st_dev, child_stat.st_ino) in file_keys:
+                fail(f"tree contains a hard-linked or duplicate file: {child_path}")
+            file_keys.add((child_stat.st_dev, child_stat.st_ino))
+            content = _read_stable_tree_file(directory_fd, name, child_stat, child_path)
+            entries.append({
+                "relativePath": child_relative,
+                "kind": "FILE",
+                "byteLength": len(content),
+                "rawFingerprint": raw_ref(content),
+            })
+        entries.sort(key=lambda entry: _utf16_sort_key(entry["relativePath"]))
+    finally:
+        os.close(root_fd)
     payload = domain.encode("ascii") + b"\x00" + canonical_bytes(entries)
     return {"kind": "TREE_COMMITMENT", "algorithm": "SHA-256", "value": digest_bytes(payload)}
+
+
+def _tree_identity(before: os.stat_result, after: os.stat_result) -> bool:
+    return (
+        (before.st_dev, before.st_ino, before.st_mode, before.st_nlink,
+         before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+        == (after.st_dev, after.st_ino, after.st_mode, after.st_nlink,
+            after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+    )
+
+
+def _read_stable_tree_file(directory_fd: int, name: str, before: os.stat_result,
+                           display_path: Path) -> bytes:
+    if before.st_size > MAX_TREE_FILE_BYTES:
+        fail(f"tree file exceeds bounded read limit: {display_path}")
+    fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd)
+    try:
+        opened = os.fstat(fd)
+        if not _tree_identity(before, opened):
+            fail(f"unstable tree file identity: {display_path}")
+        chunks: list[bytes] = []
+        total = 0
+        while total <= MAX_TREE_FILE_BYTES:
+            chunk = os.read(fd, min(64 * 1024, MAX_TREE_FILE_BYTES + 1 - total))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_TREE_FILE_BYTES:
+                fail(f"tree file exceeds bounded read limit: {display_path}")
+        content = b"".join(chunks)
+        after_fd = os.fstat(fd)
+        after_path = os.stat(name, dir_fd=directory_fd, follow_symlinks=False)
+        if (not _tree_identity(before, after_fd)
+                or not _tree_identity(before, after_path)
+                or len(content) != before.st_size):
+            fail(f"unstable tree file identity or size: {display_path}")
+        return content
+    finally:
+        os.close(fd)
 
 
 def set_pointer(document: Any, pointer: str, value: Any) -> None:
@@ -278,9 +448,10 @@ def reference_closure(root: Path, document: Any) -> bool:
 
 
 class Material:
-    def __init__(self, root: Path, case: dict[str, Any]):
+    def __init__(self, root: Path, case: dict[str, Any], admission_verification_time: dt.datetime):
         self.root = root
         self.case = case
+        self.admission_verification_time = admission_verification_time
         self.docs: dict[str, Path] = {}
         self.pinned_paths: dict[str, Path] = {}
 
@@ -381,6 +552,13 @@ def verify_ed25519(envelope: dict[str, Any], policy: dict[str, Any], root: Path)
     return process.returncode == 0
 
 
+def assert_cryptographic_signature_remains_valid(material: Material, case_id: str) -> None:
+    envelope = material.document("review/envelope.json")
+    policy = material.document("review/policy.json")
+    if not verify_ed25519(envelope, policy, material.root):
+        fail(f"{case_id} must retain a cryptographically valid authorized signature")
+
+
 def run_signed_review_helper(root: Path, mode: str) -> None:
     helper = HERE / "prepare-signed-review-count.mjs"
     process = subprocess.run(["node", str(helper), str(root), mode], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
@@ -454,10 +632,15 @@ def prepare_a1_proof(material: Material) -> None:
     envelope_target, envelope = material.find_document(
         "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1"
     )
-    result_target = envelope["replayResultRef"]["uri"]
-    process_target = envelope["producerProcessTranscriptRef"]["uri"]
-    result = read_json(material_path(material.root, result_target))
-    process = read_json(material_path(material.root, process_target))
+    result_target, result = material.find_document(
+        "resource-gateway.capability-studio.gate-a.replay-verification-result.v1"
+    )
+    process_target, process = material.find_document(
+        "resource-gateway.capability-studio.gate-a.process-transcript.v1"
+    )
+    envelope["replayResultRef"]["uri"] = result_target
+    envelope["producerProcessTranscriptRef"]["uri"] = process_target
+    material.save_document(envelope_target, envelope)
 
     materialize_declared_refs(material, result)
     candidate = material.write_bytes("artifacts/a1-candidate.jar", b"a1-candidate-material-v1\n")
@@ -643,7 +826,16 @@ def apply_mutation(material: Material, case: dict[str, Any]) -> None:
     elif guard == "PIN_LIFECYCLE_BINDING":
         material_path(material.root, "artifacts/candidate.jar").write_bytes(b"candidate-artifact-v1-tampered\n")
     elif guard == "ADMISSION_EVIDENCE_ROOT_CLOSURE":
-        material_path(material.root, "admission-evidence/root.tree/TEST_REPORT.json").write_bytes(b"tampered test report\n")
+        if case_id.endswith("SYMLINK"):
+            root = material_path(material.root, "admission-evidence/root.tree")
+            outside = material.write_bytes("outside/symlink-target.txt", b"symlink target\n")
+            link = root / ("linked-directory" if case_id.endswith("DIRECTORY-SYMLINK") else "linked-file.txt")
+            if case_id.endswith("DIRECTORY-SYMLINK"):
+                outside = material_path(material.root, "outside/symlink-target.tree")
+                outside.mkdir(parents=True, exist_ok=True)
+            os.symlink(os.path.relpath(outside, link.parent), link)
+        else:
+            material_path(material.root, "admission-evidence/root.tree/TEST_REPORT.json").write_bytes(b"tampered test report\n")
     elif guard == "CODESOURCE_INDEPENDENCE":
         alias = material_path(material.root, "artifacts/harness-alias.jar").resolve()
         material.mutate_document("process/harness.json", "/codeSource/artifactPath", str(alias))
@@ -662,6 +854,12 @@ def apply_mutation(material: Material, case: dict[str, Any]) -> None:
             run_signed_review_helper(material.root, "body-envelope-reviewed-at-drift")
         elif case_id == "REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW":
             run_signed_review_helper(material.root, "revocation-issued-after-review")
+        elif case_id == "REAL-REVIEW-EXPIRED-REVIEW":
+            run_signed_review_helper(material.root, "expired-review")
+        elif case_id == "REAL-REVIEW-EXPIRED-POLICY":
+            run_signed_review_helper(material.root, "expired-policy")
+        elif case_id == "REAL-REVIEW-EXPIRED-REVOCATION":
+            run_signed_review_helper(material.root, "expired-revocation")
         elif case_id == "REAL-REVIEW-KEYID-DRIFT":
             material.mutate_document("review/envelope.json", "/keyId", "key:unknown-fixture")
             material.rebind_document("review/envelope.json", "envelopeFingerprint", DOMAINS["reviewEnvelope"])
@@ -897,6 +1095,34 @@ def parse_time(value: str) -> dt.datetime:
     return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def read_admission_verification_time(path: Path = ADMISSION_TRUST_PIN) -> dt.datetime:
+    pin = read_stable_admission_trust_pin(path)
+    if not isinstance(pin.get("admissionContext"), dict):
+        fail("trusted admission pin has no strict verification context")
+    value = pin["admissionContext"].get("admissionVerificationTime")
+    if not isinstance(value, str) or not value.endswith("Z"):
+        fail("trusted admission pin has no strict verification time")
+    parsed = parse_time(value)
+    if parsed.tzinfo is None:
+        fail("trusted admission pin verification time has no timezone")
+    return parsed
+
+
+def verify_admission_pin_duplicate_negative_case() -> None:
+    duplicate_pin = (
+        b'{"admissionContext":{"admissionVerificationTime":"2026-08-21T09:32:00Z",'
+        b'"admissionVerificationTime":"2026-08-21T09:32:01Z"}}'
+    )
+    with tempfile.TemporaryDirectory(prefix="rggatea-pin-negative-", dir="/tmp") as directory:
+        path = Path(directory) / "duplicate-admission-trust-pin.json"
+        path.write_bytes(duplicate_pin)
+        try:
+            read_admission_verification_time(path)
+        except (AssertionError, OSError, ValueError):
+            return
+    fail("duplicate admission trust pin member was accepted")
+
+
 def reviewer_authority_valid(material: Material) -> bool:
     body_path = material_path(material.root, "review/body.json")
     body = material.document("review/body.json")
@@ -916,9 +1142,16 @@ def reviewer_authority_valid(material: Material) -> bool:
         review_time = parse_time(envelope["reviewedAt"])
         valid_until = parse_time(envelope["validUntil"])
         policy_valid_until = parse_time(policy["validUntil"])
-        valid_window = parse_time(policy["notBefore"]) <= review_time <= valid_until <= policy_valid_until
+        verification_time = material.admission_verification_time
+        policy_not_before = parse_time(policy["notBefore"])
+        revocation_issued_at = parse_time(revocation["issuedAt"])
+        revocation_valid_until = parse_time(revocation["validUntil"])
+        valid_window = policy_not_before <= review_time <= valid_until <= policy_valid_until
+        pinned_policy_window = policy_not_before <= verification_time <= policy_valid_until
+        pinned_review_window = review_time <= verification_time <= valid_until
+        pinned_revocation_window = revocation_issued_at <= verification_time <= revocation_valid_until
         body_review_time_bound = body["reviewedAt"] == envelope["reviewedAt"]
-        revocation_window = parse_time(revocation["issuedAt"]) <= review_time <= parse_time(revocation["validUntil"])
+        revocation_window = revocation_issued_at <= review_time <= revocation_valid_until
         root_bound = body["reviewedMaterialRootFingerprint"] == envelope["reviewedMaterialRootFingerprint"]
         policy_bound = (
             envelope["reviewScope"] == policy["reviewScope"]
@@ -957,6 +1190,9 @@ def reviewer_authority_valid(material: Material) -> bool:
             and finding_ids == sorted(finding_ids)
             and check_relations
             and valid_window
+            and pinned_policy_window
+            and pinned_review_window
+            and pinned_revocation_window
             and body_review_time_bound
             and revocation_window
         )
@@ -1181,17 +1417,21 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", dest="json_output", help="emit one JSON result object per case")
     args = parser.parse_args()
     verify_canonicalization_reference()
+    verify_admission_pin_duplicate_negative_case()
     manifest = load_manifest()
+    admission_verification_time = read_admission_verification_time()
     outputs: list[dict[str, Any]] = []
     for case in manifest["cases"]:
         guard = case["guardId"]
         with tempfile.TemporaryDirectory(prefix="rggatea-", dir="/tmp") as directory:
-            material = Material(Path(directory), case)
+            material = Material(Path(directory), case, admission_verification_time)
             prepare_material(material, guard)
             validate_case_documents(material, case)
             assert_baseline_pass(material, guard)
             apply_mutation(material, case)
             validate_case_documents(material, case)
+            if case["caseId"] in RESIGNED_REVIEW_SEMANTIC_ATTACKS:
+                assert_cryptographic_signature_remains_valid(material, case["caseId"])
             assert_unique_hit(material, guard)
             observed = collect(material, guard)
             expected = case["expected"]

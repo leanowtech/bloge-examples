@@ -16,7 +16,10 @@ const MODES = [
   "finding-order-drift",
   "candidate-binding-drift",
   "body-envelope-reviewed-at-drift",
-  "revocation-issued-after-review"
+  "revocation-issued-after-review",
+  "expired-review",
+  "expired-policy",
+  "expired-revocation"
 ];
 if (!directory || !MODES.includes(mode)) {
   process.stderr.write(`usage: prepare-signed-review-count.mjs <material-root> ${MODES.join("|")}\n`);
@@ -56,6 +59,11 @@ function signingDigest(value) {
     .digest();
 }
 
+if (mode !== "body-envelope-reviewed-at-drift") {
+  body.reviewedAt = "2026-08-21T09:30:00Z";
+  envelope.reviewedAt = "2026-08-21T09:30:00Z";
+}
+
 if (mode === "check-mismatch") {
   body.reviewChecks[0].status = "PASS";
 }
@@ -81,6 +89,11 @@ if (mode === "underreport-open-p1") {
 if (mode === "underreport-skipped-count") {
   body.reviewChecks[1].status = "SKIPPED";
 }
+if (["expired-review", "expired-policy", "expired-revocation"].includes(mode)) {
+  body.reviewedAt = "2026-08-21T09:00:00Z";
+  envelope.reviewedAt = "2026-08-21T09:00:00Z";
+  envelope.validUntil = "2026-08-21T09:31:00Z";
+}
 
 const openP0 = mode === "underreport"
   ? 0
@@ -98,6 +111,39 @@ if (mode === "revocation-issued-after-review") {
   const policyPath = resolve(root, "review/policy.json");
   const revocation = JSON.parse(readFileSync(revocationPath, "utf8"));
   revocation.issuedAt = "2026-08-21T11:00:00Z";
+  const revocationBytes = finalize(
+    revocation,
+    "reviewerRevocationSnapshotFingerprint",
+    "RG-CS-REVIEWER-REVOCATION-SNAPSHOT-v1"
+  );
+  writeFileSync(revocationPath, revocationBytes);
+  const revocationRef = typed("RAW_BYTES", rawSha256(revocationBytes));
+  const policy = JSON.parse(readFileSync(policyPath, "utf8"));
+  policy.revocationSnapshotRawFingerprint = revocationRef;
+  const policyBytes = finalize(
+    policy,
+    "reviewerTrustPolicyFingerprint",
+    "RG-CS-REVIEWER-TRUST-POLICY-v1"
+  );
+  writeFileSync(policyPath, policyBytes);
+  envelope.revocationSnapshotRawFingerprint = revocationRef;
+}
+if (mode === "expired-policy") {
+  const policyPath = resolve(root, "review/policy.json");
+  const policy = JSON.parse(readFileSync(policyPath, "utf8"));
+  policy.validUntil = "2026-08-21T09:31:00Z";
+  const policyBytes = finalize(
+    policy,
+    "reviewerTrustPolicyFingerprint",
+    "RG-CS-REVIEWER-TRUST-POLICY-v1"
+  );
+  writeFileSync(policyPath, policyBytes);
+}
+if (mode === "expired-revocation") {
+  const revocationPath = resolve(root, "review/revocation.json");
+  const policyPath = resolve(root, "review/policy.json");
+  const revocation = JSON.parse(readFileSync(revocationPath, "utf8"));
+  revocation.validUntil = "2026-08-21T09:31:00Z";
   const revocationBytes = finalize(
     revocation,
     "reviewerRevocationSnapshotFingerprint",

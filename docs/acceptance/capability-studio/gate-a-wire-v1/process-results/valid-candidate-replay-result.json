@@ -1,156 +1,156 @@
 {
-  "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-replay-result.v1",
-  "resultId": "A0-DEMO-001",
-  "gateRevision": 1,
-  "candidateArtifactRef": {
-    "uri": "artifacts/candidate.jar",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    }
-  },
-  "challengeTrustPinRef": {
-    "uri": "pins/challenge.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-    }
-  },
-  "formalEvidenceManifestRef": {
-    "uri": "inputs/formal-evidence-run-manifest.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:3535353535353535353535353535353535353535353535353535353535353535"
-    }
-  },
-  "challengeInputRootRef": {
-    "uri": "inputs/challenge-root.tree",
-    "fingerprint": {
-      "kind": "TREE_COMMITMENT",
-      "algorithm": "SHA-256",
-      "value": "sha256:3636363636363636363636363636363636363636363636363636363636363636"
-    }
-  },
-  "registryRef": {
-    "uri": "registries/candidate.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
-    }
-  },
+  "adapterInvalidCount": 0,
+  "adapterNotRunCount": 3,
   "adapterResults": [
     {
       "adapterKind": "FORMAL_INPUT_TREE_V1",
-      "verifierId": "CapabilityStudioFormalInputTreeSnapshotter.verify",
-      "verifierRevision": 1,
+      "resultRef": null,
       "status": "NOT_RUN",
-      "resultRef": null
+      "verifierId": "CapabilityStudioFormalInputTreeSnapshotter.verify",
+      "verifierRevision": 1
     },
     {
       "adapterKind": "EXECUTION_LEASE_DURABLE_WRAPPER_V1",
-      "verifierId": "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify",
-      "verifierRevision": 1,
+      "resultRef": null,
       "status": "NOT_RUN",
-      "resultRef": null
+      "verifierId": "CapabilityStudioExecutionLeaseEvidenceBundleVerifier.verify",
+      "verifierRevision": 1
     },
     {
       "adapterKind": "STAGE_ACCEPTANCE_RESULT_V2",
-      "verifierId": "CapabilityStudioStageAcceptanceResultV2Verifier.verify",
-      "verifierRevision": 2,
+      "resultRef": null,
       "status": "NOT_RUN",
-      "resultRef": null
+      "verifierId": "CapabilityStudioStageAcceptanceResultV2Verifier.verify",
+      "verifierRevision": 2
     }
   ],
+  "adapterUnavailableCount": 0,
+  "adapterVerifiedCount": 0,
+  "candidateArtifactRef": {
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+    },
+    "uri": "artifacts/candidate.jar"
+  },
+  "challengeInputRootRef": {
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:15189c1d34dae72c81f6620536df0f4806ecdd5f0535382661176af1df167c41"
+    },
+    "uri": "inputs/challenge-root.tree"
+  },
+  "challengeTrustPinRef": {
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+    },
+    "uri": "pins/challenge.json"
+  },
+  "formalEvidenceManifestRef": {
+    "rawFingerprint": {
+      "algorithm": "SHA-256",
+      "kind": "RAW_BYTES",
+      "value": "sha256:3535353535353535353535353535353535353535353535353535353535353535"
+    },
+    "uri": "inputs/formal-evidence-run-manifest.json"
+  },
+  "formalExpectedCount": 27,
+  "formalPassCount": 0,
+  "gateRevision": 1,
+  "messageVersion": "resource-gateway.capability-studio.gate-a.candidate-replay-result.v1",
+  "obligationBlockedCount": 0,
+  "obligationFailedCount": 0,
+  "obligationNotRunCount": 14,
   "obligationResults": [
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-01",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-02",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-03",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-04",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-05",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-06",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-07",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-08",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-09",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-10",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-11",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-12",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-13",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     },
     {
+      "evidenceRefs": [],
       "obligationId": "FELT-14",
-      "status": "NOT_RUN",
-      "evidenceRefs": []
+      "status": "NOT_RUN"
     }
   ],
-  "adapterVerifiedCount": 0,
-  "adapterInvalidCount": 0,
-  "adapterUnavailableCount": 0,
-  "adapterNotRunCount": 3,
-  "obligationFailedCount": 0,
-  "obligationBlockedCount": 0,
-  "obligationNotRunCount": 14,
-  "formalPassCount": 0,
-  "formalExpectedCount": 27,
-  "terminal": "INCOMPLETE",
   "reasonCode": "A0_INCOMPLETE",
+  "registryRef": {
+    "rawFingerprint": {
+      "algorithm": "SHA-256",
+      "kind": "RAW_BYTES",
+      "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
+    },
+    "uri": "registries/candidate.json"
+  },
   "resultFingerprint": {
     "kind": "CANONICAL_DOCUMENT",
     "algorithm": "SHA-256",
-    "value": "sha256:4343434343434343434343434343434343434343434343434343434343434343"
-  }
+    "value": "sha256:ec828cedb923739b977df701404392c3267ea6d1370989475d17c297291a9187"
+  },
+  "resultId": "A0-CHALLENGE-REPLAY-09-HONEST-INCOMPLETE-ACCEPTED",
+  "terminal": "INCOMPLETE"
 }

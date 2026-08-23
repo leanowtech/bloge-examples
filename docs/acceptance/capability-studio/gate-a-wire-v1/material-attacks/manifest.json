@@ -2110,6 +2110,179 @@
         "reason": "REVIEW_SIGNATURE_AUTHORITY",
         "exitCode": 2
       }
+    },
+    {
+      "caseId": "REAL-ADMISSION-EVIDENCE-FILE-SYMLINK",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {"target": "admission-evidence/root.tree", "kind": "DIRECTORY_TREE"},
+          {"target": "admission-evidence/root.tree/TEST_REPORT.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "REFERENCE_PATH", "DIRECTORY_TREE", "RAW_FINGERPRINT"]
+      },
+      "mutation": {
+        "mutationId": "MUT-ADMISSION-EVIDENCE-FILE-SYMLINK",
+        "operation": "TREE_FILE_REPLACE",
+        "target": "admission-evidence/root.tree/linked-file.txt",
+        "description": "Insert an in-tree file symbolic link after the admission tree commitment was recorded.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:TEST_REPORT",
+        "conclusion": "FAIL",
+        "reason": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-ADMISSION-EVIDENCE-DIRECTORY-SYMLINK",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SCHEMA_FIXTURE",
+        "documents": [
+          {
+            "target": "admission/result.json",
+            "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/process-results/valid-admission-verification-result.json",
+            "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-gate-a-admission-verification-result-v1.schema.json"
+          }
+        ],
+        "rawMaterials": [
+          {"target": "admission-evidence/root.tree", "kind": "DIRECTORY_TREE"},
+          {"target": "admission-evidence/root.tree/TEST_REPORT.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "REFERENCE_PATH", "DIRECTORY_TREE", "RAW_FINGERPRINT"]
+      },
+      "mutation": {
+        "mutationId": "MUT-ADMISSION-EVIDENCE-DIRECTORY-SYMLINK",
+        "operation": "TREE_FILE_REPLACE",
+        "target": "admission-evidence/root.tree/linked-directory",
+        "description": "Insert an in-tree directory symbolic link after the admission tree commitment was recorded.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "artifact:TEST_REPORT",
+        "conclusion": "FAIL",
+        "reason": "ADMISSION_EVIDENCE_ROOT_CLOSURE",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-EXPIRED-REVIEW",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-EXPIRED-REVIEW",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/envelope.json#/validUntil",
+        "description": "Re-sign a review envelope whose validity ends before the pinned admission verification time.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-EXPIRED-POLICY",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-EXPIRED-POLICY",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/policy.json#/validUntil",
+        "description": "Re-sign a review against a trust policy whose validity ends before the pinned admission verification time.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
+    },
+    {
+      "caseId": "REAL-REVIEW-EXPIRED-REVOCATION",
+      "caseClass": "SUPPLEMENTAL_ATTACK",
+      "guardId": "REVIEW_SIGNATURE_AUTHORITY",
+      "sourceMaterial": {
+        "canonicalBaseMaterial": "PRODUCTION_SIGNED_FIXTURE",
+        "documents": [
+          {"target": "review/body.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/review-body.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-review-body-v1.schema.json"},
+          {"target": "review/envelope.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-authority-envelope.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-authority-envelope-v1.schema.json"},
+          {"target": "review/policy.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-trust-policy.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-trust-policy-v1.schema.json"},
+          {"target": "review/revocation.json", "baseFixture": "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/signed-review-count-guard/reviewer-revocation-snapshot.json", "schema": "docs/schemas/resource-gateway-capability-studio/capability-studio-reviewer-revocation-snapshot-v1.schema.json"}
+        ],
+        "rawMaterials": [
+          {"target": "review/body.json", "kind": "RAW_BYTES"},
+          {"target": "review/envelope.json", "kind": "RAW_BYTES"},
+          {"target": "review/policy.json", "kind": "RAW_BYTES"},
+          {"target": "review/revocation.json", "kind": "RAW_BYTES"}
+        ],
+        "collectorReads": ["JSON_BYTES", "RAW_FINGERPRINT", "ED25519_SIGNATURE"]
+      },
+      "mutation": {
+        "mutationId": "MUT-REVIEW-EXPIRED-REVOCATION",
+        "operation": "BASELINE_SEMANTIC_ATTACK",
+        "target": "review/revocation.json#/validUntil",
+        "description": "Re-sign a review against a revocation snapshot whose validity ends before the pinned admission verification time.",
+        "singleMutation": true
+      },
+      "expected": {
+        "status": "FAIL",
+        "admissionTarget": "review:INDEPENDENT_TRUSTED_REVIEW",
+        "conclusion": "FAIL",
+        "reason": "REVIEW_SIGNATURE_AUTHORITY",
+        "exitCode": 2
+      }
     }
   ]
 }

@@ -101,7 +101,7 @@ D0 已在生产实现继续前完成独立对抗签核，最终结论为 `openP0
 |---|---|
 | Fingerprint Profile | 44 entries；33 canonical、3 tree、8 aggregate；Java/Node 一致 |
 | canonical vectors | 11 vectors；wrong domain、wrong self-field、empty domain 均拒绝 |
-| Process/Proof fixtures | 33 positive、24 negative；含 actual raw bytes、TOCTOU 与时间偏序 |
+| Process/Proof fixtures | 当前 fixture corpus 为 45 positive、48 negative；含 actual raw bytes、TOCTOU、六类异常 attempt、进程树/输出观察、TCK 投影与时间偏序。注意：这 45/48 是开发验证 fixture 覆盖数，不是 formal acceptance 分母；TCK 固定分母仍为 candidate 9 + trust-plane 3 = 12；正式 acceptance 计划仍为 `formalPassCount=0 / formalExpectedCount=27`，严禁将 fixture 通过数写成正式 pass |
 | Guard lineage | 4 份 A2 fixture × 18 Guard = 72 条 ordered source fact 校验 |
 | real-material attacks | 18 primary + 20 supplemental = 38；Python 与独立 Java 逐项一致 |
 | Reviewer adversarial proof | 9 个合法重签语义攻击先独立证明 Ed25519 有效，再由治理 Guard 拒绝 |
@@ -1734,6 +1734,12 @@ runMaterialRootFingerprint(kind=TREE_COMMITMENT)
 verificationProcessRuns[5] in fixed order
 testRuns[12] in GateTestEvidence TCK order
 mandatoryGuards.providerNamespaceCollision = REJECTED
+
+> A1 的 `mandatoryGuards` 是 `type: object`（单键：`providerNamespaceCollision`），
+> 不是数组，也不是 A2 的 two-entry array。A1 在 signer 角色边界评估 provider collision；
+> A2 在 admission 角色边界额外检查 `reviewCountConsistency`，此时 signed review material 已存在，
+> 是阶段契约有意扩展，不是字段漂移。
+
 scratchBeforeCount=0 / scratchAfterCount=0
 startedAt / endedAt
 resultFingerprint(kind=CANONICAL_DOCUMENT)

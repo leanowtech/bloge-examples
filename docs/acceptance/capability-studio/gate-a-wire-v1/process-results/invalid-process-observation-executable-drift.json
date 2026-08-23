@@ -1,0 +1,159 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.process-observation.v1",
+  "runId": "RUN-NORMAL-001",
+  "launchKind": "CANDIDATE_CHILD",
+  "javaExecutableObservation": {
+    "preRead": {
+      "resolvedPath": "/opt/jdk/bin/java",
+      "fileKey": "dev:1:ino:9001",
+      "owner": "uid:0",
+      "group": "gid:0",
+      "linkCount": 1,
+      "posixMode": "0755",
+      "fileSize": 65536,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:6868686868686868686868686868686868686868686868686868686868686868"
+      }
+    },
+    "postRead": {
+      "resolvedPath": "/opt/jdk/bin/java",
+      "fileKey": "dev:1:ino:9002",
+      "owner": "uid:0",
+      "group": "gid:0",
+      "linkCount": 1,
+      "posixMode": "0755",
+      "fileSize": 65536,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:6868686868686868686868686868686868686868686868686868686868686868"
+      }
+    }
+  },
+  "javaRuntime": {
+    "vendor": "Eclipse Adoptium",
+    "version": "25.0.1+8",
+    "vmName": "OpenJDK 64-Bit Server VM",
+    "runtimeImageFingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:6969696969696969696969696969696969696969696969696969696969696969"
+    }
+  },
+  "effectiveClasspath": [
+    {
+      "ordinal": 1,
+      "role": "TCK_PROVIDER",
+      "artifactPath": "/work/provider.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7070707070707070707070707070707070707070707070707070707070707070"
+      }
+    },
+    {
+      "ordinal": 2,
+      "role": "CANDIDATE",
+      "artifactPath": "/opt/candidate.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  ],
+  "jvmInputArguments": [],
+  "environmentNames": [],
+  "processTree": {
+    "rootProcess": {
+      "pid": 4242,
+      "startInstant": "2026-08-21T10:00:01Z"
+    },
+    "descendantsBeforeTermination": [],
+    "terminationAction": "NONE",
+    "descendantsAfterTermination": [],
+    "quiescenceWindowMillis": 250,
+    "processTreeQuiescent": true
+  },
+  "stdoutCapture": {
+    "limitBytes": 8192,
+    "observedBytes": 1024,
+    "complete": true,
+    "overflow": false,
+    "leakScan": "PASS",
+    "scannerId": "GATE_A_OUTPUT_HYGIENE",
+    "scannerRevision": 1,
+    "scannerProfileRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+    },
+    "quarantineStatus": "NOT_REQUIRED"
+  },
+  "stderrCapture": {
+    "limitBytes": 8192,
+    "observedBytes": 0,
+    "complete": true,
+    "overflow": false,
+    "leakScan": "PASS",
+    "scannerId": "GATE_A_OUTPUT_HYGIENE",
+    "scannerRevision": 1,
+    "scannerProfileRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+    },
+    "quarantineStatus": "NOT_REQUIRED"
+  },
+  "sandboxProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+  },
+  "admittedClassOrigins": [
+    {
+      "role": "CANDIDATE_CHALLENGE_CLI",
+      "binaryName": "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli",
+      "classRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7272727272727272727272727272727272727272727272727272727272727272"
+      },
+      "codeSourceRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "role": "CANDIDATE_SPI",
+      "binaryName": "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider",
+      "classRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7373737373737373737373737373737373737373737373737373737373737373"
+      },
+      "codeSourceRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "role": "TCK_PROVIDER",
+      "binaryName": "com.leanowtech.bloge.gatetckprovider.GateATckProvider",
+      "classRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7474747474747474747474747474747474747474747474747474747474747474"
+      },
+      "codeSourceRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7070707070707070707070707070707070707070707070707070707070707070"
+      }
+    }
+  ]
+}

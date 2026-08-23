@@ -1,0 +1,14 @@
+{
+  "fixtureVersion": "resource-gateway.capability-studio.gate-a.process-material-binding-vectors.v1",
+  "vectors": [
+    {"vectorId": "CROSS_RUN_OBSERVATION_SUBSTITUTION", "mutation": "OBSERVATION_RUN_ID", "expectedSemanticCode": "PROCESS_OBSERVATION_RUN_ID_DRIFT"},
+    {"vectorId": "OBSERVATION_FINGERPRINT_MISMATCH", "mutation": "OBSERVATION_RAW_FINGERPRINT", "expectedSemanticCode": "PROCESS_OBSERVATION_RAW_FINGERPRINT_DRIFT"},
+    {"vectorId": "OBSERVATION_PROFILE_MISMATCH", "mutation": "SANDBOX_PROFILE_RAW_FINGERPRINT", "expectedSemanticCode": "PROCESS_SANDBOX_PROFILE_DRIFT"},
+    {"vectorId": "LAUNCH_KIND_MISMATCH", "mutation": "CALLER_EXPECTED_LAUNCH_KIND", "expectedSemanticCode": "PROCESS_LAUNCH_KIND_DRIFT"},
+    {"vectorId": "TRANSCRIPT_CODESOURCE_MISMATCH", "mutation": "TRANSCRIPT_CODESOURCE", "expectedSemanticCode": "PROCESS_CODESOURCE_CLASSPATH_DRIFT"},
+    {"vectorId": "OUTER_TRANSCRIPT_REF_REUSE", "mutation": "TRANSCRIPT_REF_REUSE", "expectedSemanticCode": "PROCESS_TRANSCRIPT_REF_REUSED"},
+    {"vectorId": "CHILD_MATERIAL_STITCHING", "mutation": "REQUEST_REF_CROSS_RUN", "expectedSemanticCode": "PROCESS_RUN_REF_ROOT_DRIFT"},
+    {"vectorId": "CHALLENGE_ID_REQUEST_RESPONSE_DRIFT", "mutation": "CHALLENGE_PAIR_ID_DRIFT", "expectedSemanticCode": "CHALLENGE_PAIR_ID_DRIFT"},
+    {"vectorId": "CHALLENGE_ID_REUSED_WITHIN_RUN", "mutation": "CHALLENGE_ID_REUSE", "expectedSemanticCode": "CHALLENGE_ID_REUSED_WITHIN_RUN"}
+  ]
+}

@@ -22,12 +22,20 @@
     "maxStdoutBytes": 1048576,
     "maxStderrBytes": 1048576,
     "killProcessTree": true,
-    "environmentMode": "EMPTY_ALLOWLIST"
+    "environmentMode": "EMPTY"
   },
   "output": {
     "allowedRole": "NON_AUTHORITY_TCK_EVIDENCE",
     "createNewOnly": true,
-    "testReportOutsideMaterialRoot": true
+    "testReportOutsideMaterialRoot": true,
+    "scannerId": "GATE_A_OUTPUT_HYGIENE",
+    "scannerRevision": 1,
+    "forbiddenOutputClasses": [
+      "CREDENTIAL",
+      "BUSINESS_PAYLOAD",
+      "ABSOLUTE_PATH",
+      "EXCEPTION_DETAIL"
+    ]
   },
   "profileFingerprint": {
     "kind": "CANONICAL_DOCUMENT",

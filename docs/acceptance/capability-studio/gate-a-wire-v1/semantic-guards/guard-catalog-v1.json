@@ -86,7 +86,7 @@
       "owner": "HARNESS",
       "phase": "REFERENCE_CLOSURE",
       "inputKind": "GateAReplayVerificationResultV1",
-      "rule": "Require all 9 command, request, response, stdout, stderr and process transcript objects to be reachable and byte-bound before a Proof can exist.",
+      "rule": "Require all 9 command, request, response, parent process observation, stdout, stderr and process transcript objects to be reachable and byte-bound; runtime/executable admission, process-tree quiescence and complete leak-scanned capture must agree before a Proof can exist.",
       "mismatch": "INVALID",
       "unavailable": "UNAVAILABLE",
       "sourceFactIds": ["PROCESS_OBSERVATION", "A1_SLOT_OUTCOME"],

@@ -1,0 +1,94 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.abnormal-attempt.v1",
+  "attemptId": "ABNORMAL-CHILD-CRASH-001",
+  "runId": "RUN-ABNORMAL-CHILD-CRASH-001",
+  "event": "CHILD_CRASH",
+  "firstErrorReason": "CHILD_CRASH",
+  "a1ExitCode": 255,
+  "observedProcessState": "UNAVAILABLE",
+  "observedExitCode": 255,
+  "observedTimedOut": false,
+  "observedCancelled": false,
+  "codeSourceObservationAvailable": true,
+  "stopRemainingSlots": true,
+  "drainStreams": true,
+  "reapProcessTree": true,
+  "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+  "remainingMaterialPolicy": "FORBIDDEN",
+  "resultPolicy": "NO_REPLAY_RESULT",
+  "stdoutPolicy": "EMPTY",
+  "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT",
+  "commandRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:3ac845ff03042966b2ef56fec7743d4d0a216098656e93c6699085ae81f33112"
+    }
+  },
+  "processObservationRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/process-observation.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:67d44c75c21a58c0752d25f19da6aba402c9b467ed6929366a9b5512d5696d88"
+    }
+  },
+  "processTranscriptRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:b0fbf4059830258da8151306baf331fcb696f89031dc4f94dcf1aae27ce8b6e7"
+    }
+  },
+  "formedMaterialRefs": [
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/command.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:3ac845ff03042966b2ef56fec7743d4d0a216098656e93c6699085ae81f33112"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/stdout",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/stderr",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/process-observation.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:67d44c75c21a58c0752d25f19da6aba402c9b467ed6929366a9b5512d5696d88"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CHILD-CRASH-001/process-transcript.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:b0fbf4059830258da8151306baf331fcb696f89031dc4f94dcf1aae27ce8b6e7"
+      }
+    }
+  ],
+  "semanticResultRef": null,
+  "laterMaterialRefs": [],
+  "attemptFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:5f47f181551c619fd9f4f8e0ae5b1e13a17df7a8f25e3c1848166b641ace7193"
+  }
+}

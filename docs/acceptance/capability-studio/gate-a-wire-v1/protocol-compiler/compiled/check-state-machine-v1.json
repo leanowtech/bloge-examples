@@ -1,0 +1,394 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "CHECK_STATE_MACHINE",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": "phaseContracts",
+      "sourcePointer": "/compilerContract/phaseContracts"
+    },
+    {
+      "key": "orderedChecks",
+      "sourcePointer": "/orderedChecks"
+    },
+    {
+      "key": "abnormalTransitions",
+      "sourcePointer": "/abnormalTransitions"
+    },
+    {
+      "key": "timeDerivation",
+      "sourcePointer": "/timeDerivation"
+    }
+  ],
+  "content": {
+    "phaseContracts": [
+      {
+        "phase": "A1_BOOTSTRAP",
+        "allowedOwners": [
+          "A1"
+        ],
+        "expectedCount": 9
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "allowedOwners": [
+          "A1"
+        ],
+        "expectedCount": 8
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "allowedOwners": [
+          "HARNESS",
+          "CALLER"
+        ],
+        "expectedCount": 6
+      }
+    ],
+    "orderedChecks": [
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 1,
+        "checkId": "A1_CODESOURCE_THREE_WAY_BINDING",
+        "owner": "A1",
+        "onMismatch": "A1_CODESOURCE_DRIFT",
+        "onUnavailable": "A1_CODESOURCE_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": [
+          "producer/invocation.json"
+        ]
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 2,
+        "checkId": "CHALLENGE_PIN_EXACT_AND_SEMANTIC",
+        "owner": "A1",
+        "onMismatch": "CHALLENGE_PIN_INVALID",
+        "onUnavailable": "CHALLENGE_PIN_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 3,
+        "checkId": "BUILD_IDENTITY_ROLE_BINDING",
+        "owner": "A1",
+        "onMismatch": "BUILD_IDENTITY_INVALID",
+        "onUnavailable": "BUILD_IDENTITY_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 4,
+        "checkId": "PACKAGED_SCHEMA_SET_CLOSURE",
+        "owner": "A1",
+        "onMismatch": "SCHEMA_SET_INVALID",
+        "onUnavailable": "SCHEMA_SET_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 5,
+        "checkId": "ROLE_REGISTRY_EXACT_BINDING",
+        "owner": "A1",
+        "onMismatch": "ROLE_REGISTRY_INVALID",
+        "onUnavailable": "ROLE_REGISTRY_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 6,
+        "checkId": "TCK_DEFINITION_EXACT_BINDING",
+        "owner": "A1",
+        "onMismatch": "TCK_DEFINITION_INVALID",
+        "onUnavailable": "TCK_DEFINITION_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 7,
+        "checkId": "LEAF_MANIFEST_CLOSURE",
+        "owner": "A1",
+        "onMismatch": "LEAF_MANIFEST_INVALID",
+        "onUnavailable": "LEAF_MANIFEST_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": [
+          "producer/provider-materialization.json"
+        ]
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 8,
+        "checkId": "CANDIDATE_SPI_PROVIDER_ADMISSION",
+        "owner": "A1",
+        "onMismatch": "ARTIFACT_ADMISSION_INVALID",
+        "onUnavailable": "ARTIFACT_ADMISSION_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": [
+          "producer/children/**"
+        ]
+      },
+      {
+        "phase": "A1_BOOTSTRAP",
+        "ordinal": 9,
+        "checkId": "ROOT_ALIAS_AND_ISOLATION",
+        "owner": "A1",
+        "onMismatch": "ROOT_ISOLATION_INVALID",
+        "onUnavailable": "ROOT_ISOLATION_UNAVAILABLE",
+        "exitCode": 2,
+        "allowedWritesAfterPass": [
+          "producer/children/**"
+        ]
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 1,
+        "checkId": "COMMAND_EXACT_BINDING",
+        "owner": "A1",
+        "onMismatch": "COMMAND_BINDING_INVALID",
+        "onUnavailable": "COMMAND_BINDING_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "producer/children/{childDir}/command.json"
+        ]
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 2,
+        "checkId": "CODESOURCE_PRE_READ",
+        "owner": "A1",
+        "onMismatch": "CODESOURCE_PRE_INVALID",
+        "onUnavailable": "CODESOURCE_PRE_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 3,
+        "checkId": "PROCESS_LAUNCH_OBSERVED",
+        "owner": "A1",
+        "onMismatch": "PROCESS_LAUNCH_INVALID",
+        "onUnavailable": "PROCESS_LAUNCH_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "producer/children/{childDir}/stdout",
+          "producer/children/{childDir}/stderr"
+        ]
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 4,
+        "checkId": "OUTPUT_CAPTURE_COMPLETE",
+        "owner": "A1",
+        "onMismatch": "OUTPUT_CAPTURE_INVALID",
+        "onUnavailable": "OUTPUT_CAPTURE_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 5,
+        "checkId": "PROCESS_TREE_QUIESCENT",
+        "owner": "A1",
+        "onMismatch": "PROCESS_TREE_RESIDUE",
+        "onUnavailable": "PROCESS_TREE_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 6,
+        "checkId": "CODESOURCE_POST_READ",
+        "owner": "A1",
+        "onMismatch": "CODESOURCE_POST_INVALID",
+        "onUnavailable": "CODESOURCE_POST_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "producer/children/{childDir}/process-observation.json",
+          "producer/children/{childDir}/process-transcript.json"
+        ]
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 7,
+        "checkId": "RESPONSE_PROTOCOL_CLOSURE",
+        "owner": "A1",
+        "onMismatch": "RESPONSE_PROTOCOL_INVALID",
+        "onUnavailable": "RESPONSE_PROTOCOL_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "producer/children/{childDir}/response.json"
+        ]
+      },
+      {
+        "phase": "CHILD_PROCESS",
+        "ordinal": 8,
+        "checkId": "ORACLE_EXPECTATION_MATCH",
+        "owner": "A1",
+        "onMismatch": "ORACLE_MISMATCH",
+        "onUnavailable": "ORACLE_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 1,
+        "checkId": "OUTER_COMMAND_EXACT_BINDING",
+        "owner": "HARNESS",
+        "onMismatch": "OUTER_COMMAND_INVALID",
+        "onUnavailable": "OUTER_COMMAND_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "runs/{runId}/command.json"
+        ]
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 2,
+        "checkId": "OUTER_PROCESS_PROOF_CLOSURE",
+        "owner": "HARNESS",
+        "onMismatch": "OUTER_PROOF_INVALID",
+        "onUnavailable": "OUTER_PROOF_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "runs/{runId}/process-transcript.json"
+        ]
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 3,
+        "checkId": "FIVE_OUTER_RUN_CLOSURE",
+        "owner": "HARNESS",
+        "onMismatch": "OUTER_RUN_SET_INVALID",
+        "onUnavailable": "OUTER_RUN_SET_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": []
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 4,
+        "checkId": "TWELVE_SLOT_PROJECTION",
+        "owner": "HARNESS",
+        "onMismatch": "TEST_PROJECTION_INVALID",
+        "onUnavailable": "TEST_PROJECTION_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "reports/{reportId}/report.json"
+        ]
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 5,
+        "checkId": "REPORT_ROOT_SEAL",
+        "owner": "CALLER",
+        "onMismatch": "REPORT_ROOT_INVALID",
+        "onUnavailable": "REPORT_ROOT_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "reports/{reportId}/material-root.tree"
+        ]
+      },
+      {
+        "phase": "HARNESS_OUTER",
+        "ordinal": 6,
+        "checkId": "INDEPENDENT_PROOF_CALLER_BINDING",
+        "owner": "CALLER",
+        "onMismatch": "INDEPENDENT_PROOF_INVALID",
+        "onUnavailable": "INDEPENDENT_PROOF_UNAVAILABLE",
+        "exitCode": 255,
+        "allowedWritesAfterPass": [
+          "reports/{reportId}/derived/independent-proof-envelope.json"
+        ]
+      }
+    ],
+    "abnormalTransitions": [
+      {
+        "event": "CHILD_CRASH",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 255,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      },
+      {
+        "event": "CHILD_TIMEOUT",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 124,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      },
+      {
+        "event": "CHILD_CANCELLED",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 130,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      },
+      {
+        "event": "STDOUT_TRUNCATED",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 255,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      },
+      {
+        "event": "PROCESS_TREE_RESIDUE",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 255,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      },
+      {
+        "event": "CODESOURCE_OBSERVATION_UNAVAILABLE",
+        "stopRemainingSlots": true,
+        "drainStreams": true,
+        "reapProcessTree": true,
+        "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+        "remainingMaterialPolicy": "FORBIDDEN",
+        "resultPolicy": "NO_REPLAY_RESULT",
+        "stdoutPolicy": "EMPTY",
+        "a1ExitCode": 255,
+        "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT"
+      }
+    ],
+    "timeDerivation": {
+      "clockAuthority": "DIRECT_PARENT_PROCESS_OBSERVATION",
+      "childContainment": "OUTER_STARTED_AT_LE_CHILD_STARTED_AT_LE_CHILD_ENDED_AT_LE_OUTER_ENDED_AT",
+      "replayStartedAt": "MIN_CHILD_STARTED_AT",
+      "replayEndedAt": "MAX_CHILD_ENDED_AT",
+      "outerContainment": "HARNESS_STARTED_AT_LE_A1_STARTED_AT_LE_A1_ENDED_AT_LE_HARNESS_ENDED_AT",
+      "reportStartedAt": "MIN_OUTER_STARTED_AT",
+      "reportEndedAt": "MAX_OUTER_ENDED_AT"
+    }
+  }
+}

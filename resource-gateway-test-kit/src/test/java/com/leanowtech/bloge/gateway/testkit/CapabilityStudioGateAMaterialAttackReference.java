@@ -1,5 +1,8 @@
 package com.leanowtech.bloge.gateway.testkit;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -12,6 +15,7 @@ import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.dialect.Dialects;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.nio.file.FileVisitResult;
@@ -52,8 +56,15 @@ import java.util.zip.ZipOutputStream;
  */
 final class CapabilityStudioGateAMaterialAttackReference {
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper STRICT_ADMISSION_PIN_JSON = new ObjectMapper(
+            new JsonFactory().rebuild()
+                    .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+                    .build())
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private static final String MATERIAL_MANIFEST =
             "docs/acceptance/capability-studio/gate-a-wire-v1/material-attacks/manifest.json";
+    private static final String ADMISSION_TRUST_PIN =
+            "docs/acceptance/capability-studio/gate-a-wire-v1/trust-build/valid-admission-trust-pin.json";
     private static final String GUARD_CATALOG =
             "docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/guard-catalog-v1.json";
     private static final String MANIFEST_SCHEMA =
@@ -93,7 +104,12 @@ final class CapabilityStudioGateAMaterialAttackReference {
             "REAL-REVIEW-COUNT-SKIPPED-UNDERREPORT",
             "REAL-REVIEW-CANDIDATE-BINDING-DRIFT",
             "REAL-REVIEW-BODY-ENVELOPE-REVIEWED-AT-DRIFT",
-            "REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW");
+            "REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW",
+            "REAL-REVIEW-EXPIRED-REVIEW",
+            "REAL-REVIEW-EXPIRED-POLICY",
+            "REAL-REVIEW-EXPIRED-REVOCATION");
+    private static final long MAX_TREE_FILE_BYTES = 16L * 1024L * 1024L;
+    private static final long MAX_ADMISSION_TRUST_PIN_BYTES = 64L * 1024L;
 
     private CapabilityStudioGateAMaterialAttackReference() {
     }
@@ -103,23 +119,26 @@ final class CapabilityStudioGateAMaterialAttackReference {
         JsonNode catalogDocument = JSON.readTree(Files.readAllBytes(repository.resolve(GUARD_CATALOG)));
         GuardCatalog catalog = GuardCatalog.read(catalogDocument);
         JsonNode manifest = JSON.readTree(Files.readAllBytes(repository.resolve(MATERIAL_MANIFEST)));
+        Instant admissionVerificationTime = readAdmissionVerificationTime(repository);
         requireManifestSchemaCompatible(manifest);
         validateManifestShape(manifest, catalog);
 
         List<Observed> results = new ArrayList<>();
         for (JsonNode caseNode : manifest.path("cases")) {
-            results.add(runCase(repository, caseNode, catalog));
+            results.add(runCase(repository, caseNode, catalog, admissionVerificationTime));
         }
         return List.copyOf(results);
     }
 
-    private static Observed runCase(Path repository, JsonNode caseNode, GuardCatalog catalog)
+    private static Observed runCase(Path repository, JsonNode caseNode, GuardCatalog catalog,
+                                    Instant admissionVerificationTime)
             throws IOException {
         String caseId = text(caseNode, "caseId");
         String targetGuard = text(caseNode, "guardId");
         Path root = Files.createTempDirectory(Path.of("/tmp"), "rggatea-java-");
         try {
-            Material material = new Material(repository, root, caseNode, catalog);
+            Material material = new Material(repository, root, caseNode, catalog,
+                    admissionVerificationTime);
             material.copyDocuments();
             prepare(material, targetGuard);
             material.refreshActualReferences();
@@ -307,8 +326,13 @@ final class CapabilityStudioGateAMaterialAttackReference {
         ObjectNode envelope = findDocument(material, "replay-proof-envelope");
         require(envelope != null, "A1 proof envelope is absent");
         String envelopeTarget = material.documentTarget(envelope);
-        String resultTarget = envelope.path("replayResultRef").path("uri").asText();
-        String processTarget = envelope.path("producerProcessTranscriptRef").path("uri").asText();
+        String resultTarget = documentTargetByVersion(material,
+                text(envelope, "replayResultMessageVersion"));
+        String processTarget = documentTargetByVersion(material,
+                text(envelope, "producerProcessMessageVersion"));
+        envelope.with("replayResultRef").put("uri", resultTarget);
+        envelope.with("producerProcessTranscriptRef").put("uri", processTarget);
+        material.writeDocument(envelope, envelopeTarget);
         ObjectNode result = material.document(resultTarget);
         ObjectNode process = material.document(processTarget);
 
@@ -349,6 +373,19 @@ final class CapabilityStudioGateAMaterialAttackReference {
         material.declare("run-material");
         material.writeDocument(envelope, envelopeTarget);
         material.rebind(envelopeTarget, "envelopeFingerprint", A1_ENVELOPE_DOMAIN);
+    }
+
+    private static String documentTargetByVersion(Material material, String messageVersion)
+            throws IOException {
+        for (String target : material.docs.keySet()) {
+            ObjectNode document = material.document(target);
+            if (messageVersion.equals(document.path("messageVersion").asText())
+                    || messageVersion.equals(document.path("schemaVersion").asText())) {
+                return target;
+            }
+        }
+        throw new IllegalArgumentException("material document not found for messageVersion: "
+                + messageVersion);
     }
 
     private static void updateCodeSource(Material material, ObjectNode document, String field,
@@ -488,8 +525,23 @@ final class CapabilityStudioGateAMaterialAttackReference {
             }
             case "ADMISSION_EVIDENCE_ROOT_CLOSURE" -> {
                 ObjectNode result = material.document("admission/result.json");
-                String rootUri = result.path("admissionEvidenceRootRef").path("uri").asText();
-                Files.write(material.path(rootUri + "/TEST_REPORT.json"), bytes("tampered test report\n"));
+                Path root = material.path(result.path("admissionEvidenceRootRef").path("uri").asText());
+                if (caseId.endsWith("SYMLINK")) {
+                    Path outside = material.writeBytes("outside/symlink-target.txt",
+                            bytes("symlink target\n"));
+                    Path link = root.resolve(caseId.endsWith("DIRECTORY-SYMLINK")
+                            ? "linked-directory" : "linked-file.txt");
+                    if (caseId.endsWith("DIRECTORY-SYMLINK")) {
+                        Path directory = material.path("outside/symlink-target.tree");
+                        Files.createDirectories(directory);
+                        outside = directory;
+                    }
+                    Files.createSymbolicLink(link, root.relativize(outside));
+                } else {
+                    String rootUri = result.path("admissionEvidenceRootRef").path("uri").asText();
+                    Files.write(material.path(rootUri + "/TEST_REPORT.json"),
+                            bytes("tampered test report\n"));
+                }
             }
             case "CODESOURCE_INDEPENDENCE" -> material.set(
                     "process/harness.json", "/codeSource/artifactPath",
@@ -513,7 +565,7 @@ final class CapabilityStudioGateAMaterialAttackReference {
                     ObjectNode body = material.document("review/body.json");
                     body.put("reviewedAt", "2026-08-21T10:30:00Z");
                     material.writeDocument(body, "review/body.json");
-                    signReview(material, "baseline");
+                    signReview(material, "body-envelope-reviewed-at-drift");
                 } else if (caseId.equals("REAL-REVIEW-REVOCATION-ISSUED-AFTER-REVIEW")) {
                     ObjectNode revocation = findDocument(material, "revocation-snapshot");
                     require(revocation != null, "Reviewer revocation snapshot is absent");
@@ -524,6 +576,12 @@ final class CapabilityStudioGateAMaterialAttackReference {
                             "RG-CS-REVIEWER-REVOCATION-SNAPSHOT-v1"));
                     refreshReviewerMaterial(material);
                     signReview(material, "baseline");
+                } else if (caseId.equals("REAL-REVIEW-EXPIRED-REVIEW")) {
+                    signReview(material, "expired-review");
+                } else if (caseId.equals("REAL-REVIEW-EXPIRED-POLICY")) {
+                    signReview(material, "expired-policy");
+                } else if (caseId.equals("REAL-REVIEW-EXPIRED-REVOCATION")) {
+                    signReview(material, "expired-revocation");
                 } else {
                     ObjectNode envelope = material.document("review/envelope.json");
                     switch (caseId) {
@@ -664,8 +722,13 @@ final class CapabilityStudioGateAMaterialAttackReference {
             if (root == null) {
                 root = material.path("admission-evidence");
             }
-            boolean closed = root != null && Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)
-                    && rootRef.path("fingerprint").equals(treeFingerprint(root, ADMISSION_TREE_DOMAIN));
+            boolean closed = false;
+            try {
+                closed = root != null && Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)
+                        && rootRef.path("fingerprint").equals(treeFingerprint(root, ADMISSION_TREE_DOMAIN));
+            } catch (IOException | RuntimeException rejected) {
+                // A real filesystem rejection is the observed closure failure.
+            }
             return observed(catalog, guard, closed,
                     "ADMISSION_EVIDENCE_ROOT_CLOSURE", 2);
         }
@@ -820,6 +883,11 @@ final class CapabilityStudioGateAMaterialAttackReference {
 
     private static void signReview(Material material, String mode) throws IOException {
         ObjectNode body = material.document("review/body.json");
+        ObjectNode envelope = material.document("review/envelope.json");
+        if (!mode.equals("body-envelope-reviewed-at-drift")) {
+            body.put("reviewedAt", "2026-08-21T09:30:00Z");
+            envelope.put("reviewedAt", "2026-08-21T09:30:00Z");
+        }
         switch (mode) {
             case "check-mismatch" -> {
                 // The check status is changed below after the common fixture preparation.
@@ -845,6 +913,26 @@ final class CapabilityStudioGateAMaterialAttackReference {
                     ((ObjectNode) body.path("findings").get(0)).put("severity", "P1");
             case "underreport-skipped-count" ->
                     ((ObjectNode) body.path("reviewChecks").get(1)).put("status", "SKIPPED");
+            case "expired-review", "expired-policy", "expired-revocation" -> {
+                body.put("reviewedAt", "2026-08-21T09:00:00Z");
+                envelope.put("reviewedAt", "2026-08-21T09:00:00Z");
+                envelope.put("validUntil", "2026-08-21T09:31:00Z");
+                if (mode.equals("expired-policy")) {
+                    ObjectNode policy = material.document("review/policy.json");
+                    policy.put("validUntil", "2026-08-21T09:31:00Z");
+                    material.writeBytes("review/policy.json", canonicalDocumentBytes(policy,
+                            "reviewerTrustPolicyFingerprint", "RG-CS-REVIEWER-TRUST-POLICY-v1"));
+                } else if (mode.equals("expired-revocation")) {
+                    ObjectNode revocation = findDocument(material, "revocation-snapshot");
+                    require(revocation != null, "Reviewer revocation snapshot is absent");
+                    String target = material.documentTarget(revocation);
+                    revocation.put("validUntil", "2026-08-21T09:31:00Z");
+                    material.writeBytes(target, canonicalDocumentBytes(revocation,
+                            "reviewerRevocationSnapshotFingerprint",
+                            "RG-CS-REVIEWER-REVOCATION-SNAPSHOT-v1"));
+                    refreshReviewerMaterial(material);
+                }
+            }
             default -> {
                 // Baseline and underreport both retain the one valid open P0 finding.
             }
@@ -859,7 +947,14 @@ final class CapabilityStudioGateAMaterialAttackReference {
         material.writeBytes("review/body.json", canonicalDocumentBytes(body, "reviewBodyFingerprint",
                 "RG-CS-REVIEW-BODY-v1"));
 
-        ObjectNode envelope = material.document("review/envelope.json");
+        envelope = material.document("review/envelope.json");
+        if (!mode.equals("body-envelope-reviewed-at-drift")) {
+            envelope.put("reviewedAt", body.path("reviewedAt").asText());
+        }
+        if (mode.equals("expired-review") || mode.equals("expired-policy")
+                || mode.equals("expired-revocation")) {
+            envelope.put("validUntil", "2026-08-21T09:31:00Z");
+        }
         envelope.put("openP0", body.path("openP0").asInt());
         envelope.put("openP1", body.path("openP1").asInt());
         envelope.put("skippedCount", body.path("skippedCount").asInt());
@@ -880,7 +975,7 @@ final class CapabilityStudioGateAMaterialAttackReference {
                     || !"Ed25519".equals(policy.path("signatureAlgorithm").asText())
                     || !policy.path("issuer").asText().equals(envelope.path("issuer").asText())
                     || !envelope.path("candidateRawFingerprint").equals(policy.path("candidateSubject"))
-                    || !reviewerTemporalBoundsMatch(body, envelope, policy, revocation)
+                    || !reviewerTemporalBoundsMatch(material, body, envelope, policy, revocation)
                     || !stream(policy.path("allowedAuthorities"))
                     .anyMatch(value -> value.asText().equals(envelope.path("authorityId").asText()))) {
                 return false;
@@ -943,23 +1038,98 @@ final class CapabilityStudioGateAMaterialAttackReference {
         }
     }
 
-    private static boolean reviewerTemporalBoundsMatch(ObjectNode body, ObjectNode envelope,
+    private static boolean reviewerTemporalBoundsMatch(Material material, ObjectNode body,
+                                                       ObjectNode envelope,
                                                        ObjectNode policy, ObjectNode revocation) {
+        TemporalBoundResult result = checkTemporalBounds(
+                material.admissionVerificationTime, body, envelope, policy, revocation);
+        return result.matched();
+    }
+
+    /**
+     * Canonical reviewer temporal-bounds check — a pure function with no Material dependency.
+     *
+     * <p>Returns a result that always has either {@code matched == true} or a non-null
+     * {@code failureReason}.  Null explicit parameters are handled as explicit failures
+     * (not NPE); only JSON parse errors of individual timestamp fields escape as
+     * {@code matched=false}.</p>
+     */
+    record TemporalBoundResult(boolean matched, String failureReason) {
+    }
+
+    /**
+     * Pure temporal-bounds predicate.
+     *
+     * <p>Fails explicitly (never NPE) if {@code admissionTime}, {@code body},
+     * {@code envelope}, or {@code policy} is null.  Fails if {@code revocation} is null.
+     * Fails if {@code body.reviewedAt != envelope.reviewedAt}.  On success all twelve
+     * inequality checks across policy, envelope, and revocation must hold simultaneously.</p>
+     */
+    static TemporalBoundResult checkTemporalBounds(Instant admissionTime,
+                                                   ObjectNode body,
+                                                   ObjectNode envelope,
+                                                   ObjectNode policy,
+                                                   ObjectNode revocation) {
+        if (admissionTime == null) {
+            return new TemporalBoundResult(false, "admissionTime is null");
+        }
+        if (body == null) {
+            return new TemporalBoundResult(false, "body is null");
+        }
+        if (envelope == null) {
+            return new TemporalBoundResult(false, "envelope is null");
+        }
+        if (policy == null) {
+            return new TemporalBoundResult(false, "policy is null");
+        }
+        if (revocation == null) {
+            return new TemporalBoundResult(false, "revocation is null");
+        }
+        if (!body.path("reviewedAt").equals(envelope.path("reviewedAt"))) {
+            return new TemporalBoundResult(false, "body.reviewedAt != envelope.reviewedAt");
+        }
         try {
-            if (revocation == null
-                    || !body.path("reviewedAt").equals(envelope.path("reviewedAt"))) {
-                return false;
-            }
             Instant reviewedAt = Instant.parse(envelope.path("reviewedAt").asText());
             Instant envelopeValidUntil = Instant.parse(envelope.path("validUntil").asText());
-            return !reviewedAt.isBefore(Instant.parse(policy.path("notBefore").asText()))
-                    && !reviewedAt.isAfter(envelopeValidUntil)
-                    && !envelopeValidUntil.isAfter(Instant.parse(policy.path("validUntil").asText()))
-                    && !envelopeValidUntil.isAfter(Instant.parse(revocation.path("validUntil").asText()))
-                    && !reviewedAt.isBefore(Instant.parse(revocation.path("issuedAt").asText()))
-                    && !reviewedAt.isAfter(Instant.parse(revocation.path("validUntil").asText()));
-        } catch (RuntimeException failure) {
-            return false;
+            Instant policyNotBefore = Instant.parse(policy.path("notBefore").asText());
+            Instant policyValidUntil = Instant.parse(policy.path("validUntil").asText());
+            Instant revocationIssuedAt = Instant.parse(revocation.path("issuedAt").asText());
+            Instant revocationValidUntil = Instant.parse(revocation.path("validUntil").asText());
+
+            if (policyNotBefore.isAfter(admissionTime))
+                return new TemporalBoundResult(false,
+                        "policy.notBefore " + policyNotBefore + " is after admissionTime " + admissionTime);
+            if (policyValidUntil.isBefore(admissionTime))
+                return new TemporalBoundResult(false,
+                        "policy.validUntil " + policyValidUntil + " is before admissionTime " + admissionTime);
+            if (reviewedAt.isAfter(admissionTime))
+                return new TemporalBoundResult(false,
+                        "envelope.reviewedAt " + reviewedAt + " is after admissionTime " + admissionTime);
+            if (envelopeValidUntil.isBefore(admissionTime))
+                return new TemporalBoundResult(false,
+                        "envelope.validUntil " + envelopeValidUntil + " is before admissionTime " + admissionTime);
+            if (revocationIssuedAt.isAfter(admissionTime))
+                return new TemporalBoundResult(false,
+                        "revocation.issuedAt " + revocationIssuedAt + " is after admissionTime " + admissionTime);
+            if (revocationValidUntil.isBefore(admissionTime))
+                return new TemporalBoundResult(false,
+                        "revocation.validUntil " + revocationValidUntil + " is before admissionTime " + admissionTime);
+            if (reviewedAt.isBefore(policyNotBefore))
+                return new TemporalBoundResult(false, "reviewedAt is before policy.notBefore");
+            if (reviewedAt.isAfter(envelopeValidUntil))
+                return new TemporalBoundResult(false, "reviewedAt is after envelope.validUntil");
+            if (envelopeValidUntil.isAfter(policyValidUntil))
+                return new TemporalBoundResult(false, "envelope.validUntil is after policy.validUntil");
+            if (envelopeValidUntil.isAfter(revocationValidUntil))
+                return new TemporalBoundResult(false, "envelope.validUntil is after revocation.validUntil");
+            if (reviewedAt.isBefore(revocationIssuedAt))
+                return new TemporalBoundResult(false, "reviewedAt is before revocation.issuedAt");
+            if (reviewedAt.isAfter(revocationValidUntil))
+                return new TemporalBoundResult(false, "reviewedAt is after revocation.validUntil");
+
+            return new TemporalBoundResult(true, null);
+        } catch (IllegalArgumentException | java.time.format.DateTimeParseException failure) {
+            return new TemporalBoundResult(false, "parse error: " + failure.getMessage());
         }
     }
 
@@ -1033,22 +1203,111 @@ final class CapabilityStudioGateAMaterialAttackReference {
 
     private static ObjectNode treeFingerprint(Path root, String domain) throws IOException {
         ArrayNode entries = JSON.createArrayNode();
-        List<Path> files;
-        try (var stream = Files.walk(root)) {
-            files = stream.filter(Files::isRegularFile).sorted(Comparator.comparing(
-                    path -> root.relativize(path).toString().replace('\\', '/'))).toList();
+        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(root)) {
+            throw new IOException("tree root is not a real directory: " + root);
         }
-        for (Path file : files) {
-            ObjectNode entry = JSON.createObjectNode();
-            entry.put("relativePath", root.relativize(file).toString().replace('\\', '/'));
-            entry.put("kind", "FILE");
-            byte[] content = Files.readAllBytes(file);
-            entry.put("byteLength", content.length);
-            entry.set("rawFingerprint", rawRef(content));
-            entries.add(entry);
-        }
+        Path canonicalRoot = root.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        Set<Path> canonicalPaths = new HashSet<>();
+        canonicalPaths.add(canonicalRoot);
+        Set<String> relativePaths = new HashSet<>();
+        Set<Object> fileKeys = new HashSet<>();
+        Files.walkFileTree(root, Set.of(), Integer.MAX_VALUE, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes ignored)
+                    throws IOException {
+                if (Files.isSymbolicLink(directory)) {
+                    throw new IOException("tree contains a symbolic link: " + directory);
+                }
+                BasicFileAttributes attributes = strictAttributes(directory);
+                if (!attributes.isDirectory()) {
+                    throw new IOException("tree contains a non-directory: " + directory);
+                }
+                if (!directory.toAbsolutePath().normalize().equals(root.toAbsolutePath().normalize())) {
+                    registerCanonicalPath(directory, canonicalRoot, canonicalPaths, relativePaths);
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes ignored)
+                    throws IOException {
+                if (Files.isSymbolicLink(file)) {
+                    throw new IOException("tree contains a symbolic link: " + file);
+                }
+                BasicFileAttributes attributes = strictAttributes(file);
+                if (!attributes.isRegularFile()) {
+                    throw new IOException("tree contains a non-regular file: " + file);
+                }
+                registerCanonicalPath(file, canonicalRoot, canonicalPaths, relativePaths);
+                if (strictLinkCount(file) != 1 || attributes.fileKey() == null
+                        || !fileKeys.add(attributes.fileKey())) {
+                    throw new IOException("tree contains a hard-linked or unidentified file: " + file);
+                }
+                byte[] content = readStableBounded(file, attributes);
+                ObjectNode entry = JSON.createObjectNode();
+                entry.put("relativePath", canonicalRoot.relativize(
+                        file.toRealPath(LinkOption.NOFOLLOW_LINKS)).toString().replace('\\', '/'));
+                entry.put("kind", "FILE");
+                entry.put("byteLength", content.length);
+                entry.set("rawFingerprint", rawRef(content));
+                entries.add(entry);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
+                throw new IOException("tree walk failed: " + file, failure);
+            }
+        });
+        List<JsonNode> sorted = new ArrayList<>();
+        entries.forEach(sorted::add);
+        sorted.sort(Comparator.comparing(value -> value.path("relativePath").asText()));
+        entries.removeAll();
+        sorted.forEach(entries::add);
         return typedFingerprint("TREE_COMMITMENT", sha256Text(
                 concat(bytes(domain + "\0"), canonicalBytes(entries))));
+    }
+
+    private static BasicFileAttributes strictAttributes(Path path) throws IOException {
+        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (attributes.fileKey() == null) {
+            throw new IOException("file identity unavailable: " + path);
+        }
+        return attributes;
+    }
+
+    private static void registerCanonicalPath(Path path, Path canonicalRoot,
+                                              Set<Path> canonicalPaths,
+                                              Set<String> relativePaths) throws IOException {
+        Path canonical = path.toRealPath(LinkOption.NOFOLLOW_LINKS);
+        if (!canonical.startsWith(canonicalRoot) || canonical.equals(canonicalRoot)) {
+            throw new IOException("tree canonical path escapes root: " + path);
+        }
+        String relative = canonicalRoot.relativize(canonical).toString().replace('\\', '/');
+        if (!relativePaths.add(relative) || !canonicalPaths.add(canonical)) {
+            throw new IOException("tree contains a duplicate canonical path: " + path);
+        }
+    }
+
+    private static byte[] readStableBounded(Path file, BasicFileAttributes before)
+            throws IOException {
+        if (before.size() > MAX_TREE_FILE_BYTES) {
+            throw new IOException("tree file exceeds bounded read limit: " + file);
+        }
+        byte[] content;
+        try (InputStream input = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) {
+            content = input.readNBytes((int) MAX_TREE_FILE_BYTES + 1);
+        }
+        BasicFileAttributes after = strictAttributes(file);
+        if (!before.fileKey().equals(after.fileKey()) || before.size() != after.size()
+                || !before.lastModifiedTime().equals(after.lastModifiedTime())
+                || content.length != before.size() || content.length > MAX_TREE_FILE_BYTES
+                || strictLinkCount(file) != 1) {
+            throw new IOException("unstable tree file identity or size: " + file);
+        }
+        return content;
     }
 
     private static ObjectNode codeSourceObservation(Path file) throws IOException {
@@ -1091,6 +1350,19 @@ final class CapabilityStudioGateAMaterialAttackReference {
         } catch (IOException | UnsupportedOperationException failure) {
             return 1;
         }
+    }
+
+    private static int strictLinkCount(Path file) throws IOException {
+        Object value;
+        try {
+            value = Files.getAttribute(file, "unix:nlink", LinkOption.NOFOLLOW_LINKS);
+        } catch (UnsupportedOperationException failure) {
+            throw new IOException("hard-link identity unavailable: " + file, failure);
+        }
+        if (!(value instanceof Number number)) {
+            throw new IOException("hard-link count unavailable: " + file);
+        }
+        return number.intValue();
     }
 
     private static String posixMode(Path file) {
@@ -1798,6 +2070,30 @@ final class CapabilityStudioGateAMaterialAttackReference {
         throw new IllegalStateException("repository root not found from " + System.getProperty("user.dir"));
     }
 
+    private static Instant readAdmissionVerificationTime(Path repository) throws IOException {
+        return readAdmissionVerificationTimeForTesting(repository.resolve(ADMISSION_TRUST_PIN));
+    }
+
+    static Instant readAdmissionVerificationTimeForTesting(Path pinPath) throws IOException {
+        byte[] snapshot = CapabilityStudioBoundedFileReader.read(
+                pinPath, MAX_ADMISSION_TRUST_PIN_BYTES);
+        if (snapshot == null) {
+            throw new IOException("trusted admission pin was not a stable regular file");
+        }
+        JsonNode pin = STRICT_ADMISSION_PIN_JSON.readTree(snapshot);
+        require(pin != null && pin.isObject(),
+                "trusted admission pin must be a JSON object");
+        JsonNode context = pin.path("admissionContext");
+        JsonNode value = context.path("admissionVerificationTime");
+        require(context.isObject() && value.isTextual(),
+                "trusted admission pin has no strict verification time");
+        try {
+            return Instant.parse(value.textValue());
+        } catch (RuntimeException failure) {
+            throw new IOException("trusted admission pin verification time is invalid", failure);
+        }
+    }
+
     private static String text(JsonNode node, String field) {
         require(node.hasNonNull(field), "missing field " + field);
         return node.path(field).asText();
@@ -1946,16 +2242,19 @@ final class CapabilityStudioGateAMaterialAttackReference {
         private final Path root;
         private final JsonNode caseNode;
         private final GuardCatalog catalog;
+        private final Instant admissionVerificationTime;
         private final Map<String, Path> docs = new LinkedHashMap<>();
         private final Set<String> declaredTargets = new LinkedHashSet<>();
         private Path pinnedCodeSource;
         private Path aliasCodeSource;
 
-        private Material(Path repository, Path root, JsonNode caseNode, GuardCatalog catalog) {
+        private Material(Path repository, Path root, JsonNode caseNode, GuardCatalog catalog,
+                         Instant admissionVerificationTime) {
             this.repository = repository;
             this.root = root;
             this.caseNode = caseNode;
             this.catalog = catalog;
+            this.admissionVerificationTime = admissionVerificationTime;
         }
 
         private void copyDocuments() throws IOException {
@@ -2135,16 +2434,7 @@ final class CapabilityStudioGateAMaterialAttackReference {
         }
 
         private Path safePath(String relative) {
-            require(relative != null && !relative.isEmpty() && !relative.startsWith("/")
-                            && !relative.contains("\\"),
-                    "unsafe material reference: " + relative);
-            for (String segment : relative.split("/", -1)) {
-                require(!segment.isEmpty() && !segment.equals(".") && !segment.equals(".."),
-                        "unsafe material reference: " + relative);
-            }
-            Path resolved = root.resolve(relative).normalize();
-            require(resolved.startsWith(root), "reference escapes material root: " + relative);
-            return resolved;
+            return CapabilityStudioGateAMaterialAttackReference.safePath(root, relative);
         }
 
         private Path path(String relative) {
@@ -2159,5 +2449,151 @@ final class CapabilityStudioGateAMaterialAttackReference {
             current = current.path(tokens[index].replace("~1", "/").replace("~0", "~"));
         }
         ((ObjectNode) current).set(tokens[tokens.length - 1].replace("~1", "/").replace("~0", "~"), value);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test-only helpers for negative boundary coverage
+    // -------------------------------------------------------------------------
+
+    /**
+     * Validates the manifest shape constraints and returns normally on success.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    static void manifestShapeForTesting(Path repository) throws IOException {
+        Path catalogPath = repository.resolve(GUARD_CATALOG);
+        Path manifestPath = repository.resolve(MATERIAL_MANIFEST);
+        if (!Files.exists(catalogPath) || !Files.exists(manifestPath)) {
+            throw new IOException("required fixture files are absent");
+        }
+        JsonNode catalogDocument = JSON.readTree(Files.readAllBytes(catalogPath));
+        JsonNode manifest = JSON.readTree(Files.readAllBytes(manifestPath));
+        validateManifestShape(manifest, GuardCatalog.read(catalogDocument));
+    }
+
+    /**
+     * Validates observation refs are canonical sorted and unique.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    static boolean sortedUniqueObservationRefsForTesting(JsonNode values) {
+        return sortedUniqueObservationRefs(values);
+    }
+
+    /**
+     * Computes a tree fingerprint, throwing on any tree violation.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    static String treeFingerprintForTesting(Path root, String domain) throws IOException {
+        ObjectNode fp = treeFingerprint(root, domain);
+        return fp.path("value").asText();
+    }
+
+    /**
+     * Canonical material-path safety check.
+     *
+     * <p>The relative path must be non-null, non-empty, non-absolute, contain no backslash,
+     * no empty or "." or ".." segments, and resolve inside {@code root} after normalisation.
+     * This is the single source of truth — {@link Material#safePath} delegates here.</p>
+     */
+    /**
+     * Canonical material-path safety check — single source of truth for path validation.
+     *
+     * <p>Validates that {@code relative} is non-null, non-empty, non-absolute, contains no
+     * backslash, no empty/ "." / ".." segments, and resolves inside {@code root} after
+     * normalisation.  Throws {@link IllegalArgumentException} on any violation — the
+     * same exception type that propagates through {@link Material#safePath}.</p>
+     *
+     * @throws IllegalArgumentException if the reference is null, empty, absolute, contains
+     *         traversal segments, or escapes the material root.
+     */
+    static Path safePath(Path root, String relative) {
+        require(relative != null && !relative.isEmpty(),
+                "unsafe material reference: " + relative);
+        require(!relative.startsWith("/"),
+                "unsafe material reference: " + relative);
+        require(!relative.contains("\\"),
+                "unsafe material reference: " + relative);
+        for (String segment : relative.split("/", -1)) {
+            require(!segment.isEmpty() && !segment.equals(".") && !segment.equals(".."),
+                    "unsafe material reference: " + relative);
+        }
+        Path resolved = root.resolve(relative).normalize();
+        require(resolved.startsWith(root),
+                "reference escapes material root: " + relative);
+        return resolved;
+    }
+
+    /**
+     * Validates a relative material reference does not escape the root.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     * The reference is validated as if it were a material path inside a case: it must
+     * be a non-null, non-empty, non-absolute, path with no ".." segments and must
+     * resolve inside the given root after normalisation.
+     */
+    /**
+     * Test wrapper for {@link #safePath(Path, String)} — converts the canonical
+     * {@link IllegalArgumentException} to {@link IOException} so callers can use
+     * a single checked-exception declaration.
+     *
+     * @throws IOException wrapping the {@link IllegalArgumentException} from {@link #safePath}
+     *         when the reference is unsafe; never throws when the reference is valid.
+     */
+    static void materialSafePathForTesting(Path root, String relative) throws IOException {
+        try {
+            safePath(root, relative);
+        } catch (IllegalArgumentException failure) {
+            throw new IOException(failure.getMessage(), failure);
+        }
+    }
+
+    /**
+     * Checks reviewer temporal bounds and throws IOException on failure.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     *
+     * <p>Reads body, envelope, policy, and revocation from the review/ subdirectory and
+     * calls the same {@link #checkTemporalBounds} function that production uses.  No
+     * null placeholders are passed; every parameter is read from concrete fixture files.</p>
+     */
+    static void reviewerTemporalBoundsForTesting(Path materialRoot,
+                                               Instant admissionVerificationTime) throws IOException {
+        Path bodyPath = materialRoot.resolve("review/body.json");
+        Path envelopePath = materialRoot.resolve("review/envelope.json");
+        Path policyPath = materialRoot.resolve("review/policy.json");
+        Path revocationPath = materialRoot.resolve("review/revocation.json");
+        if (!Files.exists(bodyPath) || !Files.exists(envelopePath)
+                || !Files.exists(policyPath) || !Files.exists(revocationPath)) {
+            throw new IOException("review fixture files are absent (body, envelope, policy, or revocation missing)");
+        }
+        ObjectNode body = (ObjectNode) JSON.readTree(Files.readAllBytes(bodyPath));
+        ObjectNode envelope = (ObjectNode) JSON.readTree(Files.readAllBytes(envelopePath));
+        ObjectNode policy = (ObjectNode) JSON.readTree(Files.readAllBytes(policyPath));
+        ObjectNode revocation = (ObjectNode) JSON.readTree(Files.readAllBytes(revocationPath));
+        TemporalBoundResult result = checkTemporalBounds(
+                admissionVerificationTime, body, envelope, policy, revocation);
+        if (!result.matched()) {
+            throw new IOException("reviewer temporal bounds mismatch: " + result.failureReason()
+                    + " (admissionTime=" + admissionVerificationTime + ")");
+        }
+    }
+
+    /**
+     * Creates an ArrayNode from a list of JsonNodes for observation-ref testing.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    /**
+     * Creates an empty {@link ObjectNode} for testing.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    static ObjectNode createObjectNodeForTesting() {
+        return JSON.createObjectNode();
+    }
+
+    /**
+     * Creates an ArrayNode from a list of JsonNodes for observation-ref testing.
+     * Exposed for {@link CapabilityStudioGateAMaterialNegativeReferenceTest}.
+     */
+    static ArrayNode createArrayNodeForTesting(List<JsonNode> items) {
+        ArrayNode array = JSON.createArrayNode();
+        items.forEach(array::add);
+        return array;
     }
 }

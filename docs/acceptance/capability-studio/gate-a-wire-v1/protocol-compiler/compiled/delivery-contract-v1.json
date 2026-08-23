@@ -1,0 +1,1336 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "DELIVERY_CONTRACT",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": null,
+      "sourcePointer": "/deliverySlices"
+    }
+  ],
+  "content": [
+    {
+      "sliceId": "A1.1",
+      "owner": "CANDIDATE",
+      "modules": [
+        "resource-gateway-test-kit"
+      ],
+      "prerequisiteSliceIds": [],
+      "allowedPaths": [
+        "resource-gateway-test-kit/**"
+      ],
+      "implementationRoles": [
+        "IMPLEMENTATION_CANDIDATE"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-test-kit/pom.xml -Pgate-a-candidate -Dgate.a.slice=A1.1 clean verify"
+      ],
+      "requiredArtifacts": [],
+      "handoffArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        }
+      ],
+      "handoffGate": "Candidate role self-test command is deterministic and does not own expected outcomes.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-1-CANDIDATE-BUILD-V1",
+        "buildProfile": "gate-a-candidate",
+        "buildProperties": [
+          "gate.a.slice=A1.1"
+        ],
+        "testIds": [
+          "A1.1_CANDIDATE_ARTIFACT_SHAPE",
+          "A1.1_LEGACY_CLI_COMPATIBILITY"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-1-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-1.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "CANDIDATE_RUNTIME_CLOSURE"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "PROVIDER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "CANDIDATE_RUNTIME_CLOSURE"
+          ]
+        },
+        "sliceId": "A1.1",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": null,
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_SELF_TEST_RECEIPT",
+        "A1_EVIDENCE_RUNTIME_CLOSURE"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_SELF_TEST_RECEIPT",
+        "A1_EVIDENCE_RUNTIME_CLOSURE"
+      ]
+    },
+    {
+      "sliceId": "A1.2",
+      "owner": "PROVIDER",
+      "modules": [
+        "resource-gateway-gate-a-tck-provider"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.1"
+      ],
+      "allowedPaths": [
+        "resource-gateway-gate-a-tck-provider/**"
+      ],
+      "implementationRoles": [
+        "TCK_PROVIDER"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify"
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Provider role self-test proves the thin ServiceLoader artifact identity.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-2-PROVIDER-BUILD-V1",
+        "buildProfile": "gate-a-provider",
+        "buildProperties": [
+          "gate.a.slice=A1.2"
+        ],
+        "testIds": [
+          "A1.2_PROVIDER_ABI_BINDING",
+          "A1.2_PROVIDER_NOT_EMBEDDED"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-2-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-2.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "PROVIDED_ABI_CONTRACT"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "VERIFIER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "PROVIDED_ABI_CONTRACT"
+          ]
+        },
+        "sliceId": "A1.2",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.1",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    },
+    {
+      "sliceId": "A1.3",
+      "owner": "VERIFIER",
+      "modules": [
+        "resource-gateway-gate-a-verifier"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.1",
+        "A1.2"
+      ],
+      "allowedPaths": [
+        "resource-gateway-gate-a-verifier/**"
+      ],
+      "implementationRoles": [
+        "INDEPENDENT_VERIFIER"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-gate-a-verifier/pom.xml -Pgate-a-verifier -Dgate.a.slice=A1.3 -Dgate.a.testSet=A1_3_ROLE_PACKAGING clean verify"
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Verifier packaging and deterministic role self-test are closed.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-3-VERIFIER-PACKAGING-V1",
+        "buildProfile": "gate-a-verifier",
+        "buildProperties": [
+          "gate.a.slice=A1.3",
+          "gate.a.testSet=A1_3_ROLE_PACKAGING"
+        ],
+        "testIds": [
+          "A1.3_VERIFIER_CLOSED_JAR",
+          "A1.3_DEPENDENCY_LOCK_REBIND"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-3-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-3.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "DEPENDENCY_AUTHORITY_REBIND"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "VERIFIER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "DEPENDENCY_AUTHORITY_REBIND"
+          ]
+        },
+        "sliceId": "A1.3",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.2",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_DEPENDENCY_AUTHORITY_REBIND",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_DEPENDENCY_AUTHORITY_REBIND",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    },
+    {
+      "sliceId": "A1.4",
+      "owner": "VERIFIER",
+      "modules": [
+        "resource-gateway-gate-a-verifier"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.3"
+      ],
+      "allowedPaths": [
+        "resource-gateway-gate-a-verifier/**"
+      ],
+      "implementationRoles": [
+        "INDEPENDENT_VERIFIER"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-gate-a-verifier/pom.xml -Pgate-a-verifier -Dgate.a.slice=A1.4 -Dgate.a.testSet=A1_4_BLACK_BOX_CONFORMANCE clean verify"
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Verifier dynamic conformance remains a separate caller-owned execution.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-4-VERIFIER-CONFORMANCE-V1",
+        "buildProfile": "gate-a-verifier",
+        "buildProperties": [
+          "gate.a.slice=A1.4",
+          "gate.a.testSet=A1_4_BLACK_BOX_CONFORMANCE"
+        ],
+        "testIds": [
+          "A1.4_BLACK_BOX_CONFORMANCE",
+          "A1.4_PROCESS_BOUNDARY"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-4-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-4.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "HERMETIC_LAUNCHER_OBSERVATION"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "VERIFIER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "HERMETIC_LAUNCHER_OBSERVATION"
+          ]
+        },
+        "sliceId": "A1.4",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.3",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_HERMETIC_LAUNCHER_OBSERVATION",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_HERMETIC_LAUNCHER_OBSERVATION",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    },
+    {
+      "sliceId": "A1.5",
+      "owner": "VERIFIER",
+      "modules": [
+        "resource-gateway-gate-a-verifier"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.4"
+      ],
+      "allowedPaths": [
+        "resource-gateway-gate-a-verifier/**"
+      ],
+      "implementationRoles": [
+        "INDEPENDENT_VERIFIER"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-gate-a-verifier/pom.xml -Pgate-a-verifier -Dgate.a.slice=A1.5 -Dgate.a.testSet=A1_5_MATERIAL_CLOSURE clean verify"
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Verifier result and material implementation follows the explicit conformance contract.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-5-MATERIAL-CLOSURE-V1",
+        "buildProfile": "gate-a-verifier",
+        "buildProperties": [
+          "gate.a.slice=A1.5",
+          "gate.a.testSet=A1_5_MATERIAL_CLOSURE"
+        ],
+        "testIds": [
+          "A1.5_MATERIAL_CLOSURE",
+          "A1.5_REPLAY_EVIDENCE"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-5-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-5.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "MATERIAL_CLOSURE_EVIDENCE"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "HARNESS",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "MATERIAL_CLOSURE_EVIDENCE"
+          ]
+        },
+        "sliceId": "A1.5",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.4",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_MATERIAL_CLOSURE_EVIDENCE",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_MATERIAL_CLOSURE_EVIDENCE",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    },
+    {
+      "sliceId": "A1.6",
+      "owner": "HARNESS",
+      "modules": [
+        "resource-gateway-gate-a-conformance-harness"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.5"
+      ],
+      "allowedPaths": [
+        "resource-gateway-gate-a-conformance-harness/**"
+      ],
+      "implementationRoles": [
+        "CONFORMANCE_HARNESS"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-gate-a-conformance-harness/pom.xml -Pgate-a-harness -Dgate.a.slice=A1.6 clean verify"
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "CONFORMANCE_HARNESS",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-conformance-harness",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "CONFORMANCE_HARNESS",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-conformance-harness",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Harness role self-test is deterministic; outer execution is caller-owned.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-6-HARNESS-BUILD-V1",
+        "buildProfile": "gate-a-harness",
+        "buildProperties": [
+          "gate.a.slice=A1.6"
+        ],
+        "testIds": [
+          "A1.6_HARNESS_CLOSED_JAR",
+          "A1.6_REPORT_PROJECTION"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-6-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-6.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar",
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "HARNESS_PROOF_STRUCTURE"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "CALLER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "ROLE_SELF_TEST_RECEIPT",
+            "HARNESS_PROOF_STRUCTURE"
+          ]
+        },
+        "sliceId": "A1.6",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.5",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_HARNESS_PROOF_STRUCTURE",
+        "A1_EVIDENCE_MATERIAL_CLOSURE_EVIDENCE",
+        "A1_EVIDENCE_ARTIFACT_CLOSURE_PROOF",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_HARNESS_PROOF_STRUCTURE",
+        "A1_EVIDENCE_MATERIAL_CLOSURE_EVIDENCE",
+        "A1_EVIDENCE_ARTIFACT_CLOSURE_PROOF",
+        "A1_EVIDENCE_PROVIDED_ABI_CONTRACT",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    },
+    {
+      "sliceId": "A1.7",
+      "owner": "CALLER",
+      "modules": [
+        "resource-gateway-test-kit",
+        "resource-gateway-gate-a-tck-provider",
+        "resource-gateway-gate-a-verifier",
+        "resource-gateway-gate-a-conformance-harness",
+        "docs/acceptance/capability-studio/gate-a-wire-v1"
+      ],
+      "prerequisiteSliceIds": [
+        "A1.1",
+        "A1.2",
+        "A1.3",
+        "A1.4",
+        "A1.5",
+        "A1.6"
+      ],
+      "allowedPaths": [
+        "resource-gateway-test-kit/**",
+        "resource-gateway-gate-a-tck-provider/**",
+        "resource-gateway-gate-a-verifier/**",
+        "resource-gateway-gate-a-conformance-harness/**",
+        "docs/acceptance/capability-studio/gate-a-wire-v1/**"
+      ],
+      "implementationRoles": [
+        "IMPLEMENTATION_CANDIDATE",
+        "TCK_PROVIDER",
+        "INDEPENDENT_VERIFIER",
+        "CONFORMANCE_HARNESS"
+      ],
+      "acceptanceCommand": [
+        "mvn -f resource-gateway-test-kit/pom.xml -Pgate-a-release -Dgate.a.slice=A1.7 clean install",
+        "mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-release -Dgate.a.slice=A1.7 clean verify",
+        "mvn -f resource-gateway-gate-a-verifier/pom.xml -Pgate-a-release -Dgate.a.slice=A1.7 clean verify",
+        "mvn -f resource-gateway-gate-a-conformance-harness/pom.xml -Pgate-a-release -Dgate.a.slice=A1.7 clean verify",
+        "uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/compile-role-self-test-fixtures.py --authority docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json --output-root \"$GATE_A_RELEASE_AUTHORITY_BUNDLE_ROOT\" --target-slice-id A1.7 --role-jar IMPLEMENTATION_CANDIDATE=resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar --role-jar TCK_PROVIDER=resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar --role-jar INDEPENDENT_VERIFIER=resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar --role-jar CONFORMANCE_HARNESS=resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar",
+        "uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-release-gate.py --bundle-root \"$GATE_A_RELEASE_AUTHORITY_BUNDLE_ROOT\" --expected-bundle-root-fingerprint \"$GATE_A_RELEASE_AUTHORITY_BUNDLE_FINGERPRINT\" --launcher-observation \"$GATE_A_HERMETIC_LAUNCHER_OBSERVATION\"",
+        "uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-conformance.py --authority docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json --challenge-pin \"$GATE_A_CHALLENGE_PIN\" --challenge-input-root \"$GATE_A_CHALLENGE_INPUT_ROOT\" --output-root \"$GATE_A_RUN_MATERIAL_ROOT\" --candidate resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar --provider resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar --verifier resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar --harness resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar",
+        "uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/process-results/validate_run_material.py --root \"$GATE_A_RUN_MATERIAL_ROOT\""
+      ],
+      "requiredArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        },
+        {
+          "role": "CONFORMANCE_HARNESS",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-conformance-harness",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+        }
+      ],
+      "handoffArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        },
+        {
+          "role": "CONFORMANCE_HARNESS",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-conformance-harness",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+        }
+      ],
+      "outputArtifacts": [
+        {
+          "role": "IMPLEMENTATION_CANDIDATE",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "bloge-resource-gateway-test-kit",
+            "version": "1.0.0",
+            "classifier": "gate-a-candidate"
+          },
+          "path": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        },
+        {
+          "role": "TCK_PROVIDER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-tck-provider",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar"
+        },
+        {
+          "role": "INDEPENDENT_VERIFIER",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-verifier",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar"
+        },
+        {
+          "role": "CONFORMANCE_HARNESS",
+          "coordinate": {
+            "groupId": "com.leanowtech.bloge",
+            "artifactId": "resource-gateway-gate-a-conformance-harness",
+            "version": "1.0.0",
+            "classifier": null
+          },
+          "path": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+        }
+      ],
+      "handoffGate": "Caller compiles independent self-test fixtures, runs the four-role self-test gate, and reserves dynamic conformance for the explicit runner below.",
+      "acceptanceContract": {
+        "acceptanceId": "RG-CS-GATE-A-A1-7-RELEASE-REHEARSAL-V1",
+        "buildProfile": "gate-a-release",
+        "buildProperties": [
+          "gate.a.slice=A1.7"
+        ],
+        "testIds": [
+          "A1.7_RELEASE_ORDER",
+          "A1.7_SEALED_AUTHORITY_BUNDLE",
+          "A1.7_CONFORMANCE_HANDOFF"
+        ],
+        "receiptPath": "docs/acceptance/capability-studio/gate-a-wire-v1/receipts/a1-7-acceptance-receipt-v1.json",
+        "messageVersion": "resource-gateway.capability-studio.gate-a.slice-acceptance-receipt.a1-7.v1",
+        "requiredArtifactPaths": [
+          "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar",
+          "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+          "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+          "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar"
+        ],
+        "requiredEvidenceIds": [
+          "SEALED_AUTHORITY_BUNDLE",
+          "RELEASE_GATE_RECEIPT",
+          "CONFORMANCE_HANDOFF"
+        ],
+        "handoff": {
+          "required": true,
+          "receiver": "CALLER",
+          "receiptRequired": true,
+          "artifactPaths": [
+            "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar",
+            "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+            "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+            "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar"
+          ],
+          "evidenceIds": [
+            "SEALED_AUTHORITY_BUNDLE",
+            "RELEASE_GATE_RECEIPT",
+            "CONFORMANCE_HANDOFF"
+          ]
+        },
+        "sliceId": "A1.7",
+        "authorityRevision": 1,
+        "authorityRawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-PROTOCOL-AUTHORITY-v1",
+          "source": "THIS_AUTHORITY_EXACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "sourceTreeCommitment": {
+          "kind": "TREE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SOURCE-TREE-v1",
+          "source": "CALLER_PINNED_SOURCE_TREE",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "toolchainIdentityFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-TOOLCHAIN-RUNTIME-v1",
+          "source": "REQUIRED_EXTERNAL_TOOLCHAIN_PIN",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_UNTIL_EXTERNAL_PIN"
+        },
+        "buildInvocationId": {
+          "mode": "CALLER_ISSUED",
+          "pattern": "^RG-CS-BUILD-[A-Z0-9-]{8,64}$",
+          "uniquePerInvocation": true
+        },
+        "predecessorReceiptFingerprint": {
+          "mode": "REQUIRED",
+          "sourceSliceId": "A1.6",
+          "source": "PREDECESSOR_ACCEPTANCE_RECEIPT"
+        },
+        "artifactAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ARTIFACTS-v1",
+          "source": "REQUIRED_ARTIFACT_RAW_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "evidenceAggregate": {
+          "kind": "AGGREGATE_COMMITMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-EVIDENCE-v1",
+          "source": "REQUIRED_EVIDENCE_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        },
+        "receiptFingerprint": {
+          "kind": "CANONICAL_DOCUMENT",
+          "algorithm": "SHA-256",
+          "domain": "RG-CS-GATE-A-SLICE-ACCEPTANCE-RECEIPT-v1",
+          "source": "THIS_RECEIPT_EXACT_BYTES",
+          "value": null,
+          "selfNullPolicy": "VALUE_NULL_DURING_HASH"
+        }
+      },
+      "requiredEvidenceIds": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_SEALED_AUTHORITY_BUNDLE",
+        "A1_EVIDENCE_RELEASE_GATE_RECEIPT",
+        "A1_EVIDENCE_CONFORMANCE_HANDOFF",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ],
+      "evidenceContractRefs": [
+        "A1_EVIDENCE_PROTOCOL_COMPILATION_MANIFEST",
+        "A1_EVIDENCE_PACKAGED_SCHEMA_SET",
+        "A1_EVIDENCE_SEALED_AUTHORITY_BUNDLE",
+        "A1_EVIDENCE_RELEASE_GATE_RECEIPT",
+        "A1_EVIDENCE_CONFORMANCE_HANDOFF",
+        "A1_EVIDENCE_PROVIDER_MATERIALIZATION"
+      ]
+    }
+  ]
+}

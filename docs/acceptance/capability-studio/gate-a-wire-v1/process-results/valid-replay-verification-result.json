@@ -1,944 +1,952 @@
 {
-  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
-  "resultId": "A1-REPLAY-DEMO-001",
-  "gateRevision": 1,
+  "candidateCodeSource": {
+    "artifactPath": "/opt/gate-a/candidate.jar",
+    "fileKey": "dev:1:ino:1501",
+    "fileSize": 1048576,
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+    }
+  },
   "challengeTrustPinRawFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",
-    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
   },
-  "candidateCodeSource": {
-    "artifactPath": "/opt/gate-a/candidate.jar",
+  "endedAt": "2026-08-21T10:02:00Z",
+  "failedCount": 0,
+  "gateRevision": 1,
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
+  "passedCount": 9,
+  "reasonCode": "A1_REPLAY_VERIFIED",
+  "registryRef": {
     "rawFingerprint": {
-      "kind": "RAW_BYTES",
       "algorithm": "SHA-256",
-      "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    },
-    "fileSize": 1048576,
-    "fileKey": "dev:1:ino:1501"
-  },
-  "verifierCodeSource": {
-    "artifactPath": "/opt/gate-a/verifier.jar",
-    "rawFingerprint": {
       "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:1616161616161616161616161616161616161616161616161616161616161616"
+      "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
     },
-    "fileSize": 1048576,
-    "fileKey": "dev:1:ino:1601"
+    "uri": "registries/verifier.json"
   },
   "replayProfileRef": {
-    "uri": "profiles/replay.json",
     "rawFingerprint": {
       "kind": "RAW_BYTES",
       "algorithm": "SHA-256",
-      "value": "sha256:2424242424242424242424242424242424242424242424242424242424242424"
-    }
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+    },
+    "uri": "profiles/replay.json"
   },
-  "tckDefinitionRef": {
-    "uri": "tck/gate-a-tck-v1.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:2727272727272727272727272727272727272727272727272727272727272727"
-    }
-  },
-  "registryRef": {
-    "uri": "registries/verifier.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
-    }
-  },
-  "testRuns": [
-    {
-      "testId": "PLACEHOLDER_REJECTED",
-      "expectedMechanism": "PLACEHOLDER_TYPED_EVIDENCE",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-01.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:4343434343434343434343434343434343434343434343434343434343434343"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-01.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-01.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:4545454545454545454545454545454545454545454545454545454545454545"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:4343434343434343434343434343434343434343434343434343434343434343"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
-      },
-      "processExitCode": 2,
-      "observedTerminal": "INVALID",
-      "closedReasonCode": "PLACEHOLDER_REJECTED",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:4646464646464646464646464646464646464646464646464646464646464646"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:4747474747474747474747474747474747474747474747474747474747474747"
-      },
-      "startedAt": "2026-08-21T10:00:01Z",
-      "endedAt": "2026-08-21T10:00:02Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:4848484848484848484848484848484848484848484848484848484848484848"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "PLACEHOLDER",
-      "expectedTerminal": "INVALID",
-      "expectedExitCode": 2,
-      "expectedReasonCode": "PLACEHOLDER_REJECTED"
-    },
-    {
-      "testId": "WRONG_KIND_REJECTED",
-      "expectedMechanism": "KIND_ROLE_MISMATCH",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-02.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:4949494949494949494949494949494949494949494949494949494949494949"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-02.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-02.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5151515151515151515151515151515151515151515151515151515151515151"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:4949494949494949494949494949494949494949494949494949494949494949"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:5050505050505050505050505050505050505050505050505050505050505050"
-      },
-      "processExitCode": 2,
-      "observedTerminal": "INVALID",
-      "closedReasonCode": "WRONG_KIND",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:5252525252525252525252525252525252525252525252525252525252525252"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:5353535353535353535353535353535353535353535353535353535353535353"
-      },
-      "startedAt": "2026-08-21T10:00:03Z",
-      "endedAt": "2026-08-21T10:00:04Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:5454545454545454545454545454545454545454545454545454545454545454"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "WRONG_KIND",
-      "expectedTerminal": "INVALID",
-      "expectedExitCode": 2,
-      "expectedReasonCode": "WRONG_KIND"
-    },
-    {
-      "testId": "WRONG_VERIFIER_REVISION_REJECTED",
-      "expectedMechanism": "VERIFIER_REVISION_MISMATCH",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-03.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-03.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5656565656565656565656565656565656565656565656565656565656565656"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-03.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5757575757575757575757575757575757575757575757575757575757575757"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:5656565656565656565656565656565656565656565656565656565656565656"
-      },
-      "processExitCode": 2,
-      "observedTerminal": "INVALID",
-      "closedReasonCode": "WRONG_VERIFIER_REVISION",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:5858585858585858585858585858585858585858585858585858585858585858"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:5959595959595959595959595959595959595959595959595959595959595959"
-      },
-      "startedAt": "2026-08-21T10:00:05Z",
-      "endedAt": "2026-08-21T10:00:06Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:6060606060606060606060606060606060606060606060606060606060606060"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "WRONG_VERIFIER_REVISION",
-      "expectedTerminal": "INVALID",
-      "expectedExitCode": 2,
-      "expectedReasonCode": "WRONG_VERIFIER_REVISION"
-    },
-    {
-      "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
-      "expectedMechanism": "COMPLETE_AUTHORITY",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-07.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:7979797979797979797979797979797979797979797979797979797979797979"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-07.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:8080808080808080808080808080808080808080808080808080808080808080"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-07.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:8181818181818181818181818181818181818181818181818181818181818181"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:7979797979797979797979797979797979797979797979797979797979797979"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:8080808080808080808080808080808080808080808080808080808080808080"
-      },
-      "processExitCode": 0,
-      "observedTerminal": "ACCEPTED",
-      "closedReasonCode": "LEGACY_AUTHORITY_COMPLETE",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8282828282828282828282828282828282828282828282828282828282828282"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8383838383838383838383838383838383838383838383838383838383838383"
-      },
-      "startedAt": "2026-08-21T10:00:13Z",
-      "endedAt": "2026-08-21T10:00:14Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8484848484848484848484848484848484848484848484848484848484848484"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "NONE",
-      "expectedTerminal": "ACCEPTED",
-      "expectedExitCode": 0,
-      "expectedReasonCode": "LEGACY_AUTHORITY_COMPLETE"
-    },
-    {
-      "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
-      "expectedMechanism": "MISSING_STORE_AUTHORITY",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-08.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:8585858585858585858585858585858585858585858585858585858585858585"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-08.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:8686868686868686868686868686868686868686868686868686868686868686"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-08.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:8787878787878787878787878787878787878787878787878787878787878787"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:8585858585858585858585858585858585858585858585858585858585858585"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:8686868686868686868686868686868686868686868686868686868686868686"
-      },
-      "processExitCode": 3,
-      "observedTerminal": "NOT_ACCEPTED",
-      "closedReasonCode": "MISSING_STORE",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8989898989898989898989898989898989898989898989898989898989898989"
-      },
-      "startedAt": "2026-08-21T10:00:15Z",
-      "endedAt": "2026-08-21T10:00:16Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:9090909090909090909090909090909090909090909090909090909090909090"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "MISSING_STORE",
-      "expectedTerminal": "NOT_ACCEPTED",
-      "expectedExitCode": 3,
-      "expectedReasonCode": "MISSING_STORE"
-    },
-    {
-      "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
-      "expectedMechanism": "MISSING_OWNER_AUTHORITY",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-09.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9191919191919191919191919191919191919191919191919191919191919191"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-09.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9292929292929292929292929292929292929292929292929292929292929292"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-09.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9393939393939393939393939393939393939393939393939393939393939393"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:9191919191919191919191919191919191919191919191919191919191919191"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:9292929292929292929292929292929292929292929292929292929292929292"
-      },
-      "processExitCode": 3,
-      "observedTerminal": "NOT_ACCEPTED",
-      "closedReasonCode": "MISSING_OWNER",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:9494949494949494949494949494949494949494949494949494949494949494"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:9595959595959595959595959595959595959595959595959595959595959595"
-      },
-      "startedAt": "2026-08-21T10:00:17Z",
-      "endedAt": "2026-08-21T10:00:18Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:9696969696969696969696969696969696969696969696969696969696969696"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "MISSING_OWNER",
-      "expectedTerminal": "NOT_ACCEPTED",
-      "expectedExitCode": 3,
-      "expectedReasonCode": "MISSING_OWNER"
-    },
-    {
-      "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
-      "expectedMechanism": "MISSING_TARGET_AUTHORITY",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-10.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9797979797979797979797979797979797979797979797979797979797979797"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-10.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9898989898989898989898989898989898989898989898989898989898989898"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-10.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:9797979797979797979797979797979797979797979797979797979797979797"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:9898989898989898989898989898989898989898989898989898989898989898"
-      },
-      "processExitCode": 3,
-      "observedTerminal": "NOT_ACCEPTED",
-      "closedReasonCode": "MISSING_TARGET",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-      },
-      "startedAt": "2026-08-21T10:00:19Z",
-      "endedAt": "2026-08-21T10:00:20Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "MISSING_TARGET",
-      "expectedTerminal": "NOT_ACCEPTED",
-      "expectedExitCode": 3,
-      "expectedReasonCode": "MISSING_TARGET"
-    },
-    {
-      "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
-      "expectedMechanism": "MANIFEST_IDENTITY_DRIFT",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-11.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-11.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-11.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
-      },
-      "processExitCode": 2,
-      "observedTerminal": "INVALID",
-      "closedReasonCode": "MANIFEST_IDENTITY_DRIFT",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
-      },
-      "startedAt": "2026-08-21T10:00:21Z",
-      "endedAt": "2026-08-21T10:00:22Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "MANIFEST_IDENTITY_DRIFT",
-      "expectedTerminal": "INVALID",
-      "expectedExitCode": 2,
-      "expectedReasonCode": "MANIFEST_IDENTITY_DRIFT"
-    },
-    {
-      "testId": "HONEST_INCOMPLETE_ACCEPTED",
-      "expectedMechanism": "HONEST_INCOMPLETE",
-      "targetArtifactRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-      },
-      "inputPinRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
-      },
-      "commandRecordRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/command.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-        }
-      },
-      "requestRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/request-12.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
-        }
-      },
-      "responseRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/response-12.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111"
-        }
-      },
-      "processTranscriptRef": {
-        "uri": "run-material/runs/RUN-A1-NORMAL-001/transcript-12.json",
-        "rawFingerprint": {
-          "kind": "RAW_BYTES",
-          "algorithm": "SHA-256",
-          "value": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
-        }
-      },
-      "derivedPinRef": null,
-      "derivedVerifierArtifactRef": null,
-      "derivedCandidateArtifactRef": null,
-      "commandFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:0101010101010101010101010101010101010101010101010101010101010101"
-      },
-      "requestFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
-      },
-      "responseFingerprint": {
-        "kind": "CANONICAL_DOCUMENT",
-        "algorithm": "SHA-256",
-        "value": "sha256:aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111"
-      },
-      "processExitCode": 4,
-      "observedTerminal": "INCOMPLETE",
-      "closedReasonCode": "HONEST_INCOMPLETE",
-      "stdoutRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1313131313131313131313131313131313131313131313131313131313131313"
-      },
-      "stderrRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1414141414141414141414141414141414141414141414141414141414141414"
-      },
-      "startedAt": "2026-08-21T10:00:23Z",
-      "endedAt": "2026-08-21T10:00:24Z",
-      "timedOut": false,
-      "cancelled": false,
-      "transcriptRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1515151515151515151515151515151515151515151515151515151515151515"
-      },
-      "harnessRawFingerprint": {
-        "kind": "RAW_BYTES",
-        "algorithm": "SHA-256",
-        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
-      },
-      "status": "PASS",
-      "skipped": false,
-      "mutationVector": "NONE",
-      "expectedTerminal": "INCOMPLETE",
-      "expectedExitCode": 4,
-      "expectedReasonCode": "HONEST_INCOMPLETE"
-    }
-  ],
-  "testCount": 9,
-  "passedCount": 9,
-  "failedCount": 0,
-  "skippedCount": 0,
-  "scratchBeforeCount": 0,
-  "scratchAfterCount": 0,
-  "terminal": "VERIFIED",
-  "reasonCode": "A1_REPLAY_VERIFIED",
-  "startedAt": "2026-08-21T10:00:00Z",
-  "endedAt": "2026-08-21T10:00:18Z",
   "resultFingerprint": {
     "kind": "CANONICAL_DOCUMENT",
     "algorithm": "SHA-256",
-    "value": "sha256:9595959595959595959595959595959595959595959595959595959595959595"
+    "value": "sha256:f969bf0928869eec9ec6faa692989899d223b2bc324201c8ed1e3e2cafb83bbf"
+  },
+  "resultId": "A1-REPLAY-GENERATED-VERIFIED-001",
+  "scratchAfterCount": 0,
+  "scratchBeforeCount": 0,
+  "skippedCount": 0,
+  "startedAt": "2026-08-21T10:00:00Z",
+  "tckDefinitionRef": {
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:000000000000000000000000000000000000000000000000000000000000000a"
+    },
+    "uri": "tck/gate-a-tck-v1.json"
+  },
+  "terminal": "VERIFIED",
+  "testCount": 9,
+  "testRuns": [
+    {
+      "cancelled": false,
+      "closedReasonCode": "PLACEHOLDER_REJECTED",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:757cce96493d50017905b3228d4b66f8a6421e6693abd3a7756133d1c426c324"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/01-placeholder-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:936e42edc52dba6074da132f89711039becf6010c50c3b4cba40bb13ae49d93e"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:02Z",
+      "expectedExitCode": 2,
+      "expectedMechanism": "PLACEHOLDER_TYPED_EVIDENCE",
+      "expectedReasonCode": "PLACEHOLDER_REJECTED",
+      "expectedTerminal": "INVALID",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "PLACEHOLDER",
+      "observedTerminal": "INVALID",
+      "processExitCode": 2,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/01-placeholder-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:b2a5e7e9cb4e005ff5f82526e4d9754234e997f51f2bcb113a2928a84352511a"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:7243e7caf10edc9ef473d0fc5e8fea1727ee32573f195d87e6c4058be5cb7927"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/01-placeholder-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:947b65de31f4846da672d02aad61781f6a815b4cb51f0048c6177970687b4cad"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:250bee5afa97daa7e1f3b22ee1210b82ad12b23a0d650821bbf11960d7aaea1a"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/01-placeholder-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:b646c7c8372146d6942967f2c2e832b280e737222d84c2d01304efd09992e905"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:01Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:19dc9d1bff396ffc246779fd1ca74bce3f975d513026a943897bb0d0424eb42e"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "PLACEHOLDER_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:b2a5e7e9cb4e005ff5f82526e4d9754234e997f51f2bcb113a2928a84352511a"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "WRONG_KIND",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:b22f2f8e2136404ea6f7dd4a538df8ae3bd339e28de8728041caccc1403b7029"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/02-wrong-kind-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:a8a189a431dadb615172e1bda9ce582a6499258dc8ceb94692c4686f1028fa5d"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:04Z",
+      "expectedExitCode": 2,
+      "expectedMechanism": "KIND_ROLE_MISMATCH",
+      "expectedReasonCode": "WRONG_KIND",
+      "expectedTerminal": "INVALID",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "WRONG_KIND",
+      "observedTerminal": "INVALID",
+      "processExitCode": 2,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/02-wrong-kind-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:f888a643b7433c1bed07ad5932a66ff708bb72a56192d43d7e7b493d7f7d1528"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:01f69f0d9a1ce9b0e2aaa162b33c889564d4cab7d4bf0c3fe51cc60ed58b448a"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/02-wrong-kind-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:4134a686cb09c29c4c6f3fb931a2ccb0418afdbb2204e23a2167f2a759f5284f"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:e6599f810f9dee6f604ecbad9fc62517782eb2dee9467909d17e2a7b06656788"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/02-wrong-kind-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:493febddd68ab7d3de482c54940b19e333205a4a07bc51bdb9f12484eb1d3782"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:03Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:76bd77075a2a08071530200a949362805fd33e8698a0a40c7b38e143396402b2"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "WRONG_KIND_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:f888a643b7433c1bed07ad5932a66ff708bb72a56192d43d7e7b493d7f7d1528"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "WRONG_VERIFIER_REVISION",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:755bee062c04ccfcccec7133496aa92786127cdcac7f7b1132e008aa90b0f152"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/03-wrong-verifier-revision-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:98f8e68afbedeecd6bc92257b00e0379f2a3d59b45cb905d971c1205d1954c4c"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:06Z",
+      "expectedExitCode": 2,
+      "expectedMechanism": "VERIFIER_REVISION_MISMATCH",
+      "expectedReasonCode": "WRONG_VERIFIER_REVISION",
+      "expectedTerminal": "INVALID",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "WRONG_VERIFIER_REVISION",
+      "observedTerminal": "INVALID",
+      "processExitCode": 2,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/03-wrong-verifier-revision-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:dd8e1fd45ea16f1e1ca4539461295de187be65eb8de9cd4ba550320c8973a6aa"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:c16839349d21637cb029f5063ed3688e8fd980c10cd377d226cb77efbbc07af4"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/03-wrong-verifier-revision-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:7917b99cc56ae80483480b703dddf3b5a81db7744cd8d30ccfd0441d5cefc83f"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:59c3c5b0bab96d28baadd17564447dda913acf411eb63f24084030883022aa53"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/03-wrong-verifier-revision-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:03bfedb32dc567948e5bc69c5c9db3e79e2627eec246433eaac7a42c9874181e"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:05Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:2d5f407cb9674d15961dc621bb3643c57059a74d0681e86ff3dfc874af7b4b14"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "WRONG_VERIFIER_REVISION_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:dd8e1fd45ea16f1e1ca4539461295de187be65eb8de9cd4ba550320c8973a6aa"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "LEGACY_AUTHORITY_COMPLETE",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:76bee90830bb0e9a32d9a165f27cf4c64e1a58c2155749403f866108041d7318"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/04-legacy-accepted-complete-authority/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:82a3ff40b6280e96263018e6e1940ac99b9e19dd90f97ade8f01da269f8f29d2"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:14Z",
+      "expectedExitCode": 0,
+      "expectedMechanism": "COMPLETE_AUTHORITY",
+      "expectedReasonCode": "LEGACY_AUTHORITY_COMPLETE",
+      "expectedTerminal": "ACCEPTED",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "NONE",
+      "observedTerminal": "ACCEPTED",
+      "processExitCode": 0,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/04-legacy-accepted-complete-authority/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:4d276bb049dfc0f03687d53960f95e3a14c68272b0f211cb62b2283358bd8314"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:77eea0dc6b2a2d8a4f69eed8d4ea68c5eaafd6509613689ba05fc5aa831d74bc"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/04-legacy-accepted-complete-authority/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:fee525763528a6718c3b780dc22742b2768eb293cd4215309b4439c98a77f946"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:d99bc233e94159d5707081fcbed1513830aa6a3968240579b64366b01b41fa26"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/04-legacy-accepted-complete-authority/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:790f66d16555473f7521b064fae070851bd84d90ba314177b65e3ce6e5b274b8"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:13Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:d12956e2b8b27634d91e31fd40b520439d1be451d3e4d0fe8a167ff68dc942ff"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:4d276bb049dfc0f03687d53960f95e3a14c68272b0f211cb62b2283358bd8314"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "MISSING_STORE",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:11cbbadde90b01d6bd4009e4da3aeacc3686eb1ff9919ad2035d82c17e64c2e8"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/05-legacy-accepted-missing-store-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:8fd0b9cf4fa15e821b24ac62ed982908cb3c0c259be9943ecebc598b30089486"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:16Z",
+      "expectedExitCode": 3,
+      "expectedMechanism": "MISSING_STORE_AUTHORITY",
+      "expectedReasonCode": "MISSING_STORE",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "MISSING_STORE",
+      "observedTerminal": "NOT_ACCEPTED",
+      "processExitCode": 3,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/05-legacy-accepted-missing-store-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:f20ee081eb7539dfd74e535da7d9c3b18518cb190249bd2894520eeeef39d2ee"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:9d7e59e6a6c687e36c88dcafb6808f85ccaef1c423ce4fde933803098499a818"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/05-legacy-accepted-missing-store-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:ebbb6abecfaae95a168bb39688298f7eb4d2f085e951d15bad53108f6b743c6a"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:4be0be94a536cba939227814485be8bf633aaf1b19937d611b45565674722601"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/05-legacy-accepted-missing-store-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:eae437f0db6fb4493e646c4bf3f1b460d11541e67f6751acab02ef96db73b0bf"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:15Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7810238f4464ca0f10325af2fcc0a650db6c00aebcbce29ac32d5886c95d64a1"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:f20ee081eb7539dfd74e535da7d9c3b18518cb190249bd2894520eeeef39d2ee"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "MISSING_OWNER",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:91373aa7e876410a905bb39919592004a1bf6d3cdc2e721ba52a6e6f99f1e131"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/06-legacy-accepted-missing-owner-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:f1aec9871e2a7156d2bb5e77dc68d4799f5fd4543dfc4f447796c96bb23d11e6"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:18Z",
+      "expectedExitCode": 3,
+      "expectedMechanism": "MISSING_OWNER_AUTHORITY",
+      "expectedReasonCode": "MISSING_OWNER",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "MISSING_OWNER",
+      "observedTerminal": "NOT_ACCEPTED",
+      "processExitCode": 3,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/06-legacy-accepted-missing-owner-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:bf52e2e66be24d90d3212484af841f7e387b0db97bb0629a0d56fb8ea530854d"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:4a2a8938e6765849146fb07902cb91bb760da3e6f514c92e8a0b3c7b7edd2361"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/06-legacy-accepted-missing-owner-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:a66b2911ff5850ba9ccb79b5a2edb8d4e055fc0d7f734d13f5ea27689ff1dffc"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:c4e0c2c65eca2ca784d11fdf1850ea1803fc353dd2bdb4367c4381c8acab7491"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/06-legacy-accepted-missing-owner-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:4de761c255849c1e0e623c4d2aa6258b289cf6ea8ee18233d0984e29192e197f"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:17Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:a829582f4f9e038b4eb1609dbfb6d906ace8d1e8c14925fea19889da188e8774"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:bf52e2e66be24d90d3212484af841f7e387b0db97bb0629a0d56fb8ea530854d"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "MISSING_TARGET",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:2c5d5c0437191d72a271852f63fb0f81e5d1cc45f95420b5afd31061953118b2"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/07-legacy-accepted-missing-target-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:01d3926b3cc59f75daf6bc45fa6e7a62d0ada095e2a4787d7f1f4f53ea308c15"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:20Z",
+      "expectedExitCode": 3,
+      "expectedMechanism": "MISSING_TARGET_AUTHORITY",
+      "expectedReasonCode": "MISSING_TARGET",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "MISSING_TARGET",
+      "observedTerminal": "NOT_ACCEPTED",
+      "processExitCode": 3,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/07-legacy-accepted-missing-target-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:e9749a7b57c0be7bb0b8e277c62f5832474be454100b054375d6e1c3c00cf3d4"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:49da87191ecbee1af7272decd077f82caaca87d4e3d631b89b91cecaee734ff3"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/07-legacy-accepted-missing-target-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:fd0f8f456689f7e53ba489fa7a7f93747d9fa1aab9d7910170a46eeac3157503"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:7c31a1abf8ce32658ab4b2c592e5d0ba3b384c2c44e22d5bab4baa858312cf24"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/07-legacy-accepted-missing-target-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:e0ed62d3240b37d69cca7e7be02ca452568e30d81e78044bd4e510842b750caa"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:19Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:ed54dd8d30638ca116e1f53e034c2ccbb8dc7ebd40cd8e2b39594b3b0962263b"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e9749a7b57c0be7bb0b8e277c62f5832474be454100b054375d6e1c3c00cf3d4"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "MANIFEST_IDENTITY_DRIFT",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:a4bcf4f95eb21f1ae0fe824209c52007118c1edeaff2296309fec65b0850cf7f"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/08-manifest-identity-drift-rejected/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:bc432464fb078bbfc6a3a016598df885f02b72ed77af307950bcfc93bd48fb65"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:22Z",
+      "expectedExitCode": 2,
+      "expectedMechanism": "MANIFEST_IDENTITY_DRIFT",
+      "expectedReasonCode": "MANIFEST_IDENTITY_DRIFT",
+      "expectedTerminal": "INVALID",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "MANIFEST_IDENTITY_DRIFT",
+      "observedTerminal": "INVALID",
+      "processExitCode": 2,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/08-manifest-identity-drift-rejected/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:ac0faf963839006415eaebb7144379fbcfbe0cac80610acc40344cca66acca59"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:9a1389fbb161d733e09d208f780ea13f31443c7a3b6273a56ad69159f17f0f7c"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/08-manifest-identity-drift-rejected/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:808c6b76b7a22b5e18c18167c843824dee1cf03bcf29a3ff9e8acf0d7a870622"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:933c2603ecbedfabed21cd844cd534dcb67e55301218630921f7f164bf5e7d18"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/08-manifest-identity-drift-rejected/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:79620d6b37d60a35471348f163f106c3448465c2f8361d727a5a2c7fe990ad30"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:21Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:54a78b4fe3e9d4aa0c2b11aea4cee7725b279af297e7b5fec485695b0e7a514b"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:ac0faf963839006415eaebb7144379fbcfbe0cac80610acc40344cca66acca59"
+      }
+    },
+    {
+      "cancelled": false,
+      "closedReasonCode": "HONEST_INCOMPLETE",
+      "commandFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:290b3fd0e8c83b39a9ec164291678333a0de7f9d7d4e518d1c460e924f800a61"
+      },
+      "commandRecordRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/09-honest-incomplete-accepted/command.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:44c22d524bf6b7ae646717a9ef25345537e42402063668721f2082f3ed8276b1"
+        }
+      },
+      "derivedCandidateArtifactRef": null,
+      "derivedPinRef": null,
+      "derivedVerifierArtifactRef": null,
+      "endedAt": "2026-08-21T10:00:24Z",
+      "expectedExitCode": 4,
+      "expectedMechanism": "HONEST_INCOMPLETE",
+      "expectedReasonCode": "HONEST_INCOMPLETE",
+      "expectedTerminal": "INCOMPLETE",
+      "harnessRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+      },
+      "inputPinRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+      },
+      "mutationVector": "NONE",
+      "observedTerminal": "INCOMPLETE",
+      "processExitCode": 4,
+      "processTranscriptRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/09-honest-incomplete-accepted/process-transcript.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:4883a24e3c8bdf676c3b4275d87cf6376b7ee6a7f32b4247790130529a5ff74f"
+        }
+      },
+      "requestFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:4e9f21187f75c1acb95762900e982aa7956aa1cf695bd9fbb0ba9fddca0108c9"
+      },
+      "requestRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/09-honest-incomplete-accepted/request.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:6fa5c645584cbe6912be697c5fe39987e12dd71fff0caaa3cd4306bc5b65c3eb"
+        }
+      },
+      "responseFingerprint": {
+        "kind": "CANONICAL_DOCUMENT",
+        "algorithm": "SHA-256",
+        "value": "sha256:2e19b5120d5bc2cb98ba3391ad63fa35aae8b1df27fc996e6eb1742049ecbd33"
+      },
+      "responseRef": {
+        "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/children/09-honest-incomplete-accepted/response.json",
+        "rawFingerprint": {
+          "kind": "RAW_BYTES",
+          "algorithm": "SHA-256",
+          "value": "sha256:4584e67d2308c5dc1cbfd19aa560ba7105804c602947a020d9e28858c527f4d8"
+        }
+      },
+      "skipped": false,
+      "startedAt": "2026-08-21T10:00:23Z",
+      "status": "PASS",
+      "stderrRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stdoutRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:44097f013f67270779c7d2e8881ff56e1e6d1bf6a95923404f43d3caa3e3f54d"
+      },
+      "targetArtifactRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+      },
+      "testId": "HONEST_INCOMPLETE_ACCEPTED",
+      "timedOut": false,
+      "transcriptRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:4883a24e3c8bdf676c3b4275d87cf6376b7ee6a7f32b4247790130529a5ff74f"
+      }
+    }
+  ],
+  "verifierCodeSource": {
+    "artifactPath": "/opt/gate-a/verifier.jar",
+    "fileKey": "dev:1:ino:1601",
+    "fileSize": 1048576,
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+    }
+  },
+  "providerMaterializationRef": {
+    "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/producer/provider-materialization.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:771e27317d6c9701775066500a667f4daceaeb8ba70e155d1e8a85fd0ead4118"
+    }
   }
 }

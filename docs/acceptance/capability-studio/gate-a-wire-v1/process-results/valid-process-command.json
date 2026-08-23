@@ -9,9 +9,7 @@
     "--request",
     "/tmp/request.json"
   ],
-  "environment": [
-    "LANG=C"
-  ],
+  "environment": [],
   "workingDirectory": "/tmp/gate-a",
   "commandFingerprint": {
     "kind": "CANONICAL_DOCUMENT",

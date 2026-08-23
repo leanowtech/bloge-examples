@@ -1,0 +1,61 @@
+{
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+  },
+  "closureStatus": "CLOSED",
+  "createdAt": "2026-08-21T11:59:00Z",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:654281403c9a04cf2ba7c803f43682f8bf376081eaca5f440bdd4091a5008da7"
+  },
+  "envelopeId": "A1-ENVELOPE-GENERATED-UNAVAILABLE-001",
+  "expectedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "gateRevision": 1,
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
+  "observedExitCode": 3,
+  "observedProcessState": "COMPLETED",
+  "observedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "observedTerminal": "UNAVAILABLE",
+  "producerMaterialRootRef": {
+    "uri": "run-material/runs/RUN-A1-PARENT-UNAVAILABLE-ATTACK-001/material-root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:41436c19cc439c1be1ce50098b28fe4782611da087828b94c85132100152d073"
+    }
+  },
+  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "producerProcessTranscriptRef": {
+    "uri": "run-material/runs/RUN-A1-PARENT-UNAVAILABLE-ATTACK-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:fa251cae038e79d6109b5692e8093b845b1042697c29e53591fd319b69709346"
+    }
+  },
+  "replayProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+  },
+  "replayResultMessageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
+  "replayResultRef": {
+    "uri": "run-material/runs/RUN-A1-PARENT-UNAVAILABLE-ATTACK-001/response.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:ebdae97bf67c2314081cf6a1add224456fff60ecc42f707e3185d62653ecbf7f"
+    }
+  }
+}

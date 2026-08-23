@@ -1,61 +1,61 @@
 {
-  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
-  "envelopeId": "A1-ENVELOPE-DEMO-001",
-  "gateRevision": 1,
   "challengeTrustPinRawFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",
-    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+  },
+  "closureStatus": "CLOSED",
+  "createdAt": "2026-08-21T11:59:00Z",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:050edb06f74af200c54fed1df972db2bfa23e52ea98399d4ebcc55e720d9d638"
+  },
+  "envelopeId": "A1-ENVELOPE-GENERATED-VERIFIED-001",
+  "expectedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "gateRevision": 1,
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
+  "observedExitCode": 0,
+  "observedProcessState": "COMPLETED",
+  "observedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "observedTerminal": "VERIFIED",
+  "producerMaterialRootRef": {
+    "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/material-root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:270d85f99665f3b5e530c7f188f93e8906f7b0db10367545cd67d59c2838b6cb"
+    }
+  },
+  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "producerProcessTranscriptRef": {
+    "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:2023bc47db917775a46a49bd38da10b051e517ce9f7930c8df170727c55fc46b"
+    }
   },
   "replayProfileRawFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",
-    "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
   },
-  "closureStatus": "CLOSED",
   "replayResultMessageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
-  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
   "replayResultRef": {
-    "uri": "run-material/results/a1-replay-result.json",
+    "uri": "run-material/runs/RUN-A1-REPLAY-VERIFIED-001/response.json",
     "rawFingerprint": {
       "kind": "RAW_BYTES",
       "algorithm": "SHA-256",
-      "value": "sha256:6767676767676767676767676767676767676767676767676767676767676767"
+      "value": "sha256:72f40375ccda9e83c62ed60f43de1d9d9fcbc549dadfc66b5537dcdfb18b9e04"
     }
-  },
-  "producerProcessTranscriptRef": {
-    "uri": "run-material/transcripts/a1-process.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:6868686868686868686868686868686868686868686868686868686868686868"
-    }
-  },
-  "producerMaterialRootRef": {
-    "uri": "run-material/a1.tree",
-    "fingerprint": {
-      "kind": "TREE_COMMITMENT",
-      "algorithm": "SHA-256",
-      "value": "sha256:6969696969696969696969696969696969696969696969696969696969696969"
-    }
-  },
-  "expectedProducerCodeSourceRawFingerprint": {
-    "kind": "RAW_BYTES",
-    "algorithm": "SHA-256",
-    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  },
-  "observedProducerCodeSourceRawFingerprint": {
-    "kind": "RAW_BYTES",
-    "algorithm": "SHA-256",
-    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  },
-  "observedProcessState": "COMPLETED",
-  "observedExitCode": 0,
-  "observedTerminal": "VERIFIED",
-  "createdAt": "2026-08-21T11:10:01Z",
-  "envelopeFingerprint": {
-    "kind": "CANONICAL_DOCUMENT",
-    "algorithm": "SHA-256",
-    "value": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
   }
 }

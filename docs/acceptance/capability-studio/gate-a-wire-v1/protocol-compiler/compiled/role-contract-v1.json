@@ -1,0 +1,1469 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "ROLE_CONTRACT",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": null,
+      "sourcePointer": "/roleContracts"
+    }
+  ],
+  "content": [
+    {
+      "role": "IMPLEMENTATION_CANDIDATE",
+      "buildIdentityRole": null,
+      "modulePath": "resource-gateway-test-kit",
+      "pomPath": "resource-gateway-test-kit/pom.xml",
+      "groupId": "com.leanowtech.bloge",
+      "artifactId": "bloge-resource-gateway-test-kit",
+      "packaging": "jar",
+      "mainClass": "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli",
+      "profilePath": null,
+      "registryPath": null,
+      "profileFingerprintField": null,
+      "providerEntryPath": null,
+      "providerIdentityEntryPath": null,
+      "buildCommand": [
+        "mvn -f resource-gateway-test-kit/pom.xml -Pgate-a-candidate -Dgate.a.slice=A1.1 clean verify"
+      ],
+      "blackBoxCommand": [
+        "/opt/jdk/bin/java",
+        "-cp",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli",
+        "--role-self-test",
+        "--role",
+        "IMPLEMENTATION_CANDIDATE",
+        "--authority",
+        "${FIXTURE:AUTHORITY_SNAPSHOT}",
+        "--artifact",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--fixture-set-id",
+        "GATE_A_ROLE_BLACK_BOX_V1"
+      ],
+      "runtimeDependencyAllowlist": [
+        "com.ethlo.time:itu",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-databind",
+        "com.networknt:json-schema-validator",
+        "org.opentest4j:opentest4j",
+        "org.slf4j:slf4j-api",
+        "org.slf4j:slf4j-nop"
+      ],
+      "forbiddenProjectDependencies": [
+        "resource-gateway-gate-a-verifier",
+        "resource-gateway-gate-a-conformance-harness",
+        "resource-gateway-gate-a-admission"
+      ],
+      "requiredJarEntries": [
+        "META-INF/MANIFEST.MF",
+        "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAChallengeCli.class",
+        "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
+        "META-INF/maven/com.leanowtech.bloge/bloge-resource-gateway-test-kit/pom.properties",
+        "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+        "META-INF/gate-a/projections/canonicalization-contract-v1.json",
+        "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+        "META-INF/gate-a/manifests/dependencies.json",
+        "META-INF/gate-a/protocol/gate-a-protocol-authority.json",
+        "META-INF/gate-a/manifests/classes.json",
+        "META-INF/gate-a/manifests/resources.json",
+        "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+        "META-INF/gate-a/dependencies/opentest4j-1.3.0.jar",
+        "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+        "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+        "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+        "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar"
+      ],
+      "releaseGate": "STRUCTURE_AND_BLACK_BOX_REQUIRED",
+      "artifactVersion": "1.0.0",
+      "classifier": "gate-a-candidate",
+      "artifactPath": "resource-gateway-test-kit/target/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar",
+      "launchMode": "CLASSPATH_MAIN",
+      "compileDependencyAllowlist": [
+        "com.fasterxml.jackson.core:*",
+        "com.networknt:json-schema-validator",
+        "com.ethlo.time:itu",
+        "org.slf4j:*"
+      ],
+      "blackBoxContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "expectedExitCode": 0,
+        "stdoutMessageVersion": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1",
+        "stdoutAuthority": "CALLER_PINNED_FIXTURE_ORACLE",
+        "stderrPolicy": "EMPTY",
+        "timeoutMillis": 300000,
+        "contractKind": "DETERMINISTIC_ROLE_SELF_TEST",
+        "receiptSchema": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "receiptFingerprintDomain": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1",
+        "capabilities": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "SHADED_CLOSED_JAR",
+          "CANONICALIZATION"
+        ],
+        "authorityInputPolicy": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT",
+        "artifactInputPolicy": "ACTUAL_ROLE_JAR_RAW_BYTES",
+        "profileInputPolicy": "NO_PROFILE"
+      },
+      "artifactLimits": {
+        "maxRawBytes": 16777216,
+        "maxZipEntries": 512,
+        "maxSingleEntryBytes": 8388608,
+        "maxTotalUncompressedBytes": 67108864,
+        "maxCompressionRatio": 100
+      },
+      "blackBoxFixtureContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "bindingManifestName": "fixture-bindings-v1.json",
+        "bindingManifestMessageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+        "bindingFingerprintKind": "AGGREGATE_COMMITMENT",
+        "bindingFingerprintDomain": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1",
+        "fixtureLimits": {
+          "maxBindingManifestBytes": 1048576,
+          "maxFileBytes": 8388608,
+          "maxTreeEntries": 4096,
+          "maxTreeEntryBytes": 8388608,
+          "maxTreeTotalBytes": 67108864
+        },
+        "fixtures": [
+          {
+            "name": "AUTHORITY_SNAPSHOT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "ROLE_ARTIFACT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          }
+        ],
+        "oracle": {
+          "kind": "FILE",
+          "commitmentKind": "RAW_BYTES"
+        },
+        "oracleCompilationPolicy": {
+          "mode": "CALLER_INDEPENDENT",
+          "inputs": [
+            "AUTHORITY_SNAPSHOT",
+            "ROLE_ARTIFACT",
+            "ROLE_CONTRACT"
+          ],
+          "testedRoleExecution": "FORBIDDEN"
+        }
+      },
+      "packagedProjections": [
+        {
+          "projectionId": "CANONICALIZATION_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/canonicalization-contract-v1.json"
+        }
+      ],
+      "compilationManifestEntryPath": "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+      "canonicalizationProfileEntryPath": "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+      "packagingContract": {
+        "model": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+        "classManifestEntryPath": "META-INF/gate-a/manifests/classes.json",
+        "resourceManifestEntryPath": "META-INF/gate-a/manifests/resources.json",
+        "dependencyLockManifestEntryPath": "META-INF/gate-a/manifests/dependencies.json",
+        "embeddedDependencyEntries": [
+          {
+            "lockId": "JACKSON_DATABIND_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_ANNOTATIONS_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_CORE_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "OPENTEST4J_1_3_0",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/opentest4j-1.3.0.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "ETHLO_TIME_ITU_1_14_0",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_API_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_NOP_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          }
+        ],
+        "closurePolicy": "EVERY_UNPACKED_ENTRY_REACHABLE_FROM_CLOSED_MANIFEST_GRAPH",
+        "dependencyLockAuthority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "dependencyLockManifestMode": "EXTERNAL_LOCK_IDS_ONLY",
+        "providedAbiDependencies": []
+      },
+      "buildProfile": "gate-a-candidate",
+      "legacyCompatibility": {
+        "preserve": true,
+        "previousClassifier": "cli",
+        "previousMainClass": "com.leanowtech.bloge.gateway.testkit.ResourceGatewaySuiteCli",
+        "migration": "ADD_GATE_A_CANDIDATE_WITHOUT_RENAMING_LEGACY_CLI",
+        "legacyBuildContract": "EXISTING_CLI_CLASSIFIER_REMAINS_PUBLISHED"
+      },
+      "runtimeDependencyLockIds": [
+        "JACKSON_DATABIND_2_18_2",
+        "JACKSON_ANNOTATIONS_2_18_2",
+        "JACKSON_CORE_2_18_2",
+        "OPENTEST4J_1_3_0",
+        "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+        "ETHLO_TIME_ITU_1_14_0",
+        "SLF4J_API_2_0_17",
+        "SLF4J_NOP_2_0_17"
+      ],
+      "requiredRuntimeArtifactRoles": [],
+      "visibleSchemaIds": [
+        "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+        "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+        "capability-studio-gate-a-admission-profile-v1.schema.json",
+        "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+        "capability-studio-gate-a-authority-matrix-v1.schema.json",
+        "capability-studio-gate-a-build-identity-v1.schema.json",
+        "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+        "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+        "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+        "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-class-manifest-v1.schema.json",
+        "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+        "capability-studio-gate-a-common-v1.schema.json",
+        "capability-studio-gate-a-dependency-authority-v1.schema.json",
+        "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+        "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+        "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-profile-v1.schema.json",
+        "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+        "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+        "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+        "capability-studio-gate-a-process-command-record-v1.schema.json",
+        "capability-studio-gate-a-process-observation-v1.schema.json",
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-protocol-authority-v1.schema.json",
+        "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+        "capability-studio-gate-a-protocol-projection-v1.schema.json",
+        "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+        "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+        "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+        "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+        "capability-studio-gate-a-replay-profile-v1.schema.json",
+        "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+        "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+        "capability-studio-gate-a-role-registry-v1.schema.json",
+        "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+        "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+        "capability-studio-gate-a-source-manifest-v1.schema.json",
+        "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+        "capability-studio-gate-a-tck-v1.schema.json",
+        "capability-studio-review-body-v1.schema.json",
+        "capability-studio-reviewer-authority-envelope-v1.schema.json",
+        "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+        "capability-studio-reviewer-trust-policy-v1.schema.json"
+      ]
+    },
+    {
+      "role": "TCK_PROVIDER",
+      "buildIdentityRole": null,
+      "modulePath": "resource-gateway-gate-a-tck-provider",
+      "pomPath": "resource-gateway-gate-a-tck-provider/pom.xml",
+      "groupId": "com.leanowtech.bloge",
+      "artifactId": "resource-gateway-gate-a-tck-provider",
+      "packaging": "jar",
+      "mainClass": null,
+      "profilePath": null,
+      "registryPath": null,
+      "profileFingerprintField": null,
+      "providerEntryPath": null,
+      "providerIdentityEntryPath": null,
+      "buildCommand": [
+        "mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify"
+      ],
+      "blackBoxCommand": [
+        "/opt/jdk/bin/java",
+        "-cp",
+        "${ARTIFACT:IMPLEMENTATION_CANDIDATE}:${FIXTURE:ROLE_ARTIFACT}",
+        "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli",
+        "--role-self-test",
+        "--role",
+        "TCK_PROVIDER",
+        "--authority",
+        "${FIXTURE:AUTHORITY_SNAPSHOT}",
+        "--artifact",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--fixture-set-id",
+        "GATE_A_ROLE_BLACK_BOX_V1"
+      ],
+      "runtimeDependencyAllowlist": [],
+      "forbiddenProjectDependencies": [
+        "resource-gateway-gate-a-verifier",
+        "resource-gateway-gate-a-conformance-harness",
+        "resource-gateway-gate-a-admission"
+      ],
+      "requiredJarEntries": [
+        "META-INF/MANIFEST.MF",
+        "META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider",
+        "com/leanowtech/bloge/gatetckprovider/GateATckProvider.class",
+        "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-tck-provider/pom.properties",
+        "META-INF/gate-a/manifests/dependencies.json"
+      ],
+      "releaseGate": "STRUCTURE_AND_BLACK_BOX_REQUIRED",
+      "artifactVersion": "1.0.0",
+      "classifier": null,
+      "artifactPath": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+      "launchMode": "SERVICE_LOADER_PROBE",
+      "compileDependencyAllowlist": [
+        "com.leanowtech.bloge:bloge-resource-gateway-test-kit"
+      ],
+      "blackBoxContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "expectedExitCode": 0,
+        "stdoutMessageVersion": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1",
+        "stdoutAuthority": "CALLER_PINNED_FIXTURE_ORACLE",
+        "stderrPolicy": "EMPTY",
+        "timeoutMillis": 300000,
+        "contractKind": "DETERMINISTIC_ROLE_SELF_TEST",
+        "receiptSchema": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "receiptFingerprintDomain": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1",
+        "capabilities": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "THIN_SERVICE_PROVIDER",
+          "PROVIDER_IDENTITY"
+        ],
+        "authorityInputPolicy": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT",
+        "artifactInputPolicy": "ACTUAL_ROLE_JAR_RAW_BYTES",
+        "profileInputPolicy": "NO_PROFILE"
+      },
+      "artifactLimits": {
+        "maxRawBytes": 16777216,
+        "maxZipEntries": 512,
+        "maxSingleEntryBytes": 8388608,
+        "maxTotalUncompressedBytes": 67108864,
+        "maxCompressionRatio": 100
+      },
+      "blackBoxFixtureContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "bindingManifestName": "fixture-bindings-v1.json",
+        "bindingManifestMessageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+        "bindingFingerprintKind": "AGGREGATE_COMMITMENT",
+        "bindingFingerprintDomain": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1",
+        "fixtureLimits": {
+          "maxBindingManifestBytes": 1048576,
+          "maxFileBytes": 8388608,
+          "maxTreeEntries": 4096,
+          "maxTreeEntryBytes": 8388608,
+          "maxTreeTotalBytes": 67108864
+        },
+        "fixtures": [
+          {
+            "name": "AUTHORITY_SNAPSHOT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "ROLE_ARTIFACT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          }
+        ],
+        "oracle": {
+          "kind": "FILE",
+          "commitmentKind": "RAW_BYTES"
+        },
+        "oracleCompilationPolicy": {
+          "mode": "CALLER_INDEPENDENT",
+          "inputs": [
+            "AUTHORITY_SNAPSHOT",
+            "ROLE_ARTIFACT",
+            "ROLE_CONTRACT"
+          ],
+          "testedRoleExecution": "FORBIDDEN"
+        }
+      },
+      "packagedProjections": [],
+      "compilationManifestEntryPath": null,
+      "canonicalizationProfileEntryPath": null,
+      "packagingContract": {
+        "model": "THIN_SERVICE_PROVIDER",
+        "classManifestEntryPath": null,
+        "resourceManifestEntryPath": null,
+        "dependencyLockManifestEntryPath": "META-INF/gate-a/manifests/dependencies.json",
+        "embeddedDependencyEntries": [],
+        "closurePolicy": "THIN_SERVICE_DESCRIPTOR_AND_IMPLEMENTATION_ONLY",
+        "dependencyLockAuthority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "dependencyLockManifestMode": "PROVIDED_ABI_ONLY_NO_EMBEDDED_RUNTIME",
+        "providedAbiDependencies": [
+          {
+            "providedId": "CANDIDATE_STAGE_ACCEPTANCE_SPI",
+            "candidateRole": "IMPLEMENTATION_CANDIDATE",
+            "candidateCoordinate": {
+              "groupId": "com.leanowtech.bloge",
+              "artifactId": "bloge-resource-gateway-test-kit",
+              "version": "1.0.0",
+              "classifier": "gate-a-candidate"
+            },
+            "candidateArtifactFingerprintPinField": "expectedImplementationCandidateRawFingerprint",
+            "candidateClassEntryPath": "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
+            "candidateClassFingerprintPinField": "expectedCandidateSpiClassRawFingerprint",
+            "embeddingPolicy": "PROVIDED_ABI_NOT_EMBEDDED",
+            "candidateSpiInterfaceClassEntryPath": "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
+            "candidateSpiInterfaceClass": "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider",
+            "providerServiceDescriptorEntryPath": "META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider",
+            "providerServiceDescriptorInterfaceClass": "com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider"
+          }
+        ]
+      },
+      "buildProfile": "gate-a-provider",
+      "runtimeDependencyLockIds": [],
+      "requiredRuntimeArtifactRoles": [
+        "IMPLEMENTATION_CANDIDATE"
+      ],
+      "visibleSchemaIds": [
+        "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+        "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+        "capability-studio-gate-a-admission-profile-v1.schema.json",
+        "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+        "capability-studio-gate-a-authority-matrix-v1.schema.json",
+        "capability-studio-gate-a-build-identity-v1.schema.json",
+        "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+        "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+        "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+        "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-class-manifest-v1.schema.json",
+        "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+        "capability-studio-gate-a-common-v1.schema.json",
+        "capability-studio-gate-a-dependency-authority-v1.schema.json",
+        "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+        "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+        "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-profile-v1.schema.json",
+        "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+        "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+        "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+        "capability-studio-gate-a-process-command-record-v1.schema.json",
+        "capability-studio-gate-a-process-observation-v1.schema.json",
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-protocol-authority-v1.schema.json",
+        "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+        "capability-studio-gate-a-protocol-projection-v1.schema.json",
+        "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+        "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+        "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+        "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+        "capability-studio-gate-a-replay-profile-v1.schema.json",
+        "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+        "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+        "capability-studio-gate-a-role-registry-v1.schema.json",
+        "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+        "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+        "capability-studio-gate-a-source-manifest-v1.schema.json",
+        "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+        "capability-studio-gate-a-tck-v1.schema.json",
+        "capability-studio-review-body-v1.schema.json",
+        "capability-studio-reviewer-authority-envelope-v1.schema.json",
+        "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+        "capability-studio-reviewer-trust-policy-v1.schema.json"
+      ]
+    },
+    {
+      "role": "INDEPENDENT_VERIFIER",
+      "buildIdentityRole": "INDEPENDENT_VERIFIER",
+      "modulePath": "resource-gateway-gate-a-verifier",
+      "pomPath": "resource-gateway-gate-a-verifier/pom.xml",
+      "groupId": "com.leanowtech.bloge",
+      "artifactId": "resource-gateway-gate-a-verifier",
+      "packaging": "jar",
+      "mainClass": "com.leanowtech.bloge.gateway.gateverifier.GateAIndependentVerifierCli",
+      "profilePath": "META-INF/gate-a/gate-a-replay-profile-v1.json",
+      "registryPath": "META-INF/gate-a/gate-a-replay-registry-v1.json",
+      "profileFingerprintField": "replayProfileRawFingerprint",
+      "providerEntryPath": "META-INF/gate-a/gate-a-tck-provider-v1.jar",
+      "providerIdentityEntryPath": "META-INF/gate-a/gate-a-tck-provider-identity-v1.json",
+      "buildCommand": [
+        "mvn -f resource-gateway-gate-a-verifier/pom.xml -Pgate-a-verifier -Dgate.a.slice=A1.3 clean verify"
+      ],
+      "blackBoxCommand": [
+        "/opt/jdk/bin/java",
+        "-jar",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--role-self-test",
+        "--role",
+        "INDEPENDENT_VERIFIER",
+        "--authority",
+        "${FIXTURE:AUTHORITY_SNAPSHOT}",
+        "--artifact",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--fixture-set-id",
+        "GATE_A_ROLE_BLACK_BOX_V1",
+        "--profile",
+        "${FIXTURE:PACKAGED_PROFILE}"
+      ],
+      "runtimeDependencyAllowlist": [
+        "com.ethlo.time:itu",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-databind",
+        "com.networknt:json-schema-validator",
+        "org.slf4j:slf4j-api",
+        "org.slf4j:slf4j-nop"
+      ],
+      "forbiddenProjectDependencies": [
+        "bloge-resource-gateway-test-kit",
+        "resource-gateway-examples",
+        "bloge-runtime",
+        "resource-gateway-gate-a-conformance-harness",
+        "resource-gateway-gate-a-admission"
+      ],
+      "requiredJarEntries": [
+        "META-INF/MANIFEST.MF",
+        "com/leanowtech/bloge/gateway/gateverifier/GateAIndependentVerifierCli.class",
+        "META-INF/gate-a/provider/provider.jar",
+        "META-INF/gate-a/schema-set-manifest.json",
+        "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-verifier/pom.properties",
+        "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+        "META-INF/gate-a/projections/role-contract-v1.json",
+        "META-INF/gate-a/projections/launch-contract-v1.json",
+        "META-INF/gate-a/projections/replay-vector-registry-v1.json",
+        "META-INF/gate-a/projections/check-state-machine-v1.json",
+        "META-INF/gate-a/projections/material-ownership-v1.json",
+        "META-INF/gate-a/projections/canonicalization-contract-v1.json",
+        "META-INF/gate-a/projections/authority-matrix-v1.json",
+        "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+        "META-INF/gate-a/manifests/dependencies.json",
+        "META-INF/gate-a/protocol/gate-a-protocol-authority.json",
+        "META-INF/gate-a/manifests/classes.json",
+        "META-INF/gate-a/manifests/resources.json",
+        "META-INF/gate-a/gate-a-replay-profile-v1.json",
+        "META-INF/gate-a/gate-a-replay-registry-v1.json",
+        "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+        "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+        "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+        "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+        "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar"
+      ],
+      "releaseGate": "STRUCTURE_AND_BLACK_BOX_REQUIRED",
+      "artifactVersion": "1.0.0",
+      "classifier": null,
+      "artifactPath": "resource-gateway-gate-a-verifier/target/resource-gateway-gate-a-verifier-1.0.0.jar",
+      "launchMode": "EXECUTABLE_JAR",
+      "compileDependencyAllowlist": [
+        "com.fasterxml.jackson.core:*",
+        "com.networknt:json-schema-validator",
+        "com.ethlo.time:itu",
+        "org.slf4j:*"
+      ],
+      "blackBoxContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "expectedExitCode": 0,
+        "stdoutMessageVersion": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1",
+        "stdoutAuthority": "CALLER_PINNED_FIXTURE_ORACLE",
+        "stderrPolicy": "EMPTY",
+        "timeoutMillis": 300000,
+        "contractKind": "DETERMINISTIC_ROLE_SELF_TEST",
+        "receiptSchema": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "receiptFingerprintDomain": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1",
+        "capabilities": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "SHADED_CLOSED_JAR",
+          "CANONICALIZATION",
+          "PROTOCOL_PROJECTION"
+        ],
+        "authorityInputPolicy": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT",
+        "artifactInputPolicy": "ACTUAL_ROLE_JAR_RAW_BYTES",
+        "profileInputPolicy": "PACKAGED_PROFILE_RAW_BYTES"
+      },
+      "artifactLimits": {
+        "maxRawBytes": 16777216,
+        "maxZipEntries": 512,
+        "maxSingleEntryBytes": 8388608,
+        "maxTotalUncompressedBytes": 67108864,
+        "maxCompressionRatio": 100
+      },
+      "blackBoxFixtureContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "bindingManifestName": "fixture-bindings-v1.json",
+        "bindingManifestMessageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+        "bindingFingerprintKind": "AGGREGATE_COMMITMENT",
+        "bindingFingerprintDomain": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1",
+        "fixtureLimits": {
+          "maxBindingManifestBytes": 1048576,
+          "maxFileBytes": 8388608,
+          "maxTreeEntries": 4096,
+          "maxTreeEntryBytes": 8388608,
+          "maxTreeTotalBytes": 67108864
+        },
+        "fixtures": [
+          {
+            "name": "AUTHORITY_SNAPSHOT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "ROLE_ARTIFACT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "PACKAGED_PROFILE",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          }
+        ],
+        "oracle": {
+          "kind": "FILE",
+          "commitmentKind": "RAW_BYTES"
+        },
+        "oracleCompilationPolicy": {
+          "mode": "CALLER_INDEPENDENT",
+          "inputs": [
+            "AUTHORITY_SNAPSHOT",
+            "ROLE_ARTIFACT",
+            "ROLE_CONTRACT",
+            "PACKAGED_PROFILE"
+          ],
+          "testedRoleExecution": "FORBIDDEN"
+        }
+      },
+      "packagedProjections": [
+        {
+          "projectionId": "ROLE_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/role-contract-v1.json"
+        },
+        {
+          "projectionId": "LAUNCH_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/launch-contract-v1.json"
+        },
+        {
+          "projectionId": "REPLAY_VECTOR_REGISTRY",
+          "entryPath": "META-INF/gate-a/projections/replay-vector-registry-v1.json"
+        },
+        {
+          "projectionId": "CHECK_STATE_MACHINE",
+          "entryPath": "META-INF/gate-a/projections/check-state-machine-v1.json"
+        },
+        {
+          "projectionId": "MATERIAL_OWNERSHIP",
+          "entryPath": "META-INF/gate-a/projections/material-ownership-v1.json"
+        },
+        {
+          "projectionId": "CANONICALIZATION_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/canonicalization-contract-v1.json"
+        },
+        {
+          "projectionId": "AUTHORITY_MATRIX",
+          "entryPath": "META-INF/gate-a/projections/authority-matrix-v1.json"
+        }
+      ],
+      "compilationManifestEntryPath": "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+      "canonicalizationProfileEntryPath": "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+      "packagingContract": {
+        "model": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+        "classManifestEntryPath": "META-INF/gate-a/manifests/classes.json",
+        "resourceManifestEntryPath": "META-INF/gate-a/manifests/resources.json",
+        "dependencyLockManifestEntryPath": "META-INF/gate-a/manifests/dependencies.json",
+        "embeddedDependencyEntries": [
+          {
+            "lockId": "JACKSON_DATABIND_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_ANNOTATIONS_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_CORE_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "ETHLO_TIME_ITU_1_14_0",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_API_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_NOP_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          }
+        ],
+        "closurePolicy": "EVERY_UNPACKED_ENTRY_REACHABLE_FROM_CLOSED_MANIFEST_GRAPH",
+        "dependencyLockAuthority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "dependencyLockManifestMode": "EXTERNAL_LOCK_IDS_ONLY",
+        "providedAbiDependencies": []
+      },
+      "buildProfile": "gate-a-verifier",
+      "runtimeDependencyLockIds": [
+        "JACKSON_DATABIND_2_18_2",
+        "JACKSON_ANNOTATIONS_2_18_2",
+        "JACKSON_CORE_2_18_2",
+        "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+        "ETHLO_TIME_ITU_1_14_0",
+        "SLF4J_API_2_0_17",
+        "SLF4J_NOP_2_0_17"
+      ],
+      "requiredRuntimeArtifactRoles": [],
+      "visibleSchemaIds": [
+        "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+        "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+        "capability-studio-gate-a-admission-profile-v1.schema.json",
+        "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+        "capability-studio-gate-a-authority-matrix-v1.schema.json",
+        "capability-studio-gate-a-build-identity-v1.schema.json",
+        "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+        "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+        "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+        "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-class-manifest-v1.schema.json",
+        "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+        "capability-studio-gate-a-common-v1.schema.json",
+        "capability-studio-gate-a-dependency-authority-v1.schema.json",
+        "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+        "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+        "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-profile-v1.schema.json",
+        "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+        "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+        "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+        "capability-studio-gate-a-process-command-record-v1.schema.json",
+        "capability-studio-gate-a-process-observation-v1.schema.json",
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-protocol-authority-v1.schema.json",
+        "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+        "capability-studio-gate-a-protocol-projection-v1.schema.json",
+        "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+        "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+        "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+        "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+        "capability-studio-gate-a-replay-profile-v1.schema.json",
+        "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+        "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+        "capability-studio-gate-a-role-registry-v1.schema.json",
+        "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+        "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+        "capability-studio-gate-a-source-manifest-v1.schema.json",
+        "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+        "capability-studio-gate-a-tck-v1.schema.json",
+        "capability-studio-review-body-v1.schema.json",
+        "capability-studio-reviewer-authority-envelope-v1.schema.json",
+        "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+        "capability-studio-reviewer-trust-policy-v1.schema.json"
+      ]
+    },
+    {
+      "role": "CONFORMANCE_HARNESS",
+      "buildIdentityRole": "CONFORMANCE_HARNESS",
+      "modulePath": "resource-gateway-gate-a-conformance-harness",
+      "pomPath": "resource-gateway-gate-a-conformance-harness/pom.xml",
+      "groupId": "com.leanowtech.bloge",
+      "artifactId": "resource-gateway-gate-a-conformance-harness",
+      "packaging": "jar",
+      "mainClass": "com.leanowtech.bloge.gateway.gateharness.GateAConformanceHarnessCli",
+      "profilePath": "META-INF/gate-a/gate-a-harness-profile-v1.json",
+      "registryPath": "META-INF/gate-a/gate-a-harness-registry-v1.json",
+      "profileFingerprintField": "harnessProfileRawFingerprint",
+      "providerEntryPath": null,
+      "providerIdentityEntryPath": null,
+      "buildCommand": [
+        "mvn -f resource-gateway-gate-a-conformance-harness/pom.xml -Pgate-a-harness -Dgate.a.slice=A1.6 clean verify"
+      ],
+      "blackBoxCommand": [
+        "/opt/jdk/bin/java",
+        "-jar",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--role-self-test",
+        "--role",
+        "CONFORMANCE_HARNESS",
+        "--authority",
+        "${FIXTURE:AUTHORITY_SNAPSHOT}",
+        "--artifact",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--fixture-set-id",
+        "GATE_A_ROLE_BLACK_BOX_V1",
+        "--profile",
+        "${FIXTURE:PACKAGED_PROFILE}"
+      ],
+      "runtimeDependencyAllowlist": [
+        "com.ethlo.time:itu",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-databind",
+        "com.networknt:json-schema-validator",
+        "org.slf4j:slf4j-api",
+        "org.slf4j:slf4j-nop"
+      ],
+      "forbiddenProjectDependencies": [
+        "bloge-resource-gateway-test-kit",
+        "resource-gateway-examples",
+        "bloge-runtime",
+        "resource-gateway-gate-a-verifier",
+        "resource-gateway-gate-a-admission"
+      ],
+      "requiredJarEntries": [
+        "META-INF/MANIFEST.MF",
+        "com/leanowtech/bloge/gateway/gateharness/GateAConformanceHarnessCli.class",
+        "META-INF/gate-a/schema-set-manifest.json",
+        "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-conformance-harness/pom.properties",
+        "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+        "META-INF/gate-a/projections/role-contract-v1.json",
+        "META-INF/gate-a/projections/launch-contract-v1.json",
+        "META-INF/gate-a/projections/replay-vector-registry-v1.json",
+        "META-INF/gate-a/projections/check-state-machine-v1.json",
+        "META-INF/gate-a/projections/material-ownership-v1.json",
+        "META-INF/gate-a/projections/canonicalization-contract-v1.json",
+        "META-INF/gate-a/projections/authority-matrix-v1.json",
+        "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+        "META-INF/gate-a/manifests/dependencies.json",
+        "META-INF/gate-a/protocol/gate-a-protocol-authority.json",
+        "META-INF/gate-a/manifests/classes.json",
+        "META-INF/gate-a/manifests/resources.json",
+        "META-INF/gate-a/gate-a-harness-profile-v1.json",
+        "META-INF/gate-a/gate-a-harness-registry-v1.json",
+        "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+        "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+        "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+        "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+        "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar"
+      ],
+      "releaseGate": "STRUCTURE_AND_BLACK_BOX_REQUIRED",
+      "artifactVersion": "1.0.0",
+      "classifier": null,
+      "artifactPath": "resource-gateway-gate-a-conformance-harness/target/resource-gateway-gate-a-conformance-harness-1.0.0.jar",
+      "launchMode": "EXECUTABLE_JAR",
+      "compileDependencyAllowlist": [
+        "com.fasterxml.jackson.core:*",
+        "com.networknt:json-schema-validator",
+        "com.ethlo.time:itu",
+        "org.slf4j:*"
+      ],
+      "blackBoxContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "expectedExitCode": 0,
+        "stdoutMessageVersion": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1",
+        "stdoutAuthority": "CALLER_PINNED_FIXTURE_ORACLE",
+        "stderrPolicy": "EMPTY",
+        "timeoutMillis": 300000,
+        "contractKind": "DETERMINISTIC_ROLE_SELF_TEST",
+        "receiptSchema": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "receiptFingerprintDomain": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1",
+        "capabilities": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "SHADED_CLOSED_JAR",
+          "CANONICALIZATION",
+          "PROTOCOL_PROJECTION"
+        ],
+        "authorityInputPolicy": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT",
+        "artifactInputPolicy": "ACTUAL_ROLE_JAR_RAW_BYTES",
+        "profileInputPolicy": "PACKAGED_PROFILE_RAW_BYTES"
+      },
+      "artifactLimits": {
+        "maxRawBytes": 16777216,
+        "maxZipEntries": 512,
+        "maxSingleEntryBytes": 8388608,
+        "maxTotalUncompressedBytes": 67108864,
+        "maxCompressionRatio": 100
+      },
+      "blackBoxFixtureContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "bindingManifestName": "fixture-bindings-v1.json",
+        "bindingManifestMessageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+        "bindingFingerprintKind": "AGGREGATE_COMMITMENT",
+        "bindingFingerprintDomain": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1",
+        "fixtureLimits": {
+          "maxBindingManifestBytes": 1048576,
+          "maxFileBytes": 8388608,
+          "maxTreeEntries": 4096,
+          "maxTreeEntryBytes": 8388608,
+          "maxTreeTotalBytes": 67108864
+        },
+        "fixtures": [
+          {
+            "name": "AUTHORITY_SNAPSHOT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "ROLE_ARTIFACT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "PACKAGED_PROFILE",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          }
+        ],
+        "oracle": {
+          "kind": "FILE",
+          "commitmentKind": "RAW_BYTES"
+        },
+        "oracleCompilationPolicy": {
+          "mode": "CALLER_INDEPENDENT",
+          "inputs": [
+            "AUTHORITY_SNAPSHOT",
+            "ROLE_ARTIFACT",
+            "ROLE_CONTRACT",
+            "PACKAGED_PROFILE"
+          ],
+          "testedRoleExecution": "FORBIDDEN"
+        }
+      },
+      "packagedProjections": [
+        {
+          "projectionId": "ROLE_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/role-contract-v1.json"
+        },
+        {
+          "projectionId": "LAUNCH_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/launch-contract-v1.json"
+        },
+        {
+          "projectionId": "REPLAY_VECTOR_REGISTRY",
+          "entryPath": "META-INF/gate-a/projections/replay-vector-registry-v1.json"
+        },
+        {
+          "projectionId": "CHECK_STATE_MACHINE",
+          "entryPath": "META-INF/gate-a/projections/check-state-machine-v1.json"
+        },
+        {
+          "projectionId": "MATERIAL_OWNERSHIP",
+          "entryPath": "META-INF/gate-a/projections/material-ownership-v1.json"
+        },
+        {
+          "projectionId": "CANONICALIZATION_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/canonicalization-contract-v1.json"
+        },
+        {
+          "projectionId": "AUTHORITY_MATRIX",
+          "entryPath": "META-INF/gate-a/projections/authority-matrix-v1.json"
+        }
+      ],
+      "compilationManifestEntryPath": "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+      "canonicalizationProfileEntryPath": "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+      "packagingContract": {
+        "model": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+        "classManifestEntryPath": "META-INF/gate-a/manifests/classes.json",
+        "resourceManifestEntryPath": "META-INF/gate-a/manifests/resources.json",
+        "dependencyLockManifestEntryPath": "META-INF/gate-a/manifests/dependencies.json",
+        "embeddedDependencyEntries": [
+          {
+            "lockId": "JACKSON_DATABIND_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_ANNOTATIONS_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_CORE_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "ETHLO_TIME_ITU_1_14_0",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_API_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_NOP_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          }
+        ],
+        "closurePolicy": "EVERY_UNPACKED_ENTRY_REACHABLE_FROM_CLOSED_MANIFEST_GRAPH",
+        "dependencyLockAuthority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "dependencyLockManifestMode": "EXTERNAL_LOCK_IDS_ONLY",
+        "providedAbiDependencies": []
+      },
+      "buildProfile": "gate-a-harness",
+      "runtimeDependencyLockIds": [
+        "JACKSON_DATABIND_2_18_2",
+        "JACKSON_ANNOTATIONS_2_18_2",
+        "JACKSON_CORE_2_18_2",
+        "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+        "ETHLO_TIME_ITU_1_14_0",
+        "SLF4J_API_2_0_17",
+        "SLF4J_NOP_2_0_17"
+      ],
+      "requiredRuntimeArtifactRoles": [],
+      "visibleSchemaIds": [
+        "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+        "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+        "capability-studio-gate-a-admission-profile-v1.schema.json",
+        "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+        "capability-studio-gate-a-authority-matrix-v1.schema.json",
+        "capability-studio-gate-a-build-identity-v1.schema.json",
+        "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+        "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+        "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+        "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-class-manifest-v1.schema.json",
+        "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+        "capability-studio-gate-a-common-v1.schema.json",
+        "capability-studio-gate-a-dependency-authority-v1.schema.json",
+        "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+        "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+        "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-profile-v1.schema.json",
+        "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+        "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+        "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+        "capability-studio-gate-a-process-command-record-v1.schema.json",
+        "capability-studio-gate-a-process-observation-v1.schema.json",
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-protocol-authority-v1.schema.json",
+        "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+        "capability-studio-gate-a-protocol-projection-v1.schema.json",
+        "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+        "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+        "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+        "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+        "capability-studio-gate-a-replay-profile-v1.schema.json",
+        "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+        "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+        "capability-studio-gate-a-role-registry-v1.schema.json",
+        "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+        "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+        "capability-studio-gate-a-source-manifest-v1.schema.json",
+        "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+        "capability-studio-gate-a-tck-v1.schema.json",
+        "capability-studio-review-body-v1.schema.json",
+        "capability-studio-reviewer-authority-envelope-v1.schema.json",
+        "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+        "capability-studio-reviewer-trust-policy-v1.schema.json"
+      ]
+    },
+    {
+      "role": "GATE_ADMISSION_CHECKER",
+      "buildIdentityRole": "GATE_VERIFIER",
+      "modulePath": "resource-gateway-gate-a-admission",
+      "pomPath": "resource-gateway-gate-a-admission/pom.xml",
+      "groupId": "com.leanowtech.bloge",
+      "artifactId": "resource-gateway-gate-a-admission",
+      "packaging": "jar",
+      "mainClass": "com.leanowtech.bloge.gateway.gateadmission.GateAAdmissionCheckerCli",
+      "profilePath": "META-INF/gate-a/gate-a-admission-profile-v1.json",
+      "registryPath": "META-INF/gate-a/gate-a-admission-registry-v1.json",
+      "profileFingerprintField": "admissionProfileRawFingerprint",
+      "providerEntryPath": null,
+      "providerIdentityEntryPath": null,
+      "buildCommand": [
+        "mvn -f resource-gateway-gate-a-admission/pom.xml -Pgate-a-admission -Dgate.a.slice=A2.1 clean verify"
+      ],
+      "blackBoxCommand": [
+        "/opt/jdk/bin/java",
+        "-jar",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--role-self-test",
+        "--role",
+        "GATE_ADMISSION_CHECKER",
+        "--authority",
+        "${FIXTURE:AUTHORITY_SNAPSHOT}",
+        "--artifact",
+        "${FIXTURE:ROLE_ARTIFACT}",
+        "--fixture-set-id",
+        "GATE_A_ROLE_BLACK_BOX_V1",
+        "--profile",
+        "${FIXTURE:PACKAGED_PROFILE}"
+      ],
+      "runtimeDependencyAllowlist": [
+        "com.ethlo.time:itu",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-databind",
+        "com.networknt:json-schema-validator",
+        "org.slf4j:slf4j-api",
+        "org.slf4j:slf4j-nop"
+      ],
+      "forbiddenProjectDependencies": [
+        "bloge-resource-gateway-test-kit",
+        "resource-gateway-examples",
+        "bloge-runtime",
+        "resource-gateway-gate-a-verifier",
+        "resource-gateway-gate-a-conformance-harness"
+      ],
+      "requiredJarEntries": [
+        "META-INF/MANIFEST.MF",
+        "com/leanowtech/bloge/gateway/gateadmission/GateAAdmissionCheckerCli.class",
+        "META-INF/gate-a/schema-set-manifest.json",
+        "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-admission/pom.properties",
+        "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+        "META-INF/gate-a/projections/role-contract-v1.json",
+        "META-INF/gate-a/projections/launch-contract-v1.json",
+        "META-INF/gate-a/projections/check-state-machine-v1.json",
+        "META-INF/gate-a/projections/material-ownership-v1.json",
+        "META-INF/gate-a/projections/canonicalization-contract-v1.json",
+        "META-INF/gate-a/projections/authority-matrix-v1.json",
+        "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+        "META-INF/gate-a/manifests/dependencies.json",
+        "META-INF/gate-a/protocol/gate-a-protocol-authority.json",
+        "META-INF/gate-a/manifests/classes.json",
+        "META-INF/gate-a/manifests/resources.json",
+        "META-INF/gate-a/gate-a-admission-profile-v1.json",
+        "META-INF/gate-a/gate-a-admission-registry-v1.json",
+        "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+        "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+        "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+        "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+        "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+        "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar"
+      ],
+      "releaseGate": "STRUCTURE_AND_BLACK_BOX_REQUIRED",
+      "artifactVersion": "1.0.0",
+      "classifier": null,
+      "artifactPath": "resource-gateway-gate-a-admission/target/resource-gateway-gate-a-admission-1.0.0.jar",
+      "launchMode": "EXECUTABLE_JAR",
+      "compileDependencyAllowlist": [
+        "com.fasterxml.jackson.core:*",
+        "com.networknt:json-schema-validator",
+        "com.ethlo.time:itu",
+        "org.slf4j:*"
+      ],
+      "blackBoxContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "expectedExitCode": 0,
+        "stdoutMessageVersion": "resource-gateway.capability-studio.gate-a.role-self-test-receipt.v1",
+        "stdoutAuthority": "CALLER_PINNED_FIXTURE_ORACLE",
+        "stderrPolicy": "EMPTY",
+        "timeoutMillis": 300000,
+        "contractKind": "DETERMINISTIC_ROLE_SELF_TEST",
+        "receiptSchema": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "receiptFingerprintDomain": "RG-CS-GATE-A-ROLE-SELF-TEST-RECEIPT-v1",
+        "capabilities": [
+          "ROLE_SELF_TEST_RECEIPT",
+          "SHADED_CLOSED_JAR",
+          "CANONICALIZATION",
+          "PROTOCOL_PROJECTION"
+        ],
+        "authorityInputPolicy": "ONE_STABLE_O_NOFOLLOW_RAW_BYTE_SNAPSHOT",
+        "artifactInputPolicy": "ACTUAL_ROLE_JAR_RAW_BYTES",
+        "profileInputPolicy": "PACKAGED_PROFILE_RAW_BYTES"
+      },
+      "artifactLimits": {
+        "maxRawBytes": 16777216,
+        "maxZipEntries": 512,
+        "maxSingleEntryBytes": 8388608,
+        "maxTotalUncompressedBytes": 67108864,
+        "maxCompressionRatio": 100
+      },
+      "blackBoxFixtureContract": {
+        "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+        "bindingManifestName": "fixture-bindings-v1.json",
+        "bindingManifestMessageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+        "bindingFingerprintKind": "AGGREGATE_COMMITMENT",
+        "bindingFingerprintDomain": "RG-CS-GATE-A-ROLE-BLACK-BOX-BINDINGS-v1",
+        "fixtureLimits": {
+          "maxBindingManifestBytes": 1048576,
+          "maxFileBytes": 8388608,
+          "maxTreeEntries": 4096,
+          "maxTreeEntryBytes": 8388608,
+          "maxTreeTotalBytes": 67108864
+        },
+        "fixtures": [
+          {
+            "name": "AUTHORITY_SNAPSHOT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "ROLE_ARTIFACT",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          },
+          {
+            "name": "PACKAGED_PROFILE",
+            "kind": "FILE",
+            "commitmentKind": "RAW_BYTES"
+          }
+        ],
+        "oracle": {
+          "kind": "FILE",
+          "commitmentKind": "RAW_BYTES"
+        },
+        "oracleCompilationPolicy": {
+          "mode": "CALLER_INDEPENDENT",
+          "inputs": [
+            "AUTHORITY_SNAPSHOT",
+            "ROLE_ARTIFACT",
+            "ROLE_CONTRACT",
+            "PACKAGED_PROFILE"
+          ],
+          "testedRoleExecution": "FORBIDDEN"
+        }
+      },
+      "packagedProjections": [
+        {
+          "projectionId": "ROLE_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/role-contract-v1.json"
+        },
+        {
+          "projectionId": "LAUNCH_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/launch-contract-v1.json"
+        },
+        {
+          "projectionId": "CHECK_STATE_MACHINE",
+          "entryPath": "META-INF/gate-a/projections/check-state-machine-v1.json"
+        },
+        {
+          "projectionId": "MATERIAL_OWNERSHIP",
+          "entryPath": "META-INF/gate-a/projections/material-ownership-v1.json"
+        },
+        {
+          "projectionId": "CANONICALIZATION_CONTRACT",
+          "entryPath": "META-INF/gate-a/projections/canonicalization-contract-v1.json"
+        },
+        {
+          "projectionId": "AUTHORITY_MATRIX",
+          "entryPath": "META-INF/gate-a/projections/authority-matrix-v1.json"
+        }
+      ],
+      "compilationManifestEntryPath": "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
+      "canonicalizationProfileEntryPath": "META-INF/gate-a/canonicalization/fingerprint-profile-v1.json",
+      "packagingContract": {
+        "model": "SHADED_CLOSED_JAR_WITH_EMBEDDED_DEPENDENCY_SOURCES",
+        "classManifestEntryPath": "META-INF/gate-a/manifests/classes.json",
+        "resourceManifestEntryPath": "META-INF/gate-a/manifests/resources.json",
+        "dependencyLockManifestEntryPath": "META-INF/gate-a/manifests/dependencies.json",
+        "embeddedDependencyEntries": [
+          {
+            "lockId": "JACKSON_DATABIND_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-databind-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_ANNOTATIONS_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-annotations-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "JACKSON_CORE_2_18_2",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/jackson-core-2.18.2.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/json-schema-validator-2.0.4.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "ETHLO_TIME_ITU_1_14_0",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/itu-1.14.0.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_API_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-api-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          },
+          {
+            "lockId": "SLF4J_NOP_2_0_17",
+            "scope": "runtime",
+            "entryPath": "META-INF/gate-a/dependencies/slf4j-nop-2.0.17.jar",
+            "rawFingerprintSource": "CALLER_OWNED_DEPENDENCY_AUTHORITY"
+          }
+        ],
+        "closurePolicy": "EVERY_UNPACKED_ENTRY_REACHABLE_FROM_CLOSED_MANIFEST_GRAPH",
+        "dependencyLockAuthority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "dependencyLockManifestMode": "EXTERNAL_LOCK_IDS_ONLY",
+        "providedAbiDependencies": []
+      },
+      "buildProfile": "gate-a-admission",
+      "runtimeDependencyLockIds": [
+        "JACKSON_DATABIND_2_18_2",
+        "JACKSON_ANNOTATIONS_2_18_2",
+        "JACKSON_CORE_2_18_2",
+        "NETWORKNT_JSON_SCHEMA_VALIDATOR_2_0_4",
+        "ETHLO_TIME_ITU_1_14_0",
+        "SLF4J_API_2_0_17",
+        "SLF4J_NOP_2_0_17"
+      ],
+      "requiredRuntimeArtifactRoles": [],
+      "visibleSchemaIds": [
+        "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+        "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+        "capability-studio-gate-a-admission-profile-v1.schema.json",
+        "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+        "capability-studio-gate-a-authority-matrix-v1.schema.json",
+        "capability-studio-gate-a-build-identity-v1.schema.json",
+        "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+        "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+        "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+        "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+        "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+        "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+        "capability-studio-gate-a-class-manifest-v1.schema.json",
+        "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+        "capability-studio-gate-a-common-v1.schema.json",
+        "capability-studio-gate-a-dependency-authority-v1.schema.json",
+        "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+        "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+        "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+        "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-harness-profile-v1.schema.json",
+        "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+        "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+        "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+        "capability-studio-gate-a-process-command-record-v1.schema.json",
+        "capability-studio-gate-a-process-observation-v1.schema.json",
+        "capability-studio-gate-a-process-transcript-v1.schema.json",
+        "capability-studio-gate-a-protocol-authority-v1.schema.json",
+        "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+        "capability-studio-gate-a-protocol-projection-v1.schema.json",
+        "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+        "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+        "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+        "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+        "capability-studio-gate-a-replay-profile-v1.schema.json",
+        "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+        "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+        "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+        "capability-studio-gate-a-role-registry-v1.schema.json",
+        "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+        "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+        "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+        "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+        "capability-studio-gate-a-source-manifest-v1.schema.json",
+        "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+        "capability-studio-gate-a-tck-v1.schema.json",
+        "capability-studio-review-body-v1.schema.json",
+        "capability-studio-reviewer-authority-envelope-v1.schema.json",
+        "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+        "capability-studio-reviewer-trust-policy-v1.schema.json"
+      ]
+    }
+  ]
+}

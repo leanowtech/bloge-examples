@@ -1,0 +1,334 @@
+{
+  "schemaVersion": "capability-studio.gate-a-schema-set-manifest.v1",
+  "manifestFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:83151127d1166ee061c6be90b00653ac3ee0cf0e2b78e70d7546488988902d80"
+  },
+  "entries": [
+    {
+      "schemaId": "capability-studio.gate-a-a1-bootstrap-response.v1",
+      "entryPath": "META-INF/gate-a/schemas/a1-bootstrap-response.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:ccb0b9f569b5d3b53b3de4df77916826d7337afcb39cce389e6f7d0bb4e87698"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-a1-invocation-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/a1-invocation-record.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:9e2fc427e2283e6a53630ca41b773def164e032cfa15126152c1c3b49c271e9f"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-admission-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-profile.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:22323c129128f2a1ac4a26dba76da1a36d976351f093ff30b247ed84d650f5d5"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-admission-proof-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-proof-envelope.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:cf0687c27b5099438438be34f51874b384a375d5a566aea8ccc928c885de3257"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-admission-trust-pin.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-trust-pin.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:05fb1cc55e6e322fcdd50ec031d9c4ecbf41095956a7b746a5c16d3184c14d9f"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-admission-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-verification-result.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:7ea8f95033c02be72bc9f746d6085c143aff13470092cd01a86a565f3565513d"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-authority-matrix.v1",
+      "entryPath": "META-INF/gate-a/schemas/authority-matrix.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:a4fd8791af71c3ae14b08241da55f54899c2a50bf5ae19e26ec7753bfc99909c"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-build-identity.v1",
+      "entryPath": "META-INF/gate-a/schemas/build-identity.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:acd59a70caae5558fb8aa0589d63feda41739cf893d01262d4183b6be122ce4e"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-build-resource-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/build-resource-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:8b70fffff7d9c5c960292415a034992a683f5b825dc09e534f9493f58d286852"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-candidate-challenge-request.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-challenge-request.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:318914116347d5bdf4bc824a827c575271195ae7175add50ea547bd303dae922"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-candidate-challenge-response.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-challenge-response.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:05eec823a52d49a8f332fa2a5f7850254ce8504a73ade185d657275d1ca4ad96"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-candidate-replay-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-replay-result.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:4954ce76c65373ae4d70961ab456ff4d086cb4c1127d583b454f1baadc457561"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-challenge-sandbox-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/challenge-sandbox-profile.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:ef49be20baa9f0a48073d813bbd3285473a50c1db0ee59f47bddddd3c9832d4a"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-challenge-trust-pin.v1",
+      "entryPath": "META-INF/gate-a/schemas/challenge-trust-pin.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:f9a20ef657452aa2d80f86712aecd10e30f661d6d92d927e80dc972dfdd01da8"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-class-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/class-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:b58650f06c316555060276e7b18cff2b27d29028eae9903b05f9eb2596762ca8"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-collector-contract-vectors.v1",
+      "entryPath": "META-INF/gate-a/schemas/collector-contract-vectors.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:192c723ec3ecaf096b43d4ab56a85168bd72e4f5114560e04afae831be7547de"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-common.v1",
+      "entryPath": "META-INF/gate-a/schemas/common.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:752bdd9bb75ee2a8e0a052af420bdacbba886a35ec62348b47d545c2d5bab9a7"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-dependency-lock-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/dependency-lock-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:cb4a7e8940bef2d219e329b64ee00b64ab097498ac0940be500d7cbe25b171c7"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-fingerprint-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/fingerprint-profile.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:b8eb2b87e8da35d42caf26705d8b37bda427fc51edd1c3a9dc933ec23dab65fa"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-harness-invocation-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-invocation-record.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:4a1c83180732452259cc7c700809c91ac34074257a3f292bcb09433fbe74bab4"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-harness-process-transcript.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-process-transcript.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:1360c183bd4c906a174518ced86715d0676ffcd2f85ed7367af49f399fcab17b"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-harness-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-profile.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0fcc0bf20429355e82c611533f7c487b3bd40a3ecaa3f15a020862beccf7d064"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-independent-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/independent-verification-result.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:d8bdd4a6cb9d969deb5b1e1cc1c62ad40ac596f650696091bea4a8b6c70b4c29"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-material-attack-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/material-attack-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e41c415f5608ca9c67f5b97f13f1adc1b7eac0b60a4ef8917549eb29a2f54461"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-process-command-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-command-record.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:2754feb3b7ce4b09751beba412f57c913c70b31bfb1273e8f5e03db765ab462b"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-process-observation.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-observation.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:db8b42bc59c0dd9d7358143b278d63198d39ca82c6be120d9e8e32ba121a25e9"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-process-transcript.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-transcript.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:78780e21286d5fbd4cc9e3deeb0fd44b3b1dfa729439cdd13aab43bbdda32844"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-replay-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-profile.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:60cefe37074cc0752a3fc043b106d29352ba02fed56d9f615189256856ebbd44"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-replay-proof-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-proof-envelope.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:8e52e93d4dd60a3a92e8211298aca3c90c7ecbb44fc70ad64ad3592b06845302"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-replay-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-verification-result.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:a497ab7750e790b1898eb38dc0d6529af2ee2ea27c041228611cb05a043dbf37"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-role-registry.v1",
+      "entryPath": "META-INF/gate-a/schemas/role-registry.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:f397a5f34201633b182d4957ae2f6e3f8af2e2a98de79dcf329abff5e07f6850"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-schema-set-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/schema-set-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:c927decae448e755590ff12ca0703e390d8bac24bacd2b0b7ac8db62644c9ebf"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-semantic-guard-catalog.v1",
+      "entryPath": "META-INF/gate-a/schemas/semantic-guard-catalog.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:4c805b06bf6ee1c389bc048b7294cafe5aa93d1dbd882ace2d6f93ae94796ea0"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-semantic-guard-vectors.v1",
+      "entryPath": "META-INF/gate-a/schemas/semantic-guard-vectors.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:b62c32643322749ecb10808fb3e5f7445f91ed13febf2d9de584273e7f4696a9"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-source-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/source-manifest.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:0907a85a7ef80446a519750a348e041e0c7d0e415225af84bf67af6edffc2ac8"
+      }
+    },
+    {
+      "schemaId": "capability-studio.gate-a-tck-provider-identity.v1",
+      "entryPath": "META-INF/gate-a/schemas/tck-provider-identity.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:79bb498afb6b95e046378e982337e157bc06e76ca041741387ed4b81d04d2a3c"
+      }
+    }
+  ]
+}

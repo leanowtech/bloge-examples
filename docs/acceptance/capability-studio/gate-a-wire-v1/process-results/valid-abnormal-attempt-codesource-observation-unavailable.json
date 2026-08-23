@@ -1,0 +1,94 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.abnormal-attempt.v1",
+  "attemptId": "ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001",
+  "runId": "RUN-ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001",
+  "event": "CODESOURCE_OBSERVATION_UNAVAILABLE",
+  "firstErrorReason": "CODESOURCE_OBSERVATION_UNAVAILABLE",
+  "a1ExitCode": 255,
+  "observedProcessState": "UNAVAILABLE",
+  "observedExitCode": 255,
+  "observedTimedOut": false,
+  "observedCancelled": false,
+  "codeSourceObservationAvailable": false,
+  "stopRemainingSlots": true,
+  "drainStreams": true,
+  "reapProcessTree": true,
+  "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+  "remainingMaterialPolicy": "FORBIDDEN",
+  "resultPolicy": "NO_REPLAY_RESULT",
+  "stdoutPolicy": "EMPTY",
+  "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT",
+  "commandRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:5c90e99657af4b158b3913444837f0c069c3be65246b165d723e76663bf44f91"
+    }
+  },
+  "processObservationRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/process-observation.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:6ffe40d2f6e5d94246e88ef3c89429e48f6281b1e3ab8082509152451321a758"
+    }
+  },
+  "processTranscriptRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:26f4b31891ea7bdea75adeb9de39f1e1494e38116389d5cf662b2e19b26d6f43"
+    }
+  },
+  "formedMaterialRefs": [
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/command.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:5c90e99657af4b158b3913444837f0c069c3be65246b165d723e76663bf44f91"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/stdout",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/stderr",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/process-observation.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:6ffe40d2f6e5d94246e88ef3c89429e48f6281b1e3ab8082509152451321a758"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-CODESOURCE-OBSERVATION-UNAVAILABLE-001/process-transcript.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:26f4b31891ea7bdea75adeb9de39f1e1494e38116389d5cf662b2e19b26d6f43"
+      }
+    }
+  ],
+  "semanticResultRef": null,
+  "laterMaterialRefs": [],
+  "attemptFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:0da5bef735e8f25f0f4a687cf58a7c6c4b2ee1f80fa55a253371b1318adf8bf4"
+  }
+}

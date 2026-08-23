@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "CANONICALIZATION_CONTRACT",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": null,
+      "sourcePointer": "/canonicalizationGate"
+    }
+  ],
+  "content": {
+    "parserPolicy": "UTF8_STRICT_DUPLICATE_REJECT_TRAILING_REJECT_NONFINITE_REJECT",
+    "profileRef": "canonicalization/fingerprint-profile-v1.json",
+    "vectorRef": "canonicalization/canonicalization-vectors-v1.json",
+    "selfTestCommand": [
+      "/opt/jdk/bin/java",
+      "-jar",
+      "${JAR}",
+      "--canonicalization-challenge",
+      "${CHALLENGE}"
+    ],
+    "expectedExitCode": 0,
+    "requiredRoleModes": [
+      "IMPLEMENTATION_CANDIDATE",
+      "INDEPENDENT_VERIFIER",
+      "CONFORMANCE_HARNESS",
+      "GATE_ADMISSION_CHECKER"
+    ],
+    "releaseRule": "ACTUAL_ROLE_JAR_MUST_PASS_BYTE_EXACT_SELF_TEST",
+    "challengeInputRef": "canonicalization/canonicalization-challenge-v1.json",
+    "oracleRef": "canonicalization/canonicalization-oracle-v1.json",
+    "outputPolicy": "STDOUT_EXACT_ORACLE_FILE_BYTES",
+    "profileRawFingerprint": "sha256:c0b512c25cc46fb84928779079ff3b9e17351b7d4a22da2be1027bf306186689",
+    "vectorRawFingerprint": "sha256:44c3012db0063cf1a8a0cc4705807245f172177303020df59b63f98a45c7d903",
+    "challengeInputRawFingerprint": "sha256:0b539cb7a4b12fccb9bffb46f900c337ceb5ebb65005c3f50e0b21d5e97b739b",
+    "oracleRawFingerprint": "sha256:ef6a4a2261cf64189dd8eb582cd6b4f1514278613612669011cd21f3e228b0f5"
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.tck.v1",
+  "tckId": "GATE-A-TCK",
+  "revision": 1,
+  "tests": [
+    {
+      "testId": "PLACEHOLDER_REJECTED",
+      "execution": "WRONG_VERIFIER_DIGEST_A1",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "PLACEHOLDER_REJECTED"
+    },
+    {
+      "testId": "WRONG_KIND_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "WRONG_KIND"
+    },
+    {
+      "testId": "WRONG_VERIFIER_REVISION_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "WRONG_VERIFIER_REVISION"
+    },
+    {
+      "testId": "VERIFIER_DIGEST_MUTATION_REJECTED",
+      "execution": "WRONG_VERIFIER_DIGEST_A1",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "VERIFIER_DIGEST_MUTATION"
+    },
+    {
+      "testId": "REGISTRY_MUTATION_REJECTED",
+      "execution": "REGISTRY_MUTATION_A1",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "REGISTRY_MUTATION"
+    },
+    {
+      "testId": "VERIFIER_TCK_MISMATCH_REJECTED",
+      "execution": "TCK_MISMATCH_A1",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "VERIFIER_TCK_MISMATCH"
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_COMPLETE_AUTHORITY",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "ACCEPTED",
+      "expectedExitCode": 0,
+      "expectedReasonCode": "LEGACY_AUTHORITY_COMPLETE"
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_STORE_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "expectedExitCode": 3,
+      "expectedReasonCode": "MISSING_STORE"
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_OWNER_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "expectedExitCode": 3,
+      "expectedReasonCode": "MISSING_OWNER"
+    },
+    {
+      "testId": "LEGACY_ACCEPTED_MISSING_TARGET_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "NOT_ACCEPTED",
+      "expectedExitCode": 3,
+      "expectedReasonCode": "MISSING_TARGET"
+    },
+    {
+      "testId": "MANIFEST_IDENTITY_DRIFT_REJECTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "INVALID",
+      "expectedExitCode": 2,
+      "expectedReasonCode": "MANIFEST_IDENTITY_DRIFT"
+    },
+    {
+      "testId": "HONEST_INCOMPLETE_ACCEPTED",
+      "execution": "NORMAL_CHILD",
+      "expectedTerminal": "INCOMPLETE",
+      "expectedExitCode": 4,
+      "expectedReasonCode": "HONEST_INCOMPLETE"
+    }
+  ],
+  "outerRuns": [
+    "NORMAL_A1",
+    "WRONG_VERIFIER_DIGEST_A1",
+    "REGISTRY_MUTATION_A1",
+    "TCK_MISMATCH_A1",
+    "PROVIDER_COLLISION_A1"
+  ],
+  "providerCollisionGuard": {
+    "testId": "PROVIDER_NAMESPACE_COLLISION_REJECTED",
+    "expectedReasonCode": "PROVIDER_NAMESPACE_COLLISION",
+    "expectedTerminal": "INVALID",
+    "expectedExitCode": 2
+  },
+  "tckFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:2727272727272727272727272727272727272727272727272727272727272727"
+  }
+}

@@ -12,7 +12,10 @@
     "mutationPath": "$.adapterResults[0].adapterKind",
     "expectedKeyword": "const",
     "expectedPath": "$.adapterResults[0].adapterKind",
-    "expectedMessageContains": "FORMAL_INPUT_TREE_V1"
+    "expectedMessageContains": "FORMAL_INPUT_TREE_V1",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-candidate-replay-obligation-drift.json": {
     "base": "valid-candidate-replay-result.json",
@@ -20,7 +23,10 @@
     "mutationPath": "$.obligationResults[0].obligationId",
     "expectedKeyword": "const",
     "expectedPath": "$.obligationResults[0].obligationId",
-    "expectedMessageContains": "FELT-01"
+    "expectedMessageContains": "FELT-01",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-candidate-response-legacy-reason-drift.json": {
     "base": "valid-candidate-challenge-response-legacy-missing-store.json",
@@ -28,7 +34,10 @@
     "mutationPath": "$.operationResult.reasonCode",
     "expectedKeyword": "const",
     "expectedPath": "$.operationResult.reasonCode",
-    "expectedMessageContains": "MISSING_STORE"
+    "expectedMessageContains": "MISSING_STORE",
+    "derivedMutationPaths": [
+      "$.responseFingerprint"
+    ]
   },
   "invalid-candidate-response-self-reported-process-fact.json": {
     "base": "valid-candidate-challenge-response.json",
@@ -36,7 +45,10 @@
     "mutationPath": "$.processExitCode",
     "expectedKeyword": "additionalProperties",
     "expectedPath": "$",
-    "expectedMessageContains": "processExitCode"
+    "expectedMessageContains": "processExitCode",
+    "derivedMutationPaths": [
+      "$.responseFingerprint"
+    ]
   },
   "invalid-independent-report-eleven-child-runs.json": {
     "base": "valid-independent-verification-result.json",
@@ -46,13 +58,34 @@
     "expectedPath": "$.testRuns",
     "expectedMessageContains": "too short"
   },
+  "invalid-independent-missing-process-observation-fingerprint.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.verificationProcessRuns[0].processObservationRawFingerprint",
+    "expectedKeyword": "required",
+    "expectedPath": "$.verificationProcessRuns[0]",
+    "expectedMessageContains": "processObservationRawFingerprint",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
+  },
+  "invalid-independent-process-observation-fingerprint-reused.json": {
+    "base": "valid-independent-verification-result.json",
+    "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "mutationPath": "$.testRuns[0].processObservationRawFingerprint",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A1_PROCESS_OBSERVATION_FINGERPRINT_REUSED"
+  },
   "invalid-independent-review-guard-intrusion.json": {
     "base": "valid-independent-verification-result.json",
     "schema": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
     "mutationPath": "$.mandatoryGuards.reviewCountConsistency",
     "expectedKeyword": "additionalProperties",
     "expectedPath": "$.mandatoryGuards",
-    "expectedMessageContains": "reviewCountConsistency"
+    "expectedMessageContains": "reviewCountConsistency",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-independent-wrong-exit.json": {
     "base": "valid-independent-verification-result.json",
@@ -60,7 +93,10 @@
     "mutationPath": "$.testRuns[0].processExitCode",
     "expectedKeyword": "const",
     "expectedPath": "$.testRuns[0].processExitCode",
-    "expectedMessageContains": "2 was expected"
+    "expectedMessageContains": "2 was expected",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-independent-wrong-mechanism.json": {
     "base": "valid-independent-verification-result.json",
@@ -68,7 +104,10 @@
     "mutationPath": "$.testRuns[0].expectedMechanism",
     "expectedKeyword": "const",
     "expectedPath": "$.testRuns[0].expectedMechanism",
-    "expectedMessageContains": "PLACEHOLDER_TYPED_EVIDENCE"
+    "expectedMessageContains": "PLACEHOLDER_TYPED_EVIDENCE",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-independent-wrong-terminal.json": {
     "base": "valid-independent-verification-result.json",
@@ -76,7 +115,10 @@
     "mutationPath": "$.testRuns[0].observedTerminal",
     "expectedKeyword": "const",
     "expectedPath": "$.testRuns[0].observedTerminal",
-    "expectedMessageContains": "INVALID"
+    "expectedMessageContains": "INVALID",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
   },
   "invalid-process-transcript-missing-stdout.json": {
     "base": "valid-process-transcript.json",
@@ -84,7 +126,10 @@
     "mutationPath": "$.stdoutRef",
     "expectedKeyword": "required",
     "expectedPath": "$",
-    "expectedMessageContains": "stdoutRef"
+    "expectedMessageContains": "stdoutRef",
+    "derivedMutationPaths": [
+      "$.transcriptFingerprint"
+    ]
   },
   "invalid-process-transcript-completed-nonzero.json": {
     "base": "valid-process-transcript.json",
@@ -100,7 +145,10 @@
     "mutationPath": "$.exitCode",
     "expectedKeyword": "const",
     "expectedPath": "$.exitCode",
-    "expectedMessageContains": "143 was expected"
+    "expectedMessageContains": "143 was expected",
+    "derivedMutationPaths": [
+      "$.transcriptFingerprint"
+    ]
   },
   "invalid-process-transcript-missing-toctou.json": {
     "base": "valid-process-transcript-unavailable.json",
@@ -108,7 +156,10 @@
     "mutationPath": "$.codeSourceObservation",
     "expectedKeyword": "required",
     "expectedPath": "$",
-    "expectedMessageContains": "codeSourceObservation"
+    "expectedMessageContains": "codeSourceObservation",
+    "derivedMutationPaths": [
+      "$.transcriptFingerprint"
+    ]
   },
   "invalid-process-transcript-started-after-ended.json": {
     "base": "valid-process-transcript.json",
@@ -122,7 +173,10 @@
     "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
     "mutationPath": "$.codeSourceObservation.postRead.fileKey",
     "validationMode": "semantic",
-    "expectedSemanticCode": "PROCESS_CODESOURCE_TOCTOU_DRIFT"
+    "expectedSemanticCode": "PROCESS_CODESOURCE_TOCTOU_DRIFT",
+    "derivedMutationPaths": [
+      "$.transcriptFingerprint"
+    ]
   },
   "invalid-admission-proof-envelope-conclusion-drift.json": {
     "base": "valid-admission-proof-envelope.json",
@@ -130,7 +184,10 @@
     "mutationPath": "$.observedConclusion",
     "expectedKeyword": "oneOf",
     "expectedPath": "$",
-    "expectedMessageContains": "not valid under any of the given schemas"
+    "expectedMessageContains": "not valid under any of the given schemas",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ]
   },
   "invalid-admission-proof-envelope-process-timeout.json": {
     "base": "valid-admission-proof-envelope.json",
@@ -144,28 +201,40 @@
     "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
     "mutationPath": "$.expectedAdmissionCodeSource.fileKey",
     "validationMode": "semantic",
-    "expectedSemanticCode": "A2_EXPECTED_OBSERVED_CODESOURCE_DRIFT"
+    "expectedSemanticCode": "A2_EXPECTED_OBSERVED_CODESOURCE_DRIFT",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ]
   },
   "invalid-admission-proof-envelope-result-digest.json": {
     "base": "valid-admission-proof-envelope.json",
     "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
     "mutationPath": "$.admissionResultRef.rawFingerprint.value",
     "validationMode": "semantic",
-    "expectedSemanticCode": "A2_RESULT_RAW_FINGERPRINT_MISMATCH"
+    "expectedSemanticCode": "A2_RESULT_RAW_FINGERPRINT_MISMATCH",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ]
   },
   "invalid-admission-proof-envelope-transcript-digest.json": {
     "base": "valid-admission-proof-envelope.json",
     "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
     "mutationPath": "$.admissionProcessTranscriptRef.rawFingerprint.value",
     "validationMode": "semantic",
-    "expectedSemanticCode": "A2_PROCESS_TRANSCRIPT_RAW_FINGERPRINT_MISMATCH"
+    "expectedSemanticCode": "A2_PROCESS_TRANSCRIPT_RAW_FINGERPRINT_MISMATCH",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ]
   },
   "invalid-admission-proof-envelope-created-before-ended.json": {
     "base": "valid-admission-proof-envelope.json",
     "schema": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
     "mutationPath": "$.createdAt",
     "validationMode": "semantic",
-    "expectedSemanticCode": "A2_CREATED_BEFORE_PROCESS_ENDED"
+    "expectedSemanticCode": "A2_CREATED_BEFORE_PROCESS_ENDED",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ]
   },
   "invalid-provider-guard-accepted.json": {
     "base": "valid-independent-verification-result.json",
@@ -173,7 +242,116 @@
     "mutationPath": "$.mandatoryGuards.providerNamespaceCollision.observedOutcome",
     "expectedKeyword": "const",
     "expectedPath": "$.mandatoryGuards.providerNamespaceCollision.observedOutcome",
-    "expectedMessageContains": "REJECTED"
+    "expectedMessageContains": "REJECTED",
+    "derivedMutationPaths": [
+      "$.resultFingerprint"
+    ]
+  },
+  "invalid-provider-materialization-scratch-before.json": {
+    "base": "valid-provider-materialization-observation.json",
+    "schema": "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+    "mutationPath": "$.scratchBeforeCount",
+    "expectedKeyword": "const",
+    "expectedPath": "$.scratchBeforeCount",
+    "expectedMessageContains": "0"
+  },
+  "invalid-provider-materialization-missing-receipt.json": {
+    "base": "valid-provider-materialization-observation.json",
+    "schema": "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+    "mutationPath": "$.destinationOpenReadReceipt",
+    "expectedKeyword": "required",
+    "expectedPath": "$",
+    "expectedMessageContains": "destinationOpenReadReceipt"
+  },
+  "invalid-provider-materialization-identity-replacement.json": {
+    "base": "valid-provider-materialization-observation.json",
+    "schema": "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+    "mutationPath": "$.destinationOpenReadReceipt.preRead.fileKey",
+    "derivedMutationPaths": [
+      "$.destinationOpenReadReceipt.postRead.fileKey",
+      "$.observationFingerprint"
+    ],
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A1_PROVIDER_DESTINATION_IDENTITY_DRIFT"
+  },
+  "invalid-replay-proof-envelope-parent-unavailable.json": {
+    "base": "valid-replay-proof-envelope-unavailable.json",
+    "schema": "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+    "mutationPath": "$.producerProcessTranscriptRef",
+    "derivedMutationPaths": [
+      "$.replayResultRef",
+      "$.producerMaterialRootRef",
+      "$.envelopeFingerprint"
+    ],
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A1_PRODUCER_PROCESS_NOT_COMPLETED"
+  },
+  "invalid-independent-proof-envelope-harness-bootstrap.json": {
+    "base": "valid-independent-proof-envelope.json",
+    "schema": "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+    "mutationPath": "$.independentResultRef",
+    "derivedMutationPaths": [
+      "$.harnessProcessTranscriptRef",
+      "$.harnessMaterialRootRef",
+      "$.envelopeFingerprint"
+    ],
+    "validationMode": "semantic",
+    "expectedSemanticCode": "A1_HARNESS_STDOUT_REPORT_DRIFT"
+  },
+  "invalid-process-observation-classpath-order.json": {
+    "base": "valid-process-observation.json",
+    "schema": "capability-studio-gate-a-process-observation-v1.schema.json",
+    "mutationPath": "$.effectiveClasspath[0].role",
+    "expectedKeyword": "const",
+    "expectedPath": "$.effectiveClasspath[0].role",
+    "expectedMessageContains": "TCK_PROVIDER"
+  },
+  "invalid-process-observation-executable-drift.json": {
+    "base": "valid-process-observation.json",
+    "schema": "capability-studio-gate-a-process-observation-v1.schema.json",
+    "mutationPath": "$.javaExecutableObservation.postRead.fileKey",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_EXECUTABLE_TOCTOU_DRIFT"
+  },
+  "invalid-process-observation-tree-not-quiescent.json": {
+    "base": "valid-process-observation.json",
+    "schema": "capability-studio-gate-a-process-observation-v1.schema.json",
+    "mutationPath": "$.processTree.processTreeQuiescent",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_TREE_NOT_QUIESCENT"
+  },
+  "invalid-process-observation-output-leak.json": {
+    "base": "valid-process-observation.json",
+    "schema": "capability-studio-gate-a-process-observation-v1.schema.json",
+    "mutationPath": "$.stdoutCapture.leakScan",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_OUTPUT_CAPTURE_INCOMPLETE"
+  },
+  "invalid-process-observation-class-origin-drift.json": {
+    "base": "valid-process-observation.json",
+    "schema": "capability-studio-gate-a-process-observation-v1.schema.json",
+    "mutationPath": "$.admittedClassOrigins[0].codeSourceRawFingerprint.value",
+    "validationMode": "semantic",
+    "expectedSemanticCode": "PROCESS_CLASS_ORIGIN_DRIFT"
+  },
+  "invalid-process-command-environment.json": {
+    "base": "valid-process-command.json",
+    "schema": "capability-studio-gate-a-process-command-record-v1.schema.json",
+    "mutationPath": "$.environment",
+    "expectedKeyword": "maxItems",
+    "expectedPath": "$.environment",
+    "expectedMessageContains": "empty"
+  },
+  "invalid-process-transcript-missing-process-observation.json": {
+    "base": "valid-process-transcript.json",
+    "schema": "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "mutationPath": "$.processObservationRef",
+    "expectedKeyword": "required",
+    "expectedPath": "$",
+    "expectedMessageContains": "processObservationRef",
+    "derivedMutationPaths": [
+      "$.transcriptFingerprint"
+    ]
   },
   "invalid-tck-shuffled-first-slot.json": {
     "base": "valid-tck.json",
@@ -182,5 +360,88 @@
     "expectedKeyword": "const",
     "expectedPath": "$.tests",
     "expectedMessageContains": "was expected"
+  },
+  "invalid-tck-missing-normal-child.json": {
+    "base": "valid-tck.json",
+    "schema": "capability-studio-gate-a-tck-v1.schema.json",
+    "mutationPath": "$.tests",
+    "expectedKeyword": "const",
+    "expectedPath": "$.tests",
+    "expectedMessageContains": "was expected"
+  },
+  "invalid-tck-extra-test.json": {
+    "base": "valid-tck.json",
+    "schema": "capability-studio-gate-a-tck-v1.schema.json",
+    "mutationPath": "$.tests",
+    "expectedKeyword": "const",
+    "expectedPath": "$.tests",
+    "expectedMessageContains": "was expected"
+  },
+  "invalid-tck-wrong-execution.json": {
+    "base": "valid-tck.json",
+    "schema": "capability-studio-gate-a-tck-v1.schema.json",
+    "mutationPath": "$.tests",
+    "expectedKeyword": "const",
+    "expectedPath": "$.tests",
+    "expectedMessageContains": "was expected"
+  },
+  "invalid-replay-proof-envelope-missing-message-version.json": {
+    "base": "valid-replay-proof-envelope.json",
+    "schema": "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+    "mutationPath": "$.messageVersion",
+    "derivedMutationPaths": [
+      "$.envelopeFingerprint"
+    ],
+    "expectedKeyword": "required",
+    "expectedPath": "$",
+    "expectedMessageContains": "messageVersion"
+  },
+  "invalid-abnormal-attempt-child-crash.json": {
+    "base": "valid-abnormal-attempt-child-crash.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.stopRemainingSlots",
+    "expectedKeyword": "const",
+    "expectedPath": "$.stopRemainingSlots",
+    "expectedMessageContains": "True"
+  },
+  "invalid-abnormal-attempt-child-timeout.json": {
+    "base": "valid-abnormal-attempt-child-timeout.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.drainStreams",
+    "expectedKeyword": "const",
+    "expectedPath": "$.drainStreams",
+    "expectedMessageContains": "True"
+  },
+  "invalid-abnormal-attempt-child-cancelled.json": {
+    "base": "valid-abnormal-attempt-child-cancelled.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.reapProcessTree",
+    "expectedKeyword": "const",
+    "expectedPath": "$.reapProcessTree",
+    "expectedMessageContains": "True"
+  },
+  "invalid-abnormal-attempt-stdout-truncated.json": {
+    "base": "valid-abnormal-attempt-stdout-truncated.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.formedMaterialPolicy",
+    "expectedKeyword": "const",
+    "expectedPath": "$.formedMaterialPolicy",
+    "expectedMessageContains": "PRESERVE_ATTEMPT_ONLY"
+  },
+  "invalid-abnormal-attempt-process-tree-residue.json": {
+    "base": "valid-abnormal-attempt-process-tree-residue.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.resultPolicy",
+    "expectedKeyword": "const",
+    "expectedPath": "$.resultPolicy",
+    "expectedMessageContains": "NO_REPLAY_RESULT"
+  },
+  "invalid-abnormal-attempt-codesource-observation-unavailable.json": {
+    "base": "valid-abnormal-attempt-codesource-observation-unavailable.json",
+    "schema": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "mutationPath": "$.a1ExitCode",
+    "expectedKeyword": "const",
+    "expectedPath": "$.a1ExitCode",
+    "expectedMessageContains": "255"
   }
 }

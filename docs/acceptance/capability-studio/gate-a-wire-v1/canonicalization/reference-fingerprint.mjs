@@ -5,6 +5,39 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const MAX_SAFE_INTEGER = Number.MAX_SAFE_INTEGER;
+const MIN_SAFE_INTEGER = Number.MIN_SAFE_INTEGER;
+const CONTRACT_ID = "GATE_A_RFC8785_COMPATIBLE_SUBSET_V1";
+const CONTRACT = Object.freeze({
+  id: CONTRACT_ID,
+  canonicalization: "RFC_8785_JCS",
+  objectKeyOrdering: "UTF16_CODE_UNITS",
+  unicode: "UNICODE_SCALARS_NO_LONE_SURROGATES",
+  utf8: "UTF8_NO_BOM_EXACT_BYTES",
+  duplicateObjectMembers: "REJECT_AT_PARSE_BOUNDARY",
+  numberPolicy: "FINITE_IEEE754_BINARY64_CANONICAL_DECIMAL_ROUNDTRIP_SAFE_INTEGER_V1",
+  nonFiniteNumbers: "REJECT"
+});
+
+const REJECTION_CODES = new Set([
+  "UTF8_BOM_REJECTED",
+  "INVALID_UTF8",
+  "DUPLICATE_KEY",
+  "LONE_SURROGATE",
+  "UNSAFE_INTEGER",
+  "NUMBER_NOT_EXACT",
+  "NON_FINITE_NUMBER"
+]);
+
+function compareUtf16CodeUnits(left, right) {
+  const length = Math.min(left.length, right.length);
+  for (let index = 0; index < length; index++) {
+    const difference = left.charCodeAt(index) - right.charCodeAt(index);
+    if (difference !== 0) return difference;
+  }
+  return left.length - right.length;
+}
+
 class StrictJsonParser {
   constructor(source) {
     this.source = source;
@@ -23,6 +56,11 @@ class StrictJsonParser {
 
   parseValue() {
     const token = this.source[this.index];
+    if (this.source.startsWith("NaN", this.index)
+        || this.source.startsWith("Infinity", this.index)
+        || this.source.startsWith("-Infinity", this.index)) {
+      this.fail("NON_FINITE_NUMBER");
+    }
     if (token === "{") return this.parseObject();
     if (token === "[") return this.parseArray();
     if (token === '"') return this.parseString();
@@ -109,10 +147,11 @@ class StrictJsonParser {
     const remainder = this.source.slice(this.index);
     const match = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/.exec(remainder);
     if (!match) this.fail("INVALID_NUMBER");
-    this.index += match[0].length;
-    const value = Number(match[0]);
+    const lexical = match[0];
+    this.index += lexical.length;
+    const value = Number(lexical);
     if (!Number.isFinite(value)) this.fail("NON_FINITE_NUMBER");
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) this.fail("UNSAFE_INTEGER");
+    validateNumber(lexical, value, this);
     return value;
   }
 
@@ -131,6 +170,45 @@ class StrictJsonParser {
     error.reason = reason;
     throw error;
   }
+}
+
+function decimalRational(lexical) {
+  const [mantissa, exponentText = "0"] = lexical.split(/[eE]/);
+  const sign = mantissa.startsWith("-") ? -1n : 1n;
+  const unsigned = mantissa[0] === "-" || mantissa[0] === "+" ? mantissa.slice(1) : mantissa;
+  const decimalPoint = unsigned.indexOf(".");
+  const fractionLength = decimalPoint < 0 ? 0 : unsigned.length - decimalPoint - 1;
+  const digits = (decimalPoint < 0
+    ? unsigned
+    : unsigned.slice(0, decimalPoint) + unsigned.slice(decimalPoint + 1)).replace(/^0+/, "");
+  if (digits.length === 0) return { numerator: 0n, denominator: 1n };
+
+  const exponent = BigInt(exponentText);
+  const scale = BigInt(fractionLength) - exponent;
+  if (scale >= 0n) {
+    return {
+      numerator: sign * BigInt(digits),
+      denominator: 10n ** scale
+    };
+  }
+  return {
+    numerator: sign * BigInt(digits) * (10n ** -scale),
+    denominator: 1n
+  };
+}
+
+function sameDecimalValue(left, right) {
+  const leftValue = decimalRational(left);
+  const rightValue = decimalRational(right);
+  return leftValue.numerator * rightValue.denominator
+    === rightValue.numerator * leftValue.denominator;
+}
+
+function validateNumber(lexical, value, parser) {
+  if (Number.isInteger(value) && (value < MIN_SAFE_INTEGER || value > MAX_SAFE_INTEGER)) {
+    parser.fail("UNSAFE_INTEGER");
+  }
+  if (!sameDecimalValue(lexical, JSON.stringify(value))) parser.fail("NUMBER_NOT_EXACT");
 }
 
 function rejectLoneSurrogates(value) {
@@ -172,7 +250,9 @@ function canonicalize(value) {
   if (value === null || typeof value === "boolean") return JSON.stringify(value);
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw reasonError("NON_FINITE_NUMBER");
-    if (Number.isInteger(value) && !Number.isSafeInteger(value)) throw reasonError("UNSAFE_INTEGER");
+    if (Number.isInteger(value) && (value < MIN_SAFE_INTEGER || value > MAX_SAFE_INTEGER)) {
+      throw reasonError("UNSAFE_INTEGER");
+    }
     return JSON.stringify(value);
   }
   if (typeof value === "string") {
@@ -181,12 +261,29 @@ function canonicalize(value) {
   }
   if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
   if (typeof value === "object") {
-    return `{${Object.keys(value).sort().map((key) => {
+    return `{${Object.keys(value).sort(compareUtf16CodeUnits).map((key) => {
       rejectLoneSurrogates(key);
       return `${JSON.stringify(key)}:${canonicalize(value[key])}`;
     }).join(",")}}`;
   }
   throw reasonError("UNSUPPORTED_JSON_VALUE");
+}
+
+function validateContract(manifest) {
+  const expectedContract = {
+    ...CONTRACT,
+    rejectionCodes: [...REJECTION_CODES].sort(compareUtf16CodeUnits)
+  };
+  if (manifest === null || typeof manifest !== "object"
+      || canonicalize(manifest.contract) !== canonicalize(expectedContract)) {
+    throw reasonError("CANONICALIZATION_CONTRACT_INVALID");
+  }
+  for (const vector of [...(manifest.rejections ?? []), ...(manifest.profileRejections ?? [])]) {
+    const code = vector.expectedCode ?? vector.expectedReason;
+    if (!REJECTION_CODES.has(code) && !code.startsWith("FINGERPRINT_PROFILE_")) {
+      throw reasonError("UNKNOWN_REJECTION_CODE");
+    }
+  }
 }
 
 function rawSha256(bytes) {
@@ -219,7 +316,7 @@ function validateFingerprintProfile(profile, schema) {
     throw reasonError("FINGERPRINT_PROFILE_SCHEMA_INVALID");
   }
   if (profile === null || typeof profile !== "object" || Array.isArray(profile)
-      || Object.keys(profile).sort().join(",") !== "profiles,schemaVersion"
+      || Object.keys(profile).sort(compareUtf16CodeUnits).join(",") !== "profiles,schemaVersion"
       || profile.schemaVersion !== expectedVersion
       || !Array.isArray(profile.profiles)
       || profile.profiles.length !== expectedProfiles.length) {
@@ -312,6 +409,7 @@ function verifyVectors(path) {
     ? fileURLToPath(new URL("../../../../schemas/resource-gateway-capability-studio/capability-studio-gate-a-fingerprint-profile-v1.schema.json", import.meta.url))
     : resolve(base, manifest.fingerprintProfileSchema);
   const profile = loadFingerprintProfile(profilePath, profileSchemaPath);
+  validateContract(manifest);
   let checked = 0;
   for (const vector of manifest.vectors) {
     const parsed = parseStrictJson(vector.sourceText);
@@ -322,6 +420,10 @@ function verifyVectors(path) {
     }
     if (result.fingerprint !== vector.expectedDocumentFingerprint) {
       throw new Error(`${vector.id}: document fingerprint differs`);
+    }
+    if (vector.expectedCanonicalUtf8Hex !== undefined
+        && Buffer.from(result.canonical, "utf8").toString("hex") !== vector.expectedCanonicalUtf8Hex) {
+      throw new Error(`${vector.id}: canonical UTF-8 bytes differ`);
     }
     if (actualRawFingerprint !== vector.expectedRawFingerprint) {
       throw new Error(`${vector.id}: raw fingerprint differs`);
@@ -336,8 +438,9 @@ function verifyVectors(path) {
       parseStrictJson(sourceText);
       throw new Error(`${vector.id}: input was unexpectedly accepted`);
     } catch (error) {
-      if (error.reason !== vector.expectedReason) {
-        throw new Error(`${vector.id}: expected ${vector.expectedReason}, got ${error.reason ?? error.message}`);
+      const expectedCode = vector.expectedCode ?? vector.expectedReason;
+      if (error.reason !== expectedCode) {
+        throw new Error(`${vector.id}: expected ${expectedCode}, got ${error.reason ?? error.message}`);
       }
     }
     checked++;

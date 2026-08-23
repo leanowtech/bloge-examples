@@ -1,0 +1,97 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.role-black-box-fixture-bindings.v1",
+  "fixtureSetId": "GATE_A_ROLE_BLACK_BOX_V1",
+  "bindingFingerprint": {
+    "kind": "AGGREGATE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:520a2e7f8b01f91a7f5dfb288aa8e2a8a50fea452a85159a38029bca055ec21e"
+  },
+  "bindings": {
+    "IMPLEMENTATION_CANDIDATE": {
+      "fixtures": {
+        "AUTHORITY_SNAPSHOT": {
+          "relativePath": "authority/protocol-authority.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"}
+        },
+        "ROLE_ARTIFACT": {
+          "relativePath": "artifacts/IMPLEMENTATION_CANDIDATE.jar",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"}
+        }
+      },
+      "oracle": {
+        "relativePath": "oracle/IMPLEMENTATION_CANDIDATE.json",
+        "kind": "FILE",
+        "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000003"}
+      }
+    },
+    "TCK_PROVIDER": {
+      "fixtures": {
+        "AUTHORITY_SNAPSHOT": {
+          "relativePath": "authority/protocol-authority.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"}
+        },
+        "ROLE_ARTIFACT": {
+          "relativePath": "artifacts/TCK_PROVIDER.jar",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000004"}
+        }
+      },
+      "oracle": {
+        "relativePath": "oracle/TCK_PROVIDER.json",
+        "kind": "FILE",
+        "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"}
+      }
+    },
+    "INDEPENDENT_VERIFIER": {
+      "fixtures": {
+        "AUTHORITY_SNAPSHOT": {
+          "relativePath": "authority/protocol-authority.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"}
+        },
+        "ROLE_ARTIFACT": {
+          "relativePath": "artifacts/INDEPENDENT_VERIFIER.jar",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"}
+        },
+        "PACKAGED_PROFILE": {
+          "relativePath": "profiles/INDEPENDENT_VERIFIER.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000007"}
+        }
+      },
+      "oracle": {
+        "relativePath": "oracle/INDEPENDENT_VERIFIER.json",
+        "kind": "FILE",
+        "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000008"}
+      }
+    },
+    "CONFORMANCE_HARNESS": {
+      "fixtures": {
+        "AUTHORITY_SNAPSHOT": {
+          "relativePath": "authority/protocol-authority.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"}
+        },
+        "ROLE_ARTIFACT": {
+          "relativePath": "artifacts/CONFORMANCE_HARNESS.jar",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:0000000000000000000000000000000000000000000000000000000000000009"}
+        },
+        "PACKAGED_PROFILE": {
+          "relativePath": "profiles/CONFORMANCE_HARNESS.json",
+          "kind": "FILE",
+          "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:000000000000000000000000000000000000000000000000000000000000000a"}
+        }
+      },
+      "oracle": {
+        "relativePath": "oracle/CONFORMANCE_HARNESS.json",
+        "kind": "FILE",
+        "fingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:000000000000000000000000000000000000000000000000000000000000000b"}
+      }
+    }
+  }
+}

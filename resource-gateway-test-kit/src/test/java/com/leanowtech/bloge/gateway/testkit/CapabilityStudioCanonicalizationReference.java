@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import java.io.ByteArrayOutputStream;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
@@ -220,18 +222,17 @@ final class CapabilityStudioCanonicalizationReference {
             if (parsed == Math.rint(parsed) && Math.abs(parsed) > MAX_SAFE_INTEGER) {
                 throw failure("UNSAFE_INTEGER");
             }
+            if (!sameDecimalValue(lexical, CapabilityStudioCanonicalizationReference.ecmascriptText(parsed))) {
+                throw failure("NUMBER_NOT_EXACT");
+            }
             return parsed;
         }
 
         String ecmascriptText() {
-            if (value == 0.0d) {
-                return "0";
+            if (value == Math.rint(value) && Math.abs(value) > MAX_SAFE_INTEGER) {
+                throw failure("UNSAFE_INTEGER");
             }
-            if (!Double.isFinite(value)) {
-                throw failure("NON_FINITE_NUMBER");
-            }
-            String javaText = Double.toString(value);
-            return toEcmascriptNumber(javaText);
+            return CapabilityStudioCanonicalizationReference.ecmascriptText(value);
         }
     }
 
@@ -253,47 +254,37 @@ final class CapabilityStudioCanonicalizationReference {
         }
     }
 
-    private static String toEcmascriptNumber(String javaText) {
-        boolean negative = javaText.startsWith("-");
-        String unsigned = negative ? javaText.substring(1) : javaText;
-        int exponentMarker = Math.max(unsigned.indexOf('E'), unsigned.indexOf('e'));
-        int exponent = 0;
-        String digits;
-        int decimalPosition;
-        if (exponentMarker >= 0) {
-            exponent = Integer.parseInt(unsigned.substring(exponentMarker + 1));
-            String mantissa = unsigned.substring(0, exponentMarker);
-            int decimal = mantissa.indexOf('.');
-            digits = decimal < 0 ? mantissa : mantissa.substring(0, decimal) + mantissa.substring(decimal + 1);
-            decimalPosition = (decimal < 0 ? mantissa.length() : decimal) + exponent;
-        } else {
-            int decimal = unsigned.indexOf('.');
-            digits = decimal < 0 ? unsigned : unsigned.substring(0, decimal) + unsigned.substring(decimal + 1);
-            decimalPosition = decimal < 0 ? unsigned.length() : decimal;
+    private static String ecmascriptText(double value) {
+        if (value == 0.0d) {
+            return "0";
         }
-        digits = stripTrailingFractionZeros(digits);
-        while (digits.length() > 1 && digits.charAt(0) == '0') {
-            digits = digits.substring(1);
-            decimalPosition--;
+        if (!Double.isFinite(value)) {
+            throw failure("NON_FINITE_NUMBER");
         }
-        int scientificExponent = decimalPosition - 1;
-        boolean scientific = scientificExponent < -6 || scientificExponent >= 21;
-        String result;
-        if (scientific) {
-            var mantissa = new StringBuilder();
-            mantissa.append(digits.charAt(0));
-            if (digits.length() > 1) {
-                mantissa.append('.').append(digits.substring(1));
+
+        boolean negative = value < 0.0d;
+        double magnitude = negative ? -value : value;
+        Rational exact = Rational.of(magnitude);
+        int decimalExponent = new BigDecimal(magnitude).precision()
+                - new BigDecimal(magnitude).scale() - 1;
+        RoundingInterval interval = RoundingInterval.of(magnitude, exact);
+
+        for (int significantDigits = 1; significantDigits <= 17; significantDigits++) {
+            DecimalCandidate best = null;
+            for (int exponent = decimalExponent - 1; exponent <= decimalExponent + 1; exponent++) {
+                DecimalCandidate candidate = shortestCandidate(
+                        exact, interval, significantDigits, exponent);
+                if (candidate != null && (best == null || closer(candidate, best, exact))) {
+                    best = candidate;
+                }
             }
-            result = mantissa + "e" + (scientificExponent >= 0 ? "+" : "") + scientificExponent;
-        } else if (decimalPosition <= 0) {
-            result = "0." + "0".repeat(-decimalPosition) + digits;
-        } else if (decimalPosition >= digits.length()) {
-            result = digits + "0".repeat(decimalPosition - digits.length());
-        } else {
-            result = digits.substring(0, decimalPosition) + "." + digits.substring(decimalPosition);
+            if (best != null) {
+                String digits = stripTrailingFractionZeros(best.significand.toString());
+                String result = formatDecimal(digits, best.decimalExponent);
+                return negative ? "-" + result : result;
+            }
         }
-        return negative ? "-" + result : result;
+        throw new AssertionError("binary64 value has no ECMAScript decimal representation");
     }
 
     private static String stripTrailingFractionZeros(String digits) {
@@ -302,6 +293,187 @@ final class CapabilityStudioCanonicalizationReference {
             end--;
         }
         return digits.substring(0, end);
+    }
+
+    private static String formatDecimal(String digits, int decimalExponent) {
+        boolean scientific = decimalExponent < -6 || decimalExponent >= 21;
+        if (scientific) {
+            return digits.length() == 1
+                    ? digits + "e" + (decimalExponent >= 0 ? "+" : "") + decimalExponent
+                    : digits.charAt(0) + "." + digits.substring(1)
+                            + "e" + (decimalExponent >= 0 ? "+" : "") + decimalExponent;
+        }
+        int decimalPosition = decimalExponent + 1;
+        if (decimalPosition <= 0) {
+            return "0." + "0".repeat(-decimalPosition) + digits;
+        }
+        if (decimalPosition >= digits.length()) {
+            return digits + "0".repeat(decimalPosition - digits.length());
+        }
+        return digits.substring(0, decimalPosition) + "." + digits.substring(decimalPosition);
+    }
+
+    private static boolean sameDecimalValue(String left, String right) {
+        DecimalRational leftValue = DecimalRational.parse(left);
+        DecimalRational rightValue = DecimalRational.parse(right);
+        return leftValue.numerator.multiply(rightValue.denominator)
+                .equals(rightValue.numerator.multiply(leftValue.denominator));
+    }
+
+    private static DecimalCandidate shortestCandidate(
+            Rational exact,
+            RoundingInterval interval,
+            int significantDigits,
+            int decimalExponent) {
+        int decimalScale = decimalExponent - significantDigits + 1;
+        BigInteger factorNumerator = decimalScale >= 0
+                ? BigInteger.TEN.pow(decimalScale)
+                : BigInteger.ONE;
+        BigInteger factorDenominator = decimalScale >= 0
+                ? BigInteger.ONE
+                : BigInteger.TEN.pow(-decimalScale);
+        BigInteger minimum = BigInteger.TEN.pow(significantDigits - 1);
+        BigInteger maximum = BigInteger.TEN.pow(significantDigits).subtract(BigInteger.ONE);
+
+        BigInteger lowerNumerator = interval.lower.numerator.multiply(factorDenominator);
+        BigInteger lowerDenominator = interval.lower.denominator.multiply(factorNumerator);
+        BigInteger upperNumerator = interval.upper.numerator.multiply(factorDenominator);
+        BigInteger upperDenominator = interval.upper.denominator.multiply(factorNumerator);
+        BigInteger lower = ceilDiv(lowerNumerator, lowerDenominator);
+        BigInteger upper = upperNumerator.divide(upperDenominator);
+        if (!interval.lowerInclusive && lowerNumerator.mod(lowerDenominator).signum() == 0) {
+            lower = lower.add(BigInteger.ONE);
+        }
+        if (!interval.upperInclusive && upperNumerator.mod(upperDenominator).signum() == 0) {
+            upper = upper.subtract(BigInteger.ONE);
+        }
+        lower = lower.max(minimum);
+        upper = upper.min(maximum);
+        if (lower.compareTo(upper) > 0) {
+            return null;
+        }
+
+        BigInteger targetNumerator = exact.numerator.multiply(factorDenominator);
+        BigInteger targetDenominator = exact.denominator.multiply(factorNumerator);
+        BigInteger floor = targetNumerator.divide(targetDenominator);
+        BigInteger best = null;
+        for (BigInteger candidate : new BigInteger[]{floor, floor.add(BigInteger.ONE)}) {
+            if (candidate.compareTo(lower) >= 0 && candidate.compareTo(upper) <= 0
+                    && (best == null || closer(candidate, best, exact, factorNumerator, factorDenominator))) {
+                best = candidate;
+            }
+        }
+        return best == null
+                ? null
+                : new DecimalCandidate(best, decimalExponent, factorNumerator, factorDenominator);
+    }
+
+    private static boolean closer(DecimalCandidate candidate, DecimalCandidate current, Rational exact) {
+        BigInteger candidateDistance = distance(
+                candidate.significand, exact, candidate.factorNumerator, candidate.factorDenominator);
+        BigInteger currentDistance = distance(
+                current.significand, exact, current.factorNumerator, current.factorDenominator);
+        int comparison = candidateDistance.compareTo(currentDistance);
+        return comparison < 0 || (comparison == 0
+                && candidate.significand.testBit(0) == false && current.significand.testBit(0));
+    }
+
+    private static boolean closer(
+            BigInteger candidate,
+            BigInteger current,
+            Rational exact,
+            BigInteger factorNumerator,
+            BigInteger factorDenominator) {
+        BigInteger candidateDistance = distance(candidate, exact, factorNumerator, factorDenominator);
+        BigInteger currentDistance = distance(current, exact, factorNumerator, factorDenominator);
+        int comparison = candidateDistance.compareTo(currentDistance);
+        return comparison < 0 || (comparison == 0
+                && candidate.testBit(0) == false && current.testBit(0));
+    }
+
+    private static BigInteger distance(
+            BigInteger candidate,
+            Rational exact,
+            BigInteger factorNumerator,
+            BigInteger factorDenominator) {
+        return candidate.multiply(factorNumerator).multiply(exact.denominator)
+                .subtract(exact.numerator.multiply(factorDenominator)).abs();
+    }
+
+    private static BigInteger ceilDiv(BigInteger numerator, BigInteger denominator) {
+        BigInteger[] result = numerator.divideAndRemainder(denominator);
+        return result[1].signum() == 0 ? result[0] : result[0].add(BigInteger.ONE);
+    }
+
+    private record DecimalCandidate(
+            BigInteger significand,
+            int decimalExponent,
+            BigInteger factorNumerator,
+            BigInteger factorDenominator) {}
+
+    private record Rational(BigInteger numerator, BigInteger denominator) {
+        private static Rational of(double value) {
+            long bits = Double.doubleToRawLongBits(value);
+            long fraction = bits & 0x000f_ffffffffffffL;
+            int exponentBits = (int) ((bits >>> 52) & 0x7ff);
+            long significand = exponentBits == 0 ? fraction : (1L << 52) | fraction;
+            int binaryExponent = exponentBits == 0 ? -1074 : exponentBits - 1023 - 52;
+            BigInteger numerator = BigInteger.valueOf(significand);
+            return binaryExponent >= 0
+                    ? new Rational(numerator.shiftLeft(binaryExponent), BigInteger.ONE)
+                    : new Rational(numerator, BigInteger.ONE.shiftLeft(-binaryExponent));
+        }
+    }
+
+    private record RoundingInterval(
+            Rational lower,
+            Rational upper,
+            boolean lowerInclusive,
+            boolean upperInclusive) {
+        private static RoundingInterval of(double value, Rational exact) {
+            Rational previous = Rational.of(Math.nextDown(value));
+            Rational next = value == Double.MAX_VALUE
+                    ? new Rational(
+                            exact.numerator.add(BigInteger.ONE.shiftLeft(970).multiply(exact.denominator)),
+                            exact.denominator)
+                    : Rational.of(Math.nextUp(value));
+            boolean inclusive = (Double.doubleToRawLongBits(value) & 1L) == 0;
+            return new RoundingInterval(midpoint(previous, exact), midpoint(exact, next), inclusive, inclusive);
+        }
+
+        private static Rational midpoint(Rational left, Rational right) {
+            return new Rational(
+                    left.numerator.multiply(right.denominator)
+                            .add(right.numerator.multiply(left.denominator)),
+                    left.denominator.multiply(right.denominator).shiftLeft(1));
+        }
+    }
+
+    private record DecimalRational(BigInteger numerator, BigInteger denominator) {
+        private static DecimalRational parse(String lexical) {
+            String[] parts = lexical.split("[eE]", 2);
+            String mantissa = parts[0];
+            int exponent = parts.length == 1 ? 0 : Integer.parseInt(parts[1]);
+            boolean negative = mantissa.charAt(0) == '-';
+            String unsigned = negative ? mantissa.substring(1) : mantissa;
+            int decimalPoint = unsigned.indexOf('.');
+            int fractionLength = decimalPoint < 0 ? 0 : unsigned.length() - decimalPoint - 1;
+            String digits = (decimalPoint < 0
+                    ? unsigned
+                    : unsigned.substring(0, decimalPoint) + unsigned.substring(decimalPoint + 1))
+                    .replaceFirst("^0+", "");
+            if (digits.isEmpty()) {
+                return new DecimalRational(BigInteger.ZERO, BigInteger.ONE);
+            }
+            BigInteger numerator = new BigInteger(digits);
+            if (negative) {
+                numerator = numerator.negate();
+            }
+            int scale = fractionLength - exponent;
+            return scale >= 0
+                    ? new DecimalRational(numerator, BigInteger.TEN.pow(scale))
+                    : new DecimalRational(numerator.multiply(BigInteger.TEN.pow(-scale)), BigInteger.ONE);
+        }
     }
 
     private static IllegalArgumentException failure(String reason) {
@@ -333,6 +505,11 @@ final class CapabilityStudioCanonicalizationReference {
         private JsonValue parseValue() {
             if (index >= source.length()) {
                 throw error("INVALID_TOKEN");
+            }
+            if (source.startsWith("NaN", index)
+                    || source.startsWith("Infinity", index)
+                    || source.startsWith("-Infinity", index)) {
+                throw error("NON_FINITE_NUMBER");
             }
             return switch (source.charAt(index)) {
                 case '{' -> parseObject();

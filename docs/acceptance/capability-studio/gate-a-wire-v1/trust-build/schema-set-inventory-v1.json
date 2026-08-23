@@ -1,0 +1,479 @@
+{
+  "inventoryVersion": "capability-studio.gate-a-schema-set-inventory.v1",
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "gateASchemas": [
+    "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+    "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+    "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+    "capability-studio-gate-a-admission-profile-v1.schema.json",
+    "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+    "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+    "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+    "capability-studio-gate-a-authority-matrix-v1.schema.json",
+    "capability-studio-gate-a-build-identity-v1.schema.json",
+    "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+    "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+    "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+    "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+    "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+    "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+    "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+    "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+    "capability-studio-gate-a-class-manifest-v1.schema.json",
+    "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+    "capability-studio-gate-a-common-v1.schema.json",
+    "capability-studio-gate-a-conformance-handoff-v1.schema.json",
+    "capability-studio-gate-a-dependency-authority-v1.schema.json",
+    "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+    "capability-studio-gate-a-dependency-rebind-evidence-v1.schema.json",
+    "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+    "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+    "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+    "capability-studio-gate-a-harness-profile-v1.schema.json",
+    "capability-studio-gate-a-harness-proof-structure-evidence-v1.schema.json",
+    "capability-studio-gate-a-hermetic-launcher-observation-evidence-v1.schema.json",
+    "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+    "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+    "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+    "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+    "capability-studio-gate-a-material-closure-evidence-v1.schema.json",
+    "capability-studio-gate-a-process-command-record-v1.schema.json",
+    "capability-studio-gate-a-process-observation-v1.schema.json",
+    "capability-studio-gate-a-process-transcript-v1.schema.json",
+    "capability-studio-gate-a-protocol-authority-v1.schema.json",
+    "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+    "capability-studio-gate-a-protocol-projection-v1.schema.json",
+    "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+    "capability-studio-gate-a-provided-abi-evidence-v1.schema.json",
+    "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+    "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+    "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+    "capability-studio-gate-a-release-gate-receipt-v1.schema.json",
+    "capability-studio-gate-a-replay-profile-v1.schema.json",
+    "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+    "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+    "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+    "capability-studio-gate-a-role-registry-v1.schema.json",
+    "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+    "capability-studio-gate-a-runtime-closure-evidence-v1.schema.json",
+    "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+    "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+    "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+    "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+    "capability-studio-gate-a-slice-consumption-ledger-head-v1.schema.json",
+    "capability-studio-gate-a-slice-evidence-v1.schema.json",
+    "capability-studio-gate-a-source-manifest-v1.schema.json",
+    "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+    "capability-studio-gate-a-tck-v1.schema.json"
+  ],
+  "requiredReviewerSchemas": [
+    "capability-studio-review-body-v1.schema.json",
+    "capability-studio-reviewer-authority-envelope-v1.schema.json",
+    "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+    "capability-studio-reviewer-trust-policy-v1.schema.json"
+  ],
+  "entries": [
+    {
+      "sourcePath": "capability-studio-gate-a-a1-bootstrap-response-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-a1-bootstrap-response.v1",
+      "entryPath": "META-INF/gate-a/schemas/a1-bootstrap-response.json",
+      "rawFingerprint": "sha256:ccb0b9f569b5d3b53b3de4df77916826d7337afcb39cce389e6f7d0bb4e87698"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-a1-invocation-record-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-a1-invocation-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/a1-invocation-record.json",
+      "rawFingerprint": "sha256:9e2fc427e2283e6a53630ca41b773def164e032cfa15126152c1c3b49c271e9f"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-abnormal-attempt-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-abnormal-attempt.v1",
+      "entryPath": "META-INF/gate-a/schemas/abnormal-attempt.json",
+      "rawFingerprint": "sha256:a78cc58dabc660406330ea33d08eda7f1a2789728d2fa316efef0b564daa494f"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-admission-profile-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-admission-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-profile.json",
+      "rawFingerprint": "sha256:22323c129128f2a1ac4a26dba76da1a36d976351f093ff30b247ed84d650f5d5"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-admission-proof-envelope-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-admission-proof-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-proof-envelope.json",
+      "rawFingerprint": "sha256:cf0687c27b5099438438be34f51874b384a375d5a566aea8ccc928c885de3257"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-admission-trust-pin-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-admission-trust-pin.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-trust-pin.json",
+      "rawFingerprint": "sha256:05fb1cc55e6e322fcdd50ec031d9c4ecbf41095956a7b746a5c16d3184c14d9f"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-admission-verification-result-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-admission-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/admission-verification-result.json",
+      "rawFingerprint": "sha256:7ea8f95033c02be72bc9f746d6085c143aff13470092cd01a86a565f3565513d"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-authority-matrix-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-authority-matrix.v1",
+      "entryPath": "META-INF/gate-a/schemas/authority-matrix.json",
+      "rawFingerprint": "sha256:a4fd8791af71c3ae14b08241da55f54899c2a50bf5ae19e26ec7753bfc99909c"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-build-identity-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-build-identity.v1",
+      "entryPath": "META-INF/gate-a/schemas/build-identity.json",
+      "rawFingerprint": "sha256:acd59a70caae5558fb8aa0589d63feda41739cf893d01262d4183b6be122ce4e"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-build-resource-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-build-resource-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/build-resource-manifest.json",
+      "rawFingerprint": "sha256:8b70fffff7d9c5c960292415a034992a683f5b825dc09e534f9493f58d286852"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-candidate-challenge-request-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-candidate-challenge-request.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-challenge-request.json",
+      "rawFingerprint": "sha256:318914116347d5bdf4bc824a827c575271195ae7175add50ea547bd303dae922"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-candidate-challenge-response-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-candidate-challenge-response.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-challenge-response.json",
+      "rawFingerprint": "sha256:05eec823a52d49a8f332fa2a5f7850254ce8504a73ade185d657275d1ca4ad96"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-candidate-replay-result-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-candidate-replay-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/candidate-replay-result.json",
+      "rawFingerprint": "sha256:4954ce76c65373ae4d70961ab456ff4d086cb4c1127d583b454f1baadc457561"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-canonicalization-challenge-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-canonicalization-challenge.v1",
+      "entryPath": "META-INF/gate-a/schemas/canonicalization-challenge.json",
+      "rawFingerprint": "sha256:49c1fa92cc75560411028d2a9eddcea353d9ab065bfcbcb822c52313c87e3a8c"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-canonicalization-oracle-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-canonicalization-oracle.v1",
+      "entryPath": "META-INF/gate-a/schemas/canonicalization-oracle.json",
+      "rawFingerprint": "sha256:13732f98d41e2f6c77cb6e8bea32dbc9b6d519f7973053c4e3e8ea55e40467e6"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-challenge-sandbox-profile-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-challenge-sandbox-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/challenge-sandbox-profile.json",
+      "rawFingerprint": "sha256:ef49be20baa9f0a48073d813bbd3285473a50c1db0ee59f47bddddd3c9832d4a"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-challenge-trust-pin-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-challenge-trust-pin.v1",
+      "entryPath": "META-INF/gate-a/schemas/challenge-trust-pin.json",
+      "rawFingerprint": "sha256:4bfaf799796df72c931e38d040456a368eecaadf5d1638717ebe1817b6acdbf6"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-class-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-class-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/class-manifest.json",
+      "rawFingerprint": "sha256:b58650f06c316555060276e7b18cff2b27d29028eae9903b05f9eb2596762ca8"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-collector-contract-vectors-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-collector-contract-vectors.v1",
+      "entryPath": "META-INF/gate-a/schemas/collector-contract-vectors.json",
+      "rawFingerprint": "sha256:192c723ec3ecaf096b43d4ab56a85168bd72e4f5114560e04afae831be7547de"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-common-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-common.v1",
+      "entryPath": "META-INF/gate-a/schemas/common.json",
+      "rawFingerprint": "sha256:752bdd9bb75ee2a8e0a052af420bdacbba886a35ec62348b47d545c2d5bab9a7"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-conformance-handoff-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-conformance-handoff.v1",
+      "entryPath": "META-INF/gate-a/schemas/conformance-handoff.json",
+      "rawFingerprint": "sha256:3b5b139b57f76ab91c2bc7b7c2446791707eb2ce32d9cf64509a803842cf0c5d"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-dependency-authority-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-dependency-authority.v1",
+      "entryPath": "META-INF/gate-a/schemas/dependency-authority.json",
+      "rawFingerprint": "sha256:37f3d4115fb6d862fdcdb0137214a6c9359fce59814d5d2cf5e3969cdc241f84"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-dependency-lock-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-dependency-lock-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/dependency-lock-manifest.json",
+      "rawFingerprint": "sha256:cb4a7e8940bef2d219e329b64ee00b64ab097498ac0940be500d7cbe25b171c7"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-dependency-rebind-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-dependency-rebind-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/dependency-rebind-evidence.json",
+      "rawFingerprint": "sha256:ad9351363a1adeef1ca8d68c3e8ddbf0311cd3222cd72c7dbb6417fea9c8c41b"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-fingerprint-profile-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-fingerprint-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/fingerprint-profile.json",
+      "rawFingerprint": "sha256:6d610d319f1b848e6a9d0fe5809200557bbff84b5912d39eff3593c3074b0eeb"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-harness-invocation-record-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-harness-invocation-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-invocation-record.json",
+      "rawFingerprint": "sha256:4a1c83180732452259cc7c700809c91ac34074257a3f292bcb09433fbe74bab4"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-harness-process-transcript-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-harness-process-transcript.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-process-transcript.json",
+      "rawFingerprint": "sha256:1360c183bd4c906a174518ced86715d0676ffcd2f85ed7367af49f399fcab17b"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-harness-profile-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-harness-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-profile.json",
+      "rawFingerprint": "sha256:0fcc0bf20429355e82c611533f7c487b3bd40a3ecaa3f15a020862beccf7d064"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-harness-proof-structure-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-harness-proof-structure-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/harness-proof-structure-evidence.json",
+      "rawFingerprint": "sha256:97a85f4d2358d8983519e14923501ce0e9f19f6d8a6c4672e11214c77b64cb88"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-hermetic-launcher-observation-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-hermetic-launcher-observation-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/hermetic-launcher-observation-evidence.json",
+      "rawFingerprint": "sha256:be2990d9318da741d982f34fb845fc08e174889fc6111491de4a720a80e090b4"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-hermetic-launcher-observation-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-hermetic-launcher-observation.v1",
+      "entryPath": "META-INF/gate-a/schemas/hermetic-launcher-observation.json",
+      "rawFingerprint": "sha256:5e684b3bc8bedfbf6a6c125c10c1ed8ca1c35cd6f6a86662c4fef35e9e375113"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-independent-proof-envelope-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-independent-proof-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/independent-proof-envelope.json",
+      "rawFingerprint": "sha256:fefa784f69548d6ede9879a3ed234379523f75e4f818a7b67cd2e39eacfbcbbf"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-independent-verification-result-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-independent-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/independent-verification-result.json",
+      "rawFingerprint": "sha256:d8bdd4a6cb9d969deb5b1e1cc1c62ad40ac596f650696091bea4a8b6c70b4c29"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-material-attack-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-material-attack-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/material-attack-manifest.json",
+      "rawFingerprint": "sha256:e41c415f5608ca9c67f5b97f13f1adc1b7eac0b60a4ef8917549eb29a2f54461"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-material-closure-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-material-closure-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/material-closure-evidence.json",
+      "rawFingerprint": "sha256:05ce965d340002fa99ac02c12c377104d5ac3eec73dae32b8aa4245f546e151c"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-process-command-record-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-process-command-record.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-command-record.json",
+      "rawFingerprint": "sha256:2754feb3b7ce4b09751beba412f57c913c70b31bfb1273e8f5e03db765ab462b"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-process-observation-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-process-observation.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-observation.json",
+      "rawFingerprint": "sha256:db8b42bc59c0dd9d7358143b278d63198d39ca82c6be120d9e8e32ba121a25e9"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-process-transcript-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-process-transcript.v1",
+      "entryPath": "META-INF/gate-a/schemas/process-transcript.json",
+      "rawFingerprint": "sha256:78780e21286d5fbd4cc9e3deeb0fd44b3b1dfa729439cdd13aab43bbdda32844"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-protocol-authority-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-protocol-authority.v1",
+      "entryPath": "META-INF/gate-a/schemas/protocol-authority.json",
+      "rawFingerprint": "sha256:287372e4d0f44bb6635b1fd117831a868b48e9213887de37a8ca75ea146e9b82"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-protocol-compilation-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-protocol-compilation-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/protocol-compilation-manifest.json",
+      "rawFingerprint": "sha256:c0fb74459bb83428aae75d99ac7394ac72a30d387c4622f942d89ea82f597cff"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-protocol-projection-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-protocol-projection.v1",
+      "entryPath": "META-INF/gate-a/schemas/protocol-projection.json",
+      "rawFingerprint": "sha256:cb7135498f3a5e330f1f771ffb953d8fcaae68fd8168e1d0bba6a2fe61342494"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-provided-abi-contract-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-provided-abi-contract.v1",
+      "entryPath": "META-INF/gate-a/schemas/provided-abi-contract.json",
+      "rawFingerprint": "sha256:33fcd93107cb077723e8f169680e3744a13942a3d9a347df2f52a2d6780d4132"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-provided-abi-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-provided-abi-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/provided-abi-evidence.json",
+      "rawFingerprint": "sha256:bc65bb8353e34a01564b8a00ae3f9866cf43803e83cfb2a9dcda9cb748804242"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-provider-materialization-observation-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-provider-materialization-observation.v1",
+      "entryPath": "META-INF/gate-a/schemas/provider-materialization-observation.json",
+      "rawFingerprint": "sha256:1cf566e84575b8ca76a772ff77291e3376c3e0076a3ddfbed0c5a8e81494e899"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-provider-probe-result-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-provider-probe-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/provider-probe-result.json",
+      "rawFingerprint": "sha256:79bc9479f191f30e7acc0ad058b7240954245809648da1bd19d08fdbf0bceec9"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-release-authority-bundle-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-release-authority-bundle.v1",
+      "entryPath": "META-INF/gate-a/schemas/release-authority-bundle.json",
+      "rawFingerprint": "sha256:94b37d875a21f08fa9293abc37ac6269d51c6d6c6a3b9af6d2069cf834b6e468"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-release-gate-receipt-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-release-gate-receipt.v1",
+      "entryPath": "META-INF/gate-a/schemas/release-gate-receipt.json",
+      "rawFingerprint": "sha256:028f453654a563c7000a50ba3e816c42d322bb9033f33152503a125a66a075e4"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-replay-profile-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-replay-profile.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-profile.json",
+      "rawFingerprint": "sha256:60cefe37074cc0752a3fc043b106d29352ba02fed56d9f615189256856ebbd44"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-replay-proof-envelope-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-replay-proof-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-proof-envelope.json",
+      "rawFingerprint": "sha256:8e52e93d4dd60a3a92e8211298aca3c90c7ecbb44fc70ad64ad3592b06845302"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-replay-verification-result-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-replay-verification-result.v1",
+      "entryPath": "META-INF/gate-a/schemas/replay-verification-result.json",
+      "rawFingerprint": "sha256:887d939593441ff395af02bb3745628b5a8870dc26ee38dfa0c4266113ceb3c9"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-role-black-box-fixture-bindings-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-role-black-box-fixture-bindings.v1",
+      "entryPath": "META-INF/gate-a/schemas/role-black-box-fixture-bindings.json",
+      "rawFingerprint": "sha256:212bb6967ea7970483ef77f15a574d1b738da471bb81ded7ce818593056f57df"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-role-registry-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-role-registry.v1",
+      "entryPath": "META-INF/gate-a/schemas/role-registry.json",
+      "rawFingerprint": "sha256:f397a5f34201633b182d4957ae2f6e3f8af2e2a98de79dcf329abff5e07f6850"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-role-self-test-receipt-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-role-self-test-receipt.v1",
+      "entryPath": "META-INF/gate-a/schemas/role-self-test-receipt.json",
+      "rawFingerprint": "sha256:515f61fa35cd0777cde85b0bc67122d326e737bd28d95d5877c3855954282413"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-runtime-closure-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-runtime-closure-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/runtime-closure-evidence.json",
+      "rawFingerprint": "sha256:51d050518de30154914a013ef104f142e82cf53d1e7b32213e09da2e56219654"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-schema-set-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-schema-set-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/schema-set-manifest.json",
+      "rawFingerprint": "sha256:c927decae448e755590ff12ca0703e390d8bac24bacd2b0b7ac8db62644c9ebf"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-semantic-guard-catalog-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-semantic-guard-catalog.v1",
+      "entryPath": "META-INF/gate-a/schemas/semantic-guard-catalog.json",
+      "rawFingerprint": "sha256:4c805b06bf6ee1c389bc048b7294cafe5aa93d1dbd882ace2d6f93ae94796ea0"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-semantic-guard-vectors-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-semantic-guard-vectors.v1",
+      "entryPath": "META-INF/gate-a/schemas/semantic-guard-vectors.json",
+      "rawFingerprint": "sha256:b62c32643322749ecb10808fb3e5f7445f91ed13febf2d9de584273e7f4696a9"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-slice-acceptance-receipt-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-slice-acceptance-receipt.v1",
+      "entryPath": "META-INF/gate-a/schemas/slice-acceptance-receipt.json",
+      "rawFingerprint": "sha256:aca1dc59f906d8a516b7da06c876866a2ca009dfbd2f0fc43d431b03b7aebf2b"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-slice-consumption-ledger-head-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-slice-consumption-ledger-head.v1",
+      "entryPath": "META-INF/gate-a/schemas/slice-consumption-ledger-head.json",
+      "rawFingerprint": "sha256:0804e4eee8a8829897f1e5bc5d5111de77b7c6d4a695188ff943b7ab23bef7f1"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-slice-evidence-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-slice-evidence.v1",
+      "entryPath": "META-INF/gate-a/schemas/slice-evidence.json",
+      "rawFingerprint": "sha256:806d3b474200c9619530f6244f731b371a076f11bfd3090ad26571ab7fa8264d"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-source-manifest-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-source-manifest.v1",
+      "entryPath": "META-INF/gate-a/schemas/source-manifest.json",
+      "rawFingerprint": "sha256:0907a85a7ef80446a519750a348e041e0c7d0e415225af84bf67af6edffc2ac8"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-tck-provider-identity-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-tck-provider-identity.v1",
+      "entryPath": "META-INF/gate-a/schemas/tck-provider-identity.json",
+      "rawFingerprint": "sha256:79bb498afb6b95e046378e982337e157bc06e76ca041741387ed4b81d04d2a3c"
+    },
+    {
+      "sourcePath": "capability-studio-gate-a-tck-v1.schema.json",
+      "schemaId": "capability-studio.gate-a-tck.v1",
+      "entryPath": "META-INF/gate-a/schemas/tck.json",
+      "rawFingerprint": "sha256:3bb17412643f563ad91388fa88ed08d0c9648326b3e922488694fe22b1a8becc"
+    },
+    {
+      "sourcePath": "capability-studio-review-body-v1.schema.json",
+      "schemaId": "capability-studio.review-body.v1",
+      "entryPath": "META-INF/gate-a/schemas/reviewer/review-body.json",
+      "rawFingerprint": "sha256:dbf202881ebd5fd3aa3419365c179f571ffb0e1d45e1788e56864acad82af6b8"
+    },
+    {
+      "sourcePath": "capability-studio-reviewer-authority-envelope-v1.schema.json",
+      "schemaId": "capability-studio.reviewer-authority-envelope.v1",
+      "entryPath": "META-INF/gate-a/schemas/reviewer/reviewer-authority-envelope.json",
+      "rawFingerprint": "sha256:d846029dcbf38bcec54c0f1481feb78a3fc4abbc521ba27d3a985ed9f68d2f92"
+    },
+    {
+      "sourcePath": "capability-studio-reviewer-revocation-snapshot-v1.schema.json",
+      "schemaId": "capability-studio.reviewer-revocation-snapshot.v1",
+      "entryPath": "META-INF/gate-a/schemas/reviewer/reviewer-revocation-snapshot.json",
+      "rawFingerprint": "sha256:5b51ac41a9e2c4d4c1f8199446356e7dc7f1e973a551f626007aa7217cc6b843"
+    },
+    {
+      "sourcePath": "capability-studio-reviewer-trust-policy-v1.schema.json",
+      "schemaId": "capability-studio.reviewer-trust-policy.v1",
+      "entryPath": "META-INF/gate-a/schemas/reviewer/reviewer-trust-policy.json",
+      "rawFingerprint": "sha256:75f22205193d10dd5a75bc0ff61fd94a3cca8d651912d2c43a1c74d29a27faa9"
+    }
+  ]
+}

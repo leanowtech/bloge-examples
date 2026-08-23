@@ -1,0 +1,12 @@
+{
+  "fixtureVersion": "resource-gateway.capability-studio.gate-a.packaged-schema-set-attacks.v1",
+  "vectors": [
+    {"vectorId": "WRONG_MANIFEST_ENTRY_PATH", "mutation": "MANIFEST_ENTRY_PATH", "expectedSemanticCode": "PACKAGED_SCHEMA_MANIFEST_MISSING"},
+    {"vectorId": "PACKAGED_SCHEMA_MISSING", "mutation": "SCHEMA_ENTRY_MISSING", "expectedSemanticCode": "PACKAGED_SCHEMA_INVENTORY_DRIFT"},
+    {"vectorId": "PACKAGED_SCHEMA_EXTRA", "mutation": "SCHEMA_ENTRY_EXTRA", "expectedSemanticCode": "PACKAGED_SCHEMA_INVENTORY_DRIFT"},
+    {"vectorId": "PACKAGED_SCHEMA_BYTES_DRIFT", "mutation": "SCHEMA_BYTES_DRIFT", "expectedSemanticCode": "PACKAGED_SCHEMA_BYTES_DRIFT"},
+    {"vectorId": "BUILD_IDENTITY_SELF_FINGERPRINT_DRIFT", "mutation": "BUILD_IDENTITY_SELF", "expectedSemanticCode": "BUILD_IDENTITY_SELF_FINGERPRINT_DRIFT"},
+    {"vectorId": "CHALLENGE_PIN_SELF_FINGERPRINT_DRIFT", "mutation": "CHALLENGE_PIN_SELF", "expectedSemanticCode": "CHALLENGE_PIN_SELF_FINGERPRINT_DRIFT"},
+    {"vectorId": "CHALLENGE_SANDBOX_PROFILE_DRIFT", "mutation": "SANDBOX_PROFILE_RAW", "expectedSemanticCode": "CHALLENGE_PIN_SANDBOX_PROFILE_RAW_DRIFT"}
+  ]
+}

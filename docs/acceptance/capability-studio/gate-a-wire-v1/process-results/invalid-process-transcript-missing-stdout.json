@@ -55,6 +55,14 @@
       }
     }
   },
+  "processObservationRef": {
+    "uri": "run-material/runs/RUN-NORMAL-001/process-observation.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:526780da0fa18dbc5e0966effdc56b4a28d3d791ec22b592988513067ee78957"
+    }
+  },
   "stderrRef": {
     "uri": "run-material/runs/RUN-NORMAL-001/stderr",
     "rawFingerprint": {

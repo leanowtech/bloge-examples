@@ -2,19 +2,63 @@
   "messageVersion": "resource-gateway.capability-studio.gate-a.admission-proof-envelope.v1",
   "envelopeId": "A2-ENVELOPE-DEMO-001",
   "gateRevision": 1,
-  "challengeTrustPinRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"},
-  "admissionTrustPinRawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:5252525252525252525252525252525252525252525252525252525252525252"},
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+  },
+  "admissionTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:5252525252525252525252525252525252525252525252525252525252525252"
+  },
   "closureStatus": "CLOSED",
   "admissionResultMessageVersion": "resource-gateway.capability-studio.gate-a.admission-verification-result.v1",
   "admissionProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
-  "admissionResultRef": {"uri": "valid-admission-verification-result.json", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:a133b98fa21ef096b492666355b20cd1f6caa9cefe2697a1e3b5cb5b802309db"}},
-  "admissionProcessTranscriptRef": {"uri": "valid-process-transcript-a2.json", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}},
-  "expectedAdmissionCodeSource": {"artifactPath": "/opt/gate-a/admission.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"}, "fileSize": 1048576, "fileKey": "dev:1:ino:3101"},
-  "observedAdmissionCodeSource": {"artifactPath": "/opt/gate-a/admission.jar", "rawFingerprint": {"kind": "RAW_BYTES", "algorithm": "SHA-256", "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"}, "fileSize": 1048576, "fileKey": "dev:1:ino:3101"},
+  "admissionResultRef": {
+    "uri": "valid-admission-verification-result.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:a133b98fa21ef096b492666355b20cd1f6caa9cefe2697a1e3b5cb5b802309db"
+    }
+  },
+  "admissionProcessTranscriptRef": {
+    "uri": "valid-process-transcript-a2.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    }
+  },
+  "expectedAdmissionCodeSource": {
+    "artifactPath": "/opt/gate-a/admission.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+    },
+    "fileSize": 1048576,
+    "fileKey": "dev:1:ino:3101"
+  },
+  "observedAdmissionCodeSource": {
+    "artifactPath": "/opt/gate-a/admission.jar",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:3131313131313131313131313131313131313131313131313131313131313131"
+    },
+    "fileSize": 1048576,
+    "fileKey": "dev:1:ino:3101"
+  },
   "observedProcessState": "COMPLETED",
   "observedExitCode": 0,
   "admissionResultConclusion": "PASS",
   "observedConclusion": "PASS",
   "createdAt": "2026-08-21T10:04:05Z",
-  "envelopeFingerprint": {"kind": "CANONICAL_DOCUMENT", "algorithm": "SHA-256", "value": "sha256:2323232323232323232323232323232323232323232323232323232323232323"}
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:565a035bfe4c0fec447dff38f4e16ce7351fb6510458a1bc0a49d4bb38f83a23"
+  }
 }

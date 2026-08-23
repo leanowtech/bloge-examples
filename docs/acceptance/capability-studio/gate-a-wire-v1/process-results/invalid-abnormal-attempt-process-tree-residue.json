@@ -1,0 +1,94 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.abnormal-attempt.v1",
+  "attemptId": "ABNORMAL-PROCESS-TREE-RESIDUE-001",
+  "runId": "RUN-ABNORMAL-PROCESS-TREE-RESIDUE-001",
+  "event": "PROCESS_TREE_RESIDUE",
+  "firstErrorReason": "PROCESS_TREE_RESIDUE",
+  "a1ExitCode": 255,
+  "observedProcessState": "UNAVAILABLE",
+  "observedExitCode": 255,
+  "observedTimedOut": false,
+  "observedCancelled": false,
+  "codeSourceObservationAvailable": true,
+  "stopRemainingSlots": true,
+  "drainStreams": true,
+  "reapProcessTree": true,
+  "formedMaterialPolicy": "PRESERVE_ATTEMPT_ONLY",
+  "remainingMaterialPolicy": "FORBIDDEN",
+  "resultPolicy": "ALLOW_REPLAY_RESULT",
+  "stdoutPolicy": "EMPTY",
+  "harnessProjection": "OUTER_ATTEMPT_ONLY_NO_TEST_REPORT",
+  "commandRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/command.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:d87fa8b503efa0a2dcc9f2401a353c70c35c0a67120269f419685812911b6640"
+    }
+  },
+  "processObservationRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/process-observation.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:030c0d676c3b8562c4a950525c635778b3da21006625bdb2ce07e6a367dcc0d6"
+    }
+  },
+  "processTranscriptRef": {
+    "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:dde2beac1661d65a6a5def686499348e7daf985781258fcc37353f9262d8b4e2"
+    }
+  },
+  "formedMaterialRefs": [
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/command.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:d87fa8b503efa0a2dcc9f2401a353c70c35c0a67120269f419685812911b6640"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/stdout",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/stderr",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/process-observation.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:030c0d676c3b8562c4a950525c635778b3da21006625bdb2ce07e6a367dcc0d6"
+      }
+    },
+    {
+      "uri": "run-material/abnormal-attempts/ABNORMAL-PROCESS-TREE-RESIDUE-001/process-transcript.json",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:dde2beac1661d65a6a5def686499348e7daf985781258fcc37353f9262d8b4e2"
+      }
+    }
+  ],
+  "semanticResultRef": null,
+  "laterMaterialRefs": [],
+  "attemptFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:1e8080b19cab0adecbcdcda7e06f6b1a4b7d62b9512f74d8dbc18d7c03890725"
+  }
+}

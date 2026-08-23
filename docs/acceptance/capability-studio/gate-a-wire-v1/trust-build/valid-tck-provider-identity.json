@@ -1,1 +1,33 @@
-{"schemaVersion":"capability-studio.gate-a-tck-provider-identity.v1","providerId":"gate-a-tck-provider","providerClass":"com.leanowtech.bloge.gatetckprovider.GateATckProvider","serviceDescriptorPath":"META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider","serviceDescriptorFingerprint":{"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000004b"},"implementationClassEntryPath":"com/leanowtech/bloge/gatetckprovider/GateATckProvider.class","implementationClassRawFingerprint":{"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000004c"},"spiCoordinate":"com.leanowtech:resource-gateway-test-kit:1.0.0","spiArtifactFingerprint":{"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000004d"},"spiClassFingerprint":{"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000004e"},"identityFingerprint":{"kind":"CANONICAL_DOCUMENT","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000004f"}}
+{
+  "schemaVersion": "capability-studio.gate-a-tck-provider-identity.v1",
+  "providerId": "gate-a-tck-provider",
+  "providerClass": "com.leanowtech.bloge.gatetckprovider.GateATckProvider",
+  "serviceDescriptorPath": "META-INF/services/com.leanowtech.bloge.gateway.testkit.CapabilityStudioStageAcceptanceAuthorityProvider",
+  "serviceDescriptorFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:67d9b883597f2ca4aac2566a1ecd92380e1102ce0ec3da0589cfa1b680975bc8"
+  },
+  "implementationClassEntryPath": "com/leanowtech/bloge/gatetckprovider/GateATckProvider.class",
+  "implementationClassRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:ba261fcb8295db6048d536cce85029df998567a5f9513d9617d1f311973f1bd2"
+  },
+  "spiCoordinate": "com.leanowtech.bloge:bloge-resource-gateway-test-kit:1.0.0:gate-a-candidate",
+  "spiArtifactFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+  },
+  "spiClassFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:13397bde1e4611c3a86ff80eae2df347c6082365cf52b1dbdb371e23abeeb1e3"
+  },
+  "identityFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:7853db61a04462fdb0b6a6f698f1c4eca38c162e4eba1a83fe2e651969ae412d"
+  }
+}

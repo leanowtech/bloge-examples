@@ -25,13 +25,13 @@ class CapabilityStudioCanonicalizationReferenceTest {
         var root = asObject(manifest);
 
         var positives = asArray(root.values().get("vectors"));
-        assertThat(positives.values()).hasSize(5);
+        assertThat(positives.values()).hasSize(7);
         for (var vector : positives.values()) {
             verifyPositive(asObject(vector));
         }
 
         var rejections = asArray(root.values().get("rejections"));
-        assertThat(rejections.values()).hasSize(6);
+        assertThat(rejections.values()).hasSize(13);
         for (var vector : rejections.values()) {
             verifyRejection(asObject(vector));
         }
@@ -72,7 +72,7 @@ class CapabilityStudioCanonicalizationReferenceTest {
         var profileRoot = asObject(CapabilityStudioCanonicalizationReference.parseUtf8(
                 Files.readAllBytes(findFromRepositoryRoot(PROFILE_PATH))));
         var profiles = asArray(profileRoot.values().get("profiles"));
-        assertThat(profiles.values()).hasSize(44);
+        assertThat(profiles.values()).hasSize(46);
 
         var objectKinds = profiles.values().stream()
                 .map(CapabilityStudioCanonicalizationReferenceTest::asObject)
@@ -83,7 +83,7 @@ class CapabilityStudioCanonicalizationReferenceTest {
                 .map(CapabilityStudioCanonicalizationReferenceTest::asObject)
                 .map(profile -> text(profile, "fingerprintKind"))
                 .filter("CANONICAL_DOCUMENT"::equals))
-                .hasSize(33);
+                .hasSize(35);
         assertThat(profiles.values().stream()
                 .map(CapabilityStudioCanonicalizationReferenceTest::asObject)
                 .map(profile -> text(profile, "fingerprintKind"))
@@ -94,6 +94,17 @@ class CapabilityStudioCanonicalizationReferenceTest {
                 .map(profile -> text(profile, "fingerprintKind"))
                 .filter("AGGREGATE_COMMITMENT"::equals))
                 .hasSize(8);
+
+        assertProfile(
+                profiles,
+                "GATE_A_INDEPENDENT_PROOF_ENVELOPE",
+                "RG-CS-GATE-A1-INDEPENDENT-PROOF-ENVELOPE-v1",
+                "envelopeFingerprint");
+        assertProfile(
+                profiles,
+                "GATE_A_PROVIDER_MATERIALIZATION_OBSERVATION",
+                "RG-CS-GATE-A-PROVIDER-MATERIALIZATION-OBSERVATION-v1",
+                "observationFingerprint");
 
         var vectors = asObject(CapabilityStudioCanonicalizationReference.parseUtf8(
                 Files.readAllBytes(findFromRepositoryRoot(VECTOR_PATH))));
@@ -112,6 +123,21 @@ class CapabilityStudioCanonicalizationReferenceTest {
                             : "UNEXPECTED_PROFILE_MATCH";
             assertThat(observedReason).isEqualTo(expectedReason);
         }
+    }
+
+    private static void assertProfile(
+            CapabilityStudioCanonicalizationReference.JsonArray profiles,
+            String objectKind,
+            String domain,
+            String selfField) {
+        var profile = profiles.values().stream()
+                .map(CapabilityStudioCanonicalizationReferenceTest::asObject)
+                .filter(candidate -> objectKind.equals(text(candidate, "objectKind")))
+                .findFirst()
+                .orElseThrow();
+        assertThat(text(profile, "domain")).isEqualTo(domain);
+        assertThat(text(profile, "selfField")).isEqualTo(selfField);
+        assertThat(text(profile, "fingerprintKind")).isEqualTo("CANONICAL_DOCUMENT");
     }
 
     private static void verifyPositive(CapabilityStudioCanonicalizationReference.JsonObject vector) {

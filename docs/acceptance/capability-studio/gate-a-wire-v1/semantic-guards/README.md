@@ -17,7 +17,7 @@ JSON Schema is the structural authority: it freezes object shape, fixed slot ide
 Run from the repository root:
 
 ```bash
-/tmp/gate-a-jsonschema/bin/python docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/validate-vectors.py
+uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/semantic-guards/validate-vectors.py
 ```
 
 The same command validates the four A2 fixtures and retains the intentional separation of duties: a forged A2 `PASS` with a failed diagnostic Guard remains JSON-Schema-valid, then `A2_CONCLUSION_PRECEDENCE` must reject it semantically.

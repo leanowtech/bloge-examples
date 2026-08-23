@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "LAUNCH_CONTRACT",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": null,
+      "sourcePointer": "/launchContracts"
+    }
+  ],
+  "content": [
+    {
+      "launchKind": "CANDIDATE_CHILD",
+      "executable": "/opt/jdk/bin/java",
+      "argumentTemplate": [
+        "-cp",
+        "/work/provider.jar:/opt/candidate.jar",
+        "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli",
+        "--request",
+        "/tmp/gate-a/{outerRunId}/producer/children/{childDir}/request.json"
+      ],
+      "workingDirectoryTemplate": "/tmp/gate-a/{runId}",
+      "environmentNames": [],
+      "requestBinding": "CHILD_REQUEST_ROLE_PATH",
+      "classpathOrder": [
+        "TCK_PROVIDER",
+        "IMPLEMENTATION_CANDIDATE"
+      ],
+      "actualArgumentObservationRequired": true,
+      "launcherRole": "INDEPENDENT_VERIFIER",
+      "launchedRole": "IMPLEMENTATION_CANDIDATE",
+      "timeoutMillis": 120000,
+      "terminateSignal": "SIGTERM",
+      "killAfterMillis": 2000,
+      "stdoutLimitBytes": 1048576,
+      "stderrLimitBytes": 1048576
+    },
+    {
+      "launchKind": "A1_VERIFIER",
+      "executable": "/opt/jdk/bin/java",
+      "argumentTemplate": [
+        "-jar",
+        "/opt/gate-a/verifier.jar",
+        "--run-id",
+        "{runId}",
+        "--run-purpose",
+        "{runPurpose}",
+        "--challenge-pin",
+        "/opt/gate-a/challenge-pin.json",
+        "--challenge-input-root",
+        "/input",
+        "--candidate",
+        "/opt/candidate.jar",
+        "--candidate-spi",
+        "/opt/candidate-spi.jar",
+        "--material-output-root",
+        "/tmp/gate-a/{runId}/producer",
+        "--scratch-root",
+        "/tmp/gate-a/{runId}/scratch"
+      ],
+      "workingDirectoryTemplate": "/tmp/gate-a/{runId}",
+      "environmentNames": [],
+      "requestBinding": "COMMAND_ARGUMENTS_ARE_INVOCATION",
+      "classpathOrder": [
+        "INDEPENDENT_VERIFIER"
+      ],
+      "actualArgumentObservationRequired": true,
+      "launcherRole": "CALLER",
+      "launchedRole": "INDEPENDENT_VERIFIER",
+      "timeoutMillis": 600000,
+      "terminateSignal": "SIGTERM",
+      "killAfterMillis": 2000,
+      "stdoutLimitBytes": 1048576,
+      "stderrLimitBytes": 1048576
+    },
+    {
+      "launchKind": "CONFORMANCE_HARNESS",
+      "executable": "/opt/jdk/bin/java",
+      "argumentTemplate": [
+        "-jar",
+        "/opt/gate-a/harness.jar",
+        "--run-id",
+        "{runId}",
+        "--challenge-pin",
+        "/opt/gate-a/challenge-pin.json",
+        "--candidate",
+        "/opt/candidate.jar",
+        "--candidate-spi",
+        "/opt/candidate-spi.jar",
+        "--verifier",
+        "/opt/gate-a/verifier.jar",
+        "--material-output-root",
+        "/tmp/gate-a/{runId}/producer",
+        "--scratch-root",
+        "/tmp/gate-a/{runId}/scratch"
+      ],
+      "workingDirectoryTemplate": "/tmp/gate-a/{runId}",
+      "environmentNames": [],
+      "requestBinding": "HARNESS_ARGUMENTS_ARE_INVOCATION",
+      "classpathOrder": [
+        "CONFORMANCE_HARNESS"
+      ],
+      "actualArgumentObservationRequired": true,
+      "launcherRole": "CALLER",
+      "launchedRole": "CONFORMANCE_HARNESS",
+      "timeoutMillis": 1800000,
+      "terminateSignal": "SIGTERM",
+      "killAfterMillis": 2000,
+      "stdoutLimitBytes": 1048576,
+      "stderrLimitBytes": 1048576
+    },
+    {
+      "launchKind": "A2_ADMISSION",
+      "executable": "/opt/jdk/bin/java",
+      "argumentTemplate": [
+        "-jar",
+        "/opt/gate-a/admission.jar",
+        "--run-id",
+        "{runId}",
+        "--admission-pin",
+        "/opt/gate-a/admission-pin.json",
+        "--evidence-root",
+        "/evidence",
+        "--material-output-root",
+        "/tmp/gate-a/{runId}/producer"
+      ],
+      "workingDirectoryTemplate": "/tmp/gate-a/{runId}",
+      "environmentNames": [],
+      "requestBinding": "ADMISSION_ARGUMENTS_ARE_INVOCATION",
+      "classpathOrder": [
+        "GATE_ADMISSION_CHECKER"
+      ],
+      "actualArgumentObservationRequired": true,
+      "launcherRole": "CALLER",
+      "launchedRole": "GATE_ADMISSION_CHECKER",
+      "timeoutMillis": 300000,
+      "terminateSignal": "SIGTERM",
+      "killAfterMillis": 2000,
+      "stdoutLimitBytes": 1048576,
+      "stderrLimitBytes": 1048576
+    }
+  ]
+}

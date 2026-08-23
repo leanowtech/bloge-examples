@@ -1,0 +1,344 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "AUTHORITY_MATRIX",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": "trustBoundary",
+      "sourcePointer": "/trustBoundary"
+    },
+    {
+      "key": "authorityRelations",
+      "sourcePointer": "/authorityRelations"
+    }
+  ],
+  "content": {
+    "trustBoundary": {
+      "trusted": [
+        "caller-controlled launcher and immutable pins",
+        "CI image, operating system, JVM and file-system observations",
+        "caller-pinned A1 artifact as direct parent observation authority"
+      ],
+      "hostile": [
+        "implementation candidate",
+        "candidate stdout and semantic response",
+        "evidence-root-local expected values"
+      ],
+      "outOfScope": [
+        "OS or container escape",
+        "malicious caller-pinned A1 artifact",
+        "same-UID adversary that defeats the trusted launcher"
+      ],
+      "observationAuthority": "CALLER_PINNED_A1_IS_DIRECT_PARENT_OF_CANDIDATE",
+      "maliciousVerifierPolicy": "REQUIRES_HIGHER_REVISION_TRUSTED_LAUNCHER_OBSERVATION"
+    },
+    "authorityRelations": [
+      {
+        "fact": "PROTOCOL_AUTHORITY_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "ALL_GATE_A_ROLES",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "ROLE_SELF_REPORT"
+      },
+      {
+        "fact": "SCHEMA_SET_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "ALL_GATE_A_ROLES",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "PACKAGED_MANIFEST_ALONE"
+      },
+      {
+        "fact": "TCK_DEFINITION_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "A1_AND_HARNESS",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "TEST_REPORT"
+      },
+      {
+        "fact": "REPLAY_PROFILE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "A1",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "CANDIDATE_RESPONSE"
+      },
+      {
+        "fact": "HARNESS_PROFILE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "HARNESS",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "ROLE_SPECIFIC",
+        "forbiddenSource": "A1_RESULT"
+      },
+      {
+        "fact": "ADMISSION_PROFILE_RAW",
+        "authority": "CALLER_ADMISSION_PIN",
+        "consumer": "A2",
+        "comparisonTime": "ROLE_BOOTSTRAP",
+        "equalityPolicy": "ROLE_SPECIFIC",
+        "forbiddenSource": "GATE_RESULT"
+      },
+      {
+        "fact": "CANDIDATE_CODESOURCE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "A1",
+        "comparisonTime": "PRE_AND_POST_CHILD",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "CANDIDATE_RESPONSE"
+      },
+      {
+        "fact": "A1_CODESOURCE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "HARNESS",
+        "comparisonTime": "PRE_AND_POST_OUTER",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "A1_RESULT"
+      },
+      {
+        "fact": "HARNESS_CODESOURCE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "CALLER",
+        "comparisonTime": "PRE_AND_POST_OUTER",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "TEST_REPORT"
+      },
+      {
+        "fact": "A2_CODESOURCE_RAW",
+        "authority": "CALLER_ADMISSION_PIN",
+        "consumer": "CALLER",
+        "comparisonTime": "PRE_AND_POST_OUTER",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "GATE_RESULT"
+      },
+      {
+        "fact": "PROVIDER_CODESOURCE_RAW",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "A1",
+        "comparisonTime": "PRE_MATERIALIZE_AND_POST_READ",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "SERVICE_LOADER_RESPONSE"
+      },
+      {
+        "fact": "CHILD_PROCESS_EXIT",
+        "authority": "A1_DIRECT_PARENT_OBSERVATION",
+        "consumer": "A1_ORACLE",
+        "comparisonTime": "AFTER_CHILD_REAP",
+        "equalityPolicy": "DERIVED_ONLY",
+        "forbiddenSource": "CANDIDATE_RESPONSE"
+      },
+      {
+        "fact": "OUTER_PROCESS_EXIT",
+        "authority": "CALLER_DIRECT_PARENT_OBSERVATION",
+        "consumer": "HARNESS_OR_A2",
+        "comparisonTime": "AFTER_OUTER_REAP",
+        "equalityPolicy": "DERIVED_ONLY",
+        "forbiddenSource": "ROLE_STDOUT"
+      },
+      {
+        "fact": "ROLE_ARTIFACT_INDEPENDENCE",
+        "authority": "CALLER_BUILD_GATE",
+        "consumer": "A2",
+        "comparisonTime": "ADMISSION",
+        "equalityPolicy": "MUST_DIFFER",
+        "forbiddenSource": "ROLE_DECLARATION"
+      },
+      {
+        "fact": "DEPENDENCY_LOCK_RAW",
+        "authority": "CALLER_OWNED_DEPENDENCY_AUTHORITY",
+        "consumer": "ROLE_PACKAGING_GATE",
+        "comparisonTime": "PRE_ADMISSION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "INTERNAL_DEPENDENCY_MANIFEST"
+      },
+      {
+        "fact": "PROVIDED_ABI_EXTERNAL",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "TCK_PROVIDER",
+        "comparisonTime": "PROVIDER_ADMISSION",
+        "equalityPolicy": "ROLE_SPECIFIC",
+        "forbiddenSource": "EMBEDDED_DEPENDENCY_ENTRY"
+      },
+      {
+        "fact": "CANDIDATE_RUNTIME_CLOSURE",
+        "authority": "TOP_LEVEL_DEPENDENCY_AUTHORITY",
+        "consumer": "IMPLEMENTATION_CANDIDATE",
+        "comparisonTime": "BUILD_PROFILE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "MAVEN_TRANSITIVE_RESOLUTION"
+      },
+      {
+        "fact": "CANDIDATE_BUILD_PROFILE",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "IMPLEMENTATION_CANDIDATE",
+        "comparisonTime": "BUILD_INVOCATION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "LEGACY_CLI_CLASSIFIER"
+      },
+      {
+        "fact": "LEGACY_CLI_COMPATIBILITY",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "IMPLEMENTATION_CANDIDATE",
+        "comparisonTime": "BUILD_INVOCATION",
+        "equalityPolicy": "MUST_DIFFER",
+        "forbiddenSource": "CANDIDATE_RENAME"
+      },
+      {
+        "fact": "HERMETIC_LAUNCHER_IDENTITY",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "ALL_RUNTIME_LAUNCHES",
+        "comparisonTime": "PRE_EXECUTION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "PATH_LOOKUP"
+      },
+      {
+        "fact": "HERMETIC_ORACLE_VISIBILITY",
+        "authority": "HERMETIC_EXECUTION_CONTRACT",
+        "consumer": "ROLE_SELF_TEST",
+        "comparisonTime": "PRE_EXECUTION",
+        "equalityPolicy": "MUST_DIFFER",
+        "forbiddenSource": "ROLE_FIXTURE_ROOT"
+      },
+      {
+        "fact": "BOUNDED_CAPTURE_POLICY",
+        "authority": "HERMETIC_EXECUTION_CONTRACT",
+        "consumer": "ALL_RUNTIME_LAUNCHES",
+        "comparisonTime": "PROCESS_EXECUTION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "UNBOUNDED_THREAD_JOIN"
+      },
+      {
+        "fact": "DESCENDANT_KILL_POLICY",
+        "authority": "HERMETIC_EXECUTION_CONTRACT",
+        "consumer": "ALL_RUNTIME_LAUNCHES",
+        "comparisonTime": "PROCESS_TERMINATION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "ORIGINAL_PROCESS_GROUP_ONLY"
+      },
+      {
+        "fact": "SLICE_ACCEPTANCE_ID",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "DELIVERY_PIPELINE",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "FREE_TEXT_COMMAND"
+      },
+      {
+        "fact": "SLICE_TEST_SET",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "DELIVERY_PIPELINE",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "ORDINARY_CLEAN_VERIFY"
+      },
+      {
+        "fact": "GATE_SCHEMA_FILESYSTEM_CLOSED_SET",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "PROTOCOL_GATE",
+        "comparisonTime": "BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "AUTHORITY_LIST_ONLY"
+      },
+      {
+        "fact": "REVIEWER_SCHEMA_FILESYSTEM_CLOSED_SET",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "PROTOCOL_GATE",
+        "comparisonTime": "BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "REQUIRED_LIST_ONLY"
+      },
+      {
+        "fact": "HERMETIC_LAUNCHER_OBSERVATION_NONCE",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "HERMETIC_LAUNCHER",
+        "comparisonTime": "PRE_EXECUTION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "STATIC_CAPABILITY_DECLARATION"
+      },
+      {
+        "fact": "HERMETIC_LAUNCHER_OBSERVATION_INVOCATION",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "HERMETIC_LAUNCHER",
+        "comparisonTime": "ONE_INVOCATION_ONE_CONSUMPTION",
+        "equalityPolicy": "MUST_DIFFER",
+        "forbiddenSource": "REPLAYED_INVOCATION"
+      },
+      {
+        "fact": "HERMETIC_PROCESS_OBSERVATION",
+        "authority": "CALLER_DIRECT_PARENT_OBSERVATION",
+        "consumer": "HERMETIC_LAUNCHER_OBSERVATION",
+        "comparisonTime": "POST_EXECUTION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "LAUNCHER_SELF_REPORT"
+      },
+      {
+        "fact": "SLICE_AUTHORITY_BINDING",
+        "authority": "CALLER_CHALLENGE_PIN",
+        "consumer": "SLICE_RECEIPT",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "RECEIPT_SELF_DECLARATION"
+      },
+      {
+        "fact": "SLICE_SOURCE_TREE",
+        "authority": "CALLER_BUILD_GATE",
+        "consumer": "SLICE_RECEIPT",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "WORKTREE_PATH_ONLY"
+      },
+      {
+        "fact": "SLICE_TOOLCHAIN_IDENTITY",
+        "authority": "HERMETIC_EXECUTION_CONTRACT",
+        "consumer": "SLICE_RECEIPT",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "PATH_LOOKUP"
+      },
+      {
+        "fact": "SLICE_PREDECESSOR_RECEIPT",
+        "authority": "CALLER_ACCEPTANCE_LEDGER",
+        "consumer": "DELIVERY_PIPELINE",
+        "comparisonTime": "SLICE_ACCEPTANCE",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "SKIPPED_PREDECESSOR"
+      },
+      {
+        "fact": "SLICE_RECEIPT_SELF_FINGERPRINT",
+        "authority": "SLICE_RECEIPT_SCHEMA",
+        "consumer": "DELIVERY_PIPELINE",
+        "comparisonTime": "RECEIPT_COMMIT",
+        "equalityPolicy": "DERIVED_ONLY",
+        "forbiddenSource": "BARE_STRING_DIGEST"
+      },
+      {
+        "fact": "RUNTIME_DEPENDENCY_CLOSURE",
+        "authority": "CALLER_OWNED_DEPENDENCY_AUTHORITY",
+        "consumer": "ROLE_PACKAGING_GATE",
+        "comparisonTime": "ROLE_ADMISSION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "ONE_SIZE_FITS_ALL_RUNTIME_SET"
+      },
+      {
+        "fact": "PROVIDER_DESCRIPTOR_VS_INTERFACE",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "TCK_PROVIDER",
+        "comparisonTime": "PROVIDER_ADMISSION",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "SPI_ENTRY_PATH_AMBIGUITY"
+      },
+      {
+        "fact": "HERMETIC_SCHEMA_NAMESPACE",
+        "authority": "GATE_A_PROTOCOL_AUTHORITY",
+        "consumer": "PROTOCOL_GATE",
+        "comparisonTime": "BOOTSTRAP",
+        "equalityPolicy": "EXACT_RAW_EQUAL",
+        "forbiddenSource": "LAUNCHER_OBSERVATION_SCHEMA_VERSION_ALIAS"
+      }
+    ]
+  }
+}

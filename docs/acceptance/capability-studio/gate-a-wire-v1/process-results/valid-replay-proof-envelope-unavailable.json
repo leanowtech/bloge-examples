@@ -1,61 +1,61 @@
 {
-  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
-  "envelopeId": "A1-ENVELOPE-DEMO-002",
-  "gateRevision": 1,
   "challengeTrustPinRawFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",
-    "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+  },
+  "closureStatus": "CLOSED",
+  "createdAt": "2026-08-21T11:59:00Z",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:a56fdd5ea4c958d08f0d6719a2d7fd6bdda4b198f5a26b830596b88939e003c0"
+  },
+  "envelopeId": "A1-ENVELOPE-GENERATED-UNAVAILABLE-001",
+  "expectedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "gateRevision": 1,
+  "messageVersion": "resource-gateway.capability-studio.gate-a.replay-proof-envelope.v1",
+  "observedExitCode": 3,
+  "observedProcessState": "COMPLETED",
+  "observedProducerCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "observedTerminal": "UNAVAILABLE",
+  "producerMaterialRootRef": {
+    "uri": "run-material/runs/RUN-A1-REPLAY-UNAVAILABLE-001/material-root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:3d1fbac8bb9b0c1f9db80b27db511acdf24541828c91828df4f212a32f671368"
+    }
+  },
+  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
+  "producerProcessTranscriptRef": {
+    "uri": "run-material/runs/RUN-A1-REPLAY-UNAVAILABLE-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:50f071a7c7c98d6f3c5801ea90f4bc7d14f3174008660f9de808c5dedc4b9a60"
+    }
   },
   "replayProfileRawFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",
-    "value": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
   },
-  "closureStatus": "CLOSED",
   "replayResultMessageVersion": "resource-gateway.capability-studio.gate-a.replay-verification-result.v1",
-  "producerProcessMessageVersion": "resource-gateway.capability-studio.gate-a.process-transcript.v1",
   "replayResultRef": {
-    "uri": "run-material/results/a1-replay-result-unavailable.json",
+    "uri": "run-material/runs/RUN-A1-REPLAY-UNAVAILABLE-001/response.json",
     "rawFingerprint": {
       "kind": "RAW_BYTES",
       "algorithm": "SHA-256",
-      "value": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      "value": "sha256:6f3e21671fc20f3509607a0efef2b27e2bd641fc13f5b30c79634c2a3087323e"
     }
-  },
-  "producerProcessTranscriptRef": {
-    "uri": "run-material/transcripts/a1-process-unavailable.json",
-    "rawFingerprint": {
-      "kind": "RAW_BYTES",
-      "algorithm": "SHA-256",
-      "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
-    }
-  },
-  "producerMaterialRootRef": {
-    "uri": "run-material/a1.tree",
-    "fingerprint": {
-      "kind": "TREE_COMMITMENT",
-      "algorithm": "SHA-256",
-      "value": "sha256:6969696969696969696969696969696969696969696969696969696969696969"
-    }
-  },
-  "expectedProducerCodeSourceRawFingerprint": {
-    "kind": "RAW_BYTES",
-    "algorithm": "SHA-256",
-    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  },
-  "observedProducerCodeSourceRawFingerprint": {
-    "kind": "RAW_BYTES",
-    "algorithm": "SHA-256",
-    "value": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  },
-  "observedProcessState": "COMPLETED",
-  "observedExitCode": 3,
-  "observedTerminal": "UNAVAILABLE",
-  "createdAt": "2026-08-21T11:10:01Z",
-  "envelopeFingerprint": {
-    "kind": "CANONICAL_DOCUMENT",
-    "algorithm": "SHA-256",
-    "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
   }
 }

@@ -85,6 +85,11 @@
     "algorithm": "SHA-256",
     "value": "sha256:0000000000000000000000000000000000000000000000000000000000000010"
   },
+  "expectedProtocolAuthorityRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:f3ac8a39e653ab0d975c9186436cfa6ac0c6e2bba63f5512e174d0aae62b0901"
+  },
   "expectedChallengeInputRootFingerprint": {
     "kind": "RAW_BYTES",
     "algorithm": "SHA-256",

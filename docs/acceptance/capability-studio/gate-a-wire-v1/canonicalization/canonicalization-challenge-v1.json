@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "capability-studio.gate-a-canonicalization-challenge.v1",
+  "revision": 1,
+  "contract": {
+    "id": "GATE_A_RFC8785_COMPATIBLE_SUBSET_V1",
+    "canonicalization": "RFC_8785_JCS",
+    "objectKeyOrdering": "UTF16_CODE_UNITS",
+    "unicode": "UNICODE_SCALARS_NO_LONE_SURROGATES",
+    "utf8": "UTF8_NO_BOM_EXACT_BYTES",
+    "duplicateObjectMembers": "REJECT_AT_PARSE_BOUNDARY",
+    "numberPolicy": "FINITE_IEEE754_BINARY64_CANONICAL_DECIMAL_ROUNDTRIP_SAFE_INTEGER_V1",
+    "nonFiniteNumbers": "REJECT",
+    "rejectionCodes": [
+      "DUPLICATE_KEY",
+      "INVALID_UTF8",
+      "LONE_SURROGATE",
+      "NON_FINITE_NUMBER",
+      "NUMBER_NOT_EXACT",
+      "UNSAFE_INTEGER",
+      "UTF8_BOM_REJECTED"
+    ]
+  },
+  "vectors": [
+    {
+      "id": "PROPERTY_ORDER_ESCAPE_AND_SELF_FIELD",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"z\":3,\"selfFingerprint\":\"sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"nested\":{\"β\":\"lambda\",\"a\":1},\"escaped\":\"line\\\\nquoted\\\\\\\"\"}"
+    },
+    {
+      "id": "DOCUMENT_WITHOUT_STDOUT_LF",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"value\":\"same\"}"
+    },
+    {
+      "id": "SAME_DOCUMENT_WITH_STDOUT_LF",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"value\":\"same\"}\n"
+    },
+    {
+      "id": "UTF16_PROPERTY_ORDER",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"values\":{\"€\":\"Euro\",\"\\r\":\"CR\",\"😀\":\"Emoji\",\"1\":\"One\"}}"
+    },
+    {
+      "id": "TYPED_AGGREGATE_ENTRIES",
+      "domain": "RG-CS-GATE-A-REVIEWED-MATERIAL-ROOT-v1",
+      "selfField": null,
+      "sourceText": "[{\"role\":\"DESIGN\",\"fingerprint\":{\"kind\":\"RAW_BYTES\",\"algorithm\":\"SHA-256\",\"value\":\"sha256:0000000000000000000000000000000000000000000000000000000000000000\"}},{\"role\":\"RUN_MATERIAL_ROOT\",\"fingerprint\":{\"kind\":\"TREE_COMMITMENT\",\"algorithm\":\"SHA-256\",\"value\":\"sha256:1111111111111111111111111111111111111111111111111111111111111111\"}}]"
+    },
+    {
+      "id": "JCS_NUMBER_BOUNDARIES",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":-0,\"minSafe\":-9007199254740991,\"maxSafe\":9007199254740991,\"half\":0.5,\"decimal\":0.1,\"subnormal\":5e-324}"
+    },
+    {
+      "id": "UTF16_CODE_UNIT_ORDER_AND_SCALARS",
+      "domain": "RG-CS-GATE-A-REFERENCE-DOCUMENT-v1",
+      "selfField": "selfFingerprint",
+      "sourceText": "{\"selfFingerprint\":null,\"values\":{\"\\ue000\":\"BMP private\",\"\\ud800\\udc00\":\"first non-BMP\",\"😀\":\"grinning\",\"\\ud7ff\":\"before\"}}"
+    }
+  ],
+  "profileRejections": [
+    {
+      "id": "PROFILE_WRONG_DOMAIN_REJECTED",
+      "objectKind": "GATE_A_CHALLENGE_TRUST_PIN",
+      "domain": "RG-CS-GATE-A-ADMISSION-TRUST-PIN-v1",
+      "selfField": "challengeTrustPinFingerprint",
+      "fingerprintKind": "CANONICAL_DOCUMENT",
+      "sourceText": "{\"schemaVersion\":\"capability-studio.gate-a-challenge-trust-pin.v1\",\"challengeTrustPinFingerprint\":null}"
+    },
+    {
+      "id": "PROFILE_WRONG_SELF_FIELD_REJECTED",
+      "objectKind": "GATE_A_CHALLENGE_TRUST_PIN",
+      "domain": "RG-CS-GATE-A-CHALLENGE-TRUST-PIN-v1",
+      "selfField": "admissionTrustPinFingerprint",
+      "fingerprintKind": "CANONICAL_DOCUMENT",
+      "sourceText": "{\"schemaVersion\":\"capability-studio.gate-a-challenge-trust-pin.v1\",\"challengeTrustPinFingerprint\":null}"
+    }
+  ]
+}

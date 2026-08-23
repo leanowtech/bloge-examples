@@ -1,0 +1,13 @@
+{
+  "fixtureVersion": "resource-gateway.capability-studio.gate-a.launcher-contamination-vectors.v1",
+  "vectors": [
+    {"vectorId": "CLASSPATH_ENVIRONMENT", "target": "environmentNames", "value": "CLASSPATH", "expectedSemanticCode": "LAUNCHER_ENVIRONMENT_NOT_EMPTY"},
+    {"vectorId": "JAVA_TOOL_OPTIONS_ENVIRONMENT", "target": "environmentNames", "value": "JAVA_TOOL_OPTIONS", "expectedSemanticCode": "LAUNCHER_ENVIRONMENT_NOT_EMPTY"},
+    {"vectorId": "JDK_JAVA_OPTIONS_ENVIRONMENT", "target": "environmentNames", "value": "JDK_JAVA_OPTIONS", "expectedSemanticCode": "LAUNCHER_ENVIRONMENT_NOT_EMPTY"},
+    {"vectorId": "UNDERSCORE_JAVA_OPTIONS_ENVIRONMENT", "target": "environmentNames", "value": "_JAVA_OPTIONS", "expectedSemanticCode": "LAUNCHER_ENVIRONMENT_NOT_EMPTY"},
+    {"vectorId": "JAVA_AGENT_ARGUMENT", "target": "jvmInputArguments", "value": "-javaagent:/tmp/agent.jar", "expectedSemanticCode": "LAUNCHER_JVM_ARGUMENTS_NOT_EMPTY"},
+    {"vectorId": "EXTRA_CLASSPATH_ENTRY", "target": "effectiveClasspath", "value": "EXTRA", "expectedSemanticCode": "LAUNCHER_CLASSPATH_DRIFT"},
+    {"vectorId": "APPLICATION_CODESOURCE_DRIFT", "target": "applicationCodeSource", "value": "DRIFT", "expectedSemanticCode": "LAUNCHER_ADMITTED_CLASS_ORIGIN_DRIFT"},
+    {"vectorId": "ADMITTED_CLASS_ORIGIN_DRIFT", "target": "admittedClassOrigin", "value": "DRIFT", "expectedSemanticCode": "LAUNCHER_ADMITTED_CLASS_ORIGIN_DRIFT"}
+  ]
+}

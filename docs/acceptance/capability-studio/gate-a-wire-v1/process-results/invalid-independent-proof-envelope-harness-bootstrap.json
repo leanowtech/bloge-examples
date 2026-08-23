@@ -1,0 +1,60 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.independent-proof-envelope.v1",
+  "envelopeId": "A1-INDEPENDENT-ENVELOPE-GENERATED-001",
+  "gateRevision": 1,
+  "challengeTrustPinRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:22e0ee967f5355911cfb59e010b153575c9851da7deb00613ce9fb1c8f7f9bd9"
+  },
+  "harnessProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000007"
+  },
+  "closureStatus": "CLOSED",
+  "independentResultMessageVersion": "resource-gateway.capability-studio.gate-a.independent-verification-result.v1",
+  "harnessProcessMessageVersion": "resource-gateway.capability-studio.gate-a.harness-process-transcript.v1",
+  "independentResultRef": {
+    "uri": "run-material/runs/RUN-HARNESS-BOOTSTRAP-ATTACK-001/response.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:18a829f3ccb0e0f46baea5876416177422104f9e46d1d9e45057a06c5522ec2b"
+    }
+  },
+  "harnessProcessTranscriptRef": {
+    "uri": "run-material/runs/RUN-HARNESS-BOOTSTRAP-ATTACK-001/process-transcript.json",
+    "rawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:98bf8e897a2c370a3940118eb61233789fb0c763692bc8b5ab7fe2e683785dac"
+    }
+  },
+  "harnessMaterialRootRef": {
+    "uri": "run-material/runs/RUN-HARNESS-BOOTSTRAP-ATTACK-001/material-root.tree",
+    "fingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:605d06195451eeaf2528a88e857a72f64460d445291670b3e4bd531071bde6ee"
+    }
+  },
+  "expectedHarnessCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+  },
+  "observedHarnessCodeSourceRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+  },
+  "observedProcessState": "COMPLETED",
+  "observedExitCode": 0,
+  "createdAt": "2026-08-21T12:30:00Z",
+  "envelopeFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:ea360cbbe5d7c3e37b99c9c9733e8f6cd8b9fd0fc4787947ae56498d8a2d6ff8"
+  }
+}

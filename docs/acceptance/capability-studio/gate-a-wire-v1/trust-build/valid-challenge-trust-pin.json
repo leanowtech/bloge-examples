@@ -5,23 +5,104 @@
   "createdAt": "2026-08-21T09:00:00Z",
   "semanticVerificationTime": "2026-08-21T09:00:01Z",
   "allowedGateRevision": 1,
-  "expectedDesignRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000001"},
-  "expectedReplayProfileRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000002"},
-  "expectedAdmissionProfileRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000003"},
-  "expectedImplementationCandidateRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000004"},
-  "expectedIndependentVerifierRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000005"},
-  "expectedConformanceHarnessRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000006"},
-  "expectedHarnessProfileRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000007"},
-  "expectedGateVerifierRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000008"},
-  "expectedSchemaSetManifestRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000009"},
-  "expectedTckDefinitionRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000a"},
-  "expectedTckProviderRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000b"},
-  "expectedCandidateSpiArtifactRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000c"},
-  "expectedCandidateSpiClassRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000d"},
-  "expectedReviewerArtifactRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000e"},
-  "expectedReviewerTrustPolicyRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:000000000000000000000000000000000000000000000000000000000000000f"},
-  "expectedReviewerRevocationSnapshotRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000010"},
-  "expectedChallengeInputRootFingerprint": {"kind":"TREE_COMMITMENT","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000011"},
-  "expectedChallengeSandboxProfileRawFingerprint": {"kind":"RAW_BYTES","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000012"},
-  "challengeTrustPinFingerprint": {"kind":"CANONICAL_DOCUMENT","algorithm":"SHA-256","value":"sha256:0000000000000000000000000000000000000000000000000000000000000013"}
+  "expectedDesignRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000001"
+  },
+  "expectedReplayProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000002"
+  },
+  "expectedAdmissionProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000003"
+  },
+  "expectedImplementationCandidateRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+  },
+  "expectedIndependentVerifierRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000005"
+  },
+  "expectedConformanceHarnessRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000006"
+  },
+  "expectedHarnessProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000007"
+  },
+  "expectedGateVerifierRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000008"
+  },
+  "expectedSchemaSetManifestRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:043ed7533c65c8ed1e84cc3aecdb49544d3ba8d5cc744187e61c8efd2f87e13b"
+  },
+  "expectedTckDefinitionRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000000a"
+  },
+  "expectedTckProviderRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:2cf7e59c0b0e70558533f5493663d9d3ec938536949694b33d33943e42bd9972"
+  },
+  "expectedCandidateSpiArtifactRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:01a84e6cc1c79bc6091c3ab336fbf40fc48cc91f52305142f463a4fcb9d5f0ee"
+  },
+  "expectedCandidateSpiClassRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:13397bde1e4611c3a86ff80eae2df347c6082365cf52b1dbdb371e23abeeb1e3"
+  },
+  "expectedReviewerArtifactRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000000e"
+  },
+  "expectedReviewerTrustPolicyRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:000000000000000000000000000000000000000000000000000000000000000f"
+  },
+  "expectedReviewerRevocationSnapshotRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:0000000000000000000000000000000000000000000000000000000000000010"
+  },
+  "expectedProtocolAuthorityRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156"
+  },
+  "expectedChallengeInputRootFingerprint": {
+    "kind": "TREE_COMMITMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:15189c1d34dae72c81f6620536df0f4806ecdd5f0535382661176af1df167c41"
+  },
+  "expectedChallengeSandboxProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+  },
+  "challengeTrustPinFingerprint": {
+    "kind": "CANONICAL_DOCUMENT",
+    "algorithm": "SHA-256",
+    "value": "sha256:37997d007a5e6f48470f51beaa8ca935c25607a223ec8507e5fc30e18bc48558"
+  }
 }

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": "capability-studio.gate-a-protocol-projection.v1",
+  "projectionId": "MATERIAL_OWNERSHIP",
+  "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
+  "authorityRevision": 1,
+  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceSelectors": [
+    {
+      "key": null,
+      "sourcePointer": "/materialOwnership"
+    }
+  ],
+  "content": [
+    {
+      "artifact": "OUTER_COMMAND",
+      "pathTemplate": "runs/{runId}/command.json",
+      "writer": "CALLER",
+      "writePhase": "PRE_LAUNCH",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Visible read-only to the launched role before exec."
+    },
+    {
+      "artifact": "A1_INVOCATION",
+      "pathTemplate": "runs/{runId}/producer/invocation.json",
+      "writer": "A1",
+      "writePhase": "AFTER_COMMAND_COMPILE",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "A1 has parsed actual command arguments and may not rewrite this file."
+    },
+    {
+      "artifact": "PROVIDER_MATERIALIZATION",
+      "pathTemplate": "runs/{runId}/producer/provider-materialization.json",
+      "writer": "A1",
+      "writePhase": "AFTER_BOOTSTRAP_CHECK_7",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "A1 is the candidate direct parent and records create-read-delete receipt; early bootstrap failures forbid the file."
+    },
+    {
+      "artifact": "CHILD_PROCESS_MATERIAL",
+      "pathTemplate": "runs/{runId}/producer/children/{childDir}/**",
+      "writer": "A1",
+      "writePhase": "DURING_ORDERED_CHILD_CHECKS",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "A1 closes each child directory before advancing to the next ordinal."
+    },
+    {
+      "artifact": "OUTER_STDOUT_STDERR",
+      "pathTemplate": "runs/{runId}/{stdout,stderr}",
+      "writer": "CALLER",
+      "writePhase": "DURING_OUTER_PROCESS",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Streams are bounded, drained and closed after process termination."
+    },
+    {
+      "artifact": "OUTER_RESPONSE",
+      "pathTemplate": "runs/{runId}/response.json",
+      "writer": "CALLER",
+      "writePhase": "AFTER_OUTER_STDOUT_PARSE",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Created only from exact canonical stdout bytes for a protocol-complete process."
+    },
+    {
+      "artifact": "OUTER_PROCESS_OBSERVATION",
+      "pathTemplate": "runs/{runId}/process-observation.json",
+      "writer": "CALLER",
+      "writePhase": "AFTER_PROCESS_REAP",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Caller records actual executable, arguments, class origin, tree and capture facts."
+    },
+    {
+      "artifact": "OUTER_PROCESS_TRANSCRIPT",
+      "pathTemplate": "runs/{runId}/process-transcript.json",
+      "writer": "CALLER",
+      "writePhase": "AFTER_PROCESS_OBSERVATION",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "All referenced outer bytes and stable CodeSource snapshots already exist."
+    },
+    {
+      "artifact": "RUN_MATERIAL_TREE",
+      "pathTemplate": "runs/{runId}/material-root.tree",
+      "writer": "CALLER",
+      "writePhase": "AFTER_RUN_QUIESCENCE",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "No writer retains capability to the sealed run root."
+    },
+    {
+      "artifact": "REPLAY_PROOF_ENVELOPE",
+      "pathTemplate": "reports/{reportId}/derived/replay-proof-envelope.json",
+      "writer": "HARNESS",
+      "writePhase": "AFTER_NORMAL_RUN_SEAL",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Normal A1 result, outer transcript and run tree are already immutable."
+    },
+    {
+      "artifact": "INDEPENDENT_TEST_REPORT",
+      "pathTemplate": "reports/{reportId}/report.json",
+      "writer": "HARNESS",
+      "writePhase": "AFTER_FIVE_OUTER_RUNS",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Exactly five outer runs and twelve fixed projections are closed."
+    },
+    {
+      "artifact": "REPORT_MATERIAL_TREE",
+      "pathTemplate": "reports/{reportId}/material-root.tree",
+      "writer": "CALLER",
+      "writePhase": "AFTER_HARNESS_EXIT",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Scope roots are exact, alias-free and no producer retains write capability."
+    },
+    {
+      "artifact": "INDEPENDENT_PROOF_ENVELOPE",
+      "pathTemplate": "reports/{reportId}/derived/independent-proof-envelope.json",
+      "writer": "CALLER",
+      "writePhase": "AFTER_REPORT_TREE_SEAL",
+      "createMode": "CREATE_NEW",
+      "sealer": "CALLER",
+      "handoffCondition": "Harness has exited and caller binds result, transcript, CodeSource and report tree without a self-hash cycle."
+    }
+  ]
+}

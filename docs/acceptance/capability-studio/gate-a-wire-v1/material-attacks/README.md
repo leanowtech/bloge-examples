@@ -23,8 +23,8 @@ fixtures use a fixture-only public key; no operational credential is present.
 Run from the repository root:
 
 ```bash
-/tmp/gate-a-jsonschema/bin/python docs/acceptance/capability-studio/gate-a-wire-v1/material-attacks/run-real-material-attacks.py
-/tmp/gate-a-jsonschema/bin/python docs/acceptance/capability-studio/gate-a-wire-v1/material-attacks/run-real-material-attacks.py --json
+uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/material-attacks/run-real-material-attacks.py
+uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/material-attacks/run-real-material-attacks.py --json
 ```
 
 The runner requires Python standard-library modules, the installed `jsonschema`
@@ -36,10 +36,11 @@ The fixed order is the Guard Catalog order and is also frozen by
 `capability-studio-gate-a-material-attack-manifest-v1.schema.json`. The first
 18 cases are explicitly classified `PRIMARY_GUARD_ATTACK`, with exactly one
  real-material attack per Guard. The pack contains exactly 18 primary attacks
-and 20 supplemental attacks (38 total). Supplemental cases are explicitly classified
+and 25 supplemental attacks (43 total). Supplemental cases are explicitly classified
 `SUPPLEMENTAL_ATTACK` and cover raw/reference closure, Proof Envelope ref and
-digest binding, terminal/exit mapping, a non-Guard A2 requirement slot, and
-Reviewer key, authority, revocation, policy, check/finding and ordering attacks.
+digest binding, terminal/exit mapping, a non-Guard A2 requirement slot, filesystem
+tree file and directory symlink attacks, and Reviewer key, authority, revocation,
+policy, check/finding, ordering and pinned-freshness attacks.
 A final reviewer trio covers candidate binding drift, body/envelope `reviewedAt`
 drift, and a revocation snapshot issued after review; each is re-signed with
 valid Ed25519 material and must uniquely hit `REVIEW_SIGNATURE_AUTHORITY`.

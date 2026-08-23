@@ -1,0 +1,121 @@
+{
+  "messageVersion": "resource-gateway.capability-studio.gate-a.process-observation.v1",
+  "runId": "RUN-HARNESS-FIXTURE-001",
+  "launchKind": "CONFORMANCE_HARNESS",
+  "javaExecutableObservation": {
+    "preRead": {
+      "resolvedPath": "/opt/jdk/bin/java",
+      "fileKey": "dev:1:ino:9001",
+      "owner": "uid:0",
+      "group": "gid:0",
+      "linkCount": 1,
+      "posixMode": "0755",
+      "fileSize": 65536,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:6868686868686868686868686868686868686868686868686868686868686868"
+      }
+    },
+    "postRead": {
+      "resolvedPath": "/opt/jdk/bin/java",
+      "fileKey": "dev:1:ino:9001",
+      "owner": "uid:0",
+      "group": "gid:0",
+      "linkCount": 1,
+      "posixMode": "0755",
+      "fileSize": 65536,
+      "readRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:6868686868686868686868686868686868686868686868686868686868686868"
+      }
+    }
+  },
+  "javaRuntime": {
+    "vendor": "Eclipse Adoptium",
+    "version": "25.0.1+8",
+    "vmName": "OpenJDK 64-Bit Server VM",
+    "runtimeImageFingerprint": {
+      "kind": "TREE_COMMITMENT",
+      "algorithm": "SHA-256",
+      "value": "sha256:6969696969696969696969696969696969696969696969696969696969696969"
+    }
+  },
+  "effectiveClasspath": [
+    {
+      "ordinal": 1,
+      "role": "APPLICATION",
+      "artifactPath": "/opt/gate-a-harness.jar",
+      "rawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
+      }
+    }
+  ],
+  "jvmInputArguments": [],
+  "environmentNames": [],
+  "processTree": {
+    "rootProcess": {
+      "pid": 4244,
+      "startInstant": "2026-08-21T10:00:01Z"
+    },
+    "descendantsBeforeTermination": [],
+    "terminationAction": "NONE",
+    "descendantsAfterTermination": [],
+    "quiescenceWindowMillis": 250,
+    "processTreeQuiescent": true
+  },
+  "stdoutCapture": {
+    "limitBytes": 8192,
+    "observedBytes": 1024,
+    "complete": true,
+    "overflow": false,
+    "leakScan": "PASS",
+    "scannerId": "GATE_A_OUTPUT_HYGIENE",
+    "scannerRevision": 1,
+    "scannerProfileRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+    },
+    "quarantineStatus": "NOT_REQUIRED"
+  },
+  "stderrCapture": {
+    "limitBytes": 8192,
+    "observedBytes": 0,
+    "complete": true,
+    "overflow": false,
+    "leakScan": "PASS",
+    "scannerId": "GATE_A_OUTPUT_HYGIENE",
+    "scannerRevision": 1,
+    "scannerProfileRawFingerprint": {
+      "kind": "RAW_BYTES",
+      "algorithm": "SHA-256",
+      "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+    },
+    "quarantineStatus": "NOT_REQUIRED"
+  },
+  "sandboxProfileRawFingerprint": {
+    "kind": "RAW_BYTES",
+    "algorithm": "SHA-256",
+    "value": "sha256:a183613eec383d663e5d48e6f7b29cefc6cf7a2acb7c038717ef7d262c0eb664"
+  },
+  "admittedClassOrigins": [
+    {
+      "role": "HARNESS_MAIN",
+      "binaryName": "com.leanowtech.bloge.gateharness.GateAHarnessMain",
+      "classRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:2727272727272727272727272727272727272727272727272727272727272727"
+      },
+      "codeSourceRawFingerprint": {
+        "kind": "RAW_BYTES",
+        "algorithm": "SHA-256",
+        "value": "sha256:1717171717171717171717171717171717171717171717171717171717171717"
+      }
+    }
+  ]
+}
