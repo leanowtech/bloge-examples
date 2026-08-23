@@ -7,6 +7,8 @@ import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.networknt.schema.Error;
 import com.networknt.schema.ExecutionContext;
 import com.networknt.schema.InputFormat;
@@ -518,4 +520,252 @@ class CapabilityStudioWireAndSchemaTest {
             }
         }
     }
+
+    // ── Lossless Compiled IR Wire Assertions ─────────────────────────────────
+
+    @Nested
+    @DisplayName("Lossless Compiled IR Wire")
+    class CompiledPlanLosslessWireAssertions {
+
+        // 1. Valid item shapes/counts: 9 primitives, 7 barriers, 6 roles, 50 oracles
+        @Test
+        @DisplayName("POS: valid fixture has 9 primitives, 7 barriers, 6 roles, 50 oracles")
+        void validItemShapesAndCounts() throws IOException {
+            JsonNode node = loadFixtureNode("compiled-plan-valid.json");
+            assertThat(node.at("/primitiveContracts").size()).isEqualTo(9);
+            assertThat(node.at("/phaseBarriers").size()).isEqualTo(7);
+            assertThat(node.at("/expectedEvidenceRoles").size()).isEqualTo(6);
+            assertThat(node.at("/oracleBindings").size()).isEqualTo(50);
+        }
+
+        // 2. Missing dependsOn is rejected
+        @Test
+        @DisplayName("NEG: primitive without dependsOn is rejected (required field)")
+        void primitiveMissingDependsOnRejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ((ObjectNode) valid.at("/primitiveContracts/0")).remove("dependsOn");
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 3. Old single phase field rejected
+        @Test
+        @DisplayName("NEG: old single-phase phaseBarrier (no phases[]) is rejected")
+        void oldSinglePhaseRejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            // Replace first barrier with old format (single phase field, no phases array)
+            ObjectNode barrier = (ObjectNode) valid.at("/phaseBarriers/0");
+            barrier.remove("phases");
+            barrier.put("phase", "BOOTSTRAP_FACTS");
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 4. Old producerPrimitiveId in evidenceRoleBinding rejected
+        @Test
+        @DisplayName("NEG: old producerPrimitiveId in evidenceRoleBinding is rejected")
+        void oldProducerPrimitiveIdRejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ObjectNode role = (ObjectNode) valid.at("/expectedEvidenceRoles/0");
+            role.remove("contractIds");
+            role.put("producerPrimitiveId", "some-primitive-id");
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 5. Old oracle primitiveId in oracleBinding rejected
+        @Test
+        @DisplayName("NEG: old oracle primitiveId field in oracleBinding is rejected")
+        void oldOraclePrimitiveIdRejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ObjectNode binding = (ObjectNode) valid.at("/oracleBindings/0");
+            binding.remove("oracleId");
+            binding.put("primitiveId", "some-primitive-id");
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 6. Role contractIds empty array rejected
+        @Test
+        @DisplayName("NEG: evidenceRoleBinding with empty contractIds array is rejected")
+        void roleContractIdsEmptyRejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ObjectNode role = (ObjectNode) valid.at("/expectedEvidenceRoles/0");
+            while (((ArrayNode) role.get("contractIds")).size() > 0) { ((ArrayNode) role.get("contractIds")).remove(0); }
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 7. oracleBindings 49 rejected
+        @Test
+        @DisplayName("NEG: oracleBindings with 49 items (needs exactly 50) is rejected")
+        void oracleBindings49Rejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ((ArrayNode) valid.get("oracleBindings")).remove(0);
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 8. phaseBarriers 6 rejected (needs exactly 7)
+        @Test
+        @DisplayName("NEG: phaseBarriers with 6 items (needs exactly 7) is rejected")
+        void phaseBarriers6Rejected() throws IOException {
+            JsonNode valid = loadFixtureNode("compiled-plan-valid.json");
+            ((ArrayNode) valid.get("phaseBarriers")).remove(0);
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                MAPPER.writeValueAsString(valid));
+        }
+
+        // 9. Projection semantic: role->contractIds and contract->oracleId from catalog
+        //    independently aggregated equals compiled fixture values
+        @Test
+        @DisplayName("POS: projection semantic equals independently-aggregated catalog values")
+        void projectionSemanticEqualsIndependentAggregate() throws IOException {
+            JsonNode catalogNode = loadFixtureNode("catalog-valid.json");
+            JsonNode compiledNode = loadFixtureNode("compiled-plan-valid.json");
+
+            // Aggregate role->contractIds from catalog
+            Map<String, Set<String>> catalogRoleMap = new java.util.LinkedHashMap<>();
+            for (JsonNode contract : catalogNode.at("/stageExitContracts")) {
+                String cid = contract.at("/contractId").asText();
+                for (JsonNode roleNode : contract.at("/evidenceRoles")) {
+                    String role = roleNode.asText();
+                    catalogRoleMap.computeIfAbsent(role, k -> new java.util.LinkedHashSet<>()).add(cid);
+                }
+            }
+            for (JsonNode contract : catalogNode.at("/acStandards")) {
+                String cid = contract.at("/contractId").asText();
+                for (JsonNode roleNode : contract.at("/evidenceRoles")) {
+                    String role = roleNode.asText();
+                    catalogRoleMap.computeIfAbsent(role, k -> new java.util.LinkedHashSet<>()).add(cid);
+                }
+            }
+            for (JsonNode contract : catalogNode.at("/feltObligations")) {
+                String cid = contract.at("/contractId").asText();
+                for (JsonNode roleNode : contract.at("/evidenceRoles")) {
+                    String role = roleNode.asText();
+                    catalogRoleMap.computeIfAbsent(role, k -> new java.util.LinkedHashSet<>()).add(cid);
+                }
+            }
+
+            // Aggregate contractId->oracleId from catalog
+            Map<String, String> catalogOracleMap = new java.util.LinkedHashMap<>();
+            for (JsonNode contract : catalogNode.at("/stageExitContracts")) {
+                catalogOracleMap.put(contract.at("/contractId").asText(),
+                    contract.at("/oracleId").asText());
+            }
+            for (JsonNode contract : catalogNode.at("/acStandards")) {
+                catalogOracleMap.put(contract.at("/contractId").asText(),
+                    contract.at("/oracleId").asText());
+            }
+            for (JsonNode contract : catalogNode.at("/feltObligations")) {
+                catalogOracleMap.put(contract.at("/contractId").asText(),
+                    contract.at("/oracleId").asText());
+            }
+
+            // Compare compiled expectedEvidenceRoles against catalog aggregation
+            List<String> compiledRoles = new ArrayList<>();
+            for (JsonNode roleNode : compiledNode.at("/expectedEvidenceRoles")) {
+                compiledRoles.add(roleNode.at("/role").asText());
+                List<String> catalogCids = catalogRoleMap.get(roleNode.at("/role").asText())
+                    .stream().sorted().toList();
+                List<String> compiledCids = new ArrayList<>();
+                for (JsonNode cidNode : roleNode.at("/contractIds")) {
+                    compiledCids.add(cidNode.asText());
+                }
+                assertThat(compiledCids)
+                    .as("role " + roleNode.at("/role").asText() + " contractIds must match catalog aggregation")
+                    .isEqualTo(catalogCids);
+            }
+
+            // Compare compiled oracleBindings against catalog aggregation
+            List<Map.Entry<String, String>> compiledOracles = new ArrayList<>();
+            for (JsonNode binding : compiledNode.at("/oracleBindings")) {
+                compiledOracles.add(Map.entry(
+                    binding.at("/contractId").asText(),
+                    binding.at("/oracleId").asText()));
+            }
+            compiledOracles.sort(Comparator.comparing(Map.Entry::getKey));
+            List<Map.Entry<String, String>> catalogOracles = new ArrayList<>(catalogOracleMap.entrySet());
+            catalogOracles.sort(Comparator.comparing(Map.Entry::getKey));
+            assertThat(compiledOracles)
+                .as("oracleBindings must match catalog contractId->oracleId aggregation")
+                .isEqualTo(catalogOracles);
+        }
+    }
+
+
+        // 10. Exact projection: compiled primitive id->dependsOn/inputSlot equals authority plan
+        @Test
+        @DisplayName("POS: compiled primitive dependsOn/inputSlot exact-matches authority plan projection")
+        void compiledPrimitiveExactProjectionMatchesAuthorityPlan() throws IOException {
+            // Load authority plan
+            try (InputStream authorityIn = CapabilityStudioWireAndSchemaTest.class
+                    .getResourceAsStream("/acceptance-engine-v1/rg-cs-felt-v1.acceptance.plan.json")) {
+                assertThat(authorityIn)
+                    .as("authority plan must be on classpath")
+                    .isNotNull();
+                JsonNode authorityPlan = MAPPER.readTree(authorityIn);
+
+                // Build authority projection: primitiveId -> {dependsOn[], inputSlot}
+                Map<String, ProjectionEntry> authorityProjection = new java.util.LinkedHashMap<>();
+                for (JsonNode prim : authorityPlan.at("/primitives")) {
+                    String pid = prim.at("/id").asText();
+                    List<String> deps = new ArrayList<>();
+                    for (JsonNode d : prim.at("/dependsOn")) deps.add(d.asText());
+                    String slot = prim.has("inputSlot") ? prim.at("/inputSlot").asText() : null;
+                    authorityProjection.put(pid, new ProjectionEntry(deps, slot));
+                }
+
+                // Load compiled plan
+                JsonNode compiled = loadFixtureNode("compiled-plan-valid.json");
+
+                // Avoid subset-only verification: authority and compiled must be complete
+                assertThat(authorityProjection)
+                    .as("authority projection size must equal compiled primitive count")
+                    .hasSize(compiled.at("/primitiveContracts").size());
+
+                // Assert each compiled primitive exactly matches authority projection
+                for (JsonNode prim : compiled.at("/primitiveContracts")) {
+                    String pid = prim.at("/primitiveId").asText();
+                    ProjectionEntry expected = authorityProjection.get(pid);
+                    assertThat(expected)
+                        .as("primitiveId '" + pid + "' must exist in authority plan")
+                        .isNotNull();
+
+                    List<String> compiledDeps = new ArrayList<>();
+                    for (JsonNode d : prim.at("/dependsOn")) compiledDeps.add(d.asText());
+                    assertThat(compiledDeps)
+                        .as("primitiveId '" + pid + "' dependsOn must exactly match authority plan")
+                        .isEqualTo(expected.deps);
+
+                    String compiledSlot = prim.has("inputSlot")
+                        ? prim.at("/inputSlot").asText() : null;
+                    assertThat(compiledSlot)
+                        .as("primitiveId '" + pid + "' inputSlot must exactly match authority plan")
+                        .isEqualTo(expected.slot);
+                }
+            }
+        }
+
+        /** Holds authority-derived dependsOn and inputSlot for one primitive. */
+        private static class ProjectionEntry {
+            final List<String> deps;
+            final String slot;
+            ProjectionEntry(List<String> deps, String slot) {
+                this.deps = deps;
+                this.slot = slot;
+            }
+            @Override public String toString() {
+                return "ProjectionEntry{deps=" + deps + ", slot=" + slot + "}";
+            }
+            @Override public boolean equals(Object o) {
+                if (this == o) return true;
+                if (!(o instanceof ProjectionEntry)) return false;
+                ProjectionEntry e = (ProjectionEntry) o;
+                return Objects.equals(deps, e.deps) && Objects.equals(slot, e.slot);
+            }
+            @Override public int hashCode() { return Objects.hash(deps, slot); }
+        }
+
 }
