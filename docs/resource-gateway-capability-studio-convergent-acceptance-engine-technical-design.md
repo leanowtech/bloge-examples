@@ -746,11 +746,11 @@ BOOTSTRAP_FACTS
   -> READ_ONLY_PREFLIGHT
   -> PROVIDER_CONFORMANCE
   -> STATEFUL_EXECUTION
-  -> DURABLE_LOCAL_COMMIT
-  -> INDEPENDENT_VERIFICATION
-  -> MATERIAL_POSTFLIGHT
-  -> EXTERNAL_PUBLICATION
-  -> EXTERNAL_ADJUDICATION
+  -> INDEPENDENT_VERIFICATION    // VERIFY_DURABLE_WRAPPER + VERIFY_PACKAGED_FELT_MATRICES
+  -> MATERIAL_POSTFLIGHT          // VERIFY_MATERIAL_POSTFLIGHT_V1；post-lease PURE_VERIFY，合法
+  -> DURABLE_LOCAL_COMMIT         // COMMIT_LOCAL_PROOF_BUNDLE_V1（内建 plan 最终 primitive，Phase 1 只编译不执行）
+  -> EXTERNAL_PUBLICATION        // Phase 4
+  -> EXTERNAL_ADJUDICATION       // Phase 5
 ```
 
 每个 primitive 只有一种 effect class：
@@ -765,7 +765,7 @@ BOOTSTRAP_FACTS
 
 Compiler 固定以下 barrier：
 
-1. `PURE_VERIFY` 的全部 preflight 未通过前，不执行任何写入。
+1. **preflight PURE_VERIFY 全绿前，不执行任何写入。** preflight 指 MATERIAL_SNAPSHOT / READ_ONLY_PREFLIGHT / PROVIDER_CONFORMANCE 三个阶段；非 preflight 的 PURE_VERIFY（如 INDEPENDENT_VERIFICATION）不受此 barrier 约束。**MATERIAL_POSTFLIGHT（VERIFY_MATERIAL_POSTFLIGHT_V1）是 post-lease PURE_VERIFY，合法且必须在 DURABLE_LOCAL_COMMIT 之前执行，不得被 barrier 1 排除到 preflight 组内。** post-lease PURE_VERIFY 合法。
 2. Provider Conformance 未通过前，不进入 Lease。
 3. Lease 一旦提交，后续失败不得回滚或删除 Evidence。
 4. Durable local commitment 未形成前，不允许外部发布。
@@ -2515,6 +2515,8 @@ closedReasonCodes
 
 ## 23. 自审评分
 
+> **审查范围说明**：本文评分针对全文设计（Gate A/B/C 完整路线图）。Phase 1 = GATE-B COMPILE_ONLY，Gate A 是独立信任闭环作为 Phase 0 前置。设计自洽性评分以 95 分为基准线；Schema 物理文件缺失属于实现前置条件，不计入设计评分。
+
 | 维度 | 权重 | 得分 | 说明 |
 |---|---:|---:|---|
 | 根因命中 | 15 | 15 | 关闭控制流分散与 Evidence 语义脱节 |
@@ -2526,13 +2528,19 @@ closedReasonCodes
 | 兼容与迁移 | 9 | 8 | 三道可回滚 Gate 已拆分，仍需真实 shadow 数据 |
 | 可测试性 | 8 | 8 | companion Schema、结构负例、语义负例、38 个真实材料攻击与全量构建已闭合 |
 | 运维与容量 | 5 | 5 | 开发参考 SLO、背压、告警和恢复演练已冻结 |
-| **合计** | **100** | **97** | **D0 已通过；剩余扣分只属于生产 A0/A1/A2 和 Gate B shadow，不得提前计入完成** |
+| **合计** | **100** | **97** | **D0 已通过；Phase 1 设计自洽性 >= 95；剩余扣分属于生产 A0/A1/A2 实施和 Gate B shadow，不得提前计入 Phase 1 设计完成** |
+
+**残余 P2（不影响设计冻结）**：
+- §6.5 ProofRecord 完整字段在 Phase 1 不激活（B0/R1/E2 三层 commitment 尚未实现）
+- Gate B shadow differential 需真实旧路径数据验证
+- Fingerprint domain 前缀命名跨 §2.3 和 §10.4 存在微小不一致（统一 domain 编号表待补）
 
 当前扣分项必须先按所属门禁关闭，不能笼统留到 Gate A/B 以后：
 
-1. `D0`：已完成 companion Schema、golden/negative fixture、44-entry profile、双 reference、38 个真实攻击与独立 `P0/P1=0` 复审。
+1. `D0`：已完成 companion Schema、golden/negative fixture、44-entry profile，双 reference、38 个真实攻击与独立 `P0/P1=0` 复审。
 2. `A0/A1/A2`：仍需用 packaged independent verifier、独立 admission artifact、Provider collision 与 mutation TCK 证明生产制品的信任边界。
 3. `Gate B`：仍需用真实旧路径结果验证 shadow/differential 的输出粒度和性能成本。
+4. **Schema 物理文件**：Phase 1 Schema（4 个）写入 `docs/schemas/resource-gateway-capability-studio/` 和 `builtin-contract-catalog.json` 写入 `docs/acceptance/capability-studio/acceptance-engine-v1/` 是实现前置条件，不在设计评分范围内；完成后才可执行 AC1-AC21。
 
 ## 24. 下一步实施卡
 
