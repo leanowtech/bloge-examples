@@ -270,15 +270,66 @@ Runner 必须满足：
 
 Runner 的一次正常执行不能替代 crash、并发、兼容和对抗矩阵。`FELT-10` 与 `FELT-13` 必须引用同一候选生成的完整测试 Evidence；不能以正常路径 stdout 推断为通过。
 
+
 ## 11. 当前实施边界
 
-截至本文创建时，仓库已经具备 Formal Input Tree、mounted formal Provider、existing-only observation、full-evidence CLI、transcript verifier 和 durable-wrapper verifier。仍需完成：
+### 11.1 已有实现（组件级）
 
-1. 将这些组件接入唯一 full runner。
-2. 增加 Formal Input Tree 的 read-only `verify` CLI 模式。
-3. 增加 strict FELT run manifest 及独立 verifier。
-4. 增加外部 Evidence Store publisher/receipt SPI 和部署实现边界。
-5. 在 packaged runtime 中执行完整 Runner 正负矩阵。
-6. 由企业部署方提供真实 Candidate/Environment/Deployment Authority、Evidence Store 和 Owner 签署。
+| 组件 | 类名 | 说明 |
+|---|---|---|
+| Acceptance plan compiler | `CapabilityStudioAcceptancePlanCompiler` | 生成 22-field lossless IR |
+| 独立 compiled-plan verifier | `CapabilityStudioCompiledPlanVerifier` | 递归 canonical + Domain2 指纹，深字段比较，自洽篡改矩阵，架构禁用 |
+| Formal Input Tree CLI | `CapabilityStudioFormalInputTreeCli` | read-only verify 模式 |
+| Lease transcript 验证 CLI | `CapabilityStudioExecutionLeaseTranscriptVerifyCli` | 语义完整性验证 |
+| Durable wrapper 验证 CLI | `CapabilityStudioExecutionLeaseEvidenceBundleVerifyCli` | 双层 wrapper 验证 |
+| EPT 双层 publication/验证 | `CapabilityStudioEvidencePublicationTransaction*` | inner manifest + outer commitment |
+| Strict FELT manifest | `CapabilityStudioFormalEvidenceRunManifest` (static compile()) | passed/failed/blocked 计数收敛 |
+| Formal evidence run 独立 verifier | `CapabilityStudioFormalEvidenceRunVerifier` | manifest 语义独立复算 |
 
-完成前，`formalPassCount` 保持 `0/27`，Stage 0 保持 `NO_GO`。
+**Full runner 状态机尚未实现。** 上述组件是构建块，非 runner 本身。
+
+### 11.2 Full Runner 状态机（未实现）
+
+| 阶段 | 消费现有组件 | 核心不变量 | 失败终态 |
+|---|---|---|---|
+| preflight immutable pins | — | Candidate/Environment raw SHA-256 与声明一致 | `INVALID` |
+| verify two snapshots | `CapabilityStudioFormalInputTreeCli` | Authority + Target snapshot 均通过 Formal Input Tree verify | `INVALID` |
+| compile + independent verify plan | `CapabilityStudioAcceptancePlanCompiler` + `CapabilityStudioCompiledPlanVerifier` | compiler 输出经独立 verifier VERIFIED；deep diff 无差异 | `INVALID` |
+| BEFORE observation | — | existing-only——不得写入 bundle root | `BLOCKED` |
+| recovery-first | — | 仅当发现未关闭 lease 时尝试 recovery；无 lease 时不创建新 lease | `BLOCKED` |
+| provider run | — | Provider 无 snapshot 写权限；bounded read/count | `FAIL` |
+| AFTER observation | — | existing-only 约束持续有效 | `BLOCKED` |
+| EPT publication | `CapabilityStudioExecutionLeaseTranscriptVerifyCli` | inner manifest + outer commitment 双层均通过 | `BLOCKED/INCOMPLETE` |
+| postflight mutation reverification | `CapabilityStudioFormalInputTreeCli` | AFTER snapshot 与 preflight 一致或有 lease receipt 背书 | `INVALID` |
+| strict manifest/bundle verification | `CapabilityStudioFormalEvidenceRunVerifier` | passed=14/failed=0/blocked=0；`formalPassCount=0/27` | `INVALID` |
+| optional external store receipt | — | payload-free receipt 绑定 manifest/inventory 指纹 | `BLOCKED/INCOMPLETE` |
+
+每阶段失败即关闭；exact retry 重放同一 witness/transcript/receipt；post-lease 失败不回滚 Lease；snapshot 发布后不因后续失败删除 durable material。
+
+### 11.3 仍缺外部依赖
+
+| 角色 | 当前状态 |
+|---|---|
+| Candidate Authority | 不存在；需要企业 source attestation 和 commit identity |
+| Environment Authority | 不存在；需要 runtime/FS/egress capability descriptor 权威证明 |
+| Evidence Store | 不存在；需要外部持久化基础设施和 payload-free receipt SPI |
+| KMS/HSM | 不存在；需要签名私钥管理和 trust root |
+| Owner Authority | 不存在；需要外部签署决策 |
+
+`formalPassCount` 固定为 `0/27`，Stage 0 结论保持 `NO_GO`。
+
+### 11.4 实现入口与测试命令
+
+```bash
+# 完整验收套件
+mvn -f resource-gateway-test-kit/pom.xml clean verify
+
+# Acceptance plan compiler + 独立 verifier 专项
+mvn -f resource-gateway-test-kit/pom.xml \
+  -Dtest=CapabilityStudioAcceptanceAuthorityFingerprintTest,\
+           CapabilityStudioAcceptancePlanCompilerTest,\
+           CapabilityStudioCompiledPlanVerifierTest \
+  test
+```
+
+本文档不代表 full runner 已实现。`formalPassCount=0/27` 在外部 Authority 就位前不会改变。
