@@ -256,7 +256,7 @@ Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6�
 
 1. **unknown dependency**：dependsOn ID 引用不存在的 primitive.id → `INVALID_TOPOLOGY_UNKNOWN_NODE`
 2. **cyclic dependency**：DAG cycle → `INVALID_TOPOLOGY_CYCLE`
-3. **phase reverse dependency**：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_TOPOLOGY_CYCLE`
+3. **phase reverse dependency`：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_BARRIER_BYPASS`
 4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_BARRIER_BYPASS`
 5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_BARRIER_BYPASS`
 6. **profile vocabulary**：CapabilityStudioAcceptancePlanProtocol 验证 packaged profile 含精确 7 个 closed barrierId（按已冻结声明顺序）、ID 唯一；每个 barrier 的 phases[] 非空、唯一、每个 phase 属于 phaseOrder；Compiler 按声明顺序无损投影 barrierId + phases[]。
@@ -305,7 +305,7 @@ public CompilationResult compile(byte[] planBytes, byte[] catalogBytes) throws C
 - `CompilationResult`：immutable，不暴露可变 JsonNode
 - `CompilerException`：`reasonCode` + `reasonField`（RFC6901 pointer）
 
-### H.3 CompilationResult（immutable record）
+### H.3 CompilationResult（immutable result）
 
 ```java
 public final class CompilationResult {
@@ -487,7 +487,7 @@ catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalo
 - G7-1: DAG 无 cycle → 编译通过
 - G7-2: cyclic dependsOn → INVALID_TOPOLOGY_CYCLE
 - G7-3: unknown dependsOn ID → INVALID_TOPOLOGY_UNKNOWN_NODE
-- G7-4: A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → INVALID_TOPOLOGY_CYCLE
+- G7-4: A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → INVALID_BARRIER_BYPASS
 
 ### K.2 附加边界测试（超出 37 条）
 
