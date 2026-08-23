@@ -49,7 +49,7 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
         int failures = verifyHelpers();
         failures += verifyCompatibilityJar("normal", args[0], expectedLegacySchemas, expectedAcceptance);
         failures += verifyCompatibilityJar("shaded-cli", args[1], expectedLegacySchemas, expectedAcceptance);
-        failures += verifyProtocolJar("a1-protocol", args[2], expectedAcceptance);
+        failures += verifyProtocolJar("a1-protocol", args[2]);
         if (failures > 0) {
             System.err.println("A1 ARCHIVE BOUNDARY FAILED: " + failures + " check(s)");
             System.exit(EXIT_FAIL);
@@ -110,30 +110,22 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
             unexpected.forEach(path -> System.err.println("  unexpected: " + path));
             failures++;
         }
-        java.util.Set<String> acceptanceFound = new java.util.TreeSet<>();
-        for (String path : ACCEPTANCE_AUTHORITY_PATHS) {
-            if (inventory.files.contains(path)) acceptanceFound.add(path);
-        }
-        if (!acceptanceFound.equals(expectedAcceptance)) {
+        // acceptance-engine-v1 Wire authority: exact 3 files, no more, no less
+        java.util.Set<String> actualAcceptance = inventory.filesWithPrefix(ACCEPTANCE_PREFIX);
+        if (!actualAcceptance.equals(expectedAcceptance)) {
             java.util.Set<String> missing = new java.util.TreeSet<>(expectedAcceptance);
-            missing.removeAll(acceptanceFound);
-            java.util.Set<String> extra = new java.util.TreeSet<>(acceptanceFound);
+            missing.removeAll(actualAcceptance);
+            java.util.Set<String> extra = new java.util.TreeSet<>(actualAcceptance);
             extra.removeAll(expectedAcceptance);
             System.err.println("FAIL [" + label + "]: acceptance-engine-v1 authority inventory mismatch");
             missing.forEach(p -> System.err.println("  missing: " + p));
             extra.forEach(p -> System.err.println("  extra: " + p));
             failures++;
         }
-        java.util.Set<String> leakedAcceptance = inventory.filesWithPrefix(ACCEPTANCE_PREFIX);
-        if (!leakedAcceptance.isEmpty()) {
-            System.err.println("FAIL [" + label + "]: acceptance-engine-v1 content leaked into " + label + " JAR:");
-            leakedAcceptance.forEach(path -> System.err.println("  " + path));
-            failures++;
-        }
         System.out.println("[" + label + "] inventory: files=" + inventory.files.size()
                 + ", legacySchemas=" + actualLegacySchemas.size()
                 + ", targetA1Schemas=" + inventory.schemaCount(A1_PREFIX)
-                + ", acceptanceAuthority=" + acceptanceFound.size());
+                + ", acceptanceAuthority=" + actualAcceptance.size());
         printResult(label, failures);
         return failures;
     }
@@ -169,7 +161,7 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
         return java.util.Set.copyOf(expected);
     }
 
-    private static int verifyProtocolJar(String label, String jarPath, java.util.Set<String> expectedAcceptance) {
+    private static int verifyProtocolJar(String label, String jarPath) {
         ArchiveInventory inventory = readArchive(label, jarPath);
         int failures = inventory.commonFailures(label);
         // acceptance-engine-v1 Wire authority must NOT be in a1-protocol JAR
