@@ -103,7 +103,7 @@
       "primitiveId": "verify-fixed-material",
       "typeId": "VERIFY_FIXED_MATERIAL_V1",
       "effectClass": "PURE_VERIFY",
-      "phase": "BOOTSTRAP_FACTS",
+      "phase": "MATERIAL_SNAPSHOT",
       "revision": 1,
       "dependsOn": []
     },
@@ -117,41 +117,138 @@
         "verify-fixed-material"
       ],
       "inputSlot": "AUTHORITY"
+    },
+    {
+      "primitiveId": "verify-target-tree",
+      "typeId": "VERIFY_FORMAL_INPUT_TREE_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "READ_ONLY_PREFLIGHT",
+      "revision": 1,
+      "dependsOn": [
+        "verify-fixed-material"
+      ],
+      "inputSlot": "TARGET"
+    },
+    {
+      "primitiveId": "provider-conformance",
+      "typeId": "RUN_PROVIDER_CONFORMANCE_V2",
+      "effectClass": "PURE_VERIFY",
+      "phase": "PROVIDER_CONFORMANCE",
+      "revision": 2,
+      "dependsOn": [
+        "verify-authority-tree",
+        "verify-target-tree"
+      ]
+    },
+    {
+      "primitiveId": "execute-lease-evidence",
+      "typeId": "EXECUTE_LEASE_EVIDENCE_V1",
+      "effectClass": "AUTHORITY_LEASE",
+      "phase": "STATEFUL_EXECUTION",
+      "revision": 1,
+      "dependsOn": [
+        "provider-conformance"
+      ]
+    },
+    {
+      "primitiveId": "verify-durable-wrapper",
+      "typeId": "VERIFY_DURABLE_WRAPPER_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "INDEPENDENT_VERIFICATION",
+      "revision": 1,
+      "dependsOn": [
+        "execute-lease-evidence"
+      ]
+    },
+    {
+      "primitiveId": "verify-packaged-matrices",
+      "typeId": "VERIFY_PACKAGED_FELT_MATRICES_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "INDEPENDENT_VERIFICATION",
+      "revision": 1,
+      "dependsOn": [
+        "verify-durable-wrapper"
+      ]
+    },
+    {
+      "primitiveId": "verify-postflight",
+      "typeId": "VERIFY_MATERIAL_POSTFLIGHT_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "MATERIAL_POSTFLIGHT",
+      "revision": 1,
+      "dependsOn": [
+        "verify-packaged-matrices"
+      ]
+    },
+    {
+      "primitiveId": "commit-local-proof",
+      "typeId": "COMMIT_LOCAL_PROOF_BUNDLE_V1",
+      "effectClass": "LOCAL_IMMUTABLE_WRITE",
+      "phase": "DURABLE_LOCAL_COMMIT",
+      "revision": 1,
+      "dependsOn": [
+        "verify-postflight"
+      ]
     }
   ],
   "phaseBarriers": [
     {
       "barrierId": "PURE_VERIFY_GATE",
-      "phase": "BOOTSTRAP_FACTS"
+      "phases": [
+        "BOOTSTRAP_FACTS",
+        "MATERIAL_SNAPSHOT",
+        "READ_ONLY_PREFLIGHT",
+        "PROVIDER_CONFORMANCE"
+      ]
     },
     {
       "barrierId": "LEASE_GATE",
-      "phase": "STATEFUL_EXECUTION"
+      "phases": [
+        "STATEFUL_EXECUTION"
+      ]
     },
     {
       "barrierId": "NO_DELETE_AFTER_LEASE",
-      "phase": "DURABLE_LOCAL_COMMIT"
+      "phases": [
+        "DURABLE_LOCAL_COMMIT",
+        "EXTERNAL_PUBLICATION"
+      ]
     },
     {
       "barrierId": "DURABLE_COMMIT_GATE",
-      "phase": "DURABLE_LOCAL_COMMIT"
+      "phases": [
+        "DURABLE_LOCAL_COMMIT"
+      ]
     },
     {
       "barrierId": "STORE_RECEIPT_GATE",
-      "phase": "EXTERNAL_PUBLICATION"
+      "phases": [
+        "EXTERNAL_PUBLICATION"
+      ]
     },
     {
       "barrierId": "OWNER_SIGNOFF_GATE",
-      "phase": "EXTERNAL_ADJUDICATION"
+      "phases": [
+        "EXTERNAL_ADJUDICATION"
+      ]
     },
     {
       "barrierId": "NO_ACCEPTED_FROM_LOCAL",
-      "phase": "DURABLE_LOCAL_COMMIT"
+      "phases": [
+        "DURABLE_LOCAL_COMMIT"
+      ]
     }
   ],
   "executionOrder": [
     "verify-fixed-material",
-    "verify-authority-tree"
+    "verify-authority-tree",
+    "verify-target-tree",
+    "provider-conformance",
+    "execute-lease-evidence",
+    "verify-durable-wrapper",
+    "commit-local-proof",
+    "verify-packaged-matrices",
+    "verify-postflight"
   ],
   "expectedEvidenceRoles": [
     {

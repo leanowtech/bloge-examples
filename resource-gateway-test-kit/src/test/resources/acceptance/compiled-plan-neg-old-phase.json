@@ -103,7 +103,7 @@
       "primitiveId": "verify-fixed-material",
       "typeId": "VERIFY_FIXED_MATERIAL_V1",
       "effectClass": "PURE_VERIFY",
-      "phase": "MATERIAL_SNAPSHOT",
+      "phase": "BOOTSTRAP_FACTS",
       "revision": 1,
       "dependsOn": []
     },
@@ -194,7 +194,49 @@
   "phaseBarriers": [
     {
       "barrierId": "PURE_VERIFY_GATE",
-      "phase": "BOOTSTRAP_FACTS"
+      "phases": [
+        "BOOTSTRAP_FACTS",
+        "MATERIAL_SNAPSHOT",
+        "READ_ONLY_PREFLIGHT",
+        "PROVIDER_CONFORMANCE"
+      ]
+    },
+    {
+      "barrierId": "LEASE_GATE",
+      "phases": [
+        "STATEFUL_EXECUTION"
+      ]
+    },
+    {
+      "barrierId": "NO_DELETE_AFTER_LEASE",
+      "phases": [
+        "DURABLE_LOCAL_COMMIT",
+        "EXTERNAL_PUBLICATION"
+      ]
+    },
+    {
+      "barrierId": "DURABLE_COMMIT_GATE",
+      "phases": [
+        "DURABLE_LOCAL_COMMIT"
+      ]
+    },
+    {
+      "barrierId": "STORE_RECEIPT_GATE",
+      "phases": [
+        "EXTERNAL_PUBLICATION"
+      ]
+    },
+    {
+      "barrierId": "OWNER_SIGNOFF_GATE",
+      "phases": [
+        "EXTERNAL_ADJUDICATION"
+      ]
+    },
+    {
+      "barrierId": "NO_ACCEPTED_FROM_LOCAL",
+      "phases": [
+        "DURABLE_LOCAL_COMMIT"
+      ]
     }
   ],
   "executionOrder": [

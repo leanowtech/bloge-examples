@@ -285,4 +285,3 @@ class CapabilityStudioAcceptanceAuthorityFingerprintTest {
         assertThat(plan.get("schemaVersion")).isEqualTo("bloge.capability-studio.acceptance-plan.v1");
     }
 }
-

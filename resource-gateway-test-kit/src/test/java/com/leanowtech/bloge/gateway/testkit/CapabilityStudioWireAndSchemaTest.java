@@ -768,4 +768,85 @@ class CapabilityStudioWireAndSchemaTest {
             @Override public int hashCode() { return Objects.hash(deps, slot); }
         }
 
+
+    // ── Structural Hygiene: Isolated Negative Fixtures ─────────────────────────
+
+    @Nested
+    @DisplayName("Structural Hygiene: Isolated Negatives")
+    class CompiledPlanStructuralHygieneTests {
+
+        // bad-barrier-id: schema-invalid (INVALID_BARRIER_ID) but has correct counts
+        // Schema should reject due to bad enum; counts 9/7/6/50 prove isolation
+        @Test
+        @DisplayName("NEG: bad-barrier-id is schema-invalid (invalid enum value)")
+        void badBarrierIdIsSchemaInvalid() {
+            assertInvalid("bloge.capability-studio.compiled-plan.v1",
+                loadFixture("compiled-plan-neg-bad-barrier-id.json"));
+        }
+
+        @Test
+        @DisplayName("POS: bad-barrier-id fixture has correct counts (9/7/6/50) for isolation")
+        void badBarrierIdHasCorrectCounts() throws IOException {
+            JsonNode node = loadFixtureNode("compiled-plan-neg-bad-barrier-id.json");
+            assertThat(node.at("/primitiveContracts").size()).isEqualTo(9);
+            assertThat(node.at("/phaseBarriers").size()).isEqualTo(7);
+            assertThat(node.at("/expectedEvidenceRoles").size()).isEqualTo(6);
+            assertThat(node.at("/oracleBindings").size()).isEqualTo(50);
+        }
+
+        // old-phase: schema-valid (primitive phase field is still enum), semantic negative only
+        // Schema validation passes; semantic assertion is out of scope here
+        @Test
+        @DisplayName("POS: old-phase fixture is schema-valid (primitive phase is still enum)")
+        void oldPhaseIsSchemaValid() {
+            assertValid("bloge.capability-studio.compiled-plan.v1",
+                loadFixture("compiled-plan-neg-old-phase.json"));
+        }
+
+        @Test
+        @DisplayName("POS: old-phase fixture has correct counts (9/7/6/50) for isolation")
+        void oldPhaseHasCorrectCounts() throws IOException {
+            JsonNode node = loadFixtureNode("compiled-plan-neg-old-phase.json");
+            assertThat(node.at("/primitiveContracts").size()).isEqualTo(9);
+            assertThat(node.at("/phaseBarriers").size()).isEqualTo(7);
+            assertThat(node.at("/expectedEvidenceRoles").size()).isEqualTo(6);
+            assertThat(node.at("/oracleBindings").size()).isEqualTo(50);
+        }
+
+        // old-phase-order: schema-valid, wrong topological order in executionOrder
+        // Schema validation passes; semantic assertion is out of scope here
+        @Test
+        @DisplayName("POS: old-phase-order fixture is schema-valid (all fields well-formed)")
+        void oldPhaseOrderIsSchemaValid() {
+            assertValid("bloge.capability-studio.compiled-plan.v1",
+                loadFixture("compiled-plan-neg-old-phase-order.json"));
+        }
+
+        @Test
+        @DisplayName("POS: old-phase-order fixture has correct counts (9/7/6/50) for isolation")
+        void oldPhaseOrderHasCorrectCounts() throws IOException {
+            JsonNode node = loadFixtureNode("compiled-plan-neg-old-phase-order.json");
+            assertThat(node.at("/primitiveContracts").size()).isEqualTo(9);
+            assertThat(node.at("/phaseBarriers").size()).isEqualTo(7);
+            assertThat(node.at("/expectedEvidenceRoles").size()).isEqualTo(6);
+            assertThat(node.at("/oracleBindings").size()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("POS: old-phase-order has wrong executionOrder (commit before verify-packaged-matrices)")
+        void oldPhaseOrderHasWrongExecutionOrder() throws IOException {
+            JsonNode node = loadFixtureNode("compiled-plan-neg-old-phase-order.json");
+            // commit-local-proof is before verify-packaged-matrices in executionOrder
+            List<String> order = new ArrayList<>();
+            for (JsonNode n : node.at("/executionOrder")) order.add(n.asText());
+            int commitIdx = order.indexOf("commit-local-proof");
+            int matricesIdx = order.indexOf("verify-packaged-matrices");
+            assertThat(commitIdx).as("commit-local-proof must be in executionOrder").isGreaterThan(-1);
+            assertThat(matricesIdx).as("verify-packaged-matrices must be in executionOrder").isGreaterThan(-1);
+            assertThat(commitIdx)
+                .as("commit-local-proof must appear before verify-packaged-matrices (wrong order)")
+                .isLessThan(matricesIdx);
+        }
+    }
+
 }
