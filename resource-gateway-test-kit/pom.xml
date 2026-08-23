@@ -122,6 +122,16 @@
                     <include>*.schema.json</include>
                 </includes>
             </resource>
+            <resource>
+                <directory>../docs/acceptance/capability-studio/acceptance-engine-v1</directory>
+                <targetPath>acceptance-engine-v1</targetPath>
+                <filtering>false</filtering>
+                <includes>
+                    <include>builtin-contract-catalog.json</include>
+                    <include>builtin-compiler-profile-formal-v1.json</include>
+                    <include>rg-cs-felt-v1.acceptance.plan.json</include>
+                </includes>
+            </resource>
         </resources>
         <testResources>
             <testResource>

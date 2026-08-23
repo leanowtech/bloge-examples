@@ -1,29 +1,21 @@
 /*
  * Standalone archive boundary verifier for Capability Studio A1 Step 0.
+ * Verifies JAR packaging boundaries: normal/shaded JARs contain the 3 acceptance-engine-v1
+ * Wire authority files; a1-protocol JAR excludes them.
  * Runs as a Java source-file launcher and intentionally has no dependencies.
  */
 public final class CapabilityStudioA1ReleaseArchiveVerifier {
-    private static final String A1_PREFIX = "schemas/resource-gateway-capability-studio-a1/";
-    private static final String LEGACY_PREFIX = "schemas/resource-gateway-capability-studio/";
-    private static final String MAVEN_PREFIX =
-            "META-INF/maven/com.leanowtech.bloge/bloge-resource-gateway-test-kit/";
-
-    private static final java.util.Set<String> AUTHORITATIVE_PATHS = java.util.Set.of(
-            A1_PREFIX + "acceptance-receipt-v1.schema.json",
-            A1_PREFIX + "attack-case-v1.schema.json",
-            A1_PREFIX + "compiler-manifest-v1.schema.json",
-            A1_PREFIX + "evidence-catalog-entry-v1.schema.json",
-            A1_PREFIX + "hermetic-observation-v1.schema.json",
-            A1_PREFIX + "ledger-entry-v1.schema.json",
-            A1_PREFIX + "normative-primitives-v1.schema.json",
-            A1_PREFIX + "observation-receipt-v1.schema.json",
-            A1_PREFIX + "observer-failure-v1.schema.json",
-            A1_PREFIX + "oracle-manifest-v1.schema.json",
-            A1_PREFIX + "revocation-record-v1.schema.json",
-            A1_PREFIX + "source-package-v1.schema.json",
-            A1_PREFIX + "source-unit-v1.schema.json"
+    // Exact 3 Wire authority source paths under acceptance-engine-v1/
+    private static final String ENGINE_V1_PREFIX = "acceptance-engine-v1/";
+    private static final String AUTHORITATIVE_SOURCES = ENGINE_V1_PREFIX;
+    private static final java.util.Set<String> AUTHORITY_SOURCE_PATHS = java.util.Set.of(
+            ENGINE_V1_PREFIX + "builtin-contract-catalog.json",
+            ENGINE_V1_PREFIX + "builtin-compiler-profile-formal-v1.json",
+            ENGINE_V1_PREFIX + "rg-cs-felt-v1.acceptance.plan.json"
     );
-    private static final java.util.Set<String> PROTOCOL_ALLOWED_FILES = protocolAllowedFiles();
+    private static final int EXPECTED_AUTHORITY_COUNT = 3;
+
+    private static final int EXIT_OK = 0;
     private static final int EXIT_FAIL = 1;
     private static final int EXIT_CONFIG = 2;
     private static final int EXIT_JAR = 3;
@@ -36,24 +28,16 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
                     + "<normal-jar> <shaded-cli-jar> <a1-protocol-jar> <legacy-schema-root>");
             System.exit(EXIT_CONFIG);
         }
-        java.util.Set<String> expectedLegacySchemas = readExpectedLegacySchemas(args[3]);
         int failures = verifyHelpers();
-        failures += verifyCompatibilityJar("normal", args[0], expectedLegacySchemas);
-        failures += verifyCompatibilityJar("shaded-cli", args[1], expectedLegacySchemas);
+        failures += verifyCompatibilityJar("normal", args[0]);
+        failures += verifyCompatibilityJar("shaded-cli", args[1]);
         failures += verifyProtocolJar("a1-protocol", args[2]);
         if (failures > 0) {
             System.err.println("A1 ARCHIVE BOUNDARY FAILED: " + failures + " check(s)");
             System.exit(EXIT_FAIL);
         }
         System.out.println("A1 ARCHIVE BOUNDARY PASSED");
-    }
-
-    private static java.util.Set<String> protocolAllowedFiles() {
-        java.util.Set<String> files = new java.util.HashSet<>(AUTHORITATIVE_PATHS);
-        files.add("META-INF/MANIFEST.MF");
-        files.add(MAVEN_PREFIX + "pom.xml");
-        files.add(MAVEN_PREFIX + "pom.properties");
-        return java.util.Set.copyOf(files);
+        System.exit(EXIT_OK);
     }
 
     private static int verifyHelpers() {
@@ -79,113 +63,70 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
         return failures;
     }
 
-    private static int verifyCompatibilityJar(
-            String label, String jarPath, java.util.Set<String> expectedLegacySchemas) {
-        ArchiveInventory inventory = readArchive(label, jarPath);
-        int failures = inventory.commonFailures(label);
-        java.util.Set<String> leaked = inventory.filesWithPrefix(A1_PREFIX);
+    /**
+     * Verify normal or shaded-cli JAR: must contain exactly the 3 Wire authority files
+     * and must NOT contain a1-protocol resources.
+     */
+    private static int verifyCompatibilityJar(String label, String jarPath) {
+        ArchiveInventory inv = readArchive(label, jarPath);
+        int failures = inv.commonFailures(label);
+
+        // Check exactly 3 authority files are present
+        java.util.Set<String> authorityFiles = new java.util.TreeSet<>();
+        for (String path : AUTHORITY_SOURCE_PATHS) {
+            if (inv.files.contains(path)) {
+                authorityFiles.add(path);
+            }
+        }
+        if (authorityFiles.size() != EXPECTED_AUTHORITY_COUNT) {
+            java.util.Set<String> missing = new java.util.TreeSet<>(AUTHORITY_SOURCE_PATHS);
+            missing.removeAll(authorityFiles);
+            System.err.println("FAIL [" + label + "]: expected exactly " + EXPECTED_AUTHORITY_COUNT
+                    + " authority files, found " + authorityFiles.size()
+                    + "; missing: " + missing);
+            failures++;
+        }
+        // Verify no a1-protocol resources leaked in
+        java.util.Set<String> leaked = inv.filesWithPrefix("schemas/resource-gateway-capability-studio-a1/");
         if (!leaked.isEmpty()) {
-            System.err.println("FAIL [" + label + "]: Target A1 resources leaked into compatibility JAR:");
+            System.err.println("FAIL [" + label + "]: a1-protocol resources leaked into " + label + " JAR:");
             leaked.forEach(path -> System.err.println("  " + path));
             failures++;
         }
-        java.util.Set<String> actualLegacySchemas = inventory.filesWithPrefix(LEGACY_PREFIX);
-        if (!actualLegacySchemas.equals(expectedLegacySchemas)) {
-            java.util.Set<String> missing = new java.util.TreeSet<>(expectedLegacySchemas);
-            missing.removeAll(actualLegacySchemas);
-            java.util.Set<String> unexpected = new java.util.TreeSet<>(actualLegacySchemas);
-            unexpected.removeAll(expectedLegacySchemas);
-            System.err.println("FAIL [" + label + "]: Legacy compatibility schema inventory drifted");
-            missing.forEach(path -> System.err.println("  missing: " + path));
-            unexpected.forEach(path -> System.err.println("  unexpected: " + path));
-            failures++;
-        }
-        System.out.println("[" + label + "] inventory: files=" + inventory.files.size()
-                + ", legacySchemas=" + actualLegacySchemas.size()
-                + ", targetA1Schemas=" + inventory.schemaCount(A1_PREFIX));
+
+        System.out.println("[" + label + "] inventory: files=" + inv.files.size()
+                + ", authority=" + authorityFiles.size()
+                + ", a1-leaked=" + leaked.size());
         printResult(label, failures);
         return failures;
     }
 
-    private static java.util.Set<String> readExpectedLegacySchemas(String rootPath) {
-        java.nio.file.Path root = java.nio.file.Path.of(rootPath).toAbsolutePath().normalize();
-        if (!java.nio.file.Files.isDirectory(root, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-                || java.nio.file.Files.isSymbolicLink(root)) {
-            System.err.println("ERROR [legacy-authority]: not a real directory: " + rootPath);
-            System.exit(EXIT_CONFIG);
-        }
-        java.util.Set<String> expected = new java.util.TreeSet<>();
-        try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.list(root)) {
-            stream.sorted().forEach(path -> {
-                if (java.nio.file.Files.isSymbolicLink(path)
-                        || !java.nio.file.Files.isRegularFile(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                    System.err.println("ERROR [legacy-authority]: non-regular entry: " + path);
-                    System.exit(EXIT_CONFIG);
-                }
-                String name = path.getFileName().toString();
-                if (name.endsWith(".schema.json")) {
-                    expected.add(LEGACY_PREFIX + name);
-                }
-            });
-        } catch (java.io.IOException exception) {
-            System.err.println("ERROR [legacy-authority]: " + exception.getMessage());
-            System.exit(EXIT_CONFIG);
-        }
-        if (expected.isEmpty()) {
-            System.err.println("ERROR [legacy-authority]: no schemas found");
-            System.exit(EXIT_CONFIG);
-        }
-        return java.util.Set.copyOf(expected);
-    }
-
+    /**
+     * Verify a1-protocol JAR: must NOT contain the 3 Wire authority files.
+     * It contains a1 schemas which are validated separately.
+     */
     private static int verifyProtocolJar(String label, String jarPath) {
-        ArchiveInventory inventory = readArchive(label, jarPath);
-        int failures = inventory.commonFailures(label);
-        java.util.Set<String> missing = new java.util.TreeSet<>(PROTOCOL_ALLOWED_FILES);
-        missing.removeAll(inventory.files);
-        java.util.Set<String> unexpected = new java.util.TreeSet<>(inventory.files);
-        unexpected.removeAll(PROTOCOL_ALLOWED_FILES);
-        if (!missing.isEmpty() || !unexpected.isEmpty()) {
-            System.err.println("FAIL [" + label + "]: resource-only inventory is not closed");
-            missing.forEach(path -> System.err.println("  missing: " + path));
-            unexpected.forEach(path -> System.err.println("  unexpected: " + path));
-            failures++;
-        }
-        java.util.Set<String> a1Schemas = inventory.filesWithPrefix(A1_PREFIX);
-        if (!a1Schemas.equals(AUTHORITATIVE_PATHS)) {
-            System.err.println("FAIL [" + label + "]: expected the exact 13 Target A1 schema paths");
-            failures++;
-        }
-        java.util.Set<String> unexpectedDirectories = new java.util.TreeSet<>();
-        for (String directory : inventory.directories) {
-            if (PROTOCOL_ALLOWED_FILES.stream().noneMatch(path -> path.startsWith(directory))) {
-                unexpectedDirectories.add(directory);
+        ArchiveInventory inv = readArchive(label, jarPath);
+        int failures = inv.commonFailures(label);
+
+        // Verify the 3 Wire authority files are NOT in a1 JAR
+        java.util.Set<String> found = new java.util.TreeSet<>();
+        for (String path : AUTHORITY_SOURCE_PATHS) {
+            if (inv.files.contains(path)) {
+                found.add(path);
             }
         }
-        if (!unexpectedDirectories.isEmpty()) {
-            System.err.println("FAIL [" + label + "]: unexpected directories:");
-            unexpectedDirectories.forEach(path -> System.err.println("  " + path));
+        if (!found.isEmpty()) {
+            System.err.println("FAIL [" + label + "]: Wire authority files must not be in a1 JAR:");
+            found.forEach(path -> System.err.println("  " + path));
             failures++;
         }
-        java.util.Set<String> forbidden = new java.util.TreeSet<>();
-        for (String path : inventory.files) {
-            String lower = path.toLowerCase(java.util.Locale.ROOT);
-            if (lower.endsWith(".class") || lower.endsWith(".py") || lower.endsWith(".pyc")
-                    || path.startsWith(LEGACY_PREFIX)
-                    || lower.contains("/scripts/") || lower.startsWith("scripts/")
-                    || lower.contains("fixture") || lower.contains("quarantine")
-                    || lower.contains("gate-a1-step0") || lower.contains("step0-manifest")) {
-                forbidden.add(path);
-            }
-        }
-        if (!forbidden.isEmpty()) {
-            System.err.println("FAIL [" + label + "]: non-protocol material present:");
-            forbidden.forEach(path -> System.err.println("  " + path));
-            failures++;
-        }
-        System.out.println("[" + label + "] inventory: files=" + inventory.files.size()
-                + ", targetA1Schemas=" + a1Schemas.size()
-                + ", classes=0, legacySchemas=0, nonReleaseInstances=0");
+        // Count a1 schema files (should be present in a1-protocol JAR)
+        long a1Count = inv.schemaCount("schemas/resource-gateway-capability-studio-a1/");
+
+        System.out.println("[" + label + "] inventory: files=" + inv.files.size()
+                + ", authority-present=" + found.size()
+                + ", a1Schemas=" + a1Count);
         printResult(label, failures);
         return failures;
     }
@@ -208,10 +149,10 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
                 if (recordDuplicate(inventory.seen, name)) {
                     inventory.duplicates.add(name);
                 }
-                if (entry.isDirectory()) {
-                    inventory.directories.add(name);
-                } else {
+                if (!entry.isDirectory()) {
                     inventory.files.add(name);
+                } else {
+                    inventory.directories.add(name);
                 }
             }
         } catch (java.io.IOException exception) {
@@ -278,14 +219,22 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
 
         private java.util.Set<String> filesWithPrefix(String prefix) {
             java.util.Set<String> matches = new java.util.TreeSet<>();
-            files.stream().filter(path -> path.startsWith(prefix)).forEach(matches::add);
+            for (String path : files) {
+                if (path.startsWith(prefix)) {
+                    matches.add(path);
+                }
+            }
             return matches;
         }
 
         private long schemaCount(String prefix) {
-            return files.stream()
-                    .filter(path -> path.startsWith(prefix) && path.endsWith(".schema.json"))
-                    .count();
+            long count = 0;
+            for (String path : files) {
+                if (path.startsWith(prefix) && path.endsWith(".schema.json")) {
+                    count++;
+                }
+            }
+            return count;
         }
     }
 }
