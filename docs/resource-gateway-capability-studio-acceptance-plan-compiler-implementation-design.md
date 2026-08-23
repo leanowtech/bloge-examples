@@ -1,6 +1,6 @@
 # Capability Studio Acceptance Plan Compiler — Phase 1 实现设计
 
-**状态**: Frozen
+**状态**: FROZEN_IMPLEMENTATION_CONTRACT
 **范围**: `resource-gateway-test-kit` 模块内的 Plan Compiler 与独立 Plan Verifier
 **事实源**: 4 schemas、packaged profile、3 authority resources、compiled-plan-valid fixture、lossless IR design
 
@@ -160,8 +160,9 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 
 **registry descriptor 数组（按 typeId 升序；三个 set-like 数组各自升序）：**
 - `primitiveDescriptors[].typeId`
-- `primitiveDescriptors[].allowedEffectClasses[]`
-- `primitiveDescriptors[].phaseOrder[]`
+- `primitiveDescriptors[].inputKinds[]`
+- `primitiveDescriptors[].outputEvidenceKinds[]`
+- `primitiveDescriptors[].capabilityRequirements[]`
 
 **compiled plan 数组：**
 - `primitiveContracts[].primitiveId`：升序
@@ -211,7 +212,7 @@ Domain2(domain: string, payload: bytes) = SHA256( UTF8(domain) || I32BE(payload.
 7. unknown dep detection: each dependsOn ID must reference an existing primitive.id
 8. cycle detection: DAG 构建 + 检测
 9. dependency direction: A dependsOn B ⇒ phaseIndex(B) ≤ phaseIndex(A)
-10. stable topological sort: Kahn's algorithm，PQ 以 phase index 为 primary key、primitiveId 为 secondary key（zero-degree 时）
+10. stable topological sort: Kahn's algorithm，PQ 以 phase index 为 primary key、primitiveId 为 secondary key（zero-indegree 时）
 11. primitiveContracts: 按 primitiveId 升序输出；每个 primitive 的 dependsOn 升序
 12. exactContractIds: 50 个 contractId 升序
 13. expectedEvidenceRoles: role 升序；每个 role 的 contractIds 升序
@@ -256,13 +257,9 @@ Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6�
 1. **unknown dependency**：dependsOn ID 引用不存在的 primitive.id → `INVALID_TOPOLOGY_UNKNOWN_NODE`
 2. **cyclic dependency**：DAG cycle → `INVALID_TOPOLOGY_CYCLE`
 3. **phase reverse dependency**：A dependsOn B 但 phaseIndex(B) > phaseIndex(A) → `INVALID_TOPOLOGY_CYCLE`
-4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_REGISTRY_REVISION_MISMATCH`
-5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_REGISTRY_TYPE_NOT_FOUND`
-6. **profile vocabulary**：
-   - barrier 集合漂移（compiled phaseBarriers 集合 ≠ profile.barriers 集合）→ `INVALID_BARRIER_BYPASS`
-   - barrier 顺序漂移（compiled phaseBarriers 顺序 ≠ profile.barriers 声明顺序）→ `INVALID_COLLECTION_SIZE`
-   - Protocol 验证 compiled phaseBarriers 精确为 7 个 closed barrierId、唯一、顺序与 profile.barriers 一致、各 barrier.phase 在 phaseOrder 内
-   - Compiler 无损投影 plan primitives 到 compiled phaseBarriers
+4. **descriptor effectClass**：descriptor.effectClass ∉ allowedEffectClasses → `INVALID_BARRIER_BYPASS`
+5. **descriptor phase**：descriptor.phase ∉ phaseOrder → `INVALID_BARRIER_BYPASS`
+6. **profile vocabulary**：CapabilityStudioAcceptancePlanProtocol 验证 packaged profile 含精确 7 个 closed barrierId（按已冻结声明顺序）、ID 唯一；每个 barrier 的 phases[] 非空、唯一、每个 phase 属于 phaseOrder；Compiler 按声明顺序无损投影 barrierId + phases[]。
 
 ### G.2 Compiler 不验证的条件（由 Verifier/Runtime 负责）
 
@@ -281,7 +278,7 @@ Authority catalog evidenceRoles 实际去重后为 6 个（authority roles = 6�
 
 ```java
 public final class CapabilityStudioAcceptancePlanCompiler {
-    private CapabilityStudioAcceptancePlanCompiler(CapabilityStudioAcceptancePrimitiveRegistry registry,
+    CapabilityStudioAcceptancePlanCompiler(CapabilityStudioAcceptancePrimitiveRegistry registry,
                                                    CapabilityStudioAcceptancePlanProtocol protocol) { ... }
 
     // 直接返回 Compiler 实例，无需 Builder
@@ -333,7 +330,6 @@ public final class CompilationResult {
 **设计原则**：不保存输入 bytes，不暴露 mutable JsonNode。
 - `byte[]` 不是 immutable；constructor clone 保存，accessor clone 返回
 - `String` 字段天然 immutable，直接返回
-
 
 ### H.4 CompilerException
 
@@ -420,7 +416,7 @@ catalogSemantic 和 registrySemantic 值从 packaged profile 的 `expectedCatalo
 
 - `planSourceSemanticFingerprint`：authority plan semantic canonical 的 Domain2（待 Compiler 生成）
 - `compiledPlanFingerprint`：authority plan/catalog 编译后的 Domain2（待 Compiler 生成）
-- schema fingerprint 不声称固定
+
 - 3 个 authority fingerprints（catalogRaw/catalogSemantic/registrySemantic）已固化；profileRaw 已固化；共 4 个 material fingerprint 固定
 
 ### J.3 Compiled-Plan-Valid Fixture 说明
@@ -543,8 +539,8 @@ wire 序列化、packaged profile、3 个 authority resources、compiled-plan-va
 
 以下 design gate 条件已满足：
 
-1. ✅ 4 schemas 已提交且 fingerprint 已固化（schema fingerprint 非 plan/catalog semantic）
-2. ✅ 3 authority resources 已提交；4 个 material fingerprint（catalogRaw/catalogSemantic/profileRaw/registrySemantic）已固化；schema fingerprint 和 plan semantic/compiled fingerprint 待 Compiler 生成
+1. ✅ 4 schemas 已提交并通过 schema 与 archive tests
+2. ✅ 3 authority resources exact bytes 已提交；4 material fingerprints（catalogRaw/catalogSemantic/profileRaw/registrySemantic）已固化；plan semantic/compiled 待 Compiler 生成
 3. ✅ wire 序列化、profile、fixtures 已完成
 4. ✅ compile-only、无 PASS/ACCEPTED 字段、IR 无 formalPassCount、外部正式进度 0/27 已明确
 
