@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "bloge.capability-studio.acceptance-plan.v1",
+  "planId": "rg-cs-felt-v1",
+  "revision": 1,
+  "compilerProfile": "formal-evidence-v1",
+  "catalogId": "builtin-contract-catalog-v1",
+  "catalogRef": "builtin-contract-catalog-v1@sha256:b14c3ee599a87e0c10a94f4e0237455bcae93ff2c9fcc8a6a82ab9145942990c",
+  "obligationSet": "RG-CS-FELT-v1",
+  "terminalGate": "DEVELOPMENT_VERIFIED_ONLY",
+  "primitives": [
+    {
+      "id": "verify-fixed-material",
+      "typeId": "OLD_PHASE_TYPE",
+      "revision": 1,
+      "dependsOn": []
+    }
+  ]
+}

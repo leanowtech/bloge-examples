@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "bloge.capability-studio.compiled-plan.v1",
+  "planId": "rg-cs-felt-v1",
+  "revision": 1,
+  "planSourceSemanticFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "catalogRawFingerprint": "sha256:07b8a28ec39147d30133b8584d6042a1190150ea15758331225c27330ca6ec98",
+  "catalogSemanticFingerprint": "sha256:b6a9c1086e2f65d5648e73e7ddd3fb1dc413f628417d522cddb21596d5a30311",
+  "compilerProfileRawFingerprint": "sha256:32eea65b545e730083da93512a638cc199348a7eae669fb9c5fd42b86317731f",
+  "primitiveRegistryFingerprint": "sha256:27a14ea9fedd8831778f898a077effe4431057c3140e2bce942421013baf79bc",
+  "stageExitContractCount": 27,
+  "acStdCount": 9,
+  "feltObligationCount": 14,
+  "canonicalMatrixCellCount": 27,
+  "suiteRunCount": 3,
+  "matrixCellIds": [
+    "case-standard-cancellation-fee@canonical-suite-run-01",
+    "case-standard-cancellation-fee@canonical-suite-run-02",
+    "case-standard-cancellation-fee@canonical-suite-run-03",
+    "case-rider-not-responsible@canonical-suite-run-01",
+    "case-rider-not-responsible@canonical-suite-run-02",
+    "case-rider-not-responsible@canonical-suite-run-03",
+    "case-driver-responsible@canonical-suite-run-01",
+    "case-driver-responsible@canonical-suite-run-02",
+    "case-driver-responsible@canonical-suite-run-03",
+    "case-city-policy-missing@canonical-suite-run-01",
+    "case-city-policy-missing@canonical-suite-run-02",
+    "case-city-policy-missing@canonical-suite-run-03",
+    "case-compensation-history-empty@canonical-suite-run-01",
+    "case-compensation-history-empty@canonical-suite-run-02",
+    "case-compensation-history-empty@canonical-suite-run-03",
+    "case-duplicate-cancellation@canonical-suite-run-01",
+    "case-duplicate-cancellation@canonical-suite-run-02",
+    "case-duplicate-cancellation@canonical-suite-run-03",
+    "case-forbidden-write-effect@canonical-suite-run-01",
+    "case-forbidden-write-effect@canonical-suite-run-02",
+    "case-forbidden-write-effect@canonical-suite-run-03",
+    "case-policy-revision-regression@canonical-suite-run-01",
+    "case-policy-revision-regression@canonical-suite-run-02",
+    "case-policy-revision-regression@canonical-suite-run-03",
+    "case-compensation-history-timeout@canonical-suite-run-01",
+    "case-compensation-history-timeout@canonical-suite-run-02",
+    "case-compensation-history-timeout@canonical-suite-run-03"
+  ],
+  "suiteRunIds": [
+    "canonical-suite-run-01",
+    "canonical-suite-run-02",
+    "canonical-suite-run-03"
+  ],
+  "exactContractIds": [
+    "S0-AC-01",
+    "S0-AC-02",
+    "S0-AC-03",
+    "S0-AC-04",
+    "S0-AC-05",
+    "S0-AC-06",
+    "S1-AC-01",
+    "S1-AC-02",
+    "S1-AC-03",
+    "S1-AC-04",
+    "S1-AC-05",
+    "S2-AC-01",
+    "S2-AC-02",
+    "S2-AC-03",
+    "S2-AC-04",
+    "S3-AC-01",
+    "S3-AC-02",
+    "S3-AC-03",
+    "S3-AC-04",
+    "S4-AC-01",
+    "S4-AC-02",
+    "S4-AC-03",
+    "S4-AC-04",
+    "S5-AC-01",
+    "S5-AC-02",
+    "S5-AC-03",
+    "S5-AC-04",
+    "AC-STD-01",
+    "AC-STD-02",
+    "AC-STD-03",
+    "AC-STD-04",
+    "AC-STD-05",
+    "AC-STD-06",
+    "AC-STD-07",
+    "AC-STD-08",
+    "AC-STD-09",
+    "FELT-01",
+    "FELT-02",
+    "FELT-03",
+    "FELT-04",
+    "FELT-05",
+    "FELT-06",
+    "FELT-07",
+    "FELT-08",
+    "FELT-09",
+    "FELT-10",
+    "FELT-11",
+    "FELT-12",
+    "FELT-13",
+    "FELT-14"
+  ],
+  "primitiveContracts": [
+    {
+      "primitiveId": "verify-fixed-material",
+      "typeId": "VERIFY_FIXED_MATERIAL_V1",
+      "effectClass": "EXTERNAL_CALL",
+      "phase": "MATERIAL_SNAPSHOT",
+      "revision": 1
+    },
+    {
+      "primitiveId": "verify-authority-tree",
+      "typeId": "VERIFY_FORMAL_INPUT_TREE_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "READ_ONLY_PREFLIGHT",
+      "revision": 1
+    },
+    {
+      "primitiveId": "verify-target-tree",
+      "typeId": "VERIFY_FORMAL_INPUT_TREE_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "READ_ONLY_PREFLIGHT",
+      "revision": 1
+    },
+    {
+      "primitiveId": "provider-conformance",
+      "typeId": "RUN_PROVIDER_CONFORMANCE_V2",
+      "effectClass": "PURE_VERIFY",
+      "phase": "PROVIDER_CONFORMANCE",
+      "revision": 2
+    },
+    {
+      "primitiveId": "execute-lease-evidence",
+      "typeId": "EXECUTE_LEASE_EVIDENCE_V1",
+      "effectClass": "AUTHORITY_LEASE",
+      "phase": "STATEFUL_EXECUTION",
+      "revision": 1
+    },
+    {
+      "primitiveId": "verify-durable-wrapper",
+      "typeId": "VERIFY_DURABLE_WRAPPER_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "INDEPENDENT_VERIFICATION",
+      "revision": 1
+    },
+    {
+      "primitiveId": "verify-packaged-matrices",
+      "typeId": "VERIFY_PACKAGED_FELT_MATRICES_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "INDEPENDENT_VERIFICATION",
+      "revision": 1
+    },
+    {
+      "primitiveId": "verify-postflight",
+      "typeId": "VERIFY_MATERIAL_POSTFLIGHT_V1",
+      "effectClass": "PURE_VERIFY",
+      "phase": "MATERIAL_POSTFLIGHT",
+      "revision": 1
+    },
+    {
+      "primitiveId": "commit-local-proof",
+      "typeId": "COMMIT_LOCAL_PROOF_BUNDLE_V1",
+      "effectClass": "LOCAL_IMMUTABLE_WRITE",
+      "phase": "DURABLE_LOCAL_COMMIT",
+      "revision": 1
+    }
+  ],
+  "phaseBarriers": [
+    {
+      "barrierId": "PURE_VERIFY_GATE",
+      "phase": "BOOTSTRAP_FACTS"
+    },
+    {
+      "barrierId": "LEASE_GATE",
+      "phase": "STATEFUL_EXECUTION"
+    },
+    {
+      "barrierId": "NO_DELETE_AFTER_LEASE",
+      "phase": "DURABLE_LOCAL_COMMIT"
+    },
+    {
+      "barrierId": "DURABLE_COMMIT_GATE",
+      "phase": "DURABLE_LOCAL_COMMIT"
+    },
+    {
+      "barrierId": "STORE_RECEIPT_GATE",
+      "phase": "EXTERNAL_PUBLICATION"
+    },
+    {
+      "barrierId": "OWNER_SIGNOFF_GATE",
+      "phase": "EXTERNAL_ADJUDICATION"
+    },
+    {
+      "barrierId": "NO_ACCEPTED_FROM_LOCAL",
+      "phase": "DURABLE_LOCAL_COMMIT"
+    }
+  ],
+  "executionOrder": [
+    "verify-fixed-material",
+    "verify-authority-tree",
+    "verify-target-tree",
+    "provider-conformance",
+    "execute-lease-evidence",
+    "verify-durable-wrapper",
+    "verify-packaged-matrices",
+    "verify-postflight",
+    "commit-local-proof"
+  ],
+  "expectedEvidenceRoles": [],
+  "oracleBindings": [],
+  "terminalGate": "DEVELOPMENT_VERIFIED_ONLY",
+  "compiledPlanFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+}

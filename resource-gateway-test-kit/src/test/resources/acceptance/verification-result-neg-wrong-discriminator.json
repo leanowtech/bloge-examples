@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "bloge.capability-studio.compiled-plan-verification-result.v2",
+  "planId": "rg-cs-felt-v1",
+  "revision": 1,
+  "status": "VERIFIED",
+  "verificationFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "expectedCompiledPlanFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "recomputedCompiledPlanFingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+  "reasonCode": null,
+  "reasonField": null,
+  "catalogRefVerified": true,
+  "catalogRawFingerprintVerified": true,
+  "catalogSemanticFingerprintVerified": true,
+  "planFingerprintVerified": true,
+  "phaseBarrierVerified": true,
+  "dependencyDagVerified": true,
+  "effectBarrierVerified": true,
+  "canonicalMatrixCellCountVerified": true,
+  "stageExitContractCountVerified": true
+}

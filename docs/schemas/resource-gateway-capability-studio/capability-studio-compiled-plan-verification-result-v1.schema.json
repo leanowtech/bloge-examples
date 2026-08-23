@@ -1,0 +1,398 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-compiled-plan-verification-result-v1.schema.json",
+  "title": "Capability Studio Compiled Plan Verification Result v1",
+  "description": "Flat closed union. VERIFIED: reasonCode/reasonField required null, 9 booleans const true, expected/recomputed non-null. INVALID: closed reasonCode, nonempty RFC6901 pointer, early IDs/fingerprints nullable. UNAVAILABLE: closed reasonCode, reasonField absent, early nullable. Root verificationFingerprint always non-null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "status",
+    "verificationFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.capability-studio.compiled-plan-verification-result.v1"
+    },
+    "planId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "revision": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "VERIFIED",
+        "INVALID",
+        "UNAVAILABLE"
+      ]
+    },
+    "verificationFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "expectedCompiledPlanFingerprint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "recomputedCompiledPlanFingerprint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reasonCode": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reasonField": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "catalogRefVerified": {
+      "type": "boolean"
+    },
+    "catalogRawFingerprintVerified": {
+      "type": "boolean"
+    },
+    "catalogSemanticFingerprintVerified": {
+      "type": "boolean"
+    },
+    "planFingerprintVerified": {
+      "type": "boolean"
+    },
+    "phaseBarrierVerified": {
+      "type": "boolean"
+    },
+    "dependencyDagVerified": {
+      "type": "boolean"
+    },
+    "effectBarrierVerified": {
+      "type": "boolean"
+    },
+    "canonicalMatrixCellCountVerified": {
+      "type": "boolean"
+    },
+    "stageExitContractCountVerified": {
+      "type": "boolean"
+    }
+  },
+  "oneOf": [
+    {
+      "allOf": [
+        {
+          "required": [
+            "schemaVersion",
+            "status",
+            "verificationFingerprint",
+            "planId",
+            "revision",
+            "catalogRefVerified",
+            "catalogRawFingerprintVerified",
+            "catalogSemanticFingerprintVerified",
+            "planFingerprintVerified",
+            "phaseBarrierVerified",
+            "dependencyDagVerified",
+            "effectBarrierVerified",
+            "canonicalMatrixCellCountVerified",
+            "stageExitContractCountVerified",
+            "expectedCompiledPlanFingerprint",
+            "recomputedCompiledPlanFingerprint"
+          ]
+        },
+        {
+          "properties": {
+            "schemaVersion": {
+              "const": "bloge.capability-studio.compiled-plan-verification-result.v1"
+            },
+            "status": {
+              "const": "VERIFIED"
+            },
+            "reasonCode": {
+              "type": "null"
+            },
+            "reasonField": {
+              "type": "null"
+            },
+            "expectedCompiledPlanFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "recomputedCompiledPlanFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "verificationFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "catalogRefVerified": {
+              "const": true
+            },
+            "catalogRawFingerprintVerified": {
+              "const": true
+            },
+            "catalogSemanticFingerprintVerified": {
+              "const": true
+            },
+            "planFingerprintVerified": {
+              "const": true
+            },
+            "phaseBarrierVerified": {
+              "const": true
+            },
+            "dependencyDagVerified": {
+              "const": true
+            },
+            "effectBarrierVerified": {
+              "const": true
+            },
+            "canonicalMatrixCellCountVerified": {
+              "const": true
+            },
+            "stageExitContractCountVerified": {
+              "const": true
+            }
+          }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        {
+          "required": [
+            "schemaVersion",
+            "status",
+            "verificationFingerprint",
+            "planId",
+            "revision",
+            "catalogRefVerified",
+            "catalogRawFingerprintVerified",
+            "catalogSemanticFingerprintVerified",
+            "planFingerprintVerified",
+            "phaseBarrierVerified",
+            "dependencyDagVerified",
+            "effectBarrierVerified",
+            "canonicalMatrixCellCountVerified",
+            "stageExitContractCountVerified",
+            "reasonCode",
+            "reasonField",
+            "verificationFingerprint"
+          ]
+        },
+        {
+          "properties": {
+            "schemaVersion": {
+              "const": "bloge.capability-studio.compiled-plan-verification-result.v1"
+            },
+            "status": {
+              "const": "INVALID"
+            },
+            "reasonCode": {
+              "enum": [
+                "INVALID_SCHEMA",
+                "INVALID_PLAN_STRUCTURE",
+                "INVALID_TOPOLOGY_CYCLE",
+                "INVALID_TOPOLOGY_UNKNOWN_NODE",
+                "INVALID_REGISTRY_TYPE_NOT_FOUND",
+                "INVALID_REGISTRY_REVISION_MISMATCH",
+                "INVALID_BARRIER_BYPASS",
+                "INVALID_COLLECTION_SIZE",
+                "INVALID_CATALOG_SEMANTICS",
+                "INVALID_FINGERPRINT_MISMATCH",
+                "INVALID_STAGE_EXIT_CONTRACT_COUNT",
+                "INVALID_TAMPERED_PLAN"
+              ]
+            },
+            "reasonField": {
+              "type": "string",
+              "pattern": "^/[^\\x00-\\x1f\\x7f~]+$",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "expectedCompiledPlanFingerprint": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recomputedCompiledPlanFingerprint": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "verificationFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "allOf": [
+        {
+          "required": [
+            "schemaVersion",
+            "status",
+            "verificationFingerprint",
+            "reasonCode"
+          ]
+        },
+        {
+          "properties": {
+            "schemaVersion": {
+              "const": "bloge.capability-studio.compiled-plan-verification-result.v1"
+            },
+            "status": {
+              "const": "UNAVAILABLE"
+            },
+            "reasonCode": {
+              "enum": [
+                "UNAVAILABLE_SCHEMA_NOT_FOUND",
+                "UNAVAILABLE_CATALOG_NOT_FOUND",
+                "UNAVAILABLE_PACKAGED_SCHEMA",
+                "UNAVAILABLE_CATALOG_REF_MISMATCH"
+              ]
+            },
+            "verificationFingerprint": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            "planId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "revision": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "expectedCompiledPlanFingerprint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "recomputedCompiledPlanFingerprint": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "catalogRefVerified": {
+              "type": "boolean"
+            },
+            "catalogRawFingerprintVerified": {
+              "type": "boolean"
+            },
+            "catalogSemanticFingerprintVerified": {
+              "type": "boolean"
+            },
+            "planFingerprintVerified": {
+              "type": "boolean"
+            },
+            "phaseBarrierVerified": {
+              "type": "boolean"
+            },
+            "dependencyDagVerified": {
+              "type": "boolean"
+            },
+            "effectBarrierVerified": {
+              "type": "boolean"
+            },
+            "canonicalMatrixCellCountVerified": {
+              "type": "boolean"
+            },
+            "stageExitContractCountVerified": {
+              "type": "boolean"
+            }
+          },
+          "not": {
+            "required": [
+              "reasonField"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "reasonField"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

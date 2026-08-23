@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "bloge.capability-studio.compiled-plan-verification-result.v1",
+  "planId": null,
+  "revision": null,
+  "status": "UNAVAILABLE",
+  "verificationFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "expectedCompiledPlanFingerprint": null,
+  "recomputedCompiledPlanFingerprint": null,
+  "reasonCode": "UNAVAILABLE_SCHEMA_NOT_FOUND",
+  "catalogRefVerified": false,
+  "catalogRawFingerprintVerified": false,
+  "catalogSemanticFingerprintVerified": false,
+  "planFingerprintVerified": false,
+  "phaseBarrierVerified": false,
+  "dependencyDagVerified": false,
+  "effectBarrierVerified": false,
+  "canonicalMatrixCellCountVerified": false,
+  "stageExitContractCountVerified": false,
+  "reasonField": "/schemaVersion"
+}

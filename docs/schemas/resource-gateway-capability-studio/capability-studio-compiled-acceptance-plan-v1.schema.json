@@ -1,0 +1,291 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-compiled-acceptance-plan-v1.schema.json",
+  "title": "Capability Studio Compiled Acceptance Plan v1",
+  "description": "Wire schema for CompiledAcceptancePlan. Schema guarantees size/shape; semantic exactness (exact IDs, uniqueness, 9x3 matrix completeness) is verified by Compiler. compiledPlanFingerprint is non-null in wire; canonical body model omits it before hashing.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "planId",
+    "revision",
+    "planSourceSemanticFingerprint",
+    "catalogRawFingerprint",
+    "catalogSemanticFingerprint",
+    "compilerProfileRawFingerprint",
+    "primitiveRegistryFingerprint",
+    "stageExitContractCount",
+    "acStdCount",
+    "feltObligationCount",
+    "canonicalMatrixCellCount",
+    "suiteRunCount",
+    "matrixCellIds",
+    "suiteRunIds",
+    "exactContractIds",
+    "primitiveContracts",
+    "phaseBarriers",
+    "executionOrder",
+    "expectedEvidenceRoles",
+    "oracleBindings",
+    "terminalGate",
+    "compiledPlanFingerprint"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.capability-studio.compiled-plan.v1"
+    },
+    "planId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "planSourceSemanticFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "catalogRawFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "catalogSemanticFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "compilerProfileRawFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "primitiveRegistryFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "stageExitContractCount": {
+      "type": "integer",
+      "const": 27
+    },
+    "acStdCount": {
+      "type": "integer",
+      "const": 9
+    },
+    "feltObligationCount": {
+      "type": "integer",
+      "const": 14
+    },
+    "canonicalMatrixCellCount": {
+      "type": "integer",
+      "const": 27
+    },
+    "suiteRunCount": {
+      "type": "integer",
+      "const": 3
+    },
+    "matrixCellIds": {
+      "type": "array",
+      "minItems": 27,
+      "maxItems": 27,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      }
+    },
+    "suiteRunIds": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      }
+    },
+    "exactContractIds": {
+      "type": "array",
+      "minItems": 50,
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      }
+    },
+    "primitiveContracts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/compiledPrimitive"
+      }
+    },
+    "phaseBarriers": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/phaseBarrier"
+      }
+    },
+    "executionOrder": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 128
+      }
+    },
+    "expectedEvidenceRoles": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/evidenceRoleBinding"
+      }
+    },
+    "oracleBindings": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/oracleBinding"
+      }
+    },
+    "terminalGate": {
+      "const": "DEVELOPMENT_VERIFIED_ONLY"
+    },
+    "compiledPlanFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "Non-null in wire. Canonical body model omits this field before serialization and hashing."
+    }
+  },
+  "$defs": {
+    "compiledPrimitive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primitiveId",
+        "typeId",
+        "effectClass",
+        "phase",
+        "revision"
+      ],
+      "properties": {
+        "primitiveId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "typeId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "effectClass": {
+          "enum": [
+            "PURE_VERIFY",
+            "AUTHORITY_LEASE",
+            "LOCAL_IMMUTABLE_WRITE"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "BOOTSTRAP_FACTS",
+            "MATERIAL_SNAPSHOT",
+            "READ_ONLY_PREFLIGHT",
+            "PROVIDER_CONFORMANCE",
+            "STATEFUL_EXECUTION",
+            "INDEPENDENT_VERIFICATION",
+            "MATERIAL_POSTFLIGHT",
+            "DURABLE_LOCAL_COMMIT",
+            "EXTERNAL_PUBLICATION",
+            "EXTERNAL_ADJUDICATION"
+          ]
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "phaseBarrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "barrierId",
+        "phase"
+      ],
+      "properties": {
+        "barrierId": {
+          "enum": [
+            "PURE_VERIFY_GATE",
+            "LEASE_GATE",
+            "NO_DELETE_AFTER_LEASE",
+            "DURABLE_COMMIT_GATE",
+            "STORE_RECEIPT_GATE",
+            "OWNER_SIGNOFF_GATE",
+            "NO_ACCEPTED_FROM_LOCAL"
+          ]
+        },
+        "phase": {
+          "enum": [
+            "BOOTSTRAP_FACTS",
+            "MATERIAL_SNAPSHOT",
+            "READ_ONLY_PREFLIGHT",
+            "PROVIDER_CONFORMANCE",
+            "STATEFUL_EXECUTION",
+            "INDEPENDENT_VERIFICATION",
+            "MATERIAL_POSTFLIGHT",
+            "DURABLE_LOCAL_COMMIT",
+            "EXTERNAL_PUBLICATION",
+            "EXTERNAL_ADJUDICATION"
+          ]
+        }
+      }
+    },
+    "evidenceRoleBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "producerPrimitiveId"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "CANDIDATE_BUILD",
+            "AUTHORITY_ATTESTATION",
+            "STAGE_ACCEPTANCE_CHECK",
+            "SIGNOFF_RECORD",
+            "FORMAL_EVIDENCE_RECORD",
+            "REPLAY_PROOF",
+            "MATERIAL_POSTFLIGHT_CHECK",
+            "DEPLOYMENT_EGRESS_OBSERVATION"
+          ]
+        },
+        "producerPrimitiveId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "oracleBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "oracleId",
+        "primitiveId"
+      ],
+      "properties": {
+        "oracleId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "primitiveId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    }
+  }
+}

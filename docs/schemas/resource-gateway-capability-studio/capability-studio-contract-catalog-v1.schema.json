@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-capability-studio/capability-studio-contract-catalog-v1.schema.json",
+  "title": "Capability Studio Contract Catalog v1",
+  "description": "Wire schema for AcceptanceContractCatalog. Does NOT carry fingerprint fields; raw/semantic fingerprints are recomputed by Compiler/Verifier from caller-provided bounded bytes. Schema guarantees size/shape; semantic exactness (exact IDs, uniqueness, 9x3 matrix completeness) is verified by Compiler.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "catalogId",
+    "catalogRevision",
+    "stageExitContracts",
+    "acStandards",
+    "feltObligations",
+    "canonicalCases",
+    "suiteRuns",
+    "matrixCells"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "bloge.capability-studio.contract-catalog.v1"
+    },
+    "catalogId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "catalogRevision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "stageExitContracts": {
+      "type": "array",
+      "minItems": 27,
+      "maxItems": 27,
+      "items": {
+        "$ref": "#/$defs/contractEntry"
+      },
+      "uniqueItems": true
+    },
+    "acStandards": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "$ref": "#/$defs/contractEntry"
+      },
+      "uniqueItems": true
+    },
+    "feltObligations": {
+      "type": "array",
+      "minItems": 14,
+      "maxItems": 14,
+      "items": {
+        "$ref": "#/$defs/contractEntry"
+      },
+      "uniqueItems": true
+    },
+    "canonicalCases": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {
+        "$ref": "#/$defs/canonicalCaseEntry"
+      }
+    },
+    "suiteRuns": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/suiteRunEntry"
+      }
+    },
+    "matrixCells": {
+      "type": "array",
+      "minItems": 27,
+      "maxItems": 27,
+      "items": {
+        "$ref": "#/$defs/matrixCellEntry"
+      }
+    }
+  },
+  "$defs": {
+    "contractEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractId",
+        "category",
+        "stage",
+        "oracleId",
+        "evidenceRoles",
+        "ownerRoles",
+        "externalFactRequirements",
+        "fixedDenominator"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "contractId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "category": {
+          "enum": [
+            "STAGE_EXIT",
+            "AC_STANDARD",
+            "FELT_OBLIGATION"
+          ]
+        },
+        "stage": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "oracleId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "evidenceRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CANDIDATE_BUILD",
+              "AUTHORITY_ATTESTATION",
+              "STAGE_ACCEPTANCE_CHECK",
+              "SIGNOFF_RECORD",
+              "FORMAL_EVIDENCE_RECORD",
+              "REPLAY_PROOF",
+              "MATERIAL_POSTFLIGHT_CHECK",
+              "DEPLOYMENT_EGRESS_OBSERVATION"
+            ]
+          }
+        },
+        "ownerRoles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "CANDIDATE_OWNER",
+              "QA_OWNER",
+              "ARCHITECTURE_OWNER",
+              "DATA_OWNER",
+              "SECURITY_OWNER",
+              "UX_QA",
+              "DELIVERY_OWNER",
+              "BUSINESS_OWNER",
+              "RUNTIME_OWNER",
+              "PLATFORM_OWNER",
+              "INTEGRATION_OWNER",
+              "SRE_OWNER"
+            ]
+          }
+        },
+        "externalFactRequirements": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "fixedDenominator": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "if": {
+        "properties": {
+          "category": {
+            "const": "STAGE_EXIT"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "stage": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          }
+        },
+        "not": {
+          "required": [
+            "name"
+          ]
+        }
+      },
+      "else": {
+        "properties": {
+          "stage": {
+            "const": null
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "contractId",
+          "category",
+          "stage",
+          "name",
+          "oracleId",
+          "evidenceRoles",
+          "ownerRoles",
+          "externalFactRequirements",
+          "fixedDenominator"
+        ]
+      }
+    },
+    "canonicalCaseEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonicalCaseId",
+        "title",
+        "description"
+      ],
+      "properties": {
+        "canonicalCaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 1024
+        }
+      }
+    },
+    "suiteRunEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "suiteRunId",
+        "suiteRunNumber",
+        "label"
+      ],
+      "properties": {
+        "suiteRunId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "suiteRunNumber": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      }
+    },
+    "matrixCellEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "matrixCellId",
+        "canonicalCaseId",
+        "suiteRunId"
+      ],
+      "properties": {
+        "matrixCellId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "canonicalCaseId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "suiteRunId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      }
+    }
+  }
+}

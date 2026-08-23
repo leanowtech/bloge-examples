@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "bloge.capability-studio.acceptance-plan.v1",
+  "planId": "rg-cs-felt-v1",
+  "revision": 1,
+  "compilerProfile": "formal-evidence-v1",
+  "catalogId": "builtin-contract-catalog-v1",
+  "catalogRef": "builtin-contract-catalog-v1@sha256:b14c3ee599a87e0c10a94f4e0237455bcae93ff2c9fcc8a6a82ab9145942990c",
+  "obligationSet": "RG-CS-FELT-v1",
+  "terminalGate": "DEVELOPMENT_VERIFIED_ONLY",
+  "primitives": [
+    {
+      "id": "verify-fixed-material",
+      "typeId": "VERIFY_FIXED_MATERIAL_V1",
+      "revision": 1,
+      "dependsOn": [],
+      "script": "return true;"
+    },
+    {
+      "id": "verify-authority-tree",
+      "typeId": "VERIFY_FORMAL_INPUT_TREE_V1",
+      "revision": 1,
+      "dependsOn": [
+        "verify-fixed-material"
+      ],
+      "inputSlot": "AUTHORITY"
+    },
+    {
+      "id": "verify-target-tree",
+      "typeId": "VERIFY_FORMAL_INPUT_TREE_V1",
+      "revision": 1,
+      "dependsOn": [
+        "verify-fixed-material"
+      ],
+      "inputSlot": "TARGET"
+    },
+    {
+      "id": "provider-conformance",
+      "typeId": "RUN_PROVIDER_CONFORMANCE_V2",
+      "revision": 2,
+      "dependsOn": [
+        "verify-authority-tree",
+        "verify-target-tree"
+      ]
+    },
+    {
+      "id": "execute-lease-evidence",
+      "typeId": "EXECUTE_LEASE_EVIDENCE_V1",
+      "revision": 1,
+      "dependsOn": [
+        "provider-conformance"
+      ]
+    },
+    {
+      "id": "verify-durable-wrapper",
+      "typeId": "VERIFY_DURABLE_WRAPPER_V1",
+      "revision": 1,
+      "dependsOn": [
+        "execute-lease-evidence"
+      ]
+    },
+    {
+      "id": "verify-packaged-matrices",
+      "typeId": "VERIFY_PACKAGED_FELT_MATRICES_V1",
+      "revision": 1,
+      "dependsOn": [
+        "verify-durable-wrapper"
+      ]
+    },
+    {
+      "id": "verify-postflight",
+      "typeId": "VERIFY_MATERIAL_POSTFLIGHT_V1",
+      "revision": 1,
+      "dependsOn": [
+        "verify-packaged-matrices"
+      ]
+    },
+    {
+      "id": "commit-local-proof",
+      "typeId": "COMMIT_LOCAL_PROOF_BUNDLE_V1",
+      "revision": 1,
+      "dependsOn": [
+        "verify-postflight"
+      ]
+    }
+  ]
+}
