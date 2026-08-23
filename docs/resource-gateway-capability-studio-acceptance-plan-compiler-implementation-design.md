@@ -53,7 +53,7 @@ Phase 1 使用 bounded wire Catalog 字节作为独立输入，由 packaged JSON
 
 Catalog 实例路径：`docs/acceptance/capability-studio/acceptance-engine-v1/builtin-contract-catalog.json`
 
-**Catalog 接受逻辑：** plan.catalogRef 绑定 plan 提交时的 actual catalog raw fingerprint；Compiler 验证 catalogSemanticFingerprint 等于 packaged profile 声明的 expectedCatalogSemanticFingerprint（semantic equality check）。raw bytes 空白变化、对象键顺序变化、换行符变化会改变 catalogRawFingerprint（被 catalogRef 检测到）但不改变 semantic fingerprint（可接受）。若 contractEntry 字段内容变化导致 catalogSemanticFingerprint 漂移 → INVALID_CATALOG_SEMANTICS。
+**Catalog 接受逻辑：** plan.catalogRef 是 Catalog raw fingerprint 的声明值；Compiler 独立计算传入 catalogBytes 的 catalogRawFingerprint，与 plan.catalogRef 精确比较（catalogRefVerified）。raw bytes 空白变化、对象键顺序变化、换行符变化会改变 catalogRawFingerprint：若 plan.catalogRef 不同步更新 → catalogRawFingerprintVerified=false → catalogRef mismatch → 拒绝；若 plan.catalogRef 同步更新为新值 → catalogRawFingerprintVerified=true → 编译通过，compiledPlanFingerprint 变化。catalogSemanticFingerprint 纯由 Catalog 内容语义决定，空白/键序变化不影响；若 contractEntry 字段内容漂移 → INVALID_CATALOG_SEMANTICS。
 
 ### 2.2 `AcceptancePlanSource`
 
@@ -155,7 +155,8 @@ planId
 planRevision
 planFingerprint
 compilerFingerprint
-catalogFingerprint
+catalogRawFingerprint
+catalogSemanticFingerprint
 stageExitContractCount = 27
 expandedObligationIds
 canonicalMatrixCellCount
@@ -264,142 +265,57 @@ BOOTSTRAP_FACTS
 
 Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`，已在 pom.xml 复制到 ordinary 和 shaded main JAR；**不在** a1 JAR）：
 
-**Schema AC3 精确集合验证：** schema 中的 `"const"` 字段（27/9/14/27/3）与 required arrays 同时验证，保证精确集合。Catalog `const` 拒绝不等于指定值的 `schemaVersion`。
+**Schema AC3 精确集合验证：** compiled schema 中的 `const` 字段（stageExitContractCount=27, acStdCount=9, feltObligationCount=14, canonicalMatrixCellCount=27, suiteRunCount=3）与 required arrays 同时验证，保证精确集合。
 
 ### 5.1 `bloge.capability-studio.acceptance-plan.v1`
 
 文件名：`capability-studio-acceptance-plan-v1.schema.json`
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leanowtech.com/schemas/bloge.capability-studio.acceptance-plan.v1",
-  "title": "Capability Studio Acceptance Plan v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion", "planId", "revision", "compilerProfile",
-    "catalogRef", "obligationSet", "primitives", "terminalGate"
-  ],
-  "properties": {
-    "schemaVersion": { "const": "bloge.capability-studio.acceptance-plan.v1" },
-    "planId": { "type": "string", "maxLength": 128 },
-    "revision": { "type": "integer", "minimum": 1 },
-    "compilerProfile": { "type": "string", "maxLength": 128 },
-    "catalogRef": { "type": "string", "maxLength": 256 },
-    "obligationSet": { "type": "string", "maxLength": 128 },
-    "primitives": {
-      "type": "array",
-      "minItems": 1,
-      "maxItems": 64,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["id", "type", "dependsOn"],
-        "properties": {
-          "id": { "type": "string", "maxLength": 128 },
-          "type": { "type": "string", "maxLength": 128 },
-          "dependsOn": {
-            "type": "array",
-            "items": { "type": "string", "maxLength": 128 }
-          },
-          "inputSlot": { "type": "string", "maxLength": 64 }
-        }
-      }
-    },
-    "terminalGate": {
-      "enum": ["DEVELOPMENT_VERIFIED_ONLY"]
-    }
-  }
-}
-```
+**Wire 字段表（与真实 schema 完全一致）：**
+
+| 字段 | 类型/约束 | 说明 |
+|---|---|---|
+| `schemaVersion` | `const` = `bloge.capability-studio.acceptance-plan.v1` | |
+| `planId` | string, 1–128 字 | Plan 唯一标识 |
+| `revision` | integer, ≥1 | Plan 修订版本号 |
+| `compilerProfile` | `const` = `formal-evidence-v1` | Phase 1 仅此值 |
+| `catalogId` | string, 1–128 字 | Catalog 标识（如 `builtin-contract-catalog-v1`） |
+| `catalogRef` | string, 1–256 字 | Catalog raw fingerprint（`sha256:...`，由调用方提供） |
+| `obligationSet` | `const` = `RG-CS-FELT-v1` | 义务集常量 |
+| `primitives` | array[1–64] | Primitive 实例列表 |
+| `primitives[].id` | string, 1–128 字, pattern: `^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$` | Primitive 实例 ID |
+| `primitives[].typeId` | **closed enum**：`VERIFY_FIXED_MATERIAL_V1` \| `VERIFY_FORMAL_INPUT_TREE_V1` \| `RUN_PROVIDER_CONFORMANCE_V2` \| `EXECUTE_LEASE_EVIDENCE_V1` \| `VERIFY_DURABLE_WRAPPER_V1` \| `VERIFY_PACKAGED_FELT_MATRICES_V1` \| `VERIFY_MATERIAL_POSTFLIGHT_V1` \| `COMMIT_LOCAL_PROOF_BUNDLE_V1` | 8 个 closed primitive type |
+| `primitives[].revision` | integer, ≥1 | Type revision |
+| `primitives[].dependsOn` | string[], max 64, unique | 依赖的 primitive id 列表 |
+| `primitives[].inputSlot` | enum: `AUTHORITY` \| `TARGET`（可选） | 指定 `VERIFY_FORMAL_INPUT_TREE_V1` 两实例的槽位 |
+| `terminalGate` | `const` = `DEVELOPMENT_VERIFIED_ONLY` | 终端门常量 |
+
+> 禁止字段：`className`、`script`、`url`、`expression`、`serviceLoader`、`produces`、`requiredRoles`、`type`（旧字段）。Plan 不声明产出和角色，由唯一 Registry + Catalog 派生，不由调用方声明。
+
+权威文件：[capability-studio-acceptance-plan-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-acceptance-plan-v1.schema.json)
 
 ### 5.2 `bloge.capability-studio.contract-catalog.v1`
 
 文件名：`capability-studio-contract-catalog-v1.schema.json`
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leanowtech.com/schemas/bloge.capability-studio.contract-catalog.v1",
-  "title": "Capability Studio Contract Catalog v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schemaVersion", "catalogId", "catalogRevision",
-    "stageExitContracts", "acStandards", "feltObligations",
-    "canonicalCases", "suiteRuns",
-    "catalogRawFingerprint", "catalogSemanticFingerprint"
-  ],
-  "properties": {
-    "schemaVersion": { "const": "bloge.capability-studio.contract-catalog.v1" },
-    "catalogId": { "type": "string" },
-    "catalogRevision": { "type": "integer" },
-    "stageExitContracts": {
-      "type": "array",
-      "minItems": 27, "maxItems": 27,
-      "items": { "$ref": "#/$defs/contractEntry" }
-    },
-    "acStandards": {
-      "type": "array",
-      "minItems": 9, "maxItems": 9,
-      "items": { "$ref": "#/$defs/contractEntry" }
-    },
-    "feltObligations": {
-      "type": "array",
-      "minItems": 14, "maxItems": 14,
-      "items": { "$ref": "#/$defs/contractEntry" }
-    },
-    "canonicalCases": {
-      "type": "array",
-      "minItems": 27, "maxItems": 27,
-      "items": { "$ref": "#/$defs/canonicalCaseEntry" }
-    },
-    "suiteRuns": {
-      "type": "array",
-      "minItems": 3, "maxItems": 3,
-      "items": { "$ref": "#/$defs/suiteRunEntry" }
-    },
-    "catalogRawFingerprint": { "$ref": "#/$defs/sha256" },
-    "catalogSemanticFingerprint": { "$ref": "#/$defs/sha256" }
-  },
-  "$defs": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
-    },
-    "contractEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["contractId", "category"],
-      "properties": {
-        "contractId": { "type": "string" },
-        "category": { "type": "string" }
-      }
-    },
-    "canonicalCaseEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["matrixCellId", "canonicalCaseId"],
-      "properties": {
-        "matrixCellId": { "type": "string" },
-        "canonicalCaseId": { "type": "string" }
-      }
-    },
-    "suiteRunEntry": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["suiteRunId", "suiteRunNumber"],
-      "properties": {
-        "suiteRunId": { "type": "string" },
-        "suiteRunNumber": { "type": "integer" }
-      }
-    }
-  }
-}
-```
+**Catalog 不自含 fingerprint 字段。** raw/semantic fingerprint 由 Compiler/Verifier 从调用方提供的 bounded bytes 独立计算。
 
-Schema `const` 字段（27/9/14/27/3）与 required arrays 同时验证，保证精确集合。
+**Catalog wire 不变量（精确集合）：**
+
+| 字段 | 精确数量 | contractEntry/entry 字段 |
+|---|---|---|
+| `stageExitContracts` | 27 | `contractId`（STAGE_EXIT, stage=0–5, 无 name）, `category`（STAGE_EXIT）, `stage`（integer 0–5）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
+| `acStandards` | 9 | `contractId`（AC_STANDARD, stage=null）, `category`（AC_STANDARD）, `name`（如 `AC-STD-01`）, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
+| `feltObligations` | 14 | `contractId`（FELT_OBLIGATION, stage=null）, `category`（FELT_OBLIGATION）, `name`, `oracleId`, `evidenceRoles[]`, `ownerRoles[]`, `externalFactRequirements[]`, `fixedDenominator` |
+| `canonicalCases` | **9** | `canonicalCaseId`, `title`, `description`（三字段，minItems=9, maxItems=9） |
+| `suiteRuns` | 3 | `suiteRunId`, `suiteRunNumber`（1–3）, `label` |
+| `matrixCells` | **27** | `matrixCellId`, `canonicalCaseId`, `suiteRunId`（不在 catalog root required 中，但 Schema 约束 minItems=27, maxItems=27） |
+
+**contractEntry category 条件：** `STAGE_EXIT` → `stage` 为 integer 0–5，`name` 禁止出现；其他 category → `stage=null`，`name` 必须存在。
+
+**Schema 不含 `catalogRawFingerprint` / `catalogSemanticFingerprint`（不自指）。**
+
+权威文件：[capability-studio-contract-catalog-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-contract-catalog-v1.schema.json)
 
 ### 5.3 `bloge.capability-studio.compiled-plan.v1`
 
@@ -496,12 +412,13 @@ Schema `const` 字段（27/9/14/27/3）与 required arrays 同时验证，保证
     "compiledPrimitive": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["primitiveId", "type", "effectClass", "phase"],
+      "required": ["primitiveId", "typeId", "effectClass", "phase", "revision"],
       "properties": {
-        "primitiveId": { "type": "string" },
-        "type": { "type": "string" },
-        "effectClass": { "type": "string" },
-        "phase": { "type": "string" }
+        "primitiveId": { "type": "string", "maxLength": 128 },
+        "typeId": { "type": "string", "maxLength": 128 },
+        "effectClass": { "enum": ["PURE_VERIFY", "AUTHORITY_LEASE", "LOCAL_IMMUTABLE_WRITE"] },
+        "phase": { "enum": ["BOOTSTRAP_FACTS", "MATERIAL_SNAPSHOT", "READ_ONLY_PREFLIGHT", "PROVIDER_CONFORMANCE", "STATEFUL_EXECUTION", "INDEPENDENT_VERIFICATION", "MATERIAL_POSTFLIGHT", "DURABLE_LOCAL_COMMIT", "EXTERNAL_PUBLICATION", "EXTERNAL_ADJUDICATION"] },
+        "revision": { "type": "integer", "minimum": 1 }
       }
     },
     "phaseBarrier": {
@@ -539,89 +456,33 @@ Schema `const` 字段（27/9/14/27/3）与 required arrays 同时验证，保证
 
 文件名：`capability-studio-compiled-plan-verification-result-v1.schema.json`
 
-```json
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://leanowtech.com/schemas/bloge.capability-studio.compiled-plan-verification-result.v1",
-  "title": "Capability Studio Compiled Plan Verification Result v1",
-  "type": "object",
-  "additionalProperties": false,
-  "required": ["schemaVersion", "planId", "revision", "status", "verificationFingerprint"],
-  "properties": {
-    "schemaVersion": { "const": "bloge.capability-studio.compiled-plan-verification-result.v1" },
-    "planId": { "type": "string" },
-    "revision": { "type": "integer" },
-    "status": { "$ref": "#/$defs/Status" },
-    "expectedFingerprint": { "$ref": "#/$defs/sha256" },
-    "recomputedFingerprint": { "$ref": "#/$defs/sha256" },
-    "verificationFingerprint": { "$ref": "#/$defs/sha256" },
-    "reasonCode": { "type": ["string", "null"] },
-    "reasonField": { "type": ["string", "null"] }
-  },
-  "oneOf": [
-    {
-      "required": ["status", "verifiedResult"],
-      "properties": {
-        "status": { "const": "VERIFIED" },
-        "verifiedResult": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["expectedFingerprint", "recomputedFingerprint", "verificationFingerprint"],
-          "properties": {
-            "expectedFingerprint": { "$ref": "#/$defs/sha256" },
-            "recomputedFingerprint": { "$ref": "#/$defs/sha256" },
-            "verificationFingerprint": { "$ref": "#/$defs/sha256" }
-          }
-        }
-      }
-    },
-    {
-      "required": ["status", "invalidResult"],
-      "properties": {
-        "status": { "const": "INVALID" },
-        "invalidResult": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["reasonCode"],
-          "properties": {
-            "reasonCode": { "type": "string" },
-            "reasonField": { "type": ["string", "null"] },
-            "expectedFingerprint": { "type": ["string", "null"] },
-            "recomputedFingerprint": { "type": ["string", "null"] }
-          }
-        }
-      }
-    },
-    {
-      "required": ["status", "unavailableResult"],
-      "properties": {
-        "status": { "const": "UNAVAILABLE" },
-        "unavailableResult": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["reasonCode"],
-          "properties": {
-            "reasonCode": { "type": "string" },
-            "reasonField": { "const": null }
-          }
-        }
-      }
-    }
-  ],
-  "$defs": {
-    "sha256": {
-      "type": "string",
-      "pattern": "^sha256:[0-9a-f]{64}$"
-    },
-    "Status": { "type": "string", "enum": ["VERIFIED", "INVALID", "UNAVAILABLE"] }
-  }
-}
-```
+**Flat closed union，三状态均平铺于 root，不嵌套 verifiedResult/invalidResult/unavailableResult。**
 
-Schema oneOf 联动 status discriminant：
-- `VERIFIED` → `verifiedResult` 分支（所有 boolean 字段 required；expected==recomputed 由语义 verifier 保证相等）
-- `INVALID` → `invalidResult` 分支（reasonCode 含 INVALID_* 和 INVALID_CATALOG_SEMANTICS；early failure 时 expected/recomputed 可为 null）
-- `UNAVAILABLE` → `unavailableResult` 分支（planId/revision 可 null，reasonField 固定 null）
+**Root required（所有状态均有）：** `schemaVersion`, `status`, `verificationFingerprint`
+
+**9 个 boolean check 字段（所有状态均有，Schema type=boolean，VERIFIED 时 const=true）：**
+
+| 字段 | VERIFIED | INVALID | UNAVAILABLE |
+|---|---|---|---|
+| `catalogRefVerified` | const=true | boolean | boolean |
+| `catalogRawFingerprintVerified` | const=true | boolean | boolean |
+| `catalogSemanticFingerprintVerified` | const=true | boolean | boolean |
+| `planFingerprintVerified` | const=true | boolean | boolean |
+| `phaseBarrierVerified` | const=true | boolean | boolean |
+| `dependencyDagVerified` | const=true | boolean | boolean |
+| `effectBarrierVerified` | const=true | boolean | boolean |
+| `canonicalMatrixCellCountVerified` | const=true | boolean | boolean |
+| `stageExitContractCountVerified` | const=true | boolean | boolean |
+
+**VERIFIED：** `reasonCode=null`, `reasonField=null`；`expectedCompiledPlanFingerprint` / `recomputedCompiledPlanFingerprint` 非 null（由语义 verifier 保证相等）；9 个 boolean 全 const=true。
+
+**INVALID：** `status=INVALID`；`reasonCode` ∈ `INVALID_*` 含 `INVALID_CATALOG_SEMANTICS`；`reasonField` 为 RFC6901 JSON pointer（string，非 null）；early failure 时 `expectedCompiledPlanFingerprint`/`recomputedCompiledPlanFingerprint` 可为 null。
+
+**UNAVAILABLE：** `status=UNAVAILABLE`；`reasonCode` ∈ `UNAVAILABLE_SCHEMA_NOT_FOUND` | `UNAVAILABLE_CATALOG_NOT_FOUND` | `UNAVAILABLE_PACKAGED_SCHEMA` | `UNAVAILABLE_CATALOG_REF_MISMATCH`；**禁止出现 `reasonField`（Schema `not: {required:["reasonField"]}`）**；`planId`/`revision`/`expectedCompiledPlanFingerprint`/`recomputedCompiledPlanFingerprint` 可为 null。
+
+**不出现 `verifiedResult` / `invalidResult` / `unavailableResult` 嵌套对象；不出现 PASS / ACCEPTED / COMPILED 状态。**
+
+权威文件：[capability-studio-compiled-plan-verification-result-v1.schema.json](/Users/jtsuser/.codex/worktrees/bc27/bloge-examples/docs/schemas/resource-gateway-capability-studio/capability-studio-compiled-plan-verification-result-v1.schema.json)
 
 ## 6. Golden Vectors
 
@@ -689,8 +550,8 @@ Compiler 在编译时重算 `primitiveRegistryFingerprint`，与 `expectedPrimit
 
 Compiler 验证 catalog fingerprint 两层：
 
-1. `catalogRawFingerprint`：直接 SHA256(调用方传入 catalogBytes)
-2. `catalogSemanticFingerprint`：SHA256(canonicalCatalogBytes)，与 `expectedCatalogSemanticFingerprint` 精确比较
+1. `catalogRawFingerprint`：SHA256(Domain 2 前缀 + catalogBytes)，与 plan.catalogRef 精确比较（catalogRefVerified）
+2. `catalogSemanticFingerprint`：SHA256(Domain 2.5 前缀 + canonicalCatalogBytes)，与 packaged profile 的 expectedCatalogSemanticFingerprint 精确比较
 
 Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取。
 
@@ -716,8 +577,8 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 | `NEG-WIRE-009` | compiled plan 的 canonicalMatrixCellCount=26 | Schema const 拒绝 |
 | `NEG-WIRE-010` | compiled plan 的 matrixCellIds size=26 | Schema minItems 拒绝 |
 | `NEG-WIRE-011` | compiled plan 的 suiteRunIds size=2 | Schema minItems 拒绝 |
-| `NEG-WIRE-012` | verification result 含 status=COMPILED | Schema oneOf 拒绝 |
-| `NEG-WIRE-013` | verification result 含 reasonCode=PASS | Schema oneOf 拒绝 |
+| `NEG-WIRE-012` | verification result 含 status=`COMPILED`（schema enum 不含此值） | Schema `status` enum 拒绝 |
+| `NEG-WIRE-013` | verification result 含 reasonCode=`PASS`（INVALID reasonCode enum 不含此值） | Schema `reasonCode` enum 拒绝 |
 | `NEG-WIRE-014` | plan 只含 stageExitContractCount=27，缺少 canonicalMatrixCellCount 字段 | Schema required 拒绝 |
 | `NEG-WIRE-015` | verification result VERIFIED 时 reasonCode 非 null | Schema oneOf 拒绝 |
 | `NEG-WIRE-016` | verification result INVALID 时 reasonField=null | Schema oneOf 拒绝 |
@@ -729,13 +590,13 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 
 | 测试 ID | 场景 | 预期 |
 |---|---|---|
-| `POS-BUILTIN-001` | 内建 plan（9 个 primitive）用内建 catalog 编译 | COMPILED；compiledPlanFingerprint 与 golden fixture exact match |
+| `POS-BUILTIN-001` | 内建 plan（9 个 primitive）用内建 catalog 编译 | Compiler 返回 CompilationResult（Phase 1 status=COMPILED）；compiledPlanFingerprint 与 golden fixture exact match；Verifier 独立验证通过（status=VERIFIED） |
 
 ### 11.2 集合精确性
 
 | 测试 ID | 输入 | 预期 |
 |---|---|---|
-| `POS-COLLECT-001` | exact 50 contract IDs（S0-5:27 + AC-STD:9 + FELT:14） | COMPILED |
+| `POS-COLLECT-001` | exact 50 contract IDs（S0-5:27 + AC-STD:9 + FELT:14 = 50） | COMPILED |
 | `POS-COLLECT-002` | matrixCellIds 精确 27 个不同 ID | COMPILED |
 | `POS-COLLECT-003` | suiteRunIds 精确 3 个不同 ID | COMPILED |
 | `NEG-COLLECT-001` | 49 个 contract ID（缺一个 FELT） | INVALID_COLLECTION_SIZE |
@@ -783,11 +644,11 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 | `POS-DET-001` | 两语义等价 plan（primitive 集合相同但 executionOrder 不同） | 两 compiledPlanFingerprint 相等 |
 | `POS-DET-002` | 相同 plan 两次编译 | 两 compiledPlanFingerprint 相等（幂等性） |
 | `NEG-DET-001` | 依赖顺序不同（语义等价） | compiledPlanFingerprint 必须相等 |
-| `POS-DET-003` | golden fingerprint fixture 匹配 | COMPILED + golden fingerprint exact match |
-| `POS-DET-004` | catalog raw bytes 仅空白变化（semantic 不变） | catalogRawFingerprint 改变，catalogSemanticFingerprint 不变，compiledPlanFingerprint 不变 |
+| `POS-DET-003` | golden fingerprint fixture 匹配 | Compiler 输出 CompilationResult（status=COMPILED）；compiledPlanFingerprint 与 golden fixture exact match |
+| `POS-DET-004` | catalog raw bytes 仅空白变化（semantic 不变）；plan.catalogRef 仍引用原 fingerprint | catalogRawFingerprint 改变；catalogSemanticFingerprint 不变；**catalogRef mismatch → catalogRawFingerprintVerified=false → 拒绝**；若 plan.catalogRef 同步更新，则编译通过且 compiledPlanFingerprint 变化 |
 | `POS-DET-005` | 相同 catalog bytes 两次传入 | catalogRawFingerprint 稳定且 compiledPlanFingerprint 稳定 |
 | `POS-DET-006` | primitive executionOrder 排列不同，语义等价 | compiledPlanFingerprint 相等（semantic sort 稳定性） |
-| `POS-DET-007` | catalog contractEntry 字段内容变化（semantic drift） | INVALID_CATALOG_SEMANTICS |
+| `POS-DET-007` | catalog contractEntry 字段内容变化（semantic drift） | catalogSemanticFingerprintVerified=false → INVALID_CATALOG_SEMANTICS |
 
 ### 11.7 篡改检测
 
@@ -812,7 +673,7 @@ Catalog 字节由调用方作为 bounded input 提供，不从文件系统读取
 
 | 测试 ID | 描述 | 预期 |
 |---|---|---|
-| `POS-PACK-001` | ordinary main JAR (`bloge-resource-gateway-test-kit-1.0.0.jar`) 包含 4 个 Phase 1 Schema | Schema 可加载 |
+| POS-PACK-001 | ordinary main JAR (`bloge-resource-gateway-test-kit-1.0.0.jar`) 包含 4 个 Phase 1 Schema + 3 个 authority files（plan/catalog/profile） | Schema 可加载；authority files 可读 |
 | `POS-PACK-002` | shaded main JAR 包含 4 个 Phase 1 Schema | Schema 可加载 |
 | `NEG-PACK-001` | shaded JAR 移除 Phase 1 Schema 后验证 | UNAVAILABLE_PACKAGED_SCHEMA |
 | `NEG-PACK-002` | a1 protocol JAR 不包含 Phase 1 Schema | a1 JAR resource path 不含 Phase 1 schema |
@@ -843,13 +704,39 @@ builtin-compiler-profile-formal-v1.json   // formal-evidence-v1 profile descript
 **Schema 文件路径（`docs/schemas/resource-gateway-capability-studio/`）：**
 
 ```
-bloge.capability-studio.acceptance-plan.v1.schema.json
-bloge.capability-studio.contract-catalog.v1.schema.json
-bloge.capability-studio.compiled-plan.v1.schema.json
-bloge.capability-studio.compiled-plan-verification-result-v1.schema.json
+capability-studio-acceptance-plan-v1.schema.json
+capability-studio-contract-catalog-v1.schema.json
+capability-studio-compiled-acceptance-plan-v1.schema.json
+capability-studio-compiled-plan-verification-result-v1.schema.json
 ```
 
-**Fixture 路径（`resource-gateway-test-kit/src/test/resources/`）：**
+
+
+**Authority 清单（Phase 1）：**
+
+```
+docs/acceptance/capability-studio/acceptance-engine-v1/
+  rg-cs-felt-v1.acceptance.plan.json       // authority acceptance plan wire
+  builtin-contract-catalog.json              // authority catalog wire
+  builtin-compiler-profile-formal-v1.json   // authority compiler profile
+```
+
+**pom.xml resource 配置：**
+
+```xml
+<resource>
+  <directory>docs/acceptance/capability-studio/acceptance-engine-v1</directory>
+  <targetPath>acceptance-engine-v1</targetPath>
+  <filtering>false</filtering>
+  <includes>
+    <include>rg-cs-felt-v1.acceptance.plan.json</include>
+    <include>builtin-contract-catalog.json</include>
+    <include>builtin-compiler-profile-formal-v1.json</include>
+  </includes>
+</resource>
+```
+
+此配置**不得**放入 a1 JAR 的 testResource；a1 JAR 继续严格只包含 `resource-gateway-capability-studio-a1/` 下的 schema。**Fixture 路径（`resource-gateway-test-kit/src/test/resources/`）：**
 
 ```
 acceptance/
@@ -915,9 +802,8 @@ public final class CapabilityStudioAcceptancePlanCompiler {
 
     /** Static factory: returns compiler with built-in internals. */
     public static CapabilityStudioAcceptancePlanCompiler withBuiltInInternals() {
-        // 内部加载 packaged catalog/profile/registry；public compile() 不接收这些字节
+        // 内部加载 packaged profile/registry（closed schema + profile）；catalogBytes 始终由 public API compile() caller 注入
         return new CapabilityStudioAcceptancePlanCompiler(
-            CapabilityStudioAcceptancePlanProtocol.instance().parseBuiltInCatalog(),
             CapabilityStudioAcceptancePrimitiveRegistry.builtIn(),
             CapabilityStudioAcceptancePlanProtocol.instance()
         );
@@ -964,9 +850,8 @@ package com.leanowtech.bloge.gateway.testkit.acceptance;
 public final class CapabilityStudioCompiledPlanVerifier {
 
     public static CapabilityStudioCompiledPlanVerifier withBuiltInInternals() {
-        // 内部加载 packaged catalog/profile/registry；public verify() 不接收这些字节
+        // 内部加载 packaged profile/registry（closed schema + profile）；catalogBytes 始终由 public API verify() caller 注入
         return new CapabilityStudioCompiledPlanVerifier(
-            CapabilityStudioAcceptancePlanProtocol.instance().parseBuiltInCatalog(),
             CapabilityStudioAcceptancePrimitiveRegistry.builtIn(),
             CapabilityStudioAcceptancePlanProtocol.instance()
         );
@@ -1087,9 +972,11 @@ public record VerificationResult(
 
 ---
 
-## 14. 提交拆分（3 个隔离提交）
+## 14. 提交拆分
 
-### 提交 1：Wire + Fixtures（schema、fixtures、golden vectors）
+以下提交边界基于 Wire commit hash `5eef6e0d2` 和 authority packaging commit `fe3bb70f1`。后续 Compiler、Verifier、integration/docs 的具体提交 hash 尚未确定，以实际提交为准。
+
+### 提交 1：Wire（schema；commit `5eef6e0d2`）
 
 ```
 docs/schemas/resource-gateway-capability-studio/
@@ -1097,69 +984,67 @@ docs/schemas/resource-gateway-capability-studio/
   capability-studio-contract-catalog-v1.schema.json
   capability-studio-compiled-acceptance-plan-v1.schema.json
   capability-studio-compiled-plan-verification-result-v1.schema.json
+```
 
+### 提交 2：Authority Packaging（fixtures、pom.xml；commit `fe3bb70f1`）
+
+```
 docs/acceptance/capability-studio/acceptance-engine-v1/
+  rg-cs-felt-v1.acceptance.plan.json    // authority plan wire
   builtin-contract-catalog.json
   builtin-compiler-profile-formal-v1.json
 
-resource-gateway-test-kit/src/test/resources/acceptance/
-  (所有 fixture 文件)
-
 resource-gateway-test-kit/pom.xml
-  (添加 acceptance-engine-v1 resource 配置，但不得放入 a1 testResource)
+  (acceptance-engine-v1 resource 配置；不得放入 a1 testResource)
 
 docs/
   resource-gateway-capability-studio-acceptance-plan-compiler-implementation-design.md
 ```
 
-### 提交 2：Compiler + Tests（catalog、registry、compiler、tests）
+> 此提交后可能出现纠偏性质的额外提交，不影响 authority wire 的核心不变性。
 
+### 后续提交（分离，无限定 hash）
+
+**提交 3（Compiler + Registry + Protocol）：**
 ```
 resource-gateway-test-kit/src/main/java/com/leanowtech/bloge/gateway/testkit/acceptance/
   CapabilityStudioAcceptancePlanCompiler.java
   CapabilityStudioCompiledPlanVerifier.java
   CapabilityStudioAcceptancePrimitiveRegistry.java   // package-private
   CapabilityStudioAcceptancePlanProtocol.java      // package-private
+```
 
+**提交 4（Tests）：**
+```
 resource-gateway-test-kit/src/test/java/com/leanowtech/bloge/gateway/testkit/acceptance/
   CapabilityStudioAcceptancePlanCompilerTest.java
   CapabilityStudioCompiledPlanVerifierTest.java
   CapabilityStudioAcceptancePlanCompilerArchitecturalTest.java   // NEG-ARCH-001
   CapabilityStudioCatalogFixedDenominatorTest.java
-  CapabilityStudioCanonicalizationDeterminismTest.java   // POS-DET-001..006
+  CapabilityStudioCanonicalizationDeterminismTest.java   // POS-DET-001..007
 ```
 
-### 提交 3：Integration + Docs
-
+**提交 5（Integration + Docs）：**
 ```
 resource-gateway-test-kit/pom.xml
   (验证 acceptance-engine-v1 resource 已正确配置到 ordinary 和 shaded main JAR，
    且 a1 testResource 不含此路径)
-
 docs/
   (更新 README 相关章节)
 ```
 
-验收标准：
-- `mvn -f resource-gateway-test-kit/pom.xml clean verify` 全绿
-- §11 测试矩阵全部通过
-- NEG-BARRIER-005 验证旧 §9 顺序被拒绝（防止矛盾回归）
-- javadoc doclint 通过
-- `git diff --check` 无警告
-
----
-
+## 15. 验收标准汇总
 ## 15. 验收标准汇总
 
 | # | 标准 | 验证方式 |
 |---|---|---|
 | AC1 | 四个 Schema 均为 Draft 2020-12、additionalProperties=false | JSON Schema validator |
 | AC2 | Schema fingerprint 均为 `sha256:[0-9a-f]{64}` | Schema 内置 regex |
-| AC3 | Catalog Schema 含 required arrays（27/9/14/9/3） | Schema required 字段验证 |
-| AC4 | catalogRawFingerprint = raw bytes hash（Domain 2）；catalogSemanticFingerprint = 领域语义 hash（Domain 2.5） | POS-DET-004, POS-DET-007 |
+| AC3 | Catalog schema 含 required arrays：stageExitContracts=27, acStandards=9, feltObligations=14, canonicalCases=9, suiteRuns=3, matrixCells=27 | Schema required + const 字段验证 |
+| AC4 | catalogRawFingerprint = raw bytes hash（Domain 2）；catalogSemanticFingerprint = 领域语义 hash（Domain 2.5）；catalogRefVerified 由 plan.catalogRef 与 catalogRawFingerprint 精确比较决定 | POS-DET-004, POS-DET-007 |
 | AC5 | 禁止字段 className/script/url/expression/serviceLoader 在 Schema 层面拒绝 | NEG-WIRE-001..005 |
-| AC4b | catalog semantic drift（contractEntry 字段内容变化）被拒绝 | POS-DET-007 |
-| AC4c | catalog raw 空白变化被接受（catalogSemanticFingerprint 不变，catalogRawFingerprint 变） | POS-DET-004 |
+| AC4b | catalog contractEntry 字段内容漂移 → catalogSemanticFingerprintVerified=false → INVALID_CATALOG_SEMANTICS | POS-DET-007 |
+| AC4c | catalog raw 空白变化 + plan.catalogRef 同步更新 → 编译通过，catalogRawFingerprint 变，compiledPlanFingerprint 变；catalogSemanticFingerprint 不变 | POS-DET-004 |
 | AC6 | 6 个 domain-separated fingerprint 公式各自独立 | POS-DET-002, POS-DET-004 |
 | AC7 | PURE_VERIFY_GATE 正确：preflight 在 lease/write 前，且 lease 有 provider-conformance 传递依赖 | POS-BARRIER-001, NEG-BARRIER-001..002 |
 | AC8 | NO_DELETE_AFTER_LEASE 通过 Registry capability 验证，不靠排序 | NEG-BARRIER-004 |
@@ -1167,10 +1052,10 @@ docs/
 | AC10 | 两个 27 分母字段独立验证 | POS-27ISOLATE-001, NEG-27ISOLATE-001..003 |
 | AC11 | Semantics equivalence → same compiledPlanFingerprint | POS-DET-001, POS-DET-006 |
 | AC12 | 幂等性：相同输入两次编译相同 | POS-DET-002 |
-| AC13 | catalog raw bytes 改变 → catalogRawFingerprint 和 compiledPlanFingerprint 均变 | POS-DET-004 |
+| AC13 | catalog raw bytes 改变且 plan.catalogRef 同步更新 → catalogRawFingerprint 变，compiledPlanFingerprint 变；catalogRawFingerprintVerified 由 catalogRef 决定 | POS-DET-004 |
 | AC14 | 篡改 plan 后 Verifier 独立检测 | NEG-TAMPER-001..004 |
 | AC15 | Verifier 不调用 Compiler（constant pool 层面） | NEG-ARCH-001 |
-| AC16 | main ordinary JAR 包含 4 个 Phase 1 Schema | POS-PACK-001 |
+| POS-PACK-001 | ordinary main JAR (`bloge-resource-gateway-test-kit-1.0.0.jar`) 包含 4 个 Phase 1 Schema + 3 个 authority files（plan/catalog/profile） | Schema 可加载；authority files 可读 |
 | AC17 | a1 JAR 不包含 Phase 1 Schema | NEG-PACK-002 |
 | AC18 | Javadoc doclint 全通过 | `mvn verify` javadoc goal |
 | AC19 | Git diff-check 无警告 | `git diff --check` |
