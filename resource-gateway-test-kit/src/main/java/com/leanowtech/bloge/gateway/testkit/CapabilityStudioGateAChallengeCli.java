@@ -104,6 +104,7 @@ public final class CapabilityStudioGateAChallengeCli {
     @SuppressWarnings("unchecked")
     static byte[] execute(String[] args, boolean enforceCodeSource) {
         validateArgs(args);
+        if ("TCK_PROVIDER".equals(args[2])) return CapabilityStudioGateATckProviderRoleSelfTest.execute(args, enforceCodeSource);
 
         String role = args[2];
         Path authorityPath = Path.of(args[4]);

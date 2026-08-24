@@ -45,7 +45,8 @@ public final class CapabilityStudioGateACandidatePackager {
             "com/leanowtech/bloge/gateway/testkit/StrictJsonParser",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider",
-            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityVerifier"
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityVerifier",
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRoleSelfTest"
     };
 
     private final Path classesDir;
