@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.leanowtech.bloge</groupId>
+    <artifactId>resource-gateway-gate-a-tck-provider</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>Resource Gateway Gate A TCK Provider</name>
+
+    <properties>
+        <java.version>25</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <compiler-plugin.version>3.15.0</compiler-plugin.version>
+        <resources-plugin.version>3.4.0</resources-plugin.version>
+        <dependency-plugin.version>3.7.0</dependency-plugin.version>
+        <exec-plugin.version>3.5.0</exec-plugin.version>
+        <enforcer-plugin.version>3.6.3</enforcer-plugin.version>
+        <jar-plugin.version>3.4.0</jar-plugin.version>
+        <build-helper.version>3.5.0</build-helper.version>
+    </properties>
+
+    <!--
+      Compile-only dependency: test-kit with gate-a-candidate classifier.
+      Scope provided — not transitively resolvable at runtime.
+    -->
+    <dependencies>
+        <dependency>
+            <groupId>com.leanowtech.bloge</groupId>
+            <artifactId>bloge-resource-gateway-test-kit</artifactId>
+            <version>1.0.0</version>
+            <classifier>gate-a-candidate</classifier>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <profile>
+            <!--
+              Activated by: mvn -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify
+              NOT activated by gate.a.slice alone (no <property> match).
+              Enforcer rejects gate.a.slice != A1.2 at validate phase.
+            -->
+            <id>gate-a-provider</id>
+            <build>
+                <plugins>
+
+                    <!-- 1. Enforce exact slice value at validate -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <version>${enforcer-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>enforce-slice</id>
+                                <phase>validate</phase>
+                                <goals><goal>enforce</goal></goals>
+                                <configuration>
+                                    <rules>
+                                        <requireProperty>
+                                            <property>gate.a.slice</property>
+                                            <message>gate.a.slice property is required</message>
+                                            <regex>^A1\.2$</regex>
+                                            <regexMessage>gate.a.slice must be exactly A1.2 for this profile</regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                    <fail>true</fail>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                      2. build-helper: add src/build as extra source root.
+                      Both src/main/java and src/build compile to target/classes together.
+                      The jar-plugin then selectively excludes build-tool classes from packaging.
+                    -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>${build-helper.version}</version>
+                        <executions>
+                            <execution>
+                                <id>add-build-source</id>
+                                <phase>generate-sources</phase>
+                                <goals><goal>add-source</goal></goals>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/build</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- 3. Copy candidate JAR to known path at process-resources -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-dependency-plugin</artifactId>
+                        <version>${dependency-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>resolve-candidate-jar</id>
+                                <phase>process-resources</phase>
+                                <goals><goal>copy</goal></goals>
+                                <configuration>
+                                    <artifactItems>
+                                        <artifactItem>
+                                            <groupId>com.leanowtech.bloge</groupId>
+                                            <artifactId>bloge-resource-gateway-test-kit</artifactId>
+                                            <version>1.0.0</version>
+                                            <classifier>gate-a-candidate</classifier>
+                                            <type>jar</type>
+                                            <outputDirectory>${project.build.directory}/candidate</outputDirectory>
+                                            <destFileName>bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar</destFileName>
+                                        </artifactItem>
+                                    </artifactItems>
+                                    <overWriteIfNewer>true</overWriteIfNewer>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+
+                    <!--
+                      3c. maven-antrun-plugin: write pom.properties into target/classes at
+                      prepare-package, after the lifecycle has copied resources but before
+                      jar:jar.  This gives us pom.properties WITHOUT the pom.xml that
+                      maven-archiver would otherwise inject.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>write-pom-properties</id>
+                                <phase>prepare-package</phase>
+                                <goals><goal>run</goal></goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.outputDirectory}/META-INF/maven/${project.groupId}/${project.artifactId}"/>
+                                        <mkdir dir="${project.build.directory}/verify-working"/>
+                                        <mkdir dir="${project.build.directory}/bb-working"/>
+                                        <echo file="${project.build.outputDirectory}/META-INF/maven/${project.groupId}/${project.artifactId}/pom.properties">groupId=${project.groupId}
+artifactId=${project.artifactId}
+version=${project.version}
+</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                      4. exec-maven-plugin: all three executions in ONE declaration.
+                      build-tool classes are in target/classes alongside main classes.
+                    -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>${exec-plugin.version}</version>
+                        <executions>
+                            <!-- 4a: Generate dependencies.json at process-classes -->
+                            <execution>
+                                <id>generate-dependencies-json</id>
+                                <phase>process-classes</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <workingDirectory>${project.build.directory}/classes</workingDirectory>
+                                    <classpathScope>compile</classpathScope>
+                                    <arguments>
+                                        <argument>-cp</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>com.leanowtech.bloge.gatetckprovider.TckProviderDependenciesGenerator</argument>
+                                        <argument>${settings.localRepository}</argument>
+                                        <argument>META-INF/gate-a/manifests</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <!-- 4b: Archive structure verifier at verify -->
+                            <execution>
+                                <id>verify-tck-provider-archive</id>
+                                <phase>verify</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <arguments>
+                                        <argument>-cp</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>com.leanowtech.bloge.gatetckprovider.TckProviderArchiveVerifier</argument>
+                                        <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                        <argument>${project.build.directory}/verify-working</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <!-- 4c: BlackBoxVerifier at verify -->
+                            <execution>
+                                <id>blackbox-challenge</id>
+                                <phase>verify</phase>
+                                <goals><goal>exec</goal></goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <arguments>
+                                        <argument>-cp</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>com.leanowtech.bloge.gatetckprovider.TckProviderBlackBoxVerifier</argument>
+                                        <argument>${project.build.directory}/${project.build.finalName}.jar</argument>
+                                        <argument>${project.build.directory}/bb-working</argument>
+                                        <argument>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</argument>
+                                        <argument>${project.build.directory}/candidate/bloge-resource-gateway-test-kit-1.0.0-gate-a-candidate.jar</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!--
+                      5. JAR plugin: selectively package only the provider class.
+                      Both src/main and src/build compile to target/classes.
+                      <archive><manifestEntries> with custom classifier keeps only the main class.
+                      The service-descriptor and pom.properties are resources (handled by resources plugin).
+                      We need to exclude the three build-tool classes from the final JAR.
+                      maven-jar-plugin 3.x uses <excludes> inside <archive>.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-jar-plugin</artifactId>
+                        <version>${jar-plugin.version}</version>
+                        <configuration>
+                            <!--
+                              packagingExcludes: top-level configuration element (NOT inside <archive>).
+                              Patterns match against JAR entry paths (with / as separator).
+                              Only GateATckProvider.class passes through to the final JAR.
+                            -->
+                            <excludes>
+                                <exclude>com/leanowtech/bloge/gatetckprovider/TckProviderArchiveVerifier*.class</exclude>
+                                <exclude>com/leanowtech/bloge/gatetckprovider/TckProviderBlackBoxVerifier*.class</exclude>
+                                <exclude>com/leanowtech/bloge/gatetckprovider/TckProviderDependenciesGenerator*.class</exclude>
+                                <exclude>META-INF/maven/**/pom.xml</exclude>
+                            </excludes>
+                            <archive>
+                                <addMavenDescriptor>false</addMavenDescriptor>
+                                <manifest>
+                                    <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </plugin>
+
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+    <!-- Default (no profile): compile main sources only -->
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${compiler-plugin.version}</version>
+                <configuration>
+                    <source>${java.version}</source>
+                    <target>${java.version}</target>
+                    <release>${java.version}</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${jar-plugin.version}</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

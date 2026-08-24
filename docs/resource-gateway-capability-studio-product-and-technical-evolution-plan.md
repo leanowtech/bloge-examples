@@ -2332,6 +2332,25 @@ strict CLI args
 | A1.2-03 | ServiceLoader 恰好发现一个正确类型、正确 CodeSource 的 Provider | runtime probe tests + 双 JAR 子进程 |
 | A1.2-04 | Java 输出与 Python 独立 Oracle 逐字节相等 | parent-private oracle compare transcript |
 | A1.2-05 | 所有负向样例 fail closed，stderr 和 reason code 不泄密 | tamper matrix transcript |
-| A1.2-06 | Candidate 与 TCK Provider profile 在单 Maven 会话中全绿 | Surefire/Failsafe/build logs |
+| A1.2-06 | Candidate 与 TCK Provider 各自在独立洁净 Maven 生命周期中全绿 | Surefire/Failsafe/build logs |
 
 只有六项全部满足并形成原子提交，A1.2 才能标记 `DEVELOPMENT_VERIFIED`。这仍不增加正式 `formalPassCount`；企业 Candidate/Environment Authority、Target Binding、Evidence Store/KMS 和 Owner facts 的外部缺口保持不变。
+
+把两个模块强行放入同一个 Maven reactor 并不能增加协议可信度，反而会让 Provider 借由 reactor classpath 隐式获得 Candidate 内部状态。A1.2 要求的是相同冻结输入下的独立可复现构建：Candidate 先形成可寻址制品，Provider 仅通过 Authority 声明的 `provided` ABI 和真实 JAR 运行。两次洁净生命周期及其制品 fingerprint 才是供应链边界，不以“同一 Maven 进程”作为替代证据。
+
+#### A1.2 实现与验证记录
+
+截至 2026-08-24，A1.2 已形成以下开发级闭环：
+
+| 条件 | 实现 | 本轮可复验证据 | 结论 |
+|---|---|---|---|
+| A1.2-01 | 独立 `resource-gateway-gate-a-tck-provider` 模块；运行时 JAR 只含 Provider、ServiceLoader 描述、`pom.properties`、Manifest 和依赖锁 | archive verifier 逐项白名单；最终制品恰好 5 个非目录 entry；Provider raw fingerprint 为 `sha256:f3518344e485818bd3040fd298cd7e7387a03efce77a21d3c956e5987b1cdc35` | `PASS` |
+| A1.2-02 | Candidate Artifact Snapshot、三项 Input Tree、57 项 Schema Set、Role View 和 11 字段 Receipt 分层组合 | Candidate 90 class / 57 schema / 8 dependency / 164 entry；Schema Set commitment 为 `sha256:1c82998e0c5d9eb90349c5594c6499690e93216bbcf335f37d48cb8481831aed` | `PASS` |
+| A1.2-03 | Candidate-first、Provider-second 的独立 JVM；ServiceLoader exact-one、类型和 CodeSource 绑定 | Provider profile 的真实 `blackbox-challenge`；Candidate 39 条 role-self-test 与 30 条 artifact-validator 聚焦测试 | `PASS` |
+| A1.2-04 | Python 从 Authority、两个真实 JAR 和 Candidate 内 57 份 Schema 原始字节独立推导 Oracle；Java 黑盒只读取公开输入 | 1102-byte canonical 单行输出逐字节相等；Input Tree `sha256:ea1256566cf3793689698a0c305e974d712c9aae5c65d6fa5307845aa3032a36`；Role View `sha256:19170d255e2d86d26912da6a717ca2b27475f269644f823db4b013e7433c813d`；Receipt `sha256:7e187998048e9d93d1e74251b059b3df09ed400ab00bbbfc5a86dde7b6985d6f` | `PASS` |
+| A1.2-05 | 黑盒 stdout/stderr 各 1 MiB 上限、30 秒 timeout、TERM 后强制终止、严格 UTF-8 单行、固定错误码；构建工具使用 NOFOLLOW 和流式上限 | 错误 Oracle 得到 exit 1、0-byte stdout、唯一 `ORACLE_MISMATCH`；Provider/Candidate/Authority byte mutation、缺 Provider、非法/缺失 dependency closure 均失败关闭 | `PASS` |
+| A1.2-06 | Candidate 与 Provider 保持独立模块和独立构建边界 | Candidate `clean verify`：1905 Surefire + 2 Failsafe，0 failure/error/skip；Provider A1.2 `clean verify`：dependency manifest、archive、black-box 三道门禁全部 `PASS` | `PASS` |
+
+本节因此标记为 **`DEVELOPMENT_VERIFIED`**，但正式实现计数仍为 `0/27`，差距仍为 **100%**。本轮没有企业 Candidate/Environment Attestation、Target Binding、外部 Evidence Store/KMS 或 Owner 签署，系统也没有伪造这些事实。
+
+仍有一项不阻塞 A1.2 制品、但会阻塞后续 Authority Bundle 自动发布的工具链缺陷：当前未跟踪的 `protocol-compiler/compile-protocol-authority.py` 存在入口缩进错误，导致完整 `compile-role-self-test-fixtures.py` 无法执行。本轮独立 Oracle 直接使用 `release_authority_bundle.py` 的 canonical、commitment 和严格 JSON 原语，并自行从真实制品构造三层材料；没有调用 Java helper，也没有用 Java 输出反推 Oracle。A1.3 开工前必须把编译器恢复为可独立执行并加入洁净工具链门禁，不能长期依赖人工转录命令。
