@@ -133,6 +133,14 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
             jos.write(minimalClassFile());
 
             jos.putNextEntry(new JarEntry(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class"));
+            jos.write(minimalClassFile());
+
+            jos.putNextEntry(new JarEntry(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class"));
+            jos.write(minimalClassFile());
+
+            jos.putNextEntry(new JarEntry(
                     "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class"));
             jos.write(minimalClassFile());
 
@@ -1327,6 +1335,12 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
             jos.write(minimalClassFile());
             jos.putNextEntry(new JarEntry(
                     "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderArtifactValidator.class"));
+            jos.write(minimalClassFile());
+            jos.putNextEntry(new JarEntry(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class"));
+            jos.write(minimalClassFile());
+            jos.putNextEntry(new JarEntry(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class"));
             jos.write(minimalClassFile());
             jos.putNextEntry(new JarEntry(
                     "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class"));

@@ -39,7 +39,8 @@ final class CapabilityStudioGateATckProviderRuntimeProbe {
             CapabilityStudioGateATckProviderRoleSelfTest.class,
             CapabilityStudioGateATckProviderArtifactValidator.class,
             CapabilityStudioGateATckProviderRuntimeProbe.class,
-            CapabilityStudioGateAReceiptCanonicalizer.class
+            CapabilityStudioGateAReceiptCanonicalizer.class,
+            CapabilityStudioGateATckProviderReceiptComposer.class
     );
 
     // ── Error codes (all fixed) ───────────────────────────────────────
@@ -328,5 +329,21 @@ final class CapabilityStudioGateATckProviderRuntimeProbe {
         } catch (IOException e) {
             throw new CapabilityStudioGateAException(E_CS_MISMATCH);
         }
+    }
+
+    /**
+     * Derives the candidate artifact path from the CodeSource of the executing ChallengeCli JAR.
+     *
+     * <p>Performs the same validation chain as {@link #requireCodeSourcePath}:
+     * file URI protocol, no symlink, regular file — without copying or resolving URI dereferences.
+     *
+     * <p>Package-private for use by {@link CapabilityStudioGateATckProviderRoleSelfTest}.
+     *
+     * @return validated Path of the candidate artifact from ChallengeCli's CodeSource
+     * @throws CapabilityStudioGateAException on any fixed-code failure
+     */
+    static Path candidateArtifactPath() {
+        CodeSource cs = getCodeSourceOrFail(CapabilityStudioGateAChallengeCli.class, false);
+        return requireCodeSourcePath(cs, false);
     }
 }

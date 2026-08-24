@@ -93,23 +93,67 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
 
     private CapabilityStudioGateATckProviderRoleSelfTest() {}
 
+    // Error codes — fixed, no embedded values
+    static final String E_TCK_ROLE_INVALID         = "TCK_PROVIDER_ROLE_INVALID";
+    static final String E_TCK_FIXTURE_SET_INVALID = "TCK_PROVIDER_FIXTURE_SET_INVALID";
+    static final String E_PROVIDER_PATH_INVALID   = "PROVIDER_PATH_INVALID";
+    static final String E_PROVIDER_READ_FAILED   = "PROVIDER_READ_FAILED";
+    static final String E_CANDIDATE_READ_FAILED  = "CANDIDATE_READ_FAILED";
+
     static byte[] execute(String[] args, boolean enforceCodeSource) {
+        // Strict argument validation — fixed codes only, no embedded values
         validateArgs(args);
-        if (!"TCK_PROVIDER".equals(args[2])) {
-            fail("INVALID_ROLE:" + args[2]);
+        if (!"TCK_PROVIDER".equals(args[2]))        throw new CapabilityStudioGateAException(E_TCK_ROLE_INVALID);
+        if (!EXPECTED_FIXTURE_SET_ID.equals(args[8])) throw new CapabilityStudioGateAException(E_TCK_FIXTURE_SET_INVALID);
+
+        // Path construction: catch IllegalArgumentException / SecurityException → fixed codes
+        Path authorityPath;
+        Path providerPath;
+        try {
+            authorityPath = Path.of(args[4]);
+        } catch (RuntimeException e) {
+            throw new CapabilityStudioGateAException("AUTHORITY_PATH_INVALID");
         }
-        Path authorityPath = Path.of(args[4]);
-        Path artifactPath = Path.of(args[6]);
-        String fixtureSetId = args[8];
-        if (!EXPECTED_FIXTURE_SET_ID.equals(fixtureSetId)) {
-            fail("INVALID_FIXTURE_SET_ID:" + fixtureSetId);
+        try {
+            providerPath = Path.of(args[6]);
+        } catch (RuntimeException e) {
+            throw new CapabilityStudioGateAException(E_PROVIDER_PATH_INVALID);
         }
+
+        // Bounded stable authority read
         byte[] authorityRaw = readStableBounded(authorityPath, MAX_AUTHORITY_BYTES);
-        if (authorityRaw == null) {
-            fail("AUTHORITY_READ_FAILED");
-        }
-        projectAndValidate(authorityRaw);
-        throw new CapabilityStudioGateAException("TCK_PROVIDER_NOT_IMPLEMENTED");
+        if (authorityRaw == null) throw new CapabilityStudioGateAException("AUTHORITY_READ_FAILED");
+
+        // Authority projection
+        TckRoleContract contract = projectAndValidate(authorityRaw);
+
+        // TCK_PROVIDER contract verification
+        if (!EXPECTED_ROLE.equals(contract.role()))              throw new CapabilityStudioGateAException(E_TCK_ROLE_INVALID);
+        if (!EXPECTED_FIXTURE_SET_ID.equals(contract.fixtureSetId())) throw new CapabilityStudioGateAException(E_TCK_FIXTURE_SET_INVALID);
+
+        // Bounded stable provider read (ArtifactValidator owns path security)
+        byte[] providerRaw = readStableBounded(providerPath, contract.maxRawBytes());
+        if (providerRaw == null) throw new CapabilityStudioGateAException(E_PROVIDER_READ_FAILED);
+
+        // Bounded stable candidate read (from ChallengeCli CodeSource — not caller-reported)
+        Path candidatePath = CapabilityStudioGateATckProviderRuntimeProbe.candidateArtifactPath();
+        byte[] candidateRaw = readStableBounded(candidatePath, contract.maxRawBytes());
+        if (candidateRaw == null) throw new CapabilityStudioGateAException(E_CANDIDATE_READ_FAILED);
+
+        // ArtifactValidator.validate
+        CapabilityStudioGateATckProviderArtifactValidator.ValidationSnapshot snap =
+                CapabilityStudioGateATckProviderArtifactValidator.validate(
+                        providerRaw, providerPath, candidateRaw, candidatePath, contract, enforceCodeSource);
+        if (!snap.isPassed()) throw new CapabilityStudioGateAException(snap.errors.get(0));
+
+        // RuntimeProbe.probe (no local variable — pure call)
+        CapabilityStudioGateATckProviderRuntimeProbe.probe(
+                CapabilityStudioGateAChallengeCli.class.getClassLoader(),
+                providerPath, candidatePath, enforceCodeSource);
+
+        // ReceiptComposer.compose
+        return CapabilityStudioGateATckProviderReceiptComposer.compose(
+                authorityRaw, providerRaw, candidateRaw, contract, snap);
     }
 
     @SuppressWarnings("unchecked")
@@ -427,13 +471,13 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
     }
 
     private static void validateArgs(String[] args) {
-        if (args == null) fail("NULL_ARGS");
-        if (args.length != 9) fail("INVALID_ARG_COUNT:" + args.length);
-        if (!"--role-self-test".equals(args[0])) fail("INVALID_ARG_0:" + args[0]);
-        if (!"--role".equals(args[1])) fail("INVALID_ARG_1:" + args[1]);
-        if (!"--authority".equals(args[3])) fail("INVALID_ARG_3:" + args[3]);
-        if (!"--artifact".equals(args[5])) fail("INVALID_ARG_5:" + args[5]);
-        if (!"--fixture-set-id".equals(args[7])) fail("INVALID_ARG_7:" + args[7]);
+        if (args == null)               throw new CapabilityStudioGateAException("NULL_ARGS");
+        if (args.length != 9)          throw new CapabilityStudioGateAException("INVALID_ARG_COUNT");
+        if (!"--role-self-test".equals(args[0])) throw new CapabilityStudioGateAException("INVALID_ARG_0");
+        if (!"--role".equals(args[1]))            throw new CapabilityStudioGateAException("INVALID_ARG_1");
+        if (!"--authority".equals(args[3]))       throw new CapabilityStudioGateAException("INVALID_ARG_3");
+        if (!"--artifact".equals(args[5]))        throw new CapabilityStudioGateAException("INVALID_ARG_5");
+        if (!"--fixture-set-id".equals(args[7])) throw new CapabilityStudioGateAException("INVALID_ARG_7");
     }
 
     private static byte[] readStableBounded(Path path, long maxBytes) {

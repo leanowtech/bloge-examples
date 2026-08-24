@@ -136,6 +136,8 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRoleSelfTest.class",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderArtifactValidator.class",
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class",
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAReceiptCanonicalizer.class",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class",
             "com/leanowtech/bloge/gateway/testkit/StrictJsonParser.class"
@@ -466,6 +468,8 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
                         case "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderArtifactValidator.class":
                         case "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAReceiptCanonicalizer.class":
                         case "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class":
+                        case "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class":
+                        case "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class":
                         case "com/leanowtech/bloge/gateway/testkit/StrictJsonParser.class":
                             scan.foundRequired.add(name);
                             break;
