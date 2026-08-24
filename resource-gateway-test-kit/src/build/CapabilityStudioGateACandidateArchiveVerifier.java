@@ -106,6 +106,10 @@ public final class CapabilityStudioGateACandidateArchiveVerifier {
     private static final String TCK_RUNTIME_PROBE_OUTER =
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe";
 
+    // CapabilityStudioGateATckProviderReceiptComposer – outer + any depth $ closure allowed
+    private static final String TCK_RECEIPT_COMPOSER_OUTER =
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer";
+
     // Explicitly forbidden class patterns (outer + any inner)
     private static final String FORBIDDEN_OUTER_PREFIX =
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateACandidatePackager";
@@ -583,7 +587,9 @@ public final class CapabilityStudioGateACandidateArchiveVerifier {
                     || pathNoExt.startsWith(TCK_OUTER + "$")
                     || pathNoExt.startsWith(TCK_ARTIFACT_VALIDATOR_OUTER + "$")
                     || pathNoExt.equals(TCK_RUNTIME_PROBE_OUTER)
-                    || pathNoExt.startsWith(TCK_RUNTIME_PROBE_OUTER + "$");
+                    || pathNoExt.startsWith(TCK_RUNTIME_PROBE_OUTER + "$")
+                    || pathNoExt.equals(TCK_RECEIPT_COMPOSER_OUTER)
+                    || pathNoExt.startsWith(TCK_RECEIPT_COMPOSER_OUTER + "$");
             if (isProviderOrVerifier) {
                 continue;
             }

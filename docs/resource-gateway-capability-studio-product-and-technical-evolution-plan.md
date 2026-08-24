@@ -2285,3 +2285,53 @@ formalImplementationGap = (27 - formalPassCount) / 27 × 100%
 | 5 | A1.7 及后续 Gate | 按 Gate A 路线图继续 A1.2..A1.7，不直接跳入 legacy full runner | 前置 Gate 未通过 |
 
 > 不得以本节 `DEVELOPMENT_VERIFIED` 状态替代上述任何角色的正式完成状态。TCK/conformance 的开发实现不受外部 Authority 阻塞，可以持续推进；只有正式运行和正式验收受企业 Candidate/Environment Authority、Target Binding、Evidence Store/KMS、Owner facts 缺失阻塞。正式 `PASS` 必须同时包含：企业部署方签发的 Candidate Attestation v1、Environment Attestation v1、out-of-band Target Binding v1、外部 Evidence Store 收据、目标环境内完整固定矩阵 100% 执行、人工读屏、六人可用性测试、Owner 签署和 CI 门禁全绿。
+
+### 20.3 Gate A A1.2 采用 Authority 驱动的双实现证明管线
+
+A1.2 不继续采用“写一个实现、遇到失败再补一条测试”的修补方式。其根因不是测试数量不足，而是协议材料、文件安全、运行时发现和回执生成混在同一层，导致同一规则被多次近似实现。A1.2 采用以下实现模型：**Authority 是唯一事实源，Java 是受限执行实现，Python 是独立 Oracle，最终以真实双 JAR 的逐字节输出一致性作为裁决。**
+
+#### 四层确定性承诺模型
+
+| 层 | 唯一职责 | 输入 | 输出 | 不负责 |
+|---|---|---|---|---|
+| Artifact Snapshot | 证明两个真实 JAR 的结构、边界、依赖和 Schema 内容 | Provider/Candidate 路径及原始 bytes、Authority 投影 | 两个制品 raw fingerprint、57 个 Schema fingerprint/length、固定错误集合 | 角色视图和回执 JSON |
+| Input Tree | 证明角色实际可见的三份输入 | Authority、Candidate JAR、Provider JAR 原始 bytes | 按 `relativePath` 排序的三项 tree commitment | Schema 内容集合 |
+| Schema Set | 证明 Candidate 暴露的 57 份 Schema 集合 | Snapshot 中的 Schema fingerprint/length | `relativePath/kind/byteLength/rawFingerprint` 四字段记录及 set commitment | 从路径重新臆造 Schema fingerprint |
+| Role View + Receipt | 证明角色、能力、输入树、Schema 集和制品身份共同形成唯一输出 | 前三层承诺和 Authority 合同 | 11 字段 canonical receipt，无尾随换行 | 文件读取、ZIP 扫描和 ServiceLoader 发现 |
+
+四层之间只传递不可变 snapshot 或 bare commitment，不重新读取文件。`rawFingerprint` 在 tree record 中始终是 `sha256:<64 lowercase hex>` 字符串；只有 receipt 的公开 fingerprint 字段使用带 `kind/algorithm/value` 的 typed object。任何一层不得用文件名、路径文本或既有 fingerprint 的字符串再次计算“替代 fingerprint”。
+
+#### 执行管线与失败边界
+
+```text
+strict CLI args
+  -> bounded stable O_NOFOLLOW-style reads
+  -> Authority projection
+  -> Artifact Snapshot validation
+  -> exact-one typed ServiceLoader provider + CodeSource binding
+  -> pure commitment composition
+  -> canonical receipt bytes
+```
+
+每一步失败即停止，后续步骤不得运行。错误输出只允许闭集固定码，不拼接路径、类名、异常文本、stdout、stderr 或业务内容。Artifact Validator 负责文件与 ZIP 安全；Runtime Probe 负责类型、数量和 CodeSource；Receipt Composer 必须保持纯函数。这样既避免安全检查遗漏，也避免在回执单测中重复构造临时 JAR。
+
+#### 单一规则与独立证明
+
+1. Java 不复制 Python 编译器的流程控制，只实现冻结后的 Authority 合同；Python 不调用 Java 内部 helper。
+2. Python 由 Authority 和真实制品生成 parent-private oracle；Java 仅消费同一份公开输入，不能读取 oracle 或工作区其他角色输入。
+3. 黑盒成功标准不是“包含若干字段”，而是 `stdout == canonicalOracle + LF`、`stderr == empty`、`exitCode == 0` 三项同时成立。
+4. 单元层只保留九类协议不变量：字段/顺序、独立承诺复算、确定性、输入敏感性、空值、上游错误、Schema key 集、格式/长度、raw snapshot 绑定。文件篡改、ZIP 炸弹、Provider 数量和 CodeSource 由各自边界测试承担。
+5. 真实黑盒另覆盖 Candidate/Provider/Authority 任一 byte 变化、classpath 顺序、重复 Provider、缺失 Provider 和输出污染；失败必须得到固定 reason code，不能泄漏被测内容。
+
+#### A1.2 完成条件
+
+| 编号 | 条件 | 裁决证据 |
+|---|---|---|
+| A1.2-01 | Provider JAR 恰好满足薄 Provider 结构、依赖锁和 Candidate SPI ABI | archive verifier + artifact snapshot tests |
+| A1.2-02 | 57 个 Schema 与三个角色输入分别形成正确 commitment，且职责不混淆 | 9 个纯协议测试 |
+| A1.2-03 | ServiceLoader 恰好发现一个正确类型、正确 CodeSource 的 Provider | runtime probe tests + 双 JAR 子进程 |
+| A1.2-04 | Java 输出与 Python 独立 Oracle 逐字节相等 | parent-private oracle compare transcript |
+| A1.2-05 | 所有负向样例 fail closed，stderr 和 reason code 不泄密 | tamper matrix transcript |
+| A1.2-06 | Candidate 与 TCK Provider profile 在单 Maven 会话中全绿 | Surefire/Failsafe/build logs |
+
+只有六项全部满足并形成原子提交，A1.2 才能标记 `DEVELOPMENT_VERIFIED`。这仍不增加正式 `formalPassCount`；企业 Candidate/Environment Authority、Target Binding、Evidence Store/KMS 和 Owner facts 的外部缺口保持不变。
