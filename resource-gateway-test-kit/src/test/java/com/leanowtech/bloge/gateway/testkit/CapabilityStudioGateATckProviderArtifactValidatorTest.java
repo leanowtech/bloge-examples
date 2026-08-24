@@ -102,7 +102,7 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
         return canonicalize(manifest).getBytes(StandardCharsets.UTF_8);
     }
 
-    byte[] buildValidCandidateJar(Set<String> visibleSchemaIds) throws Exception {
+    byte[] buildValidCandidateJar(Set<String> visibleSchemaIds, Set<String> depJarEntries) throws Exception {
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         try (JarOutputStream jos = new JarOutputStream(baos)) {
             Manifest mf = new Manifest();
@@ -153,6 +153,11 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
                 jos.putNextEntry(new JarEntry("schemas/" + schemaId));
                 jos.write(content.getBytes(StandardCharsets.UTF_8));
             }
+            // Write the authority-granted IMPLEMENTATION_CANDIDATE dependency jars
+            for (String depJarEntry : depJarEntries) {
+                jos.putNextEntry(new JarEntry(depJarEntry));
+                jos.write(tinyJarEntry());
+            }
         }
         return baos.toByteArray();
     }
@@ -176,6 +181,11 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
             dos.flush();
         } catch (IOException e) { throw new RuntimeException(e); }
         return out.toByteArray();
+    }
+
+    /** Smallest non-empty content for a nested JAR entry (4 bytes). */
+    static byte[] tinyJarEntry() {
+        return new byte[]{0x23, 0x74, 0x65, 0x73}; // "#tes" — non-zero, non-magic
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
@@ -263,8 +273,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerAndCandidateBothValid_isPassed() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
         byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
@@ -289,8 +299,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerEntryCountWrong_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -325,8 +335,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerServiceDescriptorMultiLine_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -364,8 +374,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerServiceDescriptorNoLf_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -403,8 +413,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerServiceDescriptorWrongClass_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -442,8 +452,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerServiceDescriptorHasExtraClass_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -483,8 +493,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerDescriptorMalformedUtf8_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -777,8 +787,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerManifestMultiRelease_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
 
@@ -857,8 +867,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerRawSizeExceeds16MiB_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
         byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
@@ -941,8 +951,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depWrongCoordinate_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -971,8 +981,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depWrongEntryPath_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -1002,8 +1012,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depSpiFingerprintMismatch_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -1035,8 +1045,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depMalformedSpiFingerprint_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -1067,8 +1077,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depExtraTopKey_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> m.put("extraKey", 1),
@@ -1093,8 +1103,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depExtraEntryKey_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -1123,8 +1133,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_depExtraFingerprintKey_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
 
         byte[] providerJar = buildProviderJarWithDeps(candidateJar,
                 m -> {
@@ -1244,8 +1254,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerPathStableMismatch_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
         byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
@@ -1276,8 +1286,8 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
     @Test
     void validate_providerPathIsSymlink_reportsFixedCode() throws Exception {
         var contract = realContract();
-        Set<String> visible = realContract().visibleSchemaIds();
-        byte[] candidateJar = buildValidCandidateJar(visible);
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
         byte[] candidateSpiBytes = readEntryBytes(candidateJar,
                 "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
         byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
@@ -1376,5 +1386,167 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
 
         assertThat(snap.errors).contains(
                 CapabilityStudioGateATckProviderArtifactValidator.E_CANDIDATE_SCHEMA_EXTRA);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // Candidate dependency JAR tests (3 new tests)
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * validate: candidate JAR includes all 8 authority-granted dependency jars.
+     * → isPassed (no CANDIDATE_NESTED_JAR, no CANDIDATE_DEPENDENCY_SET_DRIFT).
+     */
+    @Test
+    void validate_candidateWithAllEightDependencyJars_isPassed() throws Exception {
+        var contract = realContract();
+        Set<String> visible = contract.visibleSchemaIds();
+        byte[] candidateJar = buildValidCandidateJar(visible, contract.candidateDependencyJarEntries());
+        byte[] candidateSpiBytes = readEntryBytes(candidateJar,
+                "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
+        byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
+
+        Path provPath = temp.resolve("prov.jar");
+        Path candPath = temp.resolve("cand.jar");
+        Files.write(provPath, providerJar);
+        Files.write(candPath, candidateJar);
+
+        var snap = CapabilityStudioGateATckProviderArtifactValidator.validate(
+                providerJar, provPath, candidateJar, candPath, contract, false);
+
+        assertThat(snap.isPassed()).isTrue();
+        assertThat(snap.errors).isEmpty();
+    }
+
+    /**
+     * validate: candidate JAR includes all 8 authority-granted dependency jars
+     * plus one non-authority extra JAR (lib/evil.jar).
+     * → E_CANDIDATE_NESTED_JAR and E_CANDIDATE_DEPENDENCY_SET_DRIFT.
+     */
+    @Test
+    void validate_candidateWithExtraNonDependencyJar_reportsFixedCodes() throws Exception {
+        var contract = realContract();
+        Set<String> visible = contract.visibleSchemaIds();
+        Set<String> depJars = new HashSet<>(contract.candidateDependencyJarEntries());
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (JarOutputStream jos = new JarOutputStream(baos)) {
+            Manifest mf = new Manifest();
+            mf.getMainAttributes().putValue("Manifest-Version", "1.0");
+            mf.getMainAttributes().putValue("Main-Class",
+                    "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli");
+            jos.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
+            mf.write(jos);
+
+            // All outer-class entries
+            for (String cls : List.of(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAChallengeCli.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAReceiptCanonicalizer.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRoleSelfTest.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderArtifactValidator.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class",
+                    "com/leanowtech/bloge/gateway/testkit/StrictJsonParser.class")) {
+                jos.putNextEntry(new JarEntry(cls));
+                jos.write(minimalClassFile());
+            }
+
+            for (String schemaId : visible) {
+                String content = "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"$id\":\"" + schemaId + "\"}";
+                jos.putNextEntry(new JarEntry("schemas/" + schemaId));
+                jos.write(content.getBytes(StandardCharsets.UTF_8));
+            }
+            // All 8 authority-granted dependency jars
+            for (String depJarEntry : depJars) {
+                jos.putNextEntry(new JarEntry(depJarEntry));
+                jos.write(tinyJarEntry());
+            }
+            // Extra forbidden jar: not in authority granted set
+            jos.putNextEntry(new JarEntry("lib/evil.jar"));
+            jos.write(tinyJarEntry());
+        }
+        byte[] candidateJar = baos.toByteArray();
+        byte[] candidateSpiBytes = readEntryBytes(candidateJar,
+                "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
+        byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
+
+        Path provPath = temp.resolve("prov.jar");
+        Path candPath = temp.resolve("cand.jar");
+        Files.write(provPath, providerJar);
+        Files.write(candPath, candidateJar);
+
+        var snap = CapabilityStudioGateATckProviderArtifactValidator.validate(
+                providerJar, provPath, candidateJar, candPath, contract, false);
+
+        assertThat(snap.errors).contains(
+                CapabilityStudioGateATckProviderArtifactValidator.E_CANDIDATE_NESTED_JAR);
+        assertThat(snap.errors).contains(
+                CapabilityStudioGateATckProviderArtifactValidator.E_CANDIDATE_DEPENDENCY_SET_DRIFT);
+    }
+
+    /**
+     * validate: candidate JAR includes only 7 of the 8 authority-granted dependency jars
+     * (one is missing). → E_CANDIDATE_DEPENDENCY_SET_DRIFT.
+     */
+    @Test
+    void validate_candidateMissingOneDependencyJar_reportsFixedCode() throws Exception {
+        var contract = realContract();
+        Set<String> visible = contract.visibleSchemaIds();
+        Set<String> allDepJars = contract.candidateDependencyJarEntries();
+        // Remove one entry to simulate a missing dependency
+        String removedEntry = allDepJars.iterator().next();
+        Set<String> sevenDepJars = new HashSet<>(allDepJars);
+        sevenDepJars.remove(removedEntry);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        try (JarOutputStream jos = new JarOutputStream(baos)) {
+            Manifest mf = new Manifest();
+            mf.getMainAttributes().putValue("Manifest-Version", "1.0");
+            mf.getMainAttributes().putValue("Main-Class",
+                    "com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateAChallengeCli");
+            jos.putNextEntry(new JarEntry("META-INF/MANIFEST.MF"));
+            mf.write(jos);
+
+            for (String cls : List.of(
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAChallengeCli.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAReceiptCanonicalizer.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRoleSelfTest.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderArtifactValidator.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderRuntimeProbe.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateATckProviderReceiptComposer.class",
+                    "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException.class",
+                    "com/leanowtech/bloge/gateway/testkit/StrictJsonParser.class")) {
+                jos.putNextEntry(new JarEntry(cls));
+                jos.write(minimalClassFile());
+            }
+
+            for (String schemaId : visible) {
+                String content = "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"$id\":\"" + schemaId + "\"}";
+                jos.putNextEntry(new JarEntry("schemas/" + schemaId));
+                jos.write(content.getBytes(StandardCharsets.UTF_8));
+            }
+            // Only 7 of the 8 authority-granted dependency jars
+            for (String depJarEntry : sevenDepJars) {
+                jos.putNextEntry(new JarEntry(depJarEntry));
+                jos.write(tinyJarEntry());
+            }
+        }
+        byte[] candidateJar = baos.toByteArray();
+        byte[] candidateSpiBytes = readEntryBytes(candidateJar,
+                "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider.class");
+        byte[] providerJar = buildValidProviderJar(candidateSpiBytes);
+
+        Path provPath = temp.resolve("prov.jar");
+        Path candPath = temp.resolve("cand.jar");
+        Files.write(provPath, providerJar);
+        Files.write(candPath, candidateJar);
+
+        var snap = CapabilityStudioGateATckProviderArtifactValidator.validate(
+                providerJar, provPath, candidateJar, candPath, contract, false);
+
+        assertThat(snap.errors).contains(
+                CapabilityStudioGateATckProviderArtifactValidator.E_CANDIDATE_DEPENDENCY_SET_DRIFT);
     }
 }

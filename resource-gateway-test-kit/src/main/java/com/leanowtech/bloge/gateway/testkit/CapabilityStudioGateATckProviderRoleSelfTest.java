@@ -5,6 +5,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.regex.Pattern;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -99,6 +100,24 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
     static final String E_PROVIDER_PATH_INVALID   = "PROVIDER_PATH_INVALID";
     static final String E_PROVIDER_READ_FAILED   = "PROVIDER_READ_FAILED";
     static final String E_CANDIDATE_READ_FAILED  = "CANDIDATE_READ_FAILED";
+    static final String E_IC_COUNT_DRIFT            = "AUTHORITY_IMPLEMENTATION_CANDIDATE_COUNT_DRIFT";
+    static final String E_IC_DEP_JAR_ENTRY_DRIFT    = "AUTHORITY_IC_DEP_JAR_ENTRY_DRIFT";
+    private static final Pattern DEP_JAR_NAME_PATTERN = Pattern.compile(
+            "^[A-Za-z0-9][A-Za-z0-9._-]*\\.jar$");
+
+    /**
+     * Returns true when entry is a well-formed dep-jar path strictly equivalent to
+     * {@code META-INF/gate-a/dependencies/<basename>} where basename matches the
+     * {@code ^[A-Za-z0-9][A-Za-z0-9._-]*\.jar$} pattern (no slash, backslash,
+     * NUL, or C0/C1 control chars).
+     */
+    private static boolean isValidDepJarEntryName(String entry) {
+        if (entry == null || entry.isEmpty()) return false;
+        if (!entry.startsWith("META-INF/gate-a/dependencies/") || !entry.endsWith(".jar")) return false;
+        String name = entry.substring("META-INF/gate-a/dependencies/".length());
+        // Reject empty basename and anything not matching the strict pattern
+        return DEP_JAR_NAME_PATTERN.matcher(name).matches();
+    }
 
     static byte[] execute(String[] args, boolean enforceCodeSource) {
         // Strict argument validation — fixed codes only, no embedded values
@@ -243,7 +262,49 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         }
 
         validateRoleContract(tckContract, allowedSchemas);
-        return buildContract(authority, tckContract);
+
+        // IMPLEMENTATION_CANDIDATE: find exactly one, extract allowed dependency jars
+        Map<String, Object> icContract = null;
+        int icCount = 0;
+        for (Map<String, Object> rc : roleContracts) {
+            if ("IMPLEMENTATION_CANDIDATE".equals(rc.get("role"))) {
+                icContract = rc;
+                icCount++;
+            }
+        }
+        if (icCount != 1) {
+            fail(E_IC_COUNT_DRIFT);
+        }
+
+        @SuppressWarnings("unchecked")
+        List<String> icJarEntries = (List<String>) icContract.get("requiredJarEntries");
+        if (icJarEntries == null) {
+            fail(E_IC_DEP_JAR_ENTRY_DRIFT);
+        }
+
+        // Filter: prefix META-INF/gate-a/dependencies/ + suffix .jar
+        Set<String> seenDepJars = new HashSet<>();
+        Set<String> depJars = new HashSet<>();
+        int depJarCount = 0;
+        for (String entry : icJarEntries) {
+            if (entry.startsWith("META-INF/gate-a/dependencies/") && entry.endsWith(".jar")) {
+                depJarCount++;
+                if (seenDepJars.contains(entry)) {
+                    fail(E_IC_DEP_JAR_ENTRY_DRIFT);
+                }
+                seenDepJars.add(entry);
+                // Validate dep-jar entry name format
+                if (!isValidDepJarEntryName(entry)) {
+                    fail(E_IC_DEP_JAR_ENTRY_DRIFT);
+                }
+                depJars.add(entry);
+            }
+        }
+        if (depJarCount != 8) {
+            fail(E_IC_DEP_JAR_ENTRY_DRIFT);
+        }
+
+        return buildContract(authority, tckContract, Collections.unmodifiableSet(depJars));
     }
 
     private static void validateRoleContract(Map<String, Object> rc, Set<String> allowedSchemas) {
@@ -448,9 +509,11 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static TckRoleContract buildContract(Map<String, Object> authority, Map<String, Object> rc) {
+    private static TckRoleContract buildContract(Map<String, Object> authority, Map<String, Object> rc, Set<String> candidateDependencyJarEntries) {
         Map<String, Object> bb = (Map<String, Object>) rc.get("blackBoxContract");
         List<String> visibleSchemas = (List<String>) rc.get("visibleSchemaIds");
+        Set<String> requiredRuntimeArtifactRoles = Set.of("IMPLEMENTATION_CANDIDATE");
+        Set<String> visibleSchemaIds = new HashSet<>(visibleSchemas);
 
         return new TckRoleContract(
                 SCHEMA_VERSION, AUTHORITY_ID, REVISION,
@@ -465,8 +528,9 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
                 new HashSet<>(EXPECTED_JAR_ENTRIES),
                 EXPECTED_PACKAGING_MODEL, EXPECTED_DEP_LOCK_MODE,
                 EXPECTED_SPI_INTERFACE, EXPECTED_SPI_DESCRIPTOR, EXPECTED_EMBEDDING_POLICY,
-                new HashSet<>(List.of("IMPLEMENTATION_CANDIDATE")),
-                new HashSet<>(visibleSchemas)
+                requiredRuntimeArtifactRoles,
+                visibleSchemaIds,
+                candidateDependencyJarEntries
         );
     }
 
@@ -550,6 +614,7 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         private final String embeddingPolicy;
         private final Set<String> requiredRuntimeArtifactRoles;
         private final Set<String> visibleSchemaIds;
+        private final Set<String> candidateDependencyJarEntries;
 
         TckRoleContract(String schemaVersion, String authorityId, int revision,
                         String roleViewDomain, String roleInputTreeDomain, String schemaSetDomain,
@@ -562,7 +627,7 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
                         Set<String> requiredJarEntries, String packagingModel,
                         String dependencyLockManifestMode,
                         String spiInterfaceClass, String spiDescriptorEntryPath, String embeddingPolicy,
-                        Set<String> requiredRuntimeArtifactRoles, Set<String> visibleSchemaIds) {
+                        Set<String> requiredRuntimeArtifactRoles, Set<String> visibleSchemaIds, Set<String> candidateDependencyJarEntries) {
             this.schemaVersion = schemaVersion;
             this.authorityId = authorityId;
             this.revision = revision;
@@ -595,6 +660,7 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
             this.embeddingPolicy = embeddingPolicy;
             this.requiredRuntimeArtifactRoles = Collections.unmodifiableSet(new HashSet<>(requiredRuntimeArtifactRoles));
             this.visibleSchemaIds = Collections.unmodifiableSet(new HashSet<>(visibleSchemaIds));
+            this.candidateDependencyJarEntries = Collections.unmodifiableSet(new HashSet<>(candidateDependencyJarEntries));
         }
 
         String schemaVersion() { return schemaVersion; }
@@ -629,5 +695,6 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         String embeddingPolicy() { return embeddingPolicy; }
         Set<String> requiredRuntimeArtifactRoles() { return requiredRuntimeArtifactRoles; }
         Set<String> visibleSchemaIds() { return visibleSchemaIds; }
+        Set<String> candidateDependencyJarEntries() { return candidateDependencyJarEntries; }
     }
 }

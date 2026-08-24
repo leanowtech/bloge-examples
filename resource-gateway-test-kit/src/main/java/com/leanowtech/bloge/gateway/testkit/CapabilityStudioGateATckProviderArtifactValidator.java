@@ -104,6 +104,7 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
     static final String E_CANDIDATE_SCHEMA_MISSING       = "CANDIDATE_SCHEMA_MISSING";
     static final String E_CANDIDATE_SCHEMA_EXTRA         = "CANDIDATE_SCHEMA_EXTRA";
     static final String E_CANDIDATE_NESTED_JAR           = "CANDIDATE_NESTED_JAR";
+    static final String E_CANDIDATE_DEPENDENCY_SET_DRIFT = "CANDIDATE_DEPENDENCY_SET_DRIFT";
 
     // Input
     static final String E_PROVIDER_RAW_NULL   = "PROVIDER_RAW_NULL";
@@ -760,14 +761,28 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
         extra.removeAll(visible);
         if (!extra.isEmpty()) errors.add(E_CANDIDATE_SCHEMA_EXTRA);
 
+        // Validate nested JARs: distinguish IC-authorized dependency jars from forbidden extras
+        Set<String> allowedDepJars = contract.candidateDependencyJarEntries();
+        Set<String> actualJarEntries = new TreeSet<>();
         for (EntryInfo e : scan.entries) {
             if (!e.isDir && e.name.endsWith(".jar")) {
-                errors.add(E_CANDIDATE_NESTED_JAR); break;
+                actualJarEntries.add(e.name);
             }
+        }
+        // Any jar entry not in the authority-granted set is forbidden
+        Set<String> forbidden = new TreeSet<>(actualJarEntries);
+        forbidden.removeAll(allowedDepJars);
+        if (!forbidden.isEmpty()) {
+            errors.add(E_CANDIDATE_NESTED_JAR);
+        }
+        // The actual set must exactly equal the authority set (no missing, no extra)
+        if (!actualJarEntries.equals(allowedDepJars)) {
+            errors.add(E_CANDIDATE_DEPENDENCY_SET_DRIFT);
         }
     }
 
     // ── Helpers ─────────────────────────────────────────────────────
+
 
     private static boolean isNormalized(String name, boolean isDir) {
         if (name == null || name.isEmpty()) return false;

@@ -68,6 +68,25 @@ class CapabilityStudioGateATckProviderRoleSelfTestTest {
         assertThat(contract.embeddingPolicy()).isEqualTo("PROVIDED_ABI_NOT_EMBEDDED");
         assertThat(contract.requiredRuntimeArtifactRoles()).containsExactly("IMPLEMENTATION_CANDIDATE");
         assertThat(contract.visibleSchemaIds()).hasSize(57);
+        assertThat(contract.candidateDependencyJarEntries()).hasSize(8);
+    }
+
+    // ── IC dependency JAR extraction tests ───────────────────────────────
+
+    @Test
+    void projectAndValidate_rejectsDuplicateImplementationCandidate() {
+        byte[] modified = addDuplicateIcRole();
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_IMPLEMENTATION_CANDIDATE_COUNT_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsIcDependencyJarCountDrift() {
+        byte[] modified = mutateIcRequiredJarEntriesWrongCount();
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_IC_DEP_JAR_ENTRY_DRIFT");
     }
 
     // ── Schema version drift tests ────────────────────────────────────────
@@ -556,6 +575,41 @@ class CapabilityStudioGateATckProviderRoleSelfTestTest {
     }
 
     // JSON serializer using simple formatting
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> findIcRoleContract(Map<String, Object> authority) {
+        List<Map<String, Object>> roleContracts = (List<Map<String, Object>>) authority.get("roleContracts");
+        for (Map<String, Object> rc : roleContracts) {
+            if ("IMPLEMENTATION_CANDIDATE".equals(rc.get("role"))) {
+                return rc;
+            }
+        }
+        throw new AssertionError("No IMPLEMENTATION_CANDIDATE role in authority");
+    }
+
+    @SuppressWarnings("unchecked")
+    private byte[] addDuplicateIcRole() {
+        Map<String, Object> authority = StrictJsonParser.parse(readTrackedAuthority());
+        List<Map<String, Object>> roleContracts = (List<Map<String, Object>>) authority.get("roleContracts");
+        Map<String, Object> ic = findIcRoleContract(authority);
+        Map<String, Object> dup = deepCopy(ic);
+        dup.put("modulePath", "duplicate-ic-module");
+        roleContracts.add(dup);
+        return serializeToJson(authority);
+    }
+
+    @SuppressWarnings("unchecked")
+    private byte[] mutateIcRequiredJarEntriesWrongCount() {
+        Map<String, Object> authority = StrictJsonParser.parse(readTrackedAuthority());
+        Map<String, Object> ic = findIcRoleContract(authority);
+        // Replace requiredJarEntries with only 3 entries that match the filter (expecting 8)
+        List<String> wrongEntries = List.of(
+                "META-INF/gate-a/dependencies/lib-alpha.jar",
+                "META-INF/gate-a/dependencies/lib-beta.jar",
+                "META-INF/gate-a/dependencies/lib-gamma.jar"
+        );
+        ic.put("requiredJarEntries", wrongEntries);
+        return serializeToJson(authority);
+    }
     private byte[] serializeToJson(Map<String, Object> map) {
         StringBuilder sb = new StringBuilder();
         serializeValue(sb, map, 0);
