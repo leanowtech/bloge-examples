@@ -172,7 +172,7 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
         if (contract == null)      { errors.add(E_CONTRACT_NULL); }
         if (!errors.isEmpty()) {
             return new ValidationSnapshot(null, Collections.emptyMap(), null, null,
-                    Collections.emptyMap(), Collections.emptyList());
+                    Collections.emptyMap(), Collections.emptyMap(), Collections.emptyList());
         }
 
         // ── Stable byte check ─────────────────────────────────────
@@ -191,7 +191,7 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
             return new ValidationSnapshot(
                     fingerprint(providerRaw), Collections.emptyMap(),
                     fingerprint(candidateRaw), null,
-                    Collections.emptyMap(),
+                    Collections.emptyMap(), Collections.emptyMap(),
                     new ArrayList<>(errors));
         }
 
@@ -217,13 +217,17 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
             if (!e.isDir && e.data != null) pEntries.put(e.name, fingerprint(e.data));
         }
         Map<String, String> schemas = new LinkedHashMap<>();
+        Map<String, Long> schemaLengths = new LinkedHashMap<>();
         String spiFp = null;
         if (cScan.spiBytes != null) {
             spiFp = fingerprint(cScan.spiBytes);
         }
         for (String sid : cScan.schemaIds) {
             byte[] sb = cScan.schemaData.get(sid);
-            if (sb != null) schemas.put(sid, fingerprint(sb));
+            if (sb != null) {
+                schemas.put(sid, fingerprint(sb));
+                schemaLengths.put(sid, (long) sb.length);
+            }
         }
 
         return new ValidationSnapshot(
@@ -232,6 +236,7 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
                 fingerprint(candidateRaw),
                 spiFp,
                 new LinkedHashMap<>(schemas),
+                new LinkedHashMap<>(schemaLengths),
                 new ArrayList<>(errors));
     }
 
@@ -853,16 +858,20 @@ final class CapabilityStudioGateATckProviderArtifactValidator {
         public final String candidateRawFingerprint;
         public final String candidateSpiFingerprint;
         public final Map<String, String> candidateSchemaFingerprints;
+        public final Map<String, Long> candidateSchemaByteLengths;
         public final List<String> errors;
 
         ValidationSnapshot(String provFp, Map<String, String> provEntries,
                           String candFp, String spiFp,
-                          Map<String, String> schemas, List<String> errors) {
+                          Map<String, String> schemas,
+                          Map<String, Long> schemaLengths,
+                          List<String> errors) {
             this.providerRawFingerprint = provFp;
             this.providerEntryFingerprints = Collections.unmodifiableMap(new LinkedHashMap<>(provEntries));
             this.candidateRawFingerprint = candFp;
             this.candidateSpiFingerprint = spiFp;
             this.candidateSchemaFingerprints = Collections.unmodifiableMap(new LinkedHashMap<>(schemas));
+            this.candidateSchemaByteLengths = Collections.unmodifiableMap(new LinkedHashMap<>(schemaLengths));
             this.errors = Collections.unmodifiableList(new ArrayList<>(errors));
         }
 

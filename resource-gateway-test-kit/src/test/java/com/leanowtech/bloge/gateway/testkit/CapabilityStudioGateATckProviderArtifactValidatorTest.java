@@ -271,6 +271,11 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
 
         assertThat(snap.errors).isEmpty();
         assertThat(snap.isPassed()).isTrue();
+        assertThat(snap.candidateSchemaByteLengths).hasSize(57);
+        assertThat(snap.candidateSchemaByteLengths.keySet())
+                .isEqualTo(snap.candidateSchemaFingerprints.keySet());
+        assertThat(snap.candidateSchemaByteLengths.values())
+                .allMatch(v -> v > 0, "each schema byte length must be positive");
     }
 
     @Test
@@ -807,23 +812,34 @@ class CapabilityStudioGateATckProviderArtifactValidatorTest {
         provEntries.put("META-INF/MANIFEST.MF", "fp1");
         Map<String, String> schemas = new LinkedHashMap<>();
         schemas.put("visible-schema-1", "fp2");
+        Map<String, Long> schemaLengths = new LinkedHashMap<>();
+        schemaLengths.put("visible-schema-1", 42L);
+        schemaLengths.put("visible-schema-2", 99L);
         List<String> errors = new ArrayList<>();
         errors.add("ERROR_ONE");
 
         var snap = new CapabilityStudioGateATckProviderArtifactValidator.ValidationSnapshot(
-                "provFp", provEntries, "candFp", "spiFp", schemas, errors);
+                "provFp", provEntries, "candFp", "spiFp", schemas, schemaLengths, errors);
 
         provEntries.put("EXTRA_ENTRY", "fp_extra");
         schemas.put("extra-schema", "fp_extra");
+        schemaLengths.put("extra-schema", 7L);
         errors.add("ERROR_TWO");
 
         assertThat(snap.providerEntryFingerprints).doesNotContainKey("EXTRA_ENTRY");
         assertThat(snap.candidateSchemaFingerprints).doesNotContainKey("extra-schema");
+        assertThat(snap.candidateSchemaByteLengths).doesNotContainKey("extra-schema");
+        assertThat(snap.candidateSchemaByteLengths).hasSize(2);
+        assertThat(snap.candidateSchemaByteLengths.get("visible-schema-1")).isEqualTo(42L);
+        assertThat(snap.candidateSchemaByteLengths.get("visible-schema-2")).isEqualTo(99L);
         assertThat(snap.errors).hasSize(1);
         assertThat(snap.errors).containsExactly("ERROR_ONE");
 
         assertThatThrownBy(() ->
                 ((java.util.Map<String, String>) snap.providerEntryFingerprints).put("x", "y"))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() ->
+                ((java.util.Map<String, Long>) snap.candidateSchemaByteLengths).put("x", 1L))
                 .isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() ->
                 ((java.util.List<String>) snap.errors).add("x"))
