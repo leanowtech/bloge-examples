@@ -45,7 +45,7 @@ uv run --with jsonschema python \
 | sealed Bundle 30 attacks | `uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/test-protocol-tooling.py` |
 | SliceAcceptanceReceipt 凭证 | `uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/test-slice-acceptance-receipt.py` |
 | 完整 gate（上述全部 + Schema 闭包） | `uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-protocol-gate.py` |
-| CI 静默校验（无输出写入） | `uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-protocol-gate.py --check` |
+| CI 静默校验（无输出写入） | `uv run --with jsonschema python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-protocol-gate.py --check` |  <!-- 103 tests -->
 
 ### 验证规模
 
@@ -113,7 +113,7 @@ uv run --with jsonschema python \
   docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-protocol-gate.py --check
 ```
 
-该命令执行全部门禁：Authority fingerprint 校验、双编译逐字节一致、Schema 闭包（63 Gate + 4 Reviewer）、Packaging Plan 突变测试（当前代码验收固定分母 89）、sealed bundle 30 attacks、CLI/conformance 28 attacks、SliceAcceptanceReceipt 23 attacks。Packaging Plan 测试输出末端为 `89/89 tests passed`；`run-protocol-gate.py` 最终输出为 `Gate A Protocol Authority ... PASS`（deterministic plan bytes + content-addressed publication receipt + mutation tests）。
+该命令执行全部门禁：Authority fingerprint 校验、双编译逐字节一致、Schema 闭包（63 Gate + 4 Reviewer）、Packaging Plan 突变测试（当前代码验收固定分母 106：baseline 89 + artifactLimits 17）、sealed bundle 30 attacks、CLI/conformance 28 attacks、SliceAcceptanceReceipt 23 attacks。Packaging Plan 测试输出末端为 `106/106 tests passed`；`run-protocol-gate.py` 最终输出为 `Gate A Protocol Authority ... PASS`（deterministic plan bytes + content-addressed publication receipt + mutation tests）。
 
 ## 权限边界
 

@@ -82,6 +82,14 @@ class ProviderRecipeError(PlanValidationError):
         super().__init__(f"{self.CODE}: {detail}" if detail else self.CODE)
 
 
+class ArtifactLimitsValidationError(PlanValidationError):
+    CODE = "ARTIFACT_LIMITS_VALIDATION_ERROR"
+    def __init__(self, detail: str = ""):
+        self.code = self.CODE
+        self.detail = detail
+        super().__init__(f"{self.CODE}: {detail}" if detail else self.CODE)
+
+
 class PublisherError(PackagingPlanError):
     CODE = "PUBLISHER_ERROR"
 
@@ -124,6 +132,15 @@ RECEIPT_COMMITMENT_DOMAIN = "RG-CS-GATE-A-INDEPENDENT-VERIFIER-PACKAGING-RECEIPT
 # Output file names
 PLAN_OUTPUT_NAME = "independent-verifier-packaging-plan-v1.json"
 RECEIPT_OUTPUT_NAME = "publication-receipt-v1.json"
+
+# Exact key set for artifactLimits (deterministic field order)
+ARTIFACT_LIMITS_KEYS = (
+    "maxRawBytes",
+    "maxZipEntries",
+    "maxSingleEntryBytes",
+    "maxTotalUncompressedBytes",
+    "maxCompressionRatio",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +234,7 @@ class IndependentVerifierPackagingPlan:
     dependency_manifest_path: str
     embedded_dependencies: tuple[dict[str, Any], ...]
     provider_identity_recipe: dict[str, Any] | None
+    artifact_limits: dict[str, int]  # keys: ARTIFACT_LIMITS_KEYS, values: Authority-derived
     plan_fingerprint: str
 
     def to_json(self) -> dict[str, Any]:
@@ -241,6 +259,8 @@ class IndependentVerifierPackagingPlan:
             "dependencyManifestPath": self.dependency_manifest_path,
             "embeddedDependencies": list(self.embedded_dependencies),
             "providerIdentityRecipe": self.provider_identity_recipe,
+            "artifactLimits": dict(zip(ARTIFACT_LIMITS_KEYS,
+                                       [self.artifact_limits[k] for k in ARTIFACT_LIMITS_KEYS])),
         }
 
     @classmethod
@@ -250,7 +270,16 @@ class IndependentVerifierPackagingPlan:
         required_jar_entries is derived from exactArchiveEntries (they are equal).
         plan_fingerprint is recomputed from the canonical dict to match the
         fingerprint used during plan derivation.
+        artifactLimits: validated via _validate_artifact_limits before key access.
         """
+        # Validate artifactLimits existence and content.
+        # Wrap KeyError so missing top-level field raises ArtifactLimitsValidationError
+        # rather than bubbling as KeyError.
+        try:
+            raw_limits = data["artifactLimits"]
+        except KeyError:
+            raise ArtifactLimitsValidationError("MISSING_ARTIFACT_LIMITS_FIELD") from None
+        _validate_artifact_limits(raw_limits)
         # Build fingerprint-compatible plan_data (excludes requiredJarEntries and planFingerprint)
         plan_data = {
             "schemaVersion": data["schemaVersion"],
@@ -273,6 +302,8 @@ class IndependentVerifierPackagingPlan:
             "dependencyManifestPath": data["dependencyManifestPath"],
             "embeddedDependencies": list(data["embeddedDependencies"]),
             "providerIdentityRecipe": data.get("providerIdentityRecipe"),
+            "artifactLimits": dict(zip(ARTIFACT_LIMITS_KEYS,
+                                       [data["artifactLimits"][k] for k in ARTIFACT_LIMITS_KEYS])),
         }
         plan_fingerprint = _fp(plan_data)
         return cls(
@@ -297,6 +328,8 @@ class IndependentVerifierPackagingPlan:
             dependency_manifest_path=data["dependencyManifestPath"],
             embedded_dependencies=tuple(data["embeddedDependencies"]),
             provider_identity_recipe=data.get("providerIdentityRecipe"),
+            artifact_limits=dict(zip(ARTIFACT_LIMITS_KEYS,
+                                    [data["artifactLimits"][k] for k in ARTIFACT_LIMITS_KEYS])),
             plan_fingerprint=plan_fingerprint,
         )
 
@@ -412,6 +445,12 @@ def derive_packaging_plan(
         verifier_contract, authority
     )
 
+    # --- artifactLimits: DERIVED from INDEPENDENT_VERIFIER role contract's Authority field
+    # Archive Kernel has no hidden second source of truth; limits come exclusively from
+    # the role contract's artifactLimits and are validated strictly from there.
+    artifact_limits = _derive_artifact_limits(verifier_contract)
+    _validate_artifact_limits(artifact_limits)
+
     # --- Plan fingerprint (deterministic)
     plan_data = {
         "schemaVersion": PLAN_SCHEMA_VERSION,
@@ -434,6 +473,8 @@ def derive_packaging_plan(
         "dependencyManifestPath": dependency_manifest_path,
         "embeddedDependencies": list(embedded_dependencies),
         "providerIdentityRecipe": provider_identity_recipe,
+        "artifactLimits": dict(zip(ARTIFACT_LIMITS_KEYS,
+                                   [artifact_limits[k] for k in ARTIFACT_LIMITS_KEYS])),
     }
     plan_fingerprint = _fp(plan_data)
 
@@ -469,6 +510,7 @@ def derive_packaging_plan(
         dependency_manifest_path=dependency_manifest_path,
         embedded_dependencies=tuple(embedded_dependencies),
         provider_identity_recipe=provider_identity_recipe,
+        artifact_limits=artifact_limits,
         plan_fingerprint=plan_fingerprint,
     )
 
@@ -498,6 +540,67 @@ def _derive_role_expected_jar_entries(
     """
     entries, _errors = _cc._derive_role_expected_jar_entries(contract, authority)
     return frozenset(entries)
+
+
+# ---------------------------------------------------------------------------
+# artifactLimits derivation and validation
+# ---------------------------------------------------------------------------
+
+def _derive_artifact_limits(contract: dict[str, Any]) -> dict[str, int]:
+    """Derive artifactLimits from the role contract's Authority field.
+
+    Archive Kernel has exactly ONE source of truth: the INDEPENDENT_VERIFIER
+    role contract's artifactLimits field. No constants, no test fixtures,
+    no hardcoded values anywhere else in the plan compiler.
+
+    Raises ArtifactLimitsValidationError if the field is missing or structurally
+    invalid, rather than letting KeyError/TypeError propagate.
+    Returns dict with exactly ARTIFACT_LIMITS_KEYS as keys.
+    """
+    try:
+        raw = contract["artifactLimits"]
+    except KeyError:
+        raise ArtifactLimitsValidationError("MISSING_ARTIFACT_LIMITS_FIELD") from None
+    # Delegate validation and extraction to _validate_artifact_limits
+    _validate_artifact_limits(raw)
+    return {k: raw[k] for k in ARTIFACT_LIMITS_KEYS}
+
+
+def _validate_artifact_limits(limits: dict[str, Any]) -> None:
+    """Validate artifactLimits strictly from Authority-derived data.
+
+    Rejects:
+      - Missing entire artifactLimits field (caller checks existence first)
+      - Non-object value (limits is not a dict)
+      - Missing key
+      - Extra key
+      - Wrong type (non-integer, including bool)
+      - Negative value (limits must be >= 0 per Archive Kernel contract)
+
+    bool is rejected because bool is a subclass of int in Python;
+    the protocol requires exact integer types only.
+    """
+    # Non-object guard — prevents isinstance checks on non-dict values
+    if not isinstance(limits, dict):
+        raise ArtifactLimitsValidationError(f"NON_OBJECT_TYPE:{type(limits).__name__}")
+
+    # Exact key set check
+    if set(limits.keys()) != set(ARTIFACT_LIMITS_KEYS):
+        missing = set(ARTIFACT_LIMITS_KEYS) - set(limits.keys())
+        extra = set(limits.keys()) - set(ARTIFACT_LIMITS_KEYS)
+        raise ArtifactLimitsValidationError(
+            f"MISSING_KEYS:{sorted(missing)}_EXTRA_KEYS:{sorted(extra)}"
+        )
+
+    for k in ARTIFACT_LIMITS_KEYS:
+        v = limits[k]
+        # Reject bool even though bool is subclass of int
+        if isinstance(v, bool):
+            raise ArtifactLimitsValidationError(f"NON_INTEGER_TYPE:{k}_bool")
+        if not isinstance(v, int) or isinstance(v, bool):
+            raise ArtifactLimitsValidationError(f"NON_INTEGER_TYPE:{k}_{type(v).__name__}")
+        if v < 0:
+            raise ArtifactLimitsValidationError(f"NEGATIVE_VALUE:{k}_{v}")
 
 
 # ---------------------------------------------------------------------------
@@ -1141,6 +1244,7 @@ class Publisher:
             "embeddedProviderIdentityPath", "classManifestPath",
             "resourceManifestPath", "dependencyManifestPath",
             "embeddedDependencies", "providerIdentityRecipe",
+            "artifactLimits",
         })
         _plan_actual_fields = frozenset(plan_json.keys())
         if _plan_actual_fields != _plan_required_fields:
@@ -1535,6 +1639,7 @@ class Publisher:
             "embeddedProviderIdentityPath", "classManifestPath",
             "resourceManifestPath", "dependencyManifestPath",
             "embeddedDependencies", "providerIdentityRecipe",
+            "artifactLimits",
         })
         actual_plan_fields = frozenset(plan_json.keys())
         if actual_plan_fields != expected_plan_fields:

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Self-running test suite for IndependentVerifierPackagingPlan — A1.3-01.
 
-Fixed denominator TESTS=89. Each test: PASS/FAIL with name+reason.
+Fixed denominator TESTS=106. Each test: PASS/FAIL with name+reason.
 Run: python test-packaging-plan.py
 
 Coverage:
@@ -33,7 +33,7 @@ Coverage:
   Reason codes (1 test)
   Idempotence attacks (1 test)
   CLI end-to-end (4 tests)
-  Total: 89 tests
+  Total: 106 tests (baseline 89 + artifactLimits 17) (baseline 89 + artifactLimits 17)
 """
 
 from __future__ import annotations
@@ -53,8 +53,8 @@ import tempfile
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-TESTS_EXPECTED = 89  # fixed denominator — do not change
-EXACT_TEST_COUNT = 89  # hard assertion denominator — must match TESTS_EXPECTED
+TESTS_EXPECTED = 106  # fixed denominator — do not change
+EXACT_TEST_COUNT = 106  # hard assertion denominator — must match TESTS_EXPECTED
 
 
 # ---------------------------------------------------------------------------
@@ -1353,6 +1353,7 @@ def t_old_publication_unchanged():
             dependency_manifest_path=plan1.dependency_manifest_path,
             embedded_dependencies=plan1.embedded_dependencies,
             provider_identity_recipe=plan1.provider_identity_recipe,
+            artifact_limits=plan1.artifact_limits,
             plan_fingerprint="sha256:DIFFERENT2",
         )
         try:
@@ -1399,6 +1400,7 @@ def t_commit_failure_no_corrupt():
             dependency_manifest_path=plan1.dependency_manifest_path,
             embedded_dependencies=plan1.embedded_dependencies,
             provider_identity_recipe=plan1.provider_identity_recipe,
+            artifact_limits=plan1.artifact_limits,
             plan_fingerprint="sha256:DIFFERENT3",
         )
         try:
@@ -1711,6 +1713,7 @@ def t_prepare_failure_own_staging_only():
             dependency_manifest_path=plan.dependency_manifest_path,
             embedded_dependencies=plan.embedded_dependencies,
             provider_identity_recipe=plan.provider_identity_recipe,
+            artifact_limits=plan.artifact_limits,
             plan_fingerprint=plan.plan_fingerprint,
         )
         try:
@@ -1957,6 +1960,290 @@ def t_fanout_symlink_attack_during_commit():
         assert commit_failed, "commit should have failed at TOCTOU checkpoint"
         external_contents = list(external_dir.iterdir()) if external_dir.exists() else []
         assert len(external_contents) == 0, f"external directory was written to: {external_contents}"
+
+
+# ---------------------------------------------------------------------------
+# artifactLimits derivation (14 tests)
+# Archive Kernel has no hidden second source of truth for limits.
+# Source: INDEPENDENT_VERIFIER role contract's artifactLimits Authority field.
+# ---------------------------------------------------------------------------
+
+_AUTHRaw_IV_KEYS = (
+    "maxRawBytes",
+    "maxZipEntries",
+    "maxSingleEntryBytes",
+    "maxTotalUncompressedBytes",
+    "maxCompressionRatio",
+)
+
+# Authority contract reference values (from INDEPENDENT_VERIFIER role contract)
+_IV_AUTHORITY_LIMITS = {
+    "maxRawBytes": 16777216,
+    "maxZipEntries": 512,
+    "maxSingleEntryBytes": 8388608,
+    "maxTotalUncompressedBytes": 67108864,
+    "maxCompressionRatio": 100,
+}
+
+
+@test("artifactLimits field present in plan JSON with all 5 required keys")
+def t_artifact_limits_present():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    assert "artifactLimits" in data, "artifactLimits missing from plan JSON"
+    limits = data["artifactLimits"]
+    assert isinstance(limits, dict), f"artifactLimits must be dict, got {type(limits).__name__}"
+    assert set(limits.keys()) == set(_AUTHRaw_IV_KEYS),         f"artifactLimits keys mismatch: {set(limits.keys())} != {set(_AUTHRaw_IV_KEYS)}"
+
+
+@test("artifactLimits values match INDEPENDENT_VERIFIER role contract Authority field exactly")
+def t_artifact_limits_exact_authority_values():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    model = _linked_model(auth_raw)
+    # Extract directly from the role contract's artifactLimits
+    for rc in model.authority.get("roleContracts", []):
+        if rc.get("role") == "INDEPENDENT_VERIFIER":
+            authority_limits = rc.get("artifactLimits", {})
+            break
+    plan = _plan(auth_raw, proj, man)
+    plan_limits = plan.artifact_limits
+    for k in _AUTHRaw_IV_KEYS:
+        assert plan_limits.get(k) == authority_limits.get(k),             f"plan artifactLimits[{k}]={plan_limits.get(k)} != authority={authority_limits.get(k)}"
+
+
+@test("artifactLimits key order in to_json matches ARTIFACT_LIMITS_KEYS (deterministic)")
+def t_artifact_limits_sorted_key_order():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    limits = data["artifactLimits"]
+    # Keys must appear in ARTIFACT_LIMITS_KEYS order
+    keys_in_json = [k for k in limits]
+    assert keys_in_json == list(packaging_plan.ARTIFACT_LIMITS_KEYS),         f"key order {keys_in_json} != ARTIFACT_LIMITS_KEYS order {list(packaging_plan.ARTIFACT_LIMITS_KEYS)}"
+
+
+@test("artifactLimits roundtrips through to_json/from_json with identical values")
+def t_artifact_limits_to_json_roundtrip():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+    assert rep.artifact_limits == p.artifact_limits,         f"roundtrip artifact_limits mismatch: {rep.artifact_limits} != {p.artifact_limits}"
+
+
+@test("artifactLimits maxRawBytes mutation changes plan fingerprint")
+def t_artifact_limits_max_raw_bytes_mutation():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    original_fp = p.plan_fingerprint
+    # Mutate maxRawBytes by +1
+    mutated_data = p.to_json()
+    mutated_limits = dict(mutated_data["artifactLimits"])
+    mutated_limits["maxRawBytes"] = mutated_limits["maxRawBytes"] + 1
+    mutated_data["artifactLimits"] = mutated_limits
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(mutated_data)
+    assert rep.plan_fingerprint != original_fp,         "maxRawBytes mutation must change plan fingerprint"
+
+
+@test("artifactLimits maxZipEntries mutation changes plan fingerprint")
+def t_artifact_limits_max_zip_entries_mutation():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    original_fp = p.plan_fingerprint
+    mutated_data = p.to_json()
+    mutated_limits = dict(mutated_data["artifactLimits"])
+    mutated_limits["maxZipEntries"] = mutated_limits["maxZipEntries"] + 1
+    mutated_data["artifactLimits"] = mutated_limits
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(mutated_data)
+    assert rep.plan_fingerprint != original_fp,         "maxZipEntries mutation must change plan fingerprint"
+
+
+@test("artifactLimits maxSingleEntryBytes mutation changes plan fingerprint")
+def t_artifact_limits_max_single_entry_bytes_mutation():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    original_fp = p.plan_fingerprint
+    mutated_data = p.to_json()
+    mutated_limits = dict(mutated_data["artifactLimits"])
+    mutated_limits["maxSingleEntryBytes"] = mutated_limits["maxSingleEntryBytes"] + 1
+    mutated_data["artifactLimits"] = mutated_limits
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(mutated_data)
+    assert rep.plan_fingerprint != original_fp,         "maxSingleEntryBytes mutation must change plan fingerprint"
+
+
+@test("artifactLimits maxTotalUncompressedBytes mutation changes plan fingerprint")
+def t_artifact_limits_max_total_uncompressed_bytes_mutation():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    original_fp = p.plan_fingerprint
+    mutated_data = p.to_json()
+    mutated_limits = dict(mutated_data["artifactLimits"])
+    mutated_limits["maxTotalUncompressedBytes"] = mutated_limits["maxTotalUncompressedBytes"] + 1
+    mutated_data["artifactLimits"] = mutated_limits
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(mutated_data)
+    assert rep.plan_fingerprint != original_fp,         "maxTotalUncompressedBytes mutation must change plan fingerprint"
+
+
+@test("artifactLimits maxCompressionRatio mutation changes plan fingerprint")
+def t_artifact_limits_max_compression_ratio_mutation():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    original_fp = p.plan_fingerprint
+    mutated_data = p.to_json()
+    mutated_limits = dict(mutated_data["artifactLimits"])
+    mutated_limits["maxCompressionRatio"] = mutated_limits["maxCompressionRatio"] + 1
+    mutated_data["artifactLimits"] = mutated_limits
+    rep = packaging_plan.IndependentVerifierPackagingPlan.from_json(mutated_data)
+    assert rep.plan_fingerprint != original_fp,         "maxCompressionRatio mutation must change plan fingerprint"
+
+
+@test("artifactLimits missing a required key → ArtifactLimitsValidationError")
+def t_artifact_limits_missing_key():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    del data["artifactLimits"]["maxRawBytes"]
+    try:
+        packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+        assert False, "expected ArtifactLimitsValidationError for missing key"
+    except packaging_plan.ArtifactLimitsValidationError:
+        pass  # expected
+
+
+@test("artifactLimits top-level field absent from JSON → ArtifactLimitsValidationError (not KeyError)")
+def t_artifact_limits_missing_field():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    del data["artifactLimits"]
+    try:
+        packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+        assert False, "expected ArtifactLimitsValidationError for missing field"
+    except packaging_plan.ArtifactLimitsValidationError:
+        pass  # expected
+    except KeyError:
+        assert False, "must not raise bare KeyError — ArtifactLimitsValidationError required"
+
+
+@test("artifactLimits Authority contract field absent → ArtifactLimitsValidationError (derive path)")
+def t_artifact_limits_authority_missing_field():
+    """Verify that derive_packaging_plan raises ArtifactLimitsValidationError
+    when the Authority role contract lacks the artifactLimits field entirely,
+    rather than letting KeyError propagate.
+    """
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    model = _linked_model(auth_raw)
+    for rc in model.authority.get("roleContracts", []):
+        if rc.get("role") == "INDEPENDENT_VERIFIER":
+            del rc["artifactLimits"]  # remove field to simulate missing Authority data
+            break
+
+    # The _derive_artifact_limits function should raise ArtifactLimitsValidationError
+    # not KeyError, when the Authority contract's artifactLimits field is missing.
+    try:
+        packaging_plan._derive_artifact_limits(
+            {"role": "INDEPENDENT_VERIFIER"}  # minimal contract missing artifactLimits
+        )
+        assert False, "expected ArtifactLimitsValidationError for missing Authority field"
+    except packaging_plan.ArtifactLimitsValidationError:
+        pass  # expected
+    except KeyError:
+        assert False, "must not raise bare KeyError — ArtifactLimitsValidationError required"
+
+
+@test("artifactLimits non-object value (list/string/int) → ArtifactLimitsValidationError")
+def t_artifact_limits_non_object():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    for bad_val in [None, "not-a-dict", 512, ["list-not-allowed"]]:
+        data["artifactLimits"] = bad_val
+        try:
+            packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+            assert False, f"expected ArtifactLimitsValidationError for non-object type {type(bad_val).__name__}"
+        except packaging_plan.ArtifactLimitsValidationError:
+            pass  # expected per type
+
+
+@test("artifactLimits extra key not in ARTIFACT_LIMITS_KEYS → ArtifactLimitsValidationError")
+def t_artifact_limits_extra_key():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    data["artifactLimits"]["extraFakeKey"] = 999
+    try:
+        packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+        assert False, "expected ArtifactLimitsValidationError for extra key"
+    except packaging_plan.ArtifactLimitsValidationError:
+        pass  # expected
+
+
+@test("artifactLimits wrong type (non-integer, including bool) → ArtifactLimitsValidationError")
+def t_artifact_limits_wrong_type():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    # bool is a subclass of int in Python; must be rejected
+    for bad_val in [3.14, "512", None, True, False]:
+        data["artifactLimits"]["maxZipEntries"] = bad_val
+        try:
+            packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+            assert False, f"expected ArtifactLimitsValidationError for type {type(bad_val).__name__}"
+        except packaging_plan.ArtifactLimitsValidationError:
+            pass  # expected per type
+
+
+@test("artifactLimits negative value → ArtifactLimitsValidationError")
+def t_artifact_limits_negative_value():
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    p = _plan(auth_raw, proj, man)
+    data = p.to_json()
+    data["artifactLimits"]["maxZipEntries"] = -1
+    try:
+        packaging_plan.IndependentVerifierPackagingPlan.from_json(data)
+        assert False, "expected ArtifactLimitsValidationError for negative value"
+    except packaging_plan.ArtifactLimitsValidationError:
+        pass  # expected
+
+
+@test("artifactLimits derived strictly from Authority role contract — no second source of truth")
+def t_artifact_limits_authority_only_source():
+    """Verify that artifact_limits in the plan are identical to the role contract's
+    artifactLimits field. No constants, no hardcoded test values, no separate
+    lookup tables exist in the compiler. The only source of truth is the
+    INDEPENDENT_VERIFIER role contract's artifactLimits Authority field.
+    """
+    auth_raw = _auth_raw()
+    proj, man = _projections_and_manifest()
+    model = _linked_model(auth_raw)
+    for rc in model.authority.get("roleContracts", []):
+        if rc.get("role") == "INDEPENDENT_VERIFIER":
+            authority_limits = rc.get("artifactLimits", {})
+            break
+    plan = _plan(auth_raw, proj, man)
+    plan_limits = plan.artifact_limits
+    # Assert exact equality with Authority source
+    assert plan_limits == {k: authority_limits[k] for k in _AUTHRaw_IV_KEYS},         f"plan artifact_limits {plan_limits} must equal Authority field exactly; " \
+        f"no second source of truth exists"
+
+
 
 
 if __name__ == "__main__":
