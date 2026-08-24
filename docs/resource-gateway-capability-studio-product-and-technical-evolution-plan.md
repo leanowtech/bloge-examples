@@ -273,6 +273,105 @@ Resource Gateway 可以生成运行事实、证据投影和复验工具，但不
 
 因此，默认 Test Kit verifier 通过只证明协议结构、状态机和确定性不变量成立。只有外部 Evidence Resolver、受信 Key Set/Issuer Policy、目标环境证明和指定 Owner 签署也全部闭合，`Stage Acceptance Result v2` 才允许进入 `PASS`。任何无法识别 Authority、无法验证签名或无法解析 Evidence 的情况必须失败关闭为 `BLOCKED` 或 `FAIL`，不得降级成“人工看过即可”。
 
+### 0.8 更聪明的总体实现：一个业务场景内核，三个确定性编译阶段
+
+统一产品模型如果仍按「契约页面、Fixture 页面、DAG 页面、测试页面、证据页面」分别实现，只会把同一个业务场景复制成五套前后端状态。正确的实现单元不是页面，而是一次可解释、可复现的**业务场景闭环**。页面只是同一闭环在不同任务阶段的投影。
+
+系统只新增一个轻量应用协调层 `CapabilityAuthoringKernel`。它不保存第二份领域事实，也不执行 API、Feature 或 Tool 的业务逻辑；业务逻辑仍只由 BLOGE Runtime 执行。内核包含三个无 I/O 的纯函数和一个薄的副作用协调器：纯函数负责计算，协调器只按计算结果调用既有 Authority、Registry、Runtime 与 Evidence Store。
+
+```text
+业务作者输入
+  -> pure Authoring Compiler
+       人类可理解的契约、样例、场景表和 DAG 编辑
+       -> proposed revisions + WorkspacePublicationPlan
+  -> Publication Coordinator
+       create-new revisions -> manifest -> workspace head CAS
+  -> pure Rehearsal Planner
+       exact revisions + 运行模式
+       -> 完整 IsolationRunPlan + unresolved dependency blockers
+  -> existing BLOGE Runtime
+  -> pure Evidence Projector
+       BLOGE RunTrace + Oracle results + exact closure
+       -> 业务结论 + Data Lens + Coverage + Evidence bundle
+```
+
+三个阶段分别承担唯一职责：
+
+| 阶段 | 唯一输入 | 唯一输出 | 核心不变量 |
+|---|---|---|---|
+| `Authoring Compiler` | 当前工作区 immutable snapshot 与用户显式编辑意图 | proposed revisions、`WorkspaceRevisionManifest` 候选和 `WorkspacePublicationPlan` | 纯函数、无 I/O；不复制 Payload；引用全部可解析；同一输入确定性生成相同内容 fingerprint |
+| `Publication Coordinator` | `WorkspacePublicationPlan`、`commandId` 与 `expectedWorkspaceRevision` | publication receipt 或可恢复冲突 | 不解释业务内容；只执行 create-new、持久化与 head CAS；失败不暴露半成品 |
+| `Rehearsal Planner` | exact asset closure、目标运行模式和调用者权限 | 不可变 `IsolationRunPlan` 或业务化 blocker 列表 | 每个外部依赖恰有一个行为；完全隔离模式下 unresolved dependency 必须在调度前失败；调用方不能逐请求改写生产绑定 |
+| `Evidence Projector` | 原始 BLOGE Trace、逐 Case Oracle、执行计划和 exact closure | 待持久化的业务结果、节点/边 Data Lens、覆盖与 Evidence bytes | 纯函数、无 I/O；不隐式重跑；不从最终绿色状态反推过程正确；所有结论能回到同一 Run、Case、节点和数据 revision |
+
+`CapabilityAuthoringKernel` 对前端提供一组共享同一 `workspaceRevision` 的任务分片，而不是每个页面自行拼装领域对象或由一个巨型响应返回全部内容：
+
+```text
+WorkspaceShellProjection
+  identity + assetType + workspaceRevision
+  currentTask + allowedActions + readinessBlockers + navigationTargets
+
+ContractTaskProjection | ScenarioTaskProjection | GraphTaskProjection
+RunTaskProjection | EvidenceTaskProjection
+  workspaceRevision + projectionKind + projectionFingerprint
+  bounded task payload + nextCursor
+```
+
+这些分片是由 exact closure 确定性生成的不可变只读快照，不成为写入权威。所有命令仍携带 `expectedWorkspaceRevision`，成功后由服务端从已发布领域事实重新生成受影响分片；前端不得乐观构造一个看似成功的业务状态。分片只在 workspace head、权限、purpose 或被引用 Evidence 状态变化后失效。前端收到不同 `workspaceRevision` 的分片时必须丢弃旧组合并重取 shell，不允许拼接跨 revision 页面。下拉筛选、步骤导航、阻断处理、Deep Link 和「打开精确编排图」都从 `allowedActions/navigationTargets` 产生，不再手写 ID 或在多个页面各自推断路由。
+
+跨 Contract、Dataset、Behavior 和 Graph 的保存不引入分布式事务。Publication Coordinator 固定按以下顺序执行：`create-new immutable revisions -> durability receipt -> create-new WorkspaceRevisionManifest -> manifest durability receipt -> workspace head CAS`。只有最后一次 CAS 成功后，新 revision 集合才对读取方可见；head 与 manifest 必须位于提供线性一致 CAS 和 read-after-write 的同一 Authority 中，领域 revision 存储必须在返回 durability receipt 后才允许进入下一步。
+
+崩溃恢复结果是确定的：revision 全部持久化前崩溃，不生成 manifest；manifest 持久化后、CAS 前崩溃，留下不可见候选并由同一 `commandId` 正向续提或延迟回收；CAS 成功后崩溃，命令查询从 head 与 publication receipt 返回已提交，不得回滚。CAS 失败时，现有 head 保持不变，界面收到包含 base/current revision 和可重放草稿的冲突；尚未被已提交 manifest 引用的 revision 进入延迟回收。运行、导出和 Evidence 只接受 head 可达 manifest 的 exact closure，不扫描“最新”资产。这样可用一个可裁决的可见性边界替代脆弱的跨存储原子提交。
+
+该实现还必须保持以下边界：
+
+- `WorkspaceRevisionManifest` 只包含 workspace identity、parent revision、Scope、各领域聚合的 exact refs、闭包 fingerprint、创建身份和时间，不复制 Contract、Dataset、Behavior、Graph 或 Payload 内容。
+- 每个写命令携带 `commandId + expectedWorkspaceRevision`。相同 `commandId` 重试必须返回同一 publication receipt；客户端超时后先查询命令结果，不能盲目重复发布。
+- 不可见 revision 的回收采用 manifest 可达性标记、最小保留窗口和 create receipt 三重保护。未完成的运行、Evidence 或审计引用仍然可达时不得回收。
+- Workspace 任务投影集合是按任务分片的有界读模型，不是一次返回全部资产的巨型响应。首屏只返回摘要、blocker 和已选 Case；Schema、DAG、场景行、Trace 与 Evidence 通过稳定 cursor 或 exact ref 按需读取。
+- 默认投影不包含业务 Payload。Payload 读取继续经过 purpose、Scope、clearance、脱敏和审计；前端不能因已获得 workspace 权限而自动获得数据明文权限。
+- 投影响应携带 workspace revision 和 projection fingerprint。后续命令必须回传其基准 revision；权限、Scope 或 head 漂移时服务端失败关闭并返回可恢复冲突，不接受前端自行合并业务事实。
+
+#### 为什么该实现更少、更稳
+
+1. **一次保存只经过一个命令入口。** 契约、场景和依赖表现可以在界面中连续编辑，但提交时由 Authoring Compiler 计算受影响资产和原子发布集合，不由多个表单依次写入。
+2. **一次试跑只生成一个计划。** Operator 单测、Feature DAG 和 Tool 整包演练复用相同依赖行为解析器；差异只来自被测 Scope 和 Oracle，不再维护三套 Mock 注入规则。
+3. **一次运行只保留一套事实。** UI 结果、Data Lens、表格测试与导出 Evidence 都从同一原始 Trace 投影，禁止各自计算状态。
+4. **一份黄金数据贯穿所有视图。** 取消费争议的 9 个 Case 是同一个 Dataset revision；接口、Feature 和 Tool 只选择适用 Case 并增加各自 Oracle，不复制数据行。
+5. **实现按纵向结果拆分。** 第一个切片只关闭「选择取消费 API -> 看懂契约 -> 选择一个场景 -> 完全隔离试跑 -> 看懂结果」；在真实浏览器和证据链通过前，不并行铺开全部页面。
+
+#### 明确拒绝的实现方式
+
+- 不新增 `CapabilityStudioEverything.json` 作为巨型持久化对象；内核只编译和投影既有领域聚合。
+- 不为 UI 新建第二套 DAG、Fixture 或 Test Runtime；继续使用 GraphDraft、FixtureBundle、TestSuite 和 BLOGE Runtime。
+- 不让前端根据按钮点击顺序推断 Readiness；服务端以 exact closure 计算 blocker 和 allowed action。
+- 不先批量实现页面，再用端到端测试补缝；每个纵向切片必须同时包含领域命令、协议、真实 Runtime、任务投影、浏览器交互和 Evidence。
+- 不把 AI 推断作为确定性门禁。AI 可以从样例建议 Schema、生成边界 Case 或解释失败，但保存、运行与准入必须经过确定性编译和人工确认。
+
+#### 首个实现切片的停止边界
+
+第一条切片只交付一个 API Capability 的完整业务场景闭环。用户从默认工作台选择「查询取消费规则」，无需输入技术 ID 或 Raw JSON，完成契约理解、场景选择、依赖表现确认、完全隔离试跑和结果解释。该切片必须证明以下事实后才能扩展到 Feature DAG：
+
+- 工作区投影只来自已发布 exact revisions；刷新与 Deep Link 后上下文不漂移；
+- 选中的 Case、Behavior、Run 和 Evidence 使用同一 exact closure；
+- 缺少依赖表现时，运行前给出可操作 blocker，不创建伪 Run；
+- 运行期间真实外部调用为 0，正确结果与禁止结果均由逐 Case Oracle 裁决；
+- 保存冲突、运行失败和证据读取失败都保留用户输入，并提供唯一主恢复动作；
+- 中英文与固定桌面/移动视口的真实浏览器路径通过，无 P0/P1。
+
+这条切片未通过时，不实施 Feature 和 Tool 的新页面。它通过后，Feature 只增加 DAG/Data Lens，Tool 只增加跨资产依赖闭包和整包 Oracle；两者复用同一 Authoring Compiler、Rehearsal Planner、Evidence Projector 与任务分片投影协议，不再复制整条链路。
+
+首个切片使用以下不可缩减的机器测试向量；产品可用性测试仍继承 `GP-*` 的六人任务合同，不能由机器测试替代：
+
+| 测试 ID | 固定动作与输入 | 机器 Oracle | 直接失败条件 |
+|---|---|---|---|
+| `API-SLICE-01 PROJECTION_REFRESH` | 读取 shell 与 Scenario 分片，选中 Canonical Case 后刷新并按 Deep Link 重进 | `assetType/workspaceRevision/selectedCase/exactRefs` 逐字段相等；未创建新 revision | 上下文漂移、跨 revision 拼接或要求重填 ID |
+| `API-SLICE-02 EXACT_CLOSURE` | 对同一 Case 执行一次完全隔离试跑并回读 Evidence | Dataset、Case、Behavior、Contract、Run、Evidence exact refs 与 closure fingerprint 独立复算一致 | mutable head、缺失引用或 fingerprint 漂移 |
+| `API-SLICE-03 UNRESOLVED_DEPENDENCY` | 删除一个必需 Behavior 后请求完全隔离试跑 | 返回唯一可操作 blocker；Run 数量与 Evidence 数量均不增加 | 调度已发生、自动 fallback-to-real 或仅返回技术 ID |
+| `API-SLICE-04 ZERO_REAL_CALL` | 使用固定 Case 运行并注入 connector/network 观察器 | 进程内调用、部署级 egress、被拒绝外呼尝试均为 `0`；逐 Case Oracle 通过 | 任一真实或被拒绝外呼尝试，或用 HTTP 成功替代业务 Oracle |
+| `API-SLICE-05 RECOVERY` | 分别注入 stale revision、Runtime failure 和 Evidence read failure | 草稿内容 hash 不变；焦点进入业务化错误；每种状态只有一个主要恢复动作且恢复后回到同一 Case | 内容丢失、重复提交、无恢复动作或跳转到无关 Tab |
+| `API-SLICE-06 BROWSER_MATRIX` | `zh-CN/en-US × 1440/1024/390` 执行固定主路径 | 6 格全部完成；页面横向溢出为 `0`；axe serious/critical 为 `0`；P0/P1 为 `0` | 任一格跳过、控件遮挡、技术 ID/Raw JSON 输入或关键动作不可达 |
+
 ## 1. 从技术诉求到产品任务
 
 ### 1.1 用户真正要完成的事
@@ -2359,6 +2458,21 @@ strict CLI args
 
 A1.3 不能被实现成「另一份 Candidate」。它的责任是从 caller-pinned Authority、独立打包的协议投影、Canonicalization Profile 和真实 TCK Provider 制品中复算同输入结果，并证明自己没有链接 Test Kit、Resource Gateway Runtime 或后续 Harness/Admission 代码。核心设计不是增加 verifier class，而是先把分散的 Authority 字段编译成一个无歧义、可穷举、可复算的 `IndependentVerifierPackagingPlan`。
 
+#### 与 Gate A 已冻结角色和后续切片的关系
+
+本节不改变[收敛式验收引擎技术设计](resource-gateway-capability-studio-convergent-acceptance-engine-technical-design.md)中 A0/A1/A2/Harness 的角色边界。A1.3 只是 `A1 INDEPENDENT_VERIFY` 内部的静态打包切片，不是完整 A1 子门：
+
+| 已冻结角色或切片 | 本节关系 | 本节明确不做 |
+|---|---|---|
+| `A0 CANDIDATE_REPLAY` | A1.1 Candidate 与 A1.2 TCK Provider 已作为 caller-pinned 前置制品输入 | 不重写 typed replay，不读取 Candidate 内部实现 |
+| `A1.3 ROLE_PACKAGING` | Packaging Plan、closed Verifier JAR、dependency rebind、Provider materialization 与开发级 role self-test | 不执行 9 项 candidate-path TCK，不输出 formal replay verification result |
+| `A1.4 BLACK_BOX_CONFORMANCE` | 后续在真实子进程边界挑战 Candidate | 不得提前塞入 A1.3 打包验收 |
+| `A1.5 MATERIAL_CLOSURE` | 后续形成 A1 result、run material 与 Evidence 闭包 | A1.3 self-test receipt 不冒充 formal A1 result |
+| `A1.6 CONFORMANCE_HARNESS` | 独立制品聚合 A1.4/A1.5 已形成的 9 项 candidate-path 结果，并执行 3 项 trust-plane negative TCK；固定 TCK 分母为 `9 + 3 = 12`。Provider collision 是分母外额外强制 guard | Harness 不进入 Verifier JAR，不共享生产类或 Runtime dependency；Provider collision 不得伪装成第 13 项或替代任一固定 TCK |
+| `A2 GATE_ADMISSION` | A1.7 之后由另一独立 artifact 和 caller trust root 裁决 | A1.3 不输出 `PASS/OPEN/FAIL`，不读取 GateResult 或 Admission Pin |
+
+因此，下文四个内核是 A1.3 Verifier artifact 的**静态身份与打包内核**，不是 Gate A 的四个新角色，也不是完整 A1 的充分实现。它们只关闭 Authority 投影、归档闭包、Canonicalization Profile 和 Provider materialization；动态 TCK、材料闭包、Harness 与 A2 严格留在后续切片。
+
 #### 开工前发现的 Authority 冲突
 
 当前 Authority 对 `INDEPENDENT_VERIFIER` 同时给出了三组不能共同成立的声明：
@@ -2377,6 +2491,8 @@ A1.3 不能被实现成「另一份 Candidate」。它的责任是从 caller-pin
 - `providerIdentityEntryPath` 指向 Verifier JAR 内由真实 Provider、Service Descriptor、实现类和 Candidate SPI 生成的身份资源，不要求该 Identity 预先存在于薄 Provider JAR。真正缺陷是 Identity 路径已声明，却没有进入 Verifier 的 `requiredJarEntries`。
 
 因此最小协议修复应以专用语义字段为准：保留 `providerEntryPath=META-INF/gate-a/gate-a-tck-provider-v1.jar`，删除白名单中的遗留通用路径 `META-INF/gate-a/provider/provider.jar`，并把 `providerEntryPath` 与 `providerIdentityEntryPath` 都加入精确白名单。修复后 `requiredJarEntries` 为 28 项。除非出现新的 Authority 决策，不引入额外的 Schema 路径配置或 Provider 命名规则。
+
+当前基线差异必须作为 A1.3-R02 的固定负向向量保存：原白名单 27 项，删除 1 个 legacy 路径，增加 canonical Provider 路径与 Provider Identity 路径，目标白名单 28 项。只检查最终数量不构成通过；编译器必须同时证明精确集合差异恰为上述三项变化。
 
 #### 唯一 Packaging Plan
 
@@ -2409,6 +2525,91 @@ Authority raw bytes
 6. Packaging Plan 自身使用 domain-separated aggregate commitment；Packager、Archive Verifier 和 Role Self-test 分别独立复算同一 plan，任何一方不能生成并验证自己的替代事实。
 7. 对每个非空的 `profilePath`、`registryPath`、`providerEntryPath`、`providerIdentityEntryPath`、`compilationManifestEntryPath`、`canonicalizationProfileEntryPath` 和 `packagedProjections[*].entryPath`，compiler 必须证明其在 `requiredJarEntries` 中恰好出现一次；反向不存在无人声明的特殊资源。
 
+#### 更聪明的实现模型：声明资源图，而不是同步多份路径清单
+
+仅修复当前三个冲突字段仍会留下同类问题：Authority、Role Contract、`requiredJarEntries`、POM、Packager 和 Runtime 都可能再次保存同一个路径或依赖版本。更合适的根治方式是引入类型化的 `ProtocolResourceGraph` 作为编译器内部唯一中间表示。Authority 只声明资源身份、来源和引用关系；归档路径闭包、依赖清单、角色视图与 Packaging Plan 都由资源图确定性派生。
+
+```text
+Authority v1 raw bytes
+  -> strict parser
+  -> v1 compatibility adapter
+  -> ProtocolResourceGraph
+       ResourceNode(id, kind, source, archivePath, digestPolicy, cardinality)
+       RoleNode(id, executable, resourceRefs, dependencyRefs)
+       DependencyNode(lockId, gav, artifactName, rawFingerprint)
+  -> semantic linker
+  -> immutable LinkedProtocolModel
+  -> projection compiler
+       IndependentVerifierPackagingPlan
+       exactArchiveEntries
+       role projections
+       dependency manifest
+       compilation manifest
+  -> staged verification
+  -> atomic publication
+```
+
+该模型采用以下决策：
+
+1. `resourceId` 是编译期引用身份，`archivePath` 是节点属性。Role、Profile、Identity 和 Runtime 只能引用 `resourceId`，不能再次保存路径字符串。
+2. `exactArchiveEntries` 是编译结果，不是第二事实源。Authority v1 中现存的 `requiredJarEntries` 暂时作为兼容断言：它必须与派生集合逐项相等，但不能参与派生。Authority v2 删除该重复字段。
+3. Provider Identity 是派生资源节点。其来源明确绑定 Provider JAR、Service Descriptor、Provider 实现类和 Candidate SPI 四组原始字节，编译器不得接受调用方提供的替代 fingerprint。
+4. Dependency 只通过 `lockId` 被引用。GAV、文件名和 fingerprint 来自唯一 `DependencyNode`；POM 解析结果只能证明制品可取得，不能改写协议版本事实。
+5. Linker 在任何文件写入前完成全图校验：引用必须存在、类型必须匹配、归档路径必须唯一、角色闭包必须可达、禁止存在无人引用的特殊资源或循环派生。
+6. Projection Compiler 只接收不可变 `LinkedProtocolModel`，不重新读取 Authority，不接收散落的路径参数。相同 Authority bytes 和相同外部制品 bytes 必须产生逐字节相同的全部投影。
+
+Provider Identity 的生成规则本身进入 Packaging Plan，表现为固定 `providerIdentityRecipe`，而不是另一个自由路径字段。Recipe 只包含四个类型化 `resourceId` 引用、固定字段顺序、Identity Schema 版本、canonicalization profile 和 fingerprint domain；Packager 依据 recipe 生成 bytes，Archive Verifier 从归档内四组真实 bytes 独立重算。Recipe、Identity resource 和 Provider JAR 任一项漂移都必须推动 Packaging Plan commitment 并失败关闭。
+
+`requiredJarEntries` 的版本生命周期采用显式双版本规则，不使用“以后再删”的模糊迁移：
+
+| Authority 版本 | 写入权威 | `requiredJarEntries` 语义 | 兼容与拒绝规则 |
+|---|---|---|---|
+| v1 | 既有字段保持线协议不变；`ProtocolResourceGraph` 由 v1 adapter 派生 | 冻结的 compatibility assertion，只比较派生 exact set，永不参与生成 | v1 producer 不新增语义；清单与派生集合不等立即拒绝；v1 consumer 不得猜测 v2 字段 |
+| v2 | 版本化 Resource/Role/Dependency nodes 与 refs | 字段禁止出现，exact archive set 只由图派生 | 只通过显式 Authority major-version negotiation 启用；不识别 v2 的 consumer 失败关闭，不静默降级到 v1 |
+
+v2 迁移必须单独立项，不夹入 A1.3：先发布双读 compiler 和 v1 -> v2 离线转换器，用同一输入制品证明 v1 adapter 与 v2 parser 生成逐字节相同的 `LinkedProtocolModel` 和 Packaging Plan；再迁移 producer；最后在所有受支持 consumer 声明 v2 后停止新增 v1 Authority。v1 历史材料及其 compiler 保持可复验，不被原地改写。下列三项是迁移门禁：v1 重复清单单项漂移必败、v2 携带 `requiredJarEntries` 必败、v1/v2 等价向量的 linked-model commitment 必须相等。
+
+这不是为了制造通用编译框架。A1.3 首版只实现当前协议需要的三类节点、一个 Linker 和一个 Verifier Role 投影，禁止提前抽象插件系统、表达式语言或动态扩展点。
+
+#### 两阶段编译与不可覆盖发布
+
+编译器不得边计算边覆盖 `compiled/`。一次运行分为两个阶段：
+
+| 阶段 | 动作 | 成功条件 | 失败后状态 |
+|---|---|---|---|
+| `PREPARE` | 稳定读取并固定输入 bytes；构建和链接资源图；在同父目录新建 run-scoped staging；生成全部投影与 manifest | staging 内 exact inventory、逐文件 fingerprint、aggregate commitment 和独立重读复算全部一致 | 删除本次 staging；既有发布目录逐字节不变 |
+| `COMMIT` | 以 create-new 语义发布内容寻址目录；生成不可变 publication receipt；原子更新可选的 current pointer | 目标目录此前不存在；receipt 能从已发布 bytes 独立复算；pointer 只指向完整目录 | 不覆盖旧版本；pointer 仍指向上一完整版本 |
+
+发布目录以 compilation commitment 寻址。相同输入重复编译只能得到同一 commitment 和同一 bytes；若目录已存在但内容不一致，必须以稳定错误码失败，禁止删除后重建。`--check` 只执行 `PREPARE` 和既有发布物对比，不写 current pointer；正式 `COMMIT` 不允许接受“忽略冲突”或“强制覆盖”开关。
+
+#### 设计先行门禁
+
+A1.3 实现前新增以下布尔门禁，任何一项为 `NO_GO` 都不得开始写 Verifier：
+
+| 门禁 | 必须冻结的内容 | 可执行证明 |
+|---|---|---|
+| `A1.3-DESIGN-01` | `ProtocolResourceGraph` 三类节点、引用规则和错误闭集 | 当前 Authority 可被严格解析并构图，但 Linker 必须以固定 reason-code 闭集拒绝精确三项 delta；最小修复后才允许链接 |
+| `A1.3-DESIGN-02` | v1 重复字段的兼容语义与 v2 删除计划 | v1 `requiredJarEntries` 只作 equality assertion；修改任一重复项必定失败 |
+| `A1.3-DESIGN-03` | `PREPARE/COMMIT` 状态机、崩溃点和恢复结果 | 每个写入边界注入失败后，旧发布物不变且 staging 可安全清理 |
+| `A1.3-DESIGN-04` | 编译输入、输出 inventory、commitment domain 和 canonical bytes | 两个独立临时目录重复编译逐字节一致；单 byte 输入变化推动对应 commitment |
+| `A1.3-DESIGN-05` | 第一个纵向切片的范围 | 只交付 Authority -> Linked Model -> Packaging Plan -> publication receipt；不夹带 Verifier Runtime |
+
+第一个实现切片完成后必须先提交并独立复审。只有该切片通过，第二个切片才实现 Archive/Projection/Canonicalization/Provider Materialization 四个 Verifier 内核。这样可以把「协议事实是否唯一」与「Verifier 是否正确执行」拆成两个可独立裁决的问题，避免再次把设计错误伪装成测试失败后逐项修补。
+
+#### 损坏编译器的可信恢复路径
+
+当前不存在可证明可信的损坏前 Python 源码，因此不能把“凭记忆补回原函数”作为恢复标准。R01 采用 clean-room 行为重建，权威顺序固定为：Authority 与严格 Schema、已发布的八份 projection 结构及 Compilation Manifest、`run-protocol-gate.py` 的独立内容复算、CLI 边界测试，最后才是 README 中的开发观察。任何只存在于损坏源码残片、但无法由上述权威证明的行为都不自动继承。
+
+隔离重建已经形成一项非合入观察：`/tmp/rg-a13-compiler-recovery-xk4j/` 中的候选能把当前 Authority 唯一拒绝为两个 `INDEPENDENT_VERIFIER` 特殊资源缺失；应用上述 27 -> 28 最小修复后生成八份 projection 与一份 manifest，两个独立输出目录 9/9 文件逐字节一致。该观察不等于 workspace 修复通过，因为现有工具测试仍会复制损坏的 workspace compiler 并正确失败。
+
+正式恢复必须同时满足：
+
+1. clean-room 候选的来源、审阅人和输入权威被记录，禁止直接信任 `/tmp` 制品；
+2. 对未启用 A1.3 新关系门禁的 v1 compatibility path，八份 projection 的结构、选择器、内容与 manifest 由 `run-protocol-gate.py` 独立复算一致；
+3. 启用 A1.3 门禁后，原 Authority 只得到固定缺失集合，最小修复 Authority 才允许编译；增加、删除或替换任一特殊资源都得到稳定错误码；
+4. 两个新目录重复编译逐字节一致，现有输出目录不可覆盖，strict JSON、Schema closed set、trust pin 和 60 个既有语义攻击分母全部通过；
+5. 恢复提交只包含经审阅的 compiler、Authority 最小修复、重新编译投影和对应测试，不夹带 Verifier 模块。
+
 #### Verifier 的四个独立内核
 
 | 内核 | 输入 | 输出 | 隔离要求 |
@@ -2418,7 +2619,7 @@ Authority raw bytes
 | Canonicalization Kernel | packaged profile、caller challenge | canonical bytes 与 domain-separated commitment | 不调用 Test Kit canonicalizer |
 | Provider Materialization Kernel | embedded Provider、Provider Identity、Candidate SPI pin | Provider exact identity 与可提取 material | 不执行 Provider 的 Evidence/Owner accessor |
 
-Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `INDEPENDENT_VERIFIER` 的 11 字段 canonical receipt。正常运行时，Verifier 只输出调用者要求的 verification result；`--role-self-test` 是独立模式，不能混入动态 conformance 结果。两种模式都必须满足：单行 stdout、空 stderr、固定错误码、绝对 deadline、有界输入输出、无网络、无工作区和 Oracle 可见性。
+Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `INDEPENDENT_VERIFIER` 的 11 字段 canonical receipt。它是 A1.3 构建期 `DEVELOPMENT_VERIFIED` 证据，只证明 Verifier JAR 的静态打包与同输入确定性，不是 A1.4 的 9 项 candidate-path TCK、A1.5 的 formal replay verification result、A1.6 Harness 的 3 项 trust-plane negative TCK，也不参与 A2 admission。正常运行时，Verifier 只输出调用者要求的 verification result；`--role-self-test` 是独立模式，不能混入动态 conformance 结果。两种模式都必须满足：单行 stdout、空 stderr、固定错误码、绝对 deadline、有界输入输出、无网络、无工作区和 Oracle 可见性。
 
 #### 构建与运行边界
 
