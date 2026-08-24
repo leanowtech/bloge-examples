@@ -2354,3 +2354,83 @@ strict CLI args
 本节因此标记为 **`DEVELOPMENT_VERIFIED`**，但正式实现计数仍为 `0/27`，差距仍为 **100%**。本轮没有企业 Candidate/Environment Attestation、Target Binding、外部 Evidence Store/KMS 或 Owner 签署，系统也没有伪造这些事实。
 
 仍有一项不阻塞 A1.2 制品、但会阻塞后续 Authority Bundle 自动发布的工具链缺陷：当前未跟踪的 `protocol-compiler/compile-protocol-authority.py` 存在入口缩进错误，导致完整 `compile-role-self-test-fixtures.py` 无法执行。本轮独立 Oracle 直接使用 `release_authority_bundle.py` 的 canonical、commitment 和严格 JSON 原语，并自行从真实制品构造三层材料；没有调用 Java helper，也没有用 Java 输出反推 Oracle。A1.3 开工前必须把编译器恢复为可独立执行并加入洁净工具链门禁，不能长期依赖人工转录命令。
+
+### 20.4 Gate A A1.3 先编译唯一 Packaging Plan，再实现 Independent Verifier
+
+A1.3 不能被实现成「另一份 Candidate」。它的责任是从 caller-pinned Authority、独立打包的协议投影、Canonicalization Profile 和真实 TCK Provider 制品中复算同输入结果，并证明自己没有链接 Test Kit、Resource Gateway Runtime 或后续 Harness/Admission 代码。核心设计不是增加 verifier class，而是先把分散的 Authority 字段编译成一个无歧义、可穷举、可复算的 `IndependentVerifierPackagingPlan`。
+
+#### 开工前发现的 Authority 冲突
+
+当前 Authority 对 `INDEPENDENT_VERIFIER` 同时给出了三组不能共同成立的声明：
+
+| 声明 | 当前值 | 冲突 |
+|---|---|---|
+| `providerEntryPath` | `META-INF/gate-a/gate-a-tck-provider-v1.jar` | 不在 `requiredJarEntries` 中 |
+| `providerIdentityEntryPath` | `META-INF/gate-a/gate-a-tck-provider-identity-v1.json` | 不在 `requiredJarEntries` 中 |
+| `requiredJarEntries` 中的 Provider | `META-INF/gate-a/provider/provider.jar` | 与 `providerEntryPath` 不相等 |
+
+这不是实现可以自行决定的命名问题，而是供应链身份问题。若 Packager 使用一个路径、Runtime 使用另一个路径，archive verifier、identity fingerprint 和 replay profile 可以分别绑定不同字节，最终形成「每个局部检查都通过，但整体不是同一个 Provider」的假闭环。因此 A1.3 当前状态为 **`DESIGN_READY / IMPLEMENTATION_BLOCKED_BY_AUTHORITY`**，不能选择任一字段继续编码。
+
+#### 唯一 Packaging Plan
+
+恢复协议编译器后，必须新增一个纯编译步骤，把 Role Contract、顶层 Dependency Authority 和 Protocol Compilation Manifest 归一为以下闭集：
+
+```text
+Authority raw bytes
+  -> strict schema + semantic validation
+  -> IndependentVerifierPackagingPlan
+       identity
+       executableEntry
+       exactArchiveEntries
+       packagedProjections
+       packagedProfile
+       packagedRegistry
+       embeddedProvider
+       providerIdentity
+       embeddedDependencies
+       class/resource/dependency manifests
+  -> build inputs
+```
+
+`IndependentVerifierPackagingPlan` 必须满足以下不变量：
+
+1. 所有 `*EntryPath` 和 `*Path` 类型的 JAR 内路径必须恰好出现在 `exactArchiveEntries` 一次；声明后未打包和打包后无人声明都失败关闭。
+2. Provider JAR 只能有一个 canonical entry path。Replay Profile、Provider Identity、Archive Manifest 和 Runtime extraction 必须引用同一个 plan node，禁止各自保存字符串。
+3. `providerIdentityEntryPath` 若非 `null`，必须进入精确白名单，并由真实 Provider JAR、Service Descriptor、实现类和 Candidate SPI 原始字节生成；禁止使用现有 `valid-tck-provider-identity.json` 中的占位 fingerprint。
+4. 七个 runtime dependency 只能由顶层 `dependencyAuthority.lockId` 投影得到 GAV、文件名和 raw fingerprint。POM 只负责解析制品，不能成为第二个版本事实源。
+5. 七份协议投影和 Compilation Manifest 必须来自修复后的 compiler 当前输出，并逐字节回绑 Authority raw fingerprint 与 `sourceSelectors`；禁止复制旧 `compiled/` 文件后手工改名。
+6. Packaging Plan 自身使用 domain-separated aggregate commitment；Packager、Archive Verifier 和 Role Self-test 分别独立复算同一 plan，任何一方不能生成并验证自己的替代事实。
+
+#### Verifier 的四个独立内核
+
+| 内核 | 输入 | 输出 | 隔离要求 |
+|---|---|---|---|
+| Archive Kernel | Verifier JAR raw bytes、Packaging Plan | exact closure、ZIP limits、class/resource/dependency commitments | 不加载任何 JAR class |
+| Projection Kernel | Authority raw bytes、7 个投影、Compilation Manifest | projection exact-equality 与 source binding | 不读取 Candidate 输出 |
+| Canonicalization Kernel | packaged profile、caller challenge | canonical bytes 与 domain-separated commitment | 不调用 Test Kit canonicalizer |
+| Provider Materialization Kernel | embedded Provider、Provider Identity、Candidate SPI pin | Provider exact identity 与可提取 material | 不执行 Provider 的 Evidence/Owner accessor |
+
+Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `INDEPENDENT_VERIFIER` 的 11 字段 canonical receipt。正常运行时，Verifier 只输出调用者要求的 verification result；`--role-self-test` 是独立模式，不能混入动态 conformance 结果。两种模式都必须满足：单行 stdout、空 stderr、固定错误码、绝对 deadline、有界输入输出、无网络、无工作区和 Oracle 可见性。
+
+#### 构建与运行边界
+
+- Verifier 是独立 executable JAR，编译依赖中禁止出现 `bloge-resource-gateway-test-kit`、`resource-gateway-examples`、BLOGE Runtime、Harness 和 Admission。
+- 第三方依赖以 Authority 锁定的原始 JAR 作为嵌入源，不做 class flattening；Runtime 只从受限临时目录解包并建立固定 classpath，进程退出后由 caller 负责后代回收。
+- TCK Provider 作为 material 被嵌入和验证，不在 Verifier 主进程中获得企业 Authority。A1.3 self-test 不调用 Provider accessor，也不把 A1.2 的 fail-closed accessor 当作正式能力。
+- Build Tool、Packager、Archive Verifier 与 Runtime CLI 使用分离的输出目录；构建工具类不得进入最终 JAR。最终 archive closure 由 Authority 生成的 plan 控制，禁止在 POM 中再维护一份手写 allowlist。
+
+#### A1.3 开工门禁与完成条件
+
+| 编号 | 门禁或条件 | 当前状态 | 退出证据 |
+|---|---|---|---|
+| A1.3-R01 | `compile-protocol-authority.py` 可独立执行，protocol gate 全绿 | `BLOCKED` | 洁净 Python gate 与 deterministic double compile |
+| A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `BLOCKED` | 新增关系变异测试与 compiled Role Contract |
+| A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
+| A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `PENDING` | plan snapshot、mutation tests |
+| A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING` | independent archive verifier、tamper matrix |
+| A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
+| A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |
+| A1.3-05 | canonicalization challenge、projection drift、provider rebind 和依赖替换均失败关闭 | `PENDING` | positive/negative vector matrix |
+| A1.3-06 | Authority 指定的 `A1_3_ROLE_PACKAGING` 洁净 profile 全绿 | `PENDING` | Maven/Surefire/Failsafe/build transcript |
+
+A1.3 的第一项代码工作不是创建 CLI，而是修复 Authority 与 compiler，使 `A1.3-R01..R03` 成立。三项 Ready 门禁关闭前，只允许设计 Packaging Plan 和测试向量，不允许生产 Verifier JAR，也不能把 synthetic fixture 标记为 `DEVELOPMENT_VERIFIED`。
