@@ -2248,3 +2248,40 @@ formalImplementationGap = (27 - formalPassCount) / 27 × 100%
 4. 下一轮优先选择能移除最多共同根因的纵向切片，而不是选择最容易把页面标绿的局部任务。
 
 当前自动化可继续关闭的首要根因依次为：同一本地干净候选的正常态 60 格和异常态 126 格已全量完成，机器浏览器分母达到 186/186；Provider TCK、两阶段部署门禁、只读 Authority Bundle 协议、path-independent 参考 Provider material、split-pin 受限转录，以及 Authority/Target 两棵 Formal Input Tree 的只读确定性 snapshot、tree pin、崩溃恢复和离线 verifier 已经具备。existing-only Deployment State observation、完整 Lease transcript、双层 Evidence bundle publisher/verifier 也已形成独立参考组件，并已完成本轮全量回归和独立 P0/P1 复审；剩余自动化根因是完整 formal-v2 runner 仍未消费两份 snapshot、固定编排 BEFORE/run/AFTER/publication、运行后 mutation 复验、完整 fixed-material pins 和 strict final gate。仓库中仍没有企业实际 Bundle、分别由 Candidate Authority 和 Environment Authority 签署的两份 attestation、部署-owned `Stage Acceptance Target Binding v1`、外部 Evidence Store 收据、组织信任根、KMS/HSM 托管和受信签发，Chrome/driver/CDP 版本也未对齐。`Stage Acceptance Result v2` 与 `Authority Envelope v1` 的既有 verifier/语义不构成上述缺口的替代；缺少 target binding 时，legacy provider 可以继续消费，但 formal target-bound verification 必须为 `BLOCKED`。因此当前根因的精确退出条件是：正式入口从同一不可变快照运行并生成可独立复算、不可覆盖且获得外部存储收据的 manifest；Candidate Attestation v1、Environment Attestation v1 和 target binding v1 均经独立 verifier 通过；Provider atomic binding fingerprint 与部署 pin 相等；Stage Result v2 projection 全部相等且原 v2 verifier 通过；目标环境内固定矩阵 100% 执行并满足业务 Oracle、隔离与 Evidence/Owner post-run 闭包。任何一项缺失都不能增加 `formalPassCount`。Scenario Dataset/freshness 仍缺持久化 Authority 与 Active 生命周期；Feature 仍缺字段级 source map 和客户级 ABAC/Scope Authority；部署级 network deny/egress 尚无目标环境证据。人工读屏、六人可用性、业务判断和 Owner 签署属于必须由真实责任人完成的外部验收，系统只能提供可信入口和证据，不能代签。下一轮应把这些已形成的参考组件接入 full formal-v2 runner，生成固定 Candidate/Input/Environment pin、preflight/postflight、合同结果和外部 Evidence Store receipt，再让企业部署方签发两份真实 attestation 与 out-of-band target binding，在 CI/目标环境运行现有 v2/v1 门禁，打通部署 egress 和可签署的 Evidence 闭包；不能继续以增加本地机制测试或浏览器格数冒充进展。
+### 20.2 Gate A A1.1 IMPLEMENTATION_CANDIDATE 开发闭环
+
+本节记录 Gate A A1.1 IMPLEMENTATION_CANDIDATE 从设计决策到验证结论的诚实闭环。
+
+#### 设计决策、交付与验证记录
+
+| 维度 | 内容 | 状态 | 备注 |
+|---|---|---|---|
+| 协议边界 | JDK-only 最小协议执行闭包，不启动服务，不依赖外部网络 | DONE | 仅要求本机 JDK 子进程 |
+| Authority 上限 | candidate artifact：maxRawBytes 16 MiB / maxZipEntries 512 / maxSingleEntryBytes 8 MiB / maxTotalUncompressedBytes 64 MiB / maxCompressionRatio 100 | DONE | 整体约束，不可绕过 |
+| Schema 覆盖 | 13 class entries + 57 visible schema entries，全部 pinned | DONE | candidate JAR 内自包含 |
+| Evidence 类型 | class SHA-256 + resource SHA-256 + dependency SHA-256（三份清单 `classes.json`/`resources.json`/`dependencies.json`） | DONE | caller-pinned authority 原始字节随 candidate 内嵌并逐字节校验 |
+| Verifier 形态 | Independent archive / real JVM black-box verifier（`java.home/bin/java` 子进程） | DONE | 独立于候选 JAR 运行 |
+| 制品保留 | 普通 JAR + a1-protocol classifier JAR + shaded CLI JAR + gate-a-candidate JAR 均保留在 `target/` | DONE | 默认不激活 profile，不安装到 local repo |
+| 服务状态 | 不启动 Resource Gateway 服务 | DONE | 零服务依赖 |
+| 负向篡改检测 | class / resource / dependency / `classes.json`/`resources.json`/`dependencies.json` 任一 nonzero 变更均 fail | DONE | non-zero exit |
+| 开发观察 | 13 class entries / 57 schema entries / 8 deps / 87 archive entries / ~2.8 MiB / 1827 surefire / +2 failsafe / 0 skip / CLI READY | OBSERVED | 本次开发观察，非永久合同 |
+
+#### 诚实边界
+
+- `DEVELOPMENT_VERIFIED` **不等于** formal `PASS`。本节验证了实现候选的协议执行闭包和证据完整性，但不构成正式验收。
+- 正式 0/27 阶段退出合同全部 `PASS` 的差距 **不变**，仍为 **100%**。
+- 缺口根因精确列表：企业 Candidate/Environment Authority、Target Binding、Evidence Store/KMS、Owner facts 缺失，不得伪造。
+- 本节数字（13/57/8/87/1827/+2/0/READY）是本次开发环境观察，不出现在任何正式 Attestation 或 acceptance 合同中。
+- `CLI READY` 表示本地候选在当前 JDK 环境下可用，不代表跨环境、跨 JDK 版本或跨部署的保证。
+
+#### 下一步（按 authority role contract 顺序）
+
+| 优先级 | 角色 | 任务 | 阻塞条件 |
+|---|---|---|---|
+| 1 | TCK_PROVIDER | 扩展 Test Kit TCK 覆盖 57 visible schemas 的完整 happy-path 与异常路径，覆盖全部 five authority 硬上限边界 | 无（TCK/conformance 开发实现可继续） |
+| 2 | INDEPENDENT_VERIFIER | 注意：build-time archive verifier 已存在（编译期验证）；正式 authority 角色制品要求独立于候选 JAR 的 same-input deterministic output verifier，需另建 | build-time verifier ≠ formal INDEPENDENT_VERIFIER 角色制品 |
+| 3 | CONFORMANCE_HARNESS | TCK/conformance 实现开发可继续；正式运行受外部 Authority 阻塞（企业 Candidate/Environment Authority 缺失） | Candidate Authority 缺失（仅阻塞 formal run，不阻塞开发） |
+| 4 | GATE_ADMISSION_CHECKER | TCK/conformance 实现开发可继续；正式接入受 Target Binding 缺失阻塞 | Target Binding 缺失（仅阻塞 formal run，不阻塞开发） |
+| 5 | A1.7 及后续 Gate | 按 Gate A 路线图继续 A1.2..A1.7，不直接跳入 legacy full runner | 前置 Gate 未通过 |
+
+> 不得以本节 `DEVELOPMENT_VERIFIED` 状态替代上述任何角色的正式完成状态。TCK/conformance 的开发实现不受外部 Authority 阻塞，可以持续推进；只有正式运行和正式验收受企业 Candidate/Environment Authority、Target Binding、Evidence Store/KMS、Owner facts 缺失阻塞。正式 `PASS` 必须同时包含：企业部署方签发的 Candidate Attestation v1、Environment Attestation v1、out-of-band Target Binding v1、外部 Evidence Store 收据、目标环境内完整固定矩阵 100% 执行、人工读屏、六人可用性测试、Owner 签署和 CI 门禁全绿。

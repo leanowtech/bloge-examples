@@ -65,6 +65,74 @@ Gate A1 Step0 is currently `STEP0_IMPLEMENTED_REVIEW_PENDING`; it has not been a
 Only `STEP0_INDEX_PASS` establishes the Git index attestation. Step0 still requires two independent fresh reviews with P0 = 0 and P1 = 0 before it may be declared accepted.
 
 The Maven build attaches `bloge-resource-gateway-test-kit-<version>-a1-protocol.jar`. This `a1-protocol` classifier is the isolated A1 protocol candidate and contains the 13 target schema definitions. The ordinary test-kit JAR and shaded `cli` JAR retain Legacy schemas for compatibility and are not A1 release products. The Oracle manifest schema definition may be present in `a1-protocol`; Oracle instances, executables, fixtures, expected outputs, signatures, quarantine material, and Legacy `.pyc` are NON_RELEASE and must not be packaged. Step0 never executes or imports the Legacy `.pyc`.
+## IMPLEMENTATION_CANDIDATE Development Verification
+
+Gate A1.1 uses an explicit Maven profile (`gate-a-candidate`) to build and verify the
+implementation candidate without activating the profile by default, without starting the
+Resource Gateway service, and without depending on external infrastructure.
+
+**Command:**
+
+```bash
+mvn -f resource-gateway-test-kit/pom.xml -Pgate-a-candidate -Dgate.a.slice=A1.1 clean verify
+```
+
+The command produces `target/bloge-resource-gateway-test-kit-<version>-gate-a-candidate.jar`
+and runs the verification bundle without starting the server. All four artifact forms
+(ordinary JAR, `a1-protocol` classifier JAR, shaded CLI JAR, and `gate-a-candidate` JAR)
+remain in the `target/` directory simultaneously. `package` and `verify` do not install
+any artifact to the local Maven repository; the profile is not activated by default.
+
+**Design constraints — JDK-only minimum protocol execution closure:**
+
+The candidate JAR is a self-contained execution unit that requires only a JDK — no external
+service or network dependency. It validates the protocol closure by:
+
+1. Packaging the 13 current minimum-protocol class entries and committing their
+   exact bytes via `classes.json`.
+2. Packaging 57 visible schemas and 8 raw dependency JARs according to the
+   caller-pinned visible-schema/dependency coordinates, with `resources.json` and
+   `dependencies.json` committing to their exact bytes.
+3. Running the independent black-box verifier as a `java.home/bin/java` child process,
+   consuming the caller-pinned authority bytes and the actual candidate artifact as inputs.
+
+**Authority limits** apply to the whole candidate artifact. The verifier enforces:
+
+| Constraint | Limit |
+|---|---|
+| `maxRawBytes` | 16 MiB |
+| `maxZipEntries` | 512 |
+| `maxSingleEntryBytes` | 8 MiB |
+| `maxTotalUncompressedBytes` | 64 MiB |
+| `maxCompressionRatio` | 100 |
+
+Authority is the declared file-level pin; no external runtime probe, environment
+variable, or network call contributes to the verification result.
+
+**Development observations from this candidate (2026-08-24, local JDK build):**
+
+| Metric | Observed |
+|---|---|
+| Class entries | 13 |
+| Schema entries | 57 |
+| Pinned dependency JARs | 8 |
+| Evidence archive entries | 87 |
+| Evidence archive size | ~2.8 MiB |
+| Surefire test cases | 1827 |
+| Extra Failsafe phases | 2 |
+| Tests skipped | 0 |
+| CLI run | READY |
+
+> **Honesty clause.** These numbers are development observations from this candidate on
+> this machine. They are not a permanent contract. Future candidates, environments, or
+> JDK versions may differ. The numbers do not appear in any formal Attestation or
+> acceptance contract.
+
+**Negative-tampering guard:** If any class file, resource file, dependency JAR, or
+`classes.json`, `resources.json`, or `dependencies.json` entry is modified after the candidate is sealed, the verification
+exits with a non-zero status. The verifier does not suppress, skip, or continue past any
+such mismatch.
+
 
 ## Replay a Gate A Formal Evidence Bundle
 

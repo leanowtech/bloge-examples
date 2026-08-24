@@ -322,4 +322,90 @@
             </plugin>
         </plugins>
     </build>
+
+    <!-- Gate A Candidate Selective Archive Profile -->
+    <!-- Activated with: mvn -Pgate-a-candidate -Dgate.a.slice=A1.1 clean verify -->
+    <!-- Default build (jar, cli, a1-protocol) is NOT affected -->
+    <profiles>
+        <profile>
+            <id>gate-a-candidate</id>
+            <properties>
+                <gate.a.candidate.output>${project.build.directory}/bloge-resource-gateway-test-kit-${project.version}-gate-a-candidate.jar</gate.a.candidate.output>
+            </properties>
+            <build>
+                <!-- Add src/build as additional source directory -->
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>add-source</id>
+                                <phase>generate-sources</phase>
+                                <goals>
+                                    <goal>add-source</goal>
+                                </goals>
+                                <configuration>
+                                    <sources>
+                                        <source>${project.basedir}/src/build</source>
+                                    </sources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Run packager during process-classes -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>package-gate-a-candidate</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <arguments>
+                                        <argument>-cp</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateACandidatePackager</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>${gate.a.candidate.output}</argument>
+                                        <argument>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</argument>
+                                        <argument>${settings.localRepository}</argument>
+                                        <argument>${project.basedir}/../docs/schemas/resource-gateway-capability-studio</argument>
+                                        <argument>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/canonicalization</argument>
+                                        <argument>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/compiled</argument>
+                                        <argument>${gate.a.slice}</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>verify-gate-a-candidate</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${java.home}/bin/java</executable>
+                                    <arguments>
+                                        <argument>-cp</argument>
+                                        <argument>${project.build.outputDirectory}</argument>
+                                        <argument>com.leanowtech.bloge.gateway.testkit.CapabilityStudioGateACandidateArchiveVerifier</argument>
+                                        <argument>${gate.a.candidate.output}</argument>
+                                        <argument>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</argument>
+                                        <argument>${project.build.directory}/verify-working</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
 </project>

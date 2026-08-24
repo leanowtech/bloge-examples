@@ -1,4 +1,4 @@
-/*
+/**
  * Standalone archive boundary verifier for Capability Studio A1 Step 0.
  * Runs as a Java source-file launcher and intentionally has no dependencies.
  */
@@ -38,6 +38,11 @@ public final class CapabilityStudioA1ReleaseArchiveVerifier {
 
     private CapabilityStudioA1ReleaseArchiveVerifier() { }
 
+    /**
+     * Entry point for archive boundary verification.
+     *
+     * @param args four arguments: normal-jar, shaded-cli-jar, a1-protocol-jar, legacy-schema-root
+     */
     public static void main(String[] args) {
         if (args.length != 4) {
             System.err.println("Usage: java CapabilityStudioA1ReleaseArchiveVerifier.java "

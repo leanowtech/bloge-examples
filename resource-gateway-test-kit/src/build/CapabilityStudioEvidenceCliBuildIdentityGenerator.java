@@ -18,6 +18,12 @@ public final class CapabilityStudioEvidenceCliBuildIdentityGenerator {
     private CapabilityStudioEvidenceCliBuildIdentityGenerator() {
     }
 
+    /**
+     * Generates the Evidence CLI build identity resource.
+     *
+     * @param args three arguments: source-path, class-path, output-path
+     * @throws Exception if a file cannot be read or written
+     */
     public static void main(String[] args) throws Exception {
         if (args.length != 3) {
             throw new IllegalArgumentException("source, class, and output are required");
