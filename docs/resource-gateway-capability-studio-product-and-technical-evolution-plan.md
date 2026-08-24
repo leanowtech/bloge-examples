@@ -2993,7 +2993,41 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：89 tests、0 failure、0 error、0 skip（`ZipArchiveVerifierTest`）
 - **构建检查**：`mvn enforcer:enforce` 全绿（BannedDependencies passed）；`dependency:tree -DincludeScope=compile` 扫描无违禁 artifact
 - **覆盖维度**：structural（EOCD/local-central 对齐、ZIP64 extra field/EOCD sentinel/locator 拒绝）→ DD（data descriptor 不可验证拒绝）→ CRC/size 逐流复算 → raw deflate → compression ratio → immutability（无 `Files.write`/`Files.copy`/`Files.createTempFile`）→ no path/system-message leakage
-- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；A1.3-02 整体仍为 `PENDING`（T2/T3 未完成）；formalPassCount 不变；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`；A1.3-03/04/05/06 仍为 `PENDING`；B01~B25/PF-01~PF-10/TM-01~TM-25 完整收口未完成
+- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；但 A1.3-02 整体仍为 `PENDING`（Archive Kernel integration facade、Packaging Plan JSON parser、exact 28-entry real fixture、PF-01~10、TM-01~25、snapshot serializer 与 3-run deterministic snapshot 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+
+---
+
+**T2 实现记录（2026-08-25，commit f5f92a68a）**
+
+- **模块坐标**：`com.leanowtech.bloge:resource-gateway-gate-a-verifier:1.0.0`
+- **Profile**：`gate-a-verifier`
+- **源码文件数**：4（`PathValidator.java`、`PathCheckResult.java`、`ExactClosureChecker.java`、`ExactClosureResult.java`）
+- **测试结果**：72 tests、0 failure、0 error、0 skip（`PathAndClosureVerifierTest`）
+- **实现要点**：严格 UTF-8 解码（拒绝 malformed sequences）+ NFC 规范化检查；exact closure 逐条目全量诊断，使用冻结 reason code：`AK-PATH-NUL`/`AK-PATH-ABSOLUTE`/`AK-PATH-BACKSLASH`/`AK-PATH-DOT-SEGMENT`/`AK-PATH-NFC-MISMATCH`（路径规范）+ `AK-ENTRY-DUPLICATE`/`AK-ENTRY-MISSING`/`AK-ENTRY-COUNT-MISMATCH`/`AK-ENTRY-EXTRA`（目录闭包）+ `AK-LIMIT-ZIP-ENTRIES`（条目数限制）；reasonArgs 键集冻结；PathCheckResult byte[]/nested maps 深防御复制（阻断调用方后续修改），结果集合不可变
+- **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
+- **门禁标记**：T2 DEVELOPMENT_VERIFIED（A1.3-02 中 T2 任务完成）；A1.3-02 整体仍为 `PENDING`（T3 已完成；Packaging Plan JSON parser、exact 28-entry real fixture、PF-01~10、TM-01~25、snapshot serializer、3-run deterministic snapshot 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+
+---
+
+**T3 实现记录（2026-08-25，commit d1714d7f4）**
+
+- **模块坐标**：`com.leanowtech.bloge:resource-gateway-gate-a-verifier:1.0.0`
+- **Profile**：`gate-a-verifier`
+- **源码文件数**：6（`ArtifactLimits.java`、`ArtifactLimitsChecker.java`、`ArtifactLimitsResult.java`、`NestedJarBinder.java`、`PackagingPlanBinding.java`、`PlanBindingResult.java`）
+- **测试结果**：90 tests、0 failure、0 error、0 skip（`ArtifactLimitsAndNestedBindingTest`）
+- **实现要点**：五类限制 all-entry 精确 ratio 检查，使用冻结 reason code：`AK-LIMIT-RAW-BYTES`（原始字节总量）/ `AK-LIMIT-ZIP-ENTRIES`（条目数）/ `AK-LIMIT-SINGLE-ENTRY`（单条目超限）/ `AK-LIMIT-TOTAL-UNCOMPRESSED`（解压后总量）/ `AK-LIMIT-COMPRESSION-RATIO`（压缩比）；negative validation：先拒绝负 compressed/uncompressed size，再 checked-add 防溢出；plan hash first（Packaging Plan JSON 摘要优先计算）；plan count + actual nested count 对比（TM-22）；七 SHA binding（每个 embedded JAR 精确 `sha256:<64 lowerhex>` 绑定）；冻结 args（arguments 字段与 SHA-256 摘要严格对应）
+- **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
+- **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；A1.3-02 整体仍为 `PENDING`（Packaging Plan JSON parser、exact 28-entry real fixture、PF-01~10、TM-01~25、snapshot serializer、3-run deterministic snapshot 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+
+---
+
+**聚合模块测试统计**
+
+- **T1**：89 tests（`ZipArchiveVerifierTest`）
+- **T2**：72 tests（`PathAndClosureVerifierTest`）
+- **T3**：90 tests（`ArtifactLimitsAndNestedBindingTest`）
+- **合计**：251 tests、0 failure、0 error、0 skip
+- **Enforcer/profile/dependency scan**：全绿（`gate-a-verifier` profile、`enforcer:enforce` BannedDependencies passed、`dependency:tree -DincludeScope=compile` 无违禁 artifact）
 
 ---
 
@@ -3002,8 +3036,8 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 | 任务 | 责任/状态 | 产出文件 | 验收标准 |
 |---|---|---|---|
 | T1：ZIP 流解析器与逐流校验（T2/T3 的基础） | （已实现） | `ZipArchiveVerifier.java`（主类）、`CentralDirectoryEntry.java`（记录类型）、`StreamHasher.java`（CRC+SHA-256 逐块）、`LimitResults.java`、`ArchiveKernelException.java` | B01~B06、B16~B19 全绿；无 `Files.write`/`Files.copy`/`Files.createTempFile` 调用；T2/T3 依赖 T1 的 `CentralDirectoryEntry` 记录类型；T1 维护模块根 `pom.xml`（含 gate-a-verifier profile 和 Enforcer 配置） |
-| T2：路径规范验证（T1 完成后可独立开发） | （待指派） | `PathValidator.java`（UTF-8 解码 + NFC 检查 + 路径规范检查）、`PathCheckResult.java` | B07~B12/B13~B15 全绿；reason code 优先级符合定义；T2 与 T1 通过 `CentralDirectoryEntry` 记录类型耦合；T2 负责 duplicate/count/exact-closure 验收，`ArchiveKernelSnapshot`（精确闭包输出序列化）归属 T2 或后续合并，不与 T3 耦合 |
-| T3：ArtifactLimits 校验与 nested JAR 绑定（T1完成后与T2并行） | （待指派） | `ArtifactLimitsChecker.java`、`NestedJarBinder.java`（使用 Packaging Plan 的 embeddedDependencies[] 字段）、`PlanBindingResult.java` | B20~B25 全绿；PF-04 依赖 T1 的 StreamHasher；T3 对 T1 维护的 pom.xml 有读权限，pom 变更须 T1 确认不影响 ZIP 解析器核心 |
+| T2：路径规范验证（T1 完成后可独立开发） | （已实现/DEVELOPMENT_VERIFIED） | `PathValidator.java`（UTF-8 解码 + NFC 检查 + 路径规范检查）、`PathCheckResult.java` | B07~B12/B13~B15 全绿；reason code 优先级符合定义；T2 与 T1 通过 `CentralDirectoryEntry` 记录类型耦合；T2 负责 duplicate/count/exact-closure 验收，`ArchiveKernelSnapshot`（精确闭包输出序列化）归属 T2 或后续合并，不与 T3 耦合 |
+| T3：ArtifactLimits 校验与 nested JAR 绑定（T1完成后与T2并行） | （已实现/DEVELOPMENT_VERIFIED） | `ArtifactLimitsChecker.java`、`NestedJarBinder.java`（使用 Packaging Plan 的 embeddedDependencies[] 字段）、`PlanBindingResult.java` | B20~B25 全绿；PF-04 依赖 T1 的 StreamHasher；T3 对 T1 维护的 pom.xml 有读权限，pom 变更须 T1 确认不影响 ZIP 解析器核心 |
 
 > T3 对 T1 有 pom/build 所有权依赖：`artifactId: resource-gateway-gate-a-verifier` 的根 `pom.xml` 由 T1 责任人维护；T2/T3 提交 PR 须经 T1 确认 pom 变更不影响 ZIP 解析器核心逻辑。三个任务的测试代码可并行开发，但 pom 合并须在 T1 之后。
 
@@ -3029,7 +3063,20 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `DEVELOPMENT_VERIFIED` | 89/89 tests passed、deterministic plan bytes、content-addressed publication receipt、mutation tests |
-| A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING`（T1 DEVELOPMENT_VERIFIED；T2/T3 `PENDING`）| independent archive verifier、tamper matrix |
+| A1.3-02 | Verifier JAR 满足 exact closure、五类限制、七依赖 rebind；但 Packaging Plan JSON parser、exact 28-entry real fixture、PF-01~10、TM-01~25、snapshot serializer 和 3-run 逐字节相同 snapshot 未完成 | `PENDING`（T1/T2/T3 DEVELOPMENT_VERIFIED；formalPassCount 仍为 0/27）| independent archive verifier、tamper matrix；正式 Gate 依赖 Packaging Plan JSON parser、28-entry fixture、PF-01~10、TM-01~25、snapshot serializer、3-run snapshot、R03 receipt |
+
+> **重要说明**：T1（89 tests）+ T2（72 tests）+ T3（90 tests）三个任务均已 DEVELOPMENT_VERIFIED，聚合测试 251 tests 全绿，Enforcer/profile/dependency scan 全绿。但 A1.3-02 整体 **不得** 进入 DEVELOPMENT_VERIFIED，因为以下收口项尚未完成：
+> - Packaging Plan JSON parser（Packaging Plan JSON 解析器）
+> - exact 28-entry real fixture（全量边界条件样例）
+> - PF-01~PF-10 全部通过（Plan Foundation 维度）
+> - TM-01~TM-25 全部失败（Tamper Matrix 拒绝维度）
+> - snapshot serializer（Archive Kernel snapshot 输出序列化器）
+> - 3-run deterministic snapshot（对同一 Verifier JAR 连续 3 次运行输出逐字节相同）
+> - formalPassCount 当前为 0/27，formalGate 尚未闭合
+> - A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+>
+> 上述八项全部完成后方可更新状态。
+
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
 | A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |
 | A1.3-05 | canonicalization challenge、projection drift、provider rebind 和依赖替换均失败关闭 | `PENDING` | positive/negative vector matrix |

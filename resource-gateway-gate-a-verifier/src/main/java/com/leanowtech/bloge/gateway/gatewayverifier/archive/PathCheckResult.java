@@ -3,6 +3,7 @@ package com.leanowtech.bloge.gateway.gatewayverifier.archive;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Immutable result of a single-entry path validation performed by {@link PathValidator}.
@@ -76,10 +77,10 @@ public record PathCheckResult(
      */
     private static Map<String, Map<String, Object>> deepCopyReasonArgs(
             Map<String, Map<String, Object>> original) {
-        var entries = original.entrySet().stream()
-                .map(e -> Map.entry(e.getKey(), Map.copyOf(e.getValue())))
-                .toArray(java.util.Map.Entry[]::new);
-        return Map.ofEntries(entries);
+        return original.entrySet().stream()
+                .collect(Collectors.toUnmodifiableMap(
+                        Map.Entry::getKey,
+                        e -> Map.copyOf(e.getValue())));
     }
 
     /** Returns true when this entry passed all path checks. */

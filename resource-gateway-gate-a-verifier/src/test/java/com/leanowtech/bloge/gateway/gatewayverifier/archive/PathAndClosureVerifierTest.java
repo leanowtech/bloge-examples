@@ -339,7 +339,7 @@ class PathAndClosureVerifierTest {
         void pathCheckResult_reasonsImmutable() {
             byte[] raw = "/etc/passwd".getBytes(StandardCharsets.UTF_8);
             PathCheckResult r = PathValidator.validate(raw);
-            List reasons = r.reasons();
+            List<String> reasons = r.reasons();
             assertThrows(UnsupportedOperationException.class, () -> reasons.add("extra"));
         }
 
@@ -347,8 +347,8 @@ class PathAndClosureVerifierTest {
         void pathCheckResult_reasonArgsOuterImmutable() {
             byte[] raw = "/etc/passwd".getBytes(StandardCharsets.UTF_8);
             PathCheckResult r = PathValidator.validate(raw);
-            Map args = r.reasonArgs();
-            assertThrows(UnsupportedOperationException.class, () -> args.put("extra", "value"));
+            Map<String, Map<String, Object>> args = r.reasonArgs();
+            assertThrows(UnsupportedOperationException.class, () -> args.put("extra", Map.of()));
         }
 
         @Test
@@ -688,7 +688,7 @@ class PathAndClosureVerifierTest {
             ExactClosureResult r = new ExactClosureResult(
                     true, "AK-ENTRY-DUPLICATE", Map.of("entryName", "a.txt", "count", 2L),
                     3, 3, List.of("a.txt"), List.of(), List.of());
-            List duplicates = r.duplicates();
+            List<String> duplicates = r.duplicates();
             assertThrows(UnsupportedOperationException.class, () -> duplicates.add("b.txt"));
         }
 
@@ -697,7 +697,7 @@ class PathAndClosureVerifierTest {
             ExactClosureResult r = new ExactClosureResult(
                     true, "AK-ENTRY-MISSING", Map.of("entryName", "b.txt"),
                     2, 2, List.of(), List.of("b.txt"), List.of());
-            List missing = r.missing();
+            List<String> missing = r.missing();
             assertThrows(UnsupportedOperationException.class, () -> missing.add("c.txt"));
         }
 
@@ -706,16 +706,16 @@ class PathAndClosureVerifierTest {
             ExactClosureResult r = new ExactClosureResult(
                     true, "AK-ENTRY-EXTRA", Map.of("entryName", "c.txt"),
                     3, 3, List.of(), List.of(), List.of("c.txt"));
-            List extra = r.extra();
+            List<String> extra = r.extra();
             assertThrows(UnsupportedOperationException.class, () -> extra.add("d.txt"));
         }
 
         @Test
         void closedFactoryResultImmutable() {
             ExactClosureResult r = ExactClosureResult.closed(5, 5);
-            List duplicates = r.duplicates();
-            List missing = r.missing();
-            List extra = r.extra();
+            List<String> duplicates = r.duplicates();
+            List<String> missing = r.missing();
+            List<String> extra = r.extra();
             assertThrows(UnsupportedOperationException.class, () -> duplicates.add("x"));
             assertThrows(UnsupportedOperationException.class, () -> missing.add("x"));
             assertThrows(UnsupportedOperationException.class, () -> extra.add("x"));
