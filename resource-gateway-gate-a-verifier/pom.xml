@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.leanowtech.bloge</groupId>
+    <artifactId>resource-gateway-gate-a-verifier</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>BLOGE Resource Gateway Gate A Archive Verifier</name>
+    <description>
+        Standalone ZIP/JAR archive kernel for A1.3-02 Gate A verification.
+        JDK-only implementation; no Spring Boot, no business runtime dependencies.
+    </description>
+
+    <properties>
+        <java.version>25</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>25</maven.compiler.release>
+        <junit.version>5.11.4</junit.version>
+    </properties>
+
+    <dependencies>
+        <!-- JUnit 5: test scope only -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>25</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.4.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.2</version>
+            </plugin>
+            <!--
+                Top-level plugin declaration: rules live here so
+                'mvn enforcer:enforce' fires them regardless of profile.
+                No <executions> here — lifecycle binding is only in the
+                gate-a-verifier profile below.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.4.1</version>
+                <configuration>
+                    <rules>
+                        <requireProperty>
+                            <property>gate.a.slice</property>
+                            <message>
+                                gate-a-verifier requires -Dgate.a.slice=&lt;value&gt;
+                            </message>
+                            <regex>^A1\.3$</regex>
+                            <regexMessage>
+                                gate.a.slice must be exactly A1.3, got: ${org.apache.maven.enforcer.rule.EnforceRule.value}
+                            </regexMessage>
+                        </requireProperty>
+                        <bannedDependencies>
+                            <excludes combine.children="append">
+                                <exclude>com.leanowtech.bloge:bloge-resource-gateway-test-kit</exclude>
+                                <exclude>com.leanowtech.bloge:resource-gateway-examples</exclude>
+                                <exclude>com.leanowtech.bloge:bloge-resource-gateway-runtime</exclude>
+                                <exclude>com.leanowtech.bloge:bloge-resource-gateway-harness</exclude>
+                                <exclude>com.leanowtech.bloge:bloge-resource-gateway-admission</exclude>
+                            </excludes>
+                            <message>
+                                Banned business artifact found in dependency tree.
+                                Archive kernel must not depend on runtime or test-kit artifacts.
+                            </message>
+                        </bannedDependencies>
+                    </rules>
+                    <fail>true</fail>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!--
+        Profile gate-a-verifier: activates on -Dgate.a.slice=A1.3.
+        Adds the execution block that binds to the validate phase, so
+        any lifecycle goal (test, verify, ...) that runs after validate
+        automatically enforces the rules.  The plugin-level declaration
+        above makes 'mvn enforcer:enforce' work directly in any context.
+    -->
+    <profiles>
+        <profile>
+            <id>gate-a-verifier</id>
+            <activation>
+                <property>
+                    <name>gate.a.slice</name>
+                    <value>A1.3</value>
+                </property>
+            </activation>
+            <properties>
+                <gate.a.slice>A1.3</gate.a.slice>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <version>3.4.1</version>
+                        <!-- No <configuration> here — rules are inherited from the
+                             top-level plugin declaration above.  Only <executions>
+                             is needed to bind the goal to the validate phase. -->
+                        <executions>
+                            <execution>
+                                <id>enforce-gate-a</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <phase>validate</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

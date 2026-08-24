@@ -2690,22 +2690,20 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
     <rules>
       <bannedDependencies>
         <excludes combine.children="append">
-        <excludes combine.children="append">
           <exclude>com.leanowtech.bloge:bloge-resource-gateway-test-kit</exclude>
           <exclude>com.leanowtech.bloge:resource-gateway-examples</exclude>
           <exclude>com.leanowtech.bloge:bloge-resource-gateway-runtime</exclude>
           <exclude>com.leanowtech.bloge:bloge-resource-gateway-harness</exclude>
           <exclude>com.leanowtech.bloge:bloge-resource-gateway-admission</exclude>
         </excludes>
-
+      </bannedDependencies>
+    </rules>
+  </configuration>
+</plugin>
 ```
 
 构建 CI 另须在 `gate-a-verifier` profile 中执行 `dependency:tree -DincludeScope=compile` 并对输出做字符串扫描：
 
-```bash
-BANNED="$(BANNED="$(mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml dependency:tree -DincludeScope=compile 2>&1 | grep -E "bloge-resource-gateway-test-kit|resource-gateway-examples|bloge-resource-gateway-runtime|bloge-resource-gateway-harness|bloge-resource-gateway-admission" || true)"; if [ -n "$BANNED" ]; then printf "%s\n" "$BANNED"; exit 1; fi)"
-if [ -n "$BANNED" ]; then printf "%s\n" "$BANNED"; exit 1; fi
-```：
 ```bash
 BANNED=$(mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml dependency:tree -DincludeScope=compile 2>&1 | grep -E "bloge-resource-gateway-test-kit|resource-gateway-examples|bloge-resource-gateway-runtime|bloge-resource-gateway-harness|bloge-resource-gateway-admission")
 if [ -n "$BANNED" ]; then echo "FORBIDDEN ARTIFACT: $BANNED"; exit 1; fi
@@ -2901,7 +2899,7 @@ Archive Kernel 必须对以下合法 Verifier JAR 全部通过：
 | TM-12 | 任意 entry | compression method=99（未知） | `AK-UNKNOWN-COMPRESSION` | 4 |
 | TM-13 | ZIP entry | 注入 `META-INF/versions/9/test.class` | `AK-MULTI-RELEASE` | 1 |
 | TM-14 | 任意 entry | external attributes 高 16 位 `0xA000`（symlink） | `AK-EXTERNAL-SYMLINK` | 1 |
-| TM-15 | 任意 entry | external attributes 高 16 位 `0x6000`（block） | `AK-EXEC` | 1 |
+| TM-15 | 任意 entry | external attributes 高 16 位 `0x6000`（block） | `AK-EXTERNAL-SPECIAL` | 1 |
 | TM-16 | 任意 entry | 解压后篡改内容导致 CRC 变化 | `AK-CRC-MISMATCH` | 4 |
 | TM-17 | 任意 entry | central directory uncompressedSize 声明值与实际值+1 | `AK-SIZE-MISMATCH` | 4 |
 | TM-18 | JAR 全局 | raw bytes 总大小 `maxRawBytes + 1` | `AK-LIMIT-RAW-BYTES` | 5 |
@@ -2964,7 +2962,7 @@ Archive Kernel **不解析** JAR `META-INF/MANIFEST.MF` 的 `Class-Path`、`Impo
 
 ---
 
-**精确 Maven 命令（proposed；pom 不存在，仅供任务拆分参考）**
+**精确 Maven 命令**
 
 ```bash
 # gate-a-verifier profile 激活 + 切片变量
@@ -2985,13 +2983,27 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 
 ---
 
+**T1 实现记录（2026-08-25）**
+
+- **模块坐标**：`com.leanowtech.bloge:resource-gateway-gate-a-verifier:1.0.0`
+- **父 POM**：无（standalone artifact）
+- **Profile**：`gate-a-verifier`（激活：`mvn -Pgate-a-verifier ...`）
+- **JDK**：JDK 25+；无 `--enable-preview`
+- **源码文件数**：5（`ZipArchiveVerifier.java`、`StreamHasher.java`、`CentralDirectoryEntry.java`、`LimitResults.java`、`ArchiveKernelException.java`）
+- **测试结果**：89 tests、0 failure、0 error、0 skip（`ZipArchiveVerifierTest`）
+- **构建检查**：`mvn enforcer:enforce` 全绿（BannedDependencies passed）；`dependency:tree -DincludeScope=compile` 扫描无违禁 artifact
+- **覆盖维度**：structural（EOCD/local-central 对齐、ZIP64 extra field/EOCD sentinel/locator 拒绝）→ DD（data descriptor 不可验证拒绝）→ CRC/size 逐流复算 → raw deflate → compression ratio → immutability（无 `Files.write`/`Files.copy`/`Files.createTempFile`）→ no path/system-message leakage
+- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；A1.3-02 整体仍为 `PENDING`（T2/T3 未完成）；formalPassCount 不变；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`；A1.3-03/04/05/06 仍为 `PENDING`；B01~B25/PF-01~PF-10/TM-01~TM-25 完整收口未完成
+
+---
+
 **文件责任任务（存在依赖顺序；T1 最先完成；T2 与 T3 在 T1 完成后并行，互相无依赖）**
 
-| 任务 | 责任人（proposed） | 产出文件 | 验收标准 |
+| 任务 | 责任/状态 | 产出文件 | 验收标准 |
 |---|---|---|---|
-| T1：ZIP 流解析器与逐流校验（T2/T3 的基础） | （待指派） | `ZipArchiveVerifier.java`（主类）、`ZipEntry.java`（记录类型）、`StreamHasher.java`（CRC+SHA-256 逐块） | B01~B06、B16~B19 全绿；无 `Files.write`/`Files.copy`/`Files.createTempFile` 调用；T2/T3 依赖 T1 的 `ZipEntry` 记录类型；T1 维护模块根 `pom.xml`（含 gate-a-verifier profile 和 Enforcer 配置） |
-| T2：路径规范验证（T1 完成后可独立开发） | （待指派） | `PathValidator.java`（UTF-8 解码 + NFC 检查 + 路径规范检查）、`PathCheckResult.java` | B07~B11/B13~B15 全绿；reason code 优先级符合定义；T2 与 T1 通过 `ZipEntry` 记录类型耦合，不与 T3 耦合 |
-| T3：ArtifactLimits 校验与 nested JAR 绑定（T1完成后与T2并行） | （待指派） | `ArtifactLimitsChecker.java`、`NestedJarBinder.java`（使用 Packaging Plan 的 embeddedDependencies[] 字段）、`ArchiveKernelSnapshot.java`（输出序列化）、`PlanBindingResult.java` | B12/B20~B25 全绿；PF-04 依赖 T1 的 StreamHasher；T3 对 T1 维护的 pom.xml 有读权限，pom 变更须 T1 确认不影响 ZIP 解析器核心 |
+| T1：ZIP 流解析器与逐流校验（T2/T3 的基础） | （已实现） | `ZipArchiveVerifier.java`（主类）、`CentralDirectoryEntry.java`（记录类型）、`StreamHasher.java`（CRC+SHA-256 逐块）、`LimitResults.java`、`ArchiveKernelException.java` | B01~B06、B16~B19 全绿；无 `Files.write`/`Files.copy`/`Files.createTempFile` 调用；T2/T3 依赖 T1 的 `CentralDirectoryEntry` 记录类型；T1 维护模块根 `pom.xml`（含 gate-a-verifier profile 和 Enforcer 配置） |
+| T2：路径规范验证（T1 完成后可独立开发） | （待指派） | `PathValidator.java`（UTF-8 解码 + NFC 检查 + 路径规范检查）、`PathCheckResult.java` | B07~B12/B13~B15 全绿；reason code 优先级符合定义；T2 与 T1 通过 `CentralDirectoryEntry` 记录类型耦合；T2 负责 duplicate/count/exact-closure 验收，`ArchiveKernelSnapshot`（精确闭包输出序列化）归属 T2 或后续合并，不与 T3 耦合 |
+| T3：ArtifactLimits 校验与 nested JAR 绑定（T1完成后与T2并行） | （待指派） | `ArtifactLimitsChecker.java`、`NestedJarBinder.java`（使用 Packaging Plan 的 embeddedDependencies[] 字段）、`PlanBindingResult.java` | B20~B25 全绿；PF-04 依赖 T1 的 StreamHasher；T3 对 T1 维护的 pom.xml 有读权限，pom 变更须 T1 确认不影响 ZIP 解析器核心 |
 
 > T3 对 T1 有 pom/build 所有权依赖：`artifactId: resource-gateway-gate-a-verifier` 的根 `pom.xml` 由 T1 责任人维护；T2/T3 提交 PR 须经 T1 确认 pom 变更不影响 ZIP 解析器核心逻辑。三个任务的测试代码可并行开发，但 pom 合并须在 T1 之后。
 
@@ -3017,7 +3029,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `DEVELOPMENT_VERIFIED` | 89/89 tests passed、deterministic plan bytes、content-addressed publication receipt、mutation tests |
-| A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING` | independent archive verifier、tamper matrix |
+| A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING`（T1 DEVELOPMENT_VERIFIED；T2/T3 `PENDING`）| independent archive verifier、tamper matrix |
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
 | A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |
 | A1.3-05 | canonicalization challenge、projection drift、provider rebind 和依赖替换均失败关闭 | `PENDING` | positive/negative vector matrix |
