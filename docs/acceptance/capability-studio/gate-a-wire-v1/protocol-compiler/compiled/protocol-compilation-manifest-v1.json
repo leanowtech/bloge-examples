@@ -2,7 +2,7 @@
   "schemaVersion": "capability-studio.gate-a-protocol-compilation-manifest.v1",
   "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
   "authorityRevision": 1,
-  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceRawFingerprint": "sha256:d07a6e0cd64e264bf37409eb25537ea5fc8062b894f4a07c44fbea65252b20fa",
   "authoritySchemaRawFingerprint": "sha256:287372e4d0f44bb6635b1fd117831a868b48e9213887de37a8ca75ea146e9b82",
   "projectionSchemaRawFingerprint": "sha256:cb7135498f3a5e330f1f771ffb953d8fcaae68fd8168e1d0bba6a2fe61342494",
   "projections": [
@@ -10,49 +10,49 @@
       "projectionId": "ROLE_CONTRACT",
       "path": "role-contract-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/role-contract-v1.json",
-      "rawFingerprint": "sha256:40d6333bb5a6c0851dd407ab6b8f3ed72c650e59f9130d9ca03d9f1069a48cdb"
+      "rawFingerprint": "sha256:0a5165fb342f7651084ac1ec3f8567ca644cf53ce8caa809befaea7e39a4f19f"
     },
     {
       "projectionId": "LAUNCH_CONTRACT",
       "path": "launch-contract-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/launch-contract-v1.json",
-      "rawFingerprint": "sha256:da5dad54d3af76ead87c1003c8ae3150a76322828035da95d225bc1b6a5e7a91"
+      "rawFingerprint": "sha256:11c9aae0d885630200e8ca3f19b849a8a1dbc4b968766abc5695c5d507ebad16"
     },
     {
       "projectionId": "REPLAY_VECTOR_REGISTRY",
       "path": "replay-vector-registry-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/replay-vector-registry-v1.json",
-      "rawFingerprint": "sha256:05febb0a73ee251fab8c6454ccf7a2fc11f74d6696a927636f379e9b9b465d21"
+      "rawFingerprint": "sha256:00b7c67ab18a3567228f714ab905b65fd54e1714d46551636b730cbb20bd5789"
     },
     {
       "projectionId": "CHECK_STATE_MACHINE",
       "path": "check-state-machine-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/check-state-machine-v1.json",
-      "rawFingerprint": "sha256:5323e5177c2dff1a945eb5bc3b33129f91db53e8a2cea05c14f6528303ca467c"
+      "rawFingerprint": "sha256:568e15fd81aaad07aacfe864f4b41bd39b6b6f5e877bab8e6c588eca80f21c8b"
     },
     {
       "projectionId": "MATERIAL_OWNERSHIP",
       "path": "material-ownership-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/material-ownership-v1.json",
-      "rawFingerprint": "sha256:094ce1ec384e36718062de3d01c28ba415e638670289a7130b8b2769bd9f92ab"
+      "rawFingerprint": "sha256:5273d2898f4ba7cfd5b73247d3d8a5fc7f8b6f60ddcd356d7302c754e1c9e344"
     },
     {
       "projectionId": "CANONICALIZATION_CONTRACT",
       "path": "canonicalization-contract-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/canonicalization-contract-v1.json",
-      "rawFingerprint": "sha256:5187b15c6c3733346eef74999e7e314bb209025571d80ac82272df73b6e0a9aa"
+      "rawFingerprint": "sha256:779eae8e1ddd84407c038ba57a542c3ff26074b6954246e8e4b4585c2f0f84db"
     },
     {
       "projectionId": "AUTHORITY_MATRIX",
       "path": "authority-matrix-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/authority-matrix-v1.json",
-      "rawFingerprint": "sha256:c689c337f09fbc5809eb0ab81e1b00eb029d1de6831a846e90182d707ca1b070"
+      "rawFingerprint": "sha256:11b7e8677d0bb2aa513a2ecc76e0e1c5d342a9f0dc15c69d6422d9d408ce14b9"
     },
     {
       "projectionId": "DELIVERY_CONTRACT",
       "path": "delivery-contract-v1.json",
       "jarEntryPath": "META-INF/gate-a/projections/delivery-contract-v1.json",
-      "rawFingerprint": "sha256:ac02c60d997a946c9aec08332934cebd56170c002a47fdd29a60c5a5dde4f1ed"
+      "rawFingerprint": "sha256:c52aa33e0f59feb3af192434b81ec03c5f05329f0874527f9a487d9f74ea9b3b"
     }
   ]
 }

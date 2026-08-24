@@ -3,7 +3,7 @@
   "projectionId": "REPLAY_VECTOR_REGISTRY",
   "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
   "authorityRevision": 1,
-  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceRawFingerprint": "sha256:d07a6e0cd64e264bf37409eb25537ea5fc8062b894f4a07c44fbea65252b20fa",
   "sourceSelectors": [
     {
       "key": "inputSets",

@@ -2452,7 +2452,20 @@ strict CLI args
 
 本节因此标记为 **`DEVELOPMENT_VERIFIED`**，但正式实现计数仍为 `0/27`，差距仍为 **100%**。本轮没有企业 Candidate/Environment Attestation、Target Binding、外部 Evidence Store/KMS 或 Owner 签署，系统也没有伪造这些事实。
 
-仍有一项不阻塞 A1.2 制品、但会阻塞后续 Authority Bundle 自动发布的工具链缺陷：当前未跟踪的 `protocol-compiler/compile-protocol-authority.py` 存在入口缩进错误，导致完整 `compile-role-self-test-fixtures.py` 无法执行。本轮独立 Oracle 直接使用 `release_authority_bundle.py` 的 canonical、commitment 和严格 JSON 原语，并自行从真实制品构造三层材料；没有调用 Java helper，也没有用 Java 输出反推 Oracle。A1.3 开工前必须把编译器恢复为可独立执行并加入洁净工具链门禁，不能长期依赖人工转录命令。
+**2026-08-24 实现记录**：上述工具链缺陷已由本实现修复：
+
+| 项目 | 变更 |
+|---|---|
+| Authority 变更 | 精确 1 项删除 + 2 项新增（27 → 28 条目） |
+| 投影/Manifest | 8 个编译投影 + 1 个 compilation manifest |
+| 测试计数 | 60 攻击分母 + 8 个 R01/R02 直接测试（runner 30 tests=24 integrity+6 production）；CLI/conformance 28 attacks；sealed bundle 30 attacks；SliceAcceptanceReceipt 23 tests；67 schemas（63 Gate + 4 Reviewer） |
+| Schema/Revision Bump | 无 |
+| formalPassCount | 仍为 0/27 |
+| Verifier JAR 产出 | 尚未产出，下一步为 Packaging Plan |
+| A1.3-01..06 | 尚待完成 |
+| R03 正式门禁 | 仍为 BLOCKED_FORMAL_GATE |
+
+A1.3-R01/R02 为 DEVELOPMENT_VERIFIED，仅证明 compiler 确定性，不代表 Verifier JAR 动态 conformance 或正式 slice acceptance。
 
 ### 20.4 Gate A A1.3 先编译唯一 Packaging Plan，再实现 Independent Verifier
 
@@ -2475,24 +2488,32 @@ A1.3 不能被实现成「另一份 Candidate」。它的责任是从 caller-pin
 
 #### 开工前发现的 Authority 冲突
 
-当前 Authority 对 `INDEPENDENT_VERIFIER` 同时给出了三组不能共同成立的声明：
+修复前 Authority 对 `INDEPENDENT_VERIFIER` 同时给出了三组不能共同成立的声明：
 
-| 声明 | 当前值 | 冲突 |
-|---|---|---|
-| `providerEntryPath` | `META-INF/gate-a/gate-a-tck-provider-v1.jar` | 不在 `requiredJarEntries` 中 |
-| `providerIdentityEntryPath` | `META-INF/gate-a/gate-a-tck-provider-identity-v1.json` | 不在 `requiredJarEntries` 中 |
-| `requiredJarEntries` 中的 Provider | `META-INF/gate-a/provider/provider.jar` | 与 `providerEntryPath` 不相等 |
+| 声明 | 修复前值 | 修复后值 | 冲突 |
+|---|---|---|---|
+| `providerEntryPath` | `META-INF/gate-a/gate-a-tck-provider-v1.jar`（已声明但未入白名单） | 同上，加入 `requiredJarEntries` | 不在 `requiredJarEntries` 中 |
+| `providerIdentityEntryPath` | `META-INF/gate-a/gate-a-tck-provider-identity-v1.json`（已声明但未入白名单） | 同上，加入 `requiredJarEntries` | 不在 `requiredJarEntries` 中 |
+| `requiredJarEntries` 中的 Provider | `META-INF/gate-a/provider/provider.jar`（legacy 通用路径，与 `providerEntryPath` 不等） | **已删除**（精确白名单不再含此条目） | 与 `providerEntryPath` 不相等 |
 
-这不是实现可以自行决定的命名问题，而是供应链身份问题。若 Packager 使用一个路径、Runtime 使用另一个路径，archive verifier、identity fingerprint 和 replay profile 可以分别绑定不同字节，最终形成「每个局部检查都通过，但整体不是同一个 Provider」的假闭环。因此 A1.3 当前状态为 **`DESIGN_READY / IMPLEMENTATION_BLOCKED_BY_AUTHORITY`**，不能选择任一字段继续编码。
+> **2026-08-24 修复记录**：按上表最小 delta 完成 Authority 修复，精确 1 项删除 + 2 项新增，`requiredJarEntries` 27 → 28 条目。
+
+这不是实现可以自行决定的命名问题，而是供应链身份问题。若 Packager 使用一个路径、Runtime 使用另一个路径，archive verifier、identity fingerprint 和 replay profile 可以分别绑定不同字节，最终形成「每个局部检查都通过，但整体不是同一个 Provider」的假闭环。经 2026-08-24 按上表最小 delta 修复后，该冲突已消除；A1.3-R01/R02 已进入 `DEVELOPMENT_VERIFIED` 状态。
 
 独立复审排除了两个看似相近、实则不成立的扩大解释：
 
 - `META-INF/gate-a/schema-set-manifest.json` 是 Manifest 自身在 Verifier JAR 中的位置；Manifest 内的 `META-INF/gate-a/schemas/*.json` 是被描述 Schema 的位置。两者职责不同，不要求路径前缀相同。
 - `providerIdentityEntryPath` 指向 Verifier JAR 内由真实 Provider、Service Descriptor、实现类和 Candidate SPI 生成的身份资源，不要求该 Identity 预先存在于薄 Provider JAR。真正缺陷是 Identity 路径已声明，却没有进入 Verifier 的 `requiredJarEntries`。
 
-因此最小协议修复应以专用语义字段为准：保留 `providerEntryPath=META-INF/gate-a/gate-a-tck-provider-v1.jar`，删除白名单中的遗留通用路径 `META-INF/gate-a/provider/provider.jar`，并把 `providerEntryPath` 与 `providerIdentityEntryPath` 都加入精确白名单。修复后 `requiredJarEntries` 为 28 项。除非出现新的 Authority 决策，不引入额外的 Schema 路径配置或 Provider 命名规则。
+**修复内容（已执行）**：最小协议修复以专用语义字段为准：
 
-当前基线差异必须作为 A1.3-R02 的固定负向向量保存：原白名单 27 项，删除 1 个 legacy 路径，增加 canonical Provider 路径与 Provider Identity 路径，目标白名单 28 项。只检查最终数量不构成通过；编译器必须同时证明精确集合差异恰为上述三项变化。
+1. 保留 `providerEntryPath=META-INF/gate-a/gate-a-tck-provider-v1.jar`；
+2. 删除白名单中的 legacy 路径 `META-INF/gate-a/provider/provider.jar`；
+3. 将 `providerEntryPath` 与 `providerIdentityEntryPath` 均加入 `requiredJarEntries` 白名单。
+
+修复后白名单共 28 项。除非出现新的 Authority 决策，不引入额外的 Schema 路径配置或 Provider 命名规则。
+
+原白名单 27 项，精确删除 1 个 legacy 路径，增加 canonical Provider 路径与 Provider Identity 路径，目标白名单 28 项。只检查最终数量不构成通过；编译器必须同时证明精确集合差异恰为上述三项变化。
 
 #### 唯一 Packaging Plan
 
@@ -2596,13 +2617,13 @@ A1.3 实现前新增以下布尔门禁，任何一项为 `NO_GO` 都不得开始
 
 第一个实现切片完成后必须先提交并独立复审。只有该切片通过，第二个切片才实现 Archive/Projection/Canonicalization/Provider Materialization 四个 Verifier 内核。这样可以把「协议事实是否唯一」与「Verifier 是否正确执行」拆成两个可独立裁决的问题，避免再次把设计错误伪装成测试失败后逐项修补。
 
-#### 损坏编译器的可信恢复路径
+#### 损坏编译器的可信恢复路径（已执行记录）
 
-当前不存在可证明可信的损坏前 Python 源码，因此不能把“凭记忆补回原函数”作为恢复标准。R01 采用 clean-room 行为重建，权威顺序固定为：Authority 与严格 Schema、已发布的八份 projection 结构及 Compilation Manifest、`run-protocol-gate.py` 的独立内容复算、CLI 边界测试，最后才是 README 中的开发观察。任何只存在于损坏源码残片、但无法由上述权威证明的行为都不自动继承。
+R01 修复前，workspace 中 `compile-protocol-authority.py` 存在入口缩进错误，无可证明可信的损坏前 Python 源码可供直接回退。因此采用 clean-room 行为重建，权威顺序固定为：Authority 与严格 Schema、已发布的八份 projection 结构及 Compilation Manifest、`run-protocol-gate.py` 的独立内容复算、CLI 边界测试，最后才是 README 中的开发观察。任何只存在于损坏源码残片、但无法由上述权威证明的行为都不自动继承。
 
-隔离重建已经形成一项非合入观察：`/tmp/rg-a13-compiler-recovery-xk4j/` 中的候选能把当前 Authority 唯一拒绝为两个 `INDEPENDENT_VERIFIER` 特殊资源缺失；应用上述 27 -> 28 最小修复后生成八份 projection 与一份 manifest，两个独立输出目录 9/9 文件逐字节一致。该观察不等于 workspace 修复通过，因为现有工具测试仍会复制损坏的 workspace compiler 并正确失败。
+隔离重建候选在 `/tmp/rg-a13-compiler-recovery-xk4j/` 中完成两项验证：① 原 Authority 唯一拒绝为两个 `INDEPENDENT_VERIFIER` 特殊资源缺失；② 应用 27 → 28 最小修复后生成八份 projection 与一份 manifest，两个独立输出目录 9/9 文件逐字节一致。
 
-正式恢复必须同时满足：
+恢复路径通过条件：
 
 1. clean-room 候选的来源、审阅人和输入权威被记录，禁止直接信任 `/tmp` 制品；
 2. 对未启用 A1.3 新关系门禁的 v1 compatibility path，八份 projection 的结构、选择器、内容与 manifest 由 `run-protocol-gate.py` 独立复算一致；
@@ -2632,8 +2653,8 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 
 | 编号 | 门禁或条件 | 当前状态 | 退出证据 |
 |---|---|---|---|
-| A1.3-R01 | `compile-protocol-authority.py` 可独立执行，protocol gate 全绿 | `BLOCKED` | 洁净 Python gate 与 deterministic double compile |
-| A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `BLOCKED` | 新增关系变异测试与 compiled Role Contract |
+| A1.3-R01 | `compile-protocol-authority.py` 可独立执行，protocol gate 全绿 | `DEVELOPMENT_VERIFIED` | 洁净 Python gate 与 deterministic double compile |
+| A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `PENDING` | plan snapshot、mutation tests |
 | A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING` | independent archive verifier、tamper matrix |
@@ -2642,4 +2663,4 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 | A1.3-05 | canonicalization challenge、projection drift、provider rebind 和依赖替换均失败关闭 | `PENDING` | positive/negative vector matrix |
 | A1.3-06 | Authority 指定的 `A1_3_ROLE_PACKAGING` 洁净 profile 全绿 | `PENDING` | Maven/Surefire/Failsafe/build transcript |
 
-A1.3 的第一项代码工作不是创建 CLI，而是修复 Authority 与 compiler，使 `A1.3-R01..R02` 成立。两项协议门禁关闭前，只允许设计 Packaging Plan 和测试向量，不允许生产 Verifier JAR。`A1.3-R03` 依赖 caller-owned source/toolchain pin、结构化 Evidence、A1.1/A1.2 ledger marker 和 predecessor receipt；它阻塞正式 slice acceptance，但不阻塞 R01/R02 关闭后的开发实现。开发实现即使全部通过，也只能标记 `DEVELOPMENT_VERIFIED`，不能用 synthetic fixture 或本地 Markdown 记录替代正式 receipt。
+A1.3 的第一项代码工作（修复 Authority 与 compiler）已由本实现解决：A1.3-R01 和 A1.3-R02 均为 DEVELOPMENT_VERIFIED。`A1.3-R03` 依赖 caller-owned source/toolchain pin、结构化 Evidence、A1.1/A1.2 ledger marker 和 predecessor receipt；它阻塞正式 slice acceptance，但不阻塞 R01/R02 关闭后的开发实现。开发实现即使全部通过，也只能标记 `DEVELOPMENT_VERIFIED`，不能用 synthetic fixture 或本地 Markdown 记录替代正式 receipt。

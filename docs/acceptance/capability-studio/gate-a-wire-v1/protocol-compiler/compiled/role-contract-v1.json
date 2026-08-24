@@ -3,7 +3,7 @@
   "projectionId": "ROLE_CONTRACT",
   "authorityId": "GATE-A-PROTOCOL-AUTHORITY",
   "authorityRevision": 1,
-  "sourceRawFingerprint": "sha256:364f27f441d5c3b91dfa5d4ff2e13bcf4f10c170dbe0561c8301295e2145e156",
+  "sourceRawFingerprint": "sha256:d07a6e0cd64e264bf37409eb25537ea5fc8062b894f4a07c44fbea65252b20fa",
   "sourceSelectors": [
     {
       "key": null,
@@ -570,7 +570,8 @@
       "requiredJarEntries": [
         "META-INF/MANIFEST.MF",
         "com/leanowtech/bloge/gateway/gateverifier/GateAIndependentVerifierCli.class",
-        "META-INF/gate-a/provider/provider.jar",
+        "META-INF/gate-a/gate-a-tck-provider-v1.jar",
+        "META-INF/gate-a/gate-a-tck-provider-identity-v1.json",
         "META-INF/gate-a/schema-set-manifest.json",
         "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-verifier/pom.properties",
         "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",

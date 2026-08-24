@@ -1702,7 +1702,8 @@
       "requiredJarEntries": [
         "META-INF/MANIFEST.MF",
         "com/leanowtech/bloge/gateway/gateverifier/GateAIndependentVerifierCli.class",
-        "META-INF/gate-a/provider/provider.jar",
+        "META-INF/gate-a/gate-a-tck-provider-v1.jar",
+        "META-INF/gate-a/gate-a-tck-provider-identity-v1.json",
         "META-INF/gate-a/schema-set-manifest.json",
         "META-INF/maven/com.leanowtech.bloge/resource-gateway-gate-a-verifier/pom.properties",
         "META-INF/gate-a/protocol/protocol-compilation-manifest-v1.json",
