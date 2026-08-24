@@ -378,8 +378,16 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         expectPosLong(limits, "maxZipEntries", EXPECTED_MAX_ZIP_ENTRIES, "AUTHORITY_MAX_ZIP_ENTRIES_DRIFT");
         expectPosLong(limits, "maxSingleEntryBytes", EXPECTED_MAX_SINGLE_ENTRY_BYTES, "AUTHORITY_MAX_SINGLE_ENTRY_DRIFT");
         expectPosLong(limits, "maxTotalUncompressedBytes", EXPECTED_MAX_TOTAL_UNCOMPRESSED, "AUTHORITY_MAX_TOTAL_UNCOMPRESSED_DRIFT");
-        Number ratio = (Number) limits.get("maxCompressionRatio");
-        if (ratio == null || ratio.doubleValue() != EXPECTED_MAX_COMPRESSION_RATIO) {
+        Object ratioRaw = limits.get("maxCompressionRatio");
+        if (!(ratioRaw instanceof Number)) {
+            fail("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
+        }
+        Number ratio = (Number) ratioRaw;
+        double ratioVal = ratio.doubleValue();
+        if (Double.isNaN(ratioVal) || Double.isInfinite(ratioVal) || ratioVal <= 0) {
+            fail("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
+        }
+        if (ratioVal != EXPECTED_MAX_COMPRESSION_RATIO) {
             fail("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
         }
     }
@@ -409,6 +417,7 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
                 EXPECTED_CONTRACT_KIND, EXPECTED_RECEIPT_SCHEMA, EXPECTED_RECEIPT_DOMAIN,
                 new HashSet<>(EXPECTED_CAPABILITIES),
                 EXPECTED_MAX_RAW_BYTES, EXPECTED_MAX_ZIP_ENTRIES,
+                EXPECTED_MAX_SINGLE_ENTRY_BYTES, EXPECTED_MAX_TOTAL_UNCOMPRESSED, EXPECTED_MAX_COMPRESSION_RATIO,
                 new HashSet<>(EXPECTED_JAR_ENTRIES),
                 EXPECTED_PACKAGING_MODEL, EXPECTED_DEP_LOCK_MODE,
                 EXPECTED_SPI_INTERFACE, EXPECTED_SPI_DESCRIPTOR, EXPECTED_EMBEDDING_POLICY,
@@ -486,6 +495,9 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         private final Set<String> capabilities;
         private final long maxRawBytes;
         private final long maxZipEntries;
+        private final long maxSingleEntryBytes;
+        private final long maxTotalUncompressedBytes;
+        private final double maxCompressionRatio;
         private final Set<String> requiredJarEntries;
         private final String packagingModel;
         private final String dependencyLockManifestMode;
@@ -502,6 +514,7 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
                         String fixtureSetId, String stdoutMessageVersion, String stderrPolicy,
                         String contractKind, String receiptSchema, String receiptFingerprintDomain,
                         Set<String> capabilities, long maxRawBytes, long maxZipEntries,
+                        long maxSingleEntryBytes, long maxTotalUncompressedBytes, double maxCompressionRatio,
                         Set<String> requiredJarEntries, String packagingModel,
                         String dependencyLockManifestMode,
                         String spiInterfaceClass, String spiDescriptorEntryPath, String embeddingPolicy,
@@ -527,6 +540,9 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
             this.capabilities = Collections.unmodifiableSet(new HashSet<>(capabilities));
             this.maxRawBytes = maxRawBytes;
             this.maxZipEntries = maxZipEntries;
+            this.maxSingleEntryBytes = maxSingleEntryBytes;
+            this.maxTotalUncompressedBytes = maxTotalUncompressedBytes;
+            this.maxCompressionRatio = maxCompressionRatio;
             this.requiredJarEntries = Collections.unmodifiableSet(new HashSet<>(requiredJarEntries));
             this.packagingModel = packagingModel;
             this.dependencyLockManifestMode = dependencyLockManifestMode;
@@ -558,6 +574,9 @@ final class CapabilityStudioGateATckProviderRoleSelfTest {
         Set<String> capabilities() { return capabilities; }
         long maxRawBytes() { return maxRawBytes; }
         long maxZipEntries() { return maxZipEntries; }
+        long maxSingleEntryBytes() { return maxSingleEntryBytes; }
+        long maxTotalUncompressedBytes() { return maxTotalUncompressedBytes; }
+        double maxCompressionRatio() { return maxCompressionRatio; }
         Set<String> requiredJarEntries() { return requiredJarEntries; }
         String packagingModel() { return packagingModel; }
         String dependencyLockManifestMode() { return dependencyLockManifestMode; }

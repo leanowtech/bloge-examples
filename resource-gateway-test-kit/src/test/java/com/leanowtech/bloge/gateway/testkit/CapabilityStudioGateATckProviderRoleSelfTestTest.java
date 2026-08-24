@@ -57,6 +57,9 @@ class CapabilityStudioGateATckProviderRoleSelfTestTest {
         assertThat(contract.capabilities()).containsExactlyInAnyOrder(
                 "ROLE_SELF_TEST_RECEIPT", "THIN_SERVICE_PROVIDER", "PROVIDER_IDENTITY");
         assertThat(contract.maxRawBytes()).isEqualTo(16777216L);
+        assertThat(contract.maxSingleEntryBytes()).isEqualTo(8388608L);
+        assertThat(contract.maxTotalUncompressedBytes()).isEqualTo(67108864L);
+        assertThat(contract.maxCompressionRatio()).isEqualTo(100.0);
         assertThat(contract.requiredJarEntries()).hasSize(5);
         assertThat(contract.packagingModel()).isEqualTo("THIN_SERVICE_PROVIDER");
         assertThat(contract.dependencyLockManifestMode()).isEqualTo("PROVIDED_ABI_ONLY_NO_EMBEDDED_RUNTIME");
@@ -257,6 +260,80 @@ class CapabilityStudioGateATckProviderRoleSelfTestTest {
                 .hasMessageContaining("AUTHORITY_EMBEDDED_DEPS_EMPTY_DRIFT");
     }
 
+    // ── Artifact limits tests ─────────────────────────────────────────────
+
+    @Test
+    void projectAndValidate_rejectsMaxSingleEntryBytesDrift() {
+        byte[] modified = mutateArtifactLimitsField("maxSingleEntryBytes", 4194304);
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_SINGLE_ENTRY_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxSingleEntryBytesNull() {
+        byte[] modified = mutateArtifactLimitsFieldNull("maxSingleEntryBytes");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_SINGLE_ENTRY_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxSingleEntryBytesWrongType() {
+        byte[] modified = mutateArtifactLimitsField("maxSingleEntryBytes", "8388608");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_SINGLE_ENTRY_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxTotalUncompressedBytesDrift() {
+        byte[] modified = mutateArtifactLimitsField("maxTotalUncompressedBytes", 33554432);
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_TOTAL_UNCOMPRESSED_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxTotalUncompressedBytesNull() {
+        byte[] modified = mutateArtifactLimitsFieldNull("maxTotalUncompressedBytes");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_TOTAL_UNCOMPRESSED_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxTotalUncompressedBytesWrongType() {
+        byte[] modified = mutateArtifactLimitsField("maxTotalUncompressedBytes", "67108864");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_TOTAL_UNCOMPRESSED_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxCompressionRatioDrift() {
+        byte[] modified = mutateArtifactLimitsField("maxCompressionRatio", 50);
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxCompressionRatioNull() {
+        byte[] modified = mutateArtifactLimitsFieldNull("maxCompressionRatio");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
+    }
+
+    @Test
+    void projectAndValidate_rejectsMaxCompressionRatioWrongType() {
+        byte[] modified = mutateArtifactLimitsField("maxCompressionRatio", "100");
+        assertThatThrownBy(() -> CapabilityStudioGateATckProviderRoleSelfTest.projectAndValidate(modified))
+                .isInstanceOf(CapabilityStudioGateAException.class)
+                .hasMessageContaining("AUTHORITY_MAX_COMPRESSION_RATIO_DRIFT");
+    }
+
     // ── Release bundle domain tests ──────────────────────────────────────
 
     @Test
@@ -419,6 +496,20 @@ class CapabilityStudioGateATckProviderRoleSelfTestTest {
         Map<String, Object> packaging = (Map<String, Object>) tck.get("packagingContract");
         packaging.put(fieldName, newValue);
         return serializeToJson(authority);
+    }
+
+    @SuppressWarnings("unchecked")
+    private byte[] mutateArtifactLimitsField(String fieldName, Object newValue) {
+        Map<String, Object> authority = StrictJsonParser.parse(readTrackedAuthority());
+        Map<String, Object> tck = findTckRoleContract(authority);
+        Map<String, Object> limits = (Map<String, Object>) tck.get("artifactLimits");
+        limits.put(fieldName, newValue);
+        return serializeToJson(authority);
+    }
+
+    @SuppressWarnings("unchecked")
+    private byte[] mutateArtifactLimitsFieldNull(String fieldName) {
+        return mutateArtifactLimitsField(fieldName, null);
     }
 
     @SuppressWarnings("unchecked")
