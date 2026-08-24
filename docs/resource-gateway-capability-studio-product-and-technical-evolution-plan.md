@@ -2653,6 +2653,362 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 - TCK Provider 作为 material 被嵌入和验证，不在 Verifier 主进程中获得企业 Authority。A1.3 self-test 不调用 Provider accessor，也不把 A1.2 的 fail-closed accessor 当作正式能力。
 - Build Tool、Packager、Archive Verifier 与 Runtime CLI 使用分离的输出目录；构建工具类不得进入最终 JAR。最终 archive closure 由 Authority 生成的 plan 控制，禁止在 POM 中再维护一份手写 allowlist。
 
+##### Archive Kernel 设计冻结
+
+> 对应门禁：A1.3-02；状态：`PENDING`（不变）
+>
+> 本节是 A1.3 第一个内核的完整设计冻结，不实施 manifest closure（A1.3-03）也不实施 class flattening（A1.3-03）。两者的模糊引入是 2026-08-24 之前设计撤回的主因，本节以显式 defer 消除该风险。
+
+**纠正已有文档中的两处歧义：**
+
+- 门禁条件「五类限制」指 `artifactLimits` 的 5 个字段：`maxRawBytes`（16 MiB）、`maxZipEntries`（512）、`maxSingleEntryBytes`（8 MiB）、`maxTotalUncompressedBytes`（64 MiB）、`maxCompressionRatio`（100），不是五组独立业务限制。
+- A1.3-R03（`BLOCKED_FORMAL_GATE`）只阻塞 `FORMAL_PASS` slice acceptance，不阻塞用受控 fixture 对真实 embedded JAR bytes 做 `DEVELOPMENT_VERIFIED` fingerprint 验证。
+
+---
+
+**模块定义**
+
+| 属性 | 值 |
+|---|---|
+| 模块名 | `resource-gateway-gate-a-verifier` |
+| Maven artifact | `com.leanowtech.bloge:resource-gateway-gate-a-verifier:1.0.0` |
+| 父 POM | 无（standalone artifact） |
+| Maven profile | `gate-a-verifier`（激活：`mvn -Pgate-a-verifier ...`） |
+| 切片变量 | `-Dgate.a.slice=A1.3` |
+| JDK 要求 | JDK 25+；无 `--enable-preview` |
+| 运行时环境 | 独立子进程；无 Spring Boot；无 network socket；无工作区写入；无 Oracle 可见性 |
+
+**禁止依赖（含传递）**
+
+不得出现以下任一 artifact 的任意版本作为 compile-scope 或 runtime-scope 依赖。Enforcer plugin 在 `gate-a-verifier` profile 中强制执行：
+
+```xml
+<plugin>
+  <groupId>org.apache.maven.plugins</groupId>
+  <artifactId>maven-enforcer-plugin</artifactId>
+  <configuration>
+    <rules>
+      <bannedDependencies>
+        <excludes combine.children="append">
+        <excludes combine.children="append">
+          <exclude>com.leanowtech.bloge:bloge-resource-gateway-test-kit</exclude>
+          <exclude>com.leanowtech.bloge:resource-gateway-examples</exclude>
+          <exclude>com.leanowtech.bloge:bloge-resource-gateway-runtime</exclude>
+          <exclude>com.leanowtech.bloge:bloge-resource-gateway-harness</exclude>
+          <exclude>com.leanowtech.bloge:bloge-resource-gateway-admission</exclude>
+        </excludes>
+
+```
+
+构建 CI 另须在 `gate-a-verifier` profile 中执行 `dependency:tree -DincludeScope=compile` 并对输出做字符串扫描：
+
+```bash
+BANNED="$(BANNED="$(mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml dependency:tree -DincludeScope=compile 2>&1 | grep -E "bloge-resource-gateway-test-kit|resource-gateway-examples|bloge-resource-gateway-runtime|bloge-resource-gateway-harness|bloge-resource-gateway-admission" || true)"; if [ -n "$BANNED" ]; then printf "%s\n" "$BANNED"; exit 1; fi)"
+if [ -n "$BANNED" ]; then printf "%s\n" "$BANNED"; exit 1; fi
+```：
+```bash
+BANNED=$(mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml dependency:tree -DincludeScope=compile 2>&1 | grep -E "bloge-resource-gateway-test-kit|resource-gateway-examples|bloge-resource-gateway-runtime|bloge-resource-gateway-harness|bloge-resource-gateway-admission")
+if [ -n "$BANNED" ]; then echo "FORBIDDEN ARTIFACT: $BANNED"; exit 1; fi
+```
+
+---
+
+**输入 / 输出契约**
+
+| 方向 | 内容 |
+|---|---|
+| 输入 1 | Verifier JAR 文件路径（进程不主动建立网络连接） |
+| 输入 2 | A1.3-01 Packaging Plan JSON（A1.3-01 固定输出；content-address 由 Authority 锁定） |
+| 输出 | A1.3-02 ArchiveKernelSnapshot 内部固定 schema，字段由本节定义；不得运行时漂移。schema 字段列表见下表 |
+
+输出 JSON 固定字段：
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `entryCount` | integer | central directory 中 entry 总数 |
+| `entries[].name` | string | entry 原始名称（UTF-8 解码后） |
+| `entries[].sha256` | string（hex） | entry 原始字节 SHA-256 |
+| `entries[].crc32` | integer | entry 逐流复算 CRC-32 |
+| `entries[].uncompressedSize` | integer | entry 逐流复算 uncompressed size |
+| `entries[].compressedSize` | integer | central directory 中压缩大小 |
+| `entries[].compressionMethod` | integer | 0=STORED，8=DEFLATED；拒绝其他 |
+| `limits.rawBytes` | boolean | raw JAR bytes ≤ `maxRawBytes` |
+| `limits.zipEntries` | boolean | entry count ≤ `maxZipEntries` |
+| `limits.singleEntry` | boolean | 所有 entry uncompressed size ≤ `maxSingleEntryBytes` |
+| `limits.totalUncompressed` | boolean | size sum ≤ `maxTotalUncompressedBytes` |
+| `limits.compressionRatio` | boolean | 所有 entry ratio ≤ `maxCompressionRatio` |
+| `embeddedDependencies[].entryPath` | string | nested JAR 在 Verifier JAR 中的 entry path |
+| `embeddedDependencies[].rawFingerprint` | string（hex） | nested JAR raw bytes SHA-256 |
+| `embeddedDependencies[].lockId` | string | 对应 Packaging Plan 中的 lock identifier |
+| `embeddedDependencies[].bound` | boolean | rawFingerprint 与 plan.lockId 精确匹配 |
+| `rejected` | boolean | 出现任一拒绝条件时为 true |
+| `reasonCode` | string | 首个拒绝的 reason code；无拒绝时 absent |
+| `reasonArgs` | object | reason code 附带的结构化参数；无拒绝时 absent |
+
+---
+
+**ZIP 解析安全语义（完整枚举）**
+
+Archive Kernel 以流式 ZIP 解析器实现，以下为全部拒绝条件。
+
+**检查优先级（reason code 冲突时的选取顺序）**
+
+当多个条件同时触发时，按以下顺序报告最高优先级 reason code；实现可并行检查但必须以此为报告顺序：
+
+1. 结构层（目录/extra（含ZIP64）/加密/特殊文件/symlink/multi-release）
+2. 路径规范层（NUL/绝对/反斜杠/dot segment/NFC）
+3. 结构计数层（duplicate/path limit → missing → extra）
+4. 内容层（DD unverifiable/unknown compression/CRC mismatch/size mismatch）
+5. 限制层（5 个 artifactLimits 超限）
+6. plan binding 层（nested JAR count/SHA256 mismatch/plan mismatch）
+
+**结构层（优先级最高）**
+
+| 拒绝条件 | 判定依据 |
+|---|---|
+| 目录 entry | entry name 以 `/` 结尾 |
+| Extra field 存在 | local file header 或 central directory entry 含 `extra` field；ZIP64 extended field 属于 extra field，强制拒绝 |
+| 加密文件 | 任一 entry 的 General Purpose Flag 第 0 位（encryption）置位 |
+| Central directory external attributes 声明 symlink | external attribute 高 16 位 `0xA000`（Unix symlink type）或低 16 位含 `S_IFLNK` |
+| Central directory external attributes 声明 special file | 高 16 位非 `0x8000`（regular file）且非 `0xA000`（symlink）的 block/char/fifo/socket 类型 |
+| Multi-release JAR | ZIP 中存在 `META-INF/versions/` 目录 entry |
+
+**路径规范层**
+
+| 拒绝条件 | 判定依据 |
+|---|---|
+| NUL 字符 | entry name byte[] 含 `0x00` |
+| 绝对路径 | entry name UTF-8 解码后首字符为 `/` |
+| 反斜杠 | entry name UTF-8 解码后含 `\`（0x5C） |
+| `..` dot segment | UTF-8 解码后含 `/../` 或首部为 `..` |
+| `.` dot segment | UTF-8 解码后含 `/./` 或独立 entry name 为 `.` |
+| NFC 规范化差异 | entry name UTF-8 解码后，`String.equals(java.text.Normalizer.normalize(raw, java.text.Normalizer.Form.NFC))` 返回 false（即原值不是 NFC 形式） |
+
+> 注：Java `Path.of(name).normalize()` 是路径语义规范化（解析 `..` / `.`），不是 Unicode 规范化（NFC/NFD/NF*）。两者不得混用。
+
+**结构计数层（duplicate/limit 检查优先于 missing/extra）**
+
+| 拒绝条件 | 判定依据 |
+|---|---|
+| entry 重复 | 同一 entry name 在 central directory 中出现 ≥2 次 |
+| 非精确 28 项 | central directory entry 总数 ≠ 28 |
+| entry 缺失 | `requiredJarEntries`（28 项）中任一在 central directory 缺失 |
+| entry 多余 | central directory 中存在 `requiredJarEntries` 之外的文件 entry（目录 entry 已由结构层先排除） |
+
+**内容与压缩层**
+
+| 拒绝条件 | 判定依据 |
+|---|---|
+| 写入文件系统 | Kernel 不得调用 `Files.write`/`Files.copy`/`Files.createTempFile` 解压；所有数据在 `byte[]`/`ByteBuffer` 中处理；`Path.of` 可用于打开 RAF/InputStream，不受限 |
+| Data descriptor 且 central directory size/CRC 均为 0 | `flags` 第 3 位置位，且 central directory 中 `compressedSize==0 && CRC-32==0`；此时无法流式复算，拒绝 |
+| Data descriptor 且 central directory 提供非负完整 size/CRC | `flags` 第 3 位置位，但 central directory 中 `compressedSize>0 && CRC-32!=0`：逐流读取完整 entry 内容并复算 CRC/size；与 central directory 值一致时接受 |
+| Unknown compression method | `compressionMethod` 不为 0（STORED）且不为 8（DEFLATE） |
+| Multi-release JAR | 已由结构层覆盖 |
+
+**逐流有界读取语义**
+
+| 规则 | 说明 |
+|---|---|
+| 有界读取 | `ZipInputStream` 逐 entry 读取；不得在 entry 级别调用无界 `readAllBytes()` |
+| CRC 复算 | 每 entry 以 `CRC32.update(buf)` 逐块复算；与 central directory 声明值不符时报 `AK-CRC-MISMATCH` |
+| size 复算 | decompressed size 读取完成后与 central directory 声明值比对；不符时报 `AK-SIZE-MISMATCH` |
+| fingerprint | 每 entry 字节流以 SHA-256 计算并写入 snapshot |
+| `compressedSize == 0` 的 STORED | `compressionMethod==0 && compressedSize==0` 时 `uncompressedSize` 必须也为 0；SHA-256 对 0 字节数组计算 |
+| compression ratio 检查 | `ratio = uncompressedSize / max(1, compressedSize)`；ratio > `maxCompressionRatio` 时报 `AK-LIMIT-COMPRESSION-RATIO` |
+
+**七嵌套 JAR 绑定**
+
+Verifier JAR 内嵌 7 个 nested JAR，路径由 Packaging Plan 中 `embeddedDependencies[]` 数组声明。对每个 nested JAR：
+
+1. 在 Verifier JAR ZIP entry 列表中按 `entryPath` 定位该 entry；
+2. 提取其 raw bytes（不解压内容）；
+3. 计算 raw SHA-256；
+4. 在 Packaging Plan 中按 `lockId` 查找对应的 `rawFingerprint` 声明值；
+5. 逐字节比对；不符时报 `AK-NESTED-JAR-SHA256`，参数含 `entryPath`；
+6. Packaging Plan 中的 embedded dependencies 总数不为 7 时报 `AK-NESTED-JAR-COUNT`；
+7. Packaging Plan content-address 与 A1.3-01 已知值不符时报 `AK-PLAN-MISMATCH`。
+
+---
+
+**Stable Reason Codes（Archive Kernel 错误码）**
+
+| Code | 触发条件 | 附带的 reasonArgs 字段 |
+|---|---|---|
+| `AK-ENTRY-DIRECTORY` | entry name 以 `/` 结尾 | `{entryName}` |
+| `AK-EXTRA-FIELD` | local or central directory 含 extra field（含 ZIP64） | `{entryName}` |
+| `AK-ENCRYPTED` | encryption bit 置位 | `{entryName}` |
+| `AK-EXTERNAL-SYMLINK` | external attributes 声明 symlink | `{entryName}` |
+| `AK-EXTERNAL-SPECIAL` | external attributes 声明 special file | `{entryName}` |
+| `AK-MULTI-RELEASE` | 存在 `META-INF/versions/` 目录 | — |
+| `AK-PATH-NUL` | entry name 含 NUL byte | `{entryName}` |
+| `AK-PATH-ABSOLUTE` | entry name 首字符为 `/` | `{entryName}` |
+| `AK-PATH-BACKSLASH` | entry name 含 `\` | `{entryName}` |
+| `AK-PATH-DOT-SEGMENT` | entry name 含 `.` 或 `..` dot segment | `{entryName}` |
+| `AK-PATH-NFC-MISMATCH` | entry name UTF-8 解码后不是 NFC 形式 | `{entryName, decodedForm}` |
+| `AK-ENTRY-DUPLICATE` | 同一 entry name 出现 ≥2 次 | `{entryName, count}` |
+| `AK-ENTRY-COUNT-MISMATCH` | entry 总数 ≠ 28 | `{actualCount}` |
+| `AK-ENTRY-MISSING` | requiredJarEntries 中任一缺失 | `{entryName}` |
+| `AK-ENTRY-EXTRA` | central directory 有 requiredJarEntries 之外的文件 entry | `{entryName}` |
+| `AK-DD-UNVERIFIABLE` | data descriptor 且 central directory size/CRC 均为 0 | `{entryName}` |
+| `AK-UNKNOWN-COMPRESSION` | compression method 非 0 且非 8 | `{entryName, method}` |
+| `AK-CRC-MISMATCH` | 逐流复算 CRC 与 central directory 声明值不符 | `{entryName, expected, actual}` |
+| `AK-SIZE-MISMATCH` | 逐流复算 uncompressed size 与 central directory 声明值不符 | `{entryName, expected, actual}` |
+| `AK-LIMIT-RAW-BYTES` | raw JAR bytes > `maxRawBytes` | `{actual, limit}` |
+| `AK-LIMIT-ZIP-ENTRIES` | entry count > `maxZipEntries` | `{actual, limit}` |
+| `AK-LIMIT-SINGLE-ENTRY` | 任一 uncompressed size > `maxSingleEntryBytes` | `{entryName, actual, limit}` |
+| `AK-LIMIT-TOTAL-UNCOMPRESSED` | size sum > `maxTotalUncompressedBytes` | `{actual, limit}` |
+| `AK-LIMIT-COMPRESSION-RATIO` | ratio > `maxCompressionRatio` | `{entryName, ratio, limit}` |
+| `AK-NESTED-JAR-COUNT` | embedded dependencies 总数 ≠ 7 | `{actual}` |
+| `AK-NESTED-JAR-SHA256` | nested JAR raw SHA-256 与 plan lockId 绑定值不符 | `{entryPath, expected, actual}` |
+| `AK-PLAN-MISMATCH` | Packaging Plan content-address 与已知 A1.3-01 值不符 | `{expectedPlanHash, actual}` |
+
+---
+
+**正向 Fixture（positive vectors）**
+
+Archive Kernel 必须对以下合法 Verifier JAR 全部通过：
+
+| ID | 描述 | 关键通过条件 |
+|---|---|---|
+| PF-01 | 标准编译 Verifier JAR；28 项精确匹配 requiredJarEntries；路径仅含 `A-Z a-z 0-9 _ - . /` | exact closure；无拒绝 |
+| PF-02 | 所有 entry 使用 DEFLATE；CRC/size 一致 | CRC/size 复算一致 |
+| PF-03 | 所有 entry 使用 STORED；compressedSize == uncompressedSize | 比例规则通过 |
+| PF-04 | 7 个 nested JAR raw SHA-256 与 Packaging Plan embeddedDependencies[].rawFingerprint 精确一致 | 7 个 bound==true |
+| PF-05 | JAR raw bytes 恰好 `maxRawBytes - 1` | rawBytes limit true |
+| PF-06 | 单 entry uncompressed size 恰好 `maxSingleEntryBytes - 1` | singleEntry limit true |
+| PF-07 | 7 个 nested JAR entry name 均以 `META-INF/gate-a/` 开头且无 dot segment | 路径检查全通过 |
+| PF-08 | 存在 MANIFEST.MF；无 multi-release | 结构层检查全通过 |
+| PF-09 | entry name 为 NFC 形式的 Unicode 字符（Latin-1 范围） | NFC 检查通过 |
+| PF-10 | entry name 含 JAR 合法字符集且无任何违规路径模式 | 路径规范层全通过 |
+
+---
+
+**Tamper Matrix（25 项固定分母）**
+
+| ID | 目标 | 篡改 | 期望 reason code | 优先级 |
+|---|---|---|---|---|
+| TM-01 | 任意 entry | 从 central directory 删除 | `AK-ENTRY-MISSING` | 3 |
+| TM-02 | 任意 entry | 追加相同 entry name（总数 29） | `AK-ENTRY-DUPLICATE` | 3 |
+| TM-03 | 任意 entry | entry name 注入 `\0` | `AK-PATH-NUL` | 2 |
+| TM-04 | 任意 entry | entry name 改为 `/META-INF/xxx` | `AK-PATH-ABSOLUTE` | 2 |
+| TM-05 | 任意 entry | entry name 含 `\`（反斜杠） | `AK-PATH-BACKSLASH` | 2 |
+| TM-06 | 任意 entry | entry name 含 `/../` 或首部 `..` | `AK-PATH-DOT-SEGMENT` | 2 |
+| TM-07 | 任意 entry | entry name 含 `/./` | `AK-PATH-DOT-SEGMENT` | 2 |
+| TM-08 | 任意 entry | entry name 含 extra field | `AK-EXTRA-FIELD` | 1 |
+| TM-09 | 任意 entry | entry name 以 `/` 结尾 | `AK-ENTRY-DIRECTORY` | 1 |
+| TM-10 | ZIP 全局 | encryption bit 置位 | `AK-ENCRYPTED` | 1 |
+| TM-11 | DEFLATE entry | data descriptor 置位且 central directory size/CRC=0 | `AK-DD-UNVERIFIABLE` | 4 |
+| TM-12 | 任意 entry | compression method=99（未知） | `AK-UNKNOWN-COMPRESSION` | 4 |
+| TM-13 | ZIP entry | 注入 `META-INF/versions/9/test.class` | `AK-MULTI-RELEASE` | 1 |
+| TM-14 | 任意 entry | external attributes 高 16 位 `0xA000`（symlink） | `AK-EXTERNAL-SYMLINK` | 1 |
+| TM-15 | 任意 entry | external attributes 高 16 位 `0x6000`（block） | `AK-EXEC` | 1 |
+| TM-16 | 任意 entry | 解压后篡改内容导致 CRC 变化 | `AK-CRC-MISMATCH` | 4 |
+| TM-17 | 任意 entry | central directory uncompressedSize 声明值与实际值+1 | `AK-SIZE-MISMATCH` | 4 |
+| TM-18 | JAR 全局 | raw bytes 总大小 `maxRawBytes + 1` | `AK-LIMIT-RAW-BYTES` | 5 |
+| TM-19 | JAR 全局 | 追加第 29 个 entry（总数 29） | `AK-ENTRY-COUNT-MISMATCH` | 3 |
+| TM-20 | nested JAR entry | 替换 nested JAR raw bytes 为其他 JAR bytes | `AK-NESTED-JAR-SHA256` | 6 |
+| TM-21 | Packaging Plan | embeddedDependencies[].lockId 的 rawFingerprint 差 1 bit | `AK-NESTED-JAR-SHA256` | 6 |
+| TM-22 | nested JAR entry | 从 ZIP 中移除 1 个 nested JAR（总数 6） | `AK-NESTED-JAR-COUNT` | 6 |
+| TM-23 | STORED entry | `compressedSize==0 && uncompressedSize!=0` | `AK-SIZE-MISMATCH` | 4 |
+| TM-24 | nested JAR entry | 7 个 nested JAR 中 1 个 SHA-256 与 plan 差 1 bit | `AK-NESTED-JAR-SHA256` | 6 |
+| TM-25 | 任意 entry | uncompressed size 超过 `maxSingleEntryBytes + 1` | `AK-LIMIT-SINGLE-ENTRY` | 5 |
+
+超出 25 项固定分母的补充负向用例（CI 覆盖但不计入门禁分母）：
+
+| ID | 描述 | 期望 reason code |
+|---|---|---|
+| TM-26 | entry name 为 NFD 形式（如 U+0065 U+0301 = 0x65 0xCC 0x81 序列）而非 NFC | `AK-PATH-NFC-MISMATCH` |
+| TM-27 | extra field 中含 ZIP64 extended field | `AK-EXTRA-FIELD`（优先级 1） |
+| TM-28 | extra field 含非 ZIP64 自定义 extra field | `AK-EXTRA-FIELD` |
+| TM-29 | 7 个 nested JAR 的 plan lockId 全部错误 | `AK-NESTED-JAR-SHA256`（×7） |
+
+---
+
+**分支覆盖清单（25 项固定分母对应的独立判定分支）**
+
+完成定义要求以下每个分支至少有一个独立测试用例覆盖：
+
+| 分支编号 | 描述 |
+|---|---|
+| B01 | ZIP 解析器遇到目录 entry → 拒绝 |
+| B02 | ZIP 解析器遇到含 extra field（含 ZIP64）→ 拒绝 |
+| B03 | ZIP 解析器遇到 encryption bit → 拒绝 |
+| B04 | ZIP 解析器遇到 symlink external attr → 拒绝 |
+| B05 | ZIP 解析器遇到 special file external attr → 拒绝 |
+| B06 | ZIP 解析器遇到 multi-release 目录 → 拒绝 |
+| B07 | 路径检查遇到 NUL byte → 拒绝 |
+| B08 | 路径检查遇到绝对路径 → 拒绝 |
+| B09 | 路径检查遇到反斜杠 → 拒绝 |
+| B10 | 路径检查遇到 dot segment → 拒绝 |
+| B11 | 路径检查遇到非 NFC 形式 → 拒绝 |
+| B12 | 计数检查遇到 duplicate entry → 拒绝 |
+| B13 | 计数检查发现总数≠28 → 拒绝 |
+| B14 | 计数检查发现 missing entry → 拒绝 |
+| B15 | 计数检查发现 extra entry → 拒绝 |
+| B16 | data descriptor 且 central dir size/CRC 均为 0 → 拒绝 |
+| B17 | 遇到 unknown compression method → 拒绝 |
+| B18 | 逐流 CRC 复算不符 → 拒绝 |
+| B19 | 逐流 size 复算不符 → 拒绝 |
+| B20 | raw bytes 超过 maxRawBytes → 拒绝 |
+| B21 | 单 entry size 超过 maxSingleEntryBytes → 拒绝 |
+| B22 | total uncompressed 超过 maxTotalUncompressedBytes → 拒绝 |
+| B23 | compression ratio 超过 maxCompressionRatio → 拒绝 |
+| B24 | nested JAR SHA-256 与 plan 不符 → 拒绝 |
+| B25 | Packaging Plan content-address 不符 → 拒绝 |
+
+---
+
+**Manifest Closure 和 Class Flattening 的显式 Defer**
+
+Archive Kernel **不解析** JAR `META-INF/MANIFEST.MF` 的 `Class-Path`、`Import-Package`、`Export-Package` 或任何 OSGi 头。Manifest closure 验证属于 A1.3-03 范围，class flattening 属于 A1.3-03 范围，两者均不得在 Archive Kernel 中引入。
+
+---
+
+**精确 Maven 命令（proposed；pom 不存在，仅供任务拆分参考）**
+
+```bash
+# gate-a-verifier profile 激活 + 切片变量
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml compile
+
+# 运行 Enforcer bannedDependencies（CI gate）
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml enforcer:enforce
+
+# 依赖树扫描（检测违禁 artifact 传递进入）
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml dependency:tree -DincludeScope=compile 2>&1 | grep -E "bloge-resource-gateway-test-kit|resource-gateway-examples|bloge-resource-gateway-runtime|bloge-resource-gateway-harness|bloge-resource-gateway-admission" || true
+
+# 单元测试（T1/T2/T3 各自 test class）
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml test
+
+# 独立 JAR 构建
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml clean verify
+```
+
+---
+
+**文件责任任务（存在依赖顺序；T1 最先完成；T2 与 T3 在 T1 完成后并行，互相无依赖）**
+
+| 任务 | 责任人（proposed） | 产出文件 | 验收标准 |
+|---|---|---|---|
+| T1：ZIP 流解析器与逐流校验（T2/T3 的基础） | （待指派） | `ZipArchiveVerifier.java`（主类）、`ZipEntry.java`（记录类型）、`StreamHasher.java`（CRC+SHA-256 逐块） | B01~B06、B16~B19 全绿；无 `Files.write`/`Files.copy`/`Files.createTempFile` 调用；T2/T3 依赖 T1 的 `ZipEntry` 记录类型；T1 维护模块根 `pom.xml`（含 gate-a-verifier profile 和 Enforcer 配置） |
+| T2：路径规范验证（T1 完成后可独立开发） | （待指派） | `PathValidator.java`（UTF-8 解码 + NFC 检查 + 路径规范检查）、`PathCheckResult.java` | B07~B11/B13~B15 全绿；reason code 优先级符合定义；T2 与 T1 通过 `ZipEntry` 记录类型耦合，不与 T3 耦合 |
+| T3：ArtifactLimits 校验与 nested JAR 绑定（T1完成后与T2并行） | （待指派） | `ArtifactLimitsChecker.java`、`NestedJarBinder.java`（使用 Packaging Plan 的 embeddedDependencies[] 字段）、`ArchiveKernelSnapshot.java`（输出序列化）、`PlanBindingResult.java` | B12/B20~B25 全绿；PF-04 依赖 T1 的 StreamHasher；T3 对 T1 维护的 pom.xml 有读权限，pom 变更须 T1 确认不影响 ZIP 解析器核心 |
+
+> T3 对 T1 有 pom/build 所有权依赖：`artifactId: resource-gateway-gate-a-verifier` 的根 `pom.xml` 由 T1 责任人维护；T2/T3 提交 PR 须经 T1 确认 pom 变更不影响 ZIP 解析器核心逻辑。三个任务的测试代码可并行开发，但 pom 合并须在 T1 之后。
+
+---
+
+**完成定义**
+
+当且仅当以下全部满足时，A1.3-02 可由 `PENDING` 进入 `DEVELOPMENT_VERIFIED`：
+
+1. `com.leanowtech.bloge:resource-gateway-gate-a-verifier:1.0.0` 的 `mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 clean verify` 成功，且 Enforcer bannedDependencies 通过、dependency:tree 无违禁 artifact 报告；
+2. T1/T2/T3 三个任务的 pom/build 合并完成；
+3. B01~B25 每个分支至少有一个测试用例覆盖（按分支覆盖清单逐项确认）；
+4. PF-01~PF-10 全部通过；
+5. TM-01~TM-25 全部失败（拒绝条件全部成立）且 reason code 与 reason codes 表精确匹配；
+6. Archive Kernel 对同一个 Verifier JAR 连续 3 次运行输出逐字节相同的 snapshot JSON；
+7. A1.3-R03 的 `DEVELOPMENT_VERIFIED` fingerprint 验证（在 `BLOCKED_FORMAL_GATE` 状态下仍可执行；正式 receipt 依赖 A1.2 ledger，不等待）。
+
 #### A1.3 开工门禁与完成条件
 
 | 编号 | 门禁或条件 | 当前状态 | 退出证据 |
