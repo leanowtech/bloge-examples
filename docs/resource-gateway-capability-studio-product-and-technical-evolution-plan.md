@@ -2371,6 +2371,13 @@ A1.3 不能被实现成「另一份 Candidate」。它的责任是从 caller-pin
 
 这不是实现可以自行决定的命名问题，而是供应链身份问题。若 Packager 使用一个路径、Runtime 使用另一个路径，archive verifier、identity fingerprint 和 replay profile 可以分别绑定不同字节，最终形成「每个局部检查都通过，但整体不是同一个 Provider」的假闭环。因此 A1.3 当前状态为 **`DESIGN_READY / IMPLEMENTATION_BLOCKED_BY_AUTHORITY`**，不能选择任一字段继续编码。
 
+独立复审排除了两个看似相近、实则不成立的扩大解释：
+
+- `META-INF/gate-a/schema-set-manifest.json` 是 Manifest 自身在 Verifier JAR 中的位置；Manifest 内的 `META-INF/gate-a/schemas/*.json` 是被描述 Schema 的位置。两者职责不同，不要求路径前缀相同。
+- `providerIdentityEntryPath` 指向 Verifier JAR 内由真实 Provider、Service Descriptor、实现类和 Candidate SPI 生成的身份资源，不要求该 Identity 预先存在于薄 Provider JAR。真正缺陷是 Identity 路径已声明，却没有进入 Verifier 的 `requiredJarEntries`。
+
+因此最小协议修复应以专用语义字段为准：保留 `providerEntryPath=META-INF/gate-a/gate-a-tck-provider-v1.jar`，删除白名单中的遗留通用路径 `META-INF/gate-a/provider/provider.jar`，并把 `providerEntryPath` 与 `providerIdentityEntryPath` 都加入精确白名单。修复后 `requiredJarEntries` 为 28 项。除非出现新的 Authority 决策，不引入额外的 Schema 路径配置或 Provider 命名规则。
+
 #### 唯一 Packaging Plan
 
 恢复协议编译器后，必须新增一个纯编译步骤，把 Role Contract、顶层 Dependency Authority 和 Protocol Compilation Manifest 归一为以下闭集：
@@ -2400,6 +2407,7 @@ Authority raw bytes
 4. 七个 runtime dependency 只能由顶层 `dependencyAuthority.lockId` 投影得到 GAV、文件名和 raw fingerprint。POM 只负责解析制品，不能成为第二个版本事实源。
 5. 七份协议投影和 Compilation Manifest 必须来自修复后的 compiler 当前输出，并逐字节回绑 Authority raw fingerprint 与 `sourceSelectors`；禁止复制旧 `compiled/` 文件后手工改名。
 6. Packaging Plan 自身使用 domain-separated aggregate commitment；Packager、Archive Verifier 和 Role Self-test 分别独立复算同一 plan，任何一方不能生成并验证自己的替代事实。
+7. 对每个非空的 `profilePath`、`registryPath`、`providerEntryPath`、`providerIdentityEntryPath`、`compilationManifestEntryPath`、`canonicalizationProfileEntryPath` 和 `packagedProjections[*].entryPath`，compiler 必须证明其在 `requiredJarEntries` 中恰好出现一次；反向不存在无人声明的特殊资源。
 
 #### Verifier 的四个独立内核
 
@@ -2425,7 +2433,7 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 |---|---|---|---|
 | A1.3-R01 | `compile-protocol-authority.py` 可独立执行，protocol gate 全绿 | `BLOCKED` | 洁净 Python gate 与 deterministic double compile |
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `BLOCKED` | 新增关系变异测试与 compiled Role Contract |
-| A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
+| A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `PENDING` | plan snapshot、mutation tests |
 | A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING` | independent archive verifier、tamper matrix |
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
@@ -2433,4 +2441,4 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 | A1.3-05 | canonicalization challenge、projection drift、provider rebind 和依赖替换均失败关闭 | `PENDING` | positive/negative vector matrix |
 | A1.3-06 | Authority 指定的 `A1_3_ROLE_PACKAGING` 洁净 profile 全绿 | `PENDING` | Maven/Surefire/Failsafe/build transcript |
 
-A1.3 的第一项代码工作不是创建 CLI，而是修复 Authority 与 compiler，使 `A1.3-R01..R03` 成立。三项 Ready 门禁关闭前，只允许设计 Packaging Plan 和测试向量，不允许生产 Verifier JAR，也不能把 synthetic fixture 标记为 `DEVELOPMENT_VERIFIED`。
+A1.3 的第一项代码工作不是创建 CLI，而是修复 Authority 与 compiler，使 `A1.3-R01..R02` 成立。两项协议门禁关闭前，只允许设计 Packaging Plan 和测试向量，不允许生产 Verifier JAR。`A1.3-R03` 依赖 caller-owned source/toolchain pin、结构化 Evidence、A1.1/A1.2 ledger marker 和 predecessor receipt；它阻塞正式 slice acceptance，但不阻塞 R01/R02 关闭后的开发实现。开发实现即使全部通过，也只能标记 `DEVELOPMENT_VERIFIED`，不能用 synthetic fixture 或本地 Markdown 记录替代正式 receipt。
