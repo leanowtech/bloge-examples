@@ -2458,14 +2458,18 @@ strict CLI args
 |---|---|
 | Authority 变更 | 精确 1 项删除 + 2 项新增（27 → 28 条目） |
 | 投影/Manifest | 8 个编译投影 + 1 个 compilation manifest |
-| 测试计数 | 60 攻击分母 + 8 个 R01/R02 直接测试（runner 30 tests=24 integrity+6 production）；CLI/conformance 28 attacks；sealed bundle 30 attacks；SliceAcceptanceReceipt 23 tests；67 schemas（63 Gate + 4 Reviewer） |
+| 测试计数 | 60 攻击分母 + 8 个 R01/R02 直接测试（runner 30 tests=24 integrity+6 production）；CLI/conformance 28 attacks；sealed bundle 30 attacks；SliceAcceptanceReceipt 23 attacks；67 schemas（63 Gate + 4 Reviewer） |
 | Schema/Revision Bump | 无 |
 | formalPassCount | 仍为 0/27 |
-| Verifier JAR 产出 | 尚未产出，下一步为 Packaging Plan |
-| A1.3-01..06 | 尚待完成 |
+| A1.3-01 门禁状态 | DEVELOPMENT_VERIFIED |
+| A1.3-02..06 门禁状态 | PENDING |
+| Verifier JAR 产出 | 尚未产出 |
+| A1.3-R03 状态 | BLOCKED_FORMAL_GATE |
+| A1.3-01 | DEVELOPMENT_VERIFIED（89/89 tests passed，deterministic plan bytes + content-addressed publication receipt + mutation tests） |
+| A1.3-02..06 | PENDING（A1.3-R03 BLOCKED_FORMAL_GATE 阻塞） |
 | R03 正式门禁 | 仍为 BLOCKED_FORMAL_GATE |
 
-A1.3-R01/R02 为 DEVELOPMENT_VERIFIED，仅证明 compiler 确定性，不代表 Verifier JAR 动态 conformance 或正式 slice acceptance。
+A1.3-R01/R02 与 A1.3-01 均为 DEVELOPMENT_VERIFIED，仅证明 compiler 确定性、Packaging Plan 编译步骤和 89 项突变分母，不证明 Verifier JAR 动态 conformance、A1.4 candidate-path TCK、A1.5 formal replay result、A1.6 trust-plane negative TCK，也不参与 A2 admission 或 formalPassCount 计数。
 
 ### 20.4 Gate A A1.3 先编译唯一 Packaging Plan，再实现 Independent Verifier
 
@@ -2656,7 +2660,7 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 | A1.3-R01 | `compile-protocol-authority.py` 可独立执行，protocol gate 全绿 | `DEVELOPMENT_VERIFIED` | 洁净 Python gate 与 deterministic double compile |
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
-| A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `PENDING` | plan snapshot、mutation tests |
+| A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `DEVELOPMENT_VERIFIED` | 89/89 tests passed、deterministic plan bytes、content-addressed publication receipt、mutation tests |
 | A1.3-02 | Verifier JAR 满足 exact closure、五类限制和七依赖 rebind | `PENDING` | independent archive verifier、tamper matrix |
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
 | A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |

@@ -51,7 +51,7 @@ uv run --with jsonschema python \
 
 - 60 个带唯一名称和预期关系码的关系不变量变异全部被拒绝：38 个 RELATION 攻击、2 个 TRUST_PROJECTION 关系攻击、19 个 BOUNDARY 攻击（dependency/hermetic/slice/path/JSON），以及 1 个 ACTIVE_WITH_NULL_PINS 状态攻击。运行输出逐项打印 `mutation -> rejection code` 映射，证明不依赖宽泛 Schema 偶然失败。
 - 63 个 Gate Schema 与 4 个 Reviewer Schema（合计 67）全集完成 duplicate-member、NaN/Infinity、Draft 2020-12、唯一 `$id`、实际文件系统 closed-set 和 `$ref` Registry 闭包检查。
-- 8 个 R01/R02 直接测试（runner 共计 30 tests = 24 integrity + 6 production），CLI/conformance 28 attacks，sealed bundle 30 attacks，SliceAcceptanceReceipt 23 tests，67 个 schemas（63 Gate + 4 Reviewer）。
+- 8 个 R01/R02 直接测试（runner 共计 30 tests = 24 integrity + 6 production），CLI/conformance 28 attacks，sealed bundle 30 attacks，SliceAcceptanceReceipt 23 attacks，67 个 schemas（63 Gate + 4 Reviewer）。
 - 两个独立临时目录连续编译逐字节一致，并逐份按 `sourceSelectors` 回绑 Authority。
 - Python compiler 与历史 MJS 的关系语义保持等价，覆盖 role/coordinate/command/main class/profile/registry/projection/manifest/required entry/fixture-oracle/limits、launch/replay/phase/material/canonicalization/authorityRelations、delivery slice topology/module/path/artifact/handoff/A1 order/input/A2 exclusion、Gate/Reviewer schema filesystem closed set，以及 dependency authority/provided ABI/hermetic/slice receipt/raw path/strict JSON checks。
 
@@ -71,7 +71,49 @@ uv run --with jsonschema python \
 
 `A1.3-R03`（caller-owned predecessor receipt 绑定当前 Provider raw bytes）**仍为 BLOCKED_FORMAL_GATE**，依赖结构化 Evidence、ledger marker 和正式 SliceAcceptanceReceipt，不得以本地 Markdown 记录替代。
 
-A1.3-01..06（Packaging Plan、Verifier exact closure、内核解耦、Java self-test、fail-closed positive/negative matrix、Authority profile 全绿）**尚待完成**。A1.3 的 Verifier JAR 尚未产出；下一步为 Packaging Plan 设计与评审。
+`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的固定分母突变测试固证（当前代码验收值为 89，由 `EXACT_TEST_COUNT` 常量约束；分母调整需同步更新该常量并重新运行全量门禁验证）。`A1.3-02`（Verifier exact closure）、`A1.3-03`（内核解耦）、`A1.3-04`（Java self-test）、`A1.3-05`（fail-closed positive/negative matrix）、`A1.3-06`（Authority profile 全绿）**仍为 PENDING**，被 `A1.3-R03`（BLOCKED_FORMAL_GATE）正式阻塞。`formalPassCount` 仍为 `0/27`，A1.3 的 Verifier JAR 尚未产出。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
+
+### A1.3-01 Packaging Plan 数据流
+
+```
+Authority raw bytes
+  -> LinkedProtocolModel         # 严格 JSON + 语义关联验证，绑定 authority_fingerprint；是 Packaging Plan 的唯一类型化中间模型
+  -> IndependentVerifierPackagingPlan   # 纯编译输出，不加载任何 JAR class；exactArchiveEntries（28 项）、七份协议投影引用、providerIdentityRecipe
+  -> PublicationReceipt          # content-addressed receipt，planFingerprint + authorityFingerprint 双绑定
+```
+
+- `LinkedProtocolModel`：Authority 经严格 JSON + 语义关联验证后产生，不重新读取 Authority，是 Packaging Plan 的唯一类型化中间模型。
+- `IndependentVerifierPackagingPlan`：纯编译输出，不加载任何 JAR class，包含七份协议投影引用、`providerIdentityRecipe`（类型化 `resourceId` 引用，不含自由路径字符串）。
+- `PublicationReceipt`：domain 为 `RG-CS-GATE-A-INDEPENDENT-VERIFIER-PACKAGING-RECEIPT-v1`；`receiptFingerprint` 仅排除自身，其余 6 字段（`schemaVersion`、`authorityFingerprint`、`planRawFingerprint`、`commitment`、`exactInventory`、`publicationRoot`）参与哈希计算；`publicationRoot` 与 receipt 实际路径须逐路径分量一致。
+
+### CLI 用法
+
+```bash
+uv run --with jsonschema python \
+  docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/compile-protocol-authority.py \
+  --output-root <compiled-projections-dir> \
+  --publish-packaging-plan-root <publication-root> \
+  [--authority <authority-path>]
+```
+
+`--output-root` 指定编译投影输出目录（8 个投影文件 + 1 个 compilation manifest）。`--publish-packaging-plan-root` 指定内容寻址出版根目录。receipt 写入 `<publication-root>/<plan_fp_hex[:2]>/<plan_fp_hex[2:4]>/<plan_fp_hex>/publication-receipt-v1.json`；plan 写入同一 `<plan_fp_hex>` 目录的 `independent-verifier-packaging-plan-v1.json`。布局格式为 `aa/bb/<完整64位sha256 hex>/`（前 4 位 hex 分层），实现 content-addressed 寻址。出版根可容纳多个内容寻址发布，同一计划幂等写入，不要求为空目录。
+
+### 回执边界
+
+Receipt 不自引用：`receiptFingerprint` 仅排除自身字段，其余 6 字段参与哈希计算。`publicationRoot` 字段值须与 receipt 实际写入路径一致（逐路径分量字面验证，禁止 resolve 符号链接），lstat + O_NOFOLLOW 检查贯穿所有路径边界。
+
+### 默认编译规模
+
+Authority 当前固定投影 8 个 + Compilation Manifest 1 个，合计 9 个文件。`requiredJarEntries` 共 28 项。顶层 `dependencyAuthority` 固定 8 个依赖，其中 INDEPENDENT_VERIFIER 的 `runtimeDependencyLockIds` 精确引用其中 7 个。
+
+### 门禁命令与结果
+
+```bash
+uv run --with jsonschema python \
+  docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-protocol-gate.py --check
+```
+
+该命令执行全部门禁：Authority fingerprint 校验、双编译逐字节一致、Schema 闭包（63 Gate + 4 Reviewer）、Packaging Plan 突变测试（当前代码验收固定分母 89）、sealed bundle 30 attacks、CLI/conformance 28 attacks、SliceAcceptanceReceipt 23 attacks。Packaging Plan 测试输出末端为 `89/89 tests passed`；`run-protocol-gate.py` 最终输出为 `Gate A Protocol Authority ... PASS`（deterministic plan bytes + content-addressed publication receipt + mutation tests）。
 
 ## 权限边界
 

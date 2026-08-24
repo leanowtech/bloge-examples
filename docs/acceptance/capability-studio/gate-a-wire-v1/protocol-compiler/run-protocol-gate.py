@@ -240,6 +240,12 @@ with tempfile.TemporaryDirectory(prefix="gate-a-protocol-first-") as first_raw, 
     verify_outputs(second, authority)
 
 if arguments.check:
+    # A1.3-01: IndependentVerifierPackagingPlan tests
+    packaging_plan_test = HERE / "test-packaging-plan.py"
+    result = subprocess.run([sys.executable, str(packaging_plan_test)], cwd=REPO)
+    if result.returncode != 0:
+        raise SystemExit("PACKAGING_PLAN_TESTS_FAILED")
+    # Existing gates
     tooling_test = HERE / "test-protocol-tooling.py"
     subprocess.run([sys.executable, str(tooling_test)], cwd=REPO, check=True)
     cli_boundary_test = HERE / "test-protocol-cli-boundaries.py"
