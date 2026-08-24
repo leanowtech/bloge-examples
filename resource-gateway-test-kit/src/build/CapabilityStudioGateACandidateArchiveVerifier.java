@@ -88,9 +88,11 @@ public final class CapabilityStudioGateACandidateArchiveVerifier {
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException"
     );
 
-    // StageAcceptanceAuthorityProvider – outer only, no inner classes permitted
+    // StageAcceptanceAuthorityProvider/Verifier – outer + any depth $ closure allowed
     private static final String PROVIDER_OUTER =
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider";
+    private static final String VERIFIER_OUTER =
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityVerifier";
 
     // Explicitly forbidden class patterns (outer + any inner)
     private static final String FORBIDDEN_OUTER_PREFIX =
@@ -559,13 +561,12 @@ public final class CapabilityStudioGateACandidateArchiveVerifier {
         for (String name : classEntries) {
             String pathNoExt = name.substring(0, name.length() - 6);
 
-            // StageAcceptanceAuthorityProvider – outer only, no inner classes
-            if (pathNoExt.equals(PROVIDER_OUTER)) {
-                continue;
-            }
-            if (pathNoExt.startsWith(PROVIDER_OUTER + "$")) {
-                errors.add("CLASS_FORBIDDEN_PROVIDER_INNER:" + name);
-                ok = false;
+            // StageAcceptanceAuthorityProvider/Verifier – outer + any depth $ closure allowed
+            boolean isProviderOrVerifier = pathNoExt.equals(PROVIDER_OUTER)
+                    || pathNoExt.equals(VERIFIER_OUTER)
+                    || pathNoExt.startsWith(PROVIDER_OUTER + "$")
+                    || pathNoExt.startsWith(VERIFIER_OUTER + "$");
+            if (isProviderOrVerifier) {
                 continue;
             }
 

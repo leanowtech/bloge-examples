@@ -352,6 +352,22 @@
                                     </sources>
                                 </configuration>
                             </execution>
+                            <execution>
+                                <id>attach-gate-a-candidate</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>attach-artifact</goal>
+                                </goals>
+                                <configuration>
+                                    <artifacts>
+                                        <artifact>
+                                            <type>jar</type>
+                                            <classifier>gate-a-candidate</classifier>
+                                            <file>${gate.a.candidate.output}</file>
+                                        </artifact>
+                                    </artifacts>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
 

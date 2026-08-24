@@ -35,7 +35,7 @@ public final class CapabilityStudioGateACandidatePackager {
     private static final String SCHEMA_VERSION_RESOURCE  = "capability-studio.gate-a-build-resource-manifest.v1";
     private static final String SCHEMA_VERSION_DEPENDENCY = "capability-studio.gate-a-dependency-lock-manifest.v1";
 
-    // Required outer classes (StageAcceptanceAuthorityProvider: outer only, no inner)
+    // Required outer classes (StageAcceptanceAuthorityProvider/Verifier: full $ closure)
     private static final String[] REQUIRED_OUTER_CLASSES = {
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAChallengeCli",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAArtifactValidator",
@@ -44,7 +44,8 @@ public final class CapabilityStudioGateACandidatePackager {
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateASchemaValidator",
             "com/leanowtech/bloge/gateway/testkit/StrictJsonParser",
             "com/leanowtech/bloge/gateway/testkit/CapabilityStudioGateAException",
-            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider"
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityProvider",
+            "com/leanowtech/bloge/gateway/testkit/CapabilityStudioStageAcceptanceAuthorityVerifier"
     };
 
     private final Path classesDir;
@@ -296,23 +297,19 @@ public final class CapabilityStudioGateACandidatePackager {
         Set<String> classPaths = new LinkedHashSet<>();
 
         for (String outer : REQUIRED_OUTER_CLASSES) {
-            boolean isStageAcceptance = outer.endsWith("CapabilityStudioStageAcceptanceAuthorityProvider");
-
             Path outerFile = classesDir.resolve(outer + ".class");
             if (!Files.exists(outerFile)) {
                 throw new RuntimeException("Required outer class not found: " + outer);
             }
             classPaths.add(outer);
 
-            if (!isStageAcceptance) {
-                // Find inner classes in the same package directory
-                int lastSlash = outer.lastIndexOf('/');
-                String pkgDir = outer.substring(0, lastSlash);
-                String basename = outer.substring(lastSlash + 1);
-                Path pkgPath = classesDir.resolve(pkgDir);
+            // Find inner classes in the same package directory
+            int lastSlash = outer.lastIndexOf('/');
+            String pkgDir = outer.substring(0, lastSlash);
+            String basename = outer.substring(lastSlash + 1);
+            Path pkgPath = classesDir.resolve(pkgDir);
 
-                collectInnerClasses(pkgPath, basename, classPaths);
-            }
+            collectInnerClasses(pkgPath, basename, classPaths);
         }
 
         List<EntryData> classEntries = new ArrayList<>();
