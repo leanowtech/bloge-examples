@@ -129,14 +129,18 @@ public class TestDoubleFactory {
             InvocationRecorder recorder,
             ResolvedReplayPayloads replayPayloads,
             MirrorResolutionObserver mirrorObserver) {
-        if (!(realOperator instanceof Operator<?, ?> typed)) {
+        CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
+                control, "control");
+        Operator<Object, Object> typed = realOperator instanceof Operator<?, ?> candidate
+                ? (Operator<Object, Object>) candidate : null;
+        if (typed == null && !isSchemaStandinControl(requiredControl)) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
-                control, "control");
+        Operator<Object, Object> delegate = isSchemaStandinControl(requiredControl)
+                ? schemaStandinDelegate() : typed;
         Operator<Object, Object> controlled = new ControlledOperator(
-                node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
+                node, binding, requiredControl.rules(), delegate,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 ResolvedCorpusPayloads.empty(),
                 Objects.requireNonNull(mirrorObserver, "mirrorObserver"), null,
@@ -480,9 +484,20 @@ public class TestDoubleFactory {
         private Object returnValue(FixtureRule rule, Object input, OperatorContext context) throws Exception {
             FixtureRule.Behavior behavior = rule.behavior();
             Object output;
+            ExecutionMode compiledMode = compiledControl == null ? null
+                    : compiledControl.executionMode(rule).orElse(null);
             ExecutionMode classifiedMode = ExecutionMode.resolve(
                     node.operatorRef(), behavior).orElse(null);
-            if (classifiedMode == ExecutionMode.DESCRIPTOR_PROTOCOL
+            if (compiledMode == ExecutionMode.SCHEMA_STANDIN) {
+                if (!ExecutionMode.isSchemaStandinBehavior(
+                        node.operatorRef(), behavior)) {
+                    throw modeFailure("CONTROL_PLAN_EXECUTION_MODE_MISMATCH",
+                            "Compiled execution mode does not match schema stand-in semantics.");
+                }
+                recorder.markFidelity(site, "SCHEMA_STANDIN");
+                recorder.markControlMode(site, "SCHEMA_STANDIN");
+                output = behavior.value();
+            } else if (classifiedMode == ExecutionMode.DESCRIPTOR_PROTOCOL
                     || classifiedMode == ExecutionMode.DESCRIPTOR_TRANSPORT) {
                 if (resourceRuntime == null) {
                     throw new TestControlException("RESOURCE_FIXTURE_RUNTIME_UNAVAILABLE",
@@ -557,8 +572,16 @@ public class TestDoubleFactory {
             ExecutionMode actual = control.executionMode(rule).orElse(null);
             ExecutionMode expected = ExecutionMode.resolve(
                     node.operatorRef(), rule.behavior()).orElse(null);
+            if (actual == ExecutionMode.SCHEMA_STANDIN) {
+                if (!ExecutionMode.isSchemaStandinBehavior(
+                        node.operatorRef(), rule.behavior())) {
+                    throw new TestControlException(
+                            "CONTROL_PLAN_EXECUTION_MODE_MISMATCH", "EXECUTION_MODE",
+                            "Compiled execution mode does not match fixture semantics.");
+                }
+                continue;
+            }
             if (actual == ExecutionMode.PRIMITIVE_REAL
-                    || actual == ExecutionMode.SCHEMA_STANDIN
                     || actual == ExecutionMode.BINDING_TRANSPORT
                     || actual == ExecutionMode.WORLD_DELEGATE) {
                 throw new TestControlException(
@@ -571,6 +594,31 @@ public class TestDoubleFactory {
                         "Compiled execution mode does not match fixture semantics.");
             }
         }
+    }
+
+    private static boolean isSchemaStandinControl(
+            CompiledExecutionControl.ResolvedControl control) {
+        return !control.rules().isEmpty() && control.rules().stream().allMatch(rule ->
+                control.executionMode(rule).orElse(null) == ExecutionMode.SCHEMA_STANDIN);
+    }
+
+    private static Operator<Object, Object> schemaStandinDelegate() {
+        return new Operator<>() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                throw new AssertionError("schema stand-in delegate must not execute");
+            }
+
+            @Override
+            public Idempotency idempotency() {
+                return Idempotency.IDEMPOTENT;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.READ_ONLY;
+            }
+        };
     }
 
     /** Captures one immutable occurrence summary plus every delegate attempt. */

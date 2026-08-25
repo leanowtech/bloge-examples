@@ -27,6 +27,8 @@ import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.planning.ExecutionModeHints;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
 import org.junit.jupiter.api.Test;
@@ -35,11 +37,141 @@ import java.time.Duration;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class OperatorMicroGraphRunnerTest {
+
+    @Test
+    void schemaStandinReturnsFrozenOutput() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        Operator<Object, Object> real = new OpaqueExternalOperator();
+        Graph graph = new GraphBuilder("schema-standin").node("subject", real).build();
+        NodeSpec node = graph.nodes().get("subject").toBuilder()
+                .operatorRef("fixture.operator").build();
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "standin-output",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("standin"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        InvocationSite site = new InvocationSite(InvocationSite.SCHEMA_VERSION, "target",
+                "/root", "subject", "fixture.operator", "", "", "binding",
+                InvocationSite.InvocationKind.PRIMARY, null, "", null);
+        CompiledExecutionControl.ResolvedControl control =
+                new CompiledExecutionControl.ResolvedControl(site, List.of(rule), false,
+                        CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                                .SELECTOR_SPECIFICITY,
+                        List.of(), Map.of(rule.ruleId(), ExecutionMode.SCHEMA_STANDIN));
+        InvocationRecorder recorder = new InvocationRecorder(mapper);
+        InvocationRecorder.InvocationBinding binding = recorder.bind(site, new GraphContext());
+        Operator<Object, Object> standin = new TestDoubleFactory(mapper, null).create(
+                node, binding, control, real, recorder, ResolvedReplayPayloads.empty(),
+                MirrorResolutionObserver.noop());
+
+        Object output = standin.execute("input", new OperatorContext(
+                "subject", "test", new GraphContext(), 0));
+
+        assertThat(output).isEqualTo("standin");
+    }
+
+    @Test
+    void schemaStandinNeverCallsRealOperator() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        AtomicInteger realCalls = new AtomicInteger();
+        Operator<Object, Object> real = new CountingExternalOperator(realCalls);
+        Graph graph = new GraphBuilder("schema-standin").node("subject", real).build();
+        NodeSpec node = graph.nodes().get("subject").toBuilder()
+                .operatorRef("fixture.operator").build();
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "standin-output",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("standin"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        InvocationSite site = new InvocationSite(InvocationSite.SCHEMA_VERSION, "target",
+                "/root", "subject", "fixture.operator", "", "", "binding",
+                InvocationSite.InvocationKind.PRIMARY, null, "", null);
+        CompiledExecutionControl.ResolvedControl control =
+                new CompiledExecutionControl.ResolvedControl(site, List.of(rule), false,
+                        CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                                .SELECTOR_SPECIFICITY,
+                        List.of(), Map.of(rule.ruleId(), ExecutionMode.SCHEMA_STANDIN));
+        InvocationRecorder recorder = new InvocationRecorder(mapper);
+        Operator<Object, Object> standin = new TestDoubleFactory(mapper, null).create(
+                node, recorder.bind(site, new GraphContext()), control, real, recorder,
+                ResolvedReplayPayloads.empty(), MirrorResolutionObserver.noop());
+
+        standin.execute("input", new OperatorContext(
+                "subject", "test", new GraphContext(), 0));
+
+        assertThat(realCalls).hasValue(0);
+    }
+
+    @Test
+    void explicitSchemaStandinEvidenceIsExploratoryAndSchemaDerived() {
+        ObjectMapper mapper = new ObjectMapper();
+        TestRunService service = new TestRunService(new DefaultOperatorRegistry(), mapper, null);
+        Graph graph = new GraphBuilder("schema-standin")
+                .node("subject", new OpaqueExternalOperator()).build();
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "standin-output",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("standin"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        String target = "sha256:" + "e".repeat(64);
+        FixtureBundle bundle = new FixtureBundle(FixtureBundle.SCHEMA_VERSION, "schema-standin", 1,
+                target, "INTERNAL", null, null, List.of(rule), List.of(), Map.of());
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(
+                new DefaultOperatorRegistry(), mapper).compileWithExecutionModeHints(
+                graph, bundle, "GRAPH_CONTRACT_TEST", target,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", rule.ruleId()));
+        TestExecutionRequest request = new TestExecutionRequest(
+                graph, new GraphContext(), bundle, "GRAPH_CONTRACT_TEST", target,
+                TestExecutionRequest.FixtureSource.STORED, Map.of(), true,
+                ResolvedReplayPayloads.empty());
+
+        TestExecutionResult result = service.executeCompiled(request, compiled);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace ->
+                assertThat(trace.fidelity()).isEqualTo("SCHEMA_STANDIN"));
+        assertThat(result.evidence().metadata().get("nodeControlModes").toString())
+                .contains("SCHEMA_STANDIN");
+    }
+
+    @Test
+    void schemaStandinRecorderCarriesModeIntoNodeTrace() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        Operator<Object, Object> real = new OpaqueExternalOperator();
+        Graph graph = new GraphBuilder("schema-standin").node("subject", real).build();
+        NodeSpec node = graph.nodes().get("subject").toBuilder()
+                .operatorRef("fixture.operator").build();
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "standin-output",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("standin"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        InvocationSite site = new InvocationSite(InvocationSite.SCHEMA_VERSION, "target",
+                "/root", "subject", "fixture.operator", "", "", "binding",
+                InvocationSite.InvocationKind.PRIMARY, null, "", null);
+        CompiledExecutionControl.ResolvedControl control =
+                new CompiledExecutionControl.ResolvedControl(site, List.of(rule), false,
+                        CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                                .SELECTOR_SPECIFICITY,
+                        List.of(), Map.of(rule.ruleId(), ExecutionMode.SCHEMA_STANDIN));
+        InvocationRecorder recorder = new InvocationRecorder(mapper);
+        InvocationRecorder.InvocationBinding binding = recorder.bind(site, new GraphContext());
+        Operator<Object, Object> standin = new TestDoubleFactory(mapper, null).create(
+                node, binding, control, real, recorder, ResolvedReplayPayloads.empty(),
+                MirrorResolutionObserver.noop());
+
+        standin.execute("input", new OperatorContext(
+                "subject", "test", new GraphContext(), 0));
+
+        assertThat(recorder.controlModes()).containsEntry(site.invocationSiteId(), "SCHEMA_STANDIN");
+        InvocationInventory inventory = new InvocationInventory(
+                List.of(new InvocationInventory.Entry(graph, node, site, "subject", real)),
+                Map.of("subject", new InvocationInventory.Entry(graph, node, site, "subject", real)),
+                Map.of(site.invocationSiteId(), new InvocationInventory.Entry(
+                        graph, node, site, "subject", real)));
+        assertThat(recorder.nodeTraces(inventory, graph, null)).singleElement()
+                .satisfies(trace -> assertThat(trace.fidelity()).isEqualTo("SCHEMA_STANDIN"));
+    }
 
     @Test
     void readOnlyBindingEarnsExecutableUnitByRunningItsRealLogic() {
@@ -97,6 +229,8 @@ class OperatorMicroGraphRunnerTest {
                 .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
         assertThat(result.execution().evidence().metadata())
                 .containsEntry("targetCertificationEligible", false);
+        assertThat(result.execution().evidence().nodeTrace()).singleElement()
+                .satisfies(trace -> assertThat(trace.fidelity()).isEqualTo("OUTPUT_LEVEL"));
     }
 
     @Test
@@ -167,6 +301,32 @@ class OperatorMicroGraphRunnerTest {
                 node, recorder.bind(site, new GraphContext()), control,
                 new OpaqueExternalOperator(), recorder, ResolvedReplayPayloads.empty(),
                 MirrorResolutionObserver.noop()))
+                .isInstanceOfSatisfying(TestControlException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("CONTROL_PLAN_EXECUTION_MODE_MISMATCH"));
+
+        FixtureRule wrongStandin = new FixtureRule(
+                FixtureRule.SCHEMA_VERSION, "wrong-standin",
+                FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.throwing("INJECTED", "TEST", "injected"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        NodeSpec standinNode = graph.nodes().get("subject").toBuilder()
+                .operatorRef("fixture.operator").build();
+        InvocationSite standinSite = new InvocationSite(
+                InvocationSite.SCHEMA_VERSION, "target", "/root", "subject",
+                "fixture.operator", "", "", "binding",
+                InvocationSite.InvocationKind.PRIMARY, null, "", null);
+        CompiledExecutionControl.ResolvedControl invalidStandin =
+                new CompiledExecutionControl.ResolvedControl(
+                        standinSite, List.of(wrongStandin), false,
+                        CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                                .SELECTOR_SPECIFICITY,
+                        List.of(), Map.of(wrongStandin.ruleId(), ExecutionMode.SCHEMA_STANDIN));
+        InvocationRecorder standinRecorder = new InvocationRecorder(mapper);
+        assertThatThrownBy(() -> new TestDoubleFactory(mapper, null).create(
+                standinNode, standinRecorder.bind(standinSite, new GraphContext()),
+                invalidStandin, new OpaqueExternalOperator(), standinRecorder,
+                ResolvedReplayPayloads.empty(), MirrorResolutionObserver.noop()))
                 .isInstanceOfSatisfying(TestControlException.class,
                         failure -> assertThat(failure.code())
                                 .isEqualTo("CONTROL_PLAN_EXECUTION_MODE_MISMATCH"));
@@ -291,6 +451,20 @@ class OperatorMicroGraphRunnerTest {
         @Override
         public Object execute(Object input, OperatorContext ctx) {
             throw new AssertionError("fail-closed plan must not execute opaque external binding");
+        }
+
+        @Override
+        public SideEffectType sideEffectType() {
+            return SideEffectType.EXTERNAL_CALL;
+        }
+    }
+
+    private record CountingExternalOperator(AtomicInteger calls)
+            implements Operator<Object, Object> {
+        @Override
+        public Object execute(Object input, OperatorContext ctx) {
+            calls.incrementAndGet();
+            return "real";
         }
 
         @Override

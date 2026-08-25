@@ -17,7 +17,7 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口与生产双重拒绝已形成开发证据；visual adapter、无 binding 执行与差分台仍未完成 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝与 schema stand-in 内核已形成开发证据；visual adapter、无 binding 执行与差分台仍未完成 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `NOT_STARTED` | 现有 Scenario/Mirror 资产不能自动等同于 1.2.1 定义的世界模型闭包 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
@@ -31,7 +31,7 @@
 | `S0-A` | 七态 `ExecutionMode`；编译期模式固定；`DESCRIPTOR_PROTOCOL` / `DESCRIPTOR_TRANSPORT` 显式运行分派 | `DEVELOPMENT_VERIFIED` | 60/60：模式分类、compiler 到 runtime 的动态多规则实际选择、混合规则 fingerprint 稳定、提取语义对拍、模式不一致失败关闭、legacy graph-contract 兼容 |
 | `S0-P` | 四个 `X-BLOGE-Test-*` 控制头的纯协议解析 | `DEVELOPMENT_VERIFIED` | 19/19：strict base64url/UTF-8/JSON、大小和复杂度边界、多值拒绝、错误不泄漏、inline canonicalization |
 | `S0-B` | 服务端执行目的铸造与受控入口 admission | `DEVELOPMENT_VERIFIED` | 七类 Body 入口在反序列化前按固定 `IntegrationOperation` 认证；bounded inline fixture 进入既有解析链；caller purpose 不可改写内核 purpose |
-| `S0-C` | visual 设计期模拟适配统一内核 | `NOT_STARTED` | 保留 schema stand-in、纯原语、逐节点 fixture、资源上限、超时和响应兼容 |
+| `S0-C` | visual 设计期模拟适配统一内核 | `IN_PROGRESS` | `SCHEMA_STANDIN` 已通过 server-owned Java hint 在 compiler/runtime/evidence 中显式闭合；visual port/adapter、纯原语混合执行及响应差分仍待完成 |
 | `S0-D` | 生产入口控制头拒绝/剥离及服务端二次拒绝 | `DEVELOPMENT_VERIFIED` | profile/服务端环境双判定、context-path 安全执行路由全集、真实 Spring Filter 链与 visual service 独立 403 拒绝；server-owned policy Bean 不可由普通业务 Bean 条件替换 |
 | `S0-E` | 新旧路径等价对拍、确定性和架构约束 | `NOT_STARTED` | 正常/异常矩阵、N 次同指纹、禁非确定 API、ReDoS 与零网络证明 |
 
@@ -108,9 +108,10 @@ OperatorMicroGraphRunnerTest         4/4
 
 ```text
 TestControlHeaderCodecTest          19/19
-ExecutionControlCompilerTest        32/32
+ExecutionControlCompilerTest        37/37
 ResourceFixtureRuntimeTest           8/8
-OperatorMicroGraphRunnerTest         6/6
+OperatorMicroGraphRunnerTest        10/10
+TestRunServiceTest                  40/40
 GatewayGraphContractTestServiceTest 14/14
 TestExecutionIngressAdapterTest     25/25
 TestExecutionControllerTest         15/15
@@ -127,7 +128,7 @@ VisualRuntimeBoundaryTest            1/1
 ServerDeploymentPolicySpringWiringTest 4/4
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；它不证明 visual adapter、未来五种执行模式或无 registry binding 执行已经完成。19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析及统一 visual kernel 尚未完成，因此阶段零出口仍保持部分满足。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 87/87：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，真实算子不执行，证据降为探索级；该证据尚不证明 visual adapter 已接入。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析、visual adapter 及无 binding 执行尚未完成，因此阶段零出口仍保持部分满足。
 
 截至 2026-08-26，本切片最终串行里程碑结果：
 

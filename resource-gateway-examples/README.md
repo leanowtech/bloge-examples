@@ -50,8 +50,10 @@ integration something the business flow can see, reason about, test, and change.
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
-current kernel explicitly compiles `DESCRIPTOR_PROTOCOL`, `DESCRIPTOR_TRANSPORT`, and
-`BINDING_REAL`; unsupported future modes remain closed rather than being simulated implicitly.
+current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
+`DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than
+being simulated implicitly. Schema stand-in is selected only by an exact server-owned Java hint,
+never inferred from an ordinary output fixture, and always produces exploratory evidence.
 The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authenticated
 test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
 `fixtureBundle` object and cannot be combined with a legacy body fixture source; business context

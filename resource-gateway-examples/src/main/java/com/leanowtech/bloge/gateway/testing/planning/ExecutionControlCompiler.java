@@ -10,6 +10,8 @@ import com.leanowtech.bloge.core.engine.operators.SubGraphOperator;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.schema.OpaqueSchema;
+import com.leanowtech.bloge.core.schema.SchemaValidator;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
@@ -81,6 +83,16 @@ public class ExecutionControlCompiler {
                                             String authorizedPurpose, String targetFingerprint) {
         return compile(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
                 ResolvedReplayPayloads.empty());
+    }
+
+    /** Internal stage-zero entry for server-owned execution-mode hints. */
+    public CompiledExecutionControl compileWithExecutionModeHints(
+            Graph graph, FixtureBundle fixtureBundle, String authorizedPurpose,
+            String targetFingerprint, ExecutionModeHints executionModeHints) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                targetFingerprint, ResolvedReplayPayloads.empty(), ResolvedTestSecrets.empty(),
+                null, null, null, ResolvedCorpusPayloads.empty(), Set.of(),
+                Objects.requireNonNull(executionModeHints, "executionModeHints"));
     }
 
     /**
@@ -382,6 +394,26 @@ public class ExecutionControlCompiler {
             InvocationInventory frozenInventory,
             ResolvedCorpusPayloads corpusPayloads,
             Set<String> statefulReadSiteIds) {
+        return compileBound(graph, fixtureBundle, authorizedPurpose, targetFingerprint,
+                fixtureBindingTargetFingerprint, replayPayloads, testSecrets, providerState,
+                mandatoryExternalSiteIds, frozenInventory, corpusPayloads, statefulReadSiteIds,
+                ExecutionModeHints.none());
+    }
+
+    private CompiledExecutionControl compileBound(
+            Graph graph,
+            FixtureBundle fixtureBundle,
+            String authorizedPurpose,
+            String targetFingerprint,
+            String fixtureBindingTargetFingerprint,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedTestSecrets testSecrets,
+            ExecutionServiceStateSnapshot providerState,
+            Set<String> mandatoryExternalSiteIds,
+            InvocationInventory frozenInventory,
+            ResolvedCorpusPayloads corpusPayloads,
+            Set<String> statefulReadSiteIds,
+            ExecutionModeHints executionModeHints) {
         Objects.requireNonNull(graph, "graph");
         ResolvedReplayPayloads resolvedReplays = replayPayloads == null
                 ? ResolvedReplayPayloads.empty() : replayPayloads;
@@ -389,6 +421,7 @@ public class ExecutionControlCompiler {
                 ? ResolvedTestSecrets.empty() : testSecrets;
         ResolvedCorpusPayloads resolvedCorpus = corpusPayloads == null
                 ? ResolvedCorpusPayloads.empty() : corpusPayloads;
+        rejectHintedDescriptorTransportConfusion(fixtureBundle, executionModeHints);
         safetyPreflight.validate(fixtureBundle, authorizedPurpose,
                 fixtureBindingTargetFingerprint, resolvedReplays);
 
@@ -484,9 +517,12 @@ public class ExecutionControlCompiler {
                     return control.withMirrorSource(
                             MirrorPlan.MirrorSource.RECORDED_CLUSTER);
                 }));
-        controls.replaceAll((siteId, control) -> control.withExecutionModes(
-                CompiledExecutionControl.ResolvedControl.inferExecutionModes(
-                        control.site(), control.rules())));
+        controls.replaceAll((siteId, control) -> {
+            InvocationInventory.Entry entry = inventory.byInvocationSiteId().get(siteId);
+            return control.withExecutionModes(compileExecutionModes(
+                    entry, control, executionModeHints));
+        });
+        rejectUnresolvedExecutionModeHints(controls, executionModeHints);
         rejectUnsupportedControlledBindings(inventory, controls);
         rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
@@ -783,8 +819,7 @@ public class ExecutionControlCompiler {
 
     private static String fidelity(CompiledExecutionControl.ResolvedControl control) {
         FixtureRule.Behavior behavior = control.rules().getFirst().behavior();
-        ExecutionMode mode = ExecutionMode.resolve(
-                control.site().operatorRef(), behavior).orElse(null);
+        ExecutionMode mode = control.executionMode(control.rules().getFirst()).orElse(null);
         if (mode == ExecutionMode.BINDING_REAL) {
             return "REAL";
         }
@@ -797,7 +832,117 @@ public class ExecutionControlCompiler {
         if (mode == ExecutionMode.DESCRIPTOR_PROTOCOL) {
             return "PROTOCOL_DERIVED";
         }
+        if (mode == ExecutionMode.SCHEMA_STANDIN) {
+            return "SCHEMA_STANDIN";
+        }
         return "OUTPUT_LEVEL";
+    }
+
+    private static Map<String, ExecutionMode> compileExecutionModes(
+            InvocationInventory.Entry entry,
+            CompiledExecutionControl.ResolvedControl control,
+            ExecutionModeHints hints) {
+        if (entry == null) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_SITE_UNRESOLVED", List.of(
+                    "A controlled invocation site is absent from the frozen inventory."));
+        }
+        Map<String, ExecutionMode> modes = new LinkedHashMap<>(
+                CompiledExecutionControl.ResolvedControl.inferExecutionModes(
+                        control.site(), control.rules()));
+        Map<String, ExecutionMode> siteHints = hints.entries().getOrDefault(
+                control.site().invocationSiteId(), Map.of());
+        for (Map.Entry<String, ExecutionMode> hint : siteHints.entrySet()) {
+            FixtureRule rule = control.rules().stream()
+                    .filter(candidate -> candidate.ruleId().equals(hint.getKey()))
+                    .findFirst()
+                    .orElseThrow(() -> new ControlPlanRejectedException(
+                            "CONTROL_PLAN_EXECUTION_MODE_HINT_UNRESOLVED", List.of(
+                            "Execution-mode hint does not resolve to a controlled rule.")));
+            if (hint.getValue() != ExecutionMode.SCHEMA_STANDIN) {
+                reject("CONTROL_PLAN_EXECUTION_MODE_HINT_UNSUPPORTED",
+                        "Execution-mode hint is not supported by the stage-zero runtime.");
+            }
+            FixtureRule.Behavior behavior = rule.behavior();
+            boolean httpResource = "httpResource".equals(control.site().operatorRef());
+            if (!httpResource && behavior.kind() == FixtureRule.BehaviorKind.RETURN
+                    && behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT) {
+                reject("CONTROL_PLAN_SCHEMA_STANDIN_BOUNDARY_INVALID",
+                        "Rule '" + rule.ruleId()
+                                + "' cannot use a transport boundary for a node output.");
+            }
+            if (httpResource && behavior.kind() == FixtureRule.BehaviorKind.RETURN
+                    && behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT
+                    && behavior.value() != null) {
+                reject("CONTROL_PLAN_DESCRIPTOR_TRANSPORT_CONFUSION",
+                        "Rule '" + rule.ruleId()
+                                + "' must use a raw descriptor response at transport boundary.");
+            }
+            if (!ExecutionMode.isSchemaStandinBehavior(
+                    control.site().operatorRef(), rule.behavior())) {
+                reject("CONTROL_PLAN_SCHEMA_STANDIN_OUTPUT_REQUIRED",
+                        "Schema stand-in requires one non-null node-level final output.");
+            }
+            ExecutionMode existing = modes.get(rule.ruleId());
+            if (existing != null && existing != hint.getValue()) {
+                reject("CONTROL_PLAN_EXECUTION_MODE_MISMATCH",
+                        "Execution-mode hint conflicts with compiled fixture semantics.");
+            }
+            validateSchemaStandinOutput(entry, rule);
+            modes.put(rule.ruleId(), hint.getValue());
+        }
+        return Collections.unmodifiableMap(modes);
+    }
+
+    private static void rejectUnresolvedExecutionModeHints(
+            Map<String, CompiledExecutionControl.ResolvedControl> controls,
+            ExecutionModeHints hints) {
+        if (!controls.keySet().containsAll(hints.entries().keySet())) {
+            reject("CONTROL_PLAN_EXECUTION_MODE_HINT_UNRESOLVED",
+                    "Execution-mode hint does not resolve to a controlled invocation site.");
+        }
+    }
+
+    private static void validateSchemaStandinOutput(
+            InvocationInventory.Entry entry, FixtureRule rule) {
+        if (rule.schemaCheck().mode() == FixtureRule.SchemaCheckMode.WAIVED
+                || entry.node().outputSchema() instanceof OpaqueSchema) {
+            return;
+        }
+        List<String> violations = SchemaValidator.validateInstance(
+                entry.node().id(), rule.behavior().value(), entry.node().outputSchema())
+                .stream()
+                .map(violation -> violation.path() + ": " + violation.message())
+                .toList();
+        if (!violations.isEmpty()) {
+            reject("CONTROL_PLAN_SCHEMA_STANDIN_OUTPUT_SCHEMA_INVALID",
+                    "Rule '" + rule.ruleId() + "' output does not satisfy the node schema.");
+        }
+    }
+
+    private static void rejectHintedDescriptorTransportConfusion(
+            FixtureBundle fixtureBundle, ExecutionModeHints hints) {
+        if (fixtureBundle == null || hints.entries().isEmpty()) {
+            return;
+        }
+        Map<String, FixtureRule> rulesById = fixtureBundle.rules().stream().collect(
+                java.util.stream.Collectors.toMap(FixtureRule::ruleId, rule -> rule,
+                        (first, ignored) -> first));
+        hints.entries().forEach((siteId, modes) -> modes.forEach((ruleId, mode) -> {
+            FixtureRule rule = rulesById.get(ruleId);
+            if (mode == ExecutionMode.SCHEMA_STANDIN
+                    && siteId.endsWith("#RESOURCE")
+                    && rule != null
+                    && rule.behavior().kind() == FixtureRule.BehaviorKind.RETURN
+                    && rule.behavior().boundary() == FixtureRule.DoubleBoundary.TRANSPORT
+                    && rule.behavior().value() != null) {
+                reject("CONTROL_PLAN_DESCRIPTOR_TRANSPORT_CONFUSION",
+                        "Schema stand-in cannot replace descriptor transport with a final output.");
+            }
+        }));
+    }
+
+    private static void reject(String code, String diagnostic) {
+        throw new ControlPlanRejectedException(code, List.of(diagnostic));
     }
 
     private static String recordedFidelity(

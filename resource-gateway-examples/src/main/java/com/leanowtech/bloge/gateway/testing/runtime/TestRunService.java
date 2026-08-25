@@ -437,6 +437,10 @@ public class TestRunService {
                 == FixtureRule.SchemaCheckMode.WAIVED)) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
+        if (compiled.effectivePlan().resolvedSites().stream().anyMatch(site ->
+                "SCHEMA_STANDIN".equals(site.fidelity()))) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
         boolean outputLevelResource = compiled.effectivePlan().resolvedSites().stream().anyMatch(site ->
                 site.invocationSiteId().endsWith("#RESOURCE")
                         && site.resolution() == EffectiveExecutionPlan.Resolution.TEST_DOUBLE

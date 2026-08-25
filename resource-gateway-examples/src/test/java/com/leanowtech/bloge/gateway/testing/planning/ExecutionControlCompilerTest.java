@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.schema.TypedSchema;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.ArtifactProvenance;
 import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterValidation;
@@ -161,7 +162,25 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
-    void bindingAndOutputControlsDoNotClaimDescriptorOrSchemaStandinModes() {
+    void explicitSchemaStandinHintKeepsFingerprintStableAcrossRepeatedCompilation() {
+        FixtureRule output = rule("standin-output", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(Map.of("approved", true)));
+        Graph graph = graph(new ReadOnlyOperator());
+
+        CompiledExecutionControl first = compiler.compileWithExecutionModeHints(
+                graph, bundle(output), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", output.ruleId()));
+        CompiledExecutionControl second = compiler.compileWithExecutionModeHints(
+                graph, bundle(output), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", output.ruleId()));
+        assertThat(first.controls().get("/root/subject#PRIMARY").executionMode(output))
+                .contains(ExecutionMode.SCHEMA_STANDIN);
+        assertThat(second.effectivePlan().planFingerprint())
+                .isEqualTo(first.effectivePlan().planFingerprint());
+    }
+
+    @Test
+    void bindingAndOutputControlsCompileOnlyTheirDocumentedExecutionModes() {
         FixtureRule real = rule("real", FixtureRule.Selector.node("subject"),
                 FixtureRule.Behavior.real());
 
@@ -188,6 +207,8 @@ class ExecutionControlCompilerTest {
             assertThat(outputPlan.controls().get("/root/subject#PRIMARY")
                     .executionMode(outputControl)).isEmpty();
         }
+        assertThat(ExecutionMode.resolve("readOnly", outputControls.getFirst().behavior()))
+                .isEmpty();
 
         FixtureRule replay = rule("replay", FixtureRule.Selector.node("subject"),
                 FixtureRule.Behavior.replaying(REPLAY_REF));
@@ -208,6 +229,81 @@ class ExecutionControlCompilerTest {
                 "GRAPH_CONTRACT_TEST", TARGET);
         assertThat(transportOutputPlan.controls().get("/root/subject#RESOURCE")
                 .executionMode(transportOutput)).isEmpty();
+    }
+
+    @Test
+    void schemaStandinCannotReplaceDescriptorTransportWithFinalOutput() {
+        registry.register("httpResource", new ExternalOperator());
+        FixtureRule confused = rule("transport-output",
+                FixtureRule.Selector.resource("customer.get"),
+                new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
+                        FixtureRule.DoubleBoundary.TRANSPORT, Map.of("fixed", true), "", null,
+                        Map.of(), "", "", "", null, List.of(), ""));
+
+        assertThatThrownBy(() -> compiler.compileWithExecutionModeHints(
+                registryGraph("httpResource"), bundle(confused),
+                "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#RESOURCE", confused.ruleId())))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex ->
+                        assertThat(ex.code())
+                                .isEqualTo("CONTROL_PLAN_DESCRIPTOR_TRANSPORT_CONFUSION"));
+    }
+
+    @Test
+    void explicitSchemaStandinHintIsFrozenInTheInternalPlan() {
+        FixtureRule fixed = rule("fixed", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning("fixture"));
+
+        CompiledExecutionControl first = compiler.compileWithExecutionModeHints(
+                graph(new ReadOnlyOperator()), bundle(fixed), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", fixed.ruleId()));
+        CompiledExecutionControl second = compiler.compileWithExecutionModeHints(
+                graph(new ReadOnlyOperator()), bundle(fixed), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", fixed.ruleId()));
+
+        assertThat(first.controls().get("/root/subject#PRIMARY")
+                .executionModesByRuleId()).containsEntry("fixed", ExecutionMode.SCHEMA_STANDIN);
+        assertThat(first.effectivePlan().resolvedSites()).singleElement()
+                .satisfies(site -> assertThat(site.fidelity()).isEqualTo("SCHEMA_STANDIN"));
+        assertThat(first.effectivePlan().planFingerprint())
+                .isEqualTo(second.effectivePlan().planFingerprint());
+    }
+
+    @Test
+    void explicitSchemaStandinHintRequiresOutputWithoutLeakingPayload() {
+        FixtureRule missing = rule("missing", FixtureRule.Selector.node("subject"),
+                new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
+                        FixtureRule.DoubleBoundary.NODE, null, "", null, Map.of(), "", "", "",
+                        null, List.of(), ""));
+
+        CompiledExecutionControl ordinary = compiler.compile(
+                graph(new ReadOnlyOperator()), bundle(missing), "GRAPH_CONTRACT_TEST", TARGET);
+        assertThat(ordinary.controls().get("/root/subject#PRIMARY").executionMode(missing))
+                .isEmpty();
+
+        assertThatThrownBy(() -> compiler.compileWithExecutionModeHints(
+                graph(new ReadOnlyOperator()), bundle(missing), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", missing.ruleId())))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex -> {
+                    assertThat(ex.code()).isEqualTo("CONTROL_PLAN_SCHEMA_STANDIN_OUTPUT_REQUIRED");
+                    assertThat(ex.diagnostics()).noneMatch(value -> value.contains("fixture"));
+                });
+    }
+
+    @Test
+    void explicitSchemaStandinOutputMustMatchTheFrozenNodeSchema() {
+        FixtureRule invalid = rule("invalid", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(Map.of("unexpected", true)));
+
+        assertThatThrownBy(() -> compiler.compileWithExecutionModeHints(
+                withOutputSchema(graph(new ReadOnlyOperator()), new TypedSchema(String.class)),
+                bundle(invalid), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", invalid.ruleId())))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, ex -> {
+                    assertThat(ex.code())
+                            .isEqualTo("CONTROL_PLAN_SCHEMA_STANDIN_OUTPUT_SCHEMA_INVALID");
+                    assertThat(ex.diagnostics()).noneMatch(value -> value.contains("unexpected"));
+                });
     }
 
     @Test
@@ -837,6 +933,15 @@ class ExecutionControlCompilerTest {
 
     private static Graph graph(Operator<Object, Object> operator) {
         return new GraphBuilder("subject-graph").node("subject", operator).build();
+    }
+
+    private static Graph withOutputSchema(Graph graph,
+                                          com.leanowtech.bloge.core.schema.SchemaDescriptor schema) {
+        var node = graph.nodes().get("subject").toBuilder().outputSchema(schema).build();
+        return new Graph(graph.name(), Map.of("subject", node), graph.edges(), graph.sourceNodes(),
+                graph.terminalNodes(), graph.schemaValidationLevel(), graph.embeddedOperators(),
+                graph.declaredInputSchema(), graph.declaredOutputSchema(), graph.sagaConfig(),
+                graph.definitionSource(), graph.streamingOutputNodeId(), graph.streamingInputs());
     }
 
     private static Graph registryGraph(String operatorRef) {
