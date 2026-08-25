@@ -21,6 +21,9 @@
         <maven.compiler.release>25</maven.compiler.release>
         <junit.version>5.11.4</junit.version>
         <jackson.version>2.18.2</jackson.version>
+        <networknt.version>2.0.4</networknt.version>
+        <ethlo-time.version>1.14.0</ethlo-time.version>
+        <slf4j.version>2.0.17</slf4j.version>
     </properties>
 
     <dependencies>
@@ -30,6 +33,34 @@
             <artifactId>jackson-databind</artifactId>
             <version>${jackson.version}</version>
             <scope>compile</scope>
+        </dependency>
+        <!-- networknt JSON Schema Validator 2.0.4 (Authority-allowed) -->
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>${networknt.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- com.ethlo.time:itu 1.14.0 (Authority-allowed) -->
+        <dependency>
+            <groupId>com.ethlo.time</groupId>
+            <artifactId>itu</artifactId>
+            <version>${ethlo-time.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- slf4j-api 2.0.17 (Authority-allowed) -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- slf4j-nop 2.0.17 (Authority-allowed) -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-nop</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>test</scope>
         </dependency>
         <!-- JUnit 5: test scope only -->
         <dependency>
@@ -65,12 +96,50 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <systemPropertyVariables>
+                        <gate.a.authority.path>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</gate.a.authority.path>
+                        <gate.a.dependency.jars>${project.build.directory}/dependency-jars</gate.a.dependency.jars>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <!--
+                Copies the 7 Authority-allowed nested JAR dependencies to
+                target/dependency-jars/ so RealVerifierFixtureFactory can load
+                their raw bytes via classpath resources without hardcoding paths.
+                Runs during the validate phase so artifacts are available before
+                any test-compile or test execution.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.7.1</version>
+                <executions>
+                    <execution>
+                        <id>copy-nested-jar-fixtures</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>copy-dependencies</goal>
+                        </goals>
+                        <configuration>
+                            <outputDirectory>${project.build.directory}/dependency-jars</outputDirectory>
+                            <includeArtifactIds>
+                                jackson-databind,
+                                jackson-core,
+                                jackson-annotations,
+                                json-schema-validator,
+                                itu,
+                                slf4j-api,
+                                slf4j-nop
+                            </includeArtifactIds>
+                            <includeScope>test</includeScope>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <!--
                 Top-level plugin declaration: rules live here so
                 'mvn enforcer:enforce' fires them regardless of profile.
-                No <executions> here — lifecycle binding is only in the
-                gate-a-verifier profile below.
             -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
