@@ -388,6 +388,145 @@ class VerifierFixtureTamperAcceptanceTest {
                 "TM12: must have AK-UNKNOWN-COMPRESSION code");
     }
 
+    // -------------------------------------------------------------------------
+    // TM-13: rename entry to same-byte-length name starting with META-INF/versions/
+    //         -> AK-MULTI-RELEASE
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM13: entry name starts with META-INF/versions/")
+    void tm13_multi_release_path() throws Exception {
+        String baseEntry = findEntryOfMinByteLength(25);
+        Assertions.assertNotNull(baseEntry,
+                "Need an entry with at least 25-byte UTF-8 name for META-INF/versions/");
+        byte[] tamperedJar = tamperMultiReleasePath(BASELINE_JAR_BYTES, baseEntry);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm13.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM13: must be rejected");
+        Assertions.assertEquals("AK-MULTI-RELEASE", snapshot.rejectionCode(),
+                "TM13: must have AK-MULTI-RELEASE code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-14: Unix symlink external attribute on a required entry -> AK-EXTERNAL-SYMLINK
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM14: Unix symlink external attribute")
+    void tm14_external_symlink() throws Exception {
+        byte[] tamperedJar = buildFullJarWithSymlinkAttr();
+
+        byte[] planBytes = FACTORY.buildPackagingPlan(tamperedJar);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult = parser.parse(planBytes, sha256fp(planBytes));
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm14.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM14: must be rejected");
+        Assertions.assertEquals("AK-EXTERNAL-SYMLINK", snapshot.rejectionCode(),
+                "TM14: must have AK-EXTERNAL-SYMLINK code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-15: Unix block-device external attribute -> AK-EXTERNAL-SPECIAL
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM15: Unix block-device external attribute")
+    void tm15_external_block_device() throws Exception {
+        byte[] tamperedJar = buildFullJarWithBlockAttr();
+
+        byte[] planBytes = FACTORY.buildPackagingPlan(tamperedJar);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult = parser.parse(planBytes, sha256fp(planBytes));
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm15.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM15: must be rejected");
+        Assertions.assertEquals("AK-EXTERNAL-SPECIAL", snapshot.rejectionCode(),
+                "TM15: must have AK-EXTERNAL-SPECIAL code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-16: STORED nondep entry, one payload byte mutated -> AK-CRC-MISMATCH
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM16: STORED entry with mutated payload")
+    void tm16_stored_payload_mutate() throws Exception {
+        byte[] tamperedJar = buildFullStoredJarWithPayloadMutation();
+
+        byte[] planBytes = FACTORY.buildPackagingPlan(tamperedJar);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult = parser.parse(planBytes, sha256fp(planBytes));
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm16.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM16: must be rejected");
+        Assertions.assertEquals("AK-CRC-MISMATCH", snapshot.rejectionCode(),
+                "TM16: must have AK-CRC-MISMATCH code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-17: STORED entry, declared uncompressed size = actual+1 -> AK-SIZE-MISMATCH
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM17: STORED entry with inflated size")
+    void tm17_stored_size_inflated() throws Exception {
+        byte[] tamperedJar = buildFullStoredJarWithSizePlusOne();
+
+        byte[] planBytes = FACTORY.buildPackagingPlan(tamperedJar);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult = parser.parse(planBytes, sha256fp(planBytes));
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm17.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM17: must be rejected");
+        Assertions.assertEquals("AK-SIZE-MISMATCH", snapshot.rejectionCode(),
+                "TM17: must have AK-SIZE-MISMATCH code");
+    }
+
+
     // =========================================================================
     // Helpers
     // =========================================================================
@@ -967,5 +1106,218 @@ class VerifierFixtureTamperAcceptanceTest {
 
     private static int readShortLE(byte[] data, int pos) {
         return ((data[pos] & 0xFF)) | ((data[pos+1] & 0xFF) << 8);
+    }
+
+    // -------------------------------------------------------------------------
+    // TM13 helper: find entry with name >= minByteLength
+    // -------------------------------------------------------------------------
+
+    private String findEntryOfMinByteLength(int minByteLength) {
+        for (String name : ALL_ENTRY_NAMES) {
+            byte[] nameBytes = name.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            if (nameBytes.length >= minByteLength) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // TM13 helper: rename entry to META-INF/versions/xx/... prefix (same byte length)
+    // -------------------------------------------------------------------------
+
+    private byte[] tamperMultiReleasePath(byte[] jarBytes, String baseEntry) throws IOException {
+        byte[] result = jarBytes.clone();
+        byte[] baseNameBytes = baseEntry.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int baseLen = baseNameBytes.length;
+
+        // "META-INF/versions/" = 18 bytes; pad with '.' to fill same byte length
+        String prefix = "META-INF/versions/";
+        byte[] prefixBytes = prefix.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        int padLen = baseLen - prefixBytes.length;
+
+        byte[] newNameBytes = new byte[baseLen];
+        System.arraycopy(prefixBytes, 0, newNameBytes, 0, prefixBytes.length);
+        for (int i = 0; i < padLen; i++) {
+            newNameBytes[prefixBytes.length + i] = '.';
+        }
+
+        int[] info = findCentralEntry(result, baseEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+
+        System.arraycopy(newNameBytes, 0, result, localOffset + 30, baseLen);
+        System.arraycopy(newNameBytes, 0, result, cdPos + 46, baseLen);
+        return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // TM14 helper: build full JAR with Unix symlink attribute (0120000)
+    // -------------------------------------------------------------------------
+
+    private byte[] buildFullJarWithSymlinkAttr() throws Exception {
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addDependency(req);
+            } else {
+                builder.addNonDependency(req, new byte[16]);
+            }
+        }
+        return mutateEntryExtAttr(builder.build(), FACTORY.requiredEntries().get(0), 0120000);
+    }
+
+    // -------------------------------------------------------------------------
+    // TM15 helper: build full JAR with Unix block-device attribute (060000)
+    // -------------------------------------------------------------------------
+
+    private byte[] buildFullJarWithBlockAttr() throws Exception {
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addDependency(req);
+            } else {
+                builder.addNonDependency(req, new byte[16]);
+            }
+        }
+        return mutateEntryExtAttr(builder.build(), FACTORY.requiredEntries().get(0), 060000);
+    }
+
+    // -------------------------------------------------------------------------
+    // TM16 helper: build all-STORED JAR, mutate payload byte (preserves CRC in plan)
+    // -------------------------------------------------------------------------
+
+    private byte[] buildFullStoredJarWithPayloadMutation() throws Exception {
+        List<RawEntry> baselineEntries = parseZipEntries(BASELINE_JAR_BYTES);
+        java.util.Map<String, byte[]> nondepContent = new java.util.LinkedHashMap<>();
+        for (RawEntry e : baselineEntries) {
+            if (!isDependencyEntry(e.name())) {
+                nondepContent.put(e.name(), e.data());
+            }
+        }
+
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                byte[] content = nondepContent.getOrDefault(req, new byte[1]);
+                builder.addStoredEntry(req, content);
+            }
+        }
+        byte[] storedJar = builder.build();
+        Assertions.assertTrue(isAllStored(storedJar), "JAR must be all-STORED for TM16");
+
+        String targetEntry = nondepContent.keySet().iterator().next();
+        return mutateStoredEntryPayload(storedJar, targetEntry, 0, (byte) '!');
+    }
+
+    // -------------------------------------------------------------------------
+    // TM17 helper: build all-STORED JAR, set uncompressed size = actual+1
+    // -------------------------------------------------------------------------
+
+    private byte[] buildFullStoredJarWithSizePlusOne() throws Exception {
+        List<RawEntry> baselineEntries = parseZipEntries(BASELINE_JAR_BYTES);
+        java.util.Map<String, byte[]> nondepContent = new java.util.LinkedHashMap<>();
+        for (RawEntry e : baselineEntries) {
+            if (!isDependencyEntry(e.name())) {
+                nondepContent.put(e.name(), e.data());
+            }
+        }
+
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                byte[] content = nondepContent.getOrDefault(req, new byte[1]);
+                builder.addStoredEntry(req, content);
+            }
+        }
+        byte[] storedJar = builder.build();
+
+        String targetEntry = nondepContent.keySet().iterator().next();
+        return mutateStoredEntrySize(storedJar, targetEntry, +1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared helper: check if all entries use STORED compression
+    // -------------------------------------------------------------------------
+
+    private boolean isAllStored(byte[] jarBytes) throws IOException {
+        List<RawEntry> entries = parseZipEntries(jarBytes);
+        for (RawEntry e : entries) {
+            if (e.method() != java.util.zip.ZipEntry.STORED) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared helper: check if entry is a dependency
+    // -------------------------------------------------------------------------
+
+    private boolean isDependencyEntry(String entryPath) {
+        for (RealVerifierFixtureFactory.DependencyEntry dep : FACTORY.embeddedDependencies()) {
+            if (dep.entryPath().equals(entryPath)) return true;
+        }
+        return false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared mutation helpers
+    // -------------------------------------------------------------------------
+
+    private byte[] mutateEntryExtAttr(byte[] jarBytes, String targetEntry, int unixType) {
+        byte[] result = jarBytes.clone();
+        int[] info = findCentralEntry(result, targetEntry);
+        int cdPos = info[0];
+        int currentExtAttr = readIntLE(result, cdPos + 38);
+        int newExtAttr = (unixType << 16) | (currentExtAttr & 0xFFFF);
+        writeIntLE(result, cdPos + 38, newExtAttr);
+        return result;
+    }
+
+    private byte[] mutateStoredEntryPayload(byte[] jarBytes, String targetEntry,
+                                            int byteIndex, byte newValue) {
+        byte[] result = jarBytes.clone();
+        int[] info = findCentralEntry(result, targetEntry);
+        int localOffset = info[1];
+        int nameLen = info[2];
+        int uSize = readIntLE(result, localOffset + 18);
+
+        long payloadStart = localOffset + 30 + nameLen;
+        if (byteIndex >= 0 && byteIndex < uSize) {
+            result[(int) payloadStart + byteIndex] = newValue;
+        }
+        return result;
+    }
+
+    // NOTE: for TM17 size mismatch, only uncompressed size fields are modified.
+    // local+18 (compressed size) and cd+20 (compressed size) are left untouched.
+    private byte[] mutateStoredEntrySize(byte[] jarBytes, String targetEntry, int sizeDelta) {
+        byte[] result = jarBytes.clone();
+        int[] info = findCentralEntry(result, targetEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+
+        // Read uncompressed sizes from correct offsets:
+        // local+22 = uncompressed size (local header)
+        // cd+24    = uncompressed size (central directory)
+        int uSizeLocal = readIntLE(result, localOffset + 22);
+        int uSizeCd = readIntLE(result, cdPos + 24);
+
+        writeIntLE(result, localOffset + 22, uSizeLocal + sizeDelta);
+        writeIntLE(result, cdPos + 24, uSizeCd + sizeDelta);
+
+        return result;
+    }
+
+    private static void writeIntLE(byte[] data, int offset, int value) {
+        data[offset    ] = (byte) (value        & 0xFF);
+        data[offset + 1] = (byte) ((value >> 8)  & 0xFF);
+        data[offset + 2] = (byte) ((value >> 16) & 0xFF);
+        data[offset + 3] = (byte) ((value >> 24) & 0xFF);
     }
 }
