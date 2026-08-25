@@ -31,8 +31,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.stereotype.Component;
 
 /** Adapts a visual simulation plan to the isolated test execution kernel. */
+@Component
 public final class VisualSimulationKernelAdapter implements VisualSimulationExecutor {
 
     private static final String PURPOSE = "GRAPH_CONTRACT_TEST";

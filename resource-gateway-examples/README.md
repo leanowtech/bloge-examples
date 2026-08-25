@@ -58,8 +58,9 @@ The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authen
 test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
 `fixtureBundle` object and cannot be combined with a legacy body fixture source; business context
 remains in the request body. Scenario and world-model references remain fail-closed until the
-stage-one authorized asset resolver exists. Visual simulation still uses its legacy execution
-adapter until kernel parity and differential tests are complete. See the
+stage-one authorized asset resolver exists. Spring-owned visual simulation now delegates through
+the visual-owned port to the unified test kernel; the legacy runner remains available only as the
+stage-zero differential oracle until the remaining parity and security gates close. See the
 [implementation ledger](../docs/rg-evolution-design-1.2.1-implementation-ledger.md) for the exact
 evidence and remaining gates.
 

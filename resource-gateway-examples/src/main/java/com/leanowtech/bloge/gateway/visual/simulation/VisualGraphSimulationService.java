@@ -11,6 +11,9 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunRequest;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.validation.VisualValidationResult;
@@ -82,6 +85,7 @@ public class VisualGraphSimulationService {
     private final VisualOperatorCatalog catalog;
     private final JsonSchemaSampleGenerator sampleGenerator;
     private final VisualDslRunnerFactory runnerFactory;
+    private final VisualSimulationExecutor simulationExecutor;
     private final Duration runTimeout;
     private final boolean serverProductionDeployment;
     private final String configuredDeploymentEnvironment;
@@ -98,7 +102,7 @@ public class VisualGraphSimulationService {
                                         JsonSchemaSampleGenerator sampleGenerator,
                                         VisualDslRunnerFactory runnerFactory) {
         this(validator, catalog, sampleGenerator, runnerFactory,
-                DEFAULT_SIMULATION_RUN_TIMEOUT, VisualProductionAdmissionPolicy.nonProductionTest());
+                null, DEFAULT_SIMULATION_RUN_TIMEOUT, VisualProductionAdmissionPolicy.nonProductionTest());
     }
 
     /**
@@ -109,9 +113,10 @@ public class VisualGraphSimulationService {
                                         VisualOperatorCatalog catalog,
                                         JsonSchemaSampleGenerator sampleGenerator,
                                         VisualDslRunnerFactory runnerFactory,
+                                        VisualSimulationExecutor simulationExecutor,
                                         VisualProductionAdmissionPolicy deploymentPolicy) {
         this(validator, catalog, sampleGenerator, runnerFactory,
-                DEFAULT_SIMULATION_RUN_TIMEOUT,
+                simulationExecutor, DEFAULT_SIMULATION_RUN_TIMEOUT,
                 deploymentPolicy);
     }
 
@@ -127,8 +132,8 @@ public class VisualGraphSimulationService {
                                  JsonSchemaSampleGenerator sampleGenerator,
                                  VisualDslRunnerFactory runnerFactory,
                                  Duration runTimeout) {
-        this(validator, catalog, sampleGenerator, runnerFactory, runTimeout,
-                VisualProductionAdmissionPolicy.nonProductionTest());
+        this(validator, catalog, sampleGenerator, runnerFactory,
+                null, runTimeout, VisualProductionAdmissionPolicy.nonProductionTest());
     }
 
     /** Test seam for immutable server deployment evidence. */
@@ -139,9 +144,29 @@ public class VisualGraphSimulationService {
                                  Duration runTimeout,
                                  boolean productionProfileActive,
                                  String configuredDeploymentEnvironment) {
-        this(validator, catalog, sampleGenerator, runnerFactory, runTimeout,
-                VisualProductionAdmissionPolicy.fromEvidence(
+        this(validator, catalog, sampleGenerator, runnerFactory,
+                null, runTimeout, VisualProductionAdmissionPolicy.fromEvidence(
                         productionProfileActive, configuredDeploymentEnvironment));
+    }
+
+    /** Test seam for the kernel-backed execution path. */
+    VisualGraphSimulationService(GraphDraftValidator validator,
+                                 VisualOperatorCatalog catalog,
+                                 JsonSchemaSampleGenerator sampleGenerator,
+                                 VisualDslRunnerFactory runnerFactory,
+                                 VisualSimulationExecutor simulationExecutor,
+                                 Duration runTimeout,
+                                 VisualProductionAdmissionPolicy deploymentPolicy) {
+        this.validator = validator;
+        this.catalog = catalog;
+        this.sampleGenerator = sampleGenerator;
+        this.runnerFactory = runnerFactory;
+        this.simulationExecutor = simulationExecutor;
+        this.runTimeout = normalizeTimeout(runTimeout);
+        VisualProductionAdmissionPolicy policy = Objects.requireNonNull(
+                deploymentPolicy, "deploymentPolicy");
+        this.configuredDeploymentEnvironment = policy.environmentId();
+        this.serverProductionDeployment = policy.productionDeployment();
     }
 
     /** Test seam for the shared immutable server deployment policy. */
@@ -151,15 +176,8 @@ public class VisualGraphSimulationService {
                                  VisualDslRunnerFactory runnerFactory,
                                  Duration runTimeout,
                                  VisualProductionAdmissionPolicy deploymentPolicy) {
-        this.validator = validator;
-        this.catalog = catalog;
-        this.sampleGenerator = sampleGenerator;
-        this.runnerFactory = runnerFactory;
-        this.runTimeout = normalizeTimeout(runTimeout);
-        VisualProductionAdmissionPolicy policy = Objects.requireNonNull(
-                deploymentPolicy, "deploymentPolicy");
-        this.configuredDeploymentEnvironment = policy.environmentId();
-        this.serverProductionDeployment = policy.productionDeployment();
+        this(validator, catalog, sampleGenerator, runnerFactory,
+                null, runTimeout, deploymentPolicy);
     }
 
     /**
@@ -256,23 +274,36 @@ public class VisualGraphSimulationService {
             return blocked(true, diagnostics, List.of("Simulation DSL generation failed."), generated.dsl());
         }
 
-        DefaultOperatorRegistry simulationRegistry = new DefaultOperatorRegistry();
-        Map<String, SimulationOperator> simulationOperators = new LinkedHashMap<>();
-        mockOutputsByNodeId.forEach((nodeId, output) -> {
-            SimulationOperator operator = SimulationOperator.returning(nodeId, output);
-            simulationOperators.put(nodeId, operator);
-            simulationRegistry.register(SIM_OPERATOR_PREFIX + nodeId, operator);
-        });
-
         Map<String, Object> effectiveContext = effectiveContext(draft, context);
         String selectedOutputNode = outputNode == null || outputNode.isBlank()
                 ? draft.output().nodeId()
                 : outputNode;
 
         VisualDslRunResponse dynamic;
+        Map<String, SimulationOperator> simulationOperators = new LinkedHashMap<>();
         try {
-            dynamic = runDslWithTimeout(simulationRegistry,
-                    new VisualDslRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
+            if (simulationExecutor != null) {
+                List<VisualSimulationPlan.Standin> standins = mockedNodeIds.stream()
+                        .map(nodeId -> new VisualSimulationPlan.Standin(
+                                nodeId,
+                                SIM_OPERATOR_PREFIX + nodeId,
+                                mockOutputsByNodeId.get(nodeId),
+                                Optional.ofNullable(effectiveFixtures.get(nodeId))
+                                        .map(NodeFixture::expectedInput)
+                                        .orElse(null)))
+                        .toList();
+                dynamic = runKernelWithTimeout(new VisualSimulationPlan(
+                        generated.dsl(), effectiveContext, selectedOutputNode, standins));
+            } else {
+                DefaultOperatorRegistry simulationRegistry = new DefaultOperatorRegistry();
+                mockOutputsByNodeId.forEach((nodeId, output) -> {
+                    SimulationOperator operator = SimulationOperator.returning(nodeId, output);
+                    simulationOperators.put(nodeId, operator);
+                    simulationRegistry.register(SIM_OPERATOR_PREFIX + nodeId, operator);
+                });
+                dynamic = runDslWithTimeout(simulationRegistry,
+                        new VisualDslRunRequest(generated.dsl(), effectiveContext, selectedOutputNode));
+            }
         } catch (TimeoutException ex) {
             diagnostics.add(VisualDiagnostic.error("visual.simulate.timeout",
                     "Simulation exceeded the %d ms execution timeout.".formatted(runTimeout.toMillis()),
@@ -294,17 +325,41 @@ public class VisualGraphSimulationService {
                     List.of("Simulation runner failed."), generated.dsl(),
                     selectedOutputNode, mockedNodeIds, realNodeIds, 0);
         }
-        for (VisualDslRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
-            diagnostics.add(fromCompilerDiagnostic(diagnostic));
+        boolean kernelFixtureMismatch = simulationExecutor != null
+                && dynamic.errors().contains("FIXTURE_UNMATCHED");
+        if (!kernelFixtureMismatch) {
+            for (VisualDslRunResponse.Diagnostic diagnostic : dynamic.diagnostics()) {
+                diagnostics.add(fromCompilerDiagnostic(diagnostic));
+            }
         }
-        List<VisualDiagnostic> assertionDiagnostics =
-                inputAssertionDiagnostics(effectiveFixtures, simulationOperators);
+        List<VisualDiagnostic> assertionDiagnostics = simulationExecutor == null
+                ? inputAssertionDiagnostics(effectiveFixtures, simulationOperators)
+                : kernelInputMismatchDiagnostics(dynamic, effectiveFixtures);
         diagnostics.addAll(assertionDiagnostics);
-        List<String> errors = new ArrayList<>(dynamic.errors());
+        List<String> errors = kernelFixtureMismatch
+                ? new ArrayList<>()
+                : new ArrayList<>(dynamic.errors());
         assertionDiagnostics.forEach(diagnostic -> errors.add(diagnostic.message()));
 
         boolean assertionsPass = assertionDiagnostics.isEmpty();
-        boolean terminalConforms = terminalOutputConforms(draft, dynamic.outputNode(), dynamic.output());
+        Object output = dynamic.output();
+        if (!assertionsPass && simulationExecutor != null && output == null
+                && mockOutputsByNodeId.containsKey(dynamic.outputNode())) {
+            output = mockOutputsByNodeId.get(dynamic.outputNode());
+        }
+        boolean terminalConforms = terminalOutputConforms(draft, dynamic.outputNode(), output);
+        Map<String, Object> results = dynamic.results();
+        Map<String, String> statusMap = dynamic.statusMap();
+        if (kernelFixtureMismatch) {
+            results = new LinkedHashMap<>(results);
+            statusMap = new LinkedHashMap<>(statusMap);
+            for (Map.Entry<String, Object> entry : mockOutputsByNodeId.entrySet()) {
+                String nodeId = entry.getKey();
+                Object mockOutput = entry.getValue();
+                results.putIfAbsent(nodeId, mockOutput);
+                statusMap.put(nodeId, "COMPLETED");
+            }
+        }
 
         return new VisualGraphSimulationResponse(
                 true,
@@ -312,9 +367,9 @@ public class VisualGraphSimulationService {
                 dynamic.success() && assertionsPass,
                 dynamic.graphName(),
                 dynamic.outputNode(),
-                dynamic.output(),
-                dynamic.results(),
-                dynamic.statusMap(),
+                output,
+                results,
+                statusMap,
                 dynamic.elapsedMs(),
                 dynamic.nodeElapsedMs(),
                 mockedNodeIds,
@@ -340,6 +395,21 @@ public class VisualGraphSimulationService {
                 Thread.ofVirtual().name("visual-simulate-", 0).factory());
         Future<VisualDslRunResponse> future = executor.submit(() ->
                 runnerFactory.forRegistry(simulationRegistry).run(request));
+        try {
+            return future.get(runTimeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException ex) {
+            future.cancel(true);
+            throw ex;
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
+    private VisualDslRunResponse runKernelWithTimeout(VisualSimulationPlan plan)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        ExecutorService executor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("visual-simulate-kernel-", 0).factory());
+        Future<VisualDslRunResponse> future = executor.submit(() -> simulationExecutor.execute(plan));
         try {
             return future.get(runTimeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException ex) {
@@ -443,6 +513,34 @@ public class VisualGraphSimulationService {
             }
         });
         return diagnostics;
+    }
+
+    private static List<VisualDiagnostic> kernelInputMismatchDiagnostics(
+            VisualDslRunResponse dynamic,
+            Map<String, NodeFixture> fixtures) {
+        if (!dynamic.errors().contains("FIXTURE_UNMATCHED")) {
+            return List.of();
+        }
+        return fixtures.entrySet().stream()
+                .filter(entry -> entry.getValue() != null && entry.getValue().expectedInput() != null)
+                .filter(entry -> {
+                    List<VisualNodeExecutionAttempt> attempts = dynamic.nodeAttempts()
+                            .getOrDefault(entry.getKey(), List.of());
+                    return attempts.isEmpty() || attempts.stream()
+                            .anyMatch(attempt -> "FIXTURE_UNMATCHED".equals(attempt.errorType()));
+                })
+                .map(entry -> {
+                    String nodeId = entry.getKey();
+                    Object actualInput = dynamic.nodeAttempts().getOrDefault(nodeId, List.of()).stream()
+                            .reduce((left, right) -> right)
+                            .map(VisualNodeExecutionAttempt::input)
+                            .orElse(null);
+                    return VisualDiagnostic.error("visual.simulate.inputAssertionMismatch",
+                            "Node '%s' input assertion failed: expected %s but observed %s."
+                                    .formatted(nodeId, entry.getValue().expectedInput(), actualInput),
+                            "/fixtures/" + nodeId + "/expectedInput");
+                })
+                .toList();
     }
 
     private static Map<String, Object> effectiveContext(GraphDraft draft, Map<String, Object> context) {
