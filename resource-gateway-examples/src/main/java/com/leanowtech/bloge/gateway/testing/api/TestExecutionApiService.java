@@ -267,6 +267,13 @@ public final class TestExecutionApiService {
         return execute(request, identity, admissions);
     }
 
+    /** Executes an already admitted request without re-parsing transport controls. */
+    TestExecutionApiResponse executeAdmittedIngress(TestExecutionIngress ingress,
+                                                    IntegrationRequestContext identity) {
+        Objects.requireNonNull(ingress, "ingress");
+        return execute(ingress.request(), identity, admissions);
+    }
+
     /**
      * Executes a suite child under the suite's already-held all-dimension parent permit.
      *
@@ -1245,7 +1252,7 @@ public final class TestExecutionApiService {
             throw badRequest(identity, "RG.TEST.ENTERPRISE_SCOPE_REQUIRED",
                     "Project and region are required for governed test assets.", Map.of());
         }
-        String environment = identity.environmentId().toLowerCase(Locale.ROOT);
+        String environment = TestExecutionIngressAdapter.canonicalEnvironment(identity.environmentId());
         if (!ENABLED_ENVIRONMENTS.contains(environment)) {
             securityEvent(identity, "TEST_PURPOSE_PRODUCTION_TOUCH", "REJECTED",
                     "RG.TEST.ENVIRONMENT_FORBIDDEN", Map.of("allowedEnvironments", ENABLED_ENVIRONMENTS));

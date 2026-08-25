@@ -30,6 +30,8 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
@@ -488,6 +490,29 @@ class TestExecutionApiServiceTest {
             assertThat(event.outcome()).isEqualTo("REJECTED");
         });
         assertThat(runs.values).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"test", "TEST", " test ", "staging", " STAGING "})
+    void testAndStagingEnvironmentIdsAreCanonicalizedBeforeExecution(String environment) {
+        FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "canonical-output",
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("ok"),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+        TestExecutionApiResponse response = service.execute(
+                request(bundle("canonical-" + environment.trim(), rule), null,
+                        TestExecutionApiRequest.Verbosity.SUMMARY), identity(environment));
+
+        assertThat(response.evidence().status()).isEqualTo(TestRunEvidence.Status.PASSED);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"prod", "PROD", " prod ", "production", "PRODUCTION", " production "})
+    void productionEnvironmentIdsAreCanonicalizedToTheSameForbiddenPolicy(String environment) {
+        assertThatThrownBy(() -> service.execute(
+                request(bundle("production-" + environment.trim()), null,
+                        TestExecutionApiRequest.Verbosity.SUMMARY), identity(environment)))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure ->
+                        assertThat(failure.problem().code()).isEqualTo("RG.TEST.ENVIRONMENT_FORBIDDEN"));
     }
 
     @Test

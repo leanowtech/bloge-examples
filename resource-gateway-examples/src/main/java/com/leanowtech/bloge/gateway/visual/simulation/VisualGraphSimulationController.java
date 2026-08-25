@@ -1,5 +1,11 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,5 +42,19 @@ public class VisualGraphSimulationController {
     public VisualGraphSimulationResponse simulate(@RequestBody VisualGraphSimulationRequest request) {
         return simulationService.simulate(
                 request.draft(), request.context(), request.outputNode(), request.fixtures());
+    }
+
+    /** Maps the visual-owned admission failure to Spring's standard problem-details contract. */
+    @ExceptionHandler(VisualSimulationProductionAdmissionException.class)
+    public ResponseEntity<ProblemDetail> handleProductionAdmission(
+            VisualSimulationProductionAdmissionException failure) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.FORBIDDEN);
+        problem.setTitle(VisualSimulationProductionAdmissionException.TITLE);
+        problem.setDetail(VisualSimulationProductionAdmissionException.TITLE);
+        problem.setProperty("code", VisualSimulationProductionAdmissionException.CODE);
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .cacheControl(CacheControl.noStore())
+                .header(HttpHeaders.PRAGMA, "no-cache")
+                .body(problem);
     }
 }

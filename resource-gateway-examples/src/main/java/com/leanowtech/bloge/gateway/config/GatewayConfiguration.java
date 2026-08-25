@@ -177,6 +177,7 @@ import com.leanowtech.bloge.gateway.authoring.scenario.TestingControlPlaneScenar
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualProductionAdmissionPolicy;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
@@ -194,6 +195,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -228,6 +231,56 @@ import java.util.Set;
 @EnableScheduling
 public class GatewayConfiguration {
 
+    /**
+     * Immutable server-owned evidence used by every production execution boundary.
+     *
+     * <p>The integration identity defaults to {@code prod}; the admission decision must use the
+     * same default so an omitted profile or environment property cannot accidentally disable the
+     * production guard.</p>
+     */
+    public record ServerDeploymentPolicy(boolean productionDeployment, String environmentId) {
+        public static final String ENVIRONMENT_PROPERTY =
+                "gateway.integration.identity.environment-id";
+        public static final String DEFAULT_ENVIRONMENT_ID = "prod";
+
+        public ServerDeploymentPolicy {
+            environmentId = normalize(environmentId);
+            productionDeployment = productionDeployment || isProduction(environmentId);
+        }
+
+        /** Creates the policy from server-owned Spring environment evidence. */
+        public static ServerDeploymentPolicy from(Environment environment) {
+            java.util.Objects.requireNonNull(environment, "environment");
+            return new ServerDeploymentPolicy(
+                    environment.acceptsProfiles(Profiles.of("production")),
+                    environment.getProperty(ENVIRONMENT_PROPERTY, DEFAULT_ENVIRONMENT_ID));
+        }
+
+        /** Creates the production default used by legacy standalone filter construction. */
+        public static ServerDeploymentPolicy productionDefault() {
+            return new ServerDeploymentPolicy(true, DEFAULT_ENVIRONMENT_ID);
+        }
+
+        /** Creates an explicit non-production policy for isolated unit tests. */
+        public static ServerDeploymentPolicy nonProductionTest() {
+            return new ServerDeploymentPolicy(false, "test");
+        }
+
+        /** Creates policy evidence for focused tests without consulting request data. */
+        public static ServerDeploymentPolicy fromEvidence(boolean productionProfileActive,
+                                                           String configuredEnvironment) {
+            return new ServerDeploymentPolicy(productionProfileActive, configuredEnvironment);
+        }
+
+        private static String normalize(String value) {
+            return value == null || value.isBlank() ? DEFAULT_ENVIRONMENT_ID : value.trim();
+        }
+
+        private static boolean isProduction(String value) {
+            return "prod".equalsIgnoreCase(value) || "production".equalsIgnoreCase(value);
+        }
+    }
+
     // ── Serialization ───────────────────────────────────────────────────
 
     /**
@@ -249,6 +302,20 @@ public class GatewayConfiguration {
                 new NamedType(HttpRequestInput.ApiKeyAuth.class, "apiKey")
         );
         return mapper;
+    }
+
+    /** One server-owned production admission decision shared by all execution boundaries. */
+    @Bean
+    public ServerDeploymentPolicy serverDeploymentPolicy(Environment environment) {
+        return ServerDeploymentPolicy.from(environment);
+    }
+
+    /** Converts server-owned deployment evidence into the visual runtime's narrow value object. */
+    @Bean
+    public VisualProductionAdmissionPolicy visualProductionAdmissionPolicy(
+            ServerDeploymentPolicy deploymentPolicy) {
+        return new VisualProductionAdmissionPolicy(
+                deploymentPolicy.productionDeployment(), deploymentPolicy.environmentId());
     }
 
     /** Durable authority for run cancellation, owner leases and restart recovery. */
@@ -475,8 +542,9 @@ public class GatewayConfiguration {
     @ConditionalOnMissingBean
     public ExecutionControlBoundaryGuardFilter executionControlBoundaryGuardFilter(
             ObjectMapper objectMapper,
-            IntegrationAccessAuditRepository auditRepository) {
-        return new ExecutionControlBoundaryGuardFilter(objectMapper, auditRepository);
+            IntegrationAccessAuditRepository auditRepository,
+            ServerDeploymentPolicy deploymentPolicy) {
+        return new ExecutionControlBoundaryGuardFilter(objectMapper, auditRepository, deploymentPolicy);
     }
 
     /** Transactional source of integration change events. */

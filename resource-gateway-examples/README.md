@@ -27,6 +27,7 @@ integration something the business flow can see, reason about, test, and change.
 | Schema-gated table tests | Run 14 built-in cases across all seven resource graphs with F3 transport fixtures, bounded retry consumption, coverage gates, and fidelity evidence |
 | Isolated testing control plane | Test/staging-only graph/operator discovery, validator-proven boundary-case planning, reviewed plan-to-suite materialization, immutable fixture registry, caller-driven DAG and operator micro-graph execution, attempt/occurrence-specific doubles, sanitized evidence retention, batch runs, and production control-field guard |
 | Explicit execution modes | The unified test kernel now freezes the seven-mode execution vocabulary per selected rule; descriptor protocol and descriptor transport take separate fail-closed paths, and transport fixtures run the real request mapping and response interpretation with zero network |
+| Header-isolated test admission | Authenticated test/staging execution can carry a bounded inline fixture in `X-BLOGE-Test-Inline`; all body-bearing testing routes authenticate before DTO parsing, while production execution routes and visual simulation reject test controls at both the servlet boundary and service boundary |
 | Durable stability jobs | Authenticated non-blocking submit/query/cancel protocol, deterministic idempotency, database capacity/fairness/deadline control, transaction-bound payload-free cancellation audit, lifecycle views, opt-in current-authority worker, and honest capability discovery |
 | Governed run controls | Absolute deadline, monotonic remaining-budget propagation, fenced cancel, durable owner lease/epoch, cross-instance commands, and automatic signed evidence recovery after owner failure |
 | Auditable external writes | Versioned write contracts, binding/activation conformance, execution-scoped journal, commit receipts, UNKNOWN_COMMIT DAG guard, and signed reconciliation evidence |
@@ -51,9 +52,12 @@ integration something the business flow can see, reason about, test, and change.
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `DESCRIPTOR_PROTOCOL`, `DESCRIPTOR_TRANSPORT`, and
 `BINDING_REAL`; unsupported future modes remain closed rather than being simulated implicitly.
-The four bounded `X-BLOGE-Test-*` headers also have a strict, payload-safe parser, but they are not
-yet attached to an HTTP entry point. Visual simulation still uses its legacy adapter until parity,
-production double-rejection, and differential tests are complete. See the
+The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authenticated
+test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
+`fixtureBundle` object and cannot be combined with a legacy body fixture source; business context
+remains in the request body. Scenario and world-model references remain fail-closed until the
+stage-one authorized asset resolver exists. Visual simulation still uses its legacy execution
+adapter until kernel parity and differential tests are complete. See the
 [implementation ledger](../docs/rg-evolution-design-1.2.1-implementation-ledger.md) for the exact
 evidence and remaining gates.
 

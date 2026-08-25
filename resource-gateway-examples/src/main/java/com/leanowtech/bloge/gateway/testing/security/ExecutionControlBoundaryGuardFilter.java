@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.testing.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.config.GatewayConfiguration.ServerDeploymentPolicy;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRecord;
 import com.leanowtech.bloge.gateway.integration.IntegrationAccessAuditRepository;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
@@ -13,6 +14,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +27,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import java.util.Enumeration;
 
 /**
  * Rejects caller-driven test controls on ordinary production execution protocols.
@@ -33,6 +37,7 @@ import java.util.regex.Pattern;
  * path. Rejected attempts are committed to the production integration security audit. If the audit
  * sink is unavailable, the guard fails closed with 503.</p>
  */
+@Order(Ordered.HIGHEST_PRECEDENCE)
 public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFilter {
 
     private static final int MAX_INSPECTABLE_BODY_BYTES = 2 * 1024 * 1024;
@@ -49,20 +54,77 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
             "replay", "replaypayload", "replaypayloads",
             "replacementrule", "replacementrules", "resolveroverrides",
             "scenariopack", "scenariopackref");
+    private static final Set<String> TEST_CONTROL_HEADERS = Set.of(
+            "x-bloge-test-envelope",
+            "x-bloge-test-fidelity",
+            "x-bloge-test-scope",
+            "x-bloge-test-inline");
     private static final Set<String> EXACT_EXECUTION_PATHS = Set.of(
             "/api/gateway/resources/execute",
             "/api/gateway/examples/compose/run",
             "/api/visual/drafts/run");
+    private static final Set<String> PRODUCTION_ONLY_EXECUTION_PATHS = Set.of(
+            "/api/gateway/graphs/contracts/tests/run",
+            "/api/gateway/graphs/contracts/tests/suites/run-all",
+            "/api/visual/operators/tests/run",
+            "/api/visual/operators/tests/suites/run-all");
     private static final Pattern STORED_DRAFT_RUN = Pattern.compile("/api/visual/drafts/[^/]+/run");
     private static final Pattern PUBLICATION_RUN = Pattern.compile("/api/visual/publications/[^/]+/run");
+    private static final Pattern GOLDEN_CASE_RUN = Pattern.compile("/api/visual/golden-cases/[^/]+/run");
+    private static final Pattern GATEWAY_CONTRACT_SUITE_RUN =
+            Pattern.compile("/api/gateway/graphs/contracts/tests/suites/[^/]+/run");
+    private static final Pattern VISUAL_OPERATOR_SUITE_RUN =
+            Pattern.compile("/api/visual/operators/tests/suites/[^/]+/run");
+    private static final Pattern GOLDEN_PUBLICATION_RUN =
+            Pattern.compile("/api/visual/golden-cases/publications/[^/]+/run");
+    private static final String PRODUCTION_PROFILE_ENVIRONMENT = "production";
 
     private final ObjectMapper objectMapper;
     private final IntegrationAccessAuditRepository audit;
+    private final boolean serverProductionDeployment;
+    private final String configuredDeploymentEnvironment;
 
     public ExecutionControlBoundaryGuardFilter(ObjectMapper objectMapper,
                                                IntegrationAccessAuditRepository audit) {
+        this(objectMapper, audit, ServerDeploymentPolicy.productionDefault());
+    }
+
+    /**
+     * Backward-compatible standalone constructor. A true value models a production deployment;
+     * a false value models a test/staging deployment. Legacy ordinary production-run paths remain
+     * guarded in both modes.
+     */
+    public ExecutionControlBoundaryGuardFilter(ObjectMapper objectMapper,
+                                               IntegrationAccessAuditRepository audit,
+                                               boolean productionDeployment) {
+        this(objectMapper, audit, ServerDeploymentPolicy.fromEvidence(
+                productionDeployment, productionDeployment ? PRODUCTION_PROFILE_ENVIRONMENT : "test"));
+    }
+
+    /**
+     * Creates the guard from immutable server-owned deployment evidence.
+     *
+     * @param productionProfileActive whether the Spring production profile is active
+     * @param configuredDeploymentEnvironment server-configured environment/deployment value
+     */
+    public ExecutionControlBoundaryGuardFilter(ObjectMapper objectMapper,
+                                               IntegrationAccessAuditRepository audit,
+                                               boolean productionProfileActive,
+                                               String configuredDeploymentEnvironment) {
+        this(objectMapper, audit, ServerDeploymentPolicy.fromEvidence(
+                productionProfileActive, configuredDeploymentEnvironment));
+    }
+
+    /** Creates the guard from the shared immutable server-owned deployment policy. */
+    public ExecutionControlBoundaryGuardFilter(ObjectMapper objectMapper,
+                                               IntegrationAccessAuditRepository audit,
+                                               ServerDeploymentPolicy deploymentPolicy) {
         this.objectMapper = java.util.Objects.requireNonNull(objectMapper, "objectMapper");
         this.audit = java.util.Objects.requireNonNull(audit, "audit");
+        ServerDeploymentPolicy policy = java.util.Objects.requireNonNull(
+                deploymentPolicy, "deploymentPolicy");
+        this.configuredDeploymentEnvironment = policy.environmentId();
+        this.serverProductionDeployment = policy.productionDeployment();
     }
 
     @Override
@@ -70,15 +132,27 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
         if (!"POST".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
-        String path = request.getRequestURI();
-        return !(EXACT_EXECUTION_PATHS.contains(path)
+        String path = pathWithinApplication(request);
+        boolean legacyExecutionPath = EXACT_EXECUTION_PATHS.contains(path)
                 || STORED_DRAFT_RUN.matcher(path).matches()
-                || PUBLICATION_RUN.matcher(path).matches());
+                || PUBLICATION_RUN.matcher(path).matches();
+        boolean productionOnlyExecutionPath = serverProductionDeployment
+                && ("/api/visual/graphs/simulate".equals(path)
+                || PRODUCTION_ONLY_EXECUTION_PATHS.contains(path)
+                || GOLDEN_CASE_RUN.matcher(path).matches()
+                || GATEWAY_CONTRACT_SUITE_RUN.matcher(path).matches()
+                || VISUAL_OPERATOR_SUITE_RUN.matcher(path).matches()
+                || GOLDEN_PUBLICATION_RUN.matcher(path).matches());
+        return !(legacyExecutionPath || productionOnlyExecutionPath);
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
+        if (hasTestControlHeader(request)) {
+            rejectTestControlHeader(request, response);
+            return;
+        }
         if (!json(request.getContentType())) {
             filterChain.doFilter(request, response);
             return;
@@ -106,7 +180,7 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
         try {
             audit.append(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId,
                     "", "", "", "", "", "", "", "PUBLIC", 0, "",
-                    header(request, "X-Tenant-Id"), environment(request),
+                    "", configuredDeploymentEnvironment,
                     "PRODUCTION_RUN_CONTROL_GUARD", "PRODUCTION", "DENIED",
                     "RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN"));
         } catch (RuntimeException auditFailure) {
@@ -122,6 +196,45 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
                         + "replay, and replacement-control fields are forbidden on "
                         + "production run protocols.",
                 correlationId, Map.of("field", field, "testingEndpoint", "/api/testing/executions")));
+    }
+
+    private void rejectTestControlHeader(HttpServletRequest request,
+                                         HttpServletResponse response) throws IOException {
+        String correlationId = header(request, "X-Correlation-Id");
+        if (correlationId.isBlank()) {
+            correlationId = UUID.randomUUID().toString();
+        }
+        try {
+            audit.append(new IntegrationAccessAuditRecord(0, Instant.now(), correlationId,
+                    "", "", "", "", "", "", "", "PUBLIC", 0, "",
+                    "", configuredDeploymentEnvironment,
+                    "PRODUCTION_RUN_CONTROL_GUARD", "PRODUCTION", "DENIED",
+                    "RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN"));
+        } catch (RuntimeException auditFailure) {
+            writeProblem(response, IntegrationProblem.serviceUnavailable(
+                    "RG.INTEGRATION.SECURITY_AUDIT_UNAVAILABLE",
+                    "Production execution is unavailable because the security audit sink cannot commit.",
+                    correlationId, Map.of()));
+            return;
+        }
+        writeProblem(response, IntegrationProblem.badRequest(
+                "RG.PRODUCTION.CONTROL_FIELD_FORBIDDEN",
+                "Production execution cannot accept test-control headers.",
+                correlationId, Map.of()));
+    }
+
+    private static boolean hasTestControlHeader(HttpServletRequest request) {
+        Enumeration<String> names = request.getHeaderNames();
+        if (names == null) {
+            return false;
+        }
+        while (names.hasMoreElements()) {
+            String name = names.nextElement();
+            if (name != null && TEST_CONTROL_HEADERS.contains(name.toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String controlledField(byte[] body) {
@@ -179,9 +292,36 @@ public final class ExecutionControlBoundaryGuardFilter extends OncePerRequestFil
         }
     }
 
-    private static String environment(HttpServletRequest request) {
-        String environment = header(request, "X-Environment-Id");
-        return environment.isBlank() ? header(request, "X-Namespace") : environment;
+    private static String pathWithinApplication(HttpServletRequest request) {
+        String servletPath = request.getServletPath();
+        String pathInfo = request.getPathInfo();
+        if (servletPath != null && !servletPath.isBlank() && !"/".equals(servletPath)) {
+            return normalizePath(stripContextPath(
+                    servletPath + (pathInfo == null ? "" : pathInfo), request.getContextPath()));
+        }
+        if (pathInfo != null && !pathInfo.isBlank() && !"/".equals(pathInfo)) {
+            return normalizePath(stripContextPath(pathInfo, request.getContextPath()));
+        }
+        String requestUri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        if (requestUri == null || requestUri.isBlank()) {
+            return "";
+        }
+        return normalizePath(stripContextPath(requestUri, contextPath));
+    }
+
+    private static String stripContextPath(String path, String contextPath) {
+        if (contextPath != null && !contextPath.isBlank() && path.startsWith(contextPath)) {
+            return path.substring(contextPath.length());
+        }
+        return path;
+    }
+
+    private static String normalizePath(String path) {
+        if (path == null || path.isBlank()) {
+            return "";
+        }
+        return path.startsWith("/") ? path : "/" + path;
     }
 
     private static String header(HttpServletRequest request, String name) {

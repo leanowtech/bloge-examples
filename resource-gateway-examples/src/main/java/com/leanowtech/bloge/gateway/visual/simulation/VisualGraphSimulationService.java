@@ -83,6 +83,8 @@ public class VisualGraphSimulationService {
     private final JsonSchemaSampleGenerator sampleGenerator;
     private final VisualDslRunnerFactory runnerFactory;
     private final Duration runTimeout;
+    private final boolean serverProductionDeployment;
+    private final String configuredDeploymentEnvironment;
 
     /**
      * @param validator visual draft validator (reused; the action-readiness run gate is intentionally
@@ -91,12 +93,26 @@ public class VisualGraphSimulationService {
      * @param sampleGenerator deterministic JSON Schema sample generator
      * @param runnerFactory creates DSL runners for simulation-specific operator registries
      */
-    @Autowired
     public VisualGraphSimulationService(GraphDraftValidator validator,
                                         VisualOperatorCatalog catalog,
                                         JsonSchemaSampleGenerator sampleGenerator,
                                         VisualDslRunnerFactory runnerFactory) {
-        this(validator, catalog, sampleGenerator, runnerFactory, DEFAULT_SIMULATION_RUN_TIMEOUT);
+        this(validator, catalog, sampleGenerator, runnerFactory,
+                DEFAULT_SIMULATION_RUN_TIMEOUT, VisualProductionAdmissionPolicy.nonProductionTest());
+    }
+
+    /**
+     * Spring-owned construction uses immutable deployment evidence rather than request data.
+     */
+    @Autowired
+    public VisualGraphSimulationService(GraphDraftValidator validator,
+                                        VisualOperatorCatalog catalog,
+                                        JsonSchemaSampleGenerator sampleGenerator,
+                                        VisualDslRunnerFactory runnerFactory,
+                                        VisualProductionAdmissionPolicy deploymentPolicy) {
+        this(validator, catalog, sampleGenerator, runnerFactory,
+                DEFAULT_SIMULATION_RUN_TIMEOUT,
+                deploymentPolicy);
     }
 
     /**
@@ -111,11 +127,39 @@ public class VisualGraphSimulationService {
                                  JsonSchemaSampleGenerator sampleGenerator,
                                  VisualDslRunnerFactory runnerFactory,
                                  Duration runTimeout) {
+        this(validator, catalog, sampleGenerator, runnerFactory, runTimeout,
+                VisualProductionAdmissionPolicy.nonProductionTest());
+    }
+
+    /** Test seam for immutable server deployment evidence. */
+    VisualGraphSimulationService(GraphDraftValidator validator,
+                                 VisualOperatorCatalog catalog,
+                                 JsonSchemaSampleGenerator sampleGenerator,
+                                 VisualDslRunnerFactory runnerFactory,
+                                 Duration runTimeout,
+                                 boolean productionProfileActive,
+                                 String configuredDeploymentEnvironment) {
+        this(validator, catalog, sampleGenerator, runnerFactory, runTimeout,
+                VisualProductionAdmissionPolicy.fromEvidence(
+                        productionProfileActive, configuredDeploymentEnvironment));
+    }
+
+    /** Test seam for the shared immutable server deployment policy. */
+    VisualGraphSimulationService(GraphDraftValidator validator,
+                                 VisualOperatorCatalog catalog,
+                                 JsonSchemaSampleGenerator sampleGenerator,
+                                 VisualDslRunnerFactory runnerFactory,
+                                 Duration runTimeout,
+                                 VisualProductionAdmissionPolicy deploymentPolicy) {
         this.validator = validator;
         this.catalog = catalog;
         this.sampleGenerator = sampleGenerator;
         this.runnerFactory = runnerFactory;
         this.runTimeout = normalizeTimeout(runTimeout);
+        VisualProductionAdmissionPolicy policy = Objects.requireNonNull(
+                deploymentPolicy, "deploymentPolicy");
+        this.configuredDeploymentEnvironment = policy.environmentId();
+        this.serverProductionDeployment = policy.productionDeployment();
     }
 
     /**
@@ -152,6 +196,7 @@ public class VisualGraphSimulationService {
                                                   Map<String, Object> context,
                                                   String outputNode,
                                                   Map<String, NodeFixture> fixtures) {
+        rejectProductionSimulation();
         if (draft == null) {
             return blocked(false, List.of(VisualDiagnostic.error("visual.simulate.draftMissing",
                     "Graph draft is required.", "/")), List.of("Graph draft is required."), "");
@@ -279,6 +324,13 @@ public class VisualGraphSimulationService {
                 errors,
                 generated.dsl()
         );
+    }
+
+    private void rejectProductionSimulation() {
+        if (!serverProductionDeployment) {
+            return;
+        }
+        throw new VisualSimulationProductionAdmissionException();
     }
 
     private VisualDslRunResponse runDslWithTimeout(DefaultOperatorRegistry simulationRegistry,

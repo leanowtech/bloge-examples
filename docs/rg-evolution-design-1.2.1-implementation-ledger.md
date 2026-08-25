@@ -17,7 +17,7 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 底层 transport fixture 已存在；统一 `ExecutionMode`、控制头协议和 visual adapter 正在实施 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口与生产双重拒绝已形成开发证据；visual adapter、无 binding 执行与差分台仍未完成 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `NOT_STARTED` | 现有 Scenario/Mirror 资产不能自动等同于 1.2.1 定义的世界模型闭包 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
@@ -30,9 +30,9 @@
 |---|---|---|---|
 | `S0-A` | 七态 `ExecutionMode`；编译期模式固定；`DESCRIPTOR_PROTOCOL` / `DESCRIPTOR_TRANSPORT` 显式运行分派 | `DEVELOPMENT_VERIFIED` | 60/60：模式分类、compiler 到 runtime 的动态多规则实际选择、混合规则 fingerprint 稳定、提取语义对拍、模式不一致失败关闭、legacy graph-contract 兼容 |
 | `S0-P` | 四个 `X-BLOGE-Test-*` 控制头的纯协议解析 | `DEVELOPMENT_VERIFIED` | 19/19：strict base64url/UTF-8/JSON、大小和复杂度边界、多值拒绝、错误不泄漏、inline canonicalization |
-| `S0-B` | 服务端执行目的铸造与受控入口 admission | `NOT_STARTED` | caller purpose 不被信任；test/staging 允许；production、越权和审计失败均关闭 |
+| `S0-B` | 服务端执行目的铸造与受控入口 admission | `DEVELOPMENT_VERIFIED` | 七类 Body 入口在反序列化前按固定 `IntegrationOperation` 认证；bounded inline fixture 进入既有解析链；caller purpose 不可改写内核 purpose |
 | `S0-C` | visual 设计期模拟适配统一内核 | `NOT_STARTED` | 保留 schema stand-in、纯原语、逐节点 fixture、资源上限、超时和响应兼容 |
-| `S0-D` | 生产入口控制头拒绝/剥离及服务端二次拒绝 | `NOT_STARTED` | 真实 Spring Filter 链路和服务层绕过攻击均被拒绝 |
+| `S0-D` | 生产入口控制头拒绝/剥离及服务端二次拒绝 | `DEVELOPMENT_VERIFIED` | profile/服务端环境双判定、context-path 安全执行路由全集、真实 Spring Filter 链与 visual service 独立 403 拒绝；server-owned policy Bean 不可由普通业务 Bean 条件替换 |
 | `S0-E` | 新旧路径等价对拍、确定性和架构约束 | `NOT_STARTED` | 正常/异常矩阵、N 次同指纹、禁非确定 API、ReDoS 与零网络证明 |
 
 ### 3.2 阶段出口
@@ -41,8 +41,8 @@
 |---|---|---|---|
 | `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 显式模式和完整 transport pipeline 已验证；统一 compiler 仍要求 `httpResource` registry binding，尚缺真正无 binding 的 adapter | `PARTIAL` |
 | `S0-EXIT-02` | 设计期模拟通过 adapter 进入统一内核 | `VisualGraphSimulationService` 仍使用 `__sim_*` 独立路径 | `NOT_MET` |
-| `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | 尚无结构化控制头入口 | `NOT_MET` |
-| `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 当前 Filter 仅扫描部分生产执行 Body；TestExecution 服务有局部目的校验 | `PARTIAL` |
+| `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | Header admission 和 bounded inline fixture 已进入既有执行链；legacy Body 控制为兼容保留，Scenario/World Model 授权引用属于阶段一 | `PARTIAL` |
+| `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 入口 Filter 已覆盖已识别执行路由；visual service 与 TestExecution service 可独立拒绝 production；尚待统一 visual adapter 后对所有模式做端到端旁路证明 | `PARTIAL` |
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 尚无固定差分矩阵 | `NOT_MET` |
 | `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | transport 使用 stub；尚缺系统级攻击测试 | `PARTIAL` |
 | `S0-EXIT-07` | 编译等价、N 次重放确定性和禁非确定 API 架构规则通过 | 尚无阶段零固定测试台 | `NOT_MET` |
@@ -112,6 +112,29 @@ ExecutionControlCompilerTest        32/32
 ResourceFixtureRuntimeTest           8/8
 OperatorMicroGraphRunnerTest         6/6
 GatewayGraphContractTestServiceTest 14/14
+TestExecutionIngressAdapterTest     25/25
+TestExecutionControllerTest         15/15
+TestExecutionApiServiceTest         38/38
+TestExecutionAuthenticationInterceptorIntegrationTest 22/22
+TestRuntimeProfileIsolationTest     26/26
+ExecutionControlBoundaryGuardFilterTest               309/309
+ExecutionControlBoundaryGuardApplicationIntegrationTest 2/2
+ExecutionControlBoundaryGuardNonProductionApplicationIntegrationTest 1/1
+VisualGraphSimulationServiceTest    12/12
+VisualGraphSimulationControllerTest  2/2
+VisualGraphSimulationProductionAdmissionTest 7/7
+VisualRuntimeBoundaryTest            1/1
+ServerDeploymentPolicySpringWiringTest 4/4
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；它不证明 visual adapter、未来五种执行模式或无 registry binding 执行已经完成。19 项协议测试证明 `S0-P` 纯解析协议闭合；控制头尚未接入 HTTP 入口，因此不推进 `S0-EXIT-03`。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；它不证明 visual adapter、未来五种执行模式或无 registry binding 执行已经完成。19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析及统一 visual kernel 尚未完成，因此阶段零出口仍保持部分满足。
+
+截至 2026-08-26，本切片最终串行里程碑结果：
+
+```text
+resource-gateway-examples clean verify  7047 tests / 0 failures / 0 errors / 28 skipped
+resource-gateway-test-kit clean verify  1905 tests + 2 integration tests / all green
+A1 protocol archive boundary            PASS
+```
+
+该全量结果证明当前仓库回归分母为绿色；它仍不能代替 `S0-EXIT-01..08` 的逐项事实验收。

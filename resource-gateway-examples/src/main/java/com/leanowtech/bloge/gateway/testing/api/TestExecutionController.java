@@ -1,9 +1,13 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.leanowtech.bloge.gateway.config.GatewayConfiguration;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.TestSuiteEvidenceBundle;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Profile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Map;
 
 /**
  * Caller-driven test execution surface, assembled only in {@code test} and {@code staging} profiles.
@@ -31,6 +37,7 @@ public class TestExecutionController {
     private final TestSuiteCatalogMaterializationService catalogMaterialization;
     private final TestReplayPayloadService replayPayloads;
     private final IntegrationRequestAuthenticator authenticator;
+    private final TestExecutionIngressAdapter ingressAdapter;
 
     public TestExecutionController(TestExecutionApiService service,
                                    TestSuiteRegistryService suiteRegistry,
@@ -44,12 +51,25 @@ public class TestExecutionController {
         this.catalogMaterialization = catalogMaterialization;
         this.replayPayloads = replayPayloads;
         this.authenticator = authenticator;
+        this.ingressAdapter = new TestExecutionIngressAdapter(
+                new GatewayConfiguration().objectMapper());
     }
 
     @PostMapping("/executions")
     public TestExecutionApiResponse execute(@RequestBody TestExecutionApiRequest request,
-                                            @RequestHeader HttpHeaders headers) {
-        return service.execute(request, context(headers, IntegrationOperation.TEST_EXECUTION));
+                                             @RequestHeader HttpHeaders headers,
+                                             HttpServletRequest servletRequest) {
+        IntegrationRequestContext authenticated = testExecutionContext(headers, servletRequest);
+        if (!TestExecutionIngressAdapter.hasControlHeaders(headers)) {
+            return service.execute(request, authenticated);
+        }
+        return service.executeAdmittedIngress(ingressAdapter.admit(request, authenticated, headers), authenticated);
+    }
+
+    /** Backward-compatible direct-call entry used by standalone controller tests. */
+    TestExecutionApiResponse execute(TestExecutionApiRequest request,
+                                     HttpHeaders headers) {
+        return execute(request, headers, null);
     }
 
     @GetMapping("/targets/graphs/{graphName}")
@@ -123,15 +143,18 @@ public class TestExecutionController {
     @PostMapping("/targets/operators/{operatorRef}/executions")
     public TestExecutionApiResponse executeOperator(@PathVariable String operatorRef,
                                                     @RequestBody TestOperatorExecutionApiRequest request,
-                                                    @RequestHeader HttpHeaders headers) {
+                                                    @RequestHeader HttpHeaders headers,
+                                                    HttpServletRequest servletRequest) {
         return service.executeOperator(operatorRef, request,
-                context(headers, IntegrationOperation.TEST_EXECUTION));
+                context(headers, IntegrationOperation.TEST_EXECUTION, servletRequest));
     }
 
     @PostMapping("/executions/batch")
     public TestExecutionBatchResponse executeBatch(@RequestBody TestExecutionBatchRequest request,
-                                                   @RequestHeader HttpHeaders headers) {
-        return service.executeBatch(request, context(headers, IntegrationOperation.TEST_EXECUTION));
+                                                   @RequestHeader HttpHeaders headers,
+                                                   HttpServletRequest servletRequest) {
+        return service.executeBatch(request,
+                context(headers, IntegrationOperation.TEST_EXECUTION, servletRequest));
     }
 
     @GetMapping("/executions/{runId}")
@@ -145,9 +168,10 @@ public class TestExecutionController {
     @PutMapping("/fixture-bundles/{fixtureBundleId}")
     public StoredFixtureBundle registerFixture(@PathVariable String fixtureBundleId,
                                                @RequestBody FixtureBundleRegistrationRequest request,
-                                               @RequestHeader HttpHeaders headers) {
+                                               @RequestHeader HttpHeaders headers,
+                                               HttpServletRequest servletRequest) {
         return service.registerFixture(fixtureBundleId, request,
-                context(headers, IntegrationOperation.TEST_FIXTURE_WRITE));
+                context(headers, IntegrationOperation.TEST_FIXTURE_WRITE, servletRequest));
     }
 
     @GetMapping("/fixture-bundles/{fixtureBundleId}")
@@ -163,9 +187,10 @@ public class TestExecutionController {
     public StoredReplayPayload captureReplayPayload(
             @PathVariable String replayPayloadId,
             @RequestBody ReplayPayloadCaptureRequest request,
-            @RequestHeader HttpHeaders headers) {
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest servletRequest) {
         return replayPayloads.capture(replayPayloadId, request,
-                context(headers, IntegrationOperation.TEST_REPLAY_WRITE));
+                context(headers, IntegrationOperation.TEST_REPLAY_WRITE, servletRequest));
     }
 
     /** Resolves one exact governed replay payload while its value remains available. */
@@ -182,9 +207,10 @@ public class TestExecutionController {
     @PutMapping("/suites/{suiteId}")
     public StoredTestSuite registerSuite(@PathVariable String suiteId,
                                          @RequestBody TestSuiteRegistrationRequest request,
-                                         @RequestHeader HttpHeaders headers) {
+                                         @RequestHeader HttpHeaders headers,
+                                         HttpServletRequest servletRequest) {
         return suiteRegistry.register(suiteId, request,
-                context(headers, IntegrationOperation.TEST_SUITE_WRITE));
+                context(headers, IntegrationOperation.TEST_SUITE_WRITE, servletRequest));
     }
 
     /** Resolves one exact governed test-suite revision. */
@@ -211,9 +237,10 @@ public class TestExecutionController {
     public TestSuiteExecutionResponse executeSuite(
             @PathVariable String suiteId,
             @RequestBody TestSuiteExecutionRequest request,
-            @RequestHeader HttpHeaders headers) {
+            @RequestHeader HttpHeaders headers,
+            HttpServletRequest servletRequest) {
         return suiteExecutions.execute(suiteId, request,
-                context(headers, IntegrationOperation.TEST_SUITE_EXECUTION));
+                context(headers, IntegrationOperation.TEST_SUITE_EXECUTION, servletRequest));
     }
 
     /** Resolves the latest durable checkpoint or terminal evidence for one suite run. */
@@ -236,5 +263,28 @@ public class TestExecutionController {
 
     private IntegrationRequestContext context(HttpHeaders headers, IntegrationOperation operation) {
         return authenticator.authenticate(headers, operation);
+    }
+
+    private IntegrationRequestContext context(HttpHeaders headers,
+                                              IntegrationOperation operation,
+                                              HttpServletRequest servletRequest) {
+        Object value = servletRequest == null ? null
+                : servletRequest.getAttribute(TestExecutionAuthenticationInterceptor.REQUEST_ATTRIBUTE);
+        if (value instanceof TestExecutionAuthenticationInterceptor.AuthenticatedRequest authenticated) {
+            if (authenticated.operation() != operation) {
+                throw new IntegrationProblemException(IntegrationProblem.forbidden(
+                        "RG.TEST.PRE_AUTH_OPERATION_MISMATCH",
+                        "The pre-authenticated request context does not match the endpoint operation.",
+                        authenticated.context() == null ? "" : authenticated.context().correlationId(),
+                        Map.of("operation", operation.name())));
+            }
+            return authenticated.context();
+        }
+        return context(headers, operation);
+    }
+
+    private IntegrationRequestContext testExecutionContext(HttpHeaders headers,
+                                                           HttpServletRequest servletRequest) {
+        return context(headers, IntegrationOperation.TEST_EXECUTION, servletRequest);
     }
 }
