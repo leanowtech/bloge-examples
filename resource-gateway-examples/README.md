@@ -54,6 +54,11 @@ current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than
 being simulated implicitly. Schema stand-in is selected only by an exact server-owned Java hint,
 never inferred from an ordinary output fixture, and always produces exploratory evidence.
+Descriptor protocol and transport fixtures no longer require a deployed `httpResource` binding:
+the isolated test engine receives a run-scoped fail-closed binding while the existing
+`ResourceFixtureRuntime` performs the real descriptor mapping, protocol validation, and payload
+extraction over a zero-network transport stub. Neither the graph nor the shared operator registry
+is mutated.
 The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authenticated
 test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
 `fixtureBundle` object and cannot be combined with a legacy body fixture source; business context

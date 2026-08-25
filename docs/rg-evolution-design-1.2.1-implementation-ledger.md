@@ -17,7 +17,7 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in 与 visual 默认适配已形成开发证据；无 binding 执行及完整差分/安全/确定性测试台仍未完成 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配与无 binding descriptor 执行已形成开发证据；完整差分/安全/确定性测试台仍未完成 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `NOT_STARTED` | 现有 Scenario/Mirror 资产不能自动等同于 1.2.1 定义的世界模型闭包 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
@@ -39,12 +39,12 @@
 
 | 编号 | 必须满足的事实 | 当前证据 | 状态 |
 |---|---|---|---|
-| `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 显式模式和完整 transport pipeline 已验证；统一 compiler 仍要求 `httpResource` registry binding，尚缺真正无 binding 的 adapter | `PARTIAL` |
+| `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 图内 embedded binding、compiler registry 和 isolated engine registry 均为空时，run-scoped fail-closed binding 允许统一编译与执行；真实 `ResourceFixtureRuntime` 完成参数、URL、Header、Body、协议和负载管线，共享 registry 保持不变 | `MET` |
 | `S0-EXIT-02` | 设计期模拟通过 adapter 进入统一内核 | Spring 默认 `VisualGraphSimulationService` 通过 visual-owned `VisualSimulationExecutor` 委托统一内核；旧四参数路径只保留为差分 oracle | `MET` |
 | `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | Header admission 和 bounded inline fixture 已进入既有执行链；legacy Body 控制为兼容保留，Scenario/World Model 授权引用属于阶段一 | `PARTIAL` |
 | `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 入口 Filter 已覆盖已识别执行路由；visual 默认 adapter、visual service 与 TestExecution service 均保留 production 拒绝；尚缺所有执行模式的端到端旁路矩阵 | `PARTIAL` |
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 已对拍 stand-in、纯原语混合、fixture 优先级和输入不匹配，并证明 kernel 超时中断；尚缺节点/边上限及完整异常矩阵 | `PARTIAL` |
-| `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | transport 使用 stub；尚缺系统级攻击测试 | `PARTIAL` |
+| `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | 无 binding descriptor transport 已证明只经 `StubHttpRequestOperator` 并可观察完整渲染请求；尚缺 visual 系统级零网络旁路测试与 ReDoS 负向攻击矩阵 | `PARTIAL` |
 | `S0-EXIT-07` | 编译等价、N 次重放确定性和禁非确定 API 架构规则通过 | 尚无阶段零固定测试台 | `NOT_MET` |
 | `S0-EXIT-08` | 旧路径未被提前删除，公开 endpoint 和既有协议保持兼容 | 当前未删除旧路径 | `MET_PENDING_REGRESSION` |
 
@@ -108,10 +108,11 @@ OperatorMicroGraphRunnerTest         4/4
 
 ```text
 TestControlHeaderCodecTest          19/19
-ExecutionControlCompilerTest        38/38
-ResourceFixtureRuntimeTest           8/8
+ExecutionControlCompilerTest        41/41
+InvocationInventoryBuilderTest       5/5
+ResourceFixtureRuntimeTest           9/9
 OperatorMicroGraphRunnerTest        10/10
-TestRunServiceTest                  40/40
+TestRunServiceTest                  44/44
 GatewayGraphContractTestServiceTest 14/14
 TestExecutionIngressAdapterTest     25/25
 TestExecutionControllerTest         15/15
@@ -133,7 +134,9 @@ VisualSimulationPlanTest             3/3
 VisualSimulationKernelAdapterTest    9/9
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。新增 7/7 新旧路径集成对拍覆盖 stand-in、纯原语混合、持久化/请求 fixture 优先级、输入不匹配、生产拒绝及超时中断；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该切片联合聚焦集为 114/114。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析、无 binding 描述符执行及阶段零完整差分/安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。新增 7/7 新旧路径集成对拍覆盖 stand-in、纯原语混合、持久化/请求 fixture 优先级、输入不匹配、生产拒绝及超时中断；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该切片联合聚焦集为 114/114。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析及阶段零完整差分/安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
+
+S0-EXIT-01 的联合聚焦集为 127/127。新增证据覆盖：缺失 `httpResource` binding 时调用清单冻结为稳定且不可直接执行的外部边界；已有真实 binding 仍优先；其他缺失算子继续失败关闭；无 fixture 自动生成隐式 `DENY`；图内 embedded operator、compiler registry 与 isolated engine registry 同时为空时，run-scoped overlay 不修改共享 registry，`DESCRIPTOR_TRANSPORT` 仍经真实 descriptor 管线完成参数映射、URL、Header、Body、响应协议与 payload 提取并产生 `TRANSPORT_LEVEL` 可认证证据；缺描述符和协议拒绝保持确定性失败。阶段一引用解析及阶段零完整差分/安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
 
 截至 2026-08-26，本切片最终串行里程碑结果：
 

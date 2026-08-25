@@ -162,6 +162,52 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
+    void missingHttpResourceBindingCompilesDescriptorTransportFixture() {
+        Graph graph = registryGraph("httpResource");
+        FixtureRule transport = rule("transport", FixtureRule.Selector.resource("customer.transport"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        CompiledExecutionControl compiled = compiler.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(compiled.controls().get("/root/subject#RESOURCE")
+                .executionMode(transport)).contains(ExecutionMode.DESCRIPTOR_TRANSPORT);
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.TEST_DOUBLE);
+            assertThat(site.fidelity()).isEqualTo("TRANSPORT_LEVEL");
+        });
+    }
+
+    @Test
+    void missingHttpResourceWithoutFixtureRemainsImplicitDeny() {
+        CompiledExecutionControl compiled = compiler.compile(
+                registryGraph("httpResource"), bundle(), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(compiled.controls().get("/root/subject#RESOURCE").implicitDeny()).isTrue();
+        assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site ->
+                assertThat(site.resolution()).isEqualTo(EffectiveExecutionPlan.Resolution.DENIED));
+    }
+
+    @Test
+    void missingHttpResourcePlanFingerprintIsStableAcrossCompilation() {
+        Graph graph = registryGraph("httpResource");
+        FixtureRule transport = rule("transport", FixtureRule.Selector.resource("customer.transport"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        CompiledExecutionControl first = compiler.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+        CompiledExecutionControl second = compiler.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(second.effectivePlan().planFingerprint())
+                .isEqualTo(first.effectivePlan().planFingerprint());
+        assertThat(second.inventory().entries().getFirst().site().runtimeBindingFingerprint())
+                .isEqualTo(first.inventory().entries().getFirst().site().runtimeBindingFingerprint());
+    }
+
+    @Test
     void explicitSchemaStandinHintKeepsFingerprintStableAcrossRepeatedCompilation() {
         FixtureRule output = rule("standin-output", FixtureRule.Selector.node("subject"),
                 FixtureRule.Behavior.returning(Map.of("approved", true)));

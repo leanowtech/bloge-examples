@@ -271,7 +271,8 @@ public class TestRunService {
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
         GovernedExecutionServices executionServices = compiled.executionServices();
-        GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource());
+        GraphEngine engine = engineFactory.create(recorder, executionServices.services().timeSource(),
+                runScopedBindings(compiled));
         GraphContext executionContext = new GraphContext(request.context().asMap());
         executionContext.bindExecutionBudget(request.context().executionBudget());
         try {
@@ -319,6 +320,14 @@ public class TestRunService {
                 evidenceMetadata(request, recorder, executionServices, executionContext,
                         invocationBudget)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
+    }
+
+    private static Map<String, Object> runScopedBindings(CompiledExecutionControl compiled) {
+        Map<String, Object> bindings = new LinkedHashMap<>();
+        compiled.inventory().entries().stream()
+                .filter(entry -> "httpResource".equals(entry.node().operatorRef()))
+                .forEach(entry -> bindings.putIfAbsent(entry.node().operatorRef(), entry.frozenOperator()));
+        return bindings;
     }
 
     private void validateCompiledBinding(

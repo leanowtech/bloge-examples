@@ -5,8 +5,10 @@ import com.leanowtech.bloge.core.engine.operators.ForEachOperator;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.model.NodeSpec;
 import com.leanowtech.bloge.core.model.ResilienceConfig;
+import com.leanowtech.bloge.core.operator.Idempotency;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
@@ -73,6 +75,35 @@ class InvocationInventoryBuilderTest {
 
         assertThat(inventory.byEngineStructuralId()).containsKey("/root/fetch#PRIMARY");
         assertThat(inventory.byInvocationSiteId()).containsKey("/root/fetch#RESOURCE");
+        assertThat(inventory.entries().getFirst().frozenOperator()).isSameAs(resource);
+    }
+
+    @Test
+    void freezesMissingHttpResourceAsStableFailClosedExternalBinding() {
+        Graph graph = registryGraph("resource", "fetch", "httpResource");
+
+        InvocationInventory first = builder.build(graph, TARGET);
+        InvocationInventory second = builder.build(graph, TARGET);
+        EphemeralHttpResourceOperator frozen = (EphemeralHttpResourceOperator)
+                first.entries().getFirst().frozenOperator();
+
+        assertThat(frozen).isInstanceOf(Operator.class);
+        assertThat(frozen.sideEffectType()).isEqualTo(SideEffectType.EXTERNAL_CALL);
+        assertThat(frozen.idempotency()).isEqualTo(Idempotency.UNKNOWN);
+        assertThatThrownBy(() -> frozen.execute(Map.of(), null))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThat(first.entries().getFirst().site().runtimeBindingFingerprint())
+                .isEqualTo(second.entries().getFirst().site().runtimeBindingFingerprint());
+    }
+
+    @Test
+    void missingNonHttpResourceStillRejectsUnresolvedOperator() {
+        Graph graph = registryGraph("missing", "fetch", "notRegistered");
+
+        assertThatThrownBy(() -> builder.build(graph, TARGET))
+                .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure ->
+                        assertThat(failure.code())
+                                .isEqualTo("CONTROL_PLAN_OPERATOR_UNRESOLVED"));
     }
 
     @Test

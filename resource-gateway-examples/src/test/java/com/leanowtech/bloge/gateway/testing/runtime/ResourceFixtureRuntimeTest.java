@@ -120,6 +120,45 @@ class ResourceFixtureRuntimeTest {
     }
 
     @Test
+    void transportMappingUsesDescriptorDefaultsDynamicHeadersOverridesAndBody() throws Exception {
+        registry.put(new ResourceDescriptor("customer.update", "https://api.test/customers/{id}", "GET",
+                Map.of("Accept", "application/json", "X-Default", "descriptor",
+                        "Content-Type", "application/json"), null, Duration.ofSeconds(3),
+                new ParameterMapping(
+                        Map.of("id", "ctx.params.id"),
+                        Map.of("view", "ctx.params.view"),
+                        Map.of("X-Dynamic", "ctx.params.dynamic"),
+                        Map.of("SESSION", "ctx.params.session"),
+                        "ctx.params.body"),
+                new ResponseProtocol.HttpStatus(), "data"));
+        FixtureRule.Behavior behavior = FixtureRule.Behavior.protocolResponse(
+                "{\"data\":{\"updated\":true}}", 200, Map.of(),
+                FixtureRule.DoubleBoundary.TRANSPORT);
+        HttpResourceInput input = new HttpResourceInput("customer.update",
+                Map.of("id", "C-42", "view", "full", "dynamic", "mapped",
+                        "session", "a b", "body", Map.of("active", true)),
+                Map.of("X-Default", "override", "X-Override", "per-call"),
+                null, Duration.ofSeconds(1));
+
+        ResourceFixtureRuntime.DescriptorTransportResult result =
+                runtime.executeDescriptorTransportObserved(behavior, input, context());
+
+        assertThat(result.request().url())
+                .isEqualTo("https://api.test/customers/C-42?view=full");
+        assertThat(result.request().method()).isEqualTo("GET");
+        assertThat(result.request().headers())
+                .containsEntry("Accept", "application/json")
+                .containsEntry("Content-Type", "application/json")
+                .containsEntry("X-Default", "override")
+                .containsEntry("X-Dynamic", "mapped")
+                .containsEntry("X-Override", "per-call")
+                .containsEntry("Cookie", "SESSION=a%20b");
+        assertThat(result.request().body()).isEqualTo(Map.of("active", true));
+        assertThat(result.request().timeout()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(result.output().payload()).isEqualTo(Map.of("updated", true));
+    }
+
+    @Test
     void descriptorProtocolSkipsRequestMappingButRunsRealProtocolAndExtraction() {
         registry.put(new ResourceDescriptor("profile", "https://api.test/customers/{id}", "GET",
                 Map.of(), null, Duration.ofSeconds(3),
@@ -187,7 +226,7 @@ class ResourceFixtureRuntimeTest {
                 Duration.ofSeconds(2), ParameterMapping.empty(), protocol, payloadPath);
     }
 
-    private static final class MapRegistry implements ResourceRegistry {
+    static final class MapRegistry implements ResourceRegistry {
         private final Map<String, ResourceDescriptor> descriptors = new LinkedHashMap<>();
 
         void put(ResourceDescriptor descriptor) {

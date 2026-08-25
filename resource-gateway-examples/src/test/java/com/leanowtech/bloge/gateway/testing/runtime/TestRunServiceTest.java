@@ -22,6 +22,14 @@ import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.core.spi.NestedGraphProvider;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
+import com.leanowtech.bloge.gateway.resource.ParameterMapping;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
+import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -29,7 +37,9 @@ import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -41,6 +51,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import com.leanowtech.bloge.operators.http.HttpRequestInput;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -481,6 +493,125 @@ class TestRunServiceTest {
         assertThat(result.passed()).isTrue();
         assertThat(result.evidence().evidenceClass())
                 .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+    }
+
+    @Test
+    void descriptorTransportRunsEndToEndWithEmptyOperatorRegistry() {
+        ObjectMapper mapper = new ObjectMapper();
+        ResourceFixtureRuntimeTest.MapRegistry descriptors = new ResourceFixtureRuntimeTest.MapRegistry();
+        descriptors.put(customerDescriptor("customer.get", new ResponseProtocol.HttpStatus()));
+        RecordingResourceFixtureRuntime resourceRuntime = new RecordingResourceFixtureRuntime(
+                descriptors, new BlgeExpressionEvaluator(), mapper);
+        DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
+        Graph graph = resourceGraph();
+        assertThat(graph.nodes().get("subject").operatorRef()).isEqualTo("httpResource");
+        assertThat(graph.embeddedOperators()).isEmpty();
+        HttpResourceInput input = new HttpResourceInput("customer.get",
+                Map.of("id", "C-7", "view", "full"));
+        FixtureRule transport = rule("transport-response",
+                FixtureRule.Selector.resource("customer.get"),
+                FixtureRule.Behavior.protocolResponse(
+                        "{\"data\":{\"id\":\"C-7\"}}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        TestExecutionResult result = resourceService(operators, mapper, resourceRuntime)
+                .execute(resourceRequest(graph, input, bundle(transport)));
+
+        assertThat(operators.contains("httpResource")).isFalse();
+        assertThat(result.passed())
+                .withFailMessage("status=%s diagnostics=%s traces=%s", result.evidence().status(),
+                        result.evidence().diagnostics(), result.evidence().nodeTrace())
+                .isTrue();
+        assertThat(result.plan().resolvedSites()).singleElement().satisfies(site -> {
+            assertThat(site.invocationSiteId()).isEqualTo("/root/subject#RESOURCE");
+            assertThat(site.resolution()).isEqualTo(
+                    EffectiveExecutionPlan.Resolution.TEST_DOUBLE);
+            assertThat(site.boundary()).isEqualTo(FixtureRule.DoubleBoundary.TRANSPORT);
+            assertThat(site.fidelity()).isEqualTo("TRANSPORT_LEVEL");
+        });
+        assertThat(result.graphResult().getOutput("subject", HttpResourceOutput.class).payload())
+                .isEqualTo(Map.of("id", "C-7"));
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.status()).isEqualTo("MOCKED");
+            assertThat(trace.fidelity()).isEqualTo("TRANSPORT_LEVEL");
+            assertThat(trace.output()).hasFieldOrPropertyWithValue("payload", Map.of("id", "C-7"));
+        });
+        assertThat(resourceRuntime.lastRequest.url())
+                .isEqualTo("https://api.test/customers/C-7?view=full");
+    }
+
+    @Test
+    void descriptorTransportProtocolRejectionIsObservedWithEmptyOperatorRegistry() {
+        ObjectMapper mapper = new ObjectMapper();
+        ResourceFixtureRuntimeTest.MapRegistry descriptors = new ResourceFixtureRuntimeTest.MapRegistry();
+        descriptors.put(customerDescriptor("customer.get",
+                new ResponseProtocol.BodyCode("code", Set.of(0), "message")));
+        RecordingResourceFixtureRuntime resourceRuntime = new RecordingResourceFixtureRuntime(
+                descriptors, new BlgeExpressionEvaluator(), mapper);
+        Graph graph = resourceGraph();
+        FixtureRule transport = rule("rejected-response",
+                FixtureRule.Selector.resource("customer.get"),
+                FixtureRule.Behavior.protocolResponse(
+                        "{\"code\":9,\"message\":\"rejected\"}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        TestExecutionResult result = resourceService(new DefaultOperatorRegistry(), mapper,
+                resourceRuntime).execute(resourceRequest(graph,
+                new HttpResourceInput("customer.get", Map.of("id", "C-7")), bundle(transport)));
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.EXECUTION_FAILED);
+        assertThat(result.evidence().nodeTrace()).singleElement()
+                .satisfies(trace -> assertThat(trace.errorCode()).isEqualTo("ResourceCallException"));
+        assertThat(result.evidence().diagnostics()).anyMatch(item -> item.contains("rejected"));
+    }
+
+    @Test
+    void descriptorTransportMissingDescriptorFailsWithEmptyOperatorRegistry() {
+        ObjectMapper mapper = new ObjectMapper();
+        ResourceFixtureRuntimeTest.MapRegistry descriptors = new ResourceFixtureRuntimeTest.MapRegistry();
+        RecordingResourceFixtureRuntime resourceRuntime = new RecordingResourceFixtureRuntime(
+                descriptors, new BlgeExpressionEvaluator(), mapper);
+        Graph graph = resourceGraph();
+        FixtureRule transport = rule("missing-descriptor",
+                FixtureRule.Selector.resource("missing.resource"),
+                FixtureRule.Behavior.protocolResponse("{}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        TestExecutionResult result = resourceService(new DefaultOperatorRegistry(), mapper,
+                resourceRuntime).execute(resourceRequest(graph,
+                new HttpResourceInput("missing.resource", Map.of()), bundle(transport)));
+
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.EXECUTION_FAILED);
+        assertThat(result.evidence().nodeTrace()).singleElement()
+                .satisfies(trace -> assertThat(trace.errorCode()).isEqualTo("IllegalArgumentException"));
+        assertThat(result.evidence().diagnostics()).anyMatch(item -> item.contains("Unknown resource"));
+    }
+
+    @Test
+    void descriptorTransportWithoutFixtureIsDeniedBeforeAnyBindingExecutes() {
+        ObjectMapper mapper = new ObjectMapper();
+        ResourceFixtureRuntimeTest.MapRegistry descriptors = new ResourceFixtureRuntimeTest.MapRegistry();
+        descriptors.put(customerDescriptor("customer.get", new ResponseProtocol.HttpStatus()));
+        RecordingResourceFixtureRuntime resourceRuntime = new RecordingResourceFixtureRuntime(
+                descriptors, new BlgeExpressionEvaluator(), mapper);
+        Graph graph = resourceGraph();
+        DefaultOperatorRegistry operators = new DefaultOperatorRegistry();
+
+        TestExecutionResult result = resourceService(operators, mapper,
+                resourceRuntime).execute(resourceRequest(graph,
+                new HttpResourceInput("customer.get", Map.of("id", "C-7")), bundle()));
+
+        assertThat(result.plan().resolvedSites()).singleElement()
+                .satisfies(site -> assertThat(site.resolution()).isEqualTo(
+                        EffectiveExecutionPlan.Resolution.DENIED));
+        assertThat(result.evidence().status()).isEqualTo(TestRunEvidence.Status.FIXTURE_UNMATCHED);
+        assertThat(result.evidence().nodeTrace()).singleElement().satisfies(trace -> {
+            assertThat(trace.errorCode()).isEqualTo("FIXTURE_UNMATCHED");
+            assertThat(trace.fidelity()).isEqualTo("OUTPUT_LEVEL");
+        });
+        assertThat(resourceRuntime.lastRequest).isNull();
     }
 
     @Test
@@ -1266,6 +1397,65 @@ class TestRunServiceTest {
                 graph.terminalNodes(), graph.schemaValidationLevel(), graph.embeddedOperators(),
                 graph.declaredInputSchema(), graph.declaredOutputSchema(), graph.sagaConfig(),
                 graph.definitionSource(), graph.streamingOutputNodeId(), graph.streamingInputs());
+    }
+
+    private static Graph resourceGraph() {
+        Graph graph = new GraphBuilder("descriptor-transport")
+                .node("subject", new PureOperator())
+                .input((results, context) -> context.get("input"))
+                .build();
+        var node = graph.nodes().get("subject").toBuilder()
+                .operatorRef("httpResource")
+                .build();
+        return new Graph(graph.name(), Map.of("subject", node), graph.edges(), graph.sourceNodes(),
+                graph.terminalNodes(), graph.schemaValidationLevel(), Map.of(),
+                graph.declaredInputSchema(), graph.declaredOutputSchema(), graph.sagaConfig(),
+                graph.definitionSource(), graph.streamingOutputNodeId(), graph.streamingInputs());
+    }
+
+    private static ResourceDescriptor customerDescriptor(String resourceId,
+                                                         ResponseProtocol protocol) {
+        return new ResourceDescriptor(resourceId, "https://api.test/customers/{id}", "GET",
+                Map.of(), null, Duration.ofSeconds(2),
+                new ParameterMapping(Map.of("id", "ctx.params.id"),
+                        Map.of("view", "ctx.params.view"), null), protocol, "data");
+    }
+
+    private static TestExecutionRequest resourceRequest(Graph graph, HttpResourceInput input,
+                                                        FixtureBundle bundle) {
+        return new TestExecutionRequest(graph,
+                new GraphContext(Map.of("input", input)), bundle,
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), true, ResolvedReplayPayloads.empty());
+    }
+
+    private static TestRunService resourceService(DefaultOperatorRegistry planningRegistry,
+                                                  ObjectMapper mapper,
+                                                  ResourceFixtureRuntime resourceRuntime) {
+        return new TestRunService(mapper,
+                new ExecutionControlCompiler(planningRegistry, mapper),
+                new TestDoubleFactory(mapper, resourceRuntime),
+                new IndependentTestEngineFactory(planningRegistry),
+                new TestAssertionEvaluator(mapper));
+    }
+
+    private static final class RecordingResourceFixtureRuntime extends ResourceFixtureRuntime {
+        private HttpRequestInput lastRequest;
+
+        private RecordingResourceFixtureRuntime(ResourceRegistry registry,
+                                                BlgeExpressionEvaluator evaluator,
+                                                ObjectMapper objectMapper) {
+            super(registry, evaluator, objectMapper);
+        }
+
+        @Override
+        public HttpResourceOutput executeDescriptorTransport(
+                FixtureRule.Behavior behavior, Object input, OperatorContext context) throws Exception {
+            DescriptorTransportResult result = executeDescriptorTransportObserved(
+                    behavior, input, context);
+            lastRequest = result.request();
+            return result.output();
+        }
     }
 
     private static Graph withOutputSchema(Graph graph,

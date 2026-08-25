@@ -144,6 +144,10 @@ public class InvocationInventoryBuilder {
             }
             return registry.lookup(node.operatorRef());
         } catch (RuntimeException failure) {
+            if ("httpResource".equals(node.operatorRef())
+                    && !registry.contains(node.operatorRef())) {
+                return new EphemeralHttpResourceOperator();
+            }
             throw unresolved(node.id(), node.operatorRef(), failure);
         }
     }
