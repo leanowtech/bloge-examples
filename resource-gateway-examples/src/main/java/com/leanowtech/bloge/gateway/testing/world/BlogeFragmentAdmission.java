@@ -46,6 +46,12 @@ final class BlogeFragmentAdmission {
             InvocationInventory inventory,
             Result result
     ) {
+        DefaultOperatorRegistry isolatedRegistry() {
+            DefaultOperatorRegistry isolated = new DefaultOperatorRegistry();
+            isolated.registerRaw(DecisionTableOperator.OPERATOR_REF, DecisionTableOperator.INSTANCE);
+            isolated.registerRaw(TransformOperator.OPERATOR_REF, TransformOperator.INSTANCE);
+            return isolated;
+        }
     }
 
     private record Inspection(int primitiveCount, int expressionDepth) {
@@ -65,6 +71,8 @@ final class BlogeFragmentAdmission {
         try {
             rejectWorldDelegationTokens(fragment.source());
             DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+            registry.registerRaw(DecisionTableOperator.OPERATOR_REF, DecisionTableOperator.INSTANCE);
+            registry.registerRaw(TransformOperator.OPERATOR_REF, TransformOperator.INSTANCE);
             DslCompiler compiler = new DslCompiler(registry);
             AstNode.GraphDef definition = compiler.parse(fragment.source());
             Inspection inspection = inspectGraph(definition);
