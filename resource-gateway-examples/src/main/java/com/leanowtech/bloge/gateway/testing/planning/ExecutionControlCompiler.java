@@ -13,6 +13,7 @@ import com.leanowtech.bloge.core.operator.SideEffectType;
 import com.leanowtech.bloge.core.spi.OperatorRegistry;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionMode;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -483,6 +484,9 @@ public class ExecutionControlCompiler {
                     return control.withMirrorSource(
                             MirrorPlan.MirrorSource.RECORDED_CLUSTER);
                 }));
+        controls.replaceAll((siteId, control) -> control.withExecutionModes(
+                CompiledExecutionControl.ResolvedControl.inferExecutionModes(
+                        control.site(), control.rules())));
         rejectUnsupportedControlledBindings(inventory, controls);
         rejectUnsafeExternalReal(inventory, controls, mandatoryExternalSites);
 
@@ -543,11 +547,27 @@ public class ExecutionControlCompiler {
         fingerprintMaterial.put("purpose", authorizedPurpose);
         fingerprintMaterial.put("target", targetFingerprint);
         fingerprintMaterial.put("fixture", fixtureFingerprint);
-        fingerprintMaterial.put("inventory", inventory.entries().stream().map(entry -> Map.of(
-                "engineStructuralId", entry.engineStructuralId(),
-                "invocationSiteId", entry.site().invocationSiteId(),
-                "bindingFingerprint", entry.site().runtimeBindingFingerprint())).toList());
-        fingerprintMaterial.put("sites", sites);
+        fingerprintMaterial.put("inventory", inventory.entries().stream()
+                .sorted(java.util.Comparator.comparing(
+                        entry -> entry.site().invocationSiteId()))
+                .map(entry -> Map.of(
+                        "engineStructuralId", entry.engineStructuralId(),
+                        "invocationSiteId", entry.site().invocationSiteId(),
+                        "bindingFingerprint", entry.site().runtimeBindingFingerprint()))
+                .toList());
+        fingerprintMaterial.put("sites", sites.stream()
+                .sorted(java.util.Comparator.comparing(
+                        EffectiveExecutionPlan.ResolvedSite::invocationSiteId))
+                .toList());
+        Map<String, Map<String, String>> executionModesBySite = new LinkedHashMap<>();
+        controls.forEach((siteId, control) -> executionModesBySite.put(siteId,
+                control.executionModesByRuleId().entrySet().stream().collect(
+                        java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey,
+                                entry -> entry.getValue().name(),
+                                (left, right) -> left,
+                                LinkedHashMap::new))));
+        fingerprintMaterial.put("executionModesBySite", executionModesBySite);
         fingerprintMaterial.put("replayDependencies", resolvedReplays.planDependencies());
         resolvedCorpus.servingGenerationToken().ifPresent(token ->
                 fingerprintMaterial.put("mirrorServingGeneration", Map.of(
@@ -763,16 +783,19 @@ public class ExecutionControlCompiler {
 
     private static String fidelity(CompiledExecutionControl.ResolvedControl control) {
         FixtureRule.Behavior behavior = control.rules().getFirst().behavior();
-        if (behavior.kind() == FixtureRule.BehaviorKind.REAL
-                || behavior.kind() == FixtureRule.BehaviorKind.SPY) {
+        ExecutionMode mode = ExecutionMode.resolve(
+                control.site().operatorRef(), behavior).orElse(null);
+        if (mode == ExecutionMode.BINDING_REAL) {
             return "REAL";
         }
         if (behavior.kind() == FixtureRule.BehaviorKind.REPLAY) {
             return "REPLAYED";
         }
-        if (behavior.statusCode() != null && behavior.value() == null) {
-            return behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT
-                    ? "TRANSPORT_LEVEL" : "PROTOCOL_DERIVED";
+        if (mode == ExecutionMode.DESCRIPTOR_TRANSPORT) {
+            return "TRANSPORT_LEVEL";
+        }
+        if (mode == ExecutionMode.DESCRIPTOR_PROTOCOL) {
+            return "PROTOCOL_DERIVED";
         }
         return "OUTPUT_LEVEL";
     }

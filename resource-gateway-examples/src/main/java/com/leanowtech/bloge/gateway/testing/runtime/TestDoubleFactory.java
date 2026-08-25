@@ -12,6 +12,7 @@ import com.leanowtech.bloge.core.schema.OpaqueSchema;
 import com.leanowtech.bloge.core.schema.SchemaValidator;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
 import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionMode;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
@@ -308,6 +309,9 @@ public class TestDoubleFactory {
             this.replayPayloads = replayPayloads == null
                     ? ResolvedReplayPayloads.empty() : replayPayloads;
             this.compiledControl = compiledControl;
+            if (compiledControl != null) {
+                validateExecutionModes(node, compiledControl);
+            }
             this.corpusPayloads = corpusPayloads == null
                     ? ResolvedCorpusPayloads.empty() : corpusPayloads;
             this.mirrorObserver = Objects.requireNonNull(mirrorObserver, "mirrorObserver");
@@ -476,16 +480,33 @@ public class TestDoubleFactory {
         private Object returnValue(FixtureRule rule, Object input, OperatorContext context) throws Exception {
             FixtureRule.Behavior behavior = rule.behavior();
             Object output;
-            if ("httpResource".equals(node.operatorRef())
-                    && behavior.statusCode() != null && behavior.value() == null) {
+            ExecutionMode classifiedMode = ExecutionMode.resolve(
+                    node.operatorRef(), behavior).orElse(null);
+            if (classifiedMode == ExecutionMode.DESCRIPTOR_PROTOCOL
+                    || classifiedMode == ExecutionMode.DESCRIPTOR_TRANSPORT) {
                 if (resourceRuntime == null) {
                     throw new TestControlException("RESOURCE_FIXTURE_RUNTIME_UNAVAILABLE",
                             "RESOURCE_FIXTURE", "Protocol-derived fixture requires a ResourceFixtureRuntime.");
                 }
-                String fidelity = behavior.boundary() == FixtureRule.DoubleBoundary.TRANSPORT
-                        ? "TRANSPORT_LEVEL" : "PROTOCOL_DERIVED";
-                recorder.markFidelity(site, fidelity);
-                output = resourceRuntime.execute(behavior, input, context);
+                ExecutionMode mode = compiledControl == null ? classifiedMode
+                        : compiledControl.executionMode(rule).orElseThrow(() ->
+                        modeFailure("CONTROL_PLAN_EXECUTION_MODE_MISMATCH",
+                                "Descriptor fixture has no compiled execution mode."));
+                output = switch (mode) {
+                    case DESCRIPTOR_PROTOCOL -> {
+                        recorder.markFidelity(site, "PROTOCOL_DERIVED");
+                        yield resourceRuntime.executeDescriptorProtocol(
+                                behavior, input, context);
+                    }
+                    case DESCRIPTOR_TRANSPORT -> {
+                        recorder.markFidelity(site, "TRANSPORT_LEVEL");
+                        yield resourceRuntime.executeDescriptorTransport(
+                                behavior, input, context);
+                    }
+                    default -> throw modeFailure(
+                            "CONTROL_PLAN_EXECUTION_MODE_UNSUPPORTED",
+                            "Compiled execution mode is not supported by the descriptor runtime.");
+                };
             } else if ("httpResource".equals(node.operatorRef())) {
                 recorder.markFidelity(site, "OUTPUT_LEVEL");
                 output = resourceOutput(input, behavior);
@@ -495,6 +516,10 @@ public class TestDoubleFactory {
             }
             validateOutput(rule, output);
             return output;
+        }
+
+        private TestControlException modeFailure(String code, String message) {
+            return new TestControlException(code, "EXECUTION_MODE", message);
         }
 
         private void validateOutput(FixtureRule rule, Object output) {
@@ -523,6 +548,28 @@ public class TestDoubleFactory {
         @Override
         public SideEffectProtocol sideEffectProtocol() {
             return real.sideEffectProtocol();
+        }
+    }
+
+    private static void validateExecutionModes(
+            NodeSpec node, CompiledExecutionControl.ResolvedControl control) {
+        for (FixtureRule rule : control.rules()) {
+            ExecutionMode actual = control.executionMode(rule).orElse(null);
+            ExecutionMode expected = ExecutionMode.resolve(
+                    node.operatorRef(), rule.behavior()).orElse(null);
+            if (actual == ExecutionMode.PRIMITIVE_REAL
+                    || actual == ExecutionMode.SCHEMA_STANDIN
+                    || actual == ExecutionMode.BINDING_TRANSPORT
+                    || actual == ExecutionMode.WORLD_DELEGATE) {
+                throw new TestControlException(
+                        "CONTROL_PLAN_EXECUTION_MODE_UNSUPPORTED", "EXECUTION_MODE",
+                        "Compiled execution mode is not implemented by the stage-zero runtime.");
+            }
+            if (actual != expected) {
+                throw new TestControlException(
+                        "CONTROL_PLAN_EXECUTION_MODE_MISMATCH", "EXECUTION_MODE",
+                        "Compiled execution mode does not match fixture semantics.");
+            }
         }
     }
 

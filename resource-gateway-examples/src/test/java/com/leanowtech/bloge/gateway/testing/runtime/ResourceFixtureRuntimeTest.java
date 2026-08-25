@@ -6,16 +6,11 @@ import com.leanowtech.bloge.core.operator.OperatorContext;
 import com.leanowtech.bloge.gateway.exception.ResourceCallException;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.operator.HttpResourceInput;
-import com.leanowtech.bloge.gateway.operator.HttpResourceOperator;
-import com.leanowtech.bloge.gateway.operator.PayloadExtractor;
-import com.leanowtech.bloge.gateway.operator.ResponseValidator;
-import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.resource.ParameterMapping;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
-import com.leanowtech.bloge.operators.http.HttpResponseOutput;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -110,18 +105,77 @@ class ResourceFixtureRuntimeTest {
                 new ParameterMapping(Map.of("id", "ctx.params.id"),
                         Map.of("view", "ctx.params.view"), null),
                 new ResponseProtocol.HttpStatus(), "data"));
-        StubHttpRequestOperator transport = new StubHttpRequestOperator(new HttpResponseOutput(
-                200, Map.of(), "{\"data\":{\"name\":\"Ada\"}}", Duration.ZERO));
-        HttpResourceOperator operator = new HttpResourceOperator(transport, registry, evaluator,
-                new UrlTemplateRenderer(), new PayloadExtractor(), new ResponseValidator(evaluator));
+        FixtureRule.Behavior behavior = FixtureRule.Behavior.protocolResponse(
+                "{\"data\":{\"name\":\"Ada\"}}", 200, Map.of(),
+                FixtureRule.DoubleBoundary.TRANSPORT);
 
-        var output = operator.execute(new HttpResourceInput("profile",
+        var result = runtime.executeDescriptorTransportObserved(behavior,
+                new HttpResourceInput("profile",
                 Map.of("id", "C-42", "view", "full")), context());
 
-        assertThat(transport.lastRequest().url())
+        assertThat(result.request().url())
                 .isEqualTo("https://api.test/customers/C-42?view=full");
-        assertThat(transport.lastRequest().headers()).containsEntry("Accept", "application/json");
+        assertThat(result.request().headers()).containsEntry("Accept", "application/json");
+        assertThat(result.output().payload()).isEqualTo(Map.of("name", "Ada"));
+    }
+
+    @Test
+    void descriptorProtocolSkipsRequestMappingButRunsRealProtocolAndExtraction() {
+        registry.put(new ResourceDescriptor("profile", "https://api.test/customers/{id}", "GET",
+                Map.of(), null, Duration.ofSeconds(3),
+                new ParameterMapping(Map.of("id", "ctx.params.requiredId"),
+                        Map.of(), null),
+                new ResponseProtocol.BodyCode("code", Set.of(0), "message"), "data"));
+        FixtureRule.Behavior behavior = FixtureRule.Behavior.protocolResponse(
+                "{\"code\":0,\"data\":{\"name\":\"Ada\"}}", 200, Map.of(),
+                FixtureRule.DoubleBoundary.NODE);
+
+        var output = runtime.executeDescriptorProtocol(
+                behavior, new HttpResourceInput("profile", Map.of()), context());
+
         assertThat(output.payload()).isEqualTo(Map.of("name", "Ada"));
+        assertThat(output.statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void descriptorProtocolMatchesProductionBlgeExpressionPayloadExtraction() throws Exception {
+        registry.put(new ResourceDescriptor("expression-profile",
+                "https://api.test/customers/{id}", "GET", Map.of(), null,
+                Duration.ofSeconds(3),
+                new ParameterMapping(Map.of("id", "ctx.params.requiredId"), Map.of(), null),
+                new ResponseProtocol.BlgeExpression(
+                        "ctx.statusCode == 200 && ctx.body.result.profile != null",
+                        null, "ctx.body.result.profile"),
+                "result.fallback"));
+        String rawBody = """
+                {"result":{"profile":{"tier":"gold"},"fallback":"wrong"}}
+                """;
+        FixtureRule.Behavior protocol = FixtureRule.Behavior.protocolResponse(
+                rawBody, 200, Map.of(), FixtureRule.DoubleBoundary.NODE);
+        FixtureRule.Behavior transport = FixtureRule.Behavior.protocolResponse(
+                rawBody, 200, Map.of(), FixtureRule.DoubleBoundary.TRANSPORT);
+
+        var protocolOutput = runtime.executeDescriptorProtocol(protocol,
+                new HttpResourceInput("expression-profile", Map.of()), context());
+        var productionOutput = runtime.executeDescriptorTransport(transport,
+                new HttpResourceInput("expression-profile", Map.of("requiredId", "C-7")),
+                context());
+
+        assertThat(protocolOutput.payload()).isEqualTo(Map.of("tier", "gold"));
+        assertThat(protocolOutput.payload()).isEqualTo(productionOutput.payload());
+    }
+
+    @Test
+    void explicitDescriptorEntrypointsRejectBoundaryModeMismatch() {
+        registry.put(descriptor("profile", new ResponseProtocol.HttpStatus(), null));
+        FixtureRule.Behavior protocol = FixtureRule.Behavior.protocolResponse(
+                "{}", 200, Map.of(), FixtureRule.DoubleBoundary.NODE);
+
+        assertThatThrownBy(() -> runtime.executeDescriptorTransport(
+                protocol, new HttpResourceInput("profile", Map.of()), context()))
+                .isInstanceOfSatisfying(TestControlException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo("CONTROL_PLAN_EXECUTION_MODE_MISMATCH"));
     }
 
     private static OperatorContext context() {

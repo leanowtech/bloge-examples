@@ -28,7 +28,7 @@
 
 | 切片 | 交付物 | 状态 | 证明要求 |
 |---|---|---|---|
-| `S0-A` | 七态 `ExecutionMode`；编译期模式固定；`DESCRIPTOR_PROTOCOL` / `DESCRIPTOR_TRANSPORT` 显式运行分派 | `IN_PROGRESS` | 模式分类、动态多规则选择、fingerprint 变化、模式与 fixture 不一致时失败关闭 |
+| `S0-A` | 七态 `ExecutionMode`；编译期模式固定；`DESCRIPTOR_PROTOCOL` / `DESCRIPTOR_TRANSPORT` 显式运行分派 | `DEVELOPMENT_VERIFIED` | 60/60：模式分类、compiler 到 runtime 的动态多规则实际选择、混合规则 fingerprint 稳定、提取语义对拍、模式不一致失败关闭、legacy graph-contract 兼容 |
 | `S0-P` | 四个 `X-BLOGE-Test-*` 控制头的纯协议解析 | `DEVELOPMENT_VERIFIED` | 19/19：strict base64url/UTF-8/JSON、大小和复杂度边界、多值拒绝、错误不泄漏、inline canonicalization |
 | `S0-B` | 服务端执行目的铸造与受控入口 admission | `NOT_STARTED` | caller purpose 不被信任；test/staging 允许；production、越权和审计失败均关闭 |
 | `S0-C` | visual 设计期模拟适配统一内核 | `NOT_STARTED` | 保留 schema stand-in、纯原语、逐节点 fixture、资源上限、超时和响应兼容 |
@@ -39,7 +39,7 @@
 
 | 编号 | 必须满足的事实 | 当前证据 | 状态 |
 |---|---|---|---|
-| `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | `ResourceFixtureRuntime` 已有机制；尚缺统一模式和无 binding 端到端证明 | `PARTIAL` |
+| `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 显式模式和完整 transport pipeline 已验证；统一 compiler 仍要求 `httpResource` registry binding，尚缺真正无 binding 的 adapter | `PARTIAL` |
 | `S0-EXIT-02` | 设计期模拟通过 adapter 进入统一内核 | `VisualGraphSimulationService` 仍使用 `__sim_*` 独立路径 | `NOT_MET` |
 | `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | 尚无结构化控制头入口 | `NOT_MET` |
 | `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 当前 Filter 仅扫描部分生产执行 Body；TestExecution 服务有局部目的校验 | `PARTIAL` |
@@ -108,6 +108,10 @@ OperatorMicroGraphRunnerTest         4/4
 
 ```text
 TestControlHeaderCodecTest          19/19
+ExecutionControlCompilerTest        32/32
+ResourceFixtureRuntimeTest           8/8
+OperatorMicroGraphRunnerTest         6/6
+GatewayGraphContractTestServiceTest 14/14
 ```
 
-该结果证明 `S0-P` 纯解析协议闭合；控制头尚未接入 HTTP 入口，因此不推进 `S0-EXIT-03`。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；它不证明 visual adapter、未来五种执行模式或无 registry binding 执行已经完成。19 项协议测试证明 `S0-P` 纯解析协议闭合；控制头尚未接入 HTTP 入口，因此不推进 `S0-EXIT-03`。

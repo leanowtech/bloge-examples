@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.planning;
 
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionMode;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
@@ -9,7 +10,10 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedCorpusPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 
 import java.util.List;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Server-internal executable companion to the public, immutable effective-plan projection.
@@ -68,13 +72,15 @@ public record CompiledExecutionControl(
      * @param implicitDeny whether the control was synthesized by side-effect fail-closed policy
      * @param resolutionStrategy selector-only or fixed mirror-source precedence
      * @param resolverOrder exact concrete sources followed by terminal abstention
+     * @param executionModesByRuleId compile-time execution mode for each classifiable rule
      */
     public record ResolvedControl(
             InvocationSite site,
             List<FixtureRule> rules,
             boolean implicitDeny,
             ResolutionStrategy resolutionStrategy,
-            List<MirrorPlan.MirrorSource> resolverOrder
+            List<MirrorPlan.MirrorSource> resolverOrder,
+            Map<String, ExecutionMode> executionModesByRuleId
     ) {
         /** Rule-selection strategy frozen into the execution generation. */
         public enum ResolutionStrategy {
@@ -89,6 +95,15 @@ public record CompiledExecutionControl(
             resolutionStrategy = resolutionStrategy == null
                     ? ResolutionStrategy.SELECTOR_SPECIFICITY : resolutionStrategy;
             resolverOrder = resolverOrder == null ? List.of() : List.copyOf(resolverOrder);
+            executionModesByRuleId = executionModesByRuleId == null
+                    ? Map.of() : Collections.unmodifiableMap(
+                    new LinkedHashMap<>(executionModesByRuleId));
+            java.util.Set<String> ruleIds = rules.stream()
+                    .map(FixtureRule::ruleId).collect(java.util.stream.Collectors.toSet());
+            if (!ruleIds.containsAll(executionModesByRuleId.keySet())) {
+                throw new IllegalArgumentException(
+                        "execution modes must reference rules in this control");
+            }
             if (resolutionStrategy == ResolutionStrategy.SELECTOR_SPECIFICITY
                     && !resolverOrder.isEmpty()) {
                 throw new IllegalArgumentException(
@@ -104,7 +119,19 @@ public record CompiledExecutionControl(
 
         /** Backward-compatible ordinary selector-specificity control. */
         public ResolvedControl(InvocationSite site, List<FixtureRule> rules, boolean implicitDeny) {
-            this(site, rules, implicitDeny, ResolutionStrategy.SELECTOR_SPECIFICITY, List.of());
+            this(site, rules, implicitDeny, ResolutionStrategy.SELECTOR_SPECIFICITY, List.of(),
+                    inferExecutionModes(site, rules));
+        }
+
+        /** Backward-compatible constructor used before execution modes became explicit. */
+        public ResolvedControl(
+                InvocationSite site,
+                List<FixtureRule> rules,
+                boolean implicitDeny,
+                ResolutionStrategy resolutionStrategy,
+                List<MirrorPlan.MirrorSource> resolverOrder) {
+            this(site, rules, implicitDeny, resolutionStrategy, resolverOrder,
+                    inferExecutionModes(site, rules));
         }
 
         /**
@@ -130,7 +157,8 @@ public record CompiledExecutionControl(
             order.sort(java.util.Comparator.naturalOrder());
             order.add(MirrorPlan.MirrorSource.ABSTAINED);
             return new ResolvedControl(site, rules, implicitDeny,
-                    ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR, order);
+                    ResolutionStrategy.MIRROR_SOURCE_THEN_SELECTOR, order,
+                    inferExecutionModes(site, rules));
         }
 
         /**
@@ -152,7 +180,32 @@ public record CompiledExecutionControl(
             List<MirrorPlan.MirrorSource> order = new java.util.ArrayList<>(sources);
             order.add(MirrorPlan.MirrorSource.ABSTAINED);
             return new ResolvedControl(
-                    site, rules, implicitDeny, resolutionStrategy, order);
+                    site, rules, implicitDeny, resolutionStrategy, order,
+                    executionModesByRuleId);
+        }
+
+        /** Returns the mode compiled for the exact runtime-selected rule. */
+        public Optional<ExecutionMode> executionMode(FixtureRule rule) {
+            return Optional.ofNullable(executionModesByRuleId.get(rule.ruleId()));
+        }
+
+        /** Replaces inferred modes with the compiler-owned per-rule mapping. */
+        ResolvedControl withExecutionModes(Map<String, ExecutionMode> modes) {
+            return new ResolvedControl(site, rules, implicitDeny, resolutionStrategy,
+                    resolverOrder, modes);
+        }
+
+        static Map<String, ExecutionMode> inferExecutionModes(
+                InvocationSite site, List<FixtureRule> rules) {
+            if (site == null || rules == null || rules.isEmpty()) {
+                return Map.of();
+            }
+            Map<String, ExecutionMode> modes = new LinkedHashMap<>();
+            for (FixtureRule rule : rules) {
+                ExecutionMode.resolve(site.operatorRef(), rule.behavior())
+                        .ifPresent(mode -> modes.put(rule.ruleId(), mode));
+            }
+            return Collections.unmodifiableMap(modes);
         }
     }
 }

@@ -12,6 +12,7 @@ import com.leanowtech.bloge.gateway.integration.mirror.CapabilityCorpusClusterVa
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorPlan;
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorArtifactRef;
 import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
+import com.leanowtech.bloge.gateway.testing.domain.ExecutionMode;
 import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -133,6 +135,145 @@ class ExecutionControlCompilerTest {
                 .containsExactly("dynamic", "fallback");
         assertThat(compiled.effectivePlan().resolvedSites()).singleElement().satisfies(site ->
                 assertThat(site.ruleRefs()).containsExactly("dynamic", "fallback"));
+    }
+
+    @Test
+    void descriptorModesAreCompiledPerDynamicRuleWithoutFirstRuleLeakage() {
+        registry.register("httpResource", new ExternalOperator());
+        Graph graph = registryGraph("httpResource");
+        FixtureRule protocol = rule("protocol", FixtureRule.Selector.resource("customer.protocol"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.NODE));
+        FixtureRule transport = rule("transport", FixtureRule.Selector.resource("customer.transport"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        CompiledExecutionControl compiled = compiler.compile(
+                graph, bundle(protocol, transport), "GRAPH_CONTRACT_TEST", TARGET);
+        CompiledExecutionControl.ResolvedControl control =
+                compiled.controls().get("/root/subject#RESOURCE");
+
+        assertThat(control.executionMode(protocol)).contains(ExecutionMode.DESCRIPTOR_PROTOCOL);
+        assertThat(control.executionMode(transport)).contains(ExecutionMode.DESCRIPTOR_TRANSPORT);
+        assertThat(control.executionModesByRuleId()).containsExactlyInAnyOrderEntriesOf(Map.of(
+                "protocol", ExecutionMode.DESCRIPTOR_PROTOCOL,
+                "transport", ExecutionMode.DESCRIPTOR_TRANSPORT));
+    }
+
+    @Test
+    void bindingAndOutputControlsDoNotClaimDescriptorOrSchemaStandinModes() {
+        FixtureRule real = rule("real", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.real());
+
+        CompiledExecutionControl realPlan = compiler.compile(
+                graph(new ReadOnlyOperator()), bundle(real), "GRAPH_CONTRACT_TEST", TARGET);
+        assertThat(realPlan.controls().get("/root/subject#PRIMARY").executionMode(real))
+                .contains(ExecutionMode.BINDING_REAL);
+
+        List<FixtureRule> outputControls = List.of(
+                rule("return", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.returning("fixed")),
+                rule("throw", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.throwing("FAILED", "TEST", "failed")),
+                rule("delay", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.delayed(Duration.ofSeconds(1), "fixed")),
+                rule("timeout", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.timeout(Duration.ofSeconds(1))),
+                rule("deny", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.deny("DENIED", "must not run")));
+        for (FixtureRule outputControl : outputControls) {
+            CompiledExecutionControl outputPlan = compiler.compile(
+                    graph(new ReadOnlyOperator()), logicalBundle(outputControl),
+                    "GRAPH_CONTRACT_TEST", TARGET);
+            assertThat(outputPlan.controls().get("/root/subject#PRIMARY")
+                    .executionMode(outputControl)).isEmpty();
+        }
+
+        FixtureRule replay = rule("replay", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.replaying(REPLAY_REF));
+        CompiledExecutionControl replayPlan = compiler.compile(
+                graph(new ReadOnlyOperator()), bundle(replay), "GRAPH_CONTRACT_TEST", TARGET,
+                replays(true, "source-a"));
+        assertThat(replayPlan.controls().get("/root/subject#PRIMARY").executionMode(replay))
+                .isEmpty();
+
+        registry.register("httpResource", new ExternalOperator());
+        FixtureRule transportOutput = rule("transport-output",
+                FixtureRule.Selector.resource("customer.get"),
+                new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
+                        FixtureRule.DoubleBoundary.TRANSPORT, Map.of("fixed", true), "", null,
+                        Map.of(), "", "", "", null, List.of(), ""));
+        CompiledExecutionControl transportOutputPlan = compiler.compile(
+                registryGraph("httpResource"), bundle(transportOutput),
+                "GRAPH_CONTRACT_TEST", TARGET);
+        assertThat(transportOutputPlan.controls().get("/root/subject#RESOURCE")
+                .executionMode(transportOutput)).isEmpty();
+    }
+
+    @Test
+    void descriptorModeParticipatesInPlanFingerprintWithoutChangingPublicPlanShape()
+            throws Exception {
+        registry.register("httpResource", new ExternalOperator());
+        Graph graph = registryGraph("httpResource");
+        FixtureRule protocol = rule("response", FixtureRule.Selector.resource("customer.get"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.NODE));
+        FixtureRule transport = rule("response", FixtureRule.Selector.resource("customer.get"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+
+        CompiledExecutionControl protocolPlan = compiler.compile(
+                graph, bundle(protocol), "GRAPH_CONTRACT_TEST", TARGET);
+        CompiledExecutionControl transportPlan = compiler.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(protocolPlan.effectivePlan().planFingerprint())
+                .isNotEqualTo(transportPlan.effectivePlan().planFingerprint());
+        assertThat(objectMapper.writeValueAsString(protocolPlan.effectivePlan()))
+                .doesNotContain("\"executionMode\"", "\"executionModesByRuleId\"");
+    }
+
+    @Test
+    void equivalentMixedDescriptorCompilationsKeepStableFingerprintAcrossSiteOrder() {
+        registry.register("httpResource", new ExternalOperator());
+        FixtureRule protocol = rule("protocol", FixtureRule.Selector.resource("customer.protocol"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.NODE));
+        FixtureRule transport = rule("transport", FixtureRule.Selector.resource("customer.transport"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+        String expected = null;
+
+        for (int run = 0; run < 10; run++) {
+            Graph equivalentSiteOrder = registryGraphWithAuxiliarySite(
+                    "httpResource", run % 2 == 0);
+            String actual = compiler.compile(equivalentSiteOrder, bundle(protocol, transport),
+                    "GRAPH_CONTRACT_TEST", TARGET).effectivePlan().planFingerprint();
+            if (expected == null) {
+                expected = actual;
+            }
+            assertThat(actual).isEqualTo(expected);
+        }
+
+        String reorderedDeclaration = compiler.compile(
+                registryGraphWithAuxiliarySite("httpResource", true),
+                bundle(transport, protocol), "GRAPH_CONTRACT_TEST", TARGET)
+                .effectivePlan().planFingerprint();
+        assertThat(reorderedDeclaration)
+                .as("Fixture rule list order is explicit fingerprint material")
+                .isNotEqualTo(expected);
+    }
+
+    @Test
+    void executionModeProtocolRemainsTheExactDocumentedClosedSet() {
+        assertThat(ExecutionMode.values()).containsExactly(
+                ExecutionMode.PRIMITIVE_REAL,
+                ExecutionMode.SCHEMA_STANDIN,
+                ExecutionMode.DESCRIPTOR_PROTOCOL,
+                ExecutionMode.DESCRIPTOR_TRANSPORT,
+                ExecutionMode.BINDING_TRANSPORT,
+                ExecutionMode.BINDING_REAL,
+                ExecutionMode.WORLD_DELEGATE);
     }
 
     @Test
@@ -711,6 +852,30 @@ class ExecutionControlCompilerTest {
         return new Graph(embedded.name(), Map.of("subject", node), embedded.edges(),
                 embedded.sourceNodes(), embedded.terminalNodes(), embedded.schemaValidationLevel(),
                 Map.of(), embedded.declaredInputSchema(), embedded.declaredOutputSchema(),
+                embedded.sagaConfig(), embedded.definitionSource(), embedded.streamingOutputNodeId(),
+                embedded.streamingInputs());
+    }
+
+    private static Graph registryGraphWithAuxiliarySite(
+            String operatorRef, boolean subjectFirst) {
+        Graph embedded = new GraphBuilder("subject-graph")
+                .node("subject", new ReadOnlyOperator())
+                .node("auxiliary", new ReadOnlyOperator())
+                .build();
+        var subject = embedded.nodes().get("subject").toBuilder()
+                .operatorRef(operatorRef).build();
+        Map<String, com.leanowtech.bloge.core.model.NodeSpec> nodes = new LinkedHashMap<>();
+        if (subjectFirst) {
+            nodes.put("subject", subject);
+            nodes.put("auxiliary", embedded.nodes().get("auxiliary"));
+        } else {
+            nodes.put("auxiliary", embedded.nodes().get("auxiliary"));
+            nodes.put("subject", subject);
+        }
+        return new Graph(embedded.name(), nodes, embedded.edges(), embedded.sourceNodes(),
+                embedded.terminalNodes(), embedded.schemaValidationLevel(),
+                Map.of("auxiliary", embedded.embeddedOperators().get("auxiliary")),
+                embedded.declaredInputSchema(), embedded.declaredOutputSchema(),
                 embedded.sagaConfig(), embedded.definitionSource(), embedded.streamingOutputNodeId(),
                 embedded.streamingInputs());
     }
