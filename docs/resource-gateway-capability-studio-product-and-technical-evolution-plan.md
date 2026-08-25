@@ -3324,7 +3324,7 @@ mvn -f resource-gateway-gate-a-verifier/pom.xml \
 
 | 任务 | Owner | 产出 | 退出标准 |
 |---|---|---|---|
-| D7-T1：Orchestrator + Tests | caller（外部编排层） | `run-a1-3-development-gate.py`、Python unit tests（覆盖 Authority 派生、reason codes、canonical JSON、O_EXCL、稳定读取） | Python tests 全绿；不执行 A1.2 build；不泄露原始 bytes |
+| D7-T1：Orchestrator + Tests | caller（外部编排层） | `run-a1-3-development-gate.py`、Python unit tests（覆盖 Authority 派生、reason codes、canonical JSON、O_EXCL、稳定读取） | `DEVELOPMENT_VERIFIED`：63/63；真实 Authority + 实际 Provider binding 独立复算通过；不执行 A1.2 build；不泄露原始 bytes |
 | D7-T2：Java Parser + Consumer + Vectors | Verifier Owner（T2） | `R03DevelopmentGateBindingTest.java`（结构验证）、`R03DevelopmentGateFingerprintTest.java`（哈希验证）、negative vector tests | TDD 负向场景全部 `fail-closed`；reason code 与冻结表精确匹配 |
 | D7-T3：Factory Embeds Actual Provider + Full Kernel | Verifier Owner（T3） | 扩展 `RealVerifierFixtureFactory` 注入实际 Provider bytes；`R03DevelopmentGateKernelIntegrationTest.java` | fixture 的 Authority 指定 entry 与实际 Provider bytes 逐字节相等；Parser + Kernel 连续 3 次 deterministic |
 | D7-T4：Orchestrated Integration + Negative Process Tests + Docs | 集成 Owner | Maven `gate-a-a1-3-development-binding` profile、process tests、README/状态文档 | specialized 与 ordinary 两条命令均全绿；negative tests 全部 fail-closed |
@@ -3341,6 +3341,8 @@ mvn -f resource-gateway-gate-a-verifier/pom.xml \
 - D7-T1 全绿 + D7-T2 全绿 + D7-T3 全绿 + D7-T4 全绿 → D7 整体关闭。
 - D7 整体关闭后，将 A1.3-02 整体状态更新为 `DEVELOPMENT_VERIFIED`。
 - D7 整体关闭后，**不得**将 A1.3-03..06 状态改为 `PENDING` 以外的任何状态。
+
+> D7-T1 已在 commit `3a051b7b1` 关闭：producer 63/63；真实 raw Authority 与 A1.2 Provider JAR 生成 576-byte closed binding，Authority/Provider/binding 三个 fingerprint 由独立脚本复算一致，文件模式为 `0600`；完整 protocol gate 同时通过 packaging 106/106、sealed Bundle 30 attacks、CLI/conformance 28 attacks、SliceAcceptanceReceipt 23 attacks 与 67 个 Schema。该结果仅是 DEVELOPMENT evidence，A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 仍为 0/27。
 
 ###### 11. 设计冻结确认清单
 
