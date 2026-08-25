@@ -71,7 +71,7 @@ uv run --with jsonschema python \
 
 `A1.3-R03`（caller-owned predecessor receipt 绑定当前 Provider raw bytes）**仍为 BLOCKED_FORMAL_GATE**，依赖结构化 Evidence、ledger marker 和正式 SliceAcceptanceReceipt，不得以本地 Markdown 记录替代。
 
-`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的固定分母突变测试固证（当前代码验收值为 89，由 `EXACT_TEST_COUNT` 常量约束；分母调整需同步更新该常量并重新运行全量门禁验证）。`A1.3-02`（Verifier exact closure）、`A1.3-03`（内核解耦）、`A1.3-04`（Java self-test）、`A1.3-05`（fail-closed positive/negative matrix）、`A1.3-06`（Authority profile 全绿）**仍为 PENDING**，被 `A1.3-R03`（BLOCKED_FORMAL_GATE）正式阻塞。`formalPassCount` 仍为 `0/27`，A1.3 的 Verifier JAR 尚未产出。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
+`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的 106 项固定分母突变测试固证（`EXACT_TEST_COUNT` = 106：baseline 89 + artifactLimits 17）。`A1.3-02` 完成条件 1–6 均为 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 340/340（20 main sources、9 test sources、JDK 25、Enforcer 全绿、regular JAR 构建）、Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）、factory tests 32、PF01–10 10/10、TM01–25 25/25。`A1.3-02` 整体仍为 PENDING，原因是条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27。`A1.3-03`、`A1.3-04`、`A1.3-05`、`A1.3-06` **仍为 PENDING**。实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c，Verifier 模块 clean verify 全绿。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
 
 ### A1.3-01 Packaging Plan 数据流
 

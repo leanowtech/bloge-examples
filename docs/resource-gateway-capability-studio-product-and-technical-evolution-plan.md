@@ -2993,7 +2993,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：89 tests、0 failure、0 error、0 skip（`ZipArchiveVerifierTest`）
 - **构建检查**：`mvn enforcer:enforce` 全绿（BannedDependencies passed）；`dependency:tree -DincludeScope=compile` 扫描无违禁 artifact
 - **覆盖维度**：structural（EOCD/local-central 对齐、ZIP64 extra field/EOCD sentinel/locator 拒绝）→ DD（data descriptor 不可验证拒绝）→ CRC/size 逐流复算 → raw deflate → compression ratio → immutability（无 `Files.write`/`Files.copy`/`Files.createTempFile`）→ no path/system-message leakage
-- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；但 A1.3-02 整体仍为 `PENDING`（exact 28-entry real fixture、PF-01~10、TM-01~25 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
 
 ---
 
@@ -3005,7 +3005,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：72 tests、0 failure、0 error、0 skip（`PathAndClosureVerifierTest`）
 - **实现要点**：严格 UTF-8 解码（拒绝 malformed sequences）+ NFC 规范化检查；exact closure 逐条目全量诊断，使用冻结 reason code：`AK-PATH-NUL`/`AK-PATH-ABSOLUTE`/`AK-PATH-BACKSLASH`/`AK-PATH-DOT-SEGMENT`/`AK-PATH-NFC-MISMATCH`（路径规范）+ `AK-ENTRY-DUPLICATE`/`AK-ENTRY-MISSING`/`AK-ENTRY-COUNT-MISMATCH`/`AK-ENTRY-EXTRA`（目录闭包）+ `AK-LIMIT-ZIP-ENTRIES`（条目数限制）；reasonArgs 键集冻结；PathCheckResult byte[]/nested maps 深防御复制（阻断调用方后续修改），结果集合不可变
 - **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
-- **门禁标记**：T2 DEVELOPMENT_VERIFIED（A1.3-02 中 T2 任务完成）；A1.3-02 整体仍为 `PENDING`（T3 已完成；exact 28-entry real fixture、PF-01~10、TM-01~25 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+- **门禁标记**：T2 DEVELOPMENT_VERIFIED（A1.3-02 中 T2 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
 
 ---
 
@@ -3017,7 +3017,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：90 tests、0 failure、0 error、0 skip（`ArtifactLimitsAndNestedBindingTest`）
 - **实现要点**：五类限制 all-entry 精确 ratio 检查，使用冻结 reason code：`AK-LIMIT-RAW-BYTES`（原始字节总量）/ `AK-LIMIT-ZIP-ENTRIES`（条目数）/ `AK-LIMIT-SINGLE-ENTRY`（单条目超限）/ `AK-LIMIT-TOTAL-UNCOMPRESSED`（解压后总量）/ `AK-LIMIT-COMPRESSION-RATIO`（压缩比）；negative validation：先拒绝负 compressed/uncompressed size，再 checked-add 防溢出；plan hash first（Packaging Plan JSON 摘要优先计算）；plan count + actual nested count 对比（TM-22）；七 SHA binding（每个 embedded JAR 精确 `sha256:<64 lowerhex>` 绑定）；冻结 args（arguments 字段与 SHA-256 摘要严格对应）。**协议勘误（A1.3-02）**：`AK-NESTED-JAR-COUNT` 仍为 NestedJarBinder phase-direct contract，由 T3 单元/phase test 覆盖；完整 ArchiveKernel 对缺失 entry 按 first-reason 报告 `AK-ENTRY-MISSING`（优先级 3，先于 binding 优先级 6），snapshot 可保留后续未执行项
 - **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
-- **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；A1.3-02 整体仍为 `PENDING`（exact 28-entry real fixture、PF-01~10、TM-01~25 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
+- **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
 
 ---
 
@@ -3026,7 +3026,12 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **T1**：89 tests（`ZipArchiveVerifierTest`）
 - **T2**：72 tests（`PathAndClosureVerifierTest`）
 - **T3**：90 tests（`ArtifactLimitsAndNestedBindingTest`）
-- **合计**：251 tests、0 failure、0 error、0 skip
+- **ArchiveKernelIntegrationTest**：22 tests
+- **Factory tests**：32 tests
+- **PF01–10**：10 tests
+- **TM01–25**：25 tests
+- **T1+T2+T3**：251 tests（subtotal）
+- **合计**：340 tests（89+72+90+22+32+10+25）、0 failure、0 error、0 skip
 - **Enforcer/profile/dependency scan**：全绿（`gate-a-verifier` profile、`enforcer:enforce` BannedDependencies passed、`dependency:tree -DincludeScope=compile` 无违禁 artifact）
 
 ---
@@ -3063,16 +3068,10 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `DEVELOPMENT_VERIFIED` | 106/106 tests passed（protocol packaging 106/106、deterministic plan bytes、content-addressed publication receipt、mutation tests） |
-| A1.3-02 | 已完成：PackagingPlanParser（Java）、ArchiveKernel integration facade、immutable snapshot + deterministic serializer（clean verify 273/273、零编译警告）；reasonArgs single/ratio 已对齐冻结表；剩余：exact real 28-entry fixture、PF-01~10、TM-01~25 | `PENDING`（T1/T2/T3 DEVELOPMENT_VERIFIED；formalPassCount 仍为 0/27） | tamper matrix；正式 Gate 依赖 28-entry fixture、PF-01~10、TM-01~25、R03 receipt |
+| A1.3-02 | 完成条件 1–6 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 340/340 （20 main sources、9 test sources、JDK 25、Enforcer 全绿、regular JAR 构建）；Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）；factory tests 32；PF01–10 10/10；TM01–25 25/25；reasonArgs single/ratio 已对齐冻结表；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27 | `PENDING`（条件 1–6 DEVELOPMENT_VERIFIED；条件 7 / A1.3-R03 BLOCKED_FORMAL_GATE；formalPassCount 仍为 0/27） | 实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c；Verifier 模块 clean verify 340/340；Authority-derived 28-entry fixture；factory tests 32；PF01–10 10/10；TM01–25 25/25；条件 7 / A1.3-R03 caller-owned predecessor binding 未闭合 |
 
-> T1（89 tests）+ T2（72 tests）+ T3（90 tests）三个任务均已 DEVELOPMENT_VERIFIED，另有 PackagingPlanParser、ArchiveKernel integration facade、immutable snapshot + deterministic serializer 实现完成（clean verify 273/273、零编译警告），reasonArgs single/ratio 已对齐冻结表，protocol packaging tests 106/106。聚合测试 251 tests 全绿，Enforcer/profile/dependency scan 全绿。但 A1.3-02 整体 **不得** 进入 DEVELOPMENT_VERIFIED，因为以下收口项尚未完成：
-> - exact 28-entry real fixture（全量边界条件样例）
-> - PF-01~PF-10 全部通过（Plan Foundation 维度）
-> - TM-01~TM-25 全部失败（Tamper Matrix 拒绝维度）
-> - formalPassCount 当前为 0/27，formalGate 尚未闭合
-> - A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
->
-> 上述五项全部完成后方可更新状态。
+> T1（89 tests）+ T2（72 tests）+ T3（90 tests）三个任务均已 DEVELOPMENT_VERIFIED；另有 ArchiveKernelIntegrationTest 22 tests、Factory tests 32 tests、PF01–10 10 tests、TM01–25 25 tests；合计 340 tests（89+72+90+22+32+10+25）；另有 PackagingPlanParser、ArchiveKernel integration facade、immutable snapshot + deterministic serializer 实现完成（clean verify 340/340、零编译警告），reasonArgs single/ratio 已对齐冻结表，protocol packaging tests 106/106，Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）。Enforcer/profile/dependency scan 全绿。A1.3-02 完成条件 1–6 均为 DEVELOPMENT_VERIFIED；整体状态仍为 PENDING，因为条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27。实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c。正式 Verifier JAR / production CLI black-box 尚未产出（test-side fixture 非正式制品）。
+> 剩余唯一未闭合项：条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27；A1.3-R03 formal receipt 仍为 BLOCKED_FORMAL_GATE，formalPassCount 27 项 formal evidence 未开始记录。
 
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
 | A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |
