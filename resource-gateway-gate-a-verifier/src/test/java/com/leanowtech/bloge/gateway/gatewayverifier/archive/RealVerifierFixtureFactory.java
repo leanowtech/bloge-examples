@@ -661,7 +661,195 @@ public final class RealVerifierFixtureFactory {
         return true;
     }
 
-    public static String sha256fp(Path file) throws IOException {
-        return sha256fp(Files.readAllBytes(file));
+
+    // =========================================================================
+
+    // =========================================================================
+    // Deterministic JAR builder for PF tests
+    // =========================================================================
+
+    /**
+     * Builder for creating deterministic JAR/ZIP files with precise control over
+     * compression method, entry contents, and size boundaries.
+     *
+     * <p>All entries use DOS epoch (1980-01-01 00:00:00) for timestamps.
+     * STORED entries must have CRC-32 and size preset before writing.
+     */
+    public final class DeterministicJarBuilder {
+
+        private final List<EntrySpec> entries = new ArrayList<>();
+        private int storedEntries = 0;
+
+        /** Specification for a single JAR entry. */
+        public record EntrySpec(
+                String name,
+                byte[] content,
+                int compressionMethod,
+                boolean isDependency
+        ) {}
+
+        /** Adds a dependency entry with actual JAR content from the dependency JARs directory. */
+        public DeterministicJarBuilder addDependency(String entryPath) {
+            DependencyEntry dep = findDependencyByEntryPath(entryPath);
+            if (dep == null) {
+                throw new IllegalArgumentException("Unknown dependency entry path: " + entryPath);
+            }
+            Path depJarPath = depDir.resolve(dep.artifactFileName());
+            if (!Files.exists(depJarPath)) {
+                throw new IllegalStateException(
+                        "Dependency JAR not found: " + depJarPath);
+            }
+            try {
+                byte[] content = Files.readAllBytes(depJarPath);
+                entries.add(new EntrySpec(entryPath, content, ZipEntry.DEFLATED, true));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to read dependency JAR: " + depJarPath, e);
+            }
+            return this;
+        }
+
+        /** Adds a non-dependency entry with the specified content. */
+        public DeterministicJarBuilder addNonDependency(String entryPath, byte[] content) {
+            entries.add(new EntrySpec(entryPath, content, ZipEntry.DEFLATED, false));
+            return this;
+        }
+
+        /** Adds a non-dependency entry using STORED compression. */
+        public DeterministicJarBuilder addStoredEntry(String entryPath, byte[] content) {
+            entries.add(new EntrySpec(entryPath, content, ZipEntry.STORED, false));
+            storedEntries++;
+            return this;
+        }
+
+        /** Adds a dependency entry with STORED compression using actual JAR content. */
+        public DeterministicJarBuilder addStoredDependency(String entryPath) {
+            DependencyEntry dep = findDependencyByEntryPath(entryPath);
+            if (dep == null) {
+                throw new IllegalArgumentException("Unknown dependency entry path: " + entryPath);
+            }
+            Path depJarPath = depDir.resolve(dep.artifactFileName());
+            if (!Files.exists(depJarPath)) {
+                throw new IllegalStateException("Dependency JAR not found: " + depJarPath);
+            }
+            try {
+                byte[] content = Files.readAllBytes(depJarPath);
+                entries.add(new EntrySpec(entryPath, content, ZipEntry.STORED, true));
+                storedEntries++;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to read dependency JAR: " + depJarPath, e);
+            }
+            return this;
+        }
+
+        /** Returns the expected total number of entries. */
+        public int entryCount() {
+            return entries.size();
+        }
+
+        /** Returns true if all entries use DEFLATE compression. */
+        public boolean isAllDeflate() {
+            return storedEntries == 0;
+        }
+
+        /** Returns true if all entries use STORED compression. */
+        public boolean isAllStored() {
+            return storedEntries == entries.size() && !entries.isEmpty();
+        }
+
+        /**
+         * Builds the JAR bytes.
+         * STORED entries have CRC-32 and sizes preset; all entries use DOS epoch time.
+         */
+        public byte[] build() {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+            CRC32 crc = new CRC32();
+
+            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+                for (EntrySpec spec : entries) {
+                    ZipEntry entry = new ZipEntry(spec.name());
+                    entry.setMethod(spec.compressionMethod());
+                    entry.setTime(DOS_EPOCH_MILLIS);
+
+                    if (spec.compressionMethod() == ZipEntry.STORED) {
+                        crc.reset();
+                        crc.update(spec.content());
+                        entry.setCrc(crc.getValue());
+                        entry.setSize(spec.content().length);
+                        entry.setCompressedSize(spec.content().length);
+                    }
+
+                    zos.putNextEntry(entry);
+                    zos.write(spec.content());
+                    zos.closeEntry();
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to build JAR", e);
+            }
+
+            return baos.toByteArray();
+        }
+
+        /**
+         * Builds a JAR with explicit content overrides for specific non-dependency entries.
+         */
+        public byte[] buildWithOverrides(Map<String, byte[]> overrides) {
+            List<EntrySpec> resolved = new ArrayList<>();
+            for (EntrySpec spec : entries) {
+                if (!spec.isDependency() && overrides.containsKey(spec.name())) {
+                    resolved.add(new EntrySpec(
+                            spec.name(),
+                            overrides.get(spec.name()),
+                            spec.compressionMethod(),
+                            false));
+                } else {
+                    resolved.add(spec);
+                }
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream(8192);
+            CRC32 crc = new CRC32();
+
+            try (java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(baos)) {
+                for (EntrySpec spec : resolved) {
+                    ZipEntry entry = new ZipEntry(spec.name());
+                    entry.setMethod(spec.compressionMethod());
+                    entry.setTime(DOS_EPOCH_MILLIS);
+
+                    if (spec.compressionMethod() == ZipEntry.STORED) {
+                        crc.reset();
+                        crc.update(spec.content());
+                        entry.setCrc(crc.getValue());
+                        entry.setSize(spec.content().length);
+                        entry.setCompressedSize(spec.content().length);
+                    }
+
+                    zos.putNextEntry(entry);
+                    zos.write(spec.content());
+                    zos.closeEntry();
+                }
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to build JAR with overrides", e);
+            }
+
+            return baos.toByteArray();
+        }
+    }
+
+    /** Returns a new DeterministicJarBuilder instance. */
+    public DeterministicJarBuilder jarBuilder() {
+        return new DeterministicJarBuilder();
+    }
+
+    /**
+     * Computes exact STORED linear size for uncompressed content.
+     * Formula: local header (30 + nameLen + 2) + data + data descriptor (12) + cd entry (46 + nameLen + 2)
+     */
+    public static long storedLinearSize(String entryName, long uncompressedSize) {
+        byte[] nameBytes = entryName.getBytes(StandardCharsets.UTF_8);
+        long nameLen = nameBytes.length;
+        // Local file header: 30 + nameLen + extra(2)
+        // Data descriptor for STORED: 12 bytes
+        // Central directory entry: 46 + nameLen + extra(2)
+        return (30 + nameLen + 2 + 12 + uncompressedSize) + (46 + nameLen + 2);
     }
 }
