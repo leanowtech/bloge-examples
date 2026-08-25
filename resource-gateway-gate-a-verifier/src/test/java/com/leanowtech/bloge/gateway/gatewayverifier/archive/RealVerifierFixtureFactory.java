@@ -603,6 +603,279 @@ public final class RealVerifierFixtureFactory {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // D7-T3: DevelopmentPredecessorBinding-aware fixture builder
+    // -------------------------------------------------------------------------
+
+    /** Stable fail-closed code for provider path/content validation. */
+    public static final String R03_FIXTURE_PROVIDER_MISMATCH = "R03-FIXTURE-PROVIDER-MISMATCH";
+
+    /**
+     * Immutable result of building a binding-aware fixture JAR.
+     * Arrays are cloned in the compact constructor and exposed via defensive-copy accessors.
+     */
+    public record FixtureProviderResult(
+            byte[] jarBytes,
+            String providerEntryPath,
+            byte[] providerBytes,
+            int totalEntryCount
+    ) {
+        /** Compact ctor: clone all arrays to ensure immutability. */
+        public FixtureProviderResult {
+            jarBytes = jarBytes != null ? jarBytes.clone() : new byte[0];
+            providerBytes = providerBytes != null ? providerBytes.clone() : new byte[0];
+        }
+
+        /** Defensive copy of JAR bytes. */
+        @Override public byte[] jarBytes() { return jarBytes.clone(); }
+
+        /** Defensive copy of provider bytes. */
+        @Override public byte[] providerBytes() { return providerBytes.clone(); }
+    }
+
+    /**
+     * Derives the provider entry path from the raw Authority INDEPENDENT_VERIFIER role contract.
+     * Derives from authorityRoot, never hardcoded.
+     *
+     * @return the providerEntryPath from roleContracts[INDEPENDENT_VERIFIER]
+     * @throws IllegalStateException if role or providerEntryPath is absent
+     */
+    public String deriveAuthorityProviderEntryPath() {
+        JsonNode role = findIndependentVerifierRole();
+        String pep = role.path("providerEntryPath").asText(null);
+        if (pep == null || pep.isEmpty()) {
+            throw new IllegalStateException(
+                    "providerEntryPath not found in INDEPENDENT_VERIFIER role contract");
+        }
+        return pep;
+    }
+
+    /**
+     * Builds the Authority-locked fixture JAR with injected provider bytes from binding.
+     *
+     * <p>Strict validation (all fail closed with R03-FIXTURE-PROVIDER-MISMATCH):
+     * <ul>
+     *   <li>binding non-null (converted to FixtureProviderException)</li>
+     *   <li>outputDir non-null (converted to FixtureProviderException)</li>
+     *   <li>binding.providerEntryPath() exactly matches Authority-derived provider entry path</li>
+     *   <li>Authority-derived provider entry path belongs to requiredEntries (28-entry fixture)</li>
+     *   <li>Authority-derived provider entry path is NOT an embedded runtime dependency</li>
+     *   <li>providerBytes length matches providerArtifact.byteLength</li>
+     *   <li>SHA-256 of providerBytes matches providerArtifact.rawFingerprint</li>
+     *   <li>providerBytes is non-null and non-empty</li>
+     *   <li>JAR reopened and provider entry bytes verified to equal binding.providerBytes()</li>
+     * </ul>
+     *
+     * @param binding   verified immutable DevelopmentPredecessorBinding (never null)
+     * @param outputDir directory for temporary JAR file
+     * @return FixtureProviderResult with JAR bytes, provider metadata, and entry count
+     * @throws FixtureProviderException if any validation fails, code = R03-FIXTURE-PROVIDER-MISMATCH
+     * @throws IOException if JAR I/O fails
+     */
+    public FixtureProviderResult buildFixtureJar(DevelopmentPredecessorBinding binding, Path outputDir)
+            throws IOException {
+        // V0a: binding non-null -> FixtureProviderException
+        if (binding == null) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of("detail", "binding-is-null"));
+        }
+        // V0b: outputDir non-null -> FixtureProviderException
+        if (outputDir == null) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of("detail", "output-dir-is-null"));
+        }
+
+        // Derive authority provider entry path from raw Authority (never hardcoded)
+        String authorityProviderPath;
+        try {
+            authorityProviderPath = deriveAuthorityProviderEntryPath();
+        } catch (IllegalStateException e) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of("detail", "authority-provider-entry-path-derivation-failed"));
+        }
+
+        // V1: binding.providerEntryPath must exactly match authority-derived path
+        if (!binding.providerEntryPath().equals(authorityProviderPath)) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-entry-path-mismatch",
+                            "bindingPath", binding.providerEntryPath(),
+                            "authorityPath", authorityProviderPath));
+        }
+
+        // V2: authority provider path must be in requiredEntries (28-entry fixture)
+        if (!requiredEntries.contains(authorityProviderPath)) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-entry-not-in-required-entries",
+                            "requiredCount", requiredEntries.size()));
+        }
+
+        // V3: authority provider path must NOT be an embedded runtime dependency
+        boolean isEmbeddedDep = embeddedDependencies.stream()
+                .anyMatch(dep -> dep.entryPath().equals(authorityProviderPath));
+        if (isEmbeddedDep) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of("detail", "provider-entry-is-embedded-dependency"));
+        }
+
+        // V4: providerBytes must not be null
+        byte[] bindingProviderBytes = binding.providerBytes();
+        if (bindingProviderBytes == null) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of("detail", "binding-provider-bytes-null"));
+        }
+
+        // V5: metadata coherence - providerBytes length must match providerArtifact.byteLength
+        if (bindingProviderBytes.length != binding.providerArtifact().byteLength()) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-bytes-length-mismatch",
+                            "actualLength", (long) bindingProviderBytes.length,
+                            "declaredLength", binding.providerArtifact().byteLength()));
+        }
+
+        // V6: metadata coherence - SHA-256 of providerBytes must match providerArtifact.rawFingerprint
+        String computedFp = sha256fp(bindingProviderBytes);
+        if (!computedFp.equals(binding.providerArtifact().rawFingerprint())) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-bytes-fingerprint-mismatch",
+                            "computedFingerprint", computedFp,
+                            "declaredFingerprint", binding.providerArtifact().rawFingerprint()));
+        }
+
+        // Build JAR with injected provider bytes
+        Files.createDirectories(outputDir);
+        Path jarPath = outputDir.resolve("fixture-" + System.nanoTime() + ".jar");
+        List<String> entryOrder = new ArrayList<>(requiredEntries);
+
+        try (OutputStream fos = Files.newOutputStream(jarPath);
+             ZipOutputStream zos = new ZipOutputStream(fos)) {
+
+            for (String entryName : entryOrder) {
+                ZipEntry ze = new ZipEntry(entryName);
+                ze.setTime(DOS_EPOCH_MILLIS);
+                ze.setMethod(ZipOutputStream.DEFLATED);
+                zos.putNextEntry(ze);
+
+                if (entryName.equals(authorityProviderPath)) {
+                    // Inject provider bytes from binding (defensive copy already in binding.providerBytes())
+                    zos.write(bindingProviderBytes);
+                } else if (entryName.endsWith(".class")) {
+                    zos.write(generateMinimalClassContent(entryName));
+                } else if (entryName.endsWith(".jar")) {
+                    DependencyEntry dep = findDependencyByEntryPath(entryName);
+                    if (dep != null) {
+                        Path jarFile = depDir.resolve(dep.artifactFileName());
+                        if (Files.exists(jarFile)) {
+                            zos.write(Files.readAllBytes(jarFile));
+                        } else {
+                            zos.write(new byte[0]);
+                        }
+                    } else {
+                        zos.write(new byte[0]);
+                    }
+                } else {
+                    zos.write(generateTextContent(entryName));
+                }
+                zos.closeEntry();
+            }
+        }
+
+        byte[] result = Files.readAllBytes(jarPath);
+        Files.deleteIfExists(jarPath);
+
+        // Verify exactly 28 entries
+        int actualCount = countZipEntries(result);
+        if (actualCount != EXPECTED_ENTRY_COUNT) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "entry-count-mismatch",
+                            "expected", (long) EXPECTED_ENTRY_COUNT,
+                            "actual", (long) actualCount));
+        }
+
+        // Verify all 7 embedded dependency SHA-256 fingerprints (preserved)
+        verifyAllEmbeddedFingerprints(result);
+
+        // V7: Reopen JAR and verify provider entry bytes equal binding.providerBytes()
+        byte[] reopenedProviderBytes;
+        try {
+            reopenedProviderBytes = extractEntryFromJarChecked(result, authorityProviderPath);
+        } catch (IOException e) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-entry-reopen-unreadable",
+                            "providerPath", authorityProviderPath));
+        }
+        if (reopenedProviderBytes == null) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-entry-missing-after-reopen",
+                            "providerPath", authorityProviderPath));
+        }
+        if (!Arrays.equals(reopenedProviderBytes, bindingProviderBytes)) {
+            throw new FixtureProviderException(R03_FIXTURE_PROVIDER_MISMATCH,
+                    Map.of(
+                            "detail", "provider-bytes-mismatch-after-reopen",
+                            "providerPath", authorityProviderPath,
+                            "reopenedLength", (long) reopenedProviderBytes.length,
+                            "bindingLength", (long) bindingProviderBytes.length));
+        }
+
+        // Success: return immutable result
+        return new FixtureProviderResult(
+                result,
+                authorityProviderPath,
+                bindingProviderBytes,
+                actualCount);
+    }
+
+    /**
+     * Extracts entry bytes from a JAR by entry path. Propagates IOException on I/O failure.
+     *
+     * @param jarBytes  JAR bytes
+     * @param entryPath entry path to extract
+     * @return entry bytes or null if not found
+     * @throws IOException if JAR reading fails
+     */
+    private static byte[] extractEntryFromJarChecked(byte[] jarBytes, String entryPath)
+            throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(jarBytes))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().equals(entryPath)) {
+                    byte[] content = zis.readAllBytes();
+                    zis.closeEntry();
+                    return content;
+                }
+                zis.closeEntry();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Runtime exception for fixture provider validation failures.
+     * reasonArgs is never null; message never includes raw provider payload.
+     */
+    public static final class FixtureProviderException extends RuntimeException {
+        private final String reasonCode;
+        private final Map<String, Object> reasonArgs;
+
+        public FixtureProviderException(String reasonCode, Map<String, Object> reasonArgs) {
+            // Message is code only - never include payload content
+            super(reasonCode);
+            this.reasonCode = reasonCode;
+            // Never null: use empty immutable map
+            this.reasonArgs = reasonArgs != null ? Map.copyOf(reasonArgs) : Map.of();
+        }
+
+        public String reasonCode() { return reasonCode; }
+        public Map<String, Object> reasonArgs() { return reasonArgs; }
+    }
+
     /** Returns a deterministic ObjectMapper (fresh instance each call). */
     private ObjectMapper planMapper() {
         ObjectMapper m = new ObjectMapper();
