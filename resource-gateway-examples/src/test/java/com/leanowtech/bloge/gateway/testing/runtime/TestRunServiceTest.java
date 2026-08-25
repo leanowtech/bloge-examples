@@ -151,8 +151,12 @@ class TestRunServiceTest {
                 "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED,
                 Map.of(), true, ResolvedReplayPayloads.empty());
 
-        TestExecutionResult deterministic = service.execute(stored);
-        TestExecutionResult repeated = service.execute(stored);
+        List<TestExecutionResult> runs = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            runs.add(service.execute(stored));
+        }
+        TestExecutionResult deterministic = runs.getFirst();
+        TestExecutionResult repeated = runs.get(1);
 
         assertThat(deterministic.passed()).isTrue();
         assertThat(deterministic.graphResult().getOutput("subject", Instant.class)).isEqualTo(origin);
@@ -164,24 +168,31 @@ class TestRunServiceTest {
                 });
         assertThat(deterministic.evidence().evidenceClass())
                 .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
-        assertThat(repeated.plan().planFingerprint())
-                .isEqualTo(deterministic.plan().planFingerprint());
-        assertThat(repeated.evidence().metadata().get("logicalTime"))
-                .isEqualTo(deterministic.evidence().metadata().get("logicalTime"));
+        ObjectMapper fingerprintMapper = new ObjectMapper().findAndRegisterModules();
+        assertThat(runs).allSatisfy(run -> {
+            assertThat(run.plan().planFingerprint())
+                    .isEqualTo(deterministic.plan().planFingerprint());
+            assertThat(run.evidence().metadata().get("logicalTime"))
+                    .isEqualTo(deterministic.evidence().metadata().get("logicalTime"));
+            assertThat(run.evidence().metadata().get("executionServiceStateFingerprint"))
+                    .isEqualTo(deterministic.evidence().metadata().get(
+                            "executionServiceStateFingerprint"));
+            assertThat(TestSemanticResultFingerprint.projection(
+                    fingerprintMapper, run.evidence()))
+                    .isEqualTo(TestSemanticResultFingerprint.projection(
+                            fingerprintMapper, deterministic.evidence()));
+            assertThat(run.evidence().semanticResultFingerprint())
+                    .isEqualTo(deterministic.evidence().semanticResultFingerprint());
+        });
+        assertThat(runs.stream().map(run -> run.evidence().runId()))
+                .doesNotHaveDuplicates().hasSize(20);
+        assertThat(runs.stream().map(run -> ProtocolFingerprint.of(
+                fingerprintMapper, run.evidence())))
+                .doesNotHaveDuplicates().hasSize(20);
         assertThat(repeated.evidence().metadata().get("executionServiceStateFingerprint"))
-                .isEqualTo(deterministic.evidence().metadata().get(
-                        "executionServiceStateFingerprint"))
                 .asString().startsWith("sha256:");
-        assertThat(TestSemanticResultFingerprint.projection(
-                new ObjectMapper().findAndRegisterModules(), repeated.evidence()))
-                .isEqualTo(TestSemanticResultFingerprint.projection(
-                        new ObjectMapper().findAndRegisterModules(), deterministic.evidence()));
-        assertThat(repeated.evidence().semanticResultFingerprint())
-                .isEqualTo(deterministic.evidence().semanticResultFingerprint());
+
         assertThat(repeated.evidence().runId()).isNotEqualTo(deterministic.evidence().runId());
-        assertThat(ProtocolFingerprint.of(new ObjectMapper().findAndRegisterModules(),
-                repeated.evidence())).isNotEqualTo(ProtocolFingerprint.of(
-                new ObjectMapper().findAndRegisterModules(), deterministic.evidence()));
 
         TestExecutionRequest uncontrolled = new TestExecutionRequest(graph,
                 new GraphContext(Map.of("input", "hello")), bundle(),
@@ -194,6 +205,54 @@ class TestRunServiceTest {
         assertThat(exploratory.evidence().metadata().get(
                 "executionServiceCertificationGaps").toString())
                 .contains("logicalClock");
+    }
+
+    @Test
+    void injectedIdentitySourceOrdersRunFactsAndClocksRejectedRuns() {
+        ObjectMapper mapper = new ObjectMapper();
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        List<String> calls = new ArrayList<>();
+        List<String> runIds = List.of("accepted", "rejected");
+        List<Instant> times = List.of(
+                Instant.parse("2026-08-26T00:00:00Z"),
+                Instant.parse("2026-08-26T00:00:01Z"),
+                Instant.parse("2026-08-26T00:00:02Z"),
+                Instant.parse("2026-08-26T00:00:03Z"));
+        AtomicInteger runIdIndex = new AtomicInteger();
+        AtomicInteger timeIndex = new AtomicInteger();
+        TestRunIdentitySource source = new TestRunIdentitySource(
+                () -> {
+                    calls.add("run-id");
+                    return runIds.get(runIdIndex.getAndIncrement());
+                },
+                () -> {
+                    calls.add("clock");
+                    return times.get(timeIndex.getAndIncrement());
+                });
+        TestRunService deterministic = new TestRunService(mapper,
+                new ExecutionControlCompiler(registry, mapper),
+                new TestDoubleFactory(mapper, null),
+                new IndependentTestEngineFactory(registry),
+                new TestAssertionEvaluator(mapper), source);
+
+        TestExecutionResult accepted = deterministic.execute(
+                request(single(new PureOperator()), bundle()));
+        TestExecutionResult rejected = deterministic.execute(request(single(new PureOperator()),
+                bundle(rule("first", FixtureRule.Selector.node("subject"),
+                        FixtureRule.Behavior.returning("a")),
+                        rule("second", FixtureRule.Selector.node("subject"),
+                                FixtureRule.Behavior.returning("b")))));
+
+        assertThat(calls).containsExactly("run-id", "clock", "clock",
+                "run-id", "clock", "clock");
+        assertThat(accepted.evidence().runId()).isEqualTo("test-run-accepted");
+        assertThat(accepted.evidence().startedAt()).isEqualTo(times.get(0));
+        assertThat(accepted.evidence().completedAt()).isEqualTo(times.get(1));
+        assertThat(rejected.evidence().runId()).isEqualTo("test-run-rejected");
+        assertThat(rejected.evidence().status())
+                .isEqualTo(TestRunEvidence.Status.CONTROL_PLAN_REJECTED);
+        assertThat(rejected.evidence().startedAt()).isEqualTo(times.get(2));
+        assertThat(rejected.evidence().completedAt()).isEqualTo(times.get(3));
     }
 
     @Test

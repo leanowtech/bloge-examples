@@ -25,7 +25,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 /**
  * Unified execution data-control kernel for operator, subgraph, and graph tests.
@@ -41,6 +40,7 @@ public class TestRunService {
     private final CompiledTestRuntimeOptions runtimeOptions;
     private final IndependentTestEngineFactory engineFactory;
     private final TestAssertionEvaluator assertionEvaluator;
+    private final TestRunIdentitySource identitySource;
 
     /**
      * @param registry operator binding registry used by the isolated engine
@@ -53,19 +53,30 @@ public class TestRunService {
                 new ExecutionControlCompiler(registry, objectMapper),
                 new TestDoubleFactory(objectMapper, resourceRuntime),
                 new IndependentTestEngineFactory(registry),
-                new TestAssertionEvaluator(objectMapper));
+                new TestAssertionEvaluator(objectMapper),
+                TestRunIdentitySource.system());
     }
 
     /** Constructor for focused conformance and architecture tests. */
     public TestRunService(ObjectMapper objectMapper, ExecutionControlCompiler compiler,
                           TestDoubleFactory doubleFactory, IndependentTestEngineFactory engineFactory,
                           TestAssertionEvaluator assertionEvaluator) {
+        this(objectMapper, compiler, doubleFactory, engineFactory, assertionEvaluator,
+                TestRunIdentitySource.system());
+    }
+
+    /** Constructor with an explicit immutable run identity and wall-clock source. */
+    public TestRunService(ObjectMapper objectMapper, ExecutionControlCompiler compiler,
+                          TestDoubleFactory doubleFactory, IndependentTestEngineFactory engineFactory,
+                          TestAssertionEvaluator assertionEvaluator,
+                          TestRunIdentitySource identitySource) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
         this.runtimeOptions = new CompiledTestRuntimeOptions(
                 Objects.requireNonNull(doubleFactory, "doubleFactory"));
         this.engineFactory = Objects.requireNonNull(engineFactory, "engineFactory");
         this.assertionEvaluator = Objects.requireNonNull(assertionEvaluator, "assertionEvaluator");
+        this.identitySource = Objects.requireNonNull(identitySource, "identitySource");
     }
 
     /**
@@ -213,8 +224,8 @@ public class TestRunService {
         Objects.requireNonNull(
                 stateAccessObserver, "stateAccessObserver");
         validateCompiledBinding(request, compiled);
-        String runId = "test-run-" + UUID.randomUUID();
-        Instant startedAt = Instant.now();
+        String runId = "test-run-" + identitySource.nextRunId();
+        Instant startedAt = identitySource.now();
         try (AdmissionGuard admission = noAdmissionGuard()) {
             return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
                     invocationBudget, stateAccessObserver);
@@ -234,8 +245,8 @@ public class TestRunService {
             throw new IllegalArgumentException(
                     "Mutation execution requires its purpose, stored fixture, and distinct targets");
         }
-        String runId = "test-run-" + UUID.randomUUID();
-        Instant startedAt = Instant.now();
+        String runId = "test-run-" + identitySource.nextRunId();
+        Instant startedAt = identitySource.now();
         CompiledExecutionControl compiled;
         try {
             compiled = mutationExecution
@@ -311,7 +322,7 @@ public class TestRunService {
                 compiled.effectivePlan().fixtureBundleFingerprint(),
                 compiled.effectivePlan().planFingerprint(),
                 startedAt,
-                Instant.now(),
+                identitySource.now(),
                 nodes,
                 recorder.edgeTraces(compiled.inventory(), nodes),
                 consumptions,
@@ -400,7 +411,7 @@ public class TestRunService {
                 TestRunEvidence.Status.CONTROL_PLAN_REJECTED,
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
-                startedAt, Instant.now(), List.of(), List.of(), List.of(), List.of(),
+                startedAt, identitySource.now(), List.of(), List.of(), List.of(), List.of(),
                 ex.diagnostics(), evidenceMetadata(request, null, null, null, null)));
     }
 

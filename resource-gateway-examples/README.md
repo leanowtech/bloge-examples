@@ -59,6 +59,10 @@ the isolated test engine receives a run-scoped fail-closed binding while the exi
 `ResourceFixtureRuntime` performs the real descriptor mapping, protocol validation, and payload
 extraction over a zero-network transport stub. Neither the graph nor the shared operator registry
 is mutated.
+The kernel's run identity and evidence wall clock are explicit injected dependencies. Repeated
+logical-clock executions keep stable plan and semantic-result fingerprints while retaining distinct
+run identities and full evidence fingerprints; a class-file architecture gate prevents the core
+service from directly reading system time or randomness.
 The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authenticated
 test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
 `fixtureBundle` object and cannot be combined with a legacy body fixture source; business context
