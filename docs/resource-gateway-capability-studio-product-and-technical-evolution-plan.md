@@ -2906,7 +2906,7 @@ Archive Kernel 必须对以下合法 Verifier JAR 全部通过：
 | TM-19 | JAR 全局 | 追加第 29 个 entry（总数 29） | `AK-ENTRY-COUNT-MISMATCH` | 3 |
 | TM-20 | nested JAR entry | 替换 nested JAR raw bytes 为其他 JAR bytes | `AK-NESTED-JAR-SHA256` | 6 |
 | TM-21 | Packaging Plan | embeddedDependencies[].lockId 的 rawFingerprint 差 1 bit | `AK-NESTED-JAR-SHA256` | 6 |
-| TM-22 | nested JAR entry | 从 ZIP 中移除 1 个 nested JAR（总数 6） | `AK-NESTED-JAR-COUNT` | 6 |
+| TM-22 | nested JAR entry | 从 ZIP 中移除 1 个 nested JAR（总数 6） | `AK-ENTRY-MISSING` | 3 |
 | TM-23 | STORED entry | `compressedSize==0 && uncompressedSize!=0` | `AK-SIZE-MISMATCH` | 4 |
 | TM-24 | nested JAR entry | 7 个 nested JAR 中 1 个 SHA-256 与 plan 差 1 bit | `AK-NESTED-JAR-SHA256` | 6 |
 | TM-25 | 任意 entry | uncompressed size 超过 `maxSingleEntryBytes + 1` | `AK-LIMIT-SINGLE-ENTRY` | 5 |
@@ -3015,7 +3015,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **Profile**：`gate-a-verifier`
 - **源码文件数**：6（`ArtifactLimits.java`、`ArtifactLimitsChecker.java`、`ArtifactLimitsResult.java`、`NestedJarBinder.java`、`PackagingPlanBinding.java`、`PlanBindingResult.java`）
 - **测试结果**：90 tests、0 failure、0 error、0 skip（`ArtifactLimitsAndNestedBindingTest`）
-- **实现要点**：五类限制 all-entry 精确 ratio 检查，使用冻结 reason code：`AK-LIMIT-RAW-BYTES`（原始字节总量）/ `AK-LIMIT-ZIP-ENTRIES`（条目数）/ `AK-LIMIT-SINGLE-ENTRY`（单条目超限）/ `AK-LIMIT-TOTAL-UNCOMPRESSED`（解压后总量）/ `AK-LIMIT-COMPRESSION-RATIO`（压缩比）；negative validation：先拒绝负 compressed/uncompressed size，再 checked-add 防溢出；plan hash first（Packaging Plan JSON 摘要优先计算）；plan count + actual nested count 对比（TM-22）；七 SHA binding（每个 embedded JAR 精确 `sha256:<64 lowerhex>` 绑定）；冻结 args（arguments 字段与 SHA-256 摘要严格对应）
+- **实现要点**：五类限制 all-entry 精确 ratio 检查，使用冻结 reason code：`AK-LIMIT-RAW-BYTES`（原始字节总量）/ `AK-LIMIT-ZIP-ENTRIES`（条目数）/ `AK-LIMIT-SINGLE-ENTRY`（单条目超限）/ `AK-LIMIT-TOTAL-UNCOMPRESSED`（解压后总量）/ `AK-LIMIT-COMPRESSION-RATIO`（压缩比）；negative validation：先拒绝负 compressed/uncompressed size，再 checked-add 防溢出；plan hash first（Packaging Plan JSON 摘要优先计算）；plan count + actual nested count 对比（TM-22）；七 SHA binding（每个 embedded JAR 精确 `sha256:<64 lowerhex>` 绑定）；冻结 args（arguments 字段与 SHA-256 摘要严格对应）。**协议勘误（A1.3-02）**：`AK-NESTED-JAR-COUNT` 仍为 NestedJarBinder phase-direct contract，由 T3 单元/phase test 覆盖；完整 ArchiveKernel 对缺失 entry 按 first-reason 报告 `AK-ENTRY-MISSING`（优先级 3，先于 binding 优先级 6），snapshot 可保留后续未执行项
 - **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
 - **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；A1.3-02 整体仍为 `PENDING`（exact 28-entry real fixture、PF-01~10、TM-01~25 未完成）；formalPassCount 不变（0/27）；A1.3-R03 仍为 `BLOCKED_FORMAL_GATE`
 
