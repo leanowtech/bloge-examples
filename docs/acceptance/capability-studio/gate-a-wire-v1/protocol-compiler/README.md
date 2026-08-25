@@ -71,11 +71,11 @@ uv run --with jsonschema python \
 
 `A1.3-R03`（caller-owned predecessor receipt 绑定当前 Provider raw bytes）**仍为 BLOCKED_FORMAL_GATE**，依赖结构化 Evidence、ledger marker 和正式 SliceAcceptanceReceipt，不得以本地 Markdown 记录替代。
 
-`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的 106 项固定分母突变测试固证（`EXACT_TEST_COUNT` = 106：baseline 89 + artifactLimits 17）。`A1.3-02` 完成条件 1–6 均为 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 340/340（20 main sources、9 test sources、JDK 25、Enforcer 全绿、regular JAR 构建）、Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）、factory tests 32、PF01–10 10/10、TM01–25 25/25。`A1.3-02` 整体仍为 PENDING，原因是条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27。`A1.3-03`、`A1.3-04`、`A1.3-05`、`A1.3-06` **仍为 PENDING**。实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c，Verifier 模块 clean verify 全绿。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
+`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的 106 项固定分母突变测试固证（`EXACT_TEST_COUNT` = 106：baseline 89 + artifactLimits 17）。`A1.3-02` 的既有 Verifier 能力与 D7-T2 predecessor binding consumer 均已 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 395/395（含 consumer 专属 55/55，JDK 25、Enforcer 全绿、regular JAR 构建）、Authority-derived 28-entry fixture、factory tests 32、PF01–10 10/10、TM01–25 25/25。`A1.3-02` 整体仍为 PENDING：D7-T3 尚未把已验证 Provider bytes 注入完整 Kernel fixture，D7-T4 尚未接入 specialized profile；formalPassCount 0/27。`A1.3-03`、`A1.3-04`、`A1.3-05`、`A1.3-06` **仍为 PENDING**。D7-T2 实现记录：commit `f48f48f36`。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
 
 ## A1.3-R03 开发绑定
 
-`run-a1-3-development-gate.py` 在 caller-owned A1.2 Provider JAR 已构建的前提下，构造 predecessor fingerprint binding JSON，并调用 Verifier 的 DEVELOPMENT binding 测试。Binding 写入路径由 `--binding-path` 指定（必须是绝对路径，父目录必须存在且非符号链接）；脚本通过 `resource-gateway-gate-a-verifier/pom.xml` 的 `gate-a-a1-3-development-binding` profile 运行 `A1_3_ROLE_PACKAGING` 测试集。
+`run-a1-3-development-gate.py` 在 caller-owned A1.2 Provider JAR 已构建的前提下构造 predecessor fingerprint binding JSON。Binding 写入路径由 `--binding-path` 指定（必须是绝对路径，父目录必须存在且非符号链接）。D7-T2 已提供严格 Java consumer；producer 到 consumer 的 specialized Maven profile 由 D7-T4 接线，当前尚不可用。
 
 ### 独立运行步骤
 
@@ -90,20 +90,7 @@ mvn -f resource-gateway-gate-a-tck-provider/pom.xml \
 
 脚本不执行该构建命令。Provider coordinate 和实际产物路径均从 raw Authority 的 A1.2 `handoffArtifacts` / `outputArtifacts` 唯一派生。
 
-**完整命令**（含 Maven 调用）：
-
-```bash
-REPO_ROOT="$PWD"
-BINDING_DIR="$(mktemp -d)"
-python3 docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-3-development-gate.py \
-  --authority "$REPO_ROOT/docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json" \
-  --repo-root "$REPO_ROOT" \
-  --binding-path "$BINDING_DIR/predecessor-binding-dev.json"
-```
-
-该命令执行以下步骤：① Authority `stable_read`（`O_RDONLY|O_NOFOLLOW`，pre/post `fstat` 一致性检查）；② `parse_authority_json`（`object_pairs_hook` 拒绝重复 key）；③ `derive_a12_artifact`（`handoffArtifacts` 与 `outputArtifacts` 各恰好 1 个 TCK_PROVIDER，tuple 完全一致）；④ Provider JAR 通过 `stable_read_repo_relative`（`O_DIRECTORY` dir-fd 链路，无 `lstat`/`open` 竞态）；⑤ Authority raw fingerprint + Provider raw fingerprint 写入 binding JSON；⑥ Maven `clean verify` with `gate-a-a1-3-development-binding` profile。
-
-**开发/测试专用**（跳过 Maven，绑定仅作开发态参照）：
+**当前可运行命令**（只生成并验证 binding producer，不调用 Maven consumer）：
 
 ```bash
 REPO_ROOT="$PWD"
@@ -115,11 +102,13 @@ python3 docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a
   --skip-maven
 ```
 
+该命令执行以下步骤：① Authority `stable_read`（`O_RDONLY|O_NOFOLLOW`，pre/post `fstat` 一致性检查）；② `parse_authority_json`（`object_pairs_hook` 拒绝重复 key）；③ `derive_a12_artifact`（`handoffArtifacts` 与 `outputArtifacts` 各恰好 1 个 TCK_PROVIDER，tuple 完全一致）；④ Provider JAR 通过 `stable_read_repo_relative`（`O_DIRECTORY` dir-fd 链路，无 `lstat`/`open` 竞态）；⑤ Authority raw fingerprint + Provider raw fingerprint 写入 binding JSON。第⑥步 Maven specialized profile 由 D7-T4 补齐。
+
 ### 与 formal verifier 的区别
 
 - `--skip-maven` 仅限开发/测试场景，不执行任何 Verifier JAR 动态 conformance 检查。
 - Binding 协议整体是 dev-only；closed binding JSON 不额外增加状态字段。`formalPassCount` 仍为 0/27，不计入 A1.3 formal gate。
-- Ordinary Verifier 340 测试命令保持独立，与本脚本无依赖：
+- Ordinary Verifier 395 测试命令保持独立，与本脚本无依赖：
 
 ```bash
 mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 \
@@ -139,8 +128,18 @@ python3 docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/test_
 - Authority/Provider 有界稳定读取、短读与漂移拒绝；
 - rooted directory-FD 路径遍历、symlink/escape/non-regular 拒绝；
 - duplicate JSON member、原子写入、`O_EXCL`、`0600`、partial write 清理；
-- Maven 命令、非 PIPE 有界输出、失败退出和 raw bytes 不泄露。
-| A1.3-R03 新增覆盖（coord 非空、classifier 存在、短读、parent symlink） | 4 |
+- Maven 命令、非 PIPE 有界输出、失败退出和 raw bytes 不泄露；
+- 4 项补充向量：coordinate 非空、classifier 存在、短读、parent symlink。
+
+### Consumer 验证
+
+```bash
+mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 \
+  -Dtest='DevelopmentPredecessorBinding*Test' \
+  -f resource-gateway-gate-a-verifier/pom.xml test
+```
+
+分母：**55/55**。其中 26 项覆盖正向、reason code 优先级、fingerprint、不可变性与三次确定性；29 项覆盖 canonical/closed shape、Authority 唯一派生、真实父目录/叶子 symlink、非 regular、17 MiB oversize 与 root-anchored 读取。完整 Verifier `clean verify` 分母为 **395/395**。
 
 
 ### A1.3-01 Packaging Plan 数据流
