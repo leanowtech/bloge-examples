@@ -39,7 +39,6 @@ public enum ExecutionMode {
                 && behavior.kind() == FixtureRule.BehaviorKind.RETURN
                 && !"httpResource".equals(operatorRef)
                 && behavior.boundary() == FixtureRule.DoubleBoundary.NODE
-                && behavior.value() != null
                 && behavior.rawBody().isBlank()
                 && behavior.statusCode() == null
                 && behavior.headers().isEmpty()

@@ -209,6 +209,8 @@ class ExecutionControlCompilerTest {
         }
         assertThat(ExecutionMode.resolve("readOnly", outputControls.getFirst().behavior()))
                 .isEmpty();
+        assertThat(ExecutionMode.resolve("readOnly", FixtureRule.Behavior.returning(null)))
+                .isEmpty();
 
         FixtureRule replay = rule("replay", FixtureRule.Selector.node("subject"),
                 FixtureRule.Behavior.replaying(REPLAY_REF));
@@ -270,11 +272,9 @@ class ExecutionControlCompilerTest {
     }
 
     @Test
-    void explicitSchemaStandinHintRequiresOutputWithoutLeakingPayload() {
+    void explicitSchemaStandinHintRequiresNodeReturnShapeWithoutLeakingPayload() {
         FixtureRule missing = rule("missing", FixtureRule.Selector.node("subject"),
-                new FixtureRule.Behavior(FixtureRule.BehaviorKind.RETURN,
-                        FixtureRule.DoubleBoundary.NODE, null, "", null, Map.of(), "", "", "",
-                        null, List.of(), ""));
+                FixtureRule.Behavior.throwing("MISSING_OUTPUT", "TEST", "missing output"));
 
         CompiledExecutionControl ordinary = compiler.compile(
                 graph(new ReadOnlyOperator()), bundle(missing), "GRAPH_CONTRACT_TEST", TARGET);
@@ -288,6 +288,25 @@ class ExecutionControlCompilerTest {
                     assertThat(ex.code()).isEqualTo("CONTROL_PLAN_SCHEMA_STANDIN_OUTPUT_REQUIRED");
                     assertThat(ex.diagnostics()).noneMatch(value -> value.contains("fixture"));
                 });
+    }
+
+    @Test
+    void explicitSchemaStandinHintAcceptsNullForOpaqueAndNullableOutputs() {
+        FixtureRule nullOutput = rule("null-output", FixtureRule.Selector.node("subject"),
+                FixtureRule.Behavior.returning(null));
+
+        CompiledExecutionControl opaque = compiler.compileWithExecutionModeHints(
+                graph(new ReadOnlyOperator()), bundle(nullOutput), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", nullOutput.ruleId()));
+        CompiledExecutionControl nullable = compiler.compileWithExecutionModeHints(
+                withOutputSchema(graph(new ReadOnlyOperator()), new TypedSchema(String.class)),
+                bundle(nullOutput), "GRAPH_CONTRACT_TEST", TARGET,
+                ExecutionModeHints.schemaStandin("/root/subject#PRIMARY", nullOutput.ruleId()));
+
+        assertThat(opaque.controls().get("/root/subject#PRIMARY").executionMode(nullOutput))
+                .contains(ExecutionMode.SCHEMA_STANDIN);
+        assertThat(nullable.controls().get("/root/subject#PRIMARY").executionMode(nullOutput))
+                .contains(ExecutionMode.SCHEMA_STANDIN);
     }
 
     @Test

@@ -83,7 +83,7 @@ class OperatorMicroGraphRunnerTest {
         NodeSpec node = graph.nodes().get("subject").toBuilder()
                 .operatorRef("fixture.operator").build();
         FixtureRule rule = new FixtureRule(FixtureRule.SCHEMA_VERSION, "standin-output",
-                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning("standin"),
+                FixtureRule.Selector.node("subject"), FixtureRule.Behavior.returning(null),
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
         InvocationSite site = new InvocationSite(InvocationSite.SCHEMA_VERSION, "target",
                 "/root", "subject", "fixture.operator", "", "", "binding",
@@ -98,9 +98,10 @@ class OperatorMicroGraphRunnerTest {
                 node, recorder.bind(site, new GraphContext()), control, real, recorder,
                 ResolvedReplayPayloads.empty(), MirrorResolutionObserver.noop());
 
-        standin.execute("input", new OperatorContext(
+        Object output = standin.execute("input", new OperatorContext(
                 "subject", "test", new GraphContext(), 0));
 
+        assertThat(output).isNull();
         assertThat(realCalls).hasValue(0);
     }
 

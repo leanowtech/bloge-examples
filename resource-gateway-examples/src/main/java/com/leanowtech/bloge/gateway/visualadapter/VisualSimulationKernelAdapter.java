@@ -1,0 +1,205 @@
+package com.leanowtech.bloge.gateway.visualadapter;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.engine.GraphResult;
+import com.leanowtech.bloge.core.model.Graph;
+import com.leanowtech.bloge.core.operator.Operator;
+import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.core.operator.SideEffectType;
+import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.dsl.compiler.GraphLoader;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
+import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
+import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
+import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.planning.ExecutionModeHints;
+import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
+import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/** Adapts a visual simulation plan to the isolated test execution kernel. */
+public final class VisualSimulationKernelAdapter implements VisualSimulationExecutor {
+
+    private static final String PURPOSE = "GRAPH_CONTRACT_TEST";
+    private static final String COMPILE_ERROR = "VISUAL_SIMULATION_COMPILE_FAILED";
+    private static final String INVALID_INPUT_ERROR = "VISUAL_SIMULATION_INPUT_INVALID";
+    private static final String PLACEHOLDER_ERROR = "VISUAL_SIMULATION_PLACEHOLDER_INVOKED";
+
+    private final ObjectMapper objectMapper;
+
+    public VisualSimulationKernelAdapter(ObjectMapper objectMapper) {
+        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    }
+
+    @Override
+    public VisualDslRunResponse execute(VisualSimulationPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+        String dsl = plan.generatedDsl();
+        String outputNode = plan.selectedOutputNode();
+        if (dsl.isBlank() || outputNode.isBlank()) {
+            return failure(outputNode, INVALID_INPUT_ERROR);
+        }
+
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        AtomicInteger placeholderExecutions = new AtomicInteger();
+        for (String rewrittenOperatorRef : plan.standins().stream()
+                .map(VisualSimulationPlan.Standin::rewrittenOperatorRef)
+                .distinct().toList()) {
+            registry.registerRaw(rewrittenOperatorRef, placeholderOperator(placeholderExecutions));
+        }
+
+        Graph graph;
+        String targetFingerprint = ProtocolFingerprint.ofText(dsl);
+        FixtureBundle bundle;
+        try {
+            graph = new GraphLoader(registry).load(dsl);
+            List<FixtureRule> rules = plan.standins().stream()
+                    .map(VisualSimulationKernelAdapter::ruleFor)
+                    .toList();
+            bundle = new FixtureBundle(
+                    FixtureBundle.SCHEMA_VERSION, "visual-simulation", 1,
+                    targetFingerprint, "INTERNAL", null, null, rules, List.of(), Map.of());
+
+            ExecutionModeHints.Builder hints = ExecutionModeHints.builder();
+            for (VisualSimulationPlan.Standin standin : plan.standins()) {
+                hints.schemaStandin(siteFor(standin.originalNodeId()), ruleId(standin));
+            }
+            var compiled = new ExecutionControlCompiler(registry, objectMapper)
+                    .compileWithExecutionModeHints(
+                            graph, bundle, PURPOSE, targetFingerprint, hints.build());
+            TestExecutionRequest request = new TestExecutionRequest(
+                    graph, new GraphContext(plan.businessContext()), bundle, PURPOSE,
+                    targetFingerprint, TestExecutionRequest.FixtureSource.INLINE,
+                    Map.of(), false, ResolvedReplayPayloads.empty());
+            TestExecutionResult result = new TestRunService(registry, objectMapper, null)
+                    .executeCompiled(request, compiled);
+            if (placeholderExecutions.get() != 0) {
+                return failure(outputNode, PLACEHOLDER_ERROR);
+            }
+            return toVisualResponse(outputNode, graph, result);
+        } catch (AssertionError error) {
+            return failure(outputNode, placeholderExecutions.get() == 0
+                    ? COMPILE_ERROR : PLACEHOLDER_ERROR);
+        } catch (RuntimeException error) {
+            return failure(outputNode, COMPILE_ERROR);
+        }
+    }
+
+    private static FixtureRule ruleFor(VisualSimulationPlan.Standin standin) {
+        FixtureRule.Selector selector = FixtureRule.Selector.node(standin.originalNodeId());
+        if (standin.expectedInputOptional().isPresent()) {
+            selector = selector.matching(new FixtureRule.Match(
+                    standin.expectedInput(), Map.of(), List.of(), List.of(), Map.of(), "", Map.of()));
+        }
+        return new FixtureRule(FixtureRule.SCHEMA_VERSION, ruleId(standin), selector,
+                FixtureRule.Behavior.returning(standin.output()),
+                FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static String ruleId(VisualSimulationPlan.Standin standin) {
+        return "visual-standin-" + standin.originalNodeId();
+    }
+
+    private static String siteFor(String nodeId) {
+        return "/root/" + escapeJsonPointer(nodeId) + "#PRIMARY";
+    }
+
+    private static String escapeJsonPointer(String value) {
+        return value.replace("~", "~0").replace("/", "~1");
+    }
+
+    private static Operator<Object, Object> placeholderOperator(AtomicInteger executions) {
+        return new Operator<>() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                executions.incrementAndGet();
+                throw new AssertionError(PLACEHOLDER_ERROR);
+            }
+
+            @Override
+            public SideEffectType sideEffectType() {
+                return SideEffectType.EXTERNAL_CALL;
+            }
+        };
+    }
+
+    private static VisualDslRunResponse toVisualResponse(String outputNode, Graph graph,
+                                                         TestExecutionResult result) {
+        GraphResult graphResult = result.graphResult();
+        TestRunEvidence evidence = result.evidence();
+        Map<String, Object> results = graphResult == null
+                ? Map.of() : new LinkedHashMap<>(graphResult.results().getResults());
+        Map<String, String> statuses = graphResult == null
+                ? Map.of() : graphResult.statusMap().entrySet().stream().collect(
+                        java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey, entry -> entry.getValue().name(),
+                                (left, right) -> right, LinkedHashMap::new));
+        Object output = graphResult == null
+                ? null : graphResult.findOutput(outputNode, Object.class).orElse(null);
+        Map<String, Long> nodeElapsedMs = graphResult == null
+                ? Map.of() : graphResult.nodeTimings().entrySet().stream().collect(
+                        java.util.stream.Collectors.toMap(
+                                Map.Entry::getKey, entry -> entry.getValue().toMillis(),
+                                (left, right) -> right, LinkedHashMap::new));
+        Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts = evidence == null
+                ? Map.of() : evidence.nodeTrace().stream().collect(
+                        java.util.stream.Collectors.toMap(
+                                TestRunEvidence.NodeTrace::nodeId,
+                                trace -> trace.attempts().stream().map(attempt ->
+                                        new VisualNodeExecutionAttempt(
+                                                attempt.attempt(), attempt.input(), attempt.output(),
+                                                attempt.status(), Instant.EPOCH,
+                                                attempt.durationMs(), attempt.errorCode(), ""))
+                                        .toList(),
+                                (left, right) -> right, LinkedHashMap::new));
+        List<String> errors = evidenceErrors(evidence);
+        return new VisualDslRunResponse(
+                true,
+                result.passed() && graphResult != null && graphResult.isSuccess(),
+                graph.name(), outputNode, output, results, statuses,
+                graphResult == null ? 0 : graphResult.elapsed().toMillis(), nodeElapsedMs,
+                nodeAttempts, Map.of(), diagnostics(evidence), errors, null, null);
+    }
+
+    private static List<VisualDslRunResponse.Diagnostic> diagnostics(TestRunEvidence evidence) {
+        if (evidence == null) {
+            return List.of();
+        }
+        return evidence.diagnostics().stream()
+                .map(message -> new VisualDslRunResponse.Diagnostic(
+                        "ERROR", message, "", "", -1, -1))
+                .toList();
+    }
+
+    private static List<String> evidenceErrors(TestRunEvidence evidence) {
+        if (evidence == null || evidence.status() == TestRunEvidence.Status.PASSED) {
+            return List.of();
+        }
+        List<String> errors = new ArrayList<>();
+        errors.add(evidence.status().name());
+        errors.addAll(evidence.diagnostics());
+        return List.copyOf(errors);
+    }
+
+    private static VisualDslRunResponse failure(String outputNode, String error) {
+        return new VisualDslRunResponse(
+                false, false, "", outputNode, null, Map.of(), Map.of(), 0, Map.of(),
+                Map.of(), Map.of(), List.of(new VisualDslRunResponse.Diagnostic(
+                        "ERROR", error, "", "", -1, -1)), List.of(error), null, null);
+    }
+}
