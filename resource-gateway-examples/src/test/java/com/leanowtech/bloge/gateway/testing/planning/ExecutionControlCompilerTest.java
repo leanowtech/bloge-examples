@@ -203,8 +203,51 @@ class ExecutionControlCompilerTest {
 
         assertThat(second.effectivePlan().planFingerprint())
                 .isEqualTo(first.effectivePlan().planFingerprint());
+        assertThat(first.effectivePlan().planId()).isNotBlank();
+        assertThat(second.effectivePlan().planId())
+                .isNotEqualTo(first.effectivePlan().planId());
         assertThat(second.inventory().entries().getFirst().site().runtimeBindingFingerprint())
                 .isEqualTo(first.inventory().entries().getFirst().site().runtimeBindingFingerprint());
+    }
+
+    @Test
+    void injectedPlanIdentitySourceControlsExactSequenceWithoutChangingFingerprints() {
+        registry.register("httpResource", new ExternalOperator());
+        Graph graph = registryGraph("httpResource");
+        FixtureRule transport = rule("transport", FixtureRule.Selector.resource("customer.transport"),
+                FixtureRule.Behavior.protocolResponse("{\"ok\":true}", 200, Map.of(),
+                        FixtureRule.DoubleBoundary.TRANSPORT));
+        var identities = List.of("plan-test-001", "plan-test-002").iterator();
+        ExecutionControlCompiler deterministic = new ExecutionControlCompiler(
+                registry, objectMapper, identities::next);
+
+        CompiledExecutionControl first = deterministic.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+        CompiledExecutionControl second = deterministic.compile(
+                graph, bundle(transport), "GRAPH_CONTRACT_TEST", TARGET);
+
+        assertThat(first.effectivePlan().planId()).isEqualTo("plan-test-001");
+        assertThat(second.effectivePlan().planId()).isEqualTo("plan-test-002");
+        assertThat(second.effectivePlan().planFingerprint())
+                .isEqualTo(first.effectivePlan().planFingerprint());
+        assertThat(second.inventory().entries().getFirst().site().runtimeBindingFingerprint())
+                .isEqualTo(first.inventory().entries().getFirst().site().runtimeBindingFingerprint());
+    }
+
+    @Test
+    void blankOrNullPlanIdentityFailsClosed() {
+        for (PlanIdentitySource source : new PlanIdentitySource[] {() -> null, () -> "  "}) {
+            ExecutionControlCompiler invalid = new ExecutionControlCompiler(
+                    registry, objectMapper, source);
+
+            assertThatThrownBy(() -> invalid.compile(
+                    graph(new ReadOnlyOperator()), bundle(), "GRAPH_CONTRACT_TEST", TARGET))
+                    .isInstanceOfSatisfying(ControlPlanRejectedException.class, failure -> {
+                        assertThat(failure.code()).isEqualTo("CONTROL_PLAN_ID_UNAVAILABLE");
+                        assertThat(failure.diagnostics()).containsExactly(
+                                "Plan identity source returned a blank plan id.");
+                    });
+        }
     }
 
     @Test

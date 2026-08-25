@@ -641,15 +641,14 @@ public class TestDoubleFactory {
             recorder.beginAttempt(binding);
             try {
                 Instant logicalStart = context.timeSource().now();
-                long wallStart = System.nanoTime();
                 try {
                     Object output = delegate.execute(input, context);
                     recorder.recordSuccess(binding, node, input, output, context.retryAttempt() + 1,
-                            elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                            elapsedMillis(logicalStart, context.timeSource().now()));
                     return output;
                 } catch (Exception failure) {
                     recorder.recordFailure(binding, node, input, failure, context.retryAttempt() + 1,
-                            elapsedMillis(logicalStart, context.timeSource().now(), wallStart));
+                            elapsedMillis(logicalStart, context.timeSource().now()));
                     throw failure;
                 }
             } finally {
@@ -672,10 +671,8 @@ public class TestDoubleFactory {
             return delegate.sideEffectProtocol();
         }
 
-        private static long elapsedMillis(Instant logicalStart, Instant logicalEnd, long wallStart) {
-            long logical = Math.max(0, Duration.between(logicalStart, logicalEnd).toMillis());
-            long wall = Math.max(0, Duration.ofNanos(System.nanoTime() - wallStart).toMillis());
-            return Math.max(logical, wall);
+        private static long elapsedMillis(Instant logicalStart, Instant logicalEnd) {
+            return Math.max(0, Duration.between(logicalStart, logicalEnd).toMillis());
         }
     }
 

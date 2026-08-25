@@ -35,7 +35,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
-import java.util.UUID;
 
 /**
  * Compiles caller fixture intent into a deterministic, fail-closed execution-control plan.
@@ -50,22 +49,40 @@ public class ExecutionControlCompiler {
     private final SafetyPreflight safetyPreflight;
     private final SelectorResolver selectorResolver;
     private final InvocationInventoryBuilder inventoryBuilder;
+    private final PlanIdentitySource planIdentitySource;
 
     /**
      * @param registry frozen operator binding inventory used by the independent test engine
      * @param objectMapper JSON mapper used for canonical protocol fingerprints
      */
     public ExecutionControlCompiler(OperatorRegistry registry, ObjectMapper objectMapper) {
-        this(registry, objectMapper, new SafetyPreflight(), new SelectorResolver());
+        this(registry, objectMapper, new SafetyPreflight(), new SelectorResolver(),
+                new SystemPlanIdentitySource());
+    }
+
+    /** Constructor with an explicit plan-identity seam for deterministic tests. */
+    public ExecutionControlCompiler(OperatorRegistry registry, ObjectMapper objectMapper,
+                                    PlanIdentitySource planIdentitySource) {
+        this(registry, objectMapper, new SafetyPreflight(), new SelectorResolver(),
+                planIdentitySource);
     }
 
     /** Constructor for focused tests and policy extension. */
     public ExecutionControlCompiler(OperatorRegistry registry, ObjectMapper objectMapper,
                                     SafetyPreflight safetyPreflight, SelectorResolver selectorResolver) {
+        this(registry, objectMapper, safetyPreflight, selectorResolver,
+                new SystemPlanIdentitySource());
+    }
+
+    /** Constructor for focused tests and policy extension with an explicit identity seam. */
+    public ExecutionControlCompiler(OperatorRegistry registry, ObjectMapper objectMapper,
+                                    SafetyPreflight safetyPreflight, SelectorResolver selectorResolver,
+                                    PlanIdentitySource planIdentitySource) {
         Objects.requireNonNull(registry, "registry");
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.safetyPreflight = Objects.requireNonNull(safetyPreflight, "safetyPreflight");
         this.selectorResolver = Objects.requireNonNull(selectorResolver, "selectorResolver");
+        this.planIdentitySource = Objects.requireNonNull(planIdentitySource, "planIdentitySource");
         this.inventoryBuilder = new InvocationInventoryBuilder(registry);
     }
 
@@ -643,9 +660,10 @@ public class ExecutionControlCompiler {
                         "Checkpointed execution-service state does not match the frozen plan."));
             }
         }
+        String planId = requirePlanId(planIdentitySource.nextPlanId());
         EffectiveExecutionPlan effectivePlan = new EffectiveExecutionPlan(
                 EffectiveExecutionPlan.SCHEMA_VERSION,
-                "plan-" + UUID.randomUUID(),
+                planId,
                 planFingerprint,
                 authorizedPurpose,
                 targetFingerprint,
@@ -657,6 +675,15 @@ public class ExecutionControlCompiler {
                 List.of());
         return new CompiledExecutionControl(effectivePlan, controls, fixtureBundle.rules(), inventory,
                 resolvedReplays, resolvedCorpus, executionServices);
+    }
+
+    private static String requirePlanId(String planId) {
+        String normalized = planId == null ? "" : planId.trim();
+        if (normalized.isEmpty()) {
+            throw new ControlPlanRejectedException("CONTROL_PLAN_ID_UNAVAILABLE", List.of(
+                    "Plan identity source returned a blank plan id."));
+        }
+        return normalized;
     }
 
     /**

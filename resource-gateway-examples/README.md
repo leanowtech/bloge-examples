@@ -65,6 +65,9 @@ The kernel's run identity and evidence wall clock are explicit injected dependen
 logical-clock executions keep stable plan and semantic-result fingerprints while retaining distinct
 run identities and full evidence fingerprints; a class-file architecture gate prevents the core
 service from directly reading system time or randomness.
+Compilation follows the same rule: plan fingerprints are content-deterministic, while an injected
+plan identity source preserves a distinct auditable `planId` for every compilation. The compiler
+core never generates UUIDs directly, and blank identity-source results fail closed.
 The four bounded `X-BLOGE-Test-*` headers now have a strict parser and an authenticated
 test/staging HTTP admission path. `X-BLOGE-Test-Inline` accepts exactly one bounded
 `fixtureBundle` object and cannot be combined with a legacy body fixture source; business context
