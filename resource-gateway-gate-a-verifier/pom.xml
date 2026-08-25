@@ -12,7 +12,7 @@
     <name>BLOGE Resource Gateway Gate A Archive Verifier</name>
     <description>
         Standalone ZIP/JAR archive kernel for A1.3-02 Gate A verification.
-        JDK-only implementation; no Spring Boot, no business runtime dependencies.
+        Standalone implementation; no Spring Boot, no business runtime dependencies.
     </description>
 
     <properties>
@@ -20,9 +20,17 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.release>25</maven.compiler.release>
         <junit.version>5.11.4</junit.version>
+        <jackson.version>2.18.2</jackson.version>
     </properties>
 
     <dependencies>
+        <!-- Jackson 2.18.2 databind: core and annotations transitively included -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>${jackson.version}</version>
+            <scope>compile</scope>
+        </dependency>
         <!-- JUnit 5: test scope only -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>

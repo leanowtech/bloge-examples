@@ -771,37 +771,36 @@ public final class ZipArchiveVerifier {
 
     private Result evaluateLimits(List<CentralDirectoryEntry> entries, long fileSize)
             throws ArchiveKernelException {
-        long totalUncomp   = 0;
-        long largestEntry  = 0;
-        boolean ratioHit   = false;
+        long totalUncomp = 0;
+        long largestEntry = 0;
+        String largestEntryName = null;
+        String ratioOffenderName = null;
+        long worstRatio = 0;
 
         for (CentralDirectoryEntry e : entries) {
             totalUncomp += e.uncompressedSize();
             if (e.uncompressedSize() > largestEntry) {
                 largestEntry = e.uncompressedSize();
+                largestEntryName = e.nameUtf8();
             }
 
-
-            // T1-6: Exact comparison — reject any ratio > maxCompressionRatio,
-            // including fractional values like 100.01.
-            // Use quotient + remainder to avoid multiplication overflow.
-            // For compressedSize=0 use max(1, cSize) per spec (DEFLATED entry
-            // with cSize=0 would be a malformed or DD entry, but we guard
-            // the check against division by zero with cSizeD = Math.max(1, cSize)).
+            // T1-6: Exact comparison — reject any ratio > maxCompressionRatio.
+            // Track worst offender by ratio value for frozen reasonArgs.
             if (e.compressionMethod() == METHOD_DEFLATED && e.compressedSize() > 0) {
                 long uSize = e.uncompressedSize();
                 long cSize = e.compressedSize();
-                long quotient  = uSize / cSize;
-                long remainder = uSize % cSize;
+                long den = Math.max(1, cSize);
+                long quotient  = uSize / den;
+                long remainder = uSize % den;
                 if (quotient > maxCompressionRatio
                         || (quotient == maxCompressionRatio && remainder > 0)) {
-                    ratioHit = true;
+                    if (quotient > worstRatio) {
+                        worstRatio = quotient;
+                        ratioOffenderName = e.nameUtf8();
+                    }
                 }
-
             }
-
         }
-
 
         if (entries.size() > maxZipEntries) {
             List<Result.EntryResult> entryResults = buildEntryResults(entries);
@@ -812,13 +811,17 @@ public final class ZipArchiveVerifier {
                     Map.of("limit", maxZipEntries, "actual", entries.size()));
         }
 
+        // Frozen AK-LIMIT-SINGLE-ENTRY args: {entryName, actual, limit}
         if (largestEntry > maxSingleEntryBytes) {
             List<Result.EntryResult> entryResults = buildEntryResults(entries);
             return new Result(entries.size(),
                     entryResults,
                     new LimitResults(false, false, true, false, false),
                     List.of(), true, "AK-LIMIT-SINGLE-ENTRY",
-                    Map.of("limit", maxSingleEntryBytes, "actual", largestEntry));
+                    Map.of(
+                            "entryName", largestEntryName != null ? largestEntryName : "",
+                            "actual", largestEntry,
+                            "limit", maxSingleEntryBytes));
         }
 
         if (totalUncomp > maxTotalUncompressed) {
@@ -830,15 +833,18 @@ public final class ZipArchiveVerifier {
                     Map.of("limit", maxTotalUncompressed, "actual", totalUncomp));
         }
 
-        if (ratioHit) {
+        // Frozen AK-LIMIT-COMPRESSION-RATIO args: {entryName, ratio, limit}
+        if (ratioOffenderName != null) {
             List<Result.EntryResult> entryResults = buildEntryResults(entries);
             return new Result(entries.size(),
                     entryResults,
                     new LimitResults(false, false, false, false, true),
                     List.of(), true, "AK-LIMIT-COMPRESSION-RATIO",
-                    Map.of("maxRatio", maxCompressionRatio));
+                    Map.of(
+                            "entryName", ratioOffenderName,
+                            "ratio", worstRatio,
+                            "limit", maxCompressionRatio));
         }
-
 
         List<Result.EntryResult> entryResults = buildEntryResults(entries);
         return new Result(entries.size(), entryResults,
