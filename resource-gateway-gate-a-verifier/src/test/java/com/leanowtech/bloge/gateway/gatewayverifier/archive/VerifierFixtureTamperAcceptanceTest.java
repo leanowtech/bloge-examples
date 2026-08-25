@@ -1320,4 +1320,280 @@ class VerifierFixtureTamperAcceptanceTest {
         data[offset + 2] = (byte) ((value >> 16) & 0xFF);
         data[offset + 3] = (byte) ((value >> 24) & 0xFF);
     }
+
+    // -------------------------------------------------------------------------
+    // TM-19: 29-entry archive (28 required + 1 extra small entry)
+    //         raw/entry limits below caps except entry count -> AK-ENTRY-COUNT-MISMATCH
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM19: one extra entry beyond required 28")
+    void tm19_one_extra_entry() throws Exception {
+        // Build all-STORED 28-entry JAR, then add one extra STORED entry via builder.
+        // Entry count = 29, so plan's expected count (28) mismatches.
+        // All other limits are well below their caps.
+
+        List<RawEntry> baselineEntries = parseZipEntries(BASELINE_JAR_BYTES);
+        java.util.Map<String, byte[]> nondepContent = new java.util.LinkedHashMap<>();
+        for (RawEntry e : baselineEntries) {
+            if (!isDependencyEntry(e.name())) {
+                nondepContent.put(e.name(), e.data());
+            }
+        }
+
+        // Build 28-entry all-STORED JAR, then add one extra STORED entry.
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                byte[] content = nondepContent.getOrDefault(req, new byte[1]);
+                builder.addStoredEntry(req, content);
+            }
+        }
+        // Append the 29th entry (not in plan's exactArchiveEntries)
+        builder.addStoredEntry("extra/entry.txt", new byte[8]);
+
+        byte[] tamperedJar = builder.build();
+
+        int entryCount = countZipEntries(tamperedJar);
+        Assertions.assertEquals(29, entryCount,
+                "Tampered JAR must have exactly 29 entries");
+        Assertions.assertTrue(isAllStored(tamperedJar), "JAR must be all-STORED for TM19");
+
+        // Verify entry count is within maxZipEntries (the plan mismatch is the trigger)
+        long maxZip = FACTORY.artifactLimits().maxZipEntries();
+        Assertions.assertTrue(29 <= maxZip,
+                "TM19 entry count must be within maxZipEntries so plan mismatch is the trigger");
+
+        // Plan from baseline expects exactly 28 entries
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+        PackagedPlan plan = parseResult.plan();
+
+        Path jarPath = tempDir.resolve("tm19.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM19: must be rejected");
+        Assertions.assertEquals("AK-ENTRY-COUNT-MISMATCH", snapshot.rejectionCode(),
+                "TM19: must have AK-ENTRY-COUNT-MISMATCH code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-25: 28 required entries, one nondep STORED exactly maxSingleEntryBytes+1,
+    //         total raw bytes below maxRawBytes -> AK-LIMIT-SINGLE-ENTRY
+    //         Build all STORED so DD/content validation passes.
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM25: single entry uncompressed exceeds maxSingleEntryBytes")
+    void tm25_single_entry_exceeds_max_single_entry_bytes() throws Exception {
+        long maxSingleEntry = FACTORY.artifactLimits().maxSingleEntryBytes();
+        long maxRaw = FACTORY.artifactLimits().maxRawBytes();
+
+        // Uncompressed target for the one oversized entry
+        long oversizedUncomp = maxSingleEntry + 1L; // exactly maxSingleEntryBytes + 1
+
+        // Determine which nondep entry will be oversized (deterministic: first nondep)
+        String oversizedEntry = null;
+        for (String req : FACTORY.requiredEntries()) {
+            if (!isDependencyEntry(req)) {
+                oversizedEntry = req;
+                break;
+            }
+        }
+        Assertions.assertNotNull(oversizedEntry, "Must have at least one nondep entry for TM25");
+
+        // Build all-STORED JAR: real deps, one oversized STORED nondep, rest tiny STORED
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                if (req.equals(oversizedEntry)) {
+                    // Oversized entry: STORED with maxSingleEntry+1 bytes
+                    builder.addStoredEntry(req, new byte[(int) oversizedUncomp]);
+                } else {
+                    // Tiny nondep content
+                    builder.addStoredEntry(req, new byte[1]);
+                }
+            }
+        }
+        byte[] jarBytes = builder.build();
+
+        // Verify preconditions
+        int entryCount = countZipEntries(jarBytes);
+        Assertions.assertEquals(28, entryCount, "JAR must have exactly 28 entries for TM25");
+        Assertions.assertTrue(isAllStored(jarBytes), "JAR must be all-STORED for TM25");
+
+        // Verify total raw bytes < maxRawBytes
+        long totalRaw = jarBytes.length;
+        Assertions.assertTrue(totalRaw < maxRaw,
+                "TM25: total raw (" + totalRaw + ") must be < maxRawBytes (" + maxRaw + ")");
+
+        // Verify one STORED entry has size exactly maxSingleEntry + 1
+        boolean[] foundOversized = { false };
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(jarBytes))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getMethod() == ZipEntry.STORED) {
+                    byte[] data = zis.readAllBytes();
+                    if (data.length == oversizedUncomp) {
+                        foundOversized[0] = true;
+                    }
+                }
+                zis.closeEntry();
+            }
+        }
+        Assertions.assertTrue(foundOversized[0],
+                "Must have one STORED entry with size exactly " + oversizedUncomp);
+
+        // Build plan from baseline JAR
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+        PackagedPlan plan = parseResult.plan();
+
+        Path jarPath = tempDir.resolve("tm25.jar");
+        Files.write(jarPath, jarBytes);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM25: must be rejected");
+        Assertions.assertEquals("AK-LIMIT-SINGLE-ENTRY", snapshot.rejectionCode(),
+                "TM25: must have AK-LIMIT-SINGLE-ENTRY code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-18: exactly 28 entries, all STORED, total raw bytes = maxRawBytes + 1,
+    //         distribute deterministic padding across nondep entries so every
+    //         uncompressed entry <= maxSingleEntryBytes -> AK-LIMIT-RAW-BYTES
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM18: total raw bytes exceeds maxRawBytes by exactly 1")
+    void tm18_raw_bytes_exceeds_max_raw_bytes() throws Exception {
+        long maxRaw = FACTORY.artifactLimits().maxRawBytes();
+        long maxSingleEntry = FACTORY.artifactLimits().maxSingleEntryBytes();
+
+        // Collect nondep entry content from baseline
+        List<RawEntry> baselineEntries = parseZipEntries(BASELINE_JAR_BYTES);
+        java.util.Map<String, byte[]> nondepContent = new java.util.LinkedHashMap<>();
+        for (RawEntry e : baselineEntries) {
+            if (!isDependencyEntry(e.name())) {
+                nondepContent.put(e.name(), e.data());
+            }
+        }
+
+        // Build baseline all-STORED JAR (28 entries)
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                byte[] content = nondepContent.getOrDefault(req, new byte[1]);
+                builder.addStoredEntry(req, content);
+            }
+        }
+        byte[] baselineStoredJar = builder.build();
+        Assertions.assertTrue(isAllStored(baselineStoredJar),
+                "Baseline for TM18 must be all-STORED");
+        Assertions.assertEquals(28, countZipEntries(baselineStoredJar),
+                "Baseline JAR must have exactly 28 entries");
+
+        // Measure baseline raw size
+        long baselineRaw = baselineStoredJar.length;
+        Assertions.assertTrue(baselineRaw < maxRaw + 1,
+                "Baseline STORED JAR raw size (" + baselineRaw
+                        + ") must be < maxRawBytes+1 (" + (maxRaw + 1) + ")");
+
+        // Padding needed to reach maxRaw + 1
+        int totalPaddingNeeded = (int) ((maxRaw + 1L) - baselineRaw);
+
+        // Build overrides: distribute padding across nondep entries deterministically.
+        // For each nondep in required-order: cap = maxSingleEntry - original.length,
+        // pad = min(remaining, max(0, cap)), override with original + pad bytes.
+        java.util.Map<String, byte[]> overrides = new java.util.LinkedHashMap<>();
+        int remaining = totalPaddingNeeded;
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) continue;
+            byte[] original = nondepContent.getOrDefault(req, new byte[1]);
+            long capacity = maxSingleEntry - original.length;
+            Assertions.assertTrue(capacity >= 0,
+                    "Entry '" + req + "' original length (" + original.length
+                            + ") must be <= maxSingleEntryBytes (" + maxSingleEntry + ")");
+            int padThis = (int) Math.min(remaining, Math.max(0, capacity));
+            byte[] padded = new byte[original.length + padThis];
+            System.arraycopy(original, 0, padded, 0, original.length);
+            overrides.put(req, padded);
+            remaining -= padThis;
+        }
+        Assertions.assertEquals(0, remaining,
+                "All padding (" + totalPaddingNeeded + " bytes) must be distributed; "
+                        + remaining + " bytes remain");
+
+        // Rebuild with padding overrides
+        byte[] paddedJar = builder.buildWithOverrides(overrides);
+
+        // Verify preconditions
+        Assertions.assertTrue(isAllStored(paddedJar), "TM18 JAR must be all-STORED");
+        Assertions.assertEquals(28, countZipEntries(paddedJar),
+                "TM18 JAR must have exactly 28 entries");
+
+        long actualRaw = paddedJar.length;
+        Assertions.assertEquals(maxRaw + 1L, actualRaw,
+                "TM18: total raw bytes must be exactly maxRawBytes + 1 = " + (maxRaw + 1)
+                        + " (got " + actualRaw + ")");
+
+        // Verify every uncompressed entry <= maxSingleEntryBytes
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(paddedJar))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                byte[] data = zis.readAllBytes();
+                Assertions.assertTrue(data.length <= maxSingleEntry,
+                        "TM18: entry '" + entry.getName() + "' data length " + data.length
+                                + " must be <= maxSingleEntryBytes (" + maxSingleEntry + ")");
+                zis.closeEntry();
+            }
+        }
+
+        // Build plan and verify rejection
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess(), "Plan must parse");
+        PackagedPlan plan = parseResult.plan();
+
+        Path jarPath = tempDir.resolve("tm18.jar");
+        Files.write(jarPath, paddedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM18: must be rejected");
+        Assertions.assertEquals("AK-LIMIT-RAW-BYTES", snapshot.rejectionCode(),
+                "TM18: must have AK-LIMIT-RAW-BYTES code");
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared helper: count ZIP entries in a JAR byte array
+    // -------------------------------------------------------------------------
+
+    private int countZipEntries(byte[] jarBytes) throws IOException {
+        int count = 0;
+        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(jarBytes))) {
+            while (zis.getNextEntry() != null) {
+                count++;
+                zis.closeEntry();
+            }
+        }
+        return count;
+    }
 }
