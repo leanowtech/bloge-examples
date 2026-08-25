@@ -13,7 +13,7 @@ import java.util.*;
 import java.util.zip.*;
 
 /**
- * A1.3-02 TM-01..TM-08 tamper acceptance tests.
+ * A1.3-02 TM-01..TM-12 tamper acceptance tests.
  */
 class VerifierFixtureTamperAcceptanceTest {
 
@@ -279,9 +279,252 @@ class VerifierFixtureTamperAcceptanceTest {
                 "TM08: must have AK-EXTRA-FIELD code");
     }
 
+
+    // -------------------------------------------------------------------------
+    // TM-09: entry name ends in "/" (directory) -> AK-ENTRY-DIRECTORY
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM09: entry name ends in '/'")
+    void tm09_entry_name_ends_in_slash() throws Exception {
+        String baseEntry = findSimpleEntry();
+        byte[] tamperedJar = tamperDirectoryEntry(BASELINE_JAR_BYTES, baseEntry);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess());
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm09.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM09: must be rejected");
+        Assertions.assertEquals("AK-ENTRY-DIRECTORY", snapshot.rejectionCode(),
+                "TM09: must have AK-ENTRY-DIRECTORY code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-10: GPB encrypted flag 0x0001 in local+6 and central+8 -> AK-ENCRYPTED
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM10: GPB encrypted flag")
+    void tm10_encrypted_flag() throws Exception {
+        String baseEntry = findSimpleEntry();
+        byte[] tamperedJar = tamperEncryptedFlag(BASELINE_JAR_BYTES, baseEntry);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess());
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm10.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM10: must be rejected");
+        Assertions.assertEquals("AK-ENCRYPTED", snapshot.rejectionCode(),
+                "TM10: must have AK-ENCRYPTED code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-11: GPB DD flag 0x0008 + zero central CRC -> AK-DD-UNVERIFIABLE
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM11: data descriptor with zero central CRC")
+    void tm11_data_descriptor_zero_crc() throws Exception {
+        String baseEntry = findSimpleEntry();
+        byte[] tamperedJar = tamperDDEntry(BASELINE_JAR_BYTES, baseEntry);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess());
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm11.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM11: must be rejected");
+        Assertions.assertEquals("AK-DD-UNVERIFIABLE", snapshot.rejectionCode(),
+                "TM11: must have AK-DD-UNVERIFIABLE code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-12: unknown compression method 99 in local+8 and central+10 -> AK-UNKNOWN-COMPRESSION
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM12: unknown compression method 99")
+    void tm12_unknown_compression_method() throws Exception {
+        String baseEntry = findSimpleEntry();
+        byte[] tamperedJar = tamperUnknownCompression(BASELINE_JAR_BYTES, baseEntry);
+
+        PackagingPlanParser parser = new PackagingPlanParser();
+        String planFp = sha256fp(BASELINE_PLAN_BYTES);
+        PackagingPlanParser.ParseResult parseResult = parser.parse(BASELINE_PLAN_BYTES, planFp);
+        Assertions.assertTrue(parseResult.isSuccess());
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm12.jar");
+        Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM12: must be rejected");
+        Assertions.assertEquals("AK-UNKNOWN-COMPRESSION", snapshot.rejectionCode(),
+                "TM12: must have AK-UNKNOWN-COMPRESSION code");
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
+    // -------------------------------------------------------------------------
+    // TM09 helper: rename entry to same-byte-length name ending in "/"
+    // -------------------------------------------------------------------------
+
+    private byte[] tamperDirectoryEntry(byte[] jarBytes, String baseEntry) throws IOException {
+        byte[] result = jarBytes.clone();
+
+        int[] info = findCentralEntry(result, baseEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+        int nameLen = info[2];
+        int cdExtraLen = info[3];
+        int cdCommentLen = info[4];
+
+        // Build same-byte-length name that ends with "/".
+        // Replace the final byte of the UTF-8 name with 0x2F ('/'),
+        // keeping byte length identical. Works for both slash and non-slash names.
+        byte[] newNameBytes = baseEntry.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        newNameBytes[newNameBytes.length - 1] = '/';
+
+        // Overwrite name in local header (offset localOffset + 30)
+        System.arraycopy(newNameBytes, 0, result, localOffset + 30, nameLen);
+        // Overwrite name in central directory (offset cdPos + 46)
+        System.arraycopy(newNameBytes, 0, result, cdPos + 46, nameLen);
+        return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // TM10 helper: OR GPB encrypted flag 0x0001 in local+6 and central+8
+    // -------------------------------------------------------------------------
+
+    private byte[] tamperEncryptedFlag(byte[] jarBytes, String baseEntry) throws IOException {
+        byte[] result = jarBytes.clone();
+
+        int[] info = findCentralEntry(result, baseEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+
+        // OR 0x0001 at local GPB offset (localOffset + 6)
+        result[localOffset + 6] = (byte) (result[localOffset + 6] | 0x01);
+        result[localOffset + 7] = (byte) (result[localOffset + 7] | 0x00);
+        // OR 0x0001 at central GPB offset (cdPos + 8)
+        result[cdPos + 8] = (byte) (result[cdPos + 8] | 0x01);
+        result[cdPos + 9] = (byte) (result[cdPos + 9] | 0x00);
+        return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // TM11 helper: OR GPB DD flag 0x0008 + zero central CRC/compressed/uncompressed
+    // -------------------------------------------------------------------------
+
+    private byte[] tamperDDEntry(byte[] jarBytes, String baseEntry) throws IOException {
+        byte[] result = jarBytes.clone();
+
+        int[] info = findCentralEntry(result, baseEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+
+        // OR 0x0008 at local GPB offset (localOffset + 6)
+        result[localOffset + 6] = (byte) (result[localOffset + 6] | 0x08);
+        // OR 0x0008 at central GPB offset (cdPos + 8)
+        result[cdPos + 8] = (byte) (result[cdPos + 8] | 0x08);
+        // Zero central CRC (cdPos + 16..19)
+        result[cdPos + 16] = 0;
+        result[cdPos + 17] = 0;
+        result[cdPos + 18] = 0;
+        result[cdPos + 19] = 0;
+        // Zero central compressed size (cdPos + 20..23)
+        result[cdPos + 20] = 0;
+        result[cdPos + 21] = 0;
+        result[cdPos + 22] = 0;
+        result[cdPos + 23] = 0;
+        // Zero central uncompressed size (cdPos + 24..27)
+        result[cdPos + 24] = 0;
+        result[cdPos + 25] = 0;
+        result[cdPos + 26] = 0;
+        result[cdPos + 27] = 0;
+        return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // TM12 helper: set compression method 99 in local+8 and central+10
+    // -------------------------------------------------------------------------
+
+    private byte[] tamperUnknownCompression(byte[] jarBytes, String baseEntry) throws IOException {
+        byte[] result = jarBytes.clone();
+
+        int[] info = findCentralEntry(result, baseEntry);
+        int cdPos = info[0];
+        int localOffset = info[1];
+
+        // Set method 99 (little-endian: 99, 0) at local offset 8
+        result[localOffset + 8] = 99;
+        result[localOffset + 9] = 0;
+        // Set method 99 (little-endian: 99, 0) at central offset 10
+        result[cdPos + 10] = 99;
+        result[cdPos + 11] = 0;
+        return result;
+    }
+
+    // -------------------------------------------------------------------------
+    // Shared byte-level locator used by TM09-TM12 helpers
+    // Returns: [cdPos, localOffset, nameLen, cdExtraLen, cdCommentLen]
+    // -------------------------------------------------------------------------
+
+    private int[] findCentralEntry(byte[] data, String targetEntry) {
+        long eocdOffset = findEocdOffset(data);
+        assert eocdOffset >= 0 : "EOCD not found";
+        assert data[(int)eocdOffset + 0] == 0x50 && data[(int)eocdOffset + 1] == 0x4b
+                && data[(int)eocdOffset + 2] == 0x05 && data[(int)eocdOffset + 3] == 0x06
+                : "EOCD sig not found";
+
+        int cdOffset = readIntLE(data, (int) eocdOffset + 16);
+        int cdEntries = readShortLE(data, (int) eocdOffset + 10);
+
+        int pos = cdOffset;
+        for (int i = 0; i < cdEntries; i++) {
+            assert readIntLE(data, pos) == 0x02014b50 : "Not a CD signature";
+            int nameLen = readShortLE(data, pos + 28);
+            int cdExtraLen = readShortLE(data, pos + 30);
+            int cdCommentLen = readShortLE(data, pos + 32);
+            int localOffset = readIntLE(data, pos + 42);
+
+            byte[] nameBytes = java.util.Arrays.copyOfRange(data, pos + 46, pos + 46 + nameLen);
+            String name = new String(nameBytes, java.nio.charset.StandardCharsets.UTF_8);
+            if (name.equals(targetEntry)) {
+                return new int[] { pos, localOffset, nameLen, cdExtraLen, cdCommentLen };
+            }
+            pos += 46 + nameLen + cdExtraLen + cdCommentLen;
+        }
+        assert false : "Entry not found: " + targetEntry;
+        return null;
+    }
+
 
     private String findSimpleEntry() {
         for (String name : ALL_ENTRY_NAMES) {
