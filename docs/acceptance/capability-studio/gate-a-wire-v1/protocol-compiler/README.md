@@ -71,11 +71,11 @@ uv run --with jsonschema python \
 
 `A1.3-R03`（caller-owned predecessor receipt 绑定当前 Provider raw bytes）**仍为 BLOCKED_FORMAL_GATE**，依赖结构化 Evidence、ledger marker 和正式 SliceAcceptanceReceipt，不得以本地 Markdown 记录替代。
 
-`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的 106 项固定分母突变测试固证（`EXACT_TEST_COUNT` = 106：baseline 89 + artifactLimits 17）。`A1.3-02` 的既有 Verifier 能力与 D7-T2 predecessor binding consumer 均已 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 395/395（含 consumer 专属 55/55，JDK 25、Enforcer 全绿、regular JAR 构建）、Authority-derived 28-entry fixture、factory tests 32、PF01–10 10/10、TM01–25 25/25。`A1.3-02` 整体仍为 PENDING：D7-T3 尚未把已验证 Provider bytes 注入完整 Kernel fixture，D7-T4 尚未接入 specialized profile；formalPassCount 0/27。`A1.3-03`、`A1.3-04`、`A1.3-05`、`A1.3-06` **仍为 PENDING**。D7-T2 实现记录：commit `f48f48f36`。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
+`A1.3-01`（Packaging Plan）**已标记为 DEVELOPMENT_VERIFIED**，由 `test-packaging-plan.py` 的 106 项固定分母突变测试固证（`EXACT_TEST_COUNT` = 106：baseline 89 + artifactLimits 17）。`A1.3-02` **已标记为 DEVELOPMENT_VERIFIED**：ordinary Verifier `clean verify` 为 395/395；specialized profile 为 Surefire 18/18 + Failsafe 5/5；实际 Provider raw bytes 已注入 Authority 指定的 28-entry fixture，并连续通过 Parser、Archive Kernel 与三次 deterministic snapshot 验证。A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 仍为 0/27；`A1.3-03`、`A1.3-04`、`A1.3-05`、`A1.3-06` **仍为 PENDING**。实现记录：D7-T2 `f48f48f36`、D7-T3 `b704042d9`、D7-T4 `3c561e998`。未改变 schema、revision、`GateAProtocolAuthority` 结构和已编译投影内容。
 
 ## A1.3-R03 开发绑定
 
-`run-a1-3-development-gate.py` 在 caller-owned A1.2 Provider JAR 已构建的前提下构造 predecessor fingerprint binding JSON。Binding 写入路径由 `--binding-path` 指定（必须是绝对路径，父目录必须存在且非符号链接）。D7-T2 已提供严格 Java consumer；producer 到 consumer 的 specialized Maven profile 由 D7-T4 接线，当前尚不可用。
+`run-a1-3-development-gate.py` 在 caller-owned A1.2 Provider JAR 已构建的前提下构造 predecessor fingerprint binding JSON。Binding 写入路径由 `--binding-path` 指定（必须是绝对路径，父目录必须存在且非符号链接）。脚本默认调用 `gate-a-a1-3-development-binding` specialized Maven profile；`--skip-maven` 仅用于隔离验证 producer。
 
 ### 独立运行步骤
 
@@ -90,7 +90,7 @@ mvn -f resource-gateway-gate-a-tck-provider/pom.xml \
 
 脚本不执行该构建命令。Provider coordinate 和实际产物路径均从 raw Authority 的 A1.2 `handoffArtifacts` / `outputArtifacts` 唯一派生。
 
-**当前可运行命令**（只生成并验证 binding producer，不调用 Maven consumer）：
+**完整开发门禁命令**（生成 binding 并调用 Maven consumer、fixture、Kernel 与负向进程测试）：
 
 ```bash
 REPO_ROOT="$PWD"
@@ -98,20 +98,30 @@ BINDING_DIR="$(mktemp -d)"
 python3 docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-3-development-gate.py \
   --authority "$REPO_ROOT/docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json" \
   --repo-root "$REPO_ROOT" \
-  --binding-path "$BINDING_DIR/predecessor-binding-dev.json" \
-  --skip-maven
+  --binding-path "$BINDING_DIR/predecessor-binding-dev.json"
 ```
 
-该命令执行以下步骤：① Authority `stable_read`（`O_RDONLY|O_NOFOLLOW`，pre/post `fstat` 一致性检查）；② `parse_authority_json`（`object_pairs_hook` 拒绝重复 key）；③ `derive_a12_artifact`（`handoffArtifacts` 与 `outputArtifacts` 各恰好 1 个 TCK_PROVIDER，tuple 完全一致）；④ Provider JAR 通过 `stable_read_repo_relative`（`O_DIRECTORY` dir-fd 链路，无 `lstat`/`open` 竞态）；⑤ Authority raw fingerprint + Provider raw fingerprint 写入 binding JSON。第⑥步 Maven specialized profile 由 D7-T4 补齐。
+该命令执行以下步骤：① Authority `stable_read`（`O_RDONLY|O_NOFOLLOW`，pre/post `fstat` 一致性检查）；② `parse_authority_json`（`object_pairs_hook` 拒绝重复 key）；③ `derive_a12_artifact`（`handoffArtifacts` 与 `outputArtifacts` 各恰好 1 个 TCK_PROVIDER，tuple 完全一致）；④ Provider JAR 通过 `stable_read_repo_relative`（`O_DIRECTORY` dir-fd 链路，无 `lstat`/`open` 竞态）；⑤ Authority raw fingerprint + Provider raw fingerprint 写入 binding JSON；⑥ specialized profile 严格消费 binding，把实际 Provider bytes 注入 fixture，执行 Surefire 18 项与 Failsafe 5 项子进程负向测试。
 
 ### 与 formal verifier 的区别
 
 - `--skip-maven` 仅限开发/测试场景，不执行任何 Verifier JAR 动态 conformance 检查。
 - Binding 协议整体是 dev-only；closed binding JSON 不额外增加状态字段。`formalPassCount` 仍为 0/27，不计入 A1.3 formal gate。
-- Ordinary Verifier 395 测试命令保持独立，与本脚本无依赖：
+- Ordinary Verifier 395 项保持独立，不读取 binding；specialized profile 单独执行 18 项 fixture/Kernel 测试与 5 项失败关闭进程测试：
 
 ```bash
 mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 \
+  -f resource-gateway-gate-a-verifier/pom.xml clean verify
+```
+
+需要单独重放 specialized profile 时：
+
+```bash
+mvn -Pgate-a-verifier,gate-a-a1-3-development-binding \
+  -Dgate.a.slice=A1.3 \
+  -Dgate.a.testSet=A1_3_ROLE_PACKAGING \
+  -Dgate.a.binding.path="$BINDING_DIR/predecessor-binding-dev.json" \
+  -Dgate.a.repo.root="$PWD" \
   -f resource-gateway-gate-a-verifier/pom.xml clean verify
 ```
 
@@ -139,7 +149,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 \
   -f resource-gateway-gate-a-verifier/pom.xml test
 ```
 
-分母：**55/55**。其中 26 项覆盖正向、reason code 优先级、fingerprint、不可变性与三次确定性；29 项覆盖 canonical/closed shape、Authority 唯一派生、真实父目录/叶子 symlink、非 regular、17 MiB oversize 与 root-anchored 读取。完整 Verifier `clean verify` 分母为 **395/395**。
+分母：**55/55**。其中 26 项覆盖正向、reason code 优先级、fingerprint、不可变性与三次确定性；29 项覆盖 canonical/closed shape、Authority 唯一派生、真实父目录/叶子 symlink、非 regular、17 MiB oversize 与 root-anchored 读取。Ordinary Verifier `clean verify` 分母为 **395/395**；specialized profile 为 **18/18 Surefire + 5/5 Failsafe**。
 
 
 ### A1.3-01 Packaging Plan 数据流

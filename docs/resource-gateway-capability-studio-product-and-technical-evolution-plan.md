@@ -2462,11 +2462,13 @@ strict CLI args
 | Schema/Revision Bump | 无 |
 | formalPassCount | 仍为 0/27 |
 | A1.3-01 门禁状态 | DEVELOPMENT_VERIFIED |
-| A1.3-02..06 门禁状态 | PENDING |
+| A1.3-02 门禁状态 | DEVELOPMENT_VERIFIED（formal R03 仍 BLOCKED_FORMAL_GATE） |
+| A1.3-03..06 门禁状态 | PENDING |
 | Verifier JAR 产出 | 尚未产出 |
 | A1.3-R03 状态 | BLOCKED_FORMAL_GATE |
 | A1.3-01 | DEVELOPMENT_VERIFIED（89/89 tests passed，deterministic plan bytes + content-addressed publication receipt + mutation tests） |
-| A1.3-02..06 | PENDING（A1.3-R03 BLOCKED_FORMAL_GATE 阻塞） |
+| A1.3-02 | DEVELOPMENT_VERIFIED（D7-T1..T4 开发闭环；formal R03 仍 BLOCKED_FORMAL_GATE） |
+| A1.3-03..06 | PENDING |
 | R03 正式门禁 | 仍为 BLOCKED_FORMAL_GATE |
 
 A1.3-R01/R02 与 A1.3-01 均为 DEVELOPMENT_VERIFIED，仅证明 compiler 确定性、Packaging Plan 编译步骤和 89 项突变分母，不证明 Verifier JAR 动态 conformance、A1.4 candidate-path TCK、A1.5 formal replay result、A1.6 trust-plane negative TCK，也不参与 A2 admission 或 formalPassCount 计数。
@@ -2655,7 +2657,7 @@ Role self-test 只组合四个内核已经产生的不可变 snapshot，生成 `
 
 ##### Archive Kernel 设计冻结
 
-> 对应门禁：A1.3-02；状态：`PENDING`（不变）
+> 对应门禁：A1.3-02；状态：`DEVELOPMENT_VERIFIED`（formal R03 receipt 仍为 `BLOCKED_FORMAL_GATE`）
 >
 > 本节是 A1.3 第一个内核的完整设计冻结，不实施 manifest closure（A1.3-03）也不实施 class flattening（A1.3-03）。两者的模糊引入是 2026-08-24 之前设计撤回的主因，本节以显式 defer 消除该风险。
 
@@ -2993,7 +2995,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：89 tests、0 failure、0 error、0 skip（`ZipArchiveVerifierTest`）
 - **构建检查**：`mvn enforcer:enforce` 全绿（BannedDependencies passed）；`dependency:tree -DincludeScope=compile` 扫描无违禁 artifact
 - **覆盖维度**：structural（EOCD/local-central 对齐、ZIP64 extra field/EOCD sentinel/locator 拒绝）→ DD（data descriptor 不可验证拒绝）→ CRC/size 逐流复算 → raw deflate → compression ratio → immutability（无 `Files.write`/`Files.copy`/`Files.createTempFile`）→ no path/system-message leakage
-- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
+- **门禁标记**：T1 DEVELOPMENT_VERIFIED（A1.3-02 中 T1 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；条件 7 的开发绑定现已由 D7-T1..T4 闭合，A1.3-02 当前为 DEVELOPMENT_VERIFIED；A1.3-R03 formal receipt 仍为 BLOCKED_FORMAL_GATE，formalPassCount 0/27
 
 ---
 
@@ -3005,7 +3007,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：72 tests、0 failure、0 error、0 skip（`PathAndClosureVerifierTest`）
 - **实现要点**：严格 UTF-8 解码（拒绝 malformed sequences）+ NFC 规范化检查；exact closure 逐条目全量诊断，使用冻结 reason code：`AK-PATH-NUL`/`AK-PATH-ABSOLUTE`/`AK-PATH-BACKSLASH`/`AK-PATH-DOT-SEGMENT`/`AK-PATH-NFC-MISMATCH`（路径规范）+ `AK-ENTRY-DUPLICATE`/`AK-ENTRY-MISSING`/`AK-ENTRY-COUNT-MISMATCH`/`AK-ENTRY-EXTRA`（目录闭包）+ `AK-LIMIT-ZIP-ENTRIES`（条目数限制）；reasonArgs 键集冻结；PathCheckResult byte[]/nested maps 深防御复制（阻断调用方后续修改），结果集合不可变
 - **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
-- **门禁标记**：T2 DEVELOPMENT_VERIFIED（A1.3-02 中 T2 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
+- **门禁标记**：T2 DEVELOPMENT_VERIFIED（A1.3-02 中 T2 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；条件 7 的开发绑定现已由 D7-T1..T4 闭合，A1.3-02 当前为 DEVELOPMENT_VERIFIED；A1.3-R03 formal receipt 仍为 BLOCKED_FORMAL_GATE，formalPassCount 0/27
 
 ---
 
@@ -3017,7 +3019,7 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 - **测试结果**：90 tests、0 failure、0 error、0 skip（`ArtifactLimitsAndNestedBindingTest`）
 - **实现要点**：五类限制 all-entry 精确 ratio 检查，使用冻结 reason code：`AK-LIMIT-RAW-BYTES`（原始字节总量）/ `AK-LIMIT-ZIP-ENTRIES`（条目数）/ `AK-LIMIT-SINGLE-ENTRY`（单条目超限）/ `AK-LIMIT-TOTAL-UNCOMPRESSED`（解压后总量）/ `AK-LIMIT-COMPRESSION-RATIO`（压缩比）；negative validation：先拒绝负 compressed/uncompressed size，再 checked-add 防溢出；plan hash first（Packaging Plan JSON 摘要优先计算）；plan count + actual nested count 对比（TM-22）；七 SHA binding（每个 embedded JAR 精确 `sha256:<64 lowerhex>` 绑定）；冻结 args（arguments 字段与 SHA-256 摘要严格对应）。**协议勘误（A1.3-02）**：`AK-NESTED-JAR-COUNT` 仍为 NestedJarBinder phase-direct contract，由 T3 单元/phase test 覆盖；完整 ArchiveKernel 对缺失 entry 按 first-reason 报告 `AK-ENTRY-MISSING`（优先级 3，先于 binding 优先级 6），snapshot 可保留后续未执行项
 - **构建检查**：`mvn -Pgate-a-verifier enforcer:enforce` 全绿；`dependency:tree -DincludeScope=compile` 无违禁 artifact（聚合模块级 Enforcer/profile/dependency scan 全绿）
-- **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；A1.3-02 条件 1–6 均为 DEVELOPMENT_VERIFIED（Authority-derived 28-entry fixture、PF01–10 10/10、TM01–25 25/25）；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27；A1.3-02 整体仍为 PENDING
+- **门禁标记**：T3 DEVELOPMENT_VERIFIED（A1.3-02 中 T3 任务完成）；T1/T2/T3 均已 DEVELOPMENT_VERIFIED；条件 7 的开发绑定现已由 D7-T1..T4 闭合，A1.3-02 当前为 DEVELOPMENT_VERIFIED；A1.3-R03 formal receipt 仍为 BLOCKED_FORMAL_GATE，formalPassCount 0/27
 
 ---
 
@@ -3313,7 +3315,7 @@ mvn -f resource-gateway-gate-a-verifier/pom.xml \
 |---|---|---|---|
 | 1. A1.2 clean verify | caller | `mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify` | Provider 正常 JAR 生成且 A1.2 self-test 全绿 |
 | 2. Development gate | caller | `python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-3-development-gate.py --authority <authority> --repo-root <root> --binding-path <fresh-path>` | 生成 dev-only binding，触发 Verifier specialized profile，进程退出 0 |
-| 3. Ordinary regression | caller | `mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml clean verify` | 既有 340 个测试独立全绿 |
+| 3. Ordinary regression | caller | `mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml clean verify` | 395 个测试独立全绿，不读取 binding |
 | 4. Evidence 归档 | caller | 收集有界 transcript + binding fingerprint + Provider raw fingerprint | 可审计、可溯源，但不得写入 formal receipt 或 formalPassCount |
 
 **Evidence 标识**：domain 固定为 `RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1`，binding 中记录独立的 `sha256:<bindingFp>`。二者不得拼接成另一种字段格式。
@@ -3344,26 +3346,30 @@ mvn -f resource-gateway-gate-a-verifier/pom.xml \
 
 > D7-T1 已在 commit `3a051b7b1` 关闭：producer 63/63；真实 raw Authority 与 A1.2 Provider JAR 生成 576-byte closed binding，Authority/Provider/binding 三个 fingerprint 由独立脚本复算一致，文件模式为 `0600`；完整 protocol gate 同时通过 packaging 106/106、sealed Bundle 30 attacks、CLI/conformance 28 attacks、SliceAcceptanceReceipt 23 attacks 与 67 个 Schema。该结果仅是 DEVELOPMENT evidence，A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 仍为 0/27。
 
-> D7-T2 已在 commit `f48f48f36` 关闭：consumer 专属测试 55/55（26 项正向/优先级/确定性验证 + 29 项 strictness 与真实文件系统攻击）；完整 Verifier `clean verify` 395/395、零 skip、Enforcer 与 regular JAR 构建全绿。Consumer 强制 canonical JSON + 单 LF、closed shape、domain-separated fingerprint、Authority 唯一派生、绝对路径和 root-anchored `SecureDirectoryStream` 有界读取；父目录/叶子 symlink、非 regular、17 MiB、stale 与 close failure 均 fail-closed。D7-T3/D7-T4 尚未关闭，因此 A1.3-02 仍为 `PENDING`，A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 仍为 0/27。
+> D7-T2 已在 commit `f48f48f36` 关闭：consumer 专属测试 55/55（26 项正向/优先级/确定性验证 + 29 项 strictness 与真实文件系统攻击）；完整 Verifier `clean verify` 395/395、零 skip、Enforcer 与 regular JAR 构建全绿。Consumer 强制 canonical JSON + 单 LF、closed shape、domain-separated fingerprint、Authority 唯一派生、绝对路径和 root-anchored `SecureDirectoryStream` 有界读取；父目录/叶子 symlink、非 regular、17 MiB、stale 与 close failure 均 fail-closed。
+
+> D7-T3 已在 commit `b704042d9` 关闭：18/18 专属测试把严格 consumer 返回的实际 Provider raw bytes 注入 Authority 指定 entry，验证 28-entry exact inventory、七个 dependency fingerprint、Parser + Archive Kernel 接受、三次 JAR 与 snapshot serializer 逐字节确定性，以及 `R03-FIXTURE-PROVIDER-MISMATCH` 失败关闭；含本测试的开发回归为 413/413。
+
+> D7-T4 已在 commit `3c561e998` 关闭：ordinary profile 395/395 且不读取 binding；specialized profile Surefire 18/18、Failsafe 5/5，覆盖 binding 缺失/篡改、Authority 篡改、Provider leaf symlink 与 17 MiB oversize 的独立 JVM reason code；producer 不带 `--skip-maven` 的真实一键命令退出 0。D7-T1..T4 全部关闭，A1.3-02 更新为 `DEVELOPMENT_VERIFIED`；A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 仍为 0/27，A1.3-03..06 仍为 `PENDING`。
 
 ###### 11. 设计冻结确认清单
 
 实现开始前，确认以下每一项已由设计评审通过：
 
-- [ ] `BLOCKED_FORMAL_GATE` 语义已理解：formal R03 receipt 仍为 `BLOCKED_FORMAL_GATE`；本 slice 仅产出 DEVELOPMENT_VERIFIED
-- [ ] `formalPassCount` 不增量已确认：Java Verifier 中无任何 `formalPassCount++` 或 formal PASS signal 代码路径
-- [ ] Orchestrator 不得执行 Authority build 命令（已写入脚本注释和代码审查清单）
-- [ ] A1.2 Provider coordinate 和 path 派生仅依赖 Authority `deliverySlices`，A1.3 `providerEntryPath` 仅依赖 Authority packaging projection；POM 中无硬编码值
-- [ ] 稳定读取协议（NOFOLLOW + regular file + Authority 4 MiB / Provider 16 MiB + pre/post identity/size/mtime）已在 orchestrator 和 Java Verifier 两端实现
-- [ ] Binding JSON closed keys 列表已冻结；schema 校验逻辑已实现
-- [ ] O_EXCL + 0600 + fsync 原子写入已实现；无竞争窗口
-- [ ] Binding fingerprint domain `RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1` 已分配；未与其他 domain 冲突
-- [ ] Maven profile `gate-a-a1-3-development-binding` 只追加 specialized test set；ordinary 340-test clean verify 仍独立运行
-- [ ] Producer 与 consumer reason codes 已冻结；每个负向向量只接受一个首要 reason code
-- [ ] 威胁模型覆盖 path escape、symlink/TOCTOU、oversize、binding tamper/reuse、Provider 替换和输出泄露；外部 caller 职责已明确
-- [ ] D7-T1..T4 ownership 边界已划分；Disjoint ownership 约束已写入各任务 README
-- [ ] Acceptance sequence 4 步已评审；dev-only transcript 范围已明确
-- [ ] Diff check plan 已确认：每次提交前运行 `git diff --stat` 确认只修改目标子节所在文件
+- [x] `BLOCKED_FORMAL_GATE` 语义已理解：formal R03 receipt 仍为 `BLOCKED_FORMAL_GATE`；本 slice 仅产出 DEVELOPMENT_VERIFIED
+- [x] `formalPassCount` 不增量已确认：Java Verifier 中无任何 `formalPassCount++` 或 formal PASS signal 代码路径
+- [x] Orchestrator 不得执行 Authority build 命令（已写入脚本注释和代码审查清单）
+- [x] A1.2 Provider coordinate 和 path 派生仅依赖 Authority `deliverySlices`，A1.3 `providerEntryPath` 仅依赖 Authority packaging projection；POM 中无硬编码值
+- [x] 稳定读取协议（NOFOLLOW + regular file + Authority 4 MiB / Provider 16 MiB + pre/post identity/size/mtime）已在 orchestrator 和 Java Verifier 两端实现
+- [x] Binding JSON closed keys 列表已冻结；schema 校验逻辑已实现
+- [x] O_EXCL + 0600 + fsync 原子写入已实现；无竞争窗口
+- [x] Binding fingerprint domain `RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1` 已分配；未与其他 domain 冲突
+- [x] Maven profile `gate-a-a1-3-development-binding` 隔离 specialized test set；ordinary 395-test clean verify 仍独立运行
+- [x] Producer 与 consumer reason codes 已冻结；每个负向向量只接受一个首要 reason code
+- [x] 威胁模型覆盖 path escape、symlink/TOCTOU、oversize、binding tamper/reuse、Provider 替换和输出泄露；外部 caller 职责已明确
+- [x] D7-T1..T4 ownership 边界已划分；Disjoint ownership 约束已写入各任务 README
+- [x] Acceptance sequence 4 步已评审；dev-only transcript 范围已明确
+- [x] Diff check plan 已确认：每次提交前运行 `git diff --stat` 确认只修改目标子节所在文件
 
 
 
@@ -3375,10 +3381,10 @@ mvn -f resource-gateway-gate-a-verifier/pom.xml \
 | A1.3-R02 | Provider path、Provider Identity path 和 `requiredJarEntries` 唯一一致 | `DEVELOPMENT_VERIFIED` | 新增关系变异测试与 compiled Role Contract |
 | A1.3-R03 | A1.2 predecessor receipt 可由 caller 提供且绑定当前 Provider raw bytes | `BLOCKED_FORMAL_GATE` | A1.2 slice receipt，不以本地 Markdown 记录替代 |
 | A1.3-01 | Packaging Plan 由 Authority 唯一投影，POM 无第二份版本/路径真相 | `DEVELOPMENT_VERIFIED` | 106/106 tests passed（protocol packaging 106/106、deterministic plan bytes、content-addressed publication receipt、mutation tests） |
-| A1.3-02 | 完成条件 1–6 DEVELOPMENT_VERIFIED：Verifier 模块 clean verify 340/340 （20 main sources、9 test sources、JDK 25、Enforcer 全绿、regular JAR 构建）；Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）；factory tests 32；PF01–10 10/10；TM01–25 25/25；reasonArgs single/ratio 已对齐冻结表；条件 7 / A1.3-R03 仍为 BLOCKED_FORMAL_GATE；formalPassCount 0/27 | `PENDING`（条件 1–6 DEVELOPMENT_VERIFIED；条件 7 / A1.3-R03 BLOCKED_FORMAL_GATE；formalPassCount 仍为 0/27） | 实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c；Verifier 模块 clean verify 340/340；Authority-derived 28-entry fixture；factory tests 32；PF01–10 10/10；TM01–25 25/25；条件 7 / A1.3-R03 caller-owned predecessor binding 未闭合 |
+| A1.3-02 | 条件 1–7 的开发验证全部闭合：ordinary 395/395；D7 consumer 55/55；实际 Provider bytes 注入 28-entry fixture；specialized Surefire 18/18 + Failsafe 5/5；Parser + Archive Kernel 与三次 snapshot deterministic；正式 R03 receipt 不在本开发闭环内 | `DEVELOPMENT_VERIFIED`（A1.3-R03 formal receipt 仍 `BLOCKED_FORMAL_GATE`；formalPassCount 0/27） | 实现记录：既有 Archive Kernel commits + D7-T1 `3a051b7b1`、D7-T2 `f48f48f36`、D7-T3 `b704042d9`、D7-T4 `3c561e998`；producer 一键命令退出 0；ordinary/specialized 隔离验证全绿 |
 
-> T1（89 tests）+ T2（72 tests）+ T3（90 tests）三个任务均已 DEVELOPMENT_VERIFIED；另有 ArchiveKernelIntegrationTest 22 tests、Factory tests 32 tests、PF01–10 10 tests、TM01–25 25 tests；合计 340 tests（89+72+90+22+32+10+25）；另有 PackagingPlanParser、ArchiveKernel integration facade、immutable snapshot + deterministic serializer 实现完成（clean verify 340/340、零编译警告），reasonArgs single/ratio 已对齐冻结表，protocol packaging tests 106/106，Authority-derived 28-entry fixture（actual seven Maven dependency JAR raw bytes + actual compiled Authority CLI class bytes）。Enforcer/profile/dependency scan 全绿。A1.3-02 完成条件 1–6 均为 DEVELOPMENT_VERIFIED；整体状态仍为 PENDING，因为条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27。实现记录：commits 14d742032、7eb3f6e92、627be5deb、0f55769b4、2683a79ed、b12278844、6ceab8d2c。正式 Verifier JAR / production CLI black-box 尚未产出（test-side fixture 非正式制品）。
-> 剩余唯一未闭合项：条件 7 / A1.3-R03（caller-owned predecessor Provider bytes binding）尚未闭合；formalPassCount 0/27；A1.3-R03 formal receipt 仍为 BLOCKED_FORMAL_GATE，formalPassCount 27 项 formal evidence 未开始记录。
+> A1.3-02 的开发态闭环现由 ordinary 395/395、consumer 55/55、D7-T3 18/18 与 D7-T4 Failsafe 5/5 共同固证。实际 Provider raw bytes 已进入 Authority 指定 fixture entry，Parser、Archive Kernel 和 snapshot serializer 均验证通过；specialized profile 与 ordinary profile 相互隔离。正式 Verifier JAR / production CLI black-box、caller-owned Ledger receipt 与 27 项 formal evidence 仍不在本开发证据范围内。
+> 剩余正式缺口：A1.3-R03 formal receipt 仍为 `BLOCKED_FORMAL_GATE`，`formalPassCount` 0/27；该正式缺口不再把 A1.3-02 的开发状态降回 `PENDING`。
 
 | A1.3-03 | 四个内核与 Test Kit、Provider Runtime 解耦 | `PENDING` | forbidden dependency scan、classloader/process tests |
 | A1.3-04 | Java self-test 与 caller-owned Python Oracle 逐字节相等 | `PENDING` | actual JAR black box、parent-private oracle |
