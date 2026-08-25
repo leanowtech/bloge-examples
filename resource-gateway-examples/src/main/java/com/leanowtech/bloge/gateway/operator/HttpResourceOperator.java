@@ -19,6 +19,7 @@ import com.leanowtech.bloge.operators.http.HttpRequestInput;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.operators.http.HttpResponseOutput;
 import com.leanowtech.bloge.spring.annotation.BlogeOperator;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -59,7 +60,7 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
     private static final String MULTIPART_BOUNDARY_PREFIX = "----BLOGEFormBoundary";
     private static final String CRLF = "\r\n";
 
-    private final HttpRequestOperator httpRequestOperator;
+    private final HttpRequestTransport httpRequestOperator;
     private final ResourceRegistry registry;
     private final BlgeExpressionEvaluator evaluator;
     private final UrlTemplateRenderer renderer;
@@ -74,8 +75,26 @@ public class HttpResourceOperator implements Operator<Object, HttpResourceOutput
      * @param extractor           JSON payload extractor
      * @param validator           response protocol validator
      */
+    @Autowired
     public HttpResourceOperator(
             HttpRequestOperator httpRequestOperator,
+            ResourceRegistry registry,
+            BlgeExpressionEvaluator evaluator,
+            UrlTemplateRenderer renderer,
+            PayloadExtractor extractor,
+            ResponseValidator validator) {
+        this((input, context) -> httpRequestOperator.execute(input, context), registry, evaluator,
+                renderer, extractor, validator);
+    }
+
+    /**
+     * Creates a resource operator with an already isolated request transport.
+     *
+     * <p>This overload keeps simulation and fixture runtimes from constructing the production
+     * HTTP client while preserving the existing production constructor above.</p>
+     */
+    public HttpResourceOperator(
+            HttpRequestTransport httpRequestOperator,
             ResourceRegistry registry,
             BlgeExpressionEvaluator evaluator,
             UrlTemplateRenderer renderer,

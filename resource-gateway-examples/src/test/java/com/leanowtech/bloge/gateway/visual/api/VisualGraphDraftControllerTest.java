@@ -3041,7 +3041,9 @@ class VisualGraphDraftControllerTest {
     }
 
     private static HttpResourceOperator httpResourceOperatorStub() {
-        return new HttpResourceOperator(null, null, null, null, null, null);
+        return new HttpResourceOperator(
+                (com.leanowtech.bloge.operators.http.HttpRequestOperator) null,
+                null, null, null, null, null);
     }
 
     private static class FixedRunService extends VisualGraphRunService {

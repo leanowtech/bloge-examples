@@ -33,7 +33,7 @@
 | `S0-B` | 服务端执行目的铸造与受控入口 admission | `DEVELOPMENT_VERIFIED` | 七类 Body 入口在反序列化前按固定 `IntegrationOperation` 认证；bounded inline fixture 进入既有解析链；caller purpose 不可改写内核 purpose |
 | `S0-C` | visual 设计期模拟适配统一内核 | `DEVELOPMENT_VERIFIED` | `SCHEMA_STANDIN` 经 server-owned Java hint 在 compiler/runtime/evidence 中显式闭合；visual-owned port 隔离 testing 类型；Spring 默认服务走统一内核；新旧路径对 stand-in、纯原语混合、逐节点 fixture 与输入不匹配保持语义等价；生产拒绝和超时仍在服务边界生效 |
 | `S0-D` | 生产入口控制头拒绝/剥离及服务端二次拒绝 | `DEVELOPMENT_VERIFIED` | profile/服务端环境双判定、context-path 安全执行路由全集、真实 Spring Filter 链与 visual service 独立 403 拒绝；server-owned policy Bean 不可由普通业务 Bean 条件替换 |
-| `S0-E` | 新旧路径等价对拍、确定性和架构约束 | `IN_PROGRESS` | visual 固定差分矩阵已覆盖正常/异常、节点/边上限、超时、fixture、混合分类和异常净化；20 次内核重放保持 plan/semantic/service-state 指纹一致；`TestRunService` 禁直接系统时间/随机 API；ReDoS、系统级零网络与其余核心类架构证明仍缺失 |
+| `S0-E` | 新旧路径等价对拍、确定性和架构约束 | `IN_PROGRESS` | visual 固定差分矩阵、20 次内核重放、TestRunService 非确定 API 门禁、visual/descriptor 系统级零网络和 ReDoS 负向矩阵已固定；其余核心类架构规则和独立编译等价台仍缺失 |
 
 ### 3.2 阶段出口
 
@@ -44,7 +44,7 @@
 | `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | Header admission 和 bounded inline fixture 已进入既有执行链；legacy Body 控制为兼容保留，Scenario/World Model 授权引用属于阶段一 | `PARTIAL` |
 | `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 入口 Filter 已覆盖已识别执行路由；visual 默认 adapter、visual service 与 TestExecution service 均保留 production 拒绝；尚缺所有执行模式的端到端旁路矩阵 | `PARTIAL` |
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 14 项固定差分矩阵逐字段对拍 stand-in、纯原语混合、多节点分类、fixture 优先级/null/输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化 | `MET` |
-| `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | 无 binding descriptor transport 已证明只经 `StubHttpRequestOperator` 并可观察完整渲染请求；尚缺 visual 系统级零网络旁路测试与 ReDoS 负向攻击矩阵 | `PARTIAL` |
+| `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | descriptor 与 visual kernel 对本地可计数真实端点均保持零请求；危险嵌套量词/分组/交替/lookaround/backreference、超长/畸形 pattern 与超长 candidate 在匹配前拒绝；类文件规则禁止模拟关键类构造生产网络客户端 | `MET` |
 | `S0-EXIT-07` | 编译等价、N 次重放确定性和禁非确定 API 架构规则通过 | 20 次固定逻辑时钟重放保持 plan、语义投影、语义结果与执行服务状态指纹一致；runId/完整 evidence 指纹保持唯一；TestRunService 类文件规则禁止直接读取系统时间、UUID 与随机 API；尚缺其余阶段零核心类规则和独立编译等价台 | `PARTIAL` |
 | `S0-EXIT-08` | 旧路径未被提前删除，公开 endpoint 和既有协议保持兼容 | 当前未删除旧路径 | `MET_PENDING_REGRESSION` |
 
@@ -114,6 +114,7 @@ ResourceFixtureRuntimeTest           9/9
 OperatorMicroGraphRunnerTest        10/10
 TestRunServiceTest                  45/45
 TestRunServiceArchitectureTest       1/1
+Stage0Exit06SecurityProofTest        4/4
 GatewayGraphContractTestServiceTest 14/14
 TestExecutionIngressAdapterTest     25/25
 TestExecutionControllerTest         15/15
@@ -140,6 +141,8 @@ VisualSimulationKernelAdapterTest    9/9
 S0-EXIT-01 的联合聚焦集为 127/127。新增证据覆盖：缺失 `httpResource` binding 时调用清单冻结为稳定且不可直接执行的外部边界；已有真实 binding 仍优先；其他缺失算子继续失败关闭；无 fixture 自动生成隐式 `DENY`；图内 embedded operator、compiler registry 与 isolated engine registry 同时为空时，run-scoped overlay 不修改共享 registry，`DESCRIPTOR_TRANSPORT` 仍经真实 descriptor 管线完成参数映射、URL、Header、Body、响应协议与 payload 提取并产生 `TRANSPORT_LEVEL` 可认证证据；缺描述符和协议拒绝保持确定性失败。阶段一引用解析及阶段零完整差分/安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
 
 S0-EXIT-07 的当前确定性切片联合聚焦集为 115/115。运行身份与 evidence 壁钟已收敛到显式不可变依赖，默认构造器只在边界绑定系统适配器；同一固定逻辑时钟请求连续运行 20 次，plan fingerprint、semantic projection、semantic result fingerprint 与 execution-service state fingerprint 全部逐次相同，而 runId 和包含运行事实的完整 evidence fingerprint 均保持唯一。类文件架构测试禁止 `TestRunService` 直接调用 `Instant.now`、`UUID.randomUUID`、`Math.random`、`ThreadLocalRandom.current` 或分配 `Random`。该证据尚未覆盖其余阶段零核心类及独立编译等价台，因此 `S0-EXIT-07` 仍为部分满足。
+
+S0-EXIT-06 的固定安全台为 4/4，相关联合回归为 143/143。descriptor 与 visual kernel 测试均启动真实本地计数端点并将资源 URL 指向该端点，执行后请求数严格为零；`StubHttpRequestOperator` 已从继承生产 `HttpRequestOperator` 改为实现 Resource Gateway 应用层的最小 `HttpRequestTransport`，不再为测试构造真实 `HttpClient`，生产 Spring 构造器仍保持原 `HttpRequestOperator` 依赖。ReDoS 矩阵覆盖典型灾难回溯结构、超长/畸形 pattern 与超长 candidate，同时保留安全字符类和锚点表达式。类文件规则进一步证明 `VisualSimulationKernelAdapter`、stub 与 `ResourceFixtureRuntime` 不创建生产网络 transport。本切片 `resource-gateway-examples clean verify` 为 7104 tests / 0 failures / 0 errors。
 
 截至 2026-08-26，本切片最终串行里程碑结果：
 

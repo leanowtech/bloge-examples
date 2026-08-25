@@ -58,7 +58,9 @@ Descriptor protocol and transport fixtures no longer require a deployed `httpRes
 the isolated test engine receives a run-scoped fail-closed binding while the existing
 `ResourceFixtureRuntime` performs the real descriptor mapping, protocol validation, and payload
 extraction over a zero-network transport stub. Neither the graph nor the shared operator registry
-is mutated.
+is mutated. The stub implements the Resource Gateway-local `HttpRequestTransport` seam directly,
+so test construction does not instantiate the production HTTP client; the existing Spring
+constructor still accepts the production `HttpRequestOperator` unchanged.
 The kernel's run identity and evidence wall clock are explicit injected dependencies. Repeated
 logical-clock executions keep stable plan and semantic-result fingerprints while retaining distinct
 run identities and full evidence fingerprints; a class-file architecture gate prevents the core

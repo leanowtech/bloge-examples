@@ -1,8 +1,8 @@
 package com.leanowtech.bloge.gateway.testing.runtime;
 
 import com.leanowtech.bloge.core.operator.OperatorContext;
+import com.leanowtech.bloge.gateway.operator.HttpRequestTransport;
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
-import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 import com.leanowtech.bloge.operators.http.HttpResponseOutput;
 
 import java.util.ArrayList;
@@ -17,7 +17,7 @@ import java.util.function.Function;
  * <p>The resolver receives the fully rendered {@link HttpRequestInput}; tests can therefore assert
  * URL, headers, body, auth, and capped timeout before returning a protocol-level response.</p>
  */
-public class StubHttpRequestOperator extends HttpRequestOperator {
+public class StubHttpRequestOperator implements HttpRequestTransport {
 
     private final Function<HttpRequestInput, HttpResponseOutput> resolver;
     private final List<HttpRequestInput> requests = new ArrayList<>();

@@ -54,7 +54,9 @@ class TestOperatorExecutionApiServiceTest {
     @BeforeEach
     void setUp() {
         operators.register("customer.greeting", new GreetingOperator());
-        operators.register("http.resource", new HttpResourceOperator(null, resources, null, null, null, null));
+        operators.register("http.resource", new HttpResourceOperator(
+                (com.leanowtech.bloge.operators.http.HttpRequestOperator) null,
+                resources, null, null, null, null));
         operators.register("legacy.external", new OpaqueExternalOperator());
         operators.register("configured.read", new ConfiguredReadOperator("tenant-a:"));
         operators.register("configured.snapshot", new SnapshotConfiguredReadOperator("tenant-a:"));
