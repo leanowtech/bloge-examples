@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.zip.*;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * A1.3-02 TM-01..TM-12 tamper acceptance tests.
@@ -1596,4 +1598,328 @@ class VerifierFixtureTamperAcceptanceTest {
         }
         return count;
     }
+    // -------------------------------------------------------------------------
+    // TM-20: dependency entry stored with another dep JAR's content (nested JAR
+    // content substituted via addStoredEntry) — all 28 entries STORED, baseline
+    // plan derived from tampered JAR — expect AK-NESTED-JAR-SHA256
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM20: dependency entry stored with another dep JAR content")
+    void tm20_nested_jar_content() throws Exception {
+        // Collect all dependency JAR bytes for potential replacement content
+        List<RealVerifierFixtureFactory.DependencyEntry> deps = FACTORY.embeddedDependencies();
+        Assertions.assertTrue(deps.size() >= 2, "Need at least 2 dependencies for TM20");
+
+        // Source content: read the LAST dependency JAR as replacement content
+        RealVerifierFixtureFactory.DependencyEntry srcDep = deps.get(deps.size() - 1);
+        Path srcJarPath = DEP_JARS_DIR.resolve(srcDep.artifactFileName());
+        byte[] replacementContent = java.nio.file.Files.readAllBytes(srcJarPath);
+
+        // Target: pick the FIRST dependency entry path to substitute
+        RealVerifierFixtureFactory.DependencyEntry targetDep = deps.get(0);
+        String targetEntryPath = targetDep.entryPath();
+
+        // Build exact 28 STORED JAR:
+        // - dependencies: use addStoredDependency (correct fingerprint in plan)
+        // - EXCEPT targetEntryPath: use addStoredEntry with OTHER dep JAR content
+        // - non-dependencies: use addStoredEntry with tiny 1-byte content
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                if (req.equals(targetEntryPath)) {
+                    // Substitute: add as non-dep entry with another dep JAR's content
+                    // (isDependency=false, method=STORED, custom content)
+                    builder.addStoredEntry(req, replacementContent);
+                } else {
+                    builder.addStoredDependency(req);
+                }
+            } else {
+                builder.addStoredEntry(req, new byte[1]);
+            }
+        }
+        byte[] tamperedJar = builder.build();
+        Assertions.assertEquals(28, countZipEntries(tamperedJar),
+                "TM20 JAR must have exactly 28 entries");
+        Assertions.assertTrue(isAllStored(tamperedJar),
+                "TM20 JAR must be all-STORED");
+
+        // Authority baseline plan: all 7 dep SHA-256 fingerprints are from
+        // embeddedDependencyAuthority; the plan declares the correct fingerprint for
+        // targetEntryPath, but the JAR contains another dep's JAR bytes there.
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult =
+                parser.parse(BASELINE_PLAN_BYTES, sha256fp(BASELINE_PLAN_BYTES));
+        Assertions.assertTrue(parseResult.isSuccess(), "TM20 plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm20.jar");
+        java.nio.file.Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM20: must be rejected");
+        Assertions.assertEquals("AK-NESTED-JAR-SHA256", snapshot.rejectionCode(),
+                "TM20: must have AK-NESTED-JAR-SHA256 code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-21: mutate first plan embeddedDependencies rawFingerprint last hex bit
+    // via Jackson, serialize, parse using sha256fp(mutated) — expect
+    // AK-NESTED-JAR-SHA256 when verified against baseline jar
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM21: plan fingerprint mutated (first dep, last hex bit)")
+    void tm21_plan_fingerprint_mutated() throws Exception {
+        // Parse baseline plan as generic JsonNode to mutate without full binding
+        com.fasterxml.jackson.databind.ObjectMapper mutationMapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode planNode =
+                mutationMapper.readTree(BASELINE_PLAN_BYTES);
+
+        // Navigate to embeddedDependencies[0].rawFingerprint
+        com.fasterxml.jackson.databind.JsonNode embDeps =
+                planNode.get("embeddedDependencies");
+        Assertions.assertFalse(embDeps == null || embDeps.isMissingNode(),
+                "embeddedDependencies must be present in plan");
+        Assertions.assertTrue(embDeps.isArray() && embDeps.size() > 0,
+                "embeddedDependencies must be a non-empty array");
+
+        com.fasterxml.jackson.databind.JsonNode firstDep = embDeps.get(0);
+        String originalFp = firstDep.get("rawFingerprint").asText();
+        Assertions.assertNotNull(originalFp, "rawFingerprint must not be null");
+
+        // Mutate: flip exactly one bit in the last hex character
+        char lastChar = originalFp.charAt(originalFp.length() - 1);
+        int nibble = Character.digit(lastChar, 16);
+        char mutatedChar = Character.forDigit(nibble ^ 0x1, 16); // flip exactly 1 bit
+        String mutatedFp = originalFp.substring(0, originalFp.length() - 1) + mutatedChar;
+        Assertions.assertNotEquals(originalFp, mutatedFp,
+                "Mutation must change the fingerprint");
+
+        // Apply mutation to JSON tree
+        ((ObjectNode) firstDep).put(
+                "rawFingerprint", mutatedFp);
+
+        // Reserialize with deterministic factory (same factory as factory uses)
+        com.fasterxml.jackson.databind.ObjectMapper planOutMapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        byte[] mutatedPlanBytes = planOutMapper.writeValueAsBytes(planNode);
+
+        // Parse with sha256fp of mutated bytes
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult =
+                parser.parse(mutatedPlanBytes, sha256fp(mutatedPlanBytes));
+        Assertions.assertTrue(parseResult.isSuccess(),
+                "TM21: mutated plan must parse with new fingerprint");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm21.jar");
+        java.nio.file.Files.write(jarPath, BASELINE_JAR_BYTES);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM21: must be rejected");
+        Assertions.assertEquals("AK-NESTED-JAR-SHA256", snapshot.rejectionCode(),
+                "TM21: must have AK-NESTED-JAR-SHA256 code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-22: tamperOmitEntry on first dependency entry, baseline plan —
+    // expect AK-ENTRY-MISSING
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM22: dependency entry omitted from JAR")
+    void tm22_dependency_entry_omitted() throws Exception {
+        // Pick the first dependency entry
+        String firstDepPath = FACTORY.embeddedDependencies().get(0).entryPath();
+
+        // Omit it from the baseline JAR
+        byte[] tamperedJar = tamperOmitEntry(BASELINE_JAR_BYTES, firstDepPath);
+
+        // Verify it was actually removed
+        int entryCount = countZipEntries(tamperedJar);
+        Assertions.assertEquals(27, entryCount,
+                "TM22: JAR must have exactly 27 entries after omission");
+
+        // Use baseline plan (with all 28 entries including omitted one)
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult =
+                parser.parse(BASELINE_PLAN_BYTES, sha256fp(BASELINE_PLAN_BYTES));
+        Assertions.assertTrue(parseResult.isSuccess(), "TM22: baseline plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm22.jar");
+        java.nio.file.Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM22: must be rejected");
+        Assertions.assertEquals("AK-ENTRY-MISSING", snapshot.rejectionCode(),
+                "TM22: must have AK-ENTRY-MISSING code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-23: build all 28 STORED, target nondep content {1,2,3,4}, zero
+    // local+central cSize+20 fields only — expect AK-SIZE-MISMATCH
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM23: STORED entry with zeroed compressed-size fields")
+    void tm23_zeroed_compressed_size() throws Exception {
+        byte[] content = new byte[]{1, 2, 3, 4};
+
+        // Find a non-dependency entry
+        String nonDepEntry = null;
+        for (String req : FACTORY.requiredEntries()) {
+            if (!isDependencyEntry(req)) {
+                nonDepEntry = req;
+                break;
+            }
+        }
+        Assertions.assertNotNull(nonDepEntry, "Need at least one non-dependency entry for TM23");
+
+        // Build exact 28 JAR, all STORED
+        RealVerifierFixtureFactory.DeterministicJarBuilder builder = FACTORY.jarBuilder();
+        for (String req : FACTORY.requiredEntries()) {
+            if (isDependencyEntry(req)) {
+                builder.addStoredDependency(req);
+            } else {
+                builder.addStoredEntry(req, req.equals(nonDepEntry) ? content : new byte[1]);
+            }
+        }
+        byte[] baseJar = builder.build();
+        Assertions.assertEquals(28, countZipEntries(baseJar), "TM23: must have 28 entries");
+        Assertions.assertTrue(isAllStored(baseJar), "TM23: must be all-STORED");
+
+        // Find and modify: zero cSize at local+20 and central+20 (both little-endian 4-byte)
+        byte[] tamperedJar = baseJar.clone();
+        int[] entryInfo = findCentralEntry(tamperedJar, nonDepEntry);
+        int localPos = entryInfo[1];
+        int centralPos = entryInfo[0];
+
+        // Zero out cSize at local header offset + 18 (4 bytes) — actually local+18 to local+21
+        // and central header offset + 20 (4 bytes) — central+20 to central+23
+        // "cSize+18" and "cSize+20" per instructions: byte offsets from record start
+        Assertions.assertTrue(localPos >= 0, "Local header not found for " + nonDepEntry);
+        Assertions.assertTrue(centralPos > 0, "Central entry not found for " + nonDepEntry);
+
+        // Zero 4 bytes at local + 18 (cSize field in local header)
+        for (int i = 0; i < 4; i++) tamperedJar[localPos + 18 + i] = 0;
+        // Zero 4 bytes at central + 20 (cSize field in central directory)
+        for (int i = 0; i < 4; i++) tamperedJar[centralPos + 20 + i] = 0;
+
+        // Plan from baseline JAR
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult =
+                parser.parse(BASELINE_PLAN_BYTES, sha256fp(BASELINE_PLAN_BYTES));
+        Assertions.assertTrue(parseResult.isSuccess(), "TM23: plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm23.jar");
+        java.nio.file.Files.write(jarPath, tamperedJar);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM23: must be rejected");
+        Assertions.assertEquals("AK-SIZE-MISMATCH", snapshot.rejectionCode(),
+                "TM23: must have AK-SIZE-MISMATCH code");
+    }
+
+    // -------------------------------------------------------------------------
+    // TM-24: mutate last dep rawFingerprint 1 bit, reserialize/rehash,
+    // baseline jar — expect AK-NESTED-JAR-SHA256
+    // -------------------------------------------------------------------------
+
+    @Test
+    @DisplayName("TM24: last dep plan fingerprint mutated 1 bit")
+    void tm24_plan_entry_path_mutated() throws Exception {
+        // Parse plan JSON as mutable tree
+        com.fasterxml.jackson.databind.ObjectMapper mutationMapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        com.fasterxml.jackson.databind.JsonNode planNode =
+                mutationMapper.readTree(BASELINE_PLAN_BYTES);
+
+        com.fasterxml.jackson.databind.JsonNode embDeps = planNode.get("embeddedDependencies");
+        Assertions.assertFalse(embDeps == null || embDeps.isMissingNode(),
+                "embeddedDependencies must be present");
+        int lastIdx = embDeps.size() - 1;
+        com.fasterxml.jackson.databind.JsonNode lastDep = embDeps.get(lastIdx);
+
+        String originalFp = lastDep.get("rawFingerprint").asText();
+        Assertions.assertNotNull(originalFp, "rawFingerprint must not be null");
+
+        // Mutate exactly one bit: flip LSB of last hex character
+        char lastChar = originalFp.charAt(originalFp.length() - 1);
+        int nibble = Character.digit(lastChar, 16);
+        char mutatedChar = Character.forDigit(nibble ^ 0x1, 16);
+        String mutatedFp = originalFp.substring(0, originalFp.length() - 1) + mutatedChar;
+        Assertions.assertNotEquals(originalFp, mutatedFp,
+                "Mutation must change the fingerprint");
+
+        // Apply mutation
+        ((ObjectNode) lastDep).put("rawFingerprint", mutatedFp);
+
+        // Reserialize
+        com.fasterxml.jackson.databind.ObjectMapper planOutMapper =
+                new com.fasterxml.jackson.databind.ObjectMapper();
+        byte[] mutatedPlanBytes = planOutMapper.writeValueAsBytes(planNode);
+
+        // Parse with sha256fp of mutated bytes
+        PackagingPlanParser parser = new PackagingPlanParser();
+        PackagingPlanParser.ParseResult parseResult =
+                parser.parse(mutatedPlanBytes, sha256fp(mutatedPlanBytes));
+        Assertions.assertTrue(parseResult.isSuccess(),
+                "TM24: mutated plan must parse");
+
+        PackagedPlan plan = parseResult.plan();
+        Path jarPath = tempDir.resolve("tm24.jar");
+        java.nio.file.Files.write(jarPath, BASELINE_JAR_BYTES);
+
+        ArchiveKernel kernel = new ArchiveKernel();
+        ArchiveKernelSnapshot snapshot = kernel.verify(jarPath, plan);
+
+        Assertions.assertTrue(snapshot.rejected(), "TM24: must be rejected");
+        Assertions.assertEquals("AK-NESTED-JAR-SHA256", snapshot.rejectionCode(),
+                "TM24: must have AK-NESTED-JAR-SHA256 code");
+    }
+
+    // -------------------------------------------------------------------------
+    // @AfterAll: reflection-based validation of test inventory
+    // -------------------------------------------------------------------------
+
+    @AfterAll
+    static void validateTestInventory() {
+        java.lang.reflect.Method[] methods =
+                VerifierFixtureTamperAcceptanceTest.class.getDeclaredMethods();
+        java.util.List<java.lang.reflect.Method> testMethods = new java.util.ArrayList<>();
+        for (java.lang.reflect.Method m : methods) {
+            if (m.isAnnotationPresent(org.junit.jupiter.api.Test.class)) {
+                testMethods.add(m);
+            }
+        }
+        Assertions.assertEquals(25, testMethods.size(),
+                "Must have exactly 25 @Test methods (TM01..TM25)");
+
+        java.util.Set<String> expected = new java.util.LinkedHashSet<>();
+        for (int i = 1; i <= 25; i++) {
+            expected.add("TM" + String.format("%02d", i) + ":");
+        }
+        java.util.Set<String> actual = new java.util.LinkedHashSet<>();
+        for (java.lang.reflect.Method m : testMethods) {
+            DisplayName dm = m.getAnnotation(DisplayName.class);
+            if (dm != null) {
+                actual.add(dm.value().substring(0, 5)); // "TM01:"
+            }
+        }
+        Assertions.assertEquals(expected, actual,
+                "DisplayNames must cover TM01..TM25 exactly once each");
+    }
+
 }
