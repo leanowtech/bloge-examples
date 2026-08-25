@@ -7,6 +7,9 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunRequest;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
+import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunnerFactory;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
 import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
@@ -21,6 +24,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +61,34 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
+    void multipleStandInsAndPureNodesHaveEquivalentClassificationAndHonorOutputOverride() {
+        OperatorDefinition primitive = VisualCatalogTestSupport.eligibilityOperator("integer");
+        OperatorDefinition firstStandIn = copyAsDesignOnly(primitive, "risk:firstStandin");
+        OperatorDefinition secondStandIn = copyAsDesignOnly(primitive, "risk:secondStandin");
+        DefaultVisualOperatorCatalog catalog = catalog(primitive, firstStandIn, secondStandIn);
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "mixedGraph", "", "", "", "", null,
+                List.of(
+                        new GraphDraft.DraftNode(
+                                "pure", "risk:eligibility", "", Map.of(
+                                        "score", GraphDraft.Binding.contextPath("score"),
+                                        "amount", GraphDraft.Binding.contextPath("amount")), Map.of(), null),
+                        new GraphDraft.DraftNode("first", "risk:firstStandin", "", eligibilityInputs(), Map.of(), null),
+                        new GraphDraft.DraftNode("second", "risk:secondStandin", "", eligibilityInputs(), Map.of(), null)),
+                List.of(), Map.of(), new GraphDraft.OutputSelection("second", ""));
+
+        VisualGraphSimulationResponse legacy = legacyOracle(catalog)
+                .simulate(draft, Map.of("score", 720, "amount", 250_000), "pure");
+        VisualGraphSimulationResponse kernel = kernel(catalog)
+                .simulate(draft, Map.of("score", 720, "amount", 250_000), "pure");
+
+        assertResponsesEquivalent(legacy, kernel);
+        assertThat(kernel.outputNode()).isEqualTo("pure");
+        assertThat(kernel.mockedNodeIds()).containsExactly("first", "second");
+        assertThat(kernel.realNodeIds()).containsExactly("pure");
+    }
+
+    @Test
     void pinnedPrimitiveHasEquivalentSemanticResult() {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.eligibilityOperator("integer"));
@@ -78,7 +110,7 @@ class VisualGraphSimulationKernelIntegrationTest {
         VisualGraphSimulationResponse kernel = kernel(catalog).simulate(
                 eligibilityDraft(), Map.of("score", 720, "amount", 250_000), "", fixture);
 
-        assertThat(semantic(kernel)).isEqualTo(semantic(legacy));
+        assertResponsesEquivalent(legacy, kernel);
         assertThat(kernel.success()).isFalse();
         assertThat(kernel.output()).isEqualTo(legacy.output());
         assertThat(kernel.mockedNodeIds()).isEqualTo(legacy.mockedNodeIds());
@@ -101,10 +133,98 @@ class VisualGraphSimulationKernelIntegrationTest {
                 .simulate(draft, Map.of(), "", requestFixture);
         VisualGraphSimulationResponse kernel = kernel(catalog).simulate(draft, Map.of(), "", requestFixture);
 
-        assertThat(kernel.output()).isEqualTo(legacy.output());
+        assertResponsesEquivalent(legacy, kernel);
         assertThat(kernel.output()).isEqualTo(Map.of("eligible", true, "ruleId", "REQUEST"));
         assertThat(kernel.mockedNodeIds()).doesNotContain("__sim_eligibility");
         assertThat(kernel.realNodeIds()).doesNotContain("__sim_eligibility");
+    }
+
+    @Test
+    void explicitNullFixtureHasEquivalentMockedOutput() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+
+        VisualGraphSimulationResponse legacy = legacyOracle(catalog).simulate(
+                eligibilityDraft(), Map.of(), "",
+                Map.of("eligibility", new NodeFixture(null)));
+        VisualGraphSimulationResponse kernel = kernel(catalog).simulate(
+                eligibilityDraft(), Map.of(), "",
+                Map.of("eligibility", new NodeFixture(null)));
+
+        assertResponsesEquivalent(legacy, kernel);
+        assertThat(kernel.output()).isNull();
+        assertThat(kernel.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(kernel.realNodeIds()).isEmpty();
+    }
+
+    @Test
+    void nodeCapRejectionHasEquivalentPublicSemantics() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+        List<GraphDraft.DraftNode> nodes = IntStream.rangeClosed(
+                        0, VisualGraphSimulationService.MAX_SIMULATION_NODES)
+                .mapToObj(i -> new GraphDraft.DraftNode(
+                        "n" + i, "risk:eligibility", "", Map.of(), Map.of(), null))
+                .toList();
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "tooBig", "", "", "", "", null,
+                nodes, List.of(), Map.of(), new GraphDraft.OutputSelection("n0", ""));
+
+        assertBlockedEquivalent(catalog, draft, Map.of(), Map.of(),
+                "visual.simulate.nodeCapExceeded");
+    }
+
+    @Test
+    void edgeCapRejectionHasEquivalentPublicSemantics() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+        List<GraphDraft.DraftEdge> edges = IntStream.range(0,
+                        VisualGraphSimulationService.MAX_SIMULATION_EDGES + 1)
+                .mapToObj(i -> new GraphDraft.DraftEdge(
+                        "e" + i, "data",
+                        new GraphDraft.Endpoint("source", "output", ""),
+                        new GraphDraft.Endpoint("target", "inputs", "")))
+                .toList();
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "tooManyEdges", "", "", "", "", null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility", "risk:eligibility", "", Map.of(), Map.of(), null)),
+                edges, Map.of(), new GraphDraft.OutputSelection("eligibility", ""));
+
+        assertBlockedEquivalent(catalog, draft, Map.of(), Map.of(),
+                "visual.simulate.edgeCapExceeded");
+    }
+
+    @Test
+    void validationFailureHasEquivalentDiagnosticsAndErrors() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.eligibilityOperator("integer"));
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "invalidOutput", "", "", "", "", null,
+                eligibilityDraft().nodes(), List.of(), Map.of(),
+                new GraphDraft.OutputSelection("eligibility", "missing"));
+
+        assertBlockedEquivalent(catalog, draft,
+                Map.of("score", 720, "amount", 250_000), Map.of(),
+                "visual.output.unknownPath");
+    }
+
+    @Test
+    void dslGenerationFailureHasEquivalentDiagnosticsAndErrors() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "invalidConfig", "", "", "", "", null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility", "risk:eligibility", "",
+                        Map.of("score", GraphDraft.Binding.contextPath("score"),
+                                "amount", GraphDraft.Binding.contextPath("amount")),
+                        Map.of("bad-key", "value"), null)),
+                List.of(), Map.of(), new GraphDraft.OutputSelection("eligibility", ""));
+
+        assertBlockedEquivalent(catalog, draft,
+                Map.of("score", 720, "amount", 250_000), Map.of(),
+                "visual.codegen.configKey.invalid");
     }
 
     @Test
@@ -130,43 +250,68 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
-    void kernelExecutorIsBoundedByServiceRunTimeout() throws InterruptedException {
+    void legacyAndKernelTimeoutsHaveEquivalentResponseSemantics() throws InterruptedException {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
-        CountDownLatch started = new CountDownLatch(1);
-        CountDownLatch interrupted = new CountDownLatch(1);
-        CountDownLatch blocked = new CountDownLatch(1);
-        VisualSimulationExecutor blockingExecutor = plan -> {
-            started.countDown();
-            try {
-                blocked.await();
-            } catch (InterruptedException ex) {
-                interrupted.countDown();
-                Thread.currentThread().interrupt();
-            }
-            return null;
-        };
-        VisualGraphSimulationService service = new VisualGraphSimulationService(
+        Duration timeout = Duration.ofMillis(100);
+        CountDownLatch legacyStarted = new CountDownLatch(1);
+        CountDownLatch legacyInterrupted = new CountDownLatch(1);
+        CountDownLatch legacyRelease = new CountDownLatch(1);
+        CountDownLatch kernelStarted = new CountDownLatch(1);
+        CountDownLatch kernelInterrupted = new CountDownLatch(1);
+        CountDownLatch kernelRelease = new CountDownLatch(1);
+        VisualGraphSimulationService legacy = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
+                blockingRunnerFactory(legacyStarted, legacyInterrupted, legacyRelease), timeout);
+        VisualSimulationExecutor blockingExecutor = blockingExecutor(
+                kernelStarted, kernelInterrupted, kernelRelease);
+        VisualGraphSimulationService kernel = new VisualGraphSimulationService(
                 new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(), null,
-                blockingExecutor, Duration.ofMillis(100),
+                blockingExecutor, timeout,
                 VisualProductionAdmissionPolicy.nonProductionTest());
 
-        VisualGraphSimulationResponse response;
+        VisualGraphSimulationResponse legacyResponse;
+        VisualGraphSimulationResponse kernelResponse;
         try {
-            response = service.simulate(eligibilityDraft(), Map.of(), "");
+            legacyResponse = legacy.simulate(eligibilityDraft(), Map.of(), "");
+            kernelResponse = kernel.simulate(eligibilityDraft(), Map.of(), "");
         } finally {
-            blocked.countDown();
+            legacyRelease.countDown();
+            kernelRelease.countDown();
         }
 
-        assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(interrupted.await(1, TimeUnit.SECONDS)).isTrue();
-        assertThat(response.validated()).isTrue();
-        assertThat(response.compiled()).isFalse();
-        assertThat(response.success()).isFalse();
-        assertThat(response.elapsedMs()).isEqualTo(100);
-        assertThat(response.diagnostics()).extracting(diagnostic -> diagnostic.code())
-                .contains("visual.simulate.timeout");
-        assertThat(response.errors()).containsExactly("Simulation exceeded the execution timeout.");
+        assertThat(legacyStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(kernelStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(legacyInterrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertThat(kernelInterrupted.await(1, TimeUnit.SECONDS)).isTrue();
+        assertResponsesEquivalent(legacyResponse, kernelResponse);
+        assertTimeoutResponse(legacyResponse, timeout);
+        assertTimeoutResponse(kernelResponse, timeout);
+    }
+
+    @Test
+    void unexpectedRunnerAndKernelExceptionsAreSanitizedAndEquivalent() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+        String secret = "sensitive-runner-detail";
+        VisualGraphSimulationService legacy = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(),
+                throwingRunnerFactory(secret), Duration.ofSeconds(1));
+        VisualGraphSimulationService kernel = new VisualGraphSimulationService(
+                new GraphDraftValidator(catalog), catalog, new JsonSchemaSampleGenerator(), null,
+                plan -> {
+                    throw new IllegalStateException(secret);
+                }, Duration.ofSeconds(1), VisualProductionAdmissionPolicy.nonProductionTest());
+
+        VisualGraphSimulationResponse legacyResponse = legacy.simulate(eligibilityDraft(), Map.of(), "");
+        VisualGraphSimulationResponse kernelResponse = kernel.simulate(eligibilityDraft(), Map.of(), "");
+
+        assertResponsesEquivalent(legacyResponse, kernelResponse);
+        assertThat(legacyResponse.diagnostics()).extracting(diagnostic -> diagnostic.code())
+                .containsExactly("visual.simulate.runnerFailed");
+        assertThat(legacyResponse.diagnostics()).extracting(diagnostic -> diagnostic.message())
+                .allMatch(message -> !message.contains(secret));
+        assertThat(legacyResponse.errors()).allMatch(error -> !error.contains(secret));
     }
 
     private static void assertEquivalent(DefaultVisualOperatorCatalog catalog,
@@ -176,9 +321,44 @@ class VisualGraphSimulationKernelIntegrationTest {
         VisualGraphSimulationResponse legacy = legacyOracle(catalog)
                 .simulate(draft, context, "", fixtures);
         VisualGraphSimulationResponse kernel = kernel(catalog).simulate(draft, context, "", fixtures);
-        assertThat(semantic(kernel)).isEqualTo(semantic(legacy));
+        assertResponsesEquivalent(legacy, kernel);
         assertThat(kernel.mockedNodeIds()).allMatch(id -> !id.startsWith("__sim_"));
         assertThat(kernel.realNodeIds()).allMatch(id -> !id.startsWith("__sim_"));
+    }
+
+    private static void assertBlockedEquivalent(DefaultVisualOperatorCatalog catalog,
+                                                GraphDraft draft,
+                                                Map<String, Object> context,
+                                                Map<String, NodeFixture> fixtures,
+                                                String diagnosticCode) {
+        VisualGraphSimulationResponse legacy = legacyOracle(catalog)
+                .simulate(draft, context, "", fixtures);
+        VisualGraphSimulationResponse kernel = kernel(catalog)
+                .simulate(draft, context, "", fixtures);
+
+        assertResponsesEquivalent(legacy, kernel);
+        assertThat(legacy.diagnostics()).extracting(diagnostic -> diagnostic.code())
+                .contains(diagnosticCode);
+    }
+
+    private static void assertResponsesEquivalent(VisualGraphSimulationResponse legacy,
+                                                   VisualGraphSimulationResponse kernel) {
+        assertThat(semantic(kernel)).isEqualTo(semantic(legacy));
+        assertThat(kernel.diagnostics()).extracting(diagnostic -> diagnostic.code())
+                .containsExactlyElementsOf(legacy.diagnostics().stream()
+                        .map(diagnostic -> diagnostic.code()).toList());
+        assertThat(kernel.errors()).isEqualTo(legacy.errors());
+    }
+
+    private static void assertTimeoutResponse(VisualGraphSimulationResponse response,
+                                              Duration timeout) {
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isFalse();
+        assertThat(response.success()).isFalse();
+        assertThat(response.elapsedMs()).isEqualTo(timeout.toMillis());
+        assertThat(response.diagnostics()).extracting(diagnostic -> diagnostic.code())
+                .containsExactly("visual.simulate.timeout");
+        assertThat(response.errors()).containsExactly("Simulation exceeded the execution timeout.");
     }
 
     private static Map<String, Object> semantic(VisualGraphSimulationResponse response) {
@@ -226,6 +406,58 @@ class VisualGraphSimulationKernelIntegrationTest {
                 base.diagnostics());
     }
 
+    private static VisualDslRunnerFactory blockingRunnerFactory(CountDownLatch started,
+                                                                CountDownLatch interrupted,
+                                                                CountDownLatch release) {
+        return registry -> new VisualDslRunner() {
+            @Override
+            public VisualDslRunResponse run(VisualDslRunRequest request) {
+                started.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException ex) {
+                    interrupted.countDown();
+                    Thread.currentThread().interrupt();
+                }
+                return null;
+            }
+
+            @Override
+            public List<VisualDslRunResponse.Diagnostic> compileDiagnostics(String dsl) {
+                return List.of();
+            }
+        };
+    }
+
+    private static VisualSimulationExecutor blockingExecutor(CountDownLatch started,
+                                                              CountDownLatch interrupted,
+                                                              CountDownLatch release) {
+        return plan -> {
+            started.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException ex) {
+                interrupted.countDown();
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        };
+    }
+
+    private static VisualDslRunnerFactory throwingRunnerFactory(String message) {
+        return registry -> new VisualDslRunner() {
+            @Override
+            public VisualDslRunResponse run(VisualDslRunRequest request) {
+                throw new IllegalStateException(message);
+            }
+
+            @Override
+            public List<VisualDslRunResponse.Diagnostic> compileDiagnostics(String dsl) {
+                return List.of();
+            }
+        };
+    }
+
     private static GraphDraft eligibilityDraft() {
         return new GraphDraft(
                 "", "", 0, "eligibilityPolicy", "", "", "", "", null,
@@ -236,5 +468,11 @@ class VisualGraphSimulationKernelIntegrationTest {
                                 "amount", GraphDraft.Binding.contextPath("amount")),
                         Map.of(), null)),
                 List.of(), Map.of(), new GraphDraft.OutputSelection("eligibility", ""));
+    }
+
+    private static Map<String, GraphDraft.Binding> eligibilityInputs() {
+        return Map.of(
+                "score", GraphDraft.Binding.contextPath("score"),
+                "amount", GraphDraft.Binding.contextPath("amount"));
     }
 }

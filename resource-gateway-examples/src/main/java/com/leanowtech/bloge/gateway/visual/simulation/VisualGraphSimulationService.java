@@ -650,8 +650,6 @@ public class VisualGraphSimulationService {
     }
 
     private static String rootMessage(ExecutionException ex) {
-        Throwable cause = ex.getCause();
-        String message = cause == null ? ex.getMessage() : cause.getMessage();
-        return message == null || message.isBlank() ? "unknown error" : message;
+        return "unknown error";
     }
 }
