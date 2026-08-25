@@ -19,9 +19,12 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -52,7 +55,7 @@ class MirrorRunCommitServiceSpringTransactionTest {
                             MirrorPersistenceTestFixtures.COMPILED_AT.plus(Duration.ofDays(30)));
             MirrorRunRequestRepository.Claim claim = requests.claim(
                     registration, "owner-spring", Duration.ofMillis(5));
-            Thread.sleep(20);
+            context.getBean(TestCoordinationClock.class).advance(Duration.ofMillis(6));
 
             assertThat(AopUtils.isCglibProxy(commits)).isTrue();
             assertThatThrownBy(() -> commits.commit(
@@ -213,8 +216,15 @@ class MirrorRunCommitServiceSpringTransactionTest {
         }
 
         @Bean
-        MirrorRunRequestRepository requestRepository(JdbcTemplate jdbc) {
-            return new DatabaseMirrorRunRequestRepository(jdbc);
+        TestCoordinationClock coordinationClock() {
+            return new TestCoordinationClock(
+                    MirrorPersistenceTestFixtures.COMPILED_AT.plus(Duration.ofDays(1)));
+        }
+
+        @Bean
+        MirrorRunRequestRepository requestRepository(
+                JdbcTemplate jdbc, TestCoordinationClock coordinationClock) {
+            return new DatabaseMirrorRunRequestRepository(jdbc, coordinationClock::instant);
         }
 
         @Bean
@@ -266,6 +276,39 @@ class MirrorRunCommitServiceSpringTransactionTest {
         public List<MirrorOperationAuditEvent> recent(
                 CapabilitySnapshot.Scope scope, int limit) {
             return delegate.recent(scope, limit);
+        }
+    }
+
+    private static final class TestCoordinationClock extends Clock {
+        private final AtomicReference<Instant> current;
+        private final ZoneId zone;
+
+        private TestCoordinationClock(Instant initial) {
+            this(new AtomicReference<>(initial), ZoneOffset.UTC);
+        }
+
+        private TestCoordinationClock(AtomicReference<Instant> current, ZoneId zone) {
+            this.current = current;
+            this.zone = zone;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return zone;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            return new TestCoordinationClock(current, zone);
+        }
+
+        @Override
+        public Instant instant() {
+            return current.get();
+        }
+
+        private void advance(Duration duration) {
+            current.updateAndGet(value -> value.plus(duration));
         }
     }
 }
