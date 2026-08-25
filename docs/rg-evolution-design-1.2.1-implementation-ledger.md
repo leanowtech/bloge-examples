@@ -126,9 +126,11 @@ VisualGraphSimulationControllerTest  2/2
 VisualGraphSimulationProductionAdmissionTest 7/7
 VisualRuntimeBoundaryTest            1/1
 ServerDeploymentPolicySpringWiringTest 4/4
+ExecutionModeHintsTest               3/3
+VisualSimulationPlanTest             3/3
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 87/87：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，真实算子不执行，证据降为探索级；该证据尚不证明 visual adapter 已接入。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析、visual adapter 及无 binding 执行尚未完成，因此阶段零出口仍保持部分满足。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 87/87：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，真实算子不执行，证据降为探索级。新增 6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；该证据尚不证明 adapter 已接入。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析、visual adapter 及无 binding 执行尚未完成，因此阶段零出口仍保持部分满足。
 
 截至 2026-08-26，本切片最终串行里程碑结果：
 
