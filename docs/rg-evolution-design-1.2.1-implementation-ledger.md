@@ -17,7 +17,7 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配、无 binding descriptor 执行及完整差分/安全/确定性测试台均已形成开发证据；引用式大负载解析与最终双项目回归仍未闭合 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配、无 binding descriptor 执行及完整差分/安全/确定性测试台均已形成开发证据，双项目最终回归全绿；仅授权引用式大负载解析仍待阶段一闭合 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `IN_PROGRESS` | 版本无关的逻辑资源契约、描述符投影、具体实现结构校验和保守兼容分析已形成开发证据；世界模型、剧情编译、引用解析及资产持久化尚未实现 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
@@ -46,7 +46,7 @@
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 14 项固定差分矩阵逐字段对拍 stand-in、纯原语混合、多节点分类、fixture 优先级/null/输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化 | `MET` |
 | `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | descriptor 与 visual kernel 对本地可计数真实端点均保持零请求；危险嵌套量词/分组/交替/lookaround/backreference、超长/畸形 pattern 与超长 candidate 在匹配前拒绝；类文件规则禁止模拟关键类构造生产网络客户端 | `MET` |
 | `S0-EXIT-07` | 编译等价、N 次重放确定性和禁非确定 API 架构规则通过 | 独立 oracle 对拍合法模式及失败关闭；每模式 20 次编译保持 plan/binding fingerprint 稳定且 planId 唯一；20 次运行保持语义与服务状态指纹稳定；八个阶段零核心类及关键嵌套类禁止直接时间、UUID、随机与并行流 API | `MET` |
-| `S0-EXIT-08` | 旧路径未被提前删除，公开 endpoint 和既有协议保持兼容 | 当前未删除旧路径 | `MET_PENDING_REGRESSION` |
+| `S0-EXIT-08` | 旧路径未被提前删除，公开 endpoint 和既有协议保持兼容 | 旧路径仍保留；Resource Gateway 7145 项测试与 Test Kit 1905 项单测、2 项集成测试全绿，A1 协议归档边界通过 | `MET` |
 
 阶段零只有 `S0-EXIT-01..08` 全部为 `MET`，且本项目与 Test Kit 的里程碑命令全绿时，才能标记为 `DEVELOPMENT_VERIFIED`。
 
@@ -144,7 +144,7 @@ VisualSimulationPlanTest             3/3
 VisualSimulationKernelAdapterTest    9/9
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。14/14 新旧路径固定差分矩阵覆盖 stand-in、纯原语混合、多节点分类、持久化/请求 fixture 优先级、null、输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该差分切片联合聚焦集为 47/47。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段零安全、差分与确定性固定台均已完成；引用式大负载解析及最新双项目全量回归仍待闭合。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。14/14 新旧路径固定差分矩阵覆盖 stand-in、纯原语混合、多节点分类、持久化/请求 fixture 优先级、null、输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该差分切片联合聚焦集为 47/47。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段零安全、差分、确定性和双项目全量回归均已闭合；当前唯一未闭合出口是 `S0-EXIT-03` 的授权引用式大负载解析，该能力由阶段一 `S1-D` 交付。
 
 S0-EXIT-01 的联合聚焦集为 127/127。新增证据覆盖：缺失 `httpResource` binding 时调用清单冻结为稳定且不可直接执行的外部边界；已有真实 binding 仍优先；其他缺失算子继续失败关闭；无 fixture 自动生成隐式 `DENY`；图内 embedded operator、compiler registry 与 isolated engine registry 同时为空时，run-scoped overlay 不修改共享 registry，`DESCRIPTOR_TRANSPORT` 仍经真实 descriptor 管线完成参数映射、URL、Header、Body、响应协议与 payload 提取并产生 `TRANSPORT_LEVEL` 可认证证据；缺描述符和协议拒绝保持确定性失败。
 
@@ -159,9 +159,9 @@ S0-EXIT-04 的固定生产旁路矩阵为 18/18，覆盖 real/read-only、schema
 截至 2026-08-26，本切片最终串行里程碑结果：
 
 ```text
-resource-gateway-examples clean verify  7047 tests / 0 failures / 0 errors / 28 skipped
+resource-gateway-examples clean verify  7145 tests / 0 failures / 0 errors / 28 skipped
 resource-gateway-test-kit clean verify  1905 tests + 2 integration tests / all green
 A1 protocol archive boundary            PASS
 ```
 
-该全量结果证明当前仓库回归分母为绿色；它仍不能代替 `S0-EXIT-01..08` 的逐项事实验收。
+该全量结果证明当前仓库回归分母为绿色，并闭合 `S0-EXIT-08`。阶段零仍因 `S0-EXIT-03` 为 `PARTIAL` 而保持 `IN_PROGRESS`，不得提前标记为 `DEVELOPMENT_VERIFIED`。
