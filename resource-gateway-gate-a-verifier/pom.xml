@@ -218,5 +218,217 @@
                 </plugins>
             </build>
         </profile>
+
+        <!--
+            Profile gate-a-a1-3-development-binding: specialized development gate binding.
+            NOT auto-activated; explicitly enabled via -Pgate-a-a1-3-development-binding.
+            Enforcer: exact testSet property; absolute binding/repo path.
+            RequireFilesExist removed; antrun type=file/type=dir is the validate-phase
+            existence+type authority (validate-binding-is-file, validate-repo-root-is-dir).
+            Surefire: OVERRIDE default-test to run ONLY R03DevelopmentGate*Test (18 tests).
+            Failsafe: integration-test and verify, only NegativeProcessIT (5 tests).
+        -->
+        <profile>
+            <id>gate-a-a1-3-development-binding</id>
+            <properties>
+                <gate.a.slice>A1.3</gate.a.slice>
+            </properties>
+            <build>
+                <plugins>
+                    <!--
+                        Consolidated Enforcer: one plugin, three executions.
+                        Removed RequireFilesExist rules entirely; antrun type=file/type=dir
+                        (validate-binding-is-file, validate-repo-root-is-dir) is the
+                        validate-phase existence+type authority.
+                        NOTE: Each <rules combine.self="override"> prevents inheritance of
+                        the top-level enforcer's gate.a.slice requireProperty, which would
+                        otherwise cause duplicate-rule failures in all three executions.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <version>3.4.1</version>
+                        <executions>
+                            <!-- gate.a.testSet must be exactly A1_3_ROLE_PACKAGING -->
+                            <execution>
+                                <id>enforce-exact-testset</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <!-- Override prevents top-level gate.a.slice rule from leaking in -->
+                                    <rules combine.self="override">
+                                        <requireProperty>
+                                            <property>gate.a.testSet</property>
+                                            <regex>^A1_3_ROLE_PACKAGING$</regex>
+                                            <regexMessage>
+                                                gate.a.testSet must be exactly A1_3_ROLE_PACKAGING
+                                            </regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                    <fail>true</fail>
+                                </configuration>
+                            </execution>
+                            <!-- gate.a.binding.path must be an absolute path (starts with /) -->
+                            <execution>
+                                <id>enforce-absolute-binding-path</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <!-- Override prevents top-level gate.a.slice rule from leaking in -->
+                                    <rules combine.self="override">
+                                        <requireProperty>
+                                            <property>gate.a.binding.path</property>
+                                            <regex>^/.+</regex>
+                                            <regexMessage>
+                                                gate.a.binding.path must be an absolute path starting with /: ${gate.a.binding.path}
+                                            </regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                    <fail>true</fail>
+                                </configuration>
+                            </execution>
+                            <!-- gate.a.repo.root must be an absolute path (starts with /) -->
+                            <execution>
+                                <id>enforce-absolute-repo-root</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <!-- Override prevents top-level gate.a.slice rule from leaking in -->
+                                    <rules combine.self="override">
+                                        <requireProperty>
+                                            <property>gate.a.repo.root</property>
+                                            <regex>^/.+</regex>
+                                            <regexMessage>
+                                                gate.a.repo.root must be an absolute path starting with /: ${gate.a.repo.root}
+                                            </regexMessage>
+                                        </requireProperty>
+                                    </rules>
+                                    <fail>true</fail>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Antrun 3.1.0 validate: native Ant available type=file/type=dir, NO shell exec.
+                         Antrun evaluates ${property} from Maven property stack natively. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>validate-binding-is-file</id>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <target>
+                                        <fail message="gate.a.binding.path is not a regular file: ${gate.a.binding.path}">
+                                            <condition>
+                                                <not>
+                                                    <available file="${gate.a.binding.path}" type="file"/>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                    </target>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>validate-repo-root-is-dir</id>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <phase>validate</phase>
+                                <configuration>
+                                    <target>
+                                        <fail message="gate.a.repo.root is not a directory: ${gate.a.repo.root}">
+                                            <condition>
+                                                <not>
+                                                    <available file="${gate.a.repo.root}" type="dir"/>
+                                                </not>
+                                            </condition>
+                                        </fail>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Surefire: OVERRIDE default-test execution to run ONLY R03DevelopmentGate*Test -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>3.5.2</version>
+                        <executions>
+                            <execution>
+                                <id>default-test</id>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <phase>test</phase>
+                                <configuration>
+                                    <includes>
+                                        <include>**/R03DevelopmentGate*Test.java</include>
+                                    </includes>
+                                    <excludes combine.self="override"/>
+                                    <forkCount>1</forkCount>
+                                    <reuseForks>false</reuseForks>
+                                    <systemPropertyVariables>
+                                        <gate.a.authority.path>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</gate.a.authority.path>
+                                        <gate.a.dependency.jars>${project.build.directory}/dependency-jars</gate.a.dependency.jars>
+                                        <gate.a.binding.path>${gate.a.binding.path}</gate.a.binding.path>
+                                        <gate.a.repo.root>${gate.a.repo.root}</gate.a.repo.root>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Failsafe: integration-test and verify executions for NegativeProcessIT -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>3.5.2</version>
+                        <executions>
+                            <execution>
+                                <id>integration-test</id>
+                                <goals>
+                                    <goal>integration-test</goal>
+                                </goals>
+                                <phase>integration-test</phase>
+                                <configuration>
+                                    <includes>
+                                        <include>**/R03DevelopmentGateNegativeProcessIT.java</include>
+                                    </includes>
+                                    <forkCount>1</forkCount>
+                                    <reuseForks>false</reuseForks>
+                                    <systemPropertyVariables>
+                                        <gate.a.authority.path>${project.basedir}/../docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/gate-a-protocol-authority-v1.json</gate.a.authority.path>
+                                        <gate.a.dependency.jars>${project.build.directory}/dependency-jars</gate.a.dependency.jars>
+                                        <gate.a.binding.path>${gate.a.binding.path}</gate.a.binding.path>
+                                        <gate.a.repo.root>${gate.a.repo.root}</gate.a.repo.root>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>verify</id>
+                                <goals>
+                                    <goal>verify</goal>
+                                </goals>
+                                <phase>verify</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
     </profiles>
 </project>
