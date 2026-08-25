@@ -3060,6 +3060,309 @@ mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/po
 6. Archive Kernel 对同一个 Verifier JAR 连续 3 次运行输出逐字节相同的 snapshot JSON；
 7. A1.3-R03 的 `DEVELOPMENT_VERIFIED` fingerprint 验证（在 `BLOCKED_FORMAL_GATE` 状态下仍可执行；正式 receipt 依赖 A1.2 ledger，不等待）。
 
+##### A1.3-02 条件 7：A1.3-R03 DEVELOPMENT fingerprint binding 实现设计冻结
+
+> 对应门禁：A1.3-R03、A1.3-02 条件 7；状态：`BLOCKED_FORMAL_GATE`（正式 receipt）/ `DEVELOPMENT_VERIFIED`（开发验证）
+>
+> 本节冻结 A1.3-02 条件 7 的完整实现设计。Formal R03 receipt 仍为 `BLOCKED_FORMAL_GATE`；本 slice 仅闭合 DEVELOPMENT fingerprint 验证，**禁止**向任何调用方发出 formal `PASS`，**禁止**递增 `formalPassCount`。设计不得以 synthetic fixture 或本地 Markdown 记录替代结构化 binding JSON。
+
+###### 1. 状态语义与退出边界
+
+| 属性 | 值 | 含义 |
+|---|---|---|
+| A1.3-R03 formal receipt | `BLOCKED_FORMAL_GATE` | caller-owned Ledger/A1.2 slice receipt 未交付；正式门禁仍为 `BLOCKED_FORMAL_GATE` |
+| A1.3-R03 开发验证 | `DEVELOPMENT_VERIFIED`（目标） | Development gate 仅证明 fingerprint binding 结构完整性；非 formal evidence |
+| formalPassCount 增量 | 0（不变） | 本 slice 禁止发出 formal PASS；不参与 formalPassCount 累加 |
+| A1.3-02 整体状态 | 实施前为 `PENDING` | 条件 7 的开发验证关闭后更新为 `DEVELOPMENT_VERIFIED`；不等同于 formal acceptance |
+| A1.3-03..06 | 仍为 `PENDING` | 条件 7 关闭不影响后续 slice 状态 |
+
+###### 2. Orchestrator 设计
+
+**文件路径**：`docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-3-development-gate.py`
+
+**Owner**：caller（外部编排层，不属于 Authority 或 Verifier）
+
+**前置条件**（调用方负责，不在本 orchestrator 中执行）：
+
+- A1.2 build 已由调用方独立完成（`mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify` 成功）
+- Authority 交付的 `deliverySlices` JSON 中包含 A1.2 的 `handoff/output` artifact 记录
+
+**禁止**：本脚本**不得**执行任何 Authority 定义的 build 命令；仅做 fingerprint 读取与 binding 组装。
+
+**流程**：
+
+1. 从调用方必需参数读取 Authority 文件、repository root 与 binding 输出路径；三者均不得从当前工作目录猜测。
+2. 解析 Authority `deliverySlices`，提取 `sliceId == "A1.2"` 的 `handoff/output` artifact 记录，从中派生 A1.2 provider `coordinate`（Maven `groupId:artifactId:version`）与 repo-relative `artifactPath`。
+3. 使用第 3 节定义的稳定读取协议读取 provider artifact bytes。
+4. 对同一已打开文件描述符读取前后的 identity、size 与 modification time 做对比；不一致则失败关闭，reason code 为 `DG-READ-STALE`。
+5. 计算 SHA-256 raw fingerprint（`sha256:<64 lowercase hex>`）。
+6. 对 `--authority` 指向的原始 Authority 文件执行同一稳定读取协议；不得改读 normalized 或 compiled projection。
+7. 计算 Authority raw fingerprint（SHA-256，同上）。
+8. 组装 binding JSON（第 4 节）。
+9. 将 binding 路径与 repository root 通过 Maven `-Dgate.a.binding.path=<bindingPath> -Dgate.a.repo.root=<repoRoot> -Dgate.a.testSet=A1_3_ROLE_PACKAGING` 传递给 Java Verifier。
+10. 原样转发 Maven 的有界 stdout/stderr 与 exit code，便于诊断；脚本和 Java 测试均不得输出 Provider bytes 或 binding 全文。Maven 失败时输出单行 `DG-MAVEN-FAIL exitCode=<n>`。
+
+**进程退出与 reason code**：成功固定退出 `0`；所有本脚本拒绝场景固定退出 `2`，并在 stderr 输出一行稳定 reason code。Maven 子进程失败时沿用退出 `2`，将子进程退出码作为 `DG-MAVEN-FAIL` 的 reasonArg。不要把字符串 reason code 误作操作系统退出码。
+
+| Reason code | 含义 | 失败关闭 |
+|---|---|---|
+| `DG-ARG-MISSING` | 缺少必需参数（repoRoot、bindingPath） | 是 |
+| `DG-AUTHORITY-INVALID` | Authority 无法稳定读取、不是合法 JSON 或结构不符合本 slice 所需字段 | 是 |
+| `DG-A12-MISSING` | deliverySlices 中无 A1.2 artifact 记录 | 是 |
+| `DG-A12-AMBIGUOUS` | A1.2 handoff/output 记录不唯一或两者不一致 | 是 |
+| `DG-READ-UNREADABLE` | 目标文件不存在或无读权限 | 是 |
+| `DG-READ-OVERSIZE` | Authority 或 Provider 超过各自的冻结大小上限 | 是 |
+| `DG-READ-STALE` | pre/post read inode 或 size 不一致（文件在读取期间被修改） | 是 |
+| `DG-BINDING-DUPLICATE` | binding 文件已存在（O_EXCL 失败） | 是 |
+| `DG-BINDING-WRITE` | fsync 或写入失败 | 是 |
+| `DG-MAVEN-FAIL` | Maven exit code 非 0 | 是 |
+
+###### 3. 稳定文件读取协议
+
+**适用范围**：原始 Authority 文件，以及由 `deliverySlices` 派生 repo-relative 路径的 A1.2 Provider artifact。
+
+| 要求 | 规格 |
+|---|---|
+| 路径边界 | Provider path 必须是规范化 repo-relative path，拒绝绝对路径、空段、`.`、`..`；逐段 `lstat` 拒绝 symlink，并确认最终路径位于 repository root 内 |
+| 打开方式 | Python 使用 `os.open(path, O_RDONLY | O_NOFOLLOW)`（平台不支持 `O_NOFOLLOW` 时失败关闭）；Java 使用 `Files.newByteChannel(..., READ, NOFOLLOW_LINKS)`，不得先 `realpath` 后普通 `open` |
+| 文件类型 | 对已打开描述符执行 `fstat` 并要求 `stat.S_ISREG()`；非 regular file 触发 `*-READ-UNREADABLE` |
+| 文件大小上限 | Provider `<= 16 MiB`；Authority `<= 4 MiB`；超限在分配读取缓冲前触发 `*-READ-OVERSIZE` |
+| Pre-read 快照 | 从已打开描述符记录 device/file key、inode（平台可用时）、`st_size`、`st_mtime_ns` |
+| Post-read 验证 | 在同一描述符上再次 `fstat`；identity、size 或 modification time 任一变化触发 `*-READ-STALE` |
+| 哈希算法 | SHA-256；输出格式 `sha256:<64 lowercase hex>` |
+| 读取模式 | binary；Python 对 `os.open` 返回的描述符使用 `os.fdopen(..., "rb")`，Java 使用 bounded channel read；所有路径均保证关闭描述符 |
+| 错误处理 | 文件缺失、权限拒绝、symlink、非 regular file 映射到 `*-READ-UNREADABLE`；超限和读取漂移使用专用 reason code |
+
+**禁止**：禁止使用 `subprocess` / `os.popen` / `shell=True` 调用外部哈希工具；禁止在内存中拼接大于 16 MiB 的数据。
+
+###### 4. Binding JSON 结构
+
+**原子写入**：使用 `O_EXCL` 标志打开输出文件描述符；权限 `0o600`（仅所有者读写）；写入完成后 `os.fsync(fd)` 再关闭；确保无竞争、无残留。
+
+**Closed keys**（以下字段必须全部存在，不接受额外字段）：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `messageVersion` | `string` | 本 binding 协议版本；固定 `"1.0.0"` |
+| `authorityRawFingerprint` | `string` | Authority raw bytes 的 SHA-256 fingerprint；格式 `sha256:<64 lowercase hex>` |
+| `sourceSliceId` | `string` | 源 slice ID；固定 `"A1.2"` |
+| `targetSliceId` | `string` | 目标 slice ID；固定 `"A1.3"` |
+| `providerArtifact` | `object` | Provider artifact 元数据 |
+| `providerArtifact.coordinate` | `string` | Maven coordinate；格式 `groupId:artifactId:version` |
+| `providerArtifact.path` | `string` | Authority deliverySlices 中记录的 A1.2 handoff/output repo-relative 路径 |
+| `providerArtifact.byteLength` | `integer` | artifact 原始字节数（十进制，大于 0，不大于 16,777,216） |
+| `providerArtifact.rawFingerprint` | `string` | artifact bytes 的 SHA-256 fingerprint；格式 `sha256:<64 lowercase hex>` |
+| `bindingFingerprint` | `string` | 本 binding 的 fingerprint（见下节） |
+
+**Canonical JSON 序列化规则**：
+
+- 所有 JSON string 均按 JSON 语法使用双引号；fingerprint 也必须是 JSON string，禁止 bare value。
+- 递归按 Unicode code point 升序排列 object key；array 保持原顺序。
+- 使用 UTF-8、`ensure_ascii=true`、紧凑分隔符 `(',', ':')`，不写 BOM，不写无意义空白。
+- 文件内容为一行 canonical JSON，末尾恰好一个 LF；fingerprint 输入不包含该文件尾 LF。
+
+**Binding fingerprint 计算**：
+
+- **domain**：`RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1`
+- **excluded field**：计算时从顶层对象中省略 `bindingFingerprint`；不允许用 `null` 代替。
+- **algorithm**：SHA-256；输入为 `ASCII(domain) + 0x00 + canonical JSON bytes`；输出 `sha256:<64 lowercase hex>`。
+- **bindingFingerprint 字段格式**：`sha256:<64 lowercase hex>`；domain 只进入摘要输入，不拼入字段值。
+
+```
+sha256:<64 lowercase hex>
+```
+
+**示例结构**（实际值由运行生成）：
+
+```json
+{
+"messageVersion": "1.0.0",
+"authorityRawFingerprint": "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+"sourceSliceId": "A1.2",
+"targetSliceId": "A1.3",
+"providerArtifact": {
+"coordinate": "com.leanowtech.bloge:resource-gateway-gate-a-tck-provider:1.0.0",
+"path": "resource-gateway-gate-a-tck-provider/target/resource-gateway-gate-a-tck-provider-1.0.0.jar",
+"byteLength": 1234567,
+"rawFingerprint": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+},
+"bindingFingerprint": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+}
+```
+
+###### 5. Maven 集成接口
+
+**Profile ID**：在 Verifier 模块增加 `gate-a-a1-3-development-binding`，并与现有 `gate-a-verifier` profile 组合使用。
+
+**必需属性**（无默认值，缺失则 Surefire 报错）：
+
+| 属性 | 来源 | 说明 |
+|---|---|---|
+| `gate.a.binding.path` | orchestrator 传入 | 绝对路径；指向本节生成的 binding JSON |
+| `gate.a.repo.root` | orchestrator 传入 | repository root；用于解析 Authority 派生的 Provider repo-relative path |
+| `gate.a.testSet` | 固定为 `A1_3_ROLE_PACKAGING` | 标识本次运行的目标 test set；不得由 orchestrator 改动值 |
+
+Verifier 仍从现有 `gate.a.authority.path` system property 读取 Authority；specialized profile 只增加 binding 与 repo root，不在 POM 中增加 Provider coordinate/path 的第二份真相。
+
+**Maven 命令模板**：
+
+```bash
+mvn -f resource-gateway-gate-a-verifier/pom.xml \
+  -Pgate-a-verifier,gate-a-a1-3-development-binding \
+  -Dgate.a.slice=A1.3 \
+  -Dgate.a.binding.path=/absolute/path/to/binding.json \
+  -Dgate.a.repo.root=/path/to/repo \
+  -Dgate.a.testSet=A1_3_ROLE_PACKAGING \
+  clean verify
+```
+
+现有 ordinary 命令 `mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml clean verify` 不引用本 binding 系统，340 个既有测试仍可独立运行。
+
+###### 6. Java Verifier 消费端设计
+
+**职责边界**：Java Verifier 只接收 orchestrator 写入的 binding JSON；不自行派生 binding。
+
+**步骤**：
+
+1. **读取 binding JSON**：从 `gate.a.binding.path` 读取，严格 schema 校验（closed keys + 类型）；缺失/重复/未知字段映射到 `R03-BINDING-INVALID`，reasonArg 包含具体字段。
+2. **重建 Authority 预期值**：从 Authority `deliverySlices[A1.2]` 的唯一且一致的 handoff/output artifact 记录重建 coordinate 与 repo-relative path；从 Authority A1.3 packaging projection 读取 `providerEntryPath`。不在 Java 或 POM 中硬编码这些值。
+3. **Binding 结构验证**：`messageVersion == "1.0.0"`、`sourceSliceId == "A1.2"`、`targetSliceId == "A1.3"`；任一不匹配 `R03-BINDING-STRUCTURE-MISMATCH`。
+4. **Authority raw fingerprint 验证**：读取 Authority raw bytes，重新计算 SHA-256，与 binding 中 `authorityRawFingerprint` 比对；不一致 `R03-AUTHORITY-FP-MISMATCH`。
+5. **Provider coordinate/path 验证**：比对 binding 中 `providerArtifact.coordinate` 和 `providerArtifact.path` 与 Authority deliverySlices 记录的 A1.2 handoff artifact 是否一致；不一致 `R03-COORDINATE-MISMATCH` 或 `R03-PATH-MISMATCH`。
+6. **Stable Provider bytes 验证**：
+   - 使用稳定读取协议（`NOFOLLOW`、regular file、bounded）读取 Provider artifact。
+   - pre/post inode+size 对比（与 orchestrator 同构）。
+   - SHA-256 fingerprint 与 binding 中 `providerArtifact.rawFingerprint` 比对；不一致 `R03-PROVIDER-FP-MISMATCH`。
+   - 文件大小与 `providerArtifact.byteLength` 比对；不一致 `R03-SIZE-MISMATCH`。
+7. **Fixture 实际字节绑定**：构造 Authority-derived 28-entry Verifier fixture 时，将步骤 6 已验证的 Provider raw bytes 写入 Authority A1.3 packaging projection 指定的 `providerEntryPath`；重新读取 fixture entry 并逐字节比对。不允许 synthetic placeholder 或仅写入 fingerprint。失败为 `R03-FIXTURE-PROVIDER-MISMATCH`。
+8. **PackagingPlanParser + ArchiveKernel 验证**：使用经步骤 1–7 验证通过的 binding 状态，执行 `PackagingPlanParser` + `ArchiveKernel` 完整解析流程；输出 deterministic snapshot JSON。
+9. **禁止**：`formalPassCount` 增量；任何 formal PASS 信号发出；binding fingerprint 写入 Verifier 外部输出（binding 作为只读输入）。
+
+**Fixed reason codes（DEVELOPMENT gate 专用）**：
+
+| Reason Code | 条件 | reasonArgs |
+|---|---|---|
+| `R03-BINDING-MISSING` | binding JSON 文件不存在或无法读取 | `[bindingPath]` |
+| `R03-BINDING-INVALID` | JSON schema 不符合 closed keys 或类型错误 | `[field, expected, actual]` |
+| `R03-BINDING-FP-MISMATCH` | bindingFingerprint 与按冻结 domain/canonicalization 重算结果不一致 | `[bindingFp, actualFp]` |
+| `R03-BINDING-STRUCTURE-MISMATCH` | messageVersion / sourceSliceId / targetSliceId 值不符合固定值 | `[field, expected, actual]` |
+| `R03-AUTHORITY-FP-MISMATCH` | Authority raw bytes fingerprint 与 binding 中 authorityRawFingerprint 不一致 | `[bindingFp, actualFp]` |
+| `R03-COORDINATE-MISMATCH` | binding 中 coordinate 与 deliverySlices 记录不一致 | `[bindingCoord, expectedCoord]` |
+| `R03-PATH-MISMATCH` | binding 中 path 与 deliverySlices 记录不一致 | `[bindingPath, expectedPath]` |
+| `R03-PROVIDER-FP-MISMATCH` | Provider artifact fingerprint 与 binding 中 providerArtifact.rawFingerprint 不一致 | `[bindingFp, actualFp]` |
+| `R03-SIZE-MISMATCH` | Provider artifact size 与 binding 中 providerArtifact.byteLength 不一致 | `[bindingSize, actualSize]` |
+| `R03-READ-UNREADABLE` | Provider artifact 文件不存在/非 regular/symlink/无权限 | `[artifactPath]` |
+| `R03-READ-STALE` | Provider artifact pre/post read inode 或 size 不一致（文件在读取期间被修改） | `[artifactPath]` |
+| `R03-READ-OVERSIZE` | Provider artifact size 超过 16 MiB | `[artifactPath, actualSize]` |
+| `R03-FIXTURE-PROVIDER-MISMATCH` | fixture 的 Provider entry 不是已验证的 Provider raw bytes | `[entryPath]` |
+| `R03-PARSER-FAIL` | PackagingPlanParser 解析失败 | `[reason]` |
+| `R03-KERNEL-FAIL` | ArchiveKernel 执行失败 | `[reason]` |
+
+###### 7. 威胁模型
+
+**覆盖的威胁**：
+
+| 威胁 | 防御机制 | 失败关闭代码 |
+|---|---|---|
+| binding JSON 文件缺失 | O_EXCL 原子写入；Maven 端文件存在性检查 | `R03-BINDING-MISSING` |
+| binding JSON 被重复写入（竞争） | caller producer 使用 O_EXCL 原子写入并拒绝覆盖 | `DG-BINDING-DUPLICATE` |
+| binding JSON 字段错误/多余/缺失 | strict closed keys schema 校验 | `R03-BINDING-INVALID` |
+| binding JSON 内容被修改 | domain-separated binding fingerprint 重算 | `R03-BINDING-FP-MISMATCH` |
+| Authority raw fingerprint 篡改 | Maven 端重新计算并比对 | `R03-AUTHORITY-FP-MISMATCH` |
+| Provider artifact 哈希篡改 | Maven 端稳定读取并重新计算比对 | `R03-PROVIDER-FP-MISMATCH` |
+| Provider artifact 大小篡改 | Maven 端读取并比对 byteLength | `R03-SIZE-MISMATCH` |
+| deliverySlices 中 A1.2 坐标/路径被篡改 | Maven 端与 deliverySlices 记录比对 | `R03-COORDINATE-MISMATCH`、`R03-PATH-MISMATCH` |
+| 符号链接攻击（读取指向敏感文件） | `NOFOLLOW` + `stat.S_ISREG()` 校验 | `R03-READ-UNREADABLE` |
+| Provider artifact 在读取过程中被修改 | pre/post inode+size 对比 | `R03-READ-STALE` |
+| Provider artifact 超大文件（内存耗尽） | 16 MiB 上限检查在哈希之前 | `R03-READ-OVERSIZE` |
+| Provider artifact 在 Maven 验证后被修改（binding reuse） | binding JSON 原子性写入；Maven 端每次重新计算 fp | `R03-PROVIDER-FP-MISMATCH`（下次运行检测） |
+| fixture 仍使用 placeholder 或替换后的 Provider bytes | 将已验证 Provider bytes 注入 `providerEntryPath` 并回读比对 | `R03-FIXTURE-PROVIDER-MISMATCH` |
+| self-generated verifier binding（Verifier 自己生成 binding） | binding 由 caller-owned orchestrator 生成；Verifier 只读取 | 由外部审计验证 |
+
+**未覆盖的威胁**（由外部 caller 负责）：
+
+- A1.2 build 本身正确性（A1.2 clean verify 由调用方负责）
+- Authority deliverySlices 来源真实性（Ledger 层职责）
+- orchestrator 进程间隔离（容器/进程边界）
+- Maven 退出码被伪造（调用方负责验证 Maven 进程退出码）
+
+###### 8. Maven Specialized Profile 设计
+
+**Profile ID**：`gate-a-a1-3-development-binding`
+
+**激活方式**：必须显式 `-Pgate-a-verifier,gate-a-a1-3-development-binding`；Enforcer 同时要求 `gate.a.slice=A1.3`、`gate.a.testSet=A1_3_ROLE_PACKAGING`、`gate.a.binding.path` 和 `gate.a.repo.root`。缺少或错误值必须在 `validate` 阶段失败。
+
+**隔离约束**：specialized profile 只追加本 test set，不改变 ordinary `gate-a-verifier` 的默认 includes、依赖复制和 Enforcer 规则；ordinary profile 不扫描 `R03DevelopmentGate*Test`。
+
+**Surefire 配置**：
+
+- 显式指定 `gate.a.testSet=A1_3_ROLE_PACKAGING` 对应的 test class pattern：`**/R03DevelopmentGate*Test.java`。
+- 测试独占一个 test class pattern；ordinary `gate-a-verifier` profile 不得扫描此 pattern。
+- `forkCount=1`（单 JVM）；`reuseForks=false`（每次运行重新加载 binding）。
+
+**Failsafe 配置**（integration 阶段）：
+
+- 负向场景（symlink、oversize、stale）在 integration-test phase 执行。
+- 任一负向场景没有以预期 reason code 失败关闭，或进程异常成功，均使 `verify` 失败。
+
+**Dependency scan**：specialized profile 执行时，现有 Enforcer 仍检查 `bannedDependencies`；禁止 `bloge-resource-gateway-test-kit` 进入 Verifier 依赖树。
+
+###### 9. 验收序列
+
+| 步骤 | 执行方 | 命令 | 期望结果 |
+|---|---|---|---|
+| 1. A1.2 clean verify | caller | `mvn -f resource-gateway-gate-a-tck-provider/pom.xml -Pgate-a-provider -Dgate.a.slice=A1.2 clean verify` | Provider 正常 JAR 生成且 A1.2 self-test 全绿 |
+| 2. Development gate | caller | `python docs/acceptance/capability-studio/gate-a-wire-v1/protocol-compiler/run-a1-3-development-gate.py --authority <authority> --repo-root <root> --binding-path <fresh-path>` | 生成 dev-only binding，触发 Verifier specialized profile，进程退出 0 |
+| 3. Ordinary regression | caller | `mvn -Pgate-a-verifier -Dgate.a.slice=A1.3 -f resource-gateway-gate-a-verifier/pom.xml clean verify` | 既有 340 个测试独立全绿 |
+| 4. Evidence 归档 | caller | 收集有界 transcript + binding fingerprint + Provider raw fingerprint | 可审计、可溯源，但不得写入 formal receipt 或 formalPassCount |
+
+**Evidence 标识**：domain 固定为 `RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1`，binding 中记录独立的 `sha256:<bindingFp>`。二者不得拼接成另一种字段格式。
+
+**Expected fail-closed codes（负向场景）**：binding 缺失或字段错误、binding fingerprint 错误、Provider fingerprint 不一致、Authority fingerprint 不一致、symlink、oversize、stale、fixture Provider 替换，均精确映射到本节冻结的 producer 或 consumer reason code。
+
+###### 10. 任务分工
+
+| 任务 | Owner | 产出 | 退出标准 |
+|---|---|---|---|
+| D7-T1：Orchestrator + Tests | caller（外部编排层） | `run-a1-3-development-gate.py`、Python unit tests（覆盖 Authority 派生、reason codes、canonical JSON、O_EXCL、稳定读取） | Python tests 全绿；不执行 A1.2 build；不泄露原始 bytes |
+| D7-T2：Java Parser + Consumer + Vectors | Verifier Owner（T2） | `R03DevelopmentGateBindingTest.java`（结构验证）、`R03DevelopmentGateFingerprintTest.java`（哈希验证）、negative vector tests | TDD 负向场景全部 `fail-closed`；reason code 与冻结表精确匹配 |
+| D7-T3：Factory Embeds Actual Provider + Full Kernel | Verifier Owner（T3） | 扩展 `RealVerifierFixtureFactory` 注入实际 Provider bytes；`R03DevelopmentGateKernelIntegrationTest.java` | fixture 的 Authority 指定 entry 与实际 Provider bytes 逐字节相等；Parser + Kernel 连续 3 次 deterministic |
+| D7-T4：Orchestrated Integration + Negative Process Tests + Docs | 集成 Owner | Maven `gate-a-a1-3-development-binding` profile、process tests、README/状态文档 | specialized 与 ordinary 两条命令均全绿；negative tests 全部 fail-closed |
+
+**Disjoint ownership 约束**：
+
+- D7-T1（Orchestrator）Owner 不得向 Verifier POM 写入任何文件。
+- D7-T2/D7-T3（Java Verifier）Owner 不得生成 binding JSON；仅读取和验证。
+- D7-T4（集成）Owner 不得修改 D7-T1/D7-T2/D7-T3 的源代码；仅配置 Maven profile 和 negative test scripts。
+- 任何任务 Owner 变更须经 A1.3 整体 gate owner 确认。
+
+**Exit criteria（所有 D7 任务必须全部满足）**：
+
+- D7-T1 全绿 + D7-T2 全绿 + D7-T3 全绿 + D7-T4 全绿 → D7 整体关闭。
+- D7 整体关闭后，将 A1.3-02 整体状态更新为 `DEVELOPMENT_VERIFIED`。
+- D7 整体关闭后，**不得**将 A1.3-03..06 状态改为 `PENDING` 以外的任何状态。
+
+###### 11. 设计冻结确认清单
+
+实现开始前，确认以下每一项已由设计评审通过：
+
+- [ ] `BLOCKED_FORMAL_GATE` 语义已理解：formal R03 receipt 仍为 `BLOCKED_FORMAL_GATE`；本 slice 仅产出 DEVELOPMENT_VERIFIED
+- [ ] `formalPassCount` 不增量已确认：Java Verifier 中无任何 `formalPassCount++` 或 formal PASS signal 代码路径
+- [ ] Orchestrator 不得执行 Authority build 命令（已写入脚本注释和代码审查清单）
+- [ ] A1.2 Provider coordinate 和 path 派生仅依赖 Authority `deliverySlices`，A1.3 `providerEntryPath` 仅依赖 Authority packaging projection；POM 中无硬编码值
+- [ ] 稳定读取协议（NOFOLLOW + regular file + Authority 4 MiB / Provider 16 MiB + pre/post identity/size/mtime）已在 orchestrator 和 Java Verifier 两端实现
+- [ ] Binding JSON closed keys 列表已冻结；schema 校验逻辑已实现
+- [ ] O_EXCL + 0600 + fsync 原子写入已实现；无竞争窗口
+- [ ] Binding fingerprint domain `RG-CS-GATE-A-A1-3-DEVELOPMENT-PREDECESSOR-BINDING-v1` 已分配；未与其他 domain 冲突
+- [ ] Maven profile `gate-a-a1-3-development-binding` 只追加 specialized test set；ordinary 340-test clean verify 仍独立运行
+- [ ] Producer 与 consumer reason codes 已冻结；每个负向向量只接受一个首要 reason code
+- [ ] 威胁模型覆盖 path escape、symlink/TOCTOU、oversize、binding tamper/reuse、Provider 替换和输出泄露；外部 caller 职责已明确
+- [ ] D7-T1..T4 ownership 边界已划分；Disjoint ownership 约束已写入各任务 README
+- [ ] Acceptance sequence 4 步已评审；dev-only transcript 范围已明确
+- [ ] Diff check plan 已确认：每次提交前运行 `git diff --stat` 确认只修改目标子节所在文件
+
+
+
 #### A1.3 开工门禁与完成条件
 
 | 编号 | 门禁或条件 | 当前状态 | 退出证据 |
