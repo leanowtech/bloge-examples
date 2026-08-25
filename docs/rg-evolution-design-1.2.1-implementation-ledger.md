@@ -17,7 +17,7 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配与无 binding descriptor 执行已形成开发证据；完整差分/安全/确定性测试台仍未完成 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配、无 binding descriptor 执行及完整差分/安全/确定性测试台均已形成开发证据；引用式大负载解析与最终双项目回归仍未闭合 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `NOT_STARTED` | 现有 Scenario/Mirror 资产不能自动等同于 1.2.1 定义的世界模型闭包 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
@@ -42,7 +42,7 @@
 | `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 图内 embedded binding、compiler registry 和 isolated engine registry 均为空时，run-scoped fail-closed binding 允许统一编译与执行；真实 `ResourceFixtureRuntime` 完成参数、URL、Header、Body、协议和负载管线，共享 registry 保持不变 | `MET` |
 | `S0-EXIT-02` | 设计期模拟通过 adapter 进入统一内核 | Spring 默认 `VisualGraphSimulationService` 通过 visual-owned `VisualSimulationExecutor` 委托统一内核；旧四参数路径只保留为差分 oracle | `MET` |
 | `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | Header admission 和 bounded inline fixture 已进入既有执行链；legacy Body 控制为兼容保留，Scenario/World Model 授权引用属于阶段一 | `PARTIAL` |
-| `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 入口 Filter 已覆盖已识别执行路由；visual 默认 adapter、visual service 与 TestExecution service 均保留 production 拒绝；尚缺所有执行模式的端到端旁路矩阵 | `PARTIAL` |
+| `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 6 种固定执行模式分别证明：production Filter 在 DTO 反序列化前拒绝且下游编译/执行为零；绕过 Filter 后 production TestExecution service 在规划、registry、post-compile admission 和 executor 前独立拒绝；visual production service 在 kernel 前独立拒绝 | `MET` |
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 14 项固定差分矩阵逐字段对拍 stand-in、纯原语混合、多节点分类、fixture 优先级/null/输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化 | `MET` |
 | `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | descriptor 与 visual kernel 对本地可计数真实端点均保持零请求；危险嵌套量词/分组/交替/lookaround/backreference、超长/畸形 pattern 与超长 candidate 在匹配前拒绝；类文件规则禁止模拟关键类构造生产网络客户端 | `MET` |
 | `S0-EXIT-07` | 编译等价、N 次重放确定性和禁非确定 API 架构规则通过 | 独立 oracle 对拍合法模式及失败关闭；每模式 20 次编译保持 plan/binding fingerprint 稳定且 planId 唯一；20 次运行保持语义与服务状态指纹稳定；八个阶段零核心类及关键嵌套类禁止直接时间、UUID、随机与并行流 API | `MET` |
@@ -137,15 +137,17 @@ VisualSimulationPlanTest             3/3
 VisualSimulationKernelAdapterTest    9/9
 ```
 
-上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。14/14 新旧路径固定差分矩阵覆盖 stand-in、纯原语混合、多节点分类、持久化/请求 fixture 优先级、null、输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该差分切片联合聚焦集为 47/47。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段一引用解析及阶段零安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
+上述 60 项内核测试证明 `S0-A` 开发切片闭合；19 项协议测试证明 `S0-P` 纯解析协议闭合。S0-C 的 schema stand-in 内核聚焦集为 88/88：普通 output fixture 保持 `OUTPUT_LEVEL`，只有精确 site/rule 的 server-owned Java hint 才能冻结 `SCHEMA_STANDIN`，显式 `null` 仍可作为合法最终输出，真实算子不执行，证据降为探索级。6/6 port/hint 测试证明 visual-owned plan 不携带 testing/governance 类型，且多节点 hint 只能冻结精确 `SCHEMA_STANDIN`；9/9 adapter 测试证明单/多节点、共享 operatorRef、expected-input、纯原语、编译失败净化和十次语义确定性经过统一内核。14/14 新旧路径固定差分矩阵覆盖 stand-in、纯原语混合、多节点分类、持久化/请求 fixture 优先级、null、输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化；2/2 真实 Spring 接线测试证明默认 `@Service` 由容器注入 kernel adapter，并在生产 evidence 下失败关闭。该差分切片联合聚焦集为 47/47。S0-B/S0-D 及相关隔离回归的串行聚焦集为 463/463，其中包含 3/3 mirror 事务时钟基线；另有 4/4 policy Spring wiring 测试证明 production profile 或服务端 production environment evidence 下，普通业务 Bean 注册非生产 policy 不能替换最终准入证据（冲突时 fail closed）。阶段零安全、差分与确定性固定台均已完成；引用式大负载解析及最新双项目全量回归仍待闭合。
 
-S0-EXIT-01 的联合聚焦集为 127/127。新增证据覆盖：缺失 `httpResource` binding 时调用清单冻结为稳定且不可直接执行的外部边界；已有真实 binding 仍优先；其他缺失算子继续失败关闭；无 fixture 自动生成隐式 `DENY`；图内 embedded operator、compiler registry 与 isolated engine registry 同时为空时，run-scoped overlay 不修改共享 registry，`DESCRIPTOR_TRANSPORT` 仍经真实 descriptor 管线完成参数映射、URL、Header、Body、响应协议与 payload 提取并产生 `TRANSPORT_LEVEL` 可认证证据；缺描述符和协议拒绝保持确定性失败。阶段一引用解析及阶段零完整差分/安全/确定性测试台尚未完成，因此阶段零出口仍保持部分满足。
+S0-EXIT-01 的联合聚焦集为 127/127。新增证据覆盖：缺失 `httpResource` binding 时调用清单冻结为稳定且不可直接执行的外部边界；已有真实 binding 仍优先；其他缺失算子继续失败关闭；无 fixture 自动生成隐式 `DENY`；图内 embedded operator、compiler registry 与 isolated engine registry 同时为空时，run-scoped overlay 不修改共享 registry，`DESCRIPTOR_TRANSPORT` 仍经真实 descriptor 管线完成参数映射、URL、Header、Body、响应协议与 payload 提取并产生 `TRANSPORT_LEVEL` 可认证证据；缺描述符和协议拒绝保持确定性失败。
 
 S0-EXIT-07 的当前确定性切片联合聚焦集为 115/115。运行身份与 evidence 壁钟已收敛到显式不可变依赖，默认构造器只在边界绑定系统适配器；同一固定逻辑时钟请求连续运行 20 次，plan fingerprint、semantic projection、semantic result fingerprint 与 execution-service state fingerprint 全部逐次相同，而 runId 和包含运行事实的完整 evidence fingerprint 均保持唯一。类文件架构测试禁止 `TestRunService` 直接调用 `Instant.now`、`UUID.randomUUID`、`Math.random`、`ThreadLocalRandom.current` 或分配 `Random`。该证据尚未覆盖其余阶段零核心类及独立编译等价台，因此 `S0-EXIT-07` 仍为部分满足。
 
 S0-EXIT-06 的固定安全台为 4/4，相关联合回归为 143/143。descriptor 与 visual kernel 测试均启动真实本地计数端点并将资源 URL 指向该端点，执行后请求数严格为零；`StubHttpRequestOperator` 已从继承生产 `HttpRequestOperator` 改为实现 Resource Gateway 应用层的最小 `HttpRequestTransport`，不再为测试构造真实 `HttpClient`，生产 Spring 构造器仍保持原 `HttpRequestOperator` 依赖。ReDoS 矩阵覆盖典型灾难回溯结构、超长/畸形 pattern 与超长 candidate，同时保留安全字符类和锚点表达式。类文件规则进一步证明 `VisualSimulationKernelAdapter`、stub 与 `ResourceFixtureRuntime` 不创建生产网络 transport。本切片 `resource-gateway-examples clean verify` 为 7104 tests / 0 failures / 0 errors。
 
 S0-EXIT-07 的最终固定台为 3/3，相关联合回归为 129/129。测试内朴素 oracle 不调用生产 `ExecutionMode.resolve` 或 compiler 内部分类器，独立声明并逐字段对拍纯只读 real、schema stand-in、descriptor protocol、descriptor transport、output-level return 与 external implicit deny，同时覆盖 descriptor 混淆和畸形 fixture 的失败关闭。每个代表模式连续编译 20 次，plan/runtime-binding fingerprint 完全稳定，而默认 planId 保持唯一；显式 identity source 可确定性控制 ID 序列，null/blank 则以 `CONTROL_PLAN_ID_UNAVAILABLE` 拒绝。plan identity 与 run identity 均只在边界适配器使用系统 UUID/时间。类文件规则覆盖 `ExecutionControlCompiler`、`InvocationInventoryBuilder`、`SelectorResolver`、`SafetyPreflight`、`TestDoubleFactory`（含 observed operator）、`ResourceFixtureRuntime`、`VisualSimulationKernelAdapter` 和 `TestRunService`。
+
+S0-EXIT-04 的固定生产旁路矩阵为 18/18，覆盖 real/read-only、schema stand-in、descriptor protocol、descriptor transport、output-level return 与 implicit deny。入口证据使用自定义 DTO 反序列化哨兵，证明 production Filter 在读取业务 Body 前拒绝，非生产下游 compiler/executor 计数为零；服务证据直接绕过 Filter，证明 production `TestExecutionApiService` 在目标规划、registry、post-compile admission 与 executor 前独立拒绝；visual 证据证明 production service 在 kernel adapter 前拒绝。所有失败响应均不含业务 payload、控制内容、模式或堆栈。该矩阵与既有边界/服务/visual 测试的联合聚焦集为 386/386；加入 S1-A 契约切片后的独立复跑为 404/404。
 
 截至 2026-08-26，本切片最终串行里程碑结果：
 
