@@ -62,7 +62,12 @@ public final class Scenario {
         this.target = requireTarget(target);
         this.world = requireWorld(world, worldModel, this.tenantId);
         this.context = freezeMap(context);
-        if (stateInit != WorldStateInit.EMPTY) {
+        if (stateInit == null) {
+            throw new ScenarioException(ScenarioException.Code.STATE_NOT_SUPPORTED);
+        }
+        try {
+            worldModel.stateSpec().validateOverrides(stateInit.overrides());
+        } catch (WorldModelException invalidState) {
             throw new ScenarioException(ScenarioException.Code.STATE_NOT_SUPPORTED);
         }
         this.stateInit = stateInit;
@@ -246,8 +251,41 @@ public final class Scenario {
         }
     }
 
-    /** Stage 1 has exactly one legal initial-state value. */
-    public enum WorldStateInit { EMPTY }
+    /** Compatible initial-state value that can evolve without breaking the Stage 1 EMPTY token. */
+    public static final class WorldStateInit {
+        public static final String SCHEMA_VERSION = "bloge.worldStateInit.v1";
+        public static final WorldStateInit EMPTY = new WorldStateInit(Map.of());
+        private final Map<String, Object> overrides;
+
+        private WorldStateInit(Map<String, ?> overrides) {
+            try {
+                this.overrides = com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue.freezeMap(overrides);
+            } catch (RuntimeException invalid) {
+                throw new ScenarioException(ScenarioException.Code.STATE_NOT_SUPPORTED);
+            }
+        }
+
+        public static WorldStateInit of(Map<String, ?> overrides) {
+            if (overrides == null) {
+                throw new ScenarioException(ScenarioException.Code.STATE_NOT_SUPPORTED);
+            }
+            if (overrides.isEmpty()) return EMPTY;
+            return new WorldStateInit(overrides);
+        }
+
+        public String schemaVersion() { return SCHEMA_VERSION; }
+        public Map<String, Object> overrides() { return overrides; }
+        public boolean isEmpty() { return overrides.isEmpty(); }
+        public String name() { return isEmpty() ? "EMPTY" : "V1"; }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof WorldStateInit init && overrides.equals(init.overrides);
+        }
+
+        @Override
+        public int hashCode() { return overrides.hashCode(); }
+    }
 
     /** Lossless mapping of the existing FixtureBundle assertion contract. */
     public record Expectation(
@@ -443,6 +481,10 @@ public final class Scenario {
                 "fingerprint", world.fingerprint()));
         material.put("context", context);
         material.put("stateInit", stateInit.name());
+        if (!stateInit.isEmpty()) {
+            material.put("stateInitSchemaVersion", stateInit.schemaVersion());
+            material.put("stateInitOverrides", stateInit.overrides());
+        }
         material.put("expect", expect.stream().map(Scenario::expectationMaterial).toList());
         material.put("contractDependencies", contractDependencies.stream()
                 .map(dependency -> Map.of("contractId", dependency.contractId(),

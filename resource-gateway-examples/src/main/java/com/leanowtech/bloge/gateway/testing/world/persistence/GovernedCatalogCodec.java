@@ -17,7 +17,10 @@ import com.leanowtech.bloge.gateway.testing.world.ResourceWorldModel;
 import com.leanowtech.bloge.gateway.testing.world.ResponseSemantics;
 import com.leanowtech.bloge.gateway.testing.world.Scenario;
 import com.leanowtech.bloge.gateway.testing.world.StateSpec;
+import com.leanowtech.bloge.gateway.testing.world.StateSpecV2;
+import com.leanowtech.bloge.gateway.testing.world.StateKeySpec;
 import com.leanowtech.bloge.gateway.testing.world.WorldSlice;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
 import java.nio.charset.StandardCharsets;
@@ -240,7 +243,10 @@ public final class GovernedCatalogCodec {
             item.set("binding", bindingPayload(slice.binding()));
             item.set("behavior", fragmentPayload(slice.behavior()));
             item.put("fingerprint", slice.fingerprint());
-            item.put("state", "EMPTY");
+            item.put("state", slice.worldStateSpec().isEmpty() ? "EMPTY" : "V2");
+            if (!slice.worldStateSpec().isEmpty()) {
+                item.set("stateSpec", stateSpecPayload(slice.worldStateSpec()));
+            }
         }
         return node;
     }
@@ -261,6 +267,11 @@ public final class GovernedCatalogCodec {
         world.put("fingerprint", value.world().fingerprint());
         node.set("context", mapper.valueToTree(value.context()));
         node.put("stateInit", value.stateInit().name());
+        if (!value.stateInit().isEmpty()) {
+            ObjectNode init = node.putObject("worldStateInit");
+            init.put("schemaVersion", value.stateInit().schemaVersion());
+            init.set("overrides", mapper.valueToTree(value.stateInit().overrides()));
+        }
         ArrayNode expectations = node.putArray("expect");
         for (Scenario.Expectation expectation : value.expect()) {
             ObjectNode item = expectations.addObject();
@@ -289,6 +300,24 @@ public final class GovernedCatalogCodec {
         node.put("format", value.format());
         node.put("version", value.version());
         node.set("schema", mapper.valueToTree(value.schema()));
+        return node;
+    }
+
+    private ObjectNode stateSpecPayload(WorldStateSpec value) {
+        if (!(value instanceof StateSpecV2 spec)) {
+            throw new GovernedCatalogIntegrityException();
+        }
+        ObjectNode node = JsonNodeFactory.instance.objectNode();
+        node.put("schemaVersion", spec.schemaVersion());
+        node.put("fingerprint", spec.fingerprint());
+        ArrayNode entries = node.putArray("entries");
+        for (StateKeySpec entry : spec.keys()) {
+            ObjectNode item = entries.addObject();
+            item.put("key", entry.key());
+            item.put("access", entry.access().name());
+            item.set("schema", mapper.valueToTree(entry.schema()));
+            item.set("defaultValue", mapper.valueToTree(entry.defaultValue()));
+        }
         return node;
     }
 
@@ -352,6 +381,8 @@ public final class GovernedCatalogCodec {
             if (!text(behaviorNode, "fingerprint").equals(behavior.fingerprint())) {
                 throw new GovernedCatalogIntegrityException();
             }
+            WorldStateSpec stateSpec = item.get("stateSpec") == null
+                    ? StateSpec.empty() : decodeStateSpec(item.get("stateSpec"));
             if (!text(item, "tenantId").equals(tenantId)
                     || !text(item, "logicalContractId").equals(contract.contractId())
                     || !text(item, "contractFingerprint").equals(contract.contractFingerprint())
@@ -359,14 +390,15 @@ public final class GovernedCatalogCodec {
                     || !text(item, "provider").equals(binding.provider())
                     || !text(item, "apiVersion").equals(binding.apiVersion())
                     || !item.path("bindingValid").asBoolean()
-                    || !"EMPTY".equals(text(item, "state"))) {
+                    || (!stateSpec.isEmpty() && !"V2".equals(text(item, "state")))
+                    || (stateSpec.isEmpty() && !"EMPTY".equals(text(item, "state")))) {
                 throw new GovernedCatalogIntegrityException();
             }
             WorldSlice slice = WorldSlice.register(
                     new WorldSlice.Registration(tenantId, text(item, "provider"), text(item, "apiVersion"),
                             contract.contractId(), contract.contractFingerprint(),
                             binding.descriptorFingerprint(), true),
-                    contract, binding, behavior, StateSpec.empty());
+                    contract, binding, behavior, stateSpec);
             if (!text(item, "fingerprint").equals(slice.fingerprint())) {
                 throw new GovernedCatalogIntegrityException();
             }
@@ -405,7 +437,7 @@ public final class GovernedCatalogCodec {
                 new Scenario.TargetRef(text(target, "kind"), text(target, "id"), text(target, "fingerprint")),
                 new Scenario.WorldModelRef(worldId, worldRevision, worldFingerprint), worldModel,
                 mapper.convertValue(node.get("context"), new TypeReference<Map<String, Object>>() {}),
-                Scenario.WorldStateInit.valueOf(text(node, "stateInit")), expectations, dependencies);
+                decodeStateInit(node), expectations, dependencies);
         if (!text(node, "tenantId").equals(value.tenantId())
                 || !text(node, "fingerprint").equals(value.fingerprint())) {
             throw new GovernedCatalogIntegrityException();
@@ -425,6 +457,54 @@ public final class GovernedCatalogCodec {
         } catch (RuntimeException exception) {
             throw new GovernedCatalogIntegrityException();
         }
+    }
+
+    private WorldStateSpec decodeStateSpec(JsonNode node) {
+        try {
+            if (!(node instanceof ObjectNode object) || !object.has("schemaVersion")
+                    || !StateSpecV2.SCHEMA_VERSION.equals(text(object, "schemaVersion"))
+                    || !object.has("entries") || !object.has("fingerprint")) {
+                throw new GovernedCatalogIntegrityException();
+            }
+            List<StateKeySpec> entries = new ArrayList<>();
+            for (JsonNode item : requiredArray(object, "entries")) {
+                entries.add(new StateKeySpec(text(item, "key"),
+                        StateKeySpec.Access.valueOf(text(item, "access")),
+                        mapper.convertValue(item.get("schema"), new TypeReference<Map<String, Object>>() {}),
+                        mapper.convertValue(item.get("defaultValue"), Object.class)));
+            }
+            StateSpecV2 decoded = new StateSpecV2(text(object, "schemaVersion"), entries);
+            if (!text(object, "fingerprint").equals(decoded.fingerprint())) {
+                throw new GovernedCatalogIntegrityException();
+            }
+            return decoded;
+        } catch (GovernedCatalogIntegrityException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new GovernedCatalogIntegrityException();
+        }
+    }
+
+    private Scenario.WorldStateInit decodeStateInit(JsonNode node) {
+        String marker = text(node, "stateInit");
+        // Read the old extension for source/data compatibility, but emit only the
+        // version-neutral worldStateInit field above.
+        JsonNode stateSpec = node.get("worldStateInit");
+        if (stateSpec == null) stateSpec = node.get("stateInitV2");
+        if (stateSpec == null) {
+            if (!"EMPTY".equals(marker)) {
+                throw new GovernedCatalogIntegrityException();
+            }
+            return Scenario.WorldStateInit.EMPTY;
+        }
+        if (!"V1".equals(marker) || !stateSpec.isObject()
+                || stateSpec.get("overrides") == null || !stateSpec.get("overrides").isObject()
+                || stateSpec.get("overrides").isEmpty()
+                || !Scenario.WorldStateInit.SCHEMA_VERSION.equals(text(stateSpec, "schemaVersion"))) {
+            throw new GovernedCatalogIntegrityException();
+        }
+        return Scenario.WorldStateInit.of(mapper.convertValue(stateSpec.get("overrides"),
+                new TypeReference<Map<String, Object>>() {}));
     }
 
     private SchemaEnvelope decodeSchema(JsonNode node) {

@@ -8,14 +8,17 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
-/** Immutable, revisioned and content-addressed stateless resource world. */
+/** Immutable, revisioned and content-addressed resource world with versioned state declarations. */
 public final class ResourceWorldModel {
     private final String worldModelId;
     private final String tenantId;
     private final long revision;
     private final List<WorldSlice> slices;
+    private final WorldStateSpec stateSpec;
+    private final Map<String, String> stateWriterCoordinates;
     private final String fingerprint;
 
     public ResourceWorldModel(String worldModelId, String tenantId, long revision, List<WorldSlice> slices) {
@@ -44,6 +47,41 @@ public final class ResourceWorldModel {
             }
         }
         this.slices = List.copyOf(ordered);
+        Map<String, StateKeySpec> merged = new LinkedHashMap<>();
+        Map<String, Integer> writers = new LinkedHashMap<>();
+        Map<String, Boolean> readers = new LinkedHashMap<>();
+        Map<String, String> writerCoordinates = new LinkedHashMap<>();
+        for (WorldSlice slice : this.slices) {
+            for (StateKeySpec declaration : slice.worldStateSpec().declarations()) {
+                StateKeySpec previous = merged.putIfAbsent(declaration.key(), declaration);
+                if (previous != null && (!Objects.equals(previous.schema(), declaration.schema())
+                        || !Objects.equals(previous.defaultValue(), declaration.defaultValue()))) {
+                    throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
+                }
+                if (declaration.writes()) {
+                    writers.merge(declaration.key(), 1, Integer::sum);
+                    if (writerCoordinates.putIfAbsent(declaration.key(), slice.coordinate()) != null) {
+                        throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
+                    }
+                }
+                readers.merge(declaration.key(), declaration.access() != StateKeySpec.Access.WRITE,
+                        Boolean::logicalOr);
+            }
+        }
+        if (writers.values().stream().anyMatch(value -> value != 1)
+                || (merged.keySet().stream().anyMatch(key -> !writers.containsKey(key)))) {
+            throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
+        }
+        Map<String, StateKeySpec> normalized = new LinkedHashMap<>();
+        for (Map.Entry<String, StateKeySpec> entry : merged.entrySet()) {
+            StateKeySpec.Access access = readers.get(entry.getKey())
+                    ? StateKeySpec.Access.READ_WRITE : StateKeySpec.Access.WRITE;
+            normalized.put(entry.getKey(), new StateKeySpec(entry.getValue().key(), access,
+                    entry.getValue().schema(), entry.getValue().defaultValue()));
+        }
+        this.stateSpec = normalized.isEmpty() ? StateSpec.empty()
+                : StateSpecV2.of(List.copyOf(normalized.values()));
+        this.stateWriterCoordinates = Map.copyOf(writerCoordinates);
         this.fingerprint = VisualBundleFingerprint.fromMaterial(Map.of(
                 "worldModelId", this.worldModelId,
                 "tenantId", this.tenantId,
@@ -57,4 +95,7 @@ public final class ResourceWorldModel {
     public List<WorldSlice> slices() { return List.copyOf(slices); }
     public String fingerprint() { return fingerprint; }
     public String worldModelFingerprint() { return fingerprint; }
+    public WorldStateSpec stateSpec() { return stateSpec; }
+    public Map<String, String> stateWriterCoordinates() { return stateWriterCoordinates; }
+    public String stateWriterCoordinate(String key) { return stateWriterCoordinates.get(key); }
 }

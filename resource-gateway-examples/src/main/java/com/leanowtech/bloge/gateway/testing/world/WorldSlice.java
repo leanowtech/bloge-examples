@@ -32,20 +32,20 @@ public final class WorldSlice {
     private final LogicalResourceContract contract;
     private final LogicalResourceBinding binding;
     private final BlogeFragmentRef behavior;
-    private final StateSpec state;
+    private final WorldStateSpec state;
     private final String fingerprint;
 
     private WorldSlice(Registration registration,
                        LogicalResourceContract contract,
                        LogicalResourceBinding binding,
                        BlogeFragmentRef behavior,
-                       StateSpec state) {
+                       WorldStateSpec state) {
         this.tenantId = required(registration.tenantId());
         this.provider = required(registration.provider());
         this.apiVersion = required(registration.apiVersion());
         this.bindingFingerprint = required(registration.bindingFingerprint());
         this.bindingValid = registration.valid();
-        if (contract == null || binding == null || behavior == null || state == null || !state.isEmpty()) {
+        if (contract == null || binding == null || behavior == null || state == null) {
             throw new WorldModelException(WorldModelException.Code.INVALID_SLICE);
         }
         this.contract = contract;
@@ -53,7 +53,7 @@ public final class WorldSlice {
         this.logicalContractId = contract.contractId();
         this.contractFingerprint = contract.contractFingerprint();
         this.behavior = behavior;
-        this.state = StateSpec.empty();
+        this.state = state;
         this.fingerprint = VisualBundleFingerprint.fromMaterial(material());
     }
 
@@ -62,6 +62,37 @@ public final class WorldSlice {
                                       LogicalResourceBinding binding,
                                       BlogeFragmentRef behavior,
                                       StateSpec state) {
+        if (registration == null || contract == null || binding == null) {
+            throw new WorldModelException(WorldModelException.Code.INVALID_SLICE);
+        }
+        if (!registration.valid()) {
+            throw new WorldModelException(WorldModelException.Code.BINDING_UNAVAILABLE);
+        }
+        if (!same(registration.contractId(), contract.contractId())
+                || !same(registration.contractId(), binding.contractId())
+                || !same(registration.contractFingerprint(), contract.contractFingerprint())
+                || !same(registration.contractFingerprint(), binding.contractFingerprint())) {
+            throw new WorldModelException(WorldModelException.Code.CONTRACT_DRIFT);
+        }
+        if (!same(registration.provider(), binding.provider())
+                || !same(registration.apiVersion(), binding.apiVersion())
+                || !same(registration.bindingFingerprint(), binding.descriptorFingerprint())) {
+            throw new WorldModelException(WorldModelException.Code.BINDING_DRIFT);
+        }
+        if (state == null || !state.isEmpty()) {
+            throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
+        }
+        return new WorldSlice(registration, contract, binding, behavior, state);
+    }
+
+    public static WorldSlice register(Registration registration,
+                                      LogicalResourceContract contract,
+                                      LogicalResourceBinding binding,
+                                      BlogeFragmentRef behavior,
+                                      WorldStateSpec state) {
+        if (state == null) {
+            throw new WorldModelException(WorldModelException.Code.INVALID_SLICE);
+        }
         if (registration == null || contract == null || binding == null) {
             throw new WorldModelException(WorldModelException.Code.INVALID_SLICE);
         }
@@ -92,7 +123,16 @@ public final class WorldSlice {
     public LogicalResourceContract contract() { return contract; }
     public LogicalResourceBinding binding() { return binding; }
     public BlogeFragmentRef behavior() { return behavior; }
-    public StateSpec state() { return state; }
+    /**
+     * Source-compatible Stage 1 accessor. Stateful declarations must use
+     * {@link #worldStateSpec()} and fail closed through this legacy view.
+     */
+    @Deprecated
+    public StateSpec state() {
+        if (state instanceof StateSpec legacy) return legacy;
+        throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
+    }
+    public WorldStateSpec worldStateSpec() { return state; }
     public String fingerprint() { return fingerprint; }
 
     String coordinate() {
@@ -108,7 +148,8 @@ public final class WorldSlice {
         material.put("contractFingerprint", contractFingerprint);
         material.put("bindingFingerprint", bindingFingerprint);
         material.put("behaviorFingerprint", behavior.fingerprint());
-        material.put("state", "empty");
+        // Keep the pre-S2 empty-state material byte-for-byte stable for v1 fingerprints.
+        material.put("state", state.isEmpty() ? "empty" : state.fingerprintMaterial());
         return material;
     }
 

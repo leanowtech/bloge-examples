@@ -116,6 +116,16 @@ class ScenarioTest {
     }
 
     @Test
+    void sanitizesInvalidStateOverrideAtScenarioBoundary() {
+        assertThatThrownBy(() -> new Scenario("scenario-a", "tenant-a", 1, target(),
+                world("provider-a", "v1"), Map.of(),
+                Scenario.WorldStateInit.of(Map.of("/undeclared", true)), List.of()))
+                .isInstanceOf(ScenarioException.class)
+                .isNotInstanceOf(WorldModelException.class)
+                .hasMessage("RG.WORLD.SCENARIO.STATE_NOT_SUPPORTED");
+    }
+
+    @Test
     void rejectsWorldReferenceAndTenantDrift() {
         ResourceWorldModel model = world("provider-a", "v1");
         Scenario.WorldModelRef wrong = new Scenario.WorldModelRef(

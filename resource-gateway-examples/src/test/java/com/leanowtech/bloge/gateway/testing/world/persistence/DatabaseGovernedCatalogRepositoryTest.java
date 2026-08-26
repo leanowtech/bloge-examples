@@ -8,8 +8,12 @@ import com.leanowtech.bloge.gateway.testing.world.LogicalResourceContract;
 import com.leanowtech.bloge.gateway.testing.world.ResourceWorldModel;
 import com.leanowtech.bloge.gateway.testing.world.ResponseSemantics;
 import com.leanowtech.bloge.gateway.testing.world.Scenario;
+import com.leanowtech.bloge.gateway.testing.world.ScenarioException;
 import com.leanowtech.bloge.gateway.testing.world.StateSpec;
+import com.leanowtech.bloge.gateway.testing.world.StateSpecV2;
+import com.leanowtech.bloge.gateway.testing.world.StateKeySpec;
 import com.leanowtech.bloge.gateway.testing.world.WorldSlice;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
@@ -147,6 +151,79 @@ class DatabaseGovernedCatalogRepositoryTest {
                 .isInstanceOf(Scenario.class)
                 .extracting(value -> ((Scenario) value).fingerprint())
                 .isEqualTo(scenario.fingerprint());
+    }
+
+    @Test
+    void writesAndReadsVersionedWorldStateWithoutChangingLegacyEmptyRead() throws Exception {
+        WorldStateSpec state = StateSpecV2.of(List.of(
+                new StateKeySpec("/balance", StateKeySpec.Access.WRITE,
+                        Map.of("type", "integer"), 100),
+                new StateKeySpec("/status", StateKeySpec.Access.READ_WRITE,
+                        Map.of("type", "string"), "OPEN")));
+        ResourceWorldModel world = world(1, "tenant-a", state);
+        GovernedResourceRef ref = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, world.worldModelId(), world);
+
+        ObjectNode envelope = headEnvelope(ref);
+        assertThat(envelope.at("/payload/slices/0/state").asText()).isEqualTo("V2");
+        assertThat(envelope.at("/payload/slices/0/stateSpec/schemaVersion").asText())
+                .isEqualTo(StateSpecV2.SCHEMA_VERSION);
+        assertThat(repository.findExact(ref).orElseThrow().value())
+                .isInstanceOf(ResourceWorldModel.class)
+                .extracting(value -> ((ResourceWorldModel) value).slices().getFirst().worldStateSpec())
+                .isEqualTo(state);
+    }
+
+    @Test
+    void roundTripsNullStateDefaultAndItsFingerprint() {
+        WorldStateSpec state = StateSpecV2.of(List.of(new StateKeySpec("/optional",
+                StateKeySpec.Access.WRITE, Map.of("type", "null"), null)));
+        ResourceWorldModel world = world(1, "tenant-a", state);
+        GovernedResourceRef ref = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, world.worldModelId(), world);
+
+        ResourceWorldModel restored = (ResourceWorldModel) repository.findExact(ref).orElseThrow().value();
+        assertThat(restored.stateSpec().fingerprint()).isEqualTo(state.fingerprint());
+        assertThat(restored.stateSpec().declarations().getFirst().defaultValue()).isNull();
+    }
+
+    @Test
+    void roundTripsScenarioStateOverridesAndRejectsSchemaMismatch() throws Exception {
+        WorldStateSpec state = StateSpecV2.of(List.of(new StateKeySpec("/balance",
+                StateKeySpec.Access.WRITE, Map.of("type", "integer"), 100)));
+        ResourceWorldModel world = world(1, "tenant-a", state);
+        GovernedResourceRef worldRef = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, world.worldModelId(), world);
+        Scenario scenario = new Scenario("scenario-state", "tenant-a", 1,
+                new Scenario.TargetRef("GRAPH", "graph-1", "sha256:" + "a".repeat(64)),
+                world, Map.of("input", "value"),
+                Scenario.WorldStateInit.of(Map.of("/balance", 50)), List.of());
+        GovernedResourceRef scenarioRef = repository.create("tenant-a",
+                GovernedCatalogKind.SCENARIO, scenario.scenarioId(), scenario);
+
+        Scenario restored = (Scenario) repository.findExact(scenarioRef).orElseThrow().value();
+        assertThat(restored.stateInit().overrides()).containsEntry("/balance", 50);
+        assertThat(restored.fingerprint()).isEqualTo(scenario.fingerprint());
+
+        ObjectNode baseline = headEnvelope(scenarioRef);
+        ObjectNode tampered = baseline.deepCopy();
+        ObjectNode worldStateInit = (ObjectNode) tampered.at("/payload/worldStateInit");
+        worldStateInit.putNull("overrides");
+        replaceHeadJson(scenarioRef, mapper.writeValueAsString(tampered));
+        assertThatThrownBy(() -> repository.findExact(scenarioRef))
+                .isInstanceOf(GovernedCatalogIntegrityException.class);
+
+        tampered = baseline.deepCopy();
+        worldStateInit = (ObjectNode) tampered.at("/payload/worldStateInit");
+        worldStateInit.putObject("overrides");
+        replaceHeadJson(scenarioRef, mapper.writeValueAsString(tampered));
+        assertThatThrownBy(() -> repository.findExact(scenarioRef))
+                .isInstanceOf(GovernedCatalogIntegrityException.class);
+        assertThat(worldRef).isNotNull();
+        assertThatThrownBy(() -> new Scenario("bad-state", "tenant-a", 1,
+                new Scenario.TargetRef("GRAPH", "graph-1", "sha256:" + "a".repeat(64)),
+                world, Map.of(), Scenario.WorldStateInit.of(Map.of("/balance", "bad")), List.of()))
+                .isInstanceOf(ScenarioException.class);
     }
 
     @Test
@@ -539,6 +616,10 @@ class DatabaseGovernedCatalogRepositoryTest {
     }
 
     private static ResourceWorldModel world(long revision, String tenant) {
+        return world(revision, tenant, StateSpec.empty());
+    }
+
+    private static ResourceWorldModel world(long revision, String tenant, WorldStateSpec state) {
         LogicalResourceContract contract = contract();
         LogicalResourceBinding binding = LogicalResourceBinding.bind("provider", "v1",
                 new ResourceDesignContract(contract.contractId(), "resource-1", "Resource", "",
@@ -548,7 +629,7 @@ class DatabaseGovernedCatalogRepositoryTest {
                         new VisualResourceResponseProtocol.HttpStatus(), "data"), contract);
         WorldSlice slice = WorldSlice.register(new WorldSlice.Registration(tenant, "provider", "v1",
                         contract.contractId(), contract.contractFingerprint(), binding.descriptorFingerprint(), true),
-                contract, binding, BlogeFragmentRef.frozen("world.bloge", FRAGMENT), StateSpec.empty());
+                contract, binding, BlogeFragmentRef.frozen("world.bloge", FRAGMENT), state);
         return new ResourceWorldModel("world-1", tenant, revision, List.of(slice));
     }
 

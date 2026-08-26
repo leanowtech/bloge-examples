@@ -68,7 +68,7 @@ public final class WorldModelAdmissionService {
             if (!slice.bindingFingerprint().equals(binding.descriptorFingerprint())) {
                 throw new WorldModelException(WorldModelException.Code.BINDING_DRIFT);
             }
-            if (slice.state() == null || !slice.state().isEmpty()) {
+            if (slice.worldStateSpec() == null || !slice.worldStateSpec().isEmpty()) {
                 throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
             }
             purityValidator.validate(slice.behavior());
