@@ -24,6 +24,13 @@ public record StateSpecV2(String schemaVersion, List<StateKeySpec> keys) impleme
         ordered.sort(Comparator.comparing(StateKeySpec::key));
         Set<String> names = new LinkedHashSet<>();
         for (StateKeySpec key : ordered) if (!names.add(key.key())) throw invalid();
+        for (int index = 0; index < ordered.size(); index++) {
+            for (int nested = index + 1; nested < ordered.size(); nested++) {
+                if (StatePointer.isPrefix(ordered.get(index).key(), ordered.get(nested).key())) {
+                    throw invalid();
+                }
+            }
+        }
         keys = List.copyOf(ordered);
     }
 

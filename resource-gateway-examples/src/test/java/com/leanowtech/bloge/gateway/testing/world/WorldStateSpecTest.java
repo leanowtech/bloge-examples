@@ -34,6 +34,21 @@ class WorldStateSpecTest {
     }
 
     @Test
+    void normalizesEscapedPointersAndRejectsInvalidOrPrefixAmbiguousAssets() {
+        StateKeySpec escaped = key("/account~1balance", StateKeySpec.Access.WRITE, 1);
+        assertThat(escaped.key()).isEqualTo("/account~1balance");
+        assertThat(StatePointer.decode(escaped.key())).containsExactly("account/balance");
+        assertThat(StatePointer.encode(StatePointer.decode(escaped.key())))
+                .isEqualTo("/account~1balance");
+        assertThatThrownBy(() -> key("/account~2balance", StateKeySpec.Access.WRITE, 1))
+                .isInstanceOf(WorldModelException.class);
+        assertThatThrownBy(() -> StateSpecV2.of(List.of(
+                        key("/account", StateKeySpec.Access.WRITE, 1),
+                        key("/account/balance", StateKeySpec.Access.WRITE, 1))))
+                .isInstanceOf(WorldModelException.class);
+    }
+
+    @Test
     void acceptsNullDefaultsAndComplexSchemasThroughSharedValidator() {
         StateKeySpec nullable = new StateKeySpec("/optional", StateKeySpec.Access.WRITE,
                 Map.of("type", "null"), null);

@@ -5,9 +5,9 @@ import com.leanowtech.bloge.gateway.testing.domain.ProtocolJsonValue;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 
-import java.util.Map;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** One normalized state key declaration; writer ownership belongs to its slice coordinate. */
 public record StateKeySpec(String key, Access access, Map<String, Object> schema, Object defaultValue) {
@@ -16,8 +16,12 @@ public record StateKeySpec(String key, Access access, Map<String, Object> schema
 
     public StateKeySpec {
         if (key == null || key.isBlank() || !key.equals(key.trim()) || key.length() > 256
-                || !key.startsWith("/") || key.contains("//") || access == null || schema == null) throw invalid();
-        key = key.trim();
+                || access == null || schema == null) throw invalid();
+        try {
+            key = StatePointer.normalize(key.trim());
+        } catch (WorldModelException invalid) {
+            throw invalid();
+        }
         schema = immutableSchema(schema);
         if (depth(schema, 0) > StateSpecV2.MAX_DEPTH) throw invalid();
         defaultValue = freeze(defaultValue);
