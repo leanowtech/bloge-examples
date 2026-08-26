@@ -52,6 +52,7 @@ class TestExecutionIngressAdapterTest {
         assertThat(admitted.request().context()).containsEntry("customerId", "customer-a");
         assertThat(admitted.fidelityToken()).isNull();
         assertThat(admitted.scopeToken()).isNull();
+        assertThat(admitted.envelope()).isNull();
     }
 
     @Test
@@ -80,6 +81,7 @@ class TestExecutionIngressAdapterTest {
         assertThat(admitted.request().context()).containsExactlyInAnyOrderEntriesOf(originalContext);
         assertThat(admitted.fidelityToken()).isEqualTo("mock");
         assertThat(admitted.scopeToken()).isEqualTo("graph");
+        assertThat(admitted.envelope()).isNull();
         assertThat(admitted.toString()).doesNotContain("fixture-a", "customer-a");
     }
 
@@ -97,7 +99,7 @@ class TestExecutionIngressAdapterTest {
     }
 
     @Test
-    void envelopePurposeCannotBeForgedAndUnsupportedAssetIsRejected() {
+    void envelopePurposeCannotBeForgedAndAssetReferenceIsRetained() {
         HttpHeaders forged = new HttpHeaders();
         forged.set("X-BLOGE-Test-Envelope", encoded(envelope("NOT_GRAPH_CONTRACT_TEST", false)));
 
@@ -106,12 +108,18 @@ class TestExecutionIngressAdapterTest {
 
         assertThat(purpose.problem().code()).isEqualTo("RG.TEST.CONTROL_PURPOSE_MISMATCH");
 
-        HttpHeaders unsupported = new HttpHeaders();
-        unsupported.set("X-BLOGE-Test-Envelope", encoded(envelope("GRAPH_CONTRACT_TEST", false)));
-        IntegrationProblemException asset = catchThrowableOfType(
-                () -> adapter.admit(request(null, null), identity, unsupported), IntegrationProblemException.class);
+        HttpHeaders accepted = new HttpHeaders();
+        accepted.set("X-BLOGE-Test-Envelope", encoded(envelope("GRAPH_CONTRACT_TEST", false)));
+        TestExecutionApiRequest request = request(Map.of("customerId", "customer-a"), null);
+        TestExecutionIngress admitted = adapter.admit(request, identity, accepted);
 
-        assertThat(asset.problem().code()).isEqualTo("RG.TEST.CONTROL_ASSET_RESOLUTION_UNSUPPORTED");
+        assertThat(admitted.request()).isSameAs(request);
+        assertThat(admitted.request().context()).containsEntry("customerId", "customer-a");
+        assertThat(admitted.request().fixtureBundle()).isNull();
+        assertThat(admitted.envelope()).isNotNull();
+        assertThat(admitted.envelope().scenario().id()).isEqualTo("scenario-a");
+        assertThat(admitted.toString()).doesNotContain(
+                "scenario-a", "sha256:", "corr-a", accepted.getFirst("X-BLOGE-Test-Envelope"));
     }
 
     @Test
@@ -124,6 +132,79 @@ class TestExecutionIngressAdapterTest {
 
         assertThat(exception.problem().code()).isEqualTo("RG.TEST.CONTROL_CORRELATION_MISMATCH");
         assertThat(exception.toString()).doesNotContain("corr-other", "fixture-a");
+    }
+
+    @Test
+    void worldModelAssetReferenceIsAcceptedAndRetained() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-BLOGE-Test-Envelope", encoded(worldEnvelope()));
+        TestExecutionApiRequest request = request(Map.of("customerId", "customer-a"), null);
+
+        TestExecutionIngress admitted = adapter.admit(request, identity, headers);
+
+        assertThat(admitted.request()).isSameAs(request);
+        assertThat(admitted.envelope().worldModel().id()).isEqualTo("world-a");
+        assertThat(admitted.request().context()).containsEntry("customerId", "customer-a");
+    }
+
+    @Test
+    void assetAndInlineSourcesAreRejected() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-BLOGE-Test-Envelope", encoded(envelope("GRAPH_CONTRACT_TEST", false)));
+        headers.set("X-BLOGE-Test-Inline", encoded(inlineFixtureNode()));
+
+        IntegrationProblemException exception = catchThrowableOfType(
+                () -> adapter.admit(request(null, null), identity, headers), IntegrationProblemException.class);
+
+        assertThat(exception.problem().code()).isEqualTo("RG.TEST.FIXTURE_SOURCE_AMBIGUOUS");
+        assertThat(exception.toString()).doesNotContain("scenario-a", "fixture-a");
+    }
+
+    @Test
+    void assetAndBodyFixtureSourcesAreRejected() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-BLOGE-Test-Envelope", encoded(envelope("GRAPH_CONTRACT_TEST", false)));
+
+        IntegrationProblemException exception = catchThrowableOfType(
+                () -> adapter.admit(request(null, fixture()), identity, headers), IntegrationProblemException.class);
+
+        assertThat(exception.problem().code()).isEqualTo("RG.TEST.FIXTURE_SOURCE_AMBIGUOUS");
+        assertThat(exception.toString()).doesNotContain("scenario-a", "fixture-a");
+    }
+
+    @Test
+    void assetAndBodyFixtureReferenceSourceIsRejected() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-BLOGE-Test-Envelope", encoded(envelope("GRAPH_CONTRACT_TEST", false)));
+        TestExecutionApiRequest request = new TestExecutionApiRequest(
+                TestExecutionApiRequest.SCHEMA_VERSION,
+                new TestExecutionApiRequest.Target("GRAPH", "graph-a", ""),
+                TestExecutionApiService.AUTHORIZED_PURPOSE,
+                Map.of("customerId", "customer-a"), null,
+                new TestExecutionApiRequest.FixtureBundleRef("fixture-ref", 1, ""),
+                TestExecutionApiRequest.Verbosity.STANDARD, Map.of());
+
+        IntegrationProblemException exception = catchThrowableOfType(
+                () -> adapter.admit(request, identity, headers), IntegrationProblemException.class);
+
+        assertThat(exception.problem().code()).isEqualTo("RG.TEST.FIXTURE_SOURCE_AMBIGUOUS");
+        assertThat(exception.toString()).doesNotContain("scenario-a", "fixture-ref");
+    }
+
+    @Test
+    void bodyFixtureBundleAndReferenceSourcesAreRejected() {
+        TestExecutionApiRequest request = new TestExecutionApiRequest(
+                TestExecutionApiRequest.SCHEMA_VERSION,
+                new TestExecutionApiRequest.Target("GRAPH", "graph-a", ""),
+                TestExecutionApiService.AUTHORIZED_PURPOSE,
+                Map.of("customerId", "customer-a"), fixture(),
+                new TestExecutionApiRequest.FixtureBundleRef("fixture-ref", 1, ""),
+                TestExecutionApiRequest.Verbosity.STANDARD, Map.of());
+
+        IntegrationProblemException exception = catchThrowableOfType(
+                () -> adapter.admit(request, identity, new HttpHeaders()), IntegrationProblemException.class);
+
+        assertThat(exception.problem().code()).isEqualTo("RG.TEST.FIXTURE_SOURCE_AMBIGUOUS");
     }
 
     @Test
@@ -361,6 +442,17 @@ class TestExecutionIngressAdapterTest {
         scenario.put("id", "scenario-a");
         scenario.put("revision", 1);
         scenario.put("fingerprint", "sha256:" + "b".repeat(64));
+        return root;
+    }
+
+    private ObjectNode worldEnvelope() {
+        ObjectNode root = mapper.createObjectNode();
+        root.put("purpose", "GRAPH_CONTRACT_TEST");
+        root.put("correlationId", "corr-a");
+        ObjectNode world = root.putObject("worldModel");
+        world.put("id", "world-a");
+        world.put("revision", 2);
+        world.put("fingerprint", "sha256:" + "c".repeat(64));
         return root;
     }
 

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.testing.api;
 
+import com.leanowtech.bloge.gateway.testing.protocol.TestControlEnvelope;
+
 import java.util.Objects;
 
 /**
@@ -12,7 +14,14 @@ import java.util.Objects;
 record TestExecutionIngress(
         TestExecutionApiRequest request,
         String fidelityToken,
-        String scopeToken) {
+        String scopeToken,
+        TestControlEnvelope envelope) {
+
+    TestExecutionIngress(TestExecutionApiRequest request,
+                         String fidelityToken,
+                         String scopeToken) {
+        this(request, fidelityToken, scopeToken, null);
+    }
 
     TestExecutionIngress {
         request = Objects.requireNonNull(request, "request");
@@ -22,6 +31,7 @@ record TestExecutionIngress(
     public String toString() {
         return "TestExecutionIngress{requestPresent=true"
                 + ", fidelityPresent=" + (fidelityToken != null)
-                + ", scopePresent=" + (scopeToken != null) + "}";
+                + ", scopePresent=" + (scopeToken != null)
+                + ", envelopePresent=" + (envelope != null) + "}";
     }
 }

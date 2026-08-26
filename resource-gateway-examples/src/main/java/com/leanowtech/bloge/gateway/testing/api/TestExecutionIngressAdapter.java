@@ -7,7 +7,6 @@ import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
-import com.leanowtech.bloge.gateway.testing.protocol.TestAssetReference;
 import com.leanowtech.bloge.gateway.testing.protocol.TestControlEnvelope;
 import com.leanowtech.bloge.gateway.testing.protocol.TestControlHeaderCodec;
 import com.leanowtech.bloge.gateway.testing.protocol.TestControlHeaders;
@@ -86,17 +85,23 @@ public final class TestExecutionIngressAdapter {
         validateEnvelope(controls.envelope(), identity);
 
         TestInlineControl inline = controls.inline();
+        boolean envelopeAsset = controls.envelope() != null
+                && controls.envelope().assetReference() != null;
+        boolean bodyFixture = request != null
+                && (request.fixtureBundle() != null || request.fixtureBundleRef() != null);
+        if ((request != null && request.fixtureBundle() != null && request.fixtureBundleRef() != null)
+                || (envelopeAsset && (inline != null || bodyFixture))
+                || (inline != null && bodyFixture)) {
+            throw badRequest(identity, "RG.TEST.FIXTURE_SOURCE_AMBIGUOUS",
+                    "Exactly one fixture source may be supplied to a graph execution request.");
+        }
         if (inline == null) {
             if (request == null) {
                 throw badRequest(identity, "RG.TEST.REQUEST_SCHEMA_VERSION_INVALID",
                         "A graph execution request body is required.");
             }
-            return new TestExecutionIngress(request, controls.fidelityToken(), controls.scopeToken());
-        }
-        if (request != null
-                && (request.fixtureBundle() != null || request.fixtureBundleRef() != null)) {
-            throw badRequest(identity, "RG.TEST.FIXTURE_SOURCE_AMBIGUOUS",
-                    "A fixture source may be supplied either in the request body or in the test control plane.");
+            return new TestExecutionIngress(request, controls.fidelityToken(), controls.scopeToken(),
+                    controls.envelope());
         }
         FixtureBundle fixture = inlineFixture(inline, identity);
         if (request == null) {
@@ -106,7 +111,8 @@ public final class TestExecutionIngressAdapter {
         TestExecutionApiRequest admitted = new TestExecutionApiRequest(
                 request.schemaVersion(), request.target(), request.executionPurpose(), request.context(),
                 fixture, null, request.verbosity(), request.metadata());
-        return new TestExecutionIngress(admitted, controls.fidelityToken(), controls.scopeToken());
+        return new TestExecutionIngress(admitted, controls.fidelityToken(), controls.scopeToken(),
+                controls.envelope());
     }
 
     private TestControlHeaders parse(HttpHeaders headers,
@@ -169,11 +175,6 @@ public final class TestExecutionIngressAdapter {
         if (!identity.correlationId().equals(envelope.correlationId())) {
             throw badRequest(identity, "RG.TEST.CONTROL_CORRELATION_MISMATCH",
                     "The test control correlation does not match the authenticated request.");
-        }
-        TestAssetReference reference = envelope.assetReference();
-        if (reference != null) {
-            throw badRequest(identity, "RG.TEST.CONTROL_ASSET_RESOLUTION_UNSUPPORTED",
-                    "Scenario and world-model control references are not supported by this execution entry yet.");
         }
     }
 
