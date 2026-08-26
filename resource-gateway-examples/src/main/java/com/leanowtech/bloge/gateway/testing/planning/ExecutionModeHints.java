@@ -29,6 +29,11 @@ public final class ExecutionModeHints {
         return builder().schemaStandin(invocationSiteId, ruleId).build();
     }
 
+    /** Creates one exact server-owned world-delegate hint. */
+    public static ExecutionModeHints worldDelegate(String invocationSiteId, String ruleId) {
+        return builder().worldDelegate(invocationSiteId, ruleId).build();
+    }
+
     /** Creates a Java-only builder for several precise schema stand-in sites. */
     public static Builder builder() {
         return new Builder();
@@ -46,7 +51,8 @@ public final class ExecutionModeHints {
                 .get(rule));
     }
 
-    Map<String, Map<String, ExecutionMode>> entries() {
+    /** Returns the immutable exact site/rule hint map for server-owned bridges. */
+    public Map<String, Map<String, ExecutionMode>> entries() {
         return modesBySiteAndRule;
     }
 
@@ -58,6 +64,15 @@ public final class ExecutionModeHints {
         }
 
         public Builder schemaStandin(String invocationSiteId, String ruleId) {
+            return put(invocationSiteId, ruleId, ExecutionMode.SCHEMA_STANDIN);
+        }
+
+        /** Adds one exact server-owned world-delegate site/rule pair. */
+        public Builder worldDelegate(String invocationSiteId, String ruleId) {
+            return put(invocationSiteId, ruleId, ExecutionMode.WORLD_DELEGATE);
+        }
+
+        private Builder put(String invocationSiteId, String ruleId, ExecutionMode mode) {
             String site = requireNonBlank(invocationSiteId, "invocationSiteId");
             String rule = requireNonBlank(ruleId, "ruleId");
             Map<String, ExecutionMode> siteEntries = entries.computeIfAbsent(
@@ -66,7 +81,7 @@ public final class ExecutionModeHints {
                 throw new IllegalArgumentException(
                         "duplicate execution-mode hint: " + site + " / " + rule);
             }
-            siteEntries.put(rule, ExecutionMode.SCHEMA_STANDIN);
+            siteEntries.put(rule, mode);
             return this;
         }
 

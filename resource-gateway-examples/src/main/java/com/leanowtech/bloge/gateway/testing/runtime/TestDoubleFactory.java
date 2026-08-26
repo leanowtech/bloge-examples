@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.InvocationSite;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.SelectorResolver;
+import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -32,13 +33,14 @@ public class TestDoubleFactory {
     private final FixtureMatcher matcher;
     private final ResourceFixtureRuntime resourceRuntime;
     private final MirrorResolverChain mirrorResolverChain;
+    private final WorldDelegateRuntime worldDelegateRuntime;
 
     /**
      * @param objectMapper mapper for canonical input matching and schema-visible values
      * @param resourceRuntime optional descriptor-backed protocol runtime; required by raw HTTP fixtures
      */
     public TestDoubleFactory(ObjectMapper objectMapper, ResourceFixtureRuntime resourceRuntime) {
-        this(objectMapper, resourceRuntime, MirrorResolverChain.standard(objectMapper));
+        this(objectMapper, resourceRuntime, MirrorResolverChain.standard(objectMapper), null);
     }
 
     /**
@@ -52,11 +54,30 @@ public class TestDoubleFactory {
             ObjectMapper objectMapper,
             ResourceFixtureRuntime resourceRuntime,
             MirrorResolverChain mirrorResolverChain) {
+        this(objectMapper, resourceRuntime, mirrorResolverChain, null);
+    }
+
+    /** Creates a factory with one optional run-scoped pure world-delegate runtime. */
+    public TestDoubleFactory(
+            ObjectMapper objectMapper,
+            ResourceFixtureRuntime resourceRuntime,
+            WorldDelegateRuntime worldDelegateRuntime) {
+        this(objectMapper, resourceRuntime, MirrorResolverChain.standard(objectMapper),
+                worldDelegateRuntime);
+    }
+
+    /** Full constructor retaining the ordinary mirror resolver and optional world runtime. */
+    public TestDoubleFactory(
+            ObjectMapper objectMapper,
+            ResourceFixtureRuntime resourceRuntime,
+            MirrorResolverChain mirrorResolverChain,
+            WorldDelegateRuntime worldDelegateRuntime) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.matcher = new FixtureMatcher(objectMapper);
         this.resourceRuntime = resourceRuntime;
         this.mirrorResolverChain = Objects.requireNonNull(
                 mirrorResolverChain, "mirrorResolverChain");
+        this.worldDelegateRuntime = worldDelegateRuntime;
     }
 
     /**
@@ -133,12 +154,14 @@ public class TestDoubleFactory {
                 control, "control");
         Operator<Object, Object> typed = realOperator instanceof Operator<?, ?> candidate
                 ? (Operator<Object, Object>) candidate : null;
-        if (typed == null && !isSchemaStandinControl(requiredControl)) {
+        boolean worldDelegate = isWorldDelegateControl(requiredControl);
+        prevalidateWorldDelegate(requiredControl);
+        if (typed == null && !isSchemaStandinControl(requiredControl) && !worldDelegate) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        Operator<Object, Object> delegate = isSchemaStandinControl(requiredControl)
-                ? schemaStandinDelegate() : typed;
+        Operator<Object, Object> delegate = isSchemaStandinControl(requiredControl) || worldDelegate
+                ? nonExecutingDelegate() : typed;
         Operator<Object, Object> controlled = new ControlledOperator(
                 node, binding, requiredControl.rules(), delegate,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
@@ -233,14 +256,20 @@ public class TestDoubleFactory {
             MirrorResolutionObserver mirrorObserver,
             MirrorResolver.SessionContext sessionContext,
             MirrorStateAccessObserver stateAccessObserver) {
-        if (!(realOperator instanceof Operator<?, ?> typed)) {
+        CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
+                control, "control");
+        boolean worldDelegate = isWorldDelegateControl(requiredControl);
+        prevalidateWorldDelegate(requiredControl);
+        Operator<Object, Object> typed = realOperator instanceof Operator<?, ?> candidate
+                ? (Operator<Object, Object>) candidate : null;
+        if (typed == null && !worldDelegate) {
             throw new IllegalArgumentException("Node '" + node.id()
                     + "' is not a synchronous Operator and cannot use v1 execution control.");
         }
-        CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
-                control, "control");
+        Operator<Object, Object> delegate = worldDelegate
+                ? nonExecutingDelegate() : typed;
         Operator<Object, Object> controlled = new ControlledOperator(
-                node, binding, requiredControl.rules(), (Operator<Object, Object>) typed,
+                node, binding, requiredControl.rules(), delegate,
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 corpusPayloads,
                 Objects.requireNonNull(mirrorObserver, "mirrorObserver"),
@@ -370,7 +399,28 @@ public class TestDoubleFactory {
                 throw new TestControlException("FIXTURE_EXHAUSTED", "FIXTURE_CONSUMPTION",
                         "Fixture rule '" + rule.ruleId() + "' exceeded maxUses.");
             }
+            if (compiledControl != null
+                    && compiledControl.executionMode(rule).orElse(null)
+                    == ExecutionMode.WORLD_DELEGATE) {
+                return applyWorldDelegate(rule, input);
+            }
             return apply(rule, input, context);
+        }
+
+        private Object applyWorldDelegate(FixtureRule rule, Object input) {
+            if (worldDelegateRuntime == null) {
+                throw new TestControlException(
+                        WorldDelegateRuntime.RUNTIME_UNAVAILABLE, "WORLD_DELEGATE",
+                        "World delegate runtime is not bound to this run.");
+            }
+            recorder.markFidelity(site, "WORLD_DELEGATE");
+            recorder.markControlMode(site, "WORLD_DELEGATE");
+            try {
+                return worldDelegateRuntime.invoke(rule.ruleId(), node, input);
+            } catch (WorldDelegateRuntime.WorldDelegateRuntimeException failure) {
+                throw new TestControlException(failure.code(), "WORLD_DELEGATE",
+                        "World delegate invocation failed.");
+            }
         }
 
         private Object executeMirror(
@@ -583,10 +633,19 @@ public class TestDoubleFactory {
             }
             if (actual == ExecutionMode.PRIMITIVE_REAL
                     || actual == ExecutionMode.BINDING_TRANSPORT
-                    || actual == ExecutionMode.WORLD_DELEGATE) {
+                    ) {
                 throw new TestControlException(
                         "CONTROL_PLAN_EXECUTION_MODE_UNSUPPORTED", "EXECUTION_MODE",
                         "Compiled execution mode is not implemented by the stage-zero runtime.");
+            }
+            if (actual == ExecutionMode.WORLD_DELEGATE) {
+                if (rule.behavior().kind() != FixtureRule.BehaviorKind.DENY
+                        || !"WORLD_DELEGATE_UNBOUND".equals(rule.behavior().errorCode())
+                        || !"WORLD_DELEGATE_UNBOUND".equals(rule.behavior().errorMessage())) {
+                    throw new TestControlException("CONTROL_PLAN_WORLD_DELEGATE_SHAPE_INVALID",
+                            "EXECUTION_MODE", "World delegate hint requires the C2a DENY sentinel.");
+                }
+                continue;
             }
             if (actual != expected) {
                 throw new TestControlException(
@@ -602,7 +661,32 @@ public class TestDoubleFactory {
                 control.executionMode(rule).orElse(null) == ExecutionMode.SCHEMA_STANDIN);
     }
 
-    private static Operator<Object, Object> schemaStandinDelegate() {
+    private static boolean isWorldDelegateControl(
+            CompiledExecutionControl.ResolvedControl control) {
+        return !control.rules().isEmpty() && control.rules().stream().allMatch(rule ->
+                control.executionMode(rule).orElse(null) == ExecutionMode.WORLD_DELEGATE);
+    }
+
+    private void prevalidateWorldDelegate(
+            CompiledExecutionControl.ResolvedControl control) {
+        if (!isWorldDelegateControl(control)) {
+            return;
+        }
+        if (worldDelegateRuntime == null) {
+            throw new TestControlException(WorldDelegateRuntime.RUNTIME_UNAVAILABLE,
+                    "WORLD_DELEGATE", "World delegate runtime is not bound to this run.");
+        }
+        for (FixtureRule rule : control.rules()) {
+            try {
+                worldDelegateRuntime.fragmentFor(rule.ruleId());
+            } catch (WorldDelegateRuntime.WorldDelegateRuntimeException failure) {
+                throw new TestControlException(failure.code(), "WORLD_DELEGATE",
+                        "World delegate binding is not available for this run.");
+            }
+        }
+    }
+
+    private static Operator<Object, Object> nonExecutingDelegate() {
         return new Operator<>() {
             @Override
             public Object execute(Object input, OperatorContext context) {

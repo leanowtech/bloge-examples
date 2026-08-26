@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerpri
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -49,9 +50,16 @@ public class TestRunService {
      */
     public TestRunService(OperatorRegistry registry, ObjectMapper objectMapper,
                           ResourceFixtureRuntime resourceRuntime) {
+        this(registry, objectMapper, resourceRuntime, null);
+    }
+
+    /** Backward-compatible constructor with one optional run-scoped world runtime. */
+    public TestRunService(OperatorRegistry registry, ObjectMapper objectMapper,
+                          ResourceFixtureRuntime resourceRuntime,
+                          WorldDelegateRuntime worldDelegateRuntime) {
         this(objectMapper,
                 new ExecutionControlCompiler(registry, objectMapper),
-                new TestDoubleFactory(objectMapper, resourceRuntime),
+                new TestDoubleFactory(objectMapper, resourceRuntime, worldDelegateRuntime),
                 new IndependentTestEngineFactory(registry),
                 new TestAssertionEvaluator(objectMapper),
                 TestRunIdentitySource.system());
@@ -455,6 +463,11 @@ public class TestRunService {
         }
         if (compiled.rules().stream().anyMatch(rule -> rule.schemaCheck().mode()
                 == FixtureRule.SchemaCheckMode.WAIVED)) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
+        if (compiled.controls().values().stream().anyMatch(control ->
+                control.executionModesByRuleId().containsValue(
+                        com.leanowtech.bloge.gateway.testing.domain.ExecutionMode.WORLD_DELEGATE))) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
         if (compiled.effectivePlan().resolvedSites().stream().anyMatch(site ->

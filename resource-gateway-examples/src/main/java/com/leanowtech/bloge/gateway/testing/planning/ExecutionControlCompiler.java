@@ -833,6 +833,9 @@ public class ExecutionControlCompiler {
 
     private static EffectiveExecutionPlan.Resolution resolution(
             CompiledExecutionControl.ResolvedControl control) {
+        if (control.executionModesByRuleId().containsValue(ExecutionMode.WORLD_DELEGATE)) {
+            return EffectiveExecutionPlan.Resolution.TEST_DOUBLE;
+        }
         if (control.implicitDeny()
                 || control.rules().stream().allMatch(rule -> rule.behavior().kind()
                 == FixtureRule.BehaviorKind.DENY)) {
@@ -862,6 +865,9 @@ public class ExecutionControlCompiler {
         if (mode == ExecutionMode.SCHEMA_STANDIN) {
             return "SCHEMA_STANDIN";
         }
+        if (mode == ExecutionMode.WORLD_DELEGATE) {
+            return "WORLD_DELEGATE";
+        }
         return "OUTPUT_LEVEL";
     }
 
@@ -885,6 +891,22 @@ public class ExecutionControlCompiler {
                     .orElseThrow(() -> new ControlPlanRejectedException(
                             "CONTROL_PLAN_EXECUTION_MODE_HINT_UNRESOLVED", List.of(
                             "Execution-mode hint does not resolve to a controlled rule.")));
+            if (hint.getValue() == ExecutionMode.WORLD_DELEGATE) {
+                FixtureRule.Behavior behavior = rule.behavior();
+                if (behavior.kind() != FixtureRule.BehaviorKind.DENY
+                        || !"WORLD_DELEGATE_UNBOUND".equals(behavior.errorCode())
+                        || !"WORLD_DELEGATE_UNBOUND".equals(behavior.errorMessage())) {
+                    reject("CONTROL_PLAN_WORLD_DELEGATE_SHAPE_INVALID",
+                            "World delegate hint requires the C2a DENY sentinel.");
+                }
+                ExecutionMode existing = modes.get(rule.ruleId());
+                if (existing != null && existing != hint.getValue()) {
+                    reject("CONTROL_PLAN_EXECUTION_MODE_MISMATCH",
+                            "Execution-mode hint conflicts with compiled fixture semantics.");
+                }
+                modes.put(rule.ruleId(), hint.getValue());
+                continue;
+            }
             if (hint.getValue() != ExecutionMode.SCHEMA_STANDIN) {
                 reject("CONTROL_PLAN_EXECUTION_MODE_HINT_UNSUPPORTED",
                         "Execution-mode hint is not supported by the stage-zero runtime.");

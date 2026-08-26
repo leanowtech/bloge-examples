@@ -46,4 +46,22 @@ class ExecutionModeHintsTest {
         assertThat(hints.modeFor("", "rule")).isEmpty();
         assertThat(hints.modeFor("site", "")).isEmpty();
     }
+
+    @Test
+    void worldDelegateFactoryAndBuilderResolveOnlyTheExactSiteAndRule() {
+        ExecutionModeHints factoryHints = ExecutionModeHints.worldDelegate(
+                " site#PRIMARY ", " rule ");
+
+        assertThat(factoryHints.modeFor("site#PRIMARY", "rule"))
+                .contains(ExecutionMode.WORLD_DELEGATE);
+        assertThat(factoryHints.modeFor("other#PRIMARY", "rule")).isEmpty();
+        assertThat(factoryHints.modeFor("site#PRIMARY", "other-rule")).isEmpty();
+
+        ExecutionModeHints.Builder builder = ExecutionModeHints.builder()
+                .worldDelegate(" site#PRIMARY ", " rule ");
+        assertThat(builder.build().modeFor("site#PRIMARY", "rule"))
+                .contains(ExecutionMode.WORLD_DELEGATE);
+        assertThatThrownBy(() -> builder.worldDelegate("site#PRIMARY", "rule"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

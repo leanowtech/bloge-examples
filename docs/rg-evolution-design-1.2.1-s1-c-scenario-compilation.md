@@ -1,6 +1,6 @@
 # S1-C 剧情与编译下沉实现说明
 
-本文记录 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 阶段一 `S1-C` 的实现边界。当前完成 `S1-C1`「剧情资产模型与契约兼容绑定」和 `S1-C2a`「无副作用编译下沉」；运行期 `WORLD_DELEGATE` 桥和 compiler 三重 oracle 尚未实现。
+本文记录 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 阶段一 `S1-C` 的实现边界。当前完成 `S1-C1`「剧情资产模型与契约兼容绑定」、`S1-C2a`「无副作用编译下沉」和 `S1-C2b`「统一内核世界委托」；compiler 三重 oracle 尚未闭合。
 
 ## 剧情资产
 
@@ -66,12 +66,28 @@ Expectations 按集合语义规范排序。相同业务断言的输入顺序不�
 
 Expectation 坐标使用“规范序号 + 内容指纹”，相同断言仍可按序号区分，断言内容又不会以明文进入来源映射。该映射为后续失败归因、影响分析和可视化回跳提供稳定基础。
 
+## 统一内核执行
+
+`WorldScenarioRunService` 是当前 Scenario 世界委托的高层入口。它不会建立第二条模拟执行路径，而是：
+
+1. 重算实际 Graph 指纹，并与 Scenario 编译目标和请求目标同时对拍；
+2. 校验编译结果指纹及 rule、binding、source map 的一对一关系；
+3. 复用 `InvocationInventoryBuilder + SelectorResolver` 重建真实调用点；
+4. 只为精确的 `invocationSiteId + ruleId` 生成 Java-only `WORLD_DELEGATE` hint；
+5. 通过现有 `ExecutionControlCompiler` 编译控制计划；
+6. 通过现有 `TestRunService`、独立 GraphEngine 和证据管线执行。
+
+`WorldDelegateRuntime` 是单次运行作用域的冻结 binding 表。`TestDoubleFactory` 仅当编译模式已经被服务端固定为 `WORLD_DELEGATE`，且规则仍是 C2a 生成的 `WORLD_DELEGATE_UNBOUND` DENY sentinel 时，才允许调用纯 BLOGE 片段。普通 `TestRunService` 看到同一 FixtureBundle 仍执行 DENY，不能由 fixture wire value 自行激活世界委托。
+
+世界片段结果继续经过节点输出 schema 校验。Node trace 的 fidelity/control fact 标记为 `WORLD_DELEGATE`，证据上限固定为 `EXPLORATORY`；真实算子与资源网络不会执行。缺失 runtime、缺失 binding、规则漂移、错误 purpose 或 Graph 身份漂移均使用固定净化错误，并在真实算子执行前失败。
+
 ## 尚未实现
 
-- 在统一运行内核中把契约级规则绑定为 `WORLD_DELEGATE`，调用冻结的纯 BLOGE 世界片段；
-- 缺失、漂移或越权 binding 在执行前失败的端到端证明；
-- 多节点复用同一契约时，真实算子与网络调用均为零的运行期证明；
-- 结构性质、独立参考实现差分和往返三重 compiler oracle。
+- 独立参考编译器与生产编译器的固定差分矩阵；
+- FixtureBundle、binding 和 source map 的规范序列化往返证明；
+- 对规则完备性、双向映射一致性和负载隔离的结构性质验证。
+
+三类证据全部固定后，compiler 三重 oracle 才算闭合。
 
 上述能力闭合前，`S1-C` 保持 `IN_PROGRESS`。
 
@@ -84,3 +100,5 @@ mvn -f resource-gateway-examples/pom.xml \
 ```
 
 当前固定分母为 `63` 项测试。其中 Scenario 测试 `12` 项；编译器测试 `10` 项，覆盖复杂契约标识编解码、多节点和混合调用点复用、显式切片选择、双向来源映射、20 次编译确定性、target/world/contract 漂移、零命中和多标签拒绝、错误净化，以及 metadata、来源映射和编译指纹的负载隔离。
+
+运行期受影响聚焦集为 `106` 项测试，包含 `WorldScenarioRunServiceTest` 的 `4` 项端到端证明：同一逻辑契约跨两个节点委托同一冻结片段、真实算子调用为零、20 次语义结果指纹一致、证据降级正确、缺 runtime/binding 和错误 purpose 失败关闭、变化 Graph 不能冒用旧指纹，以及普通运行入口不能激活 C2a DENY bundle。
