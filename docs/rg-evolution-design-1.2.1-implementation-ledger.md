@@ -59,7 +59,7 @@
 | `S1-A` | 版本无关的逻辑资源契约、描述符投影、具体实现绑定与兼容性分析 | `DEVELOPMENT_VERIFIED` | 18/18：canonical fingerprint、Map/集合语义顺序归一化、防御拷贝、待确认投影、provider/API 版本隔离、结构化输出证明、输入/输出双向兼容、UNKNOWN 失败关闭与错误净化 |
 | `S1-B` | 无状态世界模型、纯 BLOGE 世界片段、纯净校验和片段单测台 | `DEVELOPMENT_VERIFIED` | 41/41：不可变模型、版本化片段、稳定指纹、契约与 binding 一致性、AST/compiled-inventory 双重纯净准入、真实 BLOGE 隔离执行、FIRST/default、UNIQUE 歧义、20 次确定性重放、资源上限、超时线程终止、外部算子零执行和净化错误 |
 | `S1-C` | Scenario、编译下沉、逻辑契约寻址与双向来源映射 | `DEVELOPMENT_VERIFIED` | `S1-C1..C2c`：63/63 资产/编译聚焦集与最终 106/106 受影响集全绿；精确 target/world、稳定 Scenario、assertion lowering、规范契约标签、真实 selector 对拍、多节点复用、fail-closed sentinel、无负载编译指纹、双向来源映射、统一内核 `WORLD_DELEGATE`、20 次确定性重放、真实算子/loopback 网络零调用及 compiler 三重 oracle 全部闭合 |
-| `S1-D` | 授权引用解析、分级负载托管与三类资产版本化持久化 | `IN_PROGRESS` | D1 三类资产统一目录与确定性切片选择已形成开发证据；读取前授权、分级 payload 读取和端到端引用运行尚未闭合 |
+| `S1-D` | 授权引用解析、分级负载托管与三类资产版本化持久化 | `IN_PROGRESS` | D1 三类资产统一目录、确定性切片选择和 D2a 坐标级读取前授权已形成开发证据；分级 payload 授权和端到端引用运行尚未闭合 |
 
 - 逻辑资源契约可由描述符投影初稿，并由人确认业务语义。
 - 具体实现登记时必须证明输出满足逻辑契约。
@@ -177,3 +177,5 @@ A1 protocol archive boundary            PASS
 首轮全量回归准确发现一项旧测试预期仍把 `WORLD_DELEGATE` 视为未实现；测试已更新为区分“已实现但缺少 run-scoped runtime”与真正不支持的执行模式。修正后完整分母重新执行并全绿，没有以聚焦测试替代里程碑证据。
 
 `S1-D/D1` 的治理资产目录聚焦集为 12/12。统一头表与历史表保存逻辑资源契约、世界模型和剧情；CAS 只允许 `N -> N + 1`，真实双线程竞争只有一个赢家。精确地址固定为 `tenant + kind + id + revision + domain fingerprint`，独立 `record_fingerprint` 覆盖完整规范 JSON。测试同时证明旧版本不可变、租户与类型隔离、跨仓库实例恢复、头行与历史行篡改失败关闭，以及 binding 通过受控工厂恢复而不绕过领域构造边界。加入阶段一既有测试后的世界层回归为 90/90。自动世界切片选择另有 7/7 聚焦测试，零候选和多候选均失败，不采用输入顺序或“第一条优先”语义。
+
+`S1-D/D2a` 的读取前授权与精确依赖解析聚焦集为 22/22，阶段一联合回归为 102/102。认证上下文提供唯一租户来源；purpose、correlation 和环境在授权及仓库前校验。顶层拒绝时仓库调用为零；Scenario 的 World 依赖通过受控回调先授权再读取；错误 Scenario 指纹不会触发 World 授权或读取。数据库信封先做无负载 preflight，再比较外部精确指纹，避免把权威行损坏误报为普通未命中。只有固定、无负载的依赖中断类型可以穿过 codec 净化。D2b 的数据来源、安全分级、保留期和访问策略授权尚未实施。
