@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..C` 已通过开发验证，状态资产、片段和整图 run-scoped 原子状态会话闭合；函数控制、证据/生产隔离和系统里程碑仍由 `S2-D..E` 交付 |
+| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..C` 已通过开发验证，`S2-D2a` 静态函数控制计划已闭合；运行期函数注入、消费观察、证据/生产隔离和系统里程碑仍由 `S2-D2b..E` 交付 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -77,7 +77,7 @@
 | `S2-A` | 版本化 `WorldStateSpec` / `StateSpecV2`、Scenario 初始状态覆盖、跨切片单写者证明、治理 codec 双读写 | `DEVELOPMENT_VERIFIED` | 提交 `dd3034db6`；51/51 聚焦测试与 516/516 World、Scenario、Governed Catalog 受影响回归全绿；旧 `StateSpec` / `WorldSlice.state()` 源兼容、v1 无状态指纹不变、v2 schema/default/override/tamper/上限和 null 边界均有固定证明 |
 | `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `DEVELOPMENT_VERIFIED` | 提交 `7af01cb1d`；61/61 最终聚焦回归与 7298 项全量测试全绿；固定 `{request,state}` / `{response,stateWrites}` 信封、WRITE-only 隔离、JSON Pointer、完整写集先验校验、失败零提交、20 次确定性重放及 payload-free 转换指纹均有固定证明 |
 | `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `DEVELOPMENT_VERIFIED` | 提交 `226765b41`；125/125 最终聚焦回归与 7335 项全量测试全绿；编译期访问计划、严格绑定快照、原子提交、动态坐标、防重复/重入、无冲突规范投影、失败零提交、20 次确定性运行和 v1 指纹 golden 均有固定证明 |
-| `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `IN_PROGRESS` | `S2-D1` BLOGE 通用内核提交 `8d514a7f6` 已验证：core 1959 项、DSL 1567 项测试全绿；Resource Gateway 专用计划、运行注入、消费观察和证据降级仍待 `S2-D2` 闭合 |
+| `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `IN_PROGRESS` | `S2-D1` BLOGE 通用内核提交 `8d514a7f6` 已验证：core 1959 项、DSL 1567 项测试全绿；`S2-D2a` Resource Gateway 静态控制面 18/18 聚焦测试全绿，精确调用点、声明/运行事实对拍、alias、候选顺序、schema/value 边界、证据上限和 payload-free 投影已冻结；运行 wrapper、线程安全消费观察、证据降级和服务端接线仍待 `S2-D2b` 闭合 |
 | `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
 
 - 每个剧情拥有隔离、单写者、确定性排序、可序列化的世界状态。

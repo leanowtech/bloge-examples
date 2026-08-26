@@ -283,7 +283,9 @@ record CompiledFunctionControlPlan(
 
 `S2-D1` BLOGE 通用内核前置已完成开发验证，嵌套仓库提交为 `8d514a7f6`。所有表达式函数均经过 resolver，replacement 的名称、纯度和执行服务声明必须与注册事实一致；根图历史 invocation scope 保持不变，foreach、loop、import、transform 和 decision table 的真实引擎测试证明 graphPath/nodeId/源码坐标完整且不进入业务 context。新增 `CompiledGraph` sidecar 在不修改 `Graph` / `NodeSpec` record 结构的前提下保存根图、导入图和内联子图的静态函数调用清单；两类 foreach 公开稳定 `sequential()` 事实。`bloge-core` 1959 项、`bloge-dsl` 1567 项测试均为 0 failures / 0 errors，其中 DSL 保留 1 项既有跳过。
 
-该证据只关闭 BLOGE 通用扩展点，不代表 Resource Gateway 已可注入函数。专用函数 inventory、控制计划、运行 wrapper、消费观察、证据降级和服务端集成仍须由 `S2-D2` 闭合。
+`S2-D2a` 已关闭 Resource Gateway 静态控制面：`CompiledGraph` 与运行时 Invocation Inventory 按图对象身份对拍，可为根图、嵌套图和复用子图生成完整调用点；函数库声明与运行时名称、alias、纯度和执行服务事实逐项对拍，漂移失败关闭。控制规则支持精确参数候选与最终 wildcard fallback，冻结 RETURN、THROW、DELAY、TIMEOUT、消费上下限和纯函数强注入；精确候选始终优先，零命中、重复精确参数、多个 fallback 和宽匹配歧义均拒绝。显式 JSON `null` 与“未提供返回值”保持不同语义，schema/value、深度、数量、文本和 duration 均受限。公开计划只包含指纹和候选元数据，不暴露参数、返回值、错误文本或 schema；UNKNOWN/LEGACY、纯函数强注入和非纯函数受控替身具有明确证据上限。架构测试禁止该模块依赖 operator fixture 的 `FixtureRule`、`SelectorResolver` 或 BLOGE `NodeSpec`。聚焦验证为 18/18，0 failures、0 errors、0 skipped。
+
+该证据只证明函数控制可被静态、确定性、失败关闭地编译，不代表 Resource Gateway 已可在 DAG 运行中注入函数。运行 wrapper、精确参数运行期选择、RETURN/THROW/DELAY/TIMEOUT 行为、线程安全消费观察、未消费/耗尽判定、证据降级和服务端集成仍须由 `S2-D2b` 闭合。
 
 ### S2-E：证据、系统测试和里程碑
 
