@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -26,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 /**
  * Unified execution data-control kernel for operator, subgraph, and graph tests.
@@ -226,6 +228,49 @@ public class TestRunService {
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
             MirrorStateAccessObserver stateAccessObserver) {
+        return executeCompiled(request, compiled, mirrorObserver, invocationBudget,
+                stateAccessObserver, null);
+    }
+
+    /** Executes a compiled graph after creating exactly one session from the generated run id. */
+    public TestExecutionResult executeCompiledWithWorldSessionFactory(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver,
+            Function<String, WorldStateSession> worldStateSessionFactory) {
+        Objects.requireNonNull(request, "request");
+        Objects.requireNonNull(compiled, "compiled");
+        Objects.requireNonNull(mirrorObserver, "mirrorObserver");
+        Objects.requireNonNull(stateAccessObserver, "stateAccessObserver");
+        Objects.requireNonNull(worldStateSessionFactory, "worldStateSessionFactory");
+        validateCompiledBinding(request, compiled);
+        String runId = "test-run-" + identitySource.nextRunId();
+        Instant startedAt = identitySource.now();
+        try (AdmissionGuard admission = noAdmissionGuard();
+             WorldStateSession worldStateSession = Objects.requireNonNull(
+                     worldStateSessionFactory.apply(runId), "worldStateSession")) {
+            if (!runId.equals(worldStateSession.binding().runId())) {
+                throw new ControlPlanRejectedException(
+                        "WORLD_STATE_SESSION_RUN_ID_MISMATCH", List.of());
+            }
+            return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
+                    invocationBudget, stateAccessObserver, worldStateSession);
+        }
+    }
+
+    /**
+     * Internal compatibility path for an already-created session. New callers must use the
+     * server-owned factory method above so session construction and lifecycle stay together.
+     */
+    TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
@@ -234,9 +279,14 @@ public class TestRunService {
         validateCompiledBinding(request, compiled);
         String runId = "test-run-" + identitySource.nextRunId();
         Instant startedAt = identitySource.now();
-        try (AdmissionGuard admission = noAdmissionGuard()) {
+        try (AdmissionGuard admission = noAdmissionGuard();
+             WorldStateSession ownedSession = worldStateSession) {
+            if (ownedSession != null && !runId.equals(ownedSession.binding().runId())) {
+                throw new ControlPlanRejectedException(
+                        "WORLD_STATE_SESSION_RUN_ID_MISMATCH", List.of());
+            }
             return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
-                    invocationBudget, stateAccessObserver);
+                    invocationBudget, stateAccessObserver, ownedSession);
         }
     }
 
@@ -273,7 +323,7 @@ public class TestRunService {
                 admissionFactory.admit(compiled), "admission guard")) {
             return runCompiled(request, runId, startedAt, compiled, admission,
                     MirrorResolutionObserver.noop(), null,
-                    MirrorStateAccessObserver.noop());
+                    MirrorStateAccessObserver.noop(), null);
         }
     }
 
@@ -285,7 +335,8 @@ public class TestRunService {
             AdmissionGuard admission,
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
-            MirrorStateAccessObserver stateAccessObserver) {
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -297,7 +348,7 @@ public class TestRunService {
         try {
             ExecutionOptions options = runtimeOptions.options(
                     compiled, recorder, mirrorObserver, invocationBudget,
-                    request.mirrorSessionContext(), stateAccessObserver);
+                    request.mirrorSessionContext(), stateAccessObserver, worldStateSession);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));

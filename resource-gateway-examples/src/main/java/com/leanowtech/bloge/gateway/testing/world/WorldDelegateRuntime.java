@@ -18,6 +18,9 @@ public final class WorldDelegateRuntime {
 
     private final WorldFragmentTestKit fragmentTestKit;
     private final Map<String, BlogeFragmentRef> fragmentsByRuleId;
+    private final Map<String, WorldDelegateBinding> bindingsByRuleId;
+    private final StateAccessPlan stateAccessPlan;
+    private final WorldRunStateDescriptor runStateDescriptor;
 
     public WorldDelegateRuntime(WorldScenarioCompilation compilation,
                                 WorldFragmentTestKit fragmentTestKit) {
@@ -28,14 +31,18 @@ public final class WorldDelegateRuntime {
         compilation.verifyFingerprint();
         this.fragmentTestKit = fragmentTestKit;
         this.fragmentsByRuleId = freezeBindings(compilation);
+        this.bindingsByRuleId = freezeBindingDescriptors(compilation);
+        this.stateAccessPlan = compilation.stateAccessPlan();
+        this.runStateDescriptor = compilation.runStateDescriptor();
     }
 
     /** Invokes the exact frozen fragment and validates its result against the graph node shape. */
     public Object invoke(String ruleId, NodeSpec node, Object input) {
         String requiredRuleId = required(ruleId);
         NodeSpec requiredNode = Objects.requireNonNull(node, "node");
+        WorldDelegateBinding binding = bindingsByRuleId.get(requiredRuleId);
         BlogeFragmentRef fragment = fragmentsByRuleId.get(requiredRuleId);
-        if (fragment == null) {
+        if (fragment == null || binding == null) {
             throw failure(BINDING_UNAVAILABLE);
         }
         final Object output;
@@ -52,6 +59,65 @@ public final class WorldDelegateRuntime {
             }
         }
         return output;
+    }
+
+    /** Invokes one stateful world fragment through the run-scoped atomic session. */
+    public Object invoke(String ruleId, NodeSpec node, Object input,
+                         WorldInvocationCoordinate coordinate, WorldStateSession session) {
+        String requiredRuleId = required(ruleId);
+        WorldDelegateBinding binding = bindingsByRuleId.get(requiredRuleId);
+        BlogeFragmentRef fragment = fragmentsByRuleId.get(requiredRuleId);
+        if (fragment == null || binding == null) {
+            throw failure(BINDING_UNAVAILABLE);
+        }
+        // A stateful aggregate may contain legacy/stateless slices. Those slices retain the
+        // original execution path and must not be forced through the state session.
+        if (!runStateDescriptor.stateful() || binding.stateSpec().isEmpty()) {
+            return invoke(ruleId, node, input);
+        }
+        if (session == null || coordinate == null) {
+            throw failure(RUNTIME_UNAVAILABLE);
+        }
+        WorldStateSession.Binding sessionBinding = session.binding();
+        if (!runStateDescriptor.scenarioFingerprint().equals(sessionBinding.scenarioFingerprint())
+                || !runStateDescriptor.worldFingerprint().equals(sessionBinding.worldFingerprint())
+                || !runStateDescriptor.graphArtifactFingerprint()
+                .equals(sessionBinding.graphArtifactFingerprint())) {
+            throw failure(WorldModelException.Code.STATE_SNAPSHOT_WRONG_BINDING);
+        }
+        StateAccessPlan.Access access = stateAccessPlan.access(
+                coordinate.structuralInvocationSiteId());
+        if (access == null || !requiredRuleId.equals(access.ruleId())) {
+            throw failure(BINDING_UNAVAILABLE);
+        }
+        try {
+            return session.transition(coordinate, access, before -> {
+                        WorldFragmentTestKit.StatefulReplayResult result =
+                                fragmentTestKit.executeStateful(fragment,
+                                        stateSpec(binding), input, before.values(), 1);
+                        validateNodeOutput(node, result.response());
+                        return new WorldStateSession.StateTransition<>(result.response(),
+                                result.stateWrites());
+                    });
+        } catch (WorldModelException failure) {
+            throw failure(failure.code().name());
+        } catch (RuntimeException failure) {
+            throw failure(EXECUTION_FAILED);
+        }
+    }
+
+    private static void validateNodeOutput(NodeSpec node, Object output) {
+        if (!(node.outputSchema() instanceof OpaqueSchema)
+                && !SchemaValidator.validateInstance(node.id(), output, node.outputSchema()).isEmpty()) {
+            throw new WorldModelException(WorldModelException.Code.STATE_SCHEMA_MISMATCH);
+        }
+    }
+
+    private static StateSpecV2 stateSpec(WorldDelegateBinding binding) {
+        if (binding.stateSpec() instanceof StateSpecV2 stateSpec) {
+            return stateSpec;
+        }
+        throw new WorldModelException(WorldModelException.Code.STATE_NOT_SUPPORTED);
     }
 
     public BlogeFragmentRef fragmentFor(String ruleId) {
@@ -91,6 +157,17 @@ public final class WorldDelegateRuntime {
         return Map.copyOf(result);
     }
 
+    private static Map<String, WorldDelegateBinding> freezeBindingDescriptors(
+            WorldScenarioCompilation compilation) {
+        Map<String, WorldDelegateBinding> result = new LinkedHashMap<>();
+        for (WorldDelegateBinding binding : compilation.bindings()) {
+            if (result.put(binding.ruleId(), binding) != null) {
+                throw failure(WorldScenarioCompilationException.Code.INVALID_BINDING);
+            }
+        }
+        return Map.copyOf(result);
+    }
+
     private static String required(String value) {
         if (value == null || value.isBlank()) {
             throw failure(BINDING_UNAVAILABLE);
@@ -100,6 +177,10 @@ public final class WorldDelegateRuntime {
 
     private static WorldDelegateRuntimeException failure(String code) {
         return new WorldDelegateRuntimeException(code);
+    }
+
+    private static WorldDelegateRuntimeException failure(WorldModelException.Code code) {
+        return new WorldDelegateRuntimeException(code == null ? EXECUTION_FAILED : code.name());
     }
 
     private static WorldScenarioCompilationException failure(

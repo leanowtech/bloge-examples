@@ -61,15 +61,41 @@ public final class WorldScenarioRunService {
                                        TestExecutionRequest request,
                                        TestRunService.AdmissionFactory admissionFactory) {
         CompiledExecutionControl compiled = compile(compilation, request);
-        TestRunService runtime = new TestRunService(objectMapper, new ExecutionControlCompiler(
-                registry, objectMapper), new TestDoubleFactory(objectMapper, null,
-                new WorldDelegateRuntime(compilation, fragmentTestKit)),
-                new IndependentTestEngineFactory(registry), new TestAssertionEvaluator(objectMapper));
         AdmissionGuard admission = Objects.requireNonNull(
                 Objects.requireNonNull(admissionFactory, "admissionFactory").admit(compiled),
                 "admission guard");
         try (admission) {
-            TestExecutionResult result = runtime.executeCompiled(request, compiled);
+            TestRunService runtime;
+            TestExecutionResult result;
+            if (compilation.runStateDescriptor().stateful()) {
+                // Construct the world runtime only after external admission. A malformed
+                // server-owned runtime/session must release the admission guard before leaving.
+                runtime = new TestRunService(objectMapper, new ExecutionControlCompiler(
+                        registry, objectMapper), new TestDoubleFactory(objectMapper, null,
+                        new WorldDelegateRuntime(compilation, fragmentTestKit)),
+                        new IndependentTestEngineFactory(registry),
+                        new TestAssertionEvaluator(objectMapper));
+                result = runtime.executeCompiledWithWorldSessionFactory(
+                        request, compiled, com.leanowtech.bloge.gateway.testing.runtime
+                                .MirrorResolutionObserver.noop(), null,
+                        com.leanowtech.bloge.gateway.testing.runtime.MirrorStateAccessObserver.noop(),
+                        runId -> new WorldStateSession(
+                                compilation.runStateDescriptor().stateSpec(),
+                                compilation.runStateDescriptor().initialOverrides(),
+                                new WorldStateSession.Binding(
+                                        compilation.runStateDescriptor().scenarioFingerprint(),
+                                        compilation.runStateDescriptor().worldFingerprint(),
+                                        compilation.runStateDescriptor().graphArtifactFingerprint(),
+                                        runId), compilation.stateAccessPlan()));
+            } else {
+                // Keep the stateless execution path byte-for-byte compatible with v1 behavior.
+                runtime = new TestRunService(objectMapper, new ExecutionControlCompiler(
+                        registry, objectMapper), new TestDoubleFactory(objectMapper, null,
+                        new WorldDelegateRuntime(compilation, fragmentTestKit)),
+                        new IndependentTestEngineFactory(registry),
+                        new TestAssertionEvaluator(objectMapper));
+                result = runtime.executeCompiled(request, compiled);
+            }
             admission.checkpoint();
             return result;
         }

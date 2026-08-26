@@ -9,6 +9,8 @@ import com.leanowtech.bloge.core.schema.SchemaValidationLevel;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 import org.junit.jupiter.api.Test;
@@ -157,6 +159,210 @@ class WorldScenarioCompilerTest {
         assertThat(baseline.sourceMap().sourceToOutputs(contractSource)).hasSize(1);
         assertThat(baseline.sourceMap().sourceToOutputs(contractSource).getFirst())
                 .startsWith("invocation-site:");
+    }
+
+    @Test
+    void v1StatelessMaterialRetainsTheHistoricalFourArgumentFingerprint() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation compilation = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+
+        assertThat(WorldScenarioCompilation.fingerprintFor(compilation.bundle(),
+                compilation.bindings(), compilation.sourceMap()))
+                .isEqualTo("sha256:2f77ddd129edebcf152a9a6f9ac0a31aaa9852c7cb9b62afb15f0b7f7099d24f");
+    }
+
+    @Test
+    void statePlanAndRunDescriptorSemanticsAreFingerprintBound() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation compilation = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+        Scenario scenario = scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of());
+        StateAccessPlan balancePlan = statePlan(graph, contract, "/balance");
+        StateAccessPlan otherPlan = statePlan(graph, contract, "/other");
+        WorldRunStateDescriptor balanceOne = stateDescriptor(scenario, world, graph, "/balance", 1);
+        WorldRunStateDescriptor balanceTwo = stateDescriptor(scenario, world, graph, "/balance", 2);
+        WorldRunStateDescriptor otherState = stateDescriptor(scenario, world, graph, "/other", 1);
+
+        String balanceOneFingerprint = WorldScenarioCompilation.fingerprintFor(
+                compilation.bundle(), compilation.bindings(), compilation.sourceMap(),
+                balancePlan, balanceOne);
+        assertThat(balanceOneFingerprint).isNotEqualTo(WorldScenarioCompilation.fingerprintFor(
+                compilation.bundle(), compilation.bindings(), compilation.sourceMap(),
+                otherPlan, balanceOne));
+        assertThat(balanceOneFingerprint).isNotEqualTo(WorldScenarioCompilation.fingerprintFor(
+                compilation.bundle(), compilation.bindings(), compilation.sourceMap(),
+                balancePlan, balanceTwo));
+        assertThat(balanceOneFingerprint).isNotEqualTo(WorldScenarioCompilation.fingerprintFor(
+                compilation.bundle(), compilation.bindings(), compilation.sourceMap(),
+                balancePlan, otherState));
+    }
+
+    @Test
+    void historicalFingerprintCannotConstructACompilationAfterSourceDrift() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation compilation = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+
+        assertThatThrownBy(() -> new WorldScenarioCompilation(compilation.bundle(),
+                compilation.bindings(), WorldScenarioSourceMap.of(List.of()),
+                "sha256:2f77ddd129edebcf152a9a6f9ac0a31aaa9852c7cb9b62afb15f0b7f7099d24f"))
+                .isInstanceOfSatisfying(WorldScenarioCompilationException.class, error ->
+                        assertThat(error.code()).isEqualTo(
+                                WorldScenarioCompilationException.Code.COMPILATION_FINGERPRINT_MISMATCH));
+    }
+
+    @Test
+    void compilationRejectsStatelessBindingWithStatefulPlan() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation baseline = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+        StateAccessPlan statePlan = statePlan(graph, contract, "/balance");
+        String fingerprint = WorldScenarioCompilation.fingerprintFor(baseline.bundle(),
+                baseline.bindings(), baseline.sourceMap(), statePlan, WorldRunStateDescriptor.legacy());
+
+        assertThatThrownBy(() -> new WorldScenarioCompilation(baseline.bundle(), baseline.bindings(),
+                baseline.sourceMap(), fingerprint, statePlan, WorldRunStateDescriptor.legacy()))
+                .isInstanceOfSatisfying(WorldScenarioCompilationException.class, error ->
+                        assertThat(error.code()).isEqualTo(
+                                WorldScenarioCompilationException.Code.INVALID_COMPILATION));
+    }
+
+    @Test
+    void compilationRejectsPlanKeyDriftAgainstBindingStateSpec() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation baseline = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+        WorldDelegateBinding binding = statefulBinding(contract, "/balance");
+        StateAccessPlan driftedPlan = statePlan(graph, contract, "/other");
+        WorldRunStateDescriptor descriptor = stateDescriptor(
+                scenario(graph, world, List.of(Scenario.ContractDependency.of(contract)), List.of()),
+                world, graph, "/balance", 1);
+        String fingerprint = WorldScenarioCompilation.fingerprintFor(baseline.bundle(),
+                List.of(binding), baseline.sourceMap(), driftedPlan, descriptor);
+
+        assertThatThrownBy(() -> new WorldScenarioCompilation(baseline.bundle(), List.of(binding),
+                baseline.sourceMap(), fingerprint, driftedPlan, descriptor))
+                .isInstanceOfSatisfying(WorldScenarioCompilationException.class, error ->
+                        assertThat(error.code()).isEqualTo(
+                                WorldScenarioCompilationException.Code.INVALID_COMPILATION));
+    }
+
+    @Test
+    void compilationRejectsDescriptorMissingBindingStateKey() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation baseline = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+        WorldDelegateBinding binding = statefulBinding(contract, "/balance");
+        StateAccessPlan plan = statePlan(graph, contract, "/balance");
+        Scenario scenario = scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of());
+        WorldRunStateDescriptor missing = stateDescriptor(scenario, world, graph, "/other", 1);
+        String fingerprint = WorldScenarioCompilation.fingerprintFor(baseline.bundle(), List.of(binding),
+                baseline.sourceMap(), plan, missing);
+
+        assertThatThrownBy(() -> new WorldScenarioCompilation(baseline.bundle(), List.of(binding),
+                baseline.sourceMap(), fingerprint, plan, missing))
+                .isInstanceOfSatisfying(WorldScenarioCompilationException.class, error ->
+                        assertThat(error.code()).isEqualTo(
+                                WorldScenarioCompilationException.Code.INVALID_COMPILATION));
+    }
+
+    @Test
+    void aggregateReadWriteStateCoversASelectedWriteOnlySlice() {
+        LogicalResourceContract contract = contract("logical.customer");
+        StateSpecV2 writeOnly = StateSpecV2.of(List.of(new StateKeySpec(
+                "/balance", StateKeySpec.Access.WRITE, Map.of("type", "integer"), 10)));
+        StateSpecV2 readOnly = StateSpecV2.of(List.of(new StateKeySpec(
+                "/balance", StateKeySpec.Access.READ, Map.of("type", "integer"), 10)));
+        WorldSlice selected = slice("provider-writer", "v1", contract, writeOnly);
+        WorldSlice other = slice("provider-reader", "v1", contract, readOnly);
+        ResourceWorldModel world = new ResourceWorldModel("customer-world", "tenant-a", 1,
+                List.of(selected, other));
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        Scenario scenario = scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of());
+
+        WorldScenarioCompilation compilation = compile(scenario, world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-writer", "v1",
+                        selected.fingerprint())));
+
+        assertThat(compilation.runStateDescriptor().stateSpec().declarations().getFirst().access())
+                .isEqualTo(StateKeySpec.Access.READ_WRITE);
+        assertThat(compilation.bindings().getFirst().stateSpec().declarations().getFirst().access())
+                .isEqualTo(StateKeySpec.Access.WRITE);
+        assertThat(compilation.stateAccessPlan().accesses()).singleElement()
+                .satisfies(access -> assertThat(access.writeKeys()).containsExactly("/balance"));
+    }
+
+    @Test
+    void statefulWorldAllowsAStatelessSelectedSliceWithAnEmptySelectedPlan() {
+        LogicalResourceContract contract = contract("logical.customer");
+        WorldSlice selected = slice("provider-stateless", "v1", contract, StateSpec.empty());
+        WorldSlice other = slice("provider-stateful", "v1", contract, StateSpecV2.of(List.of(
+                new StateKeySpec("/balance", StateKeySpec.Access.WRITE,
+                        Map.of("type", "integer"), 10))));
+        ResourceWorldModel world = new ResourceWorldModel("customer-world", "tenant-a", 1,
+                List.of(selected, other));
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        Scenario scenario = scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of());
+
+        WorldScenarioCompilation compilation = compile(scenario, world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-stateless", "v1",
+                        selected.fingerprint())));
+
+        assertThat(compilation.runStateDescriptor().stateful()).isTrue();
+        assertThat(compilation.stateAccessPlan().accesses()).isEmpty();
+        assertThat(compilation.bindings().getFirst().stateSpec().isEmpty()).isTrue();
+    }
+
+    @Test
+    void compilationRejectsDuplicateLogicalContractBindings() {
+        LogicalResourceContract contract = contract("logical.customer");
+        ResourceWorldModel world = world("provider-a", "v1", contract);
+        Graph graph = graphWithTags(Map.of("lookup", tag(contract)));
+        WorldScenarioCompilation baseline = compile(scenario(graph, world,
+                List.of(Scenario.ContractDependency.of(contract)), List.of()), world, graph,
+                Map.of(contract.contractId(), new WorldSliceSelection("provider-a", "v1",
+                        world.slices().getFirst().fingerprint())));
+        WorldDelegateBinding duplicate = new WorldDelegateBinding("another-rule",
+                contract.contractId(), contract.contractFingerprint(),
+                BlogeFragmentRef.frozen("another.bloge", DSL));
+        List<WorldDelegateBinding> bindings = List.of(baseline.bindings().getFirst(), duplicate);
+        String fingerprint = WorldScenarioCompilation.fingerprintFor(baseline.bundle(), bindings,
+                baseline.sourceMap());
+
+        assertThatThrownBy(() -> new WorldScenarioCompilation(baseline.bundle(), bindings,
+                baseline.sourceMap(), fingerprint))
+                .isInstanceOfSatisfying(WorldScenarioCompilationException.class, error ->
+                        assertThat(error.code()).isEqualTo(
+                                WorldScenarioCompilationException.Code.INVALID_COMPILATION));
     }
 
     @Test
@@ -344,6 +550,11 @@ class WorldScenarioCompilerTest {
     }
 
     private static WorldSlice slice(String provider, String version, LogicalResourceContract contract) {
+        return slice(provider, version, contract, StateSpec.empty());
+    }
+
+    private static WorldSlice slice(String provider, String version, LogicalResourceContract contract,
+                                    WorldStateSpec state) {
         ResourceDesignContract design = new ResourceDesignContract(contract.contractId(),
                 contract.contractId(), "Resource", "", List.of(), contract.inputShape(),
                 contract.outputShape(), Map.of(), "ACTIVE");
@@ -351,11 +562,37 @@ class WorldScenarioCompilerTest {
                 descriptor(contract.contractId()), contract);
         return WorldSlice.register(new WorldSlice.Registration("tenant-a", provider, version,
                         contract.contractId(), contract.contractFingerprint(), binding.descriptorFingerprint(), true),
-                contract, binding, BlogeFragmentRef.frozen("customer-world.bloge", DSL), StateSpec.empty());
+                contract, binding, BlogeFragmentRef.frozen("customer-world.bloge", DSL), state);
     }
 
     private static String tag(LogicalResourceContract contract) {
         return WorldScenarioCompiler.logicalContractTag(contract.contractId(), contract.contractFingerprint());
+    }
+
+    private static StateAccessPlan statePlan(Graph graph, LogicalResourceContract contract, String key) {
+        InvocationInventory inventory = new InvocationInventoryBuilder(new DefaultOperatorRegistry())
+                .build(graph, GraphArtifactFingerprint.of(new ObjectMapper(), graph));
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(key,
+                StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 0)));
+        WorldDelegateBinding binding = statefulBinding(contract, key);
+        return StateAccessPlan.compile(graph, Map.of(contract.contractId(), inventory.entries()),
+                List.of(binding), inventory.entries());
+    }
+
+    private static WorldDelegateBinding statefulBinding(LogicalResourceContract contract, String key) {
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(key,
+                StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 0)));
+        return new WorldDelegateBinding("world-delegate:" + contract.contractId(),
+                contract.contractId(), contract.contractFingerprint(),
+                BlogeFragmentRef.frozen("state.bloge", DSL), state);
+    }
+
+    private static WorldRunStateDescriptor stateDescriptor(Scenario scenario, ResourceWorldModel world,
+                                                            Graph graph, String key, int value) {
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(key,
+                StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 0)));
+        return new WorldRunStateDescriptor(state, Map.of(key, value), scenario.fingerprint(),
+                world.fingerprint(), GraphArtifactFingerprint.of(new ObjectMapper(), graph));
     }
 
     private static void assertCode(Runnable operation, WorldScenarioCompilationException.Code code) {

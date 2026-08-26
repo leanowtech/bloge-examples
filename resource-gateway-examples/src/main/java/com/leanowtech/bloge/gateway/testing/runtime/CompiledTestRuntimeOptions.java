@@ -6,6 +6,7 @@ import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.OperatorResolutionRequest;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
 
 import java.util.Objects;
 
@@ -118,6 +119,19 @@ public class CompiledTestRuntimeOptions {
             MirrorInvocationBudget invocationBudget,
             MirrorResolver.SessionContext sessionContext,
             MirrorStateAccessObserver stateAccessObserver) {
+        return options(compiled, recorder, mirrorObserver, invocationBudget, sessionContext,
+                stateAccessObserver, null);
+    }
+
+    /** Binds an optional Resource Gateway world state session to WORLD_DELEGATE controls. */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
@@ -130,7 +144,7 @@ public class CompiledTestRuntimeOptions {
                 .operatorResolver(resolution -> resolveOperator(
                         resolution, requiredControl, requiredRecorder, requiredObserver,
                         invocationBudget, sessionContext,
-                        requiredStateObserver))
+                        requiredStateObserver, worldStateSession))
                 .executionServices(requiredControl.executionServices().services())
                 .build();
     }
@@ -142,7 +156,8 @@ public class CompiledTestRuntimeOptions {
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
             MirrorResolver.SessionContext sessionContext,
-            MirrorStateAccessObserver stateAccessObserver) {
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession) {
         InvocationInventory.Entry entry = compiled.inventory().byEngineStructuralId()
                 .get(resolution.site().structuralId());
         if (entry == null || entry.graph() != resolution.graph()) {
@@ -169,6 +184,6 @@ public class CompiledTestRuntimeOptions {
         return doubleFactory.create(entry.node(), binding, control,
                 entry.frozenOperator(), recorder, compiled.replayPayloads(),
                 compiled.corpusPayloads(), mirrorObserver, sessionContext,
-                stateAccessObserver);
+                stateAccessObserver, worldStateSession);
     }
 }

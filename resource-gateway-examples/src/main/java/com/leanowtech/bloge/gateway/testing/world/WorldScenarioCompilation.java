@@ -6,25 +6,47 @@ import com.leanowtech.bloge.gateway.visual.model.VisualBundleFingerprint;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Complete, immutable output of the pure C2a compiler. */
 public record WorldScenarioCompilation(
         FixtureBundle bundle,
         List<WorldDelegateBinding> bindings,
         WorldScenarioSourceMap sourceMap,
-        String fingerprint
+        String fingerprint,
+        StateAccessPlan stateAccessPlan,
+        WorldRunStateDescriptor runStateDescriptor
 ) {
+    public WorldScenarioCompilation(FixtureBundle bundle,
+                                    List<WorldDelegateBinding> bindings,
+                                    WorldScenarioSourceMap sourceMap,
+                                    String fingerprint) {
+        this(bundle, bindings, sourceMap, fingerprint, StateAccessPlan.empty(),
+                WorldRunStateDescriptor.legacy());
+    }
+
     public WorldScenarioCompilation {
         if (bundle == null || bindings == null || sourceMap == null
-                || fingerprint == null || fingerprint.isBlank()) {
+                || fingerprint == null || fingerprint.isBlank() || stateAccessPlan == null
+                || runStateDescriptor == null) {
             throw invalid();
         }
-        bindings = List.copyOf(bindings);
+        try {
+            bindings = List.copyOf(bindings);
+            validateSemanticConsistency(bindings, stateAccessPlan, runStateDescriptor);
+        } catch (WorldScenarioCompilationException invalid) {
+            throw invalid;
+        } catch (RuntimeException invalid) {
+            throw invalid();
+        }
         fingerprint = fingerprint.trim();
-        if (!fingerprint.equals(fingerprintFor(bundle, bindings, sourceMap))) {
+        if (!fingerprint.equals(fingerprintFor(bundle, bindings, sourceMap, stateAccessPlan,
+                runStateDescriptor))) {
             throw new WorldScenarioCompilationException(
                     WorldScenarioCompilationException.Code.COMPILATION_FINGERPRINT_MISMATCH);
         }
@@ -32,7 +54,7 @@ public record WorldScenarioCompilation(
 
     /** Recomputes the stable fingerprint without serializing DSL, source, or binding payload. */
     public String recomputedFingerprint() {
-        return fingerprintFor(bundle, bindings, sourceMap);
+        return fingerprintFor(bundle, bindings, sourceMap, stateAccessPlan, runStateDescriptor);
     }
 
     public boolean fingerprintMatches() {
@@ -47,10 +69,98 @@ public record WorldScenarioCompilation(
         return this;
     }
 
+    private static void validateSemanticConsistency(
+            List<WorldDelegateBinding> bindings,
+            StateAccessPlan stateAccessPlan,
+            WorldRunStateDescriptor runStateDescriptor) {
+        Map<String, WorldDelegateBinding> bindingsByRule = new HashMap<>();
+        Map<String, WorldDelegateBinding> bindingsByContract = new HashMap<>();
+        for (WorldDelegateBinding binding : bindings) {
+            if (binding == null || bindingsByRule.put(binding.ruleId(), binding) != null
+                    || bindingsByContract.put(binding.logicalContractId(), binding) != null) {
+                throw invalid();
+            }
+        }
+        Map<String, StateKeySpec> descriptorKeys = new HashMap<>();
+        for (StateKeySpec declaration : runStateDescriptor.stateSpec().declarations()) {
+            descriptorKeys.put(declaration.key(), declaration);
+        }
+        boolean statefulBinding = false;
+        for (WorldDelegateBinding binding : bindings) {
+            if (!binding.stateSpec().isEmpty()) statefulBinding = true;
+            for (StateKeySpec declaration : binding.stateSpec().declarations()) {
+                StateKeySpec descriptorDeclaration = descriptorKeys.get(declaration.key());
+                if (descriptorDeclaration == null || !sameSchemaAndDefault(
+                        declaration, descriptorDeclaration)
+                        || !capabilitiesCover(descriptorDeclaration, declaration)) {
+                    throw invalid();
+                }
+            }
+        }
+        Set<String> accessedStatefulRules = new HashSet<>();
+        for (StateAccessPlan.Access access : stateAccessPlan.accesses()) {
+            WorldDelegateBinding binding = bindingsByRule.get(access.ruleId());
+            if (binding == null || binding.stateSpec().isEmpty()) throw invalid();
+            accessedStatefulRules.add(binding.ruleId());
+            List<String> expectedReads = binding.stateSpec().declarations().stream()
+                    .filter(declaration -> declaration.access() != StateKeySpec.Access.WRITE)
+                    .map(StateKeySpec::key).sorted().toList();
+            List<String> expectedWrites = binding.stateSpec().declarations().stream()
+                    .filter(StateKeySpec::writes).map(StateKeySpec::key).sorted().toList();
+            if (!expectedReads.equals(access.readKeys()) || !expectedWrites.equals(access.writeKeys())) {
+                throw invalid();
+            }
+            access.readKeys().forEach(key -> requireDescriptorKey(descriptorKeys, key));
+            access.writeKeys().forEach(key -> requireDescriptorKey(descriptorKeys, key));
+        }
+        for (WorldDelegateBinding binding : bindings) {
+            if (!binding.stateSpec().isEmpty()
+                    && !accessedStatefulRules.contains(binding.ruleId())) {
+                throw invalid();
+            }
+        }
+        if (!runStateDescriptor.stateful()
+                && (!stateAccessPlan.accesses().isEmpty() || statefulBinding)) {
+            throw invalid();
+        }
+    }
+
+    private static boolean sameSchemaAndDefault(StateKeySpec left, StateKeySpec right) {
+        return left.schema().equals(right.schema())
+                && java.util.Objects.equals(left.defaultValue(), right.defaultValue());
+    }
+
+    private static boolean capabilitiesCover(StateKeySpec descriptor, StateKeySpec binding) {
+        boolean descriptorReadable = descriptor.access() != StateKeySpec.Access.WRITE;
+        boolean descriptorWritable = descriptor.writes();
+        boolean bindingReadable = binding.access() != StateKeySpec.Access.WRITE;
+        boolean bindingWritable = binding.writes();
+        return (!bindingReadable || descriptorReadable) && (!bindingWritable || descriptorWritable);
+    }
+
+    private static void requireDescriptorKey(Map<String, StateKeySpec> descriptorKeys, String key) {
+        if (!descriptorKeys.containsKey(key)) throw invalid();
+    }
+
     public static String fingerprintFor(FixtureBundle bundle,
                                         List<WorldDelegateBinding> bindings,
                                         WorldScenarioSourceMap sourceMap) {
-        if (bundle == null || bindings == null || sourceMap == null) {
+        return fingerprintFor(bundle, bindings, sourceMap, StateAccessPlan.empty());
+    }
+
+    public static String fingerprintFor(FixtureBundle bundle,
+                                        List<WorldDelegateBinding> bindings,
+                                        WorldScenarioSourceMap sourceMap,
+                                        StateAccessPlan stateAccessPlan) {
+        return fingerprintFor(bundle, bindings, sourceMap, stateAccessPlan, null);
+    }
+
+    public static String fingerprintFor(FixtureBundle bundle,
+                                        List<WorldDelegateBinding> bindings,
+                                        WorldScenarioSourceMap sourceMap,
+                                        StateAccessPlan stateAccessPlan,
+                                        WorldRunStateDescriptor runStateDescriptor) {
+        if (bundle == null || bindings == null || sourceMap == null || stateAccessPlan == null) {
             throw invalid();
         }
         List<Map<String, Object>> bindingMaterial = bindings.stream()
@@ -64,18 +174,30 @@ public record WorldScenarioCompilation(
         material.put("sourceMap", Map.of(
                 "sourceToOutputs", sourceMap.sourceToOutputs(),
                 "outputToSources", sourceMap.outputToSources()));
+        if (!stateAccessPlan.accesses().isEmpty()) {
+            material.put("stateAccessPlan", Map.of(
+                    "fingerprint", stateAccessPlan.fingerprint(),
+                    "accesses", stateAccessPlan.accesses()));
+        }
+        if (runStateDescriptor != null && runStateDescriptor.stateful()) {
+            material.put("runStateDescriptorFingerprint", runStateDescriptor.fingerprint());
+        }
         return VisualBundleFingerprint.fromMaterial(material);
     }
 
     private static Map<String, Object> bindingMaterial(WorldDelegateBinding binding) {
-        return Map.of(
-                "ruleId", binding.ruleId(),
-                "logicalContractId", binding.logicalContractId(),
-                "contractFingerprint", binding.contractFingerprint(),
-                "fragment", Map.of(
-                        "id", binding.fragment().artifactId(),
-                        "revision", binding.fragment().revision(),
-                        "fingerprint", binding.fragment().fingerprint()));
+        Map<String, Object> material = new LinkedHashMap<>();
+        material.put("ruleId", binding.ruleId());
+        material.put("logicalContractId", binding.logicalContractId());
+        material.put("contractFingerprint", binding.contractFingerprint());
+        if (!binding.stateSpec().isEmpty()) {
+            material.put("stateSpecFingerprint", binding.stateSpec().fingerprint());
+        }
+        material.put("fragment", Map.of(
+                    "id", binding.fragment().artifactId(),
+                    "revision", binding.fragment().revision(),
+                    "fingerprint", binding.fragment().fingerprint()));
+        return material;
     }
 
     private static Map<String, Object> bundleMaterial(FixtureBundle bundle) {

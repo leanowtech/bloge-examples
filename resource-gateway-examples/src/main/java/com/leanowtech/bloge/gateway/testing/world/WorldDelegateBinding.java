@@ -5,13 +5,22 @@ public record WorldDelegateBinding(
         String ruleId,
         String logicalContractId,
         String contractFingerprint,
-        BlogeFragmentRef fragment
+        BlogeFragmentRef fragment,
+        WorldStateSpec stateSpec
 ) {
+    public WorldDelegateBinding(String ruleId,
+                                String logicalContractId,
+                                String contractFingerprint,
+                                BlogeFragmentRef fragment) {
+        this(ruleId, logicalContractId, contractFingerprint, fragment, StateSpec.empty());
+    }
+
     public WorldDelegateBinding {
         ruleId = required(ruleId);
         logicalContractId = required(logicalContractId);
         contractFingerprint = required(contractFingerprint);
-        if (!contractFingerprint.matches("sha256:[0-9a-f]{64}") || fragment == null) {
+        if (!contractFingerprint.matches("sha256:[0-9a-f]{64}") || fragment == null
+                || stateSpec == null) {
             throw new WorldScenarioCompilationException(
                     WorldScenarioCompilationException.Code.INVALID_BINDING);
         }

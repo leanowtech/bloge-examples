@@ -173,7 +173,7 @@ public final class WorldScenarioCompiler {
                     .map(entry -> entry.site().invocationSiteId())
                     .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new)));
             bindings.add(new WorldDelegateBinding(ruleId, contractId,
-                    slice.contractFingerprint(), slice.behavior()));
+                    slice.contractFingerprint(), slice.behavior(), slice.worldStateSpec()));
             String ruleOutput = WorldScenarioSourceMap.coordinate("fixture-rule", ruleId);
             links.add(WorldScenarioSourceMap.link(
                     WorldScenarioSourceMap.coordinate("world-slice", contractId + "@" + slice.fingerprint()),
@@ -192,6 +192,8 @@ public final class WorldScenarioCompiler {
         bindings.sort(Comparator.comparing(WorldDelegateBinding::logicalContractId));
 
         assertSelectorResolution(inventory, rules, expectedSiteIdsByRule);
+        StateAccessPlan stateAccessPlan = StateAccessPlan.compile(
+                graph, matchesByContract, bindings, inventory.entries());
 
         List<FixtureBundle.Assertion> assertions = scenario.expect().stream()
                 .map(Scenario.Expectation::toFixtureAssertion).toList();
@@ -211,9 +213,13 @@ public final class WorldScenarioCompiler {
                     WorldScenarioSourceMap.coordinate("fixture-assertion", expectationCoordinate)));
         }
         WorldScenarioSourceMap sourceMap = WorldScenarioSourceMap.of(links);
+        WorldRunStateDescriptor runStateDescriptor = new WorldRunStateDescriptor(
+                world.stateSpec(), scenario.stateInit().overrides(), scenario.fingerprint(),
+                world.fingerprint(), graphFingerprint);
         String compilationFingerprint = WorldScenarioCompilation.fingerprintFor(
-                bundle, bindings, sourceMap);
-        return new WorldScenarioCompilation(bundle, bindings, sourceMap, compilationFingerprint);
+                bundle, bindings, sourceMap, stateAccessPlan, runStateDescriptor);
+        return new WorldScenarioCompilation(bundle, bindings, sourceMap, compilationFingerprint,
+                stateAccessPlan, runStateDescriptor);
     }
 
     private static void assertSelectorResolution(

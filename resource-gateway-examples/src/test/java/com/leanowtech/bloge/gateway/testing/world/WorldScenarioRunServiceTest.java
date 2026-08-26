@@ -41,6 +41,14 @@ class WorldScenarioRunServiceTest {
               }
             }
             """;
+    private static final String STATEFUL_DSL = """
+            graph customerState {
+              transform result {
+                response = { accepted: true, before: ctx.state.balance }
+                stateWrites = { balance: ctx.state.balance + 1 }
+              }
+            }
+            """;
 
     @Test
     void routesOneFragmentToTwoNodesWithoutCallingRealOperatorsAndStaysStable() {
@@ -303,6 +311,20 @@ class WorldScenarioRunServiceTest {
                 .input((results, context) -> context.get("request")).build();
     }
 
+    private static Graph orderedGraph(AtomicInteger realCalls, String contractId) {
+        Operator<Object, Object> real = (input, context) -> {
+            realCalls.incrementAndGet();
+            return input;
+        };
+        String tag = WorldScenarioCompiler.logicalContractTag(
+                contractId, contract(contractId).contractFingerprint());
+        GraphBuilder builder = new GraphBuilder("ordered-customer-graph");
+        var first = builder.node("first", real).meta("tags", tag)
+                .input((results, context) -> context.get("request"));
+        return first.node("second", real).dependsOn("first").meta("tags", tag)
+                .input((results, context) -> context.get("request")).build();
+    }
+
     private static Graph loopbackGraph(URI endpoint) {
         Operator<Object, Object> real = (input, context) -> {
             try {
@@ -333,8 +355,110 @@ class WorldScenarioRunServiceTest {
                 objectSchema("result", "string", true), confirmed(Map.of("NONE", List.of("N/A"))));
     }
 
+    @Test
+    void rejectsForeignStateSessionBeforeCallingTheFragment() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = orderedGraph(realCalls, "logical.customer");
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(
+                "/balance", StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 10)));
+        ResourceWorldModel world = world("provider-a", "v1", contract("logical.customer"),
+                state, STATEFUL_DSL);
+        WorldScenarioCompilation compilation = compile(graph, world);
+        WorldDelegateRuntime runtime = new WorldDelegateRuntime(compilation,
+                new WorldFragmentTestKit());
+        StateAccessPlan.Access access = compilation.stateAccessPlan().accesses().getFirst();
+        WorldStateSession foreign = new WorldStateSession(
+                compilation.runStateDescriptor().stateSpec(), Map.of(),
+                new WorldStateSession.Binding(
+                        sha("b"), compilation.runStateDescriptor().worldFingerprint(),
+                        compilation.runStateDescriptor().graphArtifactFingerprint(), "foreign-run"),
+                compilation.stateAccessPlan());
+
+        assertThatThrownBy(() -> runtime.invoke(access.ruleId(), graph.nodes().get(access.nodeId()),
+                Map.of("amount", 1), coordinate(access), foreign))
+                .isInstanceOfSatisfying(WorldDelegateRuntime.WorldDelegateRuntimeException.class,
+                        error -> assertThat(error.code())
+                                .isEqualTo(WorldModelException.Code.STATE_SNAPSHOT_WRONG_BINDING.name()));
+        assertThat(foreign.revision()).isZero();
+        assertThat(realCalls).hasValue(0);
+    }
+
+    @Test
+    void statefulScenarioRunsThroughTheServerOwnedWorldSessionPath() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = orderedGraph(realCalls, "logical.customer");
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(
+                "/balance", StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 10)));
+        WorldScenarioCompilation compilation = compile(graph,
+                world("provider-a", "v1", contract("logical.customer"), state, STATEFUL_DSL));
+
+        WorldScenarioRunService service = new WorldScenarioRunService(
+                new DefaultOperatorRegistry(), new ObjectMapper(), new WorldFragmentTestKit())
+                ;
+        List<TestExecutionResult> results = java.util.stream.IntStream.range(0, 20)
+                .mapToObj(ignored -> service.execute(compilation, graph,
+                        new GraphContext(Map.of("request", Map.of("type", "vip")))))
+                .toList();
+
+        assertThat(results).allSatisfy(result -> {
+            assertThat(result.passed()).isTrue();
+            assertThat(result.graphResult().getOutput("first", Map.class))
+                    .containsEntry("before", 10);
+            assertThat(result.graphResult().getOutput("second", Map.class))
+                    .containsEntry("before", 11.0);
+        });
+        assertThat(results).extracting(result -> result.evidence().semanticResultFingerprint())
+                .hasSize(20).containsOnly(results.getFirst().evidence().semanticResultFingerprint());
+        assertThat(results.getFirst().evidence().nodeTrace()).hasSize(2)
+                .allSatisfy(trace -> assertThat(trace.fidelity()).isEqualTo("WORLD_DELEGATE"));
+        assertThat(realCalls).hasValue(0);
+    }
+
+    @Test
+    void invalidStatefulNodeOutputLeavesSessionUnchanged() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = orderedGraph(realCalls, "logical.customer");
+        StateSpecV2 state = StateSpecV2.of(List.of(new StateKeySpec(
+                "/balance", StateKeySpec.Access.READ_WRITE, Map.of("type", "integer"), 10)));
+        WorldScenarioCompilation compilation = compile(graph,
+                world("provider-a", "v1", contract("logical.customer"), state, STATEFUL_DSL));
+        WorldDelegateRuntime runtime = new WorldDelegateRuntime(compilation,
+                new WorldFragmentTestKit());
+        StateAccessPlan.Access access = compilation.stateAccessPlan().accesses().getFirst();
+        WorldStateSession session = new WorldStateSession(
+                compilation.runStateDescriptor().stateSpec(), Map.of(),
+                new WorldStateSession.Binding(
+                        compilation.runStateDescriptor().scenarioFingerprint(),
+                        compilation.runStateDescriptor().worldFingerprint(),
+                        compilation.runStateDescriptor().graphArtifactFingerprint(), "run-1"),
+                compilation.stateAccessPlan());
+        var invalidNode = graph.nodes().get(access.nodeId()).toBuilder()
+                .outputSchema(new com.leanowtech.bloge.core.schema.TypedSchema(Integer.class)).build();
+
+        assertThatThrownBy(() -> runtime.invoke(access.ruleId(), invalidNode,
+                Map.of("amount", 1), coordinate(access), session))
+                .isInstanceOfSatisfying(WorldDelegateRuntime.WorldDelegateRuntimeException.class,
+                        error -> assertThat(error.code())
+                                .isEqualTo(WorldModelException.Code.STATE_SCHEMA_MISMATCH.name()));
+        assertThat(session.revision()).isZero();
+        assertThat(session.observations()).isEmpty();
+        assertThat(session.snapshot().state()).containsEntry("/balance", 10);
+        assertThat(realCalls).hasValue(0);
+    }
+
+    private static WorldInvocationCoordinate coordinate(StateAccessPlan.Access access) {
+        return new WorldInvocationCoordinate("/root", access.nodeId(), 1, 1, 1,
+                access.coordinate());
+    }
+
     private static ResourceWorldModel world(String provider, String version,
                                             LogicalResourceContract contract) {
+        return world(provider, version, contract, StateSpec.empty(), DSL);
+    }
+
+    private static ResourceWorldModel world(String provider, String version,
+                                            LogicalResourceContract contract,
+                                            WorldStateSpec state, String behaviorSource) {
         ResourceDesignContract design = new ResourceDesignContract(contract.contractId(),
                 contract.contractId(), "Resource", "", List.of(), contract.inputShape(),
                 contract.outputShape(), Map.of(), "ACTIVE");
@@ -343,8 +467,12 @@ class WorldScenarioRunServiceTest {
         WorldSlice slice = WorldSlice.register(new WorldSlice.Registration(
                         "tenant-a", provider, version, contract.contractId(),
                         contract.contractFingerprint(), binding.descriptorFingerprint(), true),
-                contract, binding, BlogeFragmentRef.frozen("customer-world.bloge", DSL),
-                StateSpec.empty());
+                contract, binding, BlogeFragmentRef.frozen("customer-world.bloge", behaviorSource),
+                state);
         return new ResourceWorldModel("customer-world", "tenant-a", 1, List.of(slice));
+    }
+
+    private static String sha(String value) {
+        return "sha256:" + value.repeat(64).substring(0, 64);
     }
 }

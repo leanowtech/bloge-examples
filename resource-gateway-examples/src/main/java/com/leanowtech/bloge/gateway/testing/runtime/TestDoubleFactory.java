@@ -125,7 +125,7 @@ public class TestDoubleFactory {
         Operator<Object, Object> controlled = new ControlledOperator(node, binding, rules,
                 (Operator<Object, Object>) typed, implicitDeny, recorder, replayPayloads,
                 null, ResolvedCorpusPayloads.empty(), MirrorResolutionObserver.noop(),
-                null, MirrorStateAccessObserver.noop());
+                null, MirrorStateAccessObserver.noop(), null);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -167,7 +167,7 @@ public class TestDoubleFactory {
                 requiredControl.implicitDeny(), recorder, replayPayloads, requiredControl,
                 ResolvedCorpusPayloads.empty(),
                 Objects.requireNonNull(mirrorObserver, "mirrorObserver"), null,
-                MirrorStateAccessObserver.noop());
+                MirrorStateAccessObserver.noop(), null);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -256,6 +256,24 @@ public class TestDoubleFactory {
             MirrorResolutionObserver mirrorObserver,
             MirrorResolver.SessionContext sessionContext,
             MirrorStateAccessObserver stateAccessObserver) {
+        return create(node, binding, control, realOperator, recorder, replayPayloads,
+                corpusPayloads, mirrorObserver, sessionContext, stateAccessObserver, null);
+    }
+
+    /** Creates a world-delegate control bound to one run-scoped world state session. */
+    @SuppressWarnings("unchecked")
+    public Operator<Object, Object> create(
+            NodeSpec node,
+            InvocationRecorder.InvocationBinding binding,
+            CompiledExecutionControl.ResolvedControl control,
+            Object realOperator,
+            InvocationRecorder recorder,
+            ResolvedReplayPayloads replayPayloads,
+            ResolvedCorpusPayloads corpusPayloads,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver,
+            com.leanowtech.bloge.gateway.testing.world.WorldStateSession worldStateSession) {
         CompiledExecutionControl.ResolvedControl requiredControl = Objects.requireNonNull(
                 control, "control");
         boolean worldDelegate = isWorldDelegateControl(requiredControl);
@@ -275,7 +293,7 @@ public class TestDoubleFactory {
                 Objects.requireNonNull(mirrorObserver, "mirrorObserver"),
                 sessionContext,
                 Objects.requireNonNull(
-                        stateAccessObserver, "stateAccessObserver"));
+                        stateAccessObserver, "stateAccessObserver"), worldStateSession);
         return observed(node, binding, controlled, recorder);
     }
 
@@ -321,6 +339,7 @@ public class TestDoubleFactory {
         private final MirrorResolutionObserver mirrorObserver;
         private final MirrorResolver.SessionContext sessionContext;
         private final MirrorStateAccessObserver stateAccessObserver;
+        private final com.leanowtech.bloge.gateway.testing.world.WorldStateSession worldStateSession;
 
         private ControlledOperator(NodeSpec node, InvocationRecorder.InvocationBinding binding,
                                    List<FixtureRule> rules,
@@ -331,7 +350,8 @@ public class TestDoubleFactory {
                                    ResolvedCorpusPayloads corpusPayloads,
                                    MirrorResolutionObserver mirrorObserver,
                                    MirrorResolver.SessionContext sessionContext,
-                                   MirrorStateAccessObserver stateAccessObserver) {
+                                   MirrorStateAccessObserver stateAccessObserver,
+                                   com.leanowtech.bloge.gateway.testing.world.WorldStateSession worldStateSession) {
             this.node = node;
             this.binding = Objects.requireNonNull(binding, "binding");
             this.site = binding.site();
@@ -350,7 +370,8 @@ public class TestDoubleFactory {
             this.mirrorObserver = Objects.requireNonNull(mirrorObserver, "mirrorObserver");
             this.sessionContext = sessionContext;
             this.stateAccessObserver = Objects.requireNonNull(
-                    stateAccessObserver, "stateAccessObserver");
+                        stateAccessObserver, "stateAccessObserver");
+            this.worldStateSession = worldStateSession;
         }
 
         @Override
@@ -402,12 +423,12 @@ public class TestDoubleFactory {
             if (compiledControl != null
                     && compiledControl.executionMode(rule).orElse(null)
                     == ExecutionMode.WORLD_DELEGATE) {
-                return applyWorldDelegate(rule, input);
+                return applyWorldDelegate(rule, input, attempt);
             }
             return apply(rule, input, context);
         }
 
-        private Object applyWorldDelegate(FixtureRule rule, Object input) {
+        private Object applyWorldDelegate(FixtureRule rule, Object input, int attempt) {
             if (worldDelegateRuntime == null) {
                 throw new TestControlException(
                         WorldDelegateRuntime.RUNTIME_UNAVAILABLE, "WORLD_DELEGATE",
@@ -416,12 +437,17 @@ public class TestDoubleFactory {
             recorder.markFidelity(site, "WORLD_DELEGATE");
             recorder.markControlMode(site, "WORLD_DELEGATE");
             try {
-                return worldDelegateRuntime.invoke(rule.ruleId(), node, input);
+                return worldDelegateRuntime.invoke(rule.ruleId(), node, input,
+                        new com.leanowtech.bloge.gateway.testing.world.WorldInvocationCoordinate(
+                                site.graphPath(), site.nodeId(), binding.graphOccurrence(),
+                                binding.occurrence(), attempt, site.invocationSiteId()),
+                        worldStateSession);
             } catch (WorldDelegateRuntime.WorldDelegateRuntimeException failure) {
                 throw new TestControlException(failure.code(), "WORLD_DELEGATE",
                         "World delegate invocation failed.");
             }
         }
+
 
         private Object executeMirror(
                 Object input,

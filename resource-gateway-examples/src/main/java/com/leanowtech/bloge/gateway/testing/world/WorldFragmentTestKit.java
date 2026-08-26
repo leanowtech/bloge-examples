@@ -78,6 +78,7 @@ public final class WorldFragmentTestKit {
     public record StatefulReplayResult(
             Object response,
             Map<String, Object> newState,
+            Map<String, Object> stateWrites,
             String responseFingerprint,
             String stateFingerprint,
             String transitionFingerprint,
@@ -87,10 +88,19 @@ public final class WorldFragmentTestKit {
         public StatefulReplayResult {
             response = freezeResult(response);
             newState = freezeResultMap(newState);
+            stateWrites = freezeResultMap(stateWrites);
             if (responseFingerprint == null || stateFingerprint == null
                     || transitionFingerprint == null || replayCount < 1 || elapsed == null) {
                 throw failure(WorldModelException.Code.STATE_INPUT_INVALID);
             }
+        }
+
+        public StatefulReplayResult(Object response, Map<String, Object> newState,
+                                    String responseFingerprint, String stateFingerprint,
+                                    String transitionFingerprint, int replayCount,
+                                    Duration elapsed) {
+            this(response, newState, Map.of(), responseFingerprint, stateFingerprint,
+                    transitionFingerprint, replayCount, elapsed);
         }
 
         /** Naming convenience for callers that use the state term from the fragment envelope. */
@@ -235,7 +245,7 @@ public final class WorldFragmentTestKit {
                 throw failure(WorldModelException.Code.NON_DETERMINISTIC_REPLAY);
             }
         }
-        return new StatefulReplayResult(first.response(), first.newState(),
+        return new StatefulReplayResult(first.response(), first.newState(), first.stateWrites(),
                 first.responseFingerprint(), first.stateFingerprint(), first.transitionFingerprint(),
                 replayCount, Duration.ofNanos(System.nanoTime() - started));
     }

@@ -39,7 +39,12 @@ import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.A
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.world.StateSpec;
+import com.leanowtech.bloge.gateway.testing.world.WorldModelException;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -66,6 +71,74 @@ class TestRunServiceTest {
             + "c".repeat(64);
     private final TestRunService service = new TestRunService(
             new DefaultOperatorRegistry(), new ObjectMapper(), null);
+
+    @Test
+    void worldSessionFactoryClosesTheSessionAfterTheCompiledRun() {
+        ObjectMapper mapper = new ObjectMapper();
+        Graph graph = single(new PureOperator());
+        TestExecutionRequest request = request(graph, bundle());
+        TestRunService runtime = new TestRunService(new DefaultOperatorRegistry(), mapper, null);
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(
+                new DefaultOperatorRegistry(), mapper)
+                .compile(graph, bundle(), request.authorizedPurpose(), request.targetFingerprint());
+        java.util.concurrent.atomic.AtomicReference<WorldStateSession> created =
+                new java.util.concurrent.atomic.AtomicReference<>();
+
+        TestExecutionResult result = runtime.executeCompiledWithWorldSessionFactory(
+                request, compiled, MirrorResolutionObserver.noop(), null,
+                MirrorStateAccessObserver.noop(), runId -> {
+                    WorldStateSession session = new WorldStateSession(StateSpec.empty(), Map.of(),
+                            new WorldStateSession.Binding(TARGET, TARGET, TARGET, runId));
+                    created.set(session);
+                    return session;
+                });
+
+        assertThat(result.passed()).isTrue();
+        assertThatThrownBy(() -> created.get().snapshot())
+                .isInstanceOfSatisfying(WorldModelException.class, error ->
+                        assertThat(error.code()).isEqualTo(WorldModelException.Code.STATE_SESSION_CLOSED));
+    }
+
+    @Test
+    void foreignRunIdFromWorldSessionFactoryIsRejectedBeforeOperatorExecutionAndClosed() {
+        ObjectMapper mapper = new ObjectMapper();
+        Graph graph = single(new PureOperator());
+        TestExecutionRequest request = request(graph, bundle());
+        TestRunService runtime = new TestRunService(new DefaultOperatorRegistry(), mapper, null);
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(
+                new DefaultOperatorRegistry(), mapper)
+                .compile(graph, bundle(), request.authorizedPurpose(), request.targetFingerprint());
+        java.util.concurrent.atomic.AtomicReference<WorldStateSession> created =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicInteger operatorCalls = new AtomicInteger();
+        Graph instrumented = single(new PureOperator() {
+            @Override
+            public Object execute(Object input, OperatorContext context) {
+                operatorCalls.incrementAndGet();
+                return super.execute(input, context);
+            }
+        });
+        TestExecutionRequest instrumentedRequest = request(instrumented, bundle());
+        CompiledExecutionControl instrumentedCompiled = new ExecutionControlCompiler(
+                new DefaultOperatorRegistry(), mapper)
+                .compile(instrumented, bundle(), instrumentedRequest.authorizedPurpose(),
+                        instrumentedRequest.targetFingerprint());
+
+        assertThatThrownBy(() -> runtime.executeCompiledWithWorldSessionFactory(
+                instrumentedRequest, instrumentedCompiled, MirrorResolutionObserver.noop(), null,
+                MirrorStateAccessObserver.noop(), runId -> {
+                    WorldStateSession session = new WorldStateSession(StateSpec.empty(), Map.of(),
+                            new WorldStateSession.Binding(TARGET, TARGET, TARGET, runId + "-foreign"));
+                    created.set(session);
+                    return session;
+                })).isInstanceOf(ControlPlanRejectedException.class)
+                .hasMessage("WORLD_STATE_SESSION_RUN_ID_MISMATCH");
+
+        assertThat(operatorCalls).hasValue(0);
+        assertThatThrownBy(() -> created.get().snapshot())
+                .isInstanceOfSatisfying(WorldModelException.class, error ->
+                        assertThat(error.code()).isEqualTo(WorldModelException.Code.STATE_SESSION_CLOSED));
+    }
 
     @Test
     void realPureOperatorRunsOnIndependentEngineAndProducesTrace() {

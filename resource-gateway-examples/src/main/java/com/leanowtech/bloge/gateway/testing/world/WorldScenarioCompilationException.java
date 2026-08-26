@@ -22,7 +22,8 @@ public final class WorldScenarioCompilationException extends IllegalArgumentExce
         MULTIPLE_CONTRACT_TAGS,
         ZERO_MATCH,
         INVOCATION_INVENTORY,
-        SELECTOR_RESOLUTION
+        SELECTOR_RESOLUTION,
+        WORLD_STATE_ACCESS_ORDER_AMBIGUOUS
     }
 
     private final Code code;
