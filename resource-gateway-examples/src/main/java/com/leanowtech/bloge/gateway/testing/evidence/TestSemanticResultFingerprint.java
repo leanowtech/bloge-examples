@@ -28,7 +28,8 @@ public final class TestSemanticResultFingerprint {
             "nodeControlModes",
             "executionServiceUsages",
             "logicalTime",
-            "sideEffectIntents");
+            "sideEffectIntents",
+            TestRunEvidenceProtocolCodec.CONTROL_PROJECTION_METADATA_KEY);
     private static final Set<String> VOLATILE_SIDE_EFFECT_KEYS = Set.of(
             "attemptId", "executionId", "runId", "startedAt", "completedAt", "signedAt",
             "observedAt", "committedAt", "durationMs", "receiptId", "transactionRef");
@@ -204,7 +205,10 @@ public final class TestSemanticResultFingerprint {
                 continue;
             }
             Object value = semanticValue(mapper, metadata.get(key));
-            if ("executionServiceUsages".equals(key)) {
+            if (TestRunEvidenceProtocolCodec.CONTROL_PROJECTION_METADATA_KEY.equals(key)) {
+                result.put(key, new TestRunEvidenceProtocolCodec(mapper)
+                        .semanticProjection(metadata.get(key)));
+            } else if ("executionServiceUsages".equals(key)) {
                 result.put(key, semanticExecutionServiceUsages(mapper, value));
             } else {
                 result.put(key, "sideEffectIntents".equals(key)

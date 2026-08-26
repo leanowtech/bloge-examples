@@ -38,6 +38,8 @@ import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunControlEvidenceProjection;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunEvidenceProtocolCodec;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
@@ -456,10 +458,11 @@ class TestRunServiceTest {
                 result.evidence().metadata()).isTrue();
         assertThat(result.graphResult().getOutput("capture", Map.class))
                 .containsEntry("value", "stubbed");
-        assertThat(result.evidence().metadata()).containsKey("functionControlEvidence");
-        assertThat(((com.leanowtech.bloge.gateway.testing.function.FunctionControlRunEvidence)
-                result.evidence().metadata().get("functionControlEvidence")).evidenceCeiling())
-                .isEqualTo(com.leanowtech.bloge.gateway.testing.function.FunctionEvidenceCeiling.EXPLORATORY);
+        assertThat(result.evidence().metadata()).doesNotContainKey("functionControlEvidence");
+        assertThat(result.evidence().metadata()).containsKey("controlEvidenceProjection");
+        TestRunControlEvidenceProjection projection = new TestRunEvidenceProtocolCodec(new ObjectMapper())
+                .controlProjection(result.evidence());
+        assertThat(projection.function().evidenceCeiling()).isEqualTo("EXPLORATORY");
         assertThat(result.evidence().evidenceClass())
                 .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
 

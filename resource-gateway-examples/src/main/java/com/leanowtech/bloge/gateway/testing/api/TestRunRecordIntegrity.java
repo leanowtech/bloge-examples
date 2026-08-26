@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunEvidenceProtocolCodec;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -212,6 +213,7 @@ public final class TestRunRecordIntegrity {
                                                 TestEvidenceIntegrityService integrityService,
                                                 TestRunEvidence evidence,
                                                 TestEvidenceIntegrity integrity) {
+        new TestRunEvidenceProtocolCodec(objectMapper).controlProjection(evidence);
         TestEvidenceIntegrityService.Verification verification = integrityService.verify(
                 evidence, integrity);
         if (verification == TestEvidenceIntegrityService.Verification.INVALID) {

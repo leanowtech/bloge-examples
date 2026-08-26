@@ -14,12 +14,15 @@ import com.leanowtech.bloge.gateway.testing.domain.TestSuiteRunEvidenceV5;
 import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunControlEvidenceProjection;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunEvidenceProtocolCodec;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedException;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
 import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
+import com.leanowtech.bloge.gateway.testing.world.WorldStateSnapshot;
 import com.leanowtech.bloge.gateway.testing.function.FunctionControlRunEvidence;
 import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
 import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
@@ -284,6 +287,7 @@ public class TestRunService {
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
         Objects.requireNonNull(stateAccessObserver, "stateAccessObserver");
         Objects.requireNonNull(worldStateSessionFactory, "worldStateSessionFactory");
+        rejectReservedEvidenceMetadata(request);
         validateCompiledBinding(request, compiled);
         String runId = "test-run-" + identitySource.nextRunId();
         Instant startedAt = identitySource.now();
@@ -327,6 +331,7 @@ public class TestRunService {
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
         Objects.requireNonNull(
                 stateAccessObserver, "stateAccessObserver");
+        rejectReservedEvidenceMetadata(request);
         validateCompiledBinding(request, compiled);
         String runId = "test-run-" + identitySource.nextRunId();
         Instant startedAt = identitySource.now();
@@ -348,6 +353,7 @@ public class TestRunService {
             boolean mutationExecution) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(admissionFactory, "admissionFactory");
+        rejectReservedEvidenceMetadata(request);
         if (mutationExecution && (request.fixtureSource() != TestExecutionRequest.FixtureSource.STORED
                 || !TestSuiteRunEvidenceV5.EXECUTION_PURPOSE.equals(request.authorizedPurpose())
                 || Objects.equals(request.targetFingerprint(), fixtureBindingTargetFingerprint))) {
@@ -409,6 +415,15 @@ public class TestRunService {
             engine.shutdown();
         }
 
+        WorldStateSnapshot stateSnapshot = null;
+        if (worldStateSession != null) {
+            try {
+                stateSnapshot = worldStateSession.snapshot();
+            } catch (RuntimeException failure) {
+                diagnostics.add("RG.TEST.WORLD_STATE_EVIDENCE_FINALIZATION_FAILED");
+            }
+        }
+
         FunctionControlRunEvidence functionEvidence = null;
         if (functionControlRuntime != null) {
             try {
@@ -417,7 +432,12 @@ public class TestRunService {
                         ? functionControlRuntime.finish()
                         : functionControlRuntime.finishAfterFailure();
             } catch (RuntimeException failure) {
-                diagnostics.add("Function control finalization failed: " + failure.getMessage());
+                diagnostics.add("RG.TEST.FUNCTION_CONTROL_FINALIZATION_FAILED");
+                try {
+                    functionEvidence = functionControlRuntime.finishAfterFailure();
+                } catch (RuntimeException ignored) {
+                    // Preserve the original terminal diagnostic without exposing a second failure.
+                }
             }
         }
         if (functionEvidence != null) {
@@ -458,7 +478,8 @@ public class TestRunService {
                 assertions,
                 diagnostics,
                 evidenceMetadata(request, recorder, executionServices, executionContext,
-                        invocationBudget, functionEvidence)));
+                        invocationBudget, functionEvidence, runId,
+                        compiled.effectivePlan().planFingerprint(), stateSnapshot)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -541,7 +562,8 @@ public class TestRunService {
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
                 startedAt, identitySource.now(), List.of(), List.of(), List.of(), List.of(),
-                ex.diagnostics(), evidenceMetadata(request, null, null, null, null, null)));
+                ex.diagnostics(), evidenceMetadata(request, null, null, null, null, null,
+                        runId, "", null)));
     }
 
     private static TestRunEvidence.Status terminalStatus(
@@ -617,7 +639,10 @@ public class TestRunService {
                                                  GovernedExecutionServices executionServices,
                                                  GraphContext executionContext,
                                                  MirrorInvocationBudget invocationBudget,
-                                                 FunctionControlRunEvidence functionEvidence) {
+                                                 FunctionControlRunEvidence functionEvidence,
+                                                 String runId,
+                                                 String executionPlanFingerprint,
+                                                 WorldStateSnapshot stateSnapshot) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
@@ -642,8 +667,15 @@ public class TestRunService {
                     "admittedInvocations", budget.admittedInvocations(),
                     "rejectedInvocations", budget.rejectedInvocations()));
         }
-        if (functionEvidence != null) {
-            metadata.put("functionControlEvidence", functionEvidence);
+        if (stateSnapshot != null || functionEvidence != null) {
+            TestRunControlEvidenceProjection projection = TestRunControlEvidenceProjection.from(
+                    runId,
+                    stateSnapshot == null ? "" : stateSnapshot.binding().scenarioFingerprint(),
+                    stateSnapshot == null ? "" : stateSnapshot.binding().worldFingerprint(),
+                    request.targetFingerprint(), executionPlanFingerprint,
+                    functionEvidence == null ? "" : functionEvidence.planFingerprint(),
+                    stateSnapshot, functionEvidence);
+            metadata.put(TestRunEvidenceProtocolCodec.CONTROL_PROJECTION_METADATA_KEY, projection);
         }
         GovernedExecutionServices.LogicalTimeObservation logicalTime = executionServices == null
                 ? null : executionServices.logicalTimeObservation();
@@ -655,6 +687,12 @@ public class TestRunService {
                     "elapsedMs", logicalTime.elapsed().toMillis()));
         }
         return Map.copyOf(metadata);
+    }
+
+    private static void rejectReservedEvidenceMetadata(TestExecutionRequest request) {
+        if (request.metadata().containsKey(TestRunEvidenceProtocolCodec.CONTROL_PROJECTION_METADATA_KEY)) {
+            throw new ControlPlanRejectedException("RG.TEST.CONTROL_EVIDENCE_METADATA_RESERVED", List.of());
+        }
     }
 
     private static void graphDiagnostics(GraphResult result, List<String> diagnostics) {

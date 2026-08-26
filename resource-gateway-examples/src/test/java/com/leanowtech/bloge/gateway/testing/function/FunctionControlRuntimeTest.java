@@ -8,6 +8,7 @@ import com.leanowtech.bloge.core.spi.ExpressionFunctionResolver;
 import com.leanowtech.bloge.core.spi.FunctionCallSite;
 import com.leanowtech.bloge.core.spi.FunctionInvocationContext;
 import com.leanowtech.bloge.core.spi.TimeSource;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunControlEvidenceProjection;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -90,6 +91,53 @@ class FunctionControlRuntimeTest {
                 .extracting(ex -> ((FunctionControlException) ex).code())
                 .isEqualTo(FunctionControlException.Code.CONTROL_TIMEOUT);
         assertThat(timeout.finish().observations()).hasSize(1);
+    }
+
+    @Test
+    void runtimeEvidenceProjectionAcceptsAllBehaviorsAndRecordedFailures() {
+        FunctionControlRuntime returning = runtime(List.of(rule("return", null, null,
+                FunctionControlRule.Behavior.RETURN, Duration.ZERO,
+                new FunctionControlRule.Consumption(1, 1))));
+        assertThat(invoke(returning, "x")).isNull();
+        assertProjects(returning.finish());
+
+        FunctionControlRuntime throwing = runtime(List.of(rule("throw", null, null,
+                FunctionControlRule.Behavior.THROW, Duration.ZERO,
+                new FunctionControlRule.Consumption(1, 1))));
+        assertThatThrownBy(() -> invoke(throwing, "x")).isInstanceOf(FunctionControlException.class);
+        assertProjects(throwing.finish());
+
+        FunctionControlRuntime delaying = runtime(List.of(rule("delay", null, null,
+                FunctionControlRule.Behavior.DELAY, Duration.ofMillis(1),
+                new FunctionControlRule.Consumption(1, 1))));
+        assertThat(invoke(delaying, "x")).isNull();
+        assertProjects(delaying.finish());
+
+        FunctionControlRuntime timingOut = runtime(List.of(rule("timeout", null, null,
+                FunctionControlRule.Behavior.TIMEOUT, Duration.ofMillis(1),
+                new FunctionControlRule.Consumption(1, 1))));
+        assertThatThrownBy(() -> invoke(timingOut, "x")).isInstanceOf(FunctionControlException.class);
+        assertProjects(timingOut.finish());
+
+        FunctionControlRuntime argumentFailure = runtime(List.of(rule("mismatch", List.of("a"),
+                "unused", FunctionControlRule.Behavior.RETURN, Duration.ZERO,
+                new FunctionControlRule.Consumption(0, 1))));
+        assertThatThrownBy(() -> invoke(argumentFailure, "b"))
+                .isInstanceOf(FunctionControlException.class);
+        assertProjects(argumentFailure.finishAfterFailure());
+
+        TimeSource failingClock = new TimeSource() {
+            @Override public Instant now() { return Instant.EPOCH; }
+            @Override public void sleep(Duration duration) {
+                throw new IllegalStateException("clock-failure");
+            }
+        };
+        FunctionControlRuntime delayFailure = runtime(List.of(rule("delay-failure", null, null,
+                FunctionControlRule.Behavior.DELAY, Duration.ofMillis(1),
+                new FunctionControlRule.Consumption(1, 1))), failingClock);
+        assertThatThrownBy(() -> invoke(delayFailure, "x"))
+                .isInstanceOf(FunctionControlException.class);
+        assertProjects(delayFailure.finishAfterFailure());
     }
 
     @Test
@@ -214,6 +262,23 @@ class FunctionControlRuntimeTest {
     }
 
     @Test
+    void exhaustedControlKeepsFailureObservationForEvidenceProjection() {
+        FunctionControlRuntime runtime = runtime(List.of(rule("one", null, "ok",
+                FunctionControlRule.Behavior.RETURN, Duration.ZERO,
+                new FunctionControlRule.Consumption(0, 1))));
+        assertThat(invoke(runtime, "x")).isEqualTo("ok");
+        assertThatThrownBy(() -> invoke(runtime, "x"))
+                .extracting(ex -> ((FunctionControlException) ex).code())
+                .isEqualTo(FunctionControlException.Code.CONTROL_EXHAUSTED);
+
+        FunctionControlRunEvidence evidence = runtime.finishAfterFailure();
+        assertThat(evidence.observations()).hasSize(2);
+        assertThat(evidence.observations()).anySatisfy(observation ->
+                assertThat(observation.errorFingerprint()).startsWith("sha256:"));
+        assertProjects(evidence);
+    }
+
+    @Test
     void evidenceFingerprintBindsPlanAndConsumptionEvenWithNoObservations() {
         FunctionLibraryDeclaration first = new FunctionLibraryDeclaration(
                 "f", false, Set.of("TIME"), FunctionEffect.ENVIRONMENT_FACT,
@@ -278,6 +343,13 @@ class FunctionControlRuntimeTest {
         ExpressionFunction function = runtime.resolver().resolve(
                 new FunctionCallSite("f", 1, 1), function("f"));
         return function.apply(context(), argument);
+    }
+
+    private static void assertProjects(FunctionControlRunEvidence evidence) {
+        TestRunControlEvidenceProjection projection = TestRunControlEvidenceProjection.from(
+                "function-run", "", "", "sha256:" + "a".repeat(64),
+                "sha256:" + "a".repeat(64), evidence.planFingerprint(), null, evidence);
+        assertThat(projection.function().observations()).isNotEmpty();
     }
 
     private static FunctionInvocationContext context() {

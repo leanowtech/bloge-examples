@@ -54,7 +54,7 @@
 2. 仅 World State Session；
 3. World State Session 与函数控制同时启用。
 
-真实 DSL 测试通过 BLOGE `GraphLoader.loadArtifact` 获取函数清单，在 `TestRunService` 中执行纯函数控制。结果证明 DAG 节点收到替身值、真实函数零调用、函数证据进入 `TestRunEvidence.metadata`，并且 World State Session 仍由服务端创建和关闭。
+真实 DSL 测试通过 BLOGE `GraphLoader.loadArtifact` 获取函数清单，在 `TestRunService` 中执行纯函数控制。结果证明 DAG 节点收到替身值、真实函数零调用，并且 World State Session 仍由服务端创建和关闭。S2-D 验证时使用的内部函数证据记录已在 S2-E1 被版本化 `controlEvidenceProjection` 取代，不再作为第二套外部 metadata 协议暴露。
 
 ## 4. 失败语义
 
@@ -94,9 +94,9 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 6. 尚未闭合
 
-以下内容属于 `S2-E`，不能从本阶段证据推导为已完成：
+以下内容不能仅从本阶段证据推导为已完成：
 
-- 函数与状态 evidence 的稳定外部 JSON 协议、持久化和 Test Kit 解析；
+- 函数与状态 evidence 的稳定外部 JSON 协议和持久化已由 `S2-E1` 闭合，见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md)；Test Kit 解析仍待 `S2-E2`；
 - 生产入口和服务端的双重控制拒绝；
 - 真实 HTTP Scenario 引用、重放和证据读取系统测试；
 - Resource Gateway 与 Test Kit 双项目最终里程碑；

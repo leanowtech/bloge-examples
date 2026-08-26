@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑、`S2-C` 统一运行时状态会话和 `S2-D` 函数控制已通过开发验证；`S2-E` 的对外证据协议、生产隔离和系统里程碑尚未闭合，因此阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑、`S2-C` 统一运行时状态会话、`S2-D` 函数控制和 `S2-E1` 对外控制证据协议已通过开发验证；`S2-E2` 的真实 HTTP、Test Kit、生产双层隔离和双项目系统里程碑尚未闭合，因此阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
 
 ## 1. 结论先行
 
@@ -287,12 +287,17 @@ record CompiledFunctionControlPlan(
 
 `S2-D2b` 已关闭测试运行时函数控制：run-scoped resolver 先经过原治理 resolver，再按完整调用点消费冻结计划；精确参数优先于 wildcard，RETURN、THROW、DELAY 和 TIMEOUT 均有确定性行为。DELAY 只调用受治理 `TimeSource.sleep`，不直接读取系统时间或调用 `Thread.sleep`。消费计数按 run 隔离并使用原子上限，最小消费、耗尽和参数未命中均失败关闭。受控调用通过 `GovernedExecutionServices` 私有闭包记录审计，不执行真实函数，也不向自定义函数暴露可伪造的审计能力。函数 evidence 包含计划、调用点、原函数与运行事实指纹、控制模式、消费摘要、调用作用域/参数/结果/错误指纹和证据降级原因，不包含原始参数、返回值、错误文本或 schema。纯函数强注入把最终 `TestRunEvidence` 降为 `EXPLORATORY`；状态会话与函数控制可在同一 TestRunService 路径组合。受影响集 98/98、Resource Gateway 全量 7371 项测试通过，详细证据见 [S2-D 验证说明](./rg-evolution-design-1.2.1-s2-function-control-verification.md)。
 
-该证据仍不代表阶段二整体完成。`S2-E` 需要把函数与状态 evidence 固定为可持久化、可对外消费的协议，关闭生产入口与服务端双重隔离，补齐真实 HTTP、Test Kit 和双项目里程碑。
+该证据仍不代表阶段二整体完成。`S2-E1` 已把函数与状态 evidence 固定为可持久化、可对外消费的协议；`S2-E2` 仍需关闭生产入口与服务端双重隔离，并补齐真实 HTTP、Test Kit 和双项目里程碑。
 
 ### S2-E：证据、系统测试和里程碑
 
-- 状态与函数 payload-free evidence；
-- 三类函数证据等级矩阵；
+- `S2-E1`：状态与函数 payload-free evidence、严格 codec、持久化完整性和三类函数证据等级矩阵；
+- `S2-E2`：真实 HTTP Scenario 引用、生产双层拒绝、Test Kit 和双项目里程碑。
+
+`S2-E1` 已通过开发验证。`bloge.testRunControlEvidence.v1` 外部投影只包含运行绑定、状态事务坐标与读写 key、函数调用点、消费摘要和 payload 指纹，不包含状态值、函数参数、返回值、错误文本或 schema。完整投影绑定 run/scenario/world/target/execution plan/function plan；稳定语义材料排除 runId 和自指纹，因此同一请求跨运行保持相同语义指纹。严格 codec 拒绝未知字段、重复 JSON key、缺字段、超限、错误枚举、跨 envelope 错绑及来宾伪造保留 metadata。内部 `FunctionControlRunEvidence` 不再作为第二套外部 metadata 协议暴露。
+
+开发验证为 83/83 聚焦测试及 Resource Gateway 7383 项全量测试全绿，详见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md)。以下系统项仍属于 `S2-E2`：
+
 - 真实 HTTP Scenario 引用的有状态整链测试；
 - production profile/服务端旁路拒绝；
 - Resource Gateway 与 Test Kit 双项目 `clean verify`。

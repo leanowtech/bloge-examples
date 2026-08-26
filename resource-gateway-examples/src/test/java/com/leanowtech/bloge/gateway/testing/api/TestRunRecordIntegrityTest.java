@@ -5,7 +5,14 @@ import com.leanowtech.bloge.gateway.testing.domain.EffectiveExecutionPlan;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
 import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunControlEvidenceProjection;
 import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerprint;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlEvidenceBinding;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlMode;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRunEvidence;
+import com.leanowtech.bloge.gateway.testing.function.FunctionEvidenceCeiling;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationSite;
+import com.leanowtech.bloge.gateway.testing.evidence.TestRunEvidenceProtocolCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import org.junit.jupiter.api.Test;
 
@@ -80,6 +87,34 @@ class TestRunRecordIntegrityTest {
                 .hasMessage("Stored test-run integrity verification failed")
                 .hasMessageNotContaining("tenant-a")
                 .hasMessageNotContaining("tenant-b");
+    }
+
+    @Test
+    void rejectsCrossTargetControlProjectionAtIntegrityBoundary() {
+        TestRunEvidence base = evidence("run-a", Map.of(), "tenant-a");
+        FunctionInvocationSite site = new FunctionInvocationSite("/root", "node", "f", 1, 1);
+        FunctionControlRunEvidence functionEvidence = new FunctionControlRunEvidence(
+                PLAN_FINGERPRINT, FunctionEvidenceCeiling.CERTIFIABLE,
+                List.of(new FunctionControlEvidenceBinding(site, PLAN_FINGERPRINT,
+                        PLAN_FINGERPRINT, FunctionControlMode.CONTROLLED,
+                        FunctionEvidenceCeiling.CERTIFIABLE, "")), List.of(), List.of(),
+                PLAN_FINGERPRINT);
+        TestRunControlEvidenceProjection foreign = TestRunControlEvidenceProjection.from(
+                "run-a", "", "", "sha256:" + "9".repeat(64), PLAN_FINGERPRINT,
+                PLAN_FINGERPRINT, null, functionEvidence);
+        Map<String, Object> metadata = new java.util.LinkedHashMap<>(base.metadata());
+        metadata.put(TestRunEvidenceProtocolCodec.CONTROL_PROJECTION_METADATA_KEY, foreign);
+        TestRunEvidence forged = TestSemanticResultFingerprint.attach(mapper,
+                new TestRunEvidence(TestRunEvidence.SCHEMA_VERSION, base.runId(), base.status(),
+                        base.evidenceClass(), base.executionPurpose(), base.targetFingerprint(),
+                        base.fixtureBundleFingerprint(), base.planFingerprint(), base.startedAt(),
+                        base.completedAt(), base.nodeTrace(), base.edgeTrace(),
+                        base.fixtureConsumptions(), base.assertionResults(), base.diagnostics(), metadata));
+
+        assertThatThrownBy(() -> TestRunRecordIntegrity.verifiedSnapshot(
+                mapper, integrity, record("tenant-a", forged, null), "tenant-a", "test", "run-a"))
+                .isInstanceOf(TestRunIntegrityException.class)
+                .hasMessage("Stored test-run integrity verification failed");
     }
 
     private void assertPayloadFreeFailure(TestRunRecord record) {

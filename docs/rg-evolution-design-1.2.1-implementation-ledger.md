@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..D` 已通过开发验证，状态会话与函数控制可在统一运行时组合；对外协议、生产隔离和系统里程碑仍由 `S2-E` 交付 |
+| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..D` 与 `S2-E1` 已通过开发验证；状态/函数控制已有稳定、可持久化、payload-free 的外部证据协议，真实 HTTP、Test Kit、生产双层拒绝和双项目里程碑仍由 `S2-E2` 交付 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -78,7 +78,8 @@
 | `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `DEVELOPMENT_VERIFIED` | 提交 `7af01cb1d`；61/61 最终聚焦回归与 7298 项全量测试全绿；固定 `{request,state}` / `{response,stateWrites}` 信封、WRITE-only 隔离、JSON Pointer、完整写集先验校验、失败零提交、20 次确定性重放及 payload-free 转换指纹均有固定证明 |
 | `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `DEVELOPMENT_VERIFIED` | 提交 `226765b41`；125/125 最终聚焦回归与 7335 项全量测试全绿；编译期访问计划、严格绑定快照、原子提交、动态坐标、防重复/重入、无冲突规范投影、失败零提交、20 次确定性运行和 v1 指纹 golden 均有固定证明 |
 | `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `DEVELOPMENT_VERIFIED` | `S2-D1` BLOGE 通用内核提交 `8d514a7f6` 已验证：core 1959 项、DSL 1567 项测试全绿；`S2-D2a` 静态控制面 19/19 全绿；`S2-D2b` 运行期 RETURN/THROW/DELAY/TIMEOUT、精确参数、线程安全消费、治理审计、payload-free evidence、证据降级及 World Session 组合闭合。受影响集 98/98、Resource Gateway 全量 7371 项全绿；详见 [S2-D 验证说明](./rg-evolution-design-1.2.1-s2-function-control-verification.md) |
-| `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-E1` | 版本化 payload-free 控制证据、稳定语义投影、严格 codec 与持久化完整性 | `DEVELOPMENT_VERIFIED` | 83/83 聚焦回归与 Resource Gateway 7383 项全量测试全绿；外部投影严格绑定 run/scenario/world/target/execution plan/function plan，状态值与函数 payload 不外泄，跨运行语义指纹稳定，错绑、篡改、重复键、未知字段、超限和保留 metadata 伪造均失败关闭；详见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md) |
+| `S2-E2` | 生产双层隔离、真实 HTTP 引用链、Test Kit 协议和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
 
 - 每个剧情拥有隔离、单写者、确定性排序、可序列化的世界状态。
 - 写后读、跨剧情隔离和并发确定顺序具有固定自动化证明。
