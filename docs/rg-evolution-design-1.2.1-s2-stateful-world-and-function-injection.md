@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产已通过开发验证，`S2-B..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产和 `S2-B` 有状态片段独立试跑已通过开发验证，`S2-C..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
 
 ## 1. 结论先行
 
@@ -256,6 +256,8 @@ record CompiledFunctionControlPlan(
 - 原子写集校验；
 - `WorldFragmentTestKit` 返回响应与新状态；
 - 重放 N 次响应、状态和指纹逐位一致。
+
+开发验证证据：提交 `7af01cb1d`；最终聚焦回归 61/61，全量 `resource-gateway-examples clean verify` 为 7298 tests、0 failures、0 errors、28 skipped。该证据只关闭独立片段边界，不替代 `S2-C` 的 run-scoped 状态会话与整图运行证明。
 
 ### S2-C：统一运行时状态会话
 

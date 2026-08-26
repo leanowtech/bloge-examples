@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A` 版本化状态资产已通过开发验证；`S2-B..E` 尚未实现，15 项阶段出口尚未闭合 |
+| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A` 版本化状态资产和 `S2-B` 有状态片段独立试跑已通过开发验证；`S2-C..E` 尚未实现，15 项阶段出口尚未闭合 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -75,7 +75,7 @@
 | 切片 | 交付物 | 状态 | 当前证据 |
 |---|---|---|---|
 | `S2-A` | 版本化 `WorldStateSpec` / `StateSpecV2`、Scenario 初始状态覆盖、跨切片单写者证明、治理 codec 双读写 | `DEVELOPMENT_VERIFIED` | 提交 `dd3034db6`；51/51 聚焦测试与 516/516 World、Scenario、Governed Catalog 受影响回归全绿；旧 `StateSpec` / `WorldSlice.state()` 源兼容、v1 无状态指纹不变、v2 schema/default/override/tamper/上限和 null 边界均有固定证明 |
-| `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `DEVELOPMENT_VERIFIED` | 提交 `7af01cb1d`；61/61 最终聚焦回归与 7298 项全量测试全绿；固定 `{request,state}` / `{response,stateWrites}` 信封、WRITE-only 隔离、JSON Pointer、完整写集先验校验、失败零提交、20 次确定性重放及 payload-free 转换指纹均有固定证明 |
 | `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `NOT_STARTED` | 尚无实现证据 |
 | `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `NOT_STARTED` | 尚无实现证据 |
 | `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
@@ -210,4 +210,14 @@ A1 protocol archive boundary            PASS
 S2-A focused clean test       51 tests / 0 failures / 0 errors / 0 skipped
 S2-A affected regression     516 tests / 0 failures / 0 errors / 0 skipped
 implementation commit        dd3034db6
+```
+
+`S2-B` 于 2026-08-26 完成开发验证。有状态片段使用固定输入输出信封；默认值与 Scenario override 在片段执行前完成规范化和 schema 校验，`WRITE` 状态不会进入片段可见输入。片段返回的嵌套写集先被确定性展平为规范 JSON Pointer，再整体校验未知 key、只读写入和 schema；只有全部写入合法时才一次构造新快照。重放每次都从同一初态开始，并对响应、写集、终态和绑定 fragment/stateSpec/request/initialState 的转换指纹逐项对拍。错误、默认 evidence 材料和异常信息不携带原始请求或状态值。
+
+本切片只证明单个有状态 World Fragment 可被隔离、受限、确定性地试跑；`WorldStateSession`、DAG 冲突可达性、统一运行时提交、状态 evidence 持久化和函数注入仍属于 `S2-C..E`，不得据此宣称整张有状态 DAG 已可运行。
+
+```text
+S2-B final focused regression   61 tests / 0 failures / 0 errors / 0 skipped
+resource-gateway clean verify 7298 tests / 0 failures / 0 errors / 28 skipped
+implementation commit        7af01cb1d
 ```
