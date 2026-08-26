@@ -18,7 +18,7 @@
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配、无 binding descriptor 执行及完整差分/安全/确定性测试台均已形成开发证据，双项目最终回归全绿；仅授权引用式大负载解析仍待阶段一闭合 |
-| 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `IN_PROGRESS` | 逻辑资源契约、无状态世界模型、纯 BLOGE 片段准入、隔离试跑、剧情资产模型、FixtureBundle 编译及统一内核世界委托已形成开发证据；三重 compiler oracle、引用解析及资产持久化尚未实现 |
+| 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `IN_PROGRESS` | 逻辑资源契约、无状态世界模型、纯 BLOGE 片段准入、隔离试跑、剧情资产模型、FixtureBundle 编译、统一内核世界委托及三重 compiler oracle 已形成开发证据；引用解析及资产持久化尚未实现 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
 
@@ -58,7 +58,7 @@
 |---|---|---|---|
 | `S1-A` | 版本无关的逻辑资源契约、描述符投影、具体实现绑定与兼容性分析 | `DEVELOPMENT_VERIFIED` | 18/18：canonical fingerprint、Map/集合语义顺序归一化、防御拷贝、待确认投影、provider/API 版本隔离、结构化输出证明、输入/输出双向兼容、UNKNOWN 失败关闭与错误净化 |
 | `S1-B` | 无状态世界模型、纯 BLOGE 世界片段、纯净校验和片段单测台 | `DEVELOPMENT_VERIFIED` | 41/41：不可变模型、版本化片段、稳定指纹、契约与 binding 一致性、AST/compiled-inventory 双重纯净准入、真实 BLOGE 隔离执行、FIRST/default、UNIQUE 歧义、20 次确定性重放、资源上限、超时线程终止、外部算子零执行和净化错误 |
-| `S1-C` | Scenario、编译下沉、逻辑契约寻址与双向来源映射 | `IN_PROGRESS` | `S1-C1 + S1-C2a + S1-C2b`：63/63 资产/编译聚焦集与 106/106 运行期受影响集全绿；精确 target/world、稳定 Scenario、assertion lowering、规范契约标签、真实 selector 对拍、多节点复用、fail-closed sentinel、无负载编译指纹、双向来源映射及统一内核 `WORLD_DELEGATE` 已闭合；三重 oracle 尚未完成 |
+| `S1-C` | Scenario、编译下沉、逻辑契约寻址与双向来源映射 | `DEVELOPMENT_VERIFIED` | `S1-C1..C2c`：63/63 资产/编译聚焦集与最终 106/106 受影响集全绿；精确 target/world、稳定 Scenario、assertion lowering、规范契约标签、真实 selector 对拍、多节点复用、fail-closed sentinel、无负载编译指纹、双向来源映射、统一内核 `WORLD_DELEGATE`、20 次确定性重放、真实算子/loopback 网络零调用及 compiler 三重 oracle 全部闭合 |
 | `S1-D` | 授权引用解析、分级负载托管与三类资产版本化持久化 | `NOT_STARTED` | 尚无读取前授权、不可变递增版本与跨重启证据 |
 
 - 逻辑资源契约可由描述符投影初稿，并由人确认业务语义。

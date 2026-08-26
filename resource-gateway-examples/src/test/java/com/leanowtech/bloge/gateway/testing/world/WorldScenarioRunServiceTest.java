@@ -13,6 +13,13 @@ import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
 import org.junit.jupiter.api.Test;
 
+import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -142,6 +149,38 @@ class WorldScenarioRunServiceTest {
         assertThat(realCalls).hasValue(0);
     }
 
+    @Test
+    void worldDelegateDoesNotCallLoopbackHttpOperator() throws IOException {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/must-not-be-called", exchange -> {
+            requests.incrementAndGet();
+            exchange.sendResponseHeaders(200, 2);
+            try (var output = exchange.getResponseBody()) {
+                output.write("ok".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        });
+        server.start();
+        try {
+            URI endpoint = URI.create("http://127.0.0.1:" + server.getAddress().getPort()
+                    + "/must-not-be-called");
+            Graph graph = loopbackGraph(endpoint);
+            ResourceWorldModel world = world("provider-a", "v1", contract("logical.customer"));
+            WorldScenarioCompilation compilation = compile(graph, world);
+            TestExecutionResult result = new WorldScenarioRunService(
+                    new DefaultOperatorRegistry(), new ObjectMapper(), new WorldFragmentTestKit())
+                    .execute(compilation, graph,
+                            new GraphContext(Map.of("request", Map.of("type", "vip"))));
+
+            assertThat(result.passed()).isTrue();
+            assertThat(result.evidence().nodeTrace()).allSatisfy(trace ->
+                    assertThat(trace.fidelity()).isEqualTo("WORLD_DELEGATE"));
+            assertThat(requests).hasValue(0);
+        } finally {
+            server.stop(0);
+        }
+    }
+
     private static WorldScenarioCompilation compile(Graph graph, ResourceWorldModel world) {
         LogicalResourceContract contract = world.slices().getFirst().contract();
         WorldScenarioCompiler compiler = new WorldScenarioCompiler();
@@ -171,6 +210,31 @@ class WorldScenarioRunServiceTest {
                 .input((results, context) -> context.get("request"));
         return first.node("second", real).meta("tags", tag)
                 .input((results, context) -> context.get("request")).build();
+    }
+
+    private static Graph loopbackGraph(URI endpoint) {
+        Operator<Object, Object> real = (input, context) -> {
+            try {
+                return HttpClient.newHttpClient().send(
+                        HttpRequest.newBuilder(endpoint).GET().build(),
+                        HttpResponse.BodyHandlers.ofString()).body();
+            } catch (IOException failure) {
+                throw new IllegalStateException(failure);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(failure);
+            }
+        };
+        String contractId = "logical.customer";
+        String tag = WorldScenarioCompiler.logicalContractTag(contractId,
+                contract(contractId).contractFingerprint());
+        Graph graph = new GraphBuilder("loopback-graph").node("resource", real)
+                .meta("tags", tag).input((results, context) -> context.get("request")).build();
+        var resource = graph.nodes().get("resource").toBuilder().operatorRef("httpResource").build();
+        return new Graph(graph.name(), Map.of("resource", resource), graph.edges(),
+                graph.sourceNodes(), graph.terminalNodes(),
+                com.leanowtech.bloge.core.schema.SchemaValidationLevel.OFF,
+                graph.embeddedOperators());
     }
 
     private static LogicalResourceContract contract(String id) {

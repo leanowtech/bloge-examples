@@ -1,6 +1,6 @@
 # S1-C 剧情与编译下沉实现说明
 
-本文记录 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 阶段一 `S1-C` 的实现边界。当前完成 `S1-C1`「剧情资产模型与契约兼容绑定」、`S1-C2a`「无副作用编译下沉」和 `S1-C2b`「统一内核世界委托」；compiler 三重 oracle 尚未闭合。
+本文记录 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 阶段一 `S1-C` 的实现边界。`S1-C1`「剧情资产模型与契约兼容绑定」、`S1-C2a`「无副作用编译下沉」、`S1-C2b`「统一内核世界委托」和 `S1-C2c`「compiler 三重 oracle」均已形成固定开发证据。
 
 ## 剧情资产
 
@@ -81,13 +81,18 @@ Expectation 坐标使用“规范序号 + 内容指纹”，相同断言仍可�
 
 世界片段结果继续经过节点输出 schema 校验。Node trace 的 fidelity/control fact 标记为 `WORLD_DELEGATE`，证据上限固定为 `EXPLORATORY`；真实算子与资源网络不会执行。缺失 runtime、缺失 binding、规则漂移、错误 purpose 或 Graph 身份漂移均使用固定净化错误，并在真实算子执行前失败。
 
-## 尚未实现
+## 编译器自证
 
-- 独立参考编译器与生产编译器的固定差分矩阵；
-- FixtureBundle、binding 和 source map 的规范序列化往返证明；
-- 对规则完备性、双向映射一致性和负载隔离的结构性质验证。
+`WorldScenarioCompilerOracleTest` 不复用生产编译器 helper，使用朴素测试投影对三类固定拓扑进行差分，并同时验证：
 
-三类证据全部固定后，compiler 三重 oracle 才算闭合。
+- 规则、binding、逻辑契约与 invocation site 的结构完备性；
+- fail-closed sentinel、契约级 selector 和无节点 id 寻址；
+- source map 正反方向的闭包一致性；
+- metadata 和 compilation fingerprint 的业务负载隔离；
+- FixtureBundle、binding 与 forward source map 的 JSON/规范映射往返；
+- 重复 expectation 仍保留“序号 + 内容指纹”的可区分坐标。
+
+独立参考差分、结构性质和往返三类 oracle 已全部固定，`S1-C` 状态为 `DEVELOPMENT_VERIFIED`。
 
 上述能力闭合前，`S1-C` 保持 `IN_PROGRESS`。
 
@@ -101,4 +106,4 @@ mvn -f resource-gateway-examples/pom.xml \
 
 当前固定分母为 `63` 项测试。其中 Scenario 测试 `12` 项；编译器测试 `10` 项，覆盖复杂契约标识编解码、多节点和混合调用点复用、显式切片选择、双向来源映射、20 次编译确定性、target/world/contract 漂移、零命中和多标签拒绝、错误净化，以及 metadata、来源映射和编译指纹的负载隔离。
 
-运行期受影响聚焦集为 `106` 项测试，包含 `WorldScenarioRunServiceTest` 的 `4` 项端到端证明：同一逻辑契约跨两个节点委托同一冻结片段、真实算子调用为零、20 次语义结果指纹一致、证据降级正确、缺 runtime/binding 和错误 purpose 失败关闭、变化 Graph 不能冒用旧指纹，以及普通运行入口不能激活 C2a DENY bundle。
+最终受影响聚焦集为 `106` 项测试。其中 `WorldScenarioRunServiceTest` 的 `5` 项端到端证明覆盖：同一逻辑契约跨两个节点委托同一冻结片段、真实算子调用为零、真实 loopback HTTP 请求为零、20 次语义结果指纹一致、证据降级正确、缺 runtime/binding 和错误 purpose 失败关闭、变化 Graph 不能冒用旧指纹，以及普通运行入口不能激活 C2a DENY bundle。`WorldScenarioCompilerOracleTest` 的 `3` 项测试闭合 compiler 三重 oracle。
