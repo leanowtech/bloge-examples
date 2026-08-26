@@ -29,6 +29,7 @@ import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionModeHints;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
 import com.leanowtech.bloge.operators.http.HttpRequestOperator;
 
 import org.junit.jupiter.api.Test;
@@ -332,11 +333,25 @@ class OperatorMicroGraphRunnerTest {
                         failure -> assertThat(failure.code())
                                 .isEqualTo("CONTROL_PLAN_EXECUTION_MODE_MISMATCH"));
 
-        CompiledExecutionControl.ResolvedControl unsupported =
+        CompiledExecutionControl.ResolvedControl worldDelegateUnavailable =
                 new CompiledExecutionControl.ResolvedControl(site, List.of(protocol), false,
                         CompiledExecutionControl.ResolvedControl.ResolutionStrategy
                                 .SELECTOR_SPECIFICITY,
                         List.of(), Map.of("protocol-response", ExecutionMode.WORLD_DELEGATE));
+        InvocationRecorder worldDelegateRecorder = new InvocationRecorder(mapper);
+        assertThatThrownBy(() -> new TestDoubleFactory(mapper, null).create(
+                node, worldDelegateRecorder.bind(site, new GraphContext()),
+                worldDelegateUnavailable, new OpaqueExternalOperator(), worldDelegateRecorder,
+                ResolvedReplayPayloads.empty(), MirrorResolutionObserver.noop()))
+                .isInstanceOfSatisfying(TestControlException.class,
+                        failure -> assertThat(failure.code())
+                                .isEqualTo(WorldDelegateRuntime.RUNTIME_UNAVAILABLE));
+
+        CompiledExecutionControl.ResolvedControl unsupported =
+                new CompiledExecutionControl.ResolvedControl(site, List.of(protocol), false,
+                        CompiledExecutionControl.ResolvedControl.ResolutionStrategy
+                                .SELECTOR_SPECIFICITY,
+                        List.of(), Map.of("protocol-response", ExecutionMode.PRIMITIVE_REAL));
         InvocationRecorder unsupportedRecorder = new InvocationRecorder(mapper);
         assertThatThrownBy(() -> new TestDoubleFactory(mapper, null).create(
                 node, unsupportedRecorder.bind(site, new GraphContext()), unsupported,
