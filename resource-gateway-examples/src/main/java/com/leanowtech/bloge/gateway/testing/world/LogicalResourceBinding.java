@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.resource.VisualResourceDescriptor;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaCompatibility;
 
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Proven binding of one concrete provider/API version to a version-independent logical contract.
@@ -14,6 +15,7 @@ import java.util.Map;
  * structurally satisfied the logical output shape. Caller-supplied fingerprints are never trusted.</p>
  */
 public final class LogicalResourceBinding {
+    private static final Pattern FINGERPRINT = Pattern.compile("sha256:[a-f0-9]{64}");
     private final String provider;
     private final String apiVersion;
     private final String resourceId;
@@ -76,6 +78,35 @@ public final class LogicalResourceBinding {
                 contract.contractId(), contract.contractFingerprint());
     }
 
+    /**
+     * Restores an already-proven binding from a catalog record.
+     *
+     * <p>This factory does not establish provider/schema compatibility; that proof happened before
+     * persistence. The catalog must verify its canonical record seal and nested identity before
+     * calling this method. It still validates every persisted identity and fingerprint, and binds
+     * the restored proof to the exact decoded logical contract.</p>
+     */
+    public static LogicalResourceBinding restorePersisted(String provider,
+                                                           String apiVersion,
+                                                           String resourceId,
+                                                           String descriptorFingerprint,
+                                                           String providerOutputFingerprint,
+                                                           String contractId,
+                                                           String contractFingerprint,
+                                                           LogicalResourceContract exactContract) {
+        if (invalid(provider) || invalid(apiVersion) || invalid(resourceId)
+                || !validFingerprint(descriptorFingerprint)
+                || !validFingerprint(providerOutputFingerprint)
+                || invalid(contractId) || !validFingerprint(contractFingerprint)
+                || exactContract == null || !contractId.trim().equals(exactContract.contractId())
+                || !validFingerprint(exactContract.contractFingerprint())
+                || !contractFingerprint.equals(exactContract.contractFingerprint())) {
+            throw LogicalResourceContractException.implementationUnknown();
+        }
+        return new LogicalResourceBinding(provider.trim(), apiVersion.trim(), resourceId.trim(),
+                descriptorFingerprint, providerOutputFingerprint, contractId.trim(), contractFingerprint);
+    }
+
     public String provider() {
         return provider;
     }
@@ -106,5 +137,9 @@ public final class LogicalResourceBinding {
 
     private static boolean invalid(String value) {
         return value == null || value.isBlank() || value.length() > 256;
+    }
+
+    private static boolean validFingerprint(String value) {
+        return value != null && FINGERPRINT.matcher(value).matches();
     }
 }
