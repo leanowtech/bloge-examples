@@ -20,7 +20,7 @@
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
 | 阶段二 | 有状态世界和函数返回值注入 | `DEVELOPMENT_VERIFIED` | `S2-A..D`、`S2-E1`、`S2-E2a..b` 全部闭合；治理函数控制从权威编译产物、真实 HTTP、生产隔离、payload-free evidence 到独立 Test Kit 严格消费形成双项目固定证据 |
-| 阶段三 | 线上沉淀、影响分析和存量迁移 | `IN_PROGRESS` | `S3-A` 已完成开发验证：受治理观测经脱敏、审批、真实 BLOGE 物化和事务式发布形成可跨重启执行的 World 草稿资产；`S3-B..F` 尚未闭合 |
+| 阶段三 | 线上沉淀、影响分析和存量迁移 | `IN_PROGRESS` | `S3-A..B` 已完成开发验证：受治理观测可安全晋升为可执行 World 资产，静态声明与完整性已验证的运行证据可形成独立、持久化、失败关闭的影响索引；`S3-C..F` 尚未闭合 |
 
 ## 3. 阶段零验收矩阵
 
@@ -92,7 +92,7 @@
 | 切片 | 交付物 | 状态 | 当前证据 |
 |---|---|---|---|
 | `S3-A` | 引用式观测、schema 引导脱敏、候选 CAS 生命周期、外部审批/发布授权、World 草稿物化及安全晋升 | `DEVELOPMENT_VERIFIED` | 36/36 聚焦测试与 Resource Gateway 7439 项全量测试通过；PostgreSQL/H2 持久化、AES-GCM vault、发布事务、payload-free 精确引用、pinned retention、跨重启执行、普通清理保留、撤销/篡改/跨租户失败关闭均有固定证明；详见 [S3-A 验证说明](./rg-evolution-design-1.2.1-s3-world-draft-candidate-verification.md) |
-| `S3-B` | 静态依赖索引、运行时消费投影、staleness 与影响报告 | `NOT_STARTED` | 待实现 |
+| `S3-B` | 静态依赖索引、运行时消费投影、staleness 与影响报告 | `DEVELOPMENT_VERIFIED` | 23/23 聚焦测试与 Resource Gateway 7462 项全量测试通过；权威编译 source map 和完整性已验证 evidence 分别形成不可变索引，PostgreSQL/H2 可跨实例恢复；declared-only/observed-only、breaking 全静态分母、缺失或陈旧索引显式门禁阻断、错契约/跨租户/篡改失败关闭及 payload-free 投影均有固定证明；详见 [S3-B 验证说明](./rg-evolution-design-1.2.1-s3-world-impact-verification.md) |
 | `S3-C` | 存量 FixtureBundle/TestSuite 单向迁移 | `NOT_STARTED` | 待实现 |
 | `S3-D` | 真实 API 与 World 保真校准 | `NOT_STARTED` | 待实现 |
 | `S3-E` | 图与 World 双层变异、验证器反证 | `NOT_STARTED` | 待实现 |

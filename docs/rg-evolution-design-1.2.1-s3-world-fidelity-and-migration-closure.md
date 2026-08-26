@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A` 已完成开发验证，`S3-B..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..B` 已完成开发验证，`S3-C..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -215,6 +215,8 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - evidence 消费投影；
 - 声明漂移和 staleness；
 - 契约变更影响报告。
+
+开发验证证据：23/23 聚焦测试与 Resource Gateway 7462 项全量测试通过。静态索引只接受 `Scenario + ResourceWorldModel + WorldScenarioCompilation` 的精确指纹链和 compiler-owned source map；运行索引只接受完整性已验证的 `TestRunRecord/TestRunEvidence`，未知 fixture、异常调用点和来源漂移均失败关闭。两类索引采用租户隔离、不可变快照和独立水位，可在 PostgreSQL/H2 中跨 repository 实例恢复。影响报告显式携带算法版本、新旧契约指纹、双索引水位和 evidence 窗口；breaking 变更覆盖全部静态依赖场景，缺失分母或陈旧索引返回门禁阻断状态，不能被空 affected 集误判为安全。详见 [S3-B 验证说明](./rg-evolution-design-1.2.1-s3-world-impact-verification.md)。
 
 ### S3-C：存量测试迁移器
 
