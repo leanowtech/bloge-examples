@@ -16,15 +16,16 @@ import java.util.Map;
 /** Package-private JSON and bound policy shared by function control value objects. */
 final class FunctionValueSupport {
 
-    static final int MAX_STRING_LENGTH = 4_096;
-    static final int MAX_LIST_ENTRIES = 256;
-    static final int MAX_OBJECT_ENTRIES = 256;
-    static final int MAX_DEPTH = 64;
-    static final int MAX_JSON_BYTES = 256 * 1024;
-    static final int MAX_SCHEMA_BYTES = 128 * 1024;
-    static final int MAX_SCHEMA_DEPTH = 32;
-    static final long MAX_CONSUMPTION = 1_000_000L;
-    static final long MAX_DURATION_MILLIS = 60_000L;
+    static final FunctionControlLimits LIMITS = FunctionControlLimits.CURRENT;
+    static final int MAX_STRING_LENGTH = LIMITS.maxStringChars();
+    static final int MAX_LIST_ENTRIES = LIMITS.maxListEntries();
+    static final int MAX_OBJECT_ENTRIES = LIMITS.maxObjectEntries();
+    static final int MAX_DEPTH = LIMITS.maxJsonValueDepth();
+    static final int MAX_JSON_BYTES = LIMITS.maxJsonValueBytes();
+    static final int MAX_SCHEMA_BYTES = LIMITS.maxSchemaBytes();
+    static final int MAX_SCHEMA_DEPTH = LIMITS.maxSchemaDepth();
+    static final long MAX_CONSUMPTION = LIMITS.maxConsumption();
+    static final long MAX_DURATION_MILLIS = LIMITS.maxDurationMillis();
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

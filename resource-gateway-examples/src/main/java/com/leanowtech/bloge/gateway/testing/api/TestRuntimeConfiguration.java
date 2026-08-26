@@ -59,6 +59,7 @@ import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestK
 import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner;
 import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
 import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedFunctionControlAssetResolver;
 import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetMetadataAuthorizer;
 import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetReadAuthorizer;
 import com.leanowtech.bloge.gateway.testing.world.persistence.DatabaseGovernedCatalogRepository;
@@ -74,6 +75,8 @@ import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.IndependentDurableTestEngineFactory;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionInventoryProvider;
+import com.leanowtech.bloge.core.runtime.registry.CompiledGraphCatalog;
 import com.leanowtech.bloge.durable.codec.JacksonCheckpointCodec;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
@@ -215,6 +218,21 @@ public class TestRuntimeConfiguration {
             GovernedAssetReadAuthorizer authorizer,
             GovernedAssetMetadataAuthorizer metadataAuthorizer) {
         return new AuthorizedWorldAssetResolver(repository, authorizer, metadataAuthorizer);
+    }
+
+    @Bean
+    AuthorizedFunctionControlAssetResolver authorizedFunctionControlAssetResolver(
+            GovernedCatalogRepository repository,
+            GovernedAssetReadAuthorizer authorizer,
+            GovernedAssetMetadataAuthorizer metadataAuthorizer) {
+        return new AuthorizedFunctionControlAssetResolver(repository, authorizer, metadataAuthorizer, null);
+    }
+
+    @Bean
+    @ConditionalOnBean(CompiledGraphCatalog.class)
+    CompiledFunctionInventoryProvider compiledFunctionInventoryProvider(
+            CompiledGraphCatalog catalog) {
+        return new CompiledFunctionInventoryProvider(catalog);
     }
 
     @Bean
@@ -2050,13 +2068,16 @@ public class TestRuntimeConfiguration {
             TestRuntimeAdmissionGate admissions,
             @Value("${gateway.testing.store.retention-days:30}") long retentionDays,
             AuthorizedWorldAssetResolver worldAssetResolver,
+            AuthorizedFunctionControlAssetResolver functionAssetResolver,
+            ObjectProvider<CompiledFunctionInventoryProvider> functionInventoryProvider,
             WorldReferenceExecutionPlanner worldReferencePlanner,
             WorldScenarioRunService worldScenarioRunService) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService,
                 evidenceIntegrity, admissions, testSecretResolutionService, worldAssetResolver,
-                worldReferencePlanner, worldScenarioRunService);
+                worldReferencePlanner, worldScenarioRunService, functionAssetResolver,
+                functionInventoryProvider.getIfAvailable());
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */

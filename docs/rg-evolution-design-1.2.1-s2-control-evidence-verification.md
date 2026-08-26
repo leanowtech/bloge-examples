@@ -67,10 +67,11 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 ## 6. 尚未闭合
 
-以下内容属于 `S2-E2`：
+`S2-E2a` 已关闭以下内容：
 
-- 通过现有测试控制信封传递 Scenario、World 和 function control 精确引用；
-- 真实 Spring HTTP 正向整链与 production profile 入口拒绝；
-- 绕过入口后的服务端独立拒绝及零编译、零执行、零证据写入证明；
-- capability probe 与公开协议 Schema；
-- Test Kit 客户端解析、兼容性 fixture 和双项目 `clean verify`。
+- 通过现有测试控制信封传递 Scenario/World 主引用和可选 function control 精确引用；
+- 真实 Spring HTTP 正向整链、production profile 入口拒绝和服务端独立拒绝；
+- capability probe、机器可读信封 Schema、版本兼容 fixture 和治理资产迁移；
+- 函数与状态组合运行、payload-free 证据持久化及读取。
+
+实现与复现证据见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md)。`S2-E2b` 尚需关闭 Test Kit 客户端解析、证据校验和双项目 `clean verify`。

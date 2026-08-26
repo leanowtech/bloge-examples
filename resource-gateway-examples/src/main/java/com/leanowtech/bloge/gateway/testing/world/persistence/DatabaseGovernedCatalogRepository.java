@@ -34,7 +34,7 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
                 access_policy_ref VARCHAR(512) NOT NULL,
                 approval_ref VARCHAR(512) NULL,
                 governance_fingerprint VARCHAR(80) NOT NULL CHECK (governance_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
-                CHECK (kind IN ('LOGICAL_RESOURCE_CONTRACT', 'RESOURCE_WORLD_MODEL', 'SCENARIO')),
+                CHECK (kind IN ('LOGICAL_RESOURCE_CONTRACT', 'RESOURCE_WORLD_MODEL', 'SCENARIO', 'FUNCTION_CONTROL')),
                 canonical_json TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -55,7 +55,7 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
                 access_policy_ref VARCHAR(512) NOT NULL,
                 approval_ref VARCHAR(512) NULL,
                 governance_fingerprint VARCHAR(80) NOT NULL CHECK (governance_fingerprint ~ '^sha256:[a-f0-9]{64}$'),
-                CHECK (kind IN ('LOGICAL_RESOURCE_CONTRACT', 'RESOURCE_WORLD_MODEL', 'SCENARIO')),
+                CHECK (kind IN ('LOGICAL_RESOURCE_CONTRACT', 'RESOURCE_WORLD_MODEL', 'SCENARIO', 'FUNCTION_CONTROL')),
                 canonical_json TEXT NOT NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (tenant_id, kind, asset_id, revision)

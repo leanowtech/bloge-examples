@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bloge:resource-gateway:test-control-envelope:v1",
+  "title": "BLOGE Resource Gateway test-control envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["purpose", "correlationId"],
+  "properties": {
+    "purpose": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "correlationId": { "type": "string", "minLength": 1, "maxLength": 2048 },
+    "scenario": { "$ref": "#/$defs/exactReference" },
+    "worldModel": { "$ref": "#/$defs/exactReference" },
+    "functionControl": { "$ref": "#/$defs/exactReference" }
+  },
+  "oneOf": [
+    { "required": ["scenario"], "not": { "required": ["worldModel"] } },
+    { "required": ["worldModel"], "not": { "required": ["scenario"] } }
+  ],
+  "$defs": {
+    "exactReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "fingerprint"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

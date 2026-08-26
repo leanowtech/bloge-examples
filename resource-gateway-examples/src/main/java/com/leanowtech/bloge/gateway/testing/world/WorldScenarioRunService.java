@@ -19,6 +19,9 @@ import com.leanowtech.bloge.gateway.testing.runtime.TestDoubleFactory;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
+import com.leanowtech.bloge.core.spi.ExpressionFunction;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -60,6 +63,15 @@ public final class WorldScenarioRunService {
     public TestExecutionResult execute(WorldScenarioCompilation compilation,
                                        TestExecutionRequest request,
                                        TestRunService.AdmissionFactory admissionFactory) {
+        return execute(compilation, request, admissionFactory, null, Map.of());
+    }
+
+    /** Executes the same world run with an optional server-owned function control plan. */
+    public TestExecutionResult execute(WorldScenarioCompilation compilation,
+                                       TestExecutionRequest request,
+                                       TestRunService.AdmissionFactory admissionFactory,
+                                       CompiledFunctionControlPlan functionPlan,
+                                       Map<String, ? extends ExpressionFunction> functionRegistry) {
         CompiledExecutionControl compiled = compile(compilation, request);
         AdmissionGuard admission = Objects.requireNonNull(
                 Objects.requireNonNull(admissionFactory, "admissionFactory").admit(compiled),
@@ -67,6 +79,9 @@ public final class WorldScenarioRunService {
         try (admission) {
             TestRunService runtime;
             TestExecutionResult result;
+            FunctionControlRuntime functionRuntime = functionPlan == null ? null
+                    : FunctionControlRuntime.forTestRun(functionPlan, functionRegistry,
+                    compiled.executionServices().services());
             if (compilation.runStateDescriptor().stateful()) {
                 // Construct the world runtime only after external admission. A malformed
                 // server-owned runtime/session must release the admission guard before leaving.
@@ -86,7 +101,7 @@ public final class WorldScenarioRunService {
                                         compilation.runStateDescriptor().scenarioFingerprint(),
                                         compilation.runStateDescriptor().worldFingerprint(),
                                         compilation.runStateDescriptor().graphArtifactFingerprint(),
-                                        runId), compilation.stateAccessPlan()));
+                                        runId), compilation.stateAccessPlan()), functionRuntime);
             } else {
                 // Keep the stateless execution path byte-for-byte compatible with v1 behavior.
                 runtime = new TestRunService(objectMapper, new ExecutionControlCompiler(
@@ -94,7 +109,9 @@ public final class WorldScenarioRunService {
                         new WorldDelegateRuntime(compilation, fragmentTestKit)),
                         new IndependentTestEngineFactory(registry),
                         new TestAssertionEvaluator(objectMapper));
-                result = runtime.executeCompiled(request, compiled);
+                result = functionRuntime == null
+                        ? runtime.executeCompiled(request, compiled)
+                        : runtime.executeCompiledWithFunctionControl(request, compiled, functionRuntime);
             }
             admission.checkpoint();
             return result;

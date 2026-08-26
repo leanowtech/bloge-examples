@@ -26,6 +26,8 @@ import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityObservationExt
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptRuntimeCapability;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventory;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryAuthority;
+import com.leanowtech.bloge.gateway.testing.protocol.TestControlProtocolLimits;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlLimits;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteStabilityPhysicalAttemptProviderInventoryCohortGate;
 import com.leanowtech.bloge.gateway.testing.api.WorkerQuarantineChangeAuthorizationTrustStore;
 import com.leanowtech.bloge.gateway.testing.domain.WorkerQuarantineRequestIndexMode;
@@ -56,7 +58,8 @@ public record IntegrationCapabilities(
         VisualEvidenceSigner.Descriptor evidenceSigner,
         VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
         Testability testability,
-        List<Endpoint> endpoints
+        List<Endpoint> endpoints,
+        Map<String, Integer> limits
 ) {
     public static final String SCHEMA_VERSION = "toolStudio.resourceGateway.capabilities.v1";
 
@@ -77,6 +80,7 @@ public record IntegrationCapabilities(
                 ? unavailablePayloadGovernance() : payloadGovernance;
         testability = testability == null ? Testability.schemaContractOnly() : testability;
         endpoints = endpoints == null ? List.of() : List.copyOf(endpoints);
+        limits = limits == null ? functionControlLimits() : Map.copyOf(limits);
     }
 
     public IntegrationCapabilities(String schemaVersion,
@@ -88,7 +92,7 @@ public record IntegrationCapabilities(
                                    List<Endpoint> endpoints) {
         this(schemaVersion, protocol, protocolVersion, supportedObjects, features, identityProvider,
                 VisualEvidenceSigner.unavailable().descriptor(), unavailablePayloadGovernance(),
-                Testability.schemaContractOnly(), endpoints);
+                Testability.schemaContractOnly(), endpoints, functionControlLimits());
     }
 
     public static IntegrationCapabilities current() {
@@ -254,6 +258,28 @@ public record IntegrationCapabilities(
                                                           currentAuthority,
                                                   TestSuiteStabilityObservationExternalArchiveReconciliationHealth
                                                           .Descriptor archiveReconciliation) {
+        return current(evidenceSigner, identityProvider, sideEffectReconcilerAdapters,
+                payloadGovernance, testExecutionEndpointEnabled, evidenceTrust,
+                requestIndexMode, changeAuthorizationTrust, suiteStabilityJobSubmissionEnabled,
+                currentAuthority, archiveReconciliation, false);
+    }
+
+    /** Builds capabilities with function-control availability sourced from the actual provider bean. */
+    public static IntegrationCapabilities current(VisualEvidenceSigner.Descriptor evidenceSigner,
+                                                  IntegrationIdentityResolver.Descriptor identityProvider,
+                                                  boolean sideEffectReconcilerAdapters,
+                                                  VisualPayloadGovernancePolicy.Descriptor payloadGovernance,
+                                                  boolean testExecutionEndpointEnabled,
+                                                  EvidenceKeySetTrustStore.Descriptor evidenceTrust,
+                                                  WorkerQuarantineRequestIndexMode requestIndexMode,
+                                                  WorkerQuarantineChangeAuthorizationTrustStore
+                                                          .Descriptor changeAuthorizationTrust,
+                                                  boolean suiteStabilityJobSubmissionEnabled,
+                                                  TestSuiteStabilityJobAuthorizer.Descriptor
+                                                          currentAuthority,
+                                                  TestSuiteStabilityObservationExternalArchiveReconciliationHealth
+                                                          .Descriptor archiveReconciliation,
+                                                  boolean functionControlAvailable) {
         if (suiteStabilityJobSubmissionEnabled && !testExecutionEndpointEnabled) {
             throw new IllegalArgumentException(
                     "Stability-job submission requires the testing control plane");
@@ -834,6 +860,11 @@ public record IntegrationCapabilities(
                 TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION_V1,
                 TestSuiteStabilityPhysicalAttemptRuntimeCapability.SCHEMA_VERSION));
         if (testExecutionEndpointEnabled) {
+            if (functionControlAvailable) {
+                objects.put("functionControlAsset", List.of(
+                    com.leanowtech.bloge.gateway.testing.function.FunctionControlAsset
+                            .SCHEMA_VERSION));
+            }
             objects.put("testExecutionRequest", List.of(
                     com.leanowtech.bloge.gateway.testing.api.TestExecutionApiRequest.SCHEMA_VERSION));
             objects.put("testExecutionResponse", List.of(
@@ -1172,6 +1203,10 @@ public record IntegrationCapabilities(
         features.put("visualLibraryAuthoringProtocol", true);
         features.put("visualLibraryAuthoringStatelessPreview", true);
         features.put("functionOnlyLibrary", true);
+        features.put("functionControlAssetReference", functionControlAvailable);
+        features.put("functionControlGovernedCatalog", functionControlAvailable);
+        features.put("functionControlStateComposition", functionControlAvailable);
+        features.put("functionControlPayloadFreeEvidence", functionControlAvailable);
         features.put("visualLibraryAuthoringInference", true);
         features.put("visualLibraryAuthoringDiscoveryFacts", true);
         features.put("visualLibraryAuthoringRuntimeParity", true);
@@ -1895,7 +1930,13 @@ public record IntegrationCapabilities(
                         ? Testability.executionControlPlane(
                         changeTrust, suiteStabilityJobSubmissionEnabled, authority, reconciliation)
                         : Testability.schemaContractOnly(),
-                endpoints);
+                endpoints, functionControlLimits());
+    }
+
+    /** Stable, payload-free ceilings advertised to protocol consumers. */
+    private static Map<String, Integer> functionControlLimits() {
+        return FunctionControlLimits.CURRENT.capabilityMap(
+                TestControlProtocolLimits.MAX_DECODED_ENVELOPE_BYTES);
     }
 
     private static VisualPayloadGovernancePolicy.Descriptor unavailablePayloadGovernance() {

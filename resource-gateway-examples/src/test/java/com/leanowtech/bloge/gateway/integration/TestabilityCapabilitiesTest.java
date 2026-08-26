@@ -401,6 +401,12 @@ class TestabilityCapabilitiesTest {
         assertThat(disabled.testability().executionEndpointEnabled()).isFalse();
         assertThat(disabled.endpoints()).noneMatch(endpoint -> endpoint.path().startsWith("/api/testing/"));
         assertThat(disabled.features()).containsEntry("dynamicAttemptOccurrenceSelectors", false);
+        assertThat(enabled.features())
+                .containsEntry("functionControlAssetReference", false)
+                .containsEntry("functionControlGovernedCatalog", false)
+                .containsEntry("functionControlStateComposition", false)
+                .containsEntry("functionControlPayloadFreeEvidence", false);
+        assertThat(enabled.supportedObjects()).doesNotContainKey("functionControlAsset");
         assertThat(disabled.features())
                 .containsEntry("durableOperatorTestExecutionCreation", false);
         assertThat(disabled.features())

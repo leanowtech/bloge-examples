@@ -36,6 +36,7 @@ import com.leanowtech.bloge.gateway.testing.evidence.TestSemanticResultFingerpri
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventoryBuilder;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import com.leanowtech.bloge.gateway.testing.planning.TestBoundaryCasePlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
 import com.leanowtech.bloge.gateway.testing.planning.TestPropertyCasePlanner;
@@ -52,6 +53,13 @@ import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner
 import com.leanowtech.bloge.gateway.testing.world.WorldScenarioCompilationException;
 import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
 import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedFunctionControlAssetResolver;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionInventoryProvider;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlAsset;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationInventory;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlException;
 import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException;
 import com.leanowtech.bloge.gateway.testing.world.access.ResolvedWorldAssetControl;
 import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
@@ -106,6 +114,8 @@ public final class TestExecutionApiService {
     private final AuthorizedWorldAssetResolver worldAssetResolver;
     private final WorldReferenceExecutionPlanner worldReferencePlanner;
     private final WorldScenarioRunService worldScenarioRunService;
+    private final AuthorizedFunctionControlAssetResolver functionAssetResolver;
+    private final CompiledFunctionInventoryProvider functionInventoryProvider;
     private final TestBoundaryCasePlanner boundaryCases;
     private final TestDslMutationPlanner mutationCases;
     private final TestPropertyCasePlanner propertyCases;
@@ -259,6 +269,31 @@ public final class TestExecutionApiService {
                                    AuthorizedWorldAssetResolver worldAssetResolver,
                                    WorldReferenceExecutionPlanner worldReferencePlanner,
                                    WorldScenarioRunService worldScenarioRunService) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
+                evidenceIntegrity, admissions, testSecrets, worldAssetResolver,
+                worldReferencePlanner, worldScenarioRunService, null, null);
+    }
+
+    /** Complete wiring including the server-owned function artifact and runtime catalog. */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads,
+                                   TestEvidenceIntegrityService evidenceIntegrity,
+                                   TestRuntimeAdmissionGate admissions,
+                                   TestSecretResolutionService testSecrets,
+                                   AuthorizedWorldAssetResolver worldAssetResolver,
+                                   WorldReferenceExecutionPlanner worldReferencePlanner,
+                                   WorldScenarioRunService worldScenarioRunService,
+                                   AuthorizedFunctionControlAssetResolver functionAssetResolver,
+                                   CompiledFunctionInventoryProvider functionInventoryProvider) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -274,6 +309,8 @@ public final class TestExecutionApiService {
         this.worldAssetResolver = worldAssetResolver;
         this.worldReferencePlanner = worldReferencePlanner;
         this.worldScenarioRunService = worldScenarioRunService;
+        this.functionAssetResolver = functionAssetResolver;
+        this.functionInventoryProvider = functionInventoryProvider;
         this.boundaryCases = new TestBoundaryCasePlanner(
                 objectMapper, new JsonSchemaSampleGenerator());
         this.mutationCases = new TestDslMutationPlanner(objectMapper, operatorRegistry);
@@ -357,6 +394,38 @@ public final class TestExecutionApiService {
                     "Governed world-reference planning is unavailable.");
         }
 
+        CompiledFunctionControlPlan functionPlan = null;
+        if (envelope.functionControl() != null) {
+            if (functionAssetResolver == null || functionInventoryProvider == null) {
+                throw unavailable(identity, "RG.TEST.FUNCTION_CONTROL_UNAVAILABLE",
+                        "Governed function control is unavailable.");
+            }
+            FunctionControlAsset asset;
+            try {
+                asset = functionAssetResolver.resolve(envelope, trustedContext);
+                if (!artifactFingerprint.equals(asset.targetFingerprint())) {
+                    throw badRequest(identity, "RG.TEST.FUNCTION_CONTROL_TARGET_MISMATCH",
+                            "Function control target does not match the graph target.", Map.of());
+                }
+                InvocationInventory inventory = new InvocationInventoryBuilder(operatorRegistry)
+                        .build(graph, artifactFingerprint);
+                FunctionInvocationInventory functionInventory = functionInventoryProvider
+                        .build(graph, inventory);
+                functionPlan = new FunctionControlCompiler().compile(functionInventory,
+                        functionInventoryProvider.runtimeFunctions(), asset.declarations(), asset.rules());
+            } catch (IntegrationProblemException expected) {
+                throw expected;
+            } catch (FunctionControlException failure) {
+                throw badRequest(identity, "RG.TEST.FUNCTION_CONTROL_INVALID",
+                        "Governed function control is invalid.", Map.of());
+            } catch (GovernedAssetAccessException failure) {
+                throw governedAssetFailure(identity, failure);
+            } catch (RuntimeException failure) {
+                throw unavailable(identity, "RG.TEST.FUNCTION_CONTROL_UNAVAILABLE",
+                        "Governed function control is unavailable.");
+            }
+        }
+
         TestExecutionRequest worldRequest = new TestExecutionRequest(
                 snapshot.graph(), new GraphContext(request.context()), plan.compilation().bundle(),
                 AUTHORIZED_PURPOSE, artifactFingerprint, TestExecutionRequest.FixtureSource.STORED,
@@ -366,9 +435,13 @@ public final class TestExecutionApiService {
         ResolvedFixture fixture = referencedFixture(plan.compilation().bundle());
         TestExecutionResult result;
         try {
-            result = worldScenarioRunService.execute(plan.compilation(), worldRequest, compiled ->
+            TestRunService.AdmissionFactory admissionFactory = compiled ->
                     admissions.admit(identity, admissionIntent(Kind.GRAPH, request,
-                            artifactFingerprint, compiled, snapshot.dependencyFingerprints().keySet())));
+                            artifactFingerprint, compiled, snapshot.dependencyFingerprints().keySet()));
+            result = functionPlan == null
+                    ? worldScenarioRunService.execute(plan.compilation(), worldRequest, admissionFactory)
+                    : worldScenarioRunService.execute(plan.compilation(), worldRequest, admissionFactory,
+                            functionPlan, functionInventoryProvider.runtimeFunctions());
         } catch (WorldScenarioCompilationException failure) {
             throw worldCompilationFailure(identity);
         } catch (IntegrationProblemException expected) {

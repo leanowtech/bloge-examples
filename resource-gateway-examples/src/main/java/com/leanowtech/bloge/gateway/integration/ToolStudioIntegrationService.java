@@ -88,6 +88,7 @@ public class ToolStudioIntegrationService {
     private EvidenceKeySetTrustPublicationRepository evidenceTrustPublications;
     private final ObjectMapper objectMapper;
     private boolean testExecutionEndpointEnabled;
+    private boolean functionControlAvailable;
     private boolean suiteStabilityJobSubmissionEnabled;
     private boolean businessMirrorProposalSimulationApi;
     private boolean businessMirrorImplementationBindingApi;
@@ -247,6 +248,13 @@ public class ToolStudioIntegrationService {
                 ? new TestSuiteStabilityJobAuthorizer.Descriptor(
                 "", false, "UNAVAILABLE", "", Map.of())
                 : availability.suiteStabilityCurrentAuthority();
+    }
+
+    /** Advertises function-control assets only when the compiled graph catalog provider exists. */
+    @Autowired(required = false)
+    void configureFunctionControlAvailability(
+            com.leanowtech.bloge.gateway.testing.function.CompiledFunctionInventoryProvider provider) {
+        this.functionControlAvailable = provider != null;
     }
 
     @Autowired(required = false)
@@ -690,7 +698,8 @@ public class ToolStudioIntegrationService {
                         workerQuarantineChangeAuthorizationTrust,
                         stabilitySubmissionReady,
                         currentAuthority,
-                        archiveReconciliation);
+                        archiveReconciliation,
+                        functionControlAvailable);
         TestSecretAuthority.Descriptor testSecretAuthority = currentTestSecretAuthority();
         boolean secretAuthorityReady = testSecretAuthority.available();
         Map<String, Boolean> features = new LinkedHashMap<>(current.features());
@@ -2490,7 +2499,7 @@ public class ToolStudioIntegrationService {
                 current.evidenceSigner(), current.payloadGovernance(),
                 current.testability().withRecoveryFleet(recoveryFleet)
                         .withPhysicalAttemptRuntime(physicalAttempt),
-                endpoints);
+                endpoints, current.limits());
         return IntegrationEnvelope.of("CAPABILITIES", IntegrationCapabilities.SCHEMA_VERSION,
                 augmented);
     }

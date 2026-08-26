@@ -214,6 +214,8 @@ public final class FunctionControlRule {
     /** Package-private server-owned executable value; public plans expose only its fingerprint. */
     Object executableReturnValue() { return returnValue; }
 
+    String executableErrorMessage() { return errorMessage; }
+
     String semanticFingerprint() {
         Map<String, Object> material = new LinkedHashMap<>();
         material.put("ruleId", ruleId);

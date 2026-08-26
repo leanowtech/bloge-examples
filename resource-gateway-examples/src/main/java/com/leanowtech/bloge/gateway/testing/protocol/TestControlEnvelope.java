@@ -7,7 +7,13 @@ public record TestControlEnvelope(
         String purpose,
         TestAssetReference scenario,
         TestAssetReference worldModel,
-        String correlationId) {
+        String correlationId,
+        TestAssetReference functionControl) {
+
+    public TestControlEnvelope(String purpose, TestAssetReference scenario,
+                               TestAssetReference worldModel, String correlationId) {
+        this(purpose, scenario, worldModel, correlationId, null);
+    }
 
     public TestControlEnvelope {
         purpose = requireText(purpose);

@@ -96,8 +96,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 以下内容不能仅从本阶段证据推导为已完成：
 
-- 函数与状态 evidence 的稳定外部 JSON 协议和持久化已由 `S2-E1` 闭合，见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md)；Test Kit 解析仍待 `S2-E2`；
-- 生产入口和服务端的双重控制拒绝；
-- 真实 HTTP Scenario 引用、重放和证据读取系统测试；
-- Resource Gateway 与 Test Kit 双项目最终里程碑；
-- 面向部署环境的能力探针、运维配置和兼容性说明。
+- 函数与状态 evidence 的稳定外部 JSON 协议和持久化已由 `S2-E1` 闭合，见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md)；
+- 生产双层拒绝、真实 HTTP 精确引用、权威编译产物和能力探针已由 `S2-E2a` 闭合，见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md)；
+- Test Kit 的协议解析、证据校验和 Resource Gateway/Test Kit 双项目最终里程碑仍待 `S2-E2b`。

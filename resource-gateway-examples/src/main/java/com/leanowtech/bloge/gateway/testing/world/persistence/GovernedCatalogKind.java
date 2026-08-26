@@ -3,12 +3,14 @@ package com.leanowtech.bloge.gateway.testing.world.persistence;
 import com.leanowtech.bloge.gateway.testing.world.LogicalResourceContract;
 import com.leanowtech.bloge.gateway.testing.world.ResourceWorldModel;
 import com.leanowtech.bloge.gateway.testing.world.Scenario;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlAsset;
 
 /** The three Stage 1 assets stored by the generic governed catalog. */
 public enum GovernedCatalogKind {
     LOGICAL_RESOURCE_CONTRACT(LogicalResourceContract.class),
     RESOURCE_WORLD_MODEL(ResourceWorldModel.class),
-    SCENARIO(Scenario.class);
+    SCENARIO(Scenario.class),
+    FUNCTION_CONTROL(FunctionControlAsset.class);
 
     private final Class<?> valueType;
 

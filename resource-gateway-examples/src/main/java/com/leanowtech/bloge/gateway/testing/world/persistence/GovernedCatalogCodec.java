@@ -20,6 +20,8 @@ import com.leanowtech.bloge.gateway.testing.world.StateSpec;
 import com.leanowtech.bloge.gateway.testing.world.StateSpecV2;
 import com.leanowtech.bloge.gateway.testing.world.StateKeySpec;
 import com.leanowtech.bloge.gateway.testing.world.WorldSlice;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlAsset;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlAssetCodec;
 import com.leanowtech.bloge.gateway.testing.world.WorldStateSpec;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
@@ -160,6 +162,9 @@ public final class GovernedCatalogCodec {
         if (value instanceof Scenario scenario) {
             return scenario.fingerprint();
         }
+        if (value instanceof FunctionControlAsset asset) {
+            return asset.assetFingerprint();
+        }
         throw new IllegalArgumentException("RG.WORLD.CATALOG.INVALID_ASSET");
     }
 
@@ -196,6 +201,9 @@ public final class GovernedCatalogCodec {
         if (kind == GovernedCatalogKind.RESOURCE_WORLD_MODEL) {
             return worldPayload((ResourceWorldModel) value);
         }
+        if (kind == GovernedCatalogKind.FUNCTION_CONTROL) {
+            return FunctionControlAssetCodec.encode(mapper, (FunctionControlAsset) value);
+        }
         return scenarioPayload((Scenario) value);
     }
 
@@ -209,6 +217,9 @@ public final class GovernedCatalogCodec {
         }
         if (kind == GovernedCatalogKind.RESOURCE_WORLD_MODEL) {
             return decodeWorld(payload);
+        }
+        if (kind == GovernedCatalogKind.FUNCTION_CONTROL) {
+            return FunctionControlAssetCodec.decode(mapper, payload);
         }
         return decodeScenario(payload, tenant, worldResolver);
     }
@@ -528,8 +539,13 @@ public final class GovernedCatalogCodec {
     }
 
     private String payloadFingerprint(GovernedCatalogKind kind, JsonNode payload) {
-        return text(payload, kind == GovernedCatalogKind.LOGICAL_RESOURCE_CONTRACT
-                ? "contractFingerprint" : "fingerprint");
+        if (kind == GovernedCatalogKind.LOGICAL_RESOURCE_CONTRACT) {
+            return text(payload, "contractFingerprint");
+        }
+        if (kind == GovernedCatalogKind.FUNCTION_CONTROL) {
+            return text(payload, "assetFingerprint");
+        }
+        return text(payload, "fingerprint");
     }
 
     private void validateIdentity(GovernedCatalogKind kind, String tenant, String id, long revision,
@@ -554,6 +570,10 @@ public final class GovernedCatalogCodec {
                     || scenario.revision() != revision || !fingerprint.equals(scenario.fingerprint())) {
                 throw new GovernedCatalogIntegrityException();
             }
+        }
+        if (kind == GovernedCatalogKind.FUNCTION_CONTROL
+                && !fingerprint.equals(((FunctionControlAsset) value).assetFingerprint())) {
+            throw new GovernedCatalogIntegrityException();
         }
     }
 

@@ -108,6 +108,38 @@ class Stage0Exit04ProductionBypassMatrixTest {
         verify(audit).append(any());
     }
 
+    @org.junit.jupiter.api.Test
+    void productionFilterRejectsFunctionControlReferenceBeforeDeserialization() throws Exception {
+        BodyDeserializationSentinel.calls.set(0);
+        NonProductionExecutionService downstream = new NonProductionExecutionService();
+        IntegrationAccessAuditRepository audit = mock(IntegrationAccessAuditRepository.class);
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new ProductionRunEndpoint(downstream))
+                .addFilters(new ExecutionControlBoundaryGuardFilter(
+                        new ObjectMapper(), audit, true, "production"))
+                .build();
+        String envelope = base64Url("{\"purpose\":\"GRAPH_CONTRACT_TEST\","
+                + "\"worldModel\":{\"id\":\"world-ref\",\"revision\":1,"
+                + "\"fingerprint\":\"" + FINGERPRINT + "\"},"
+                + "\"functionControl\":{\"id\":\"function-ref\",\"revision\":1,"
+                + "\"fingerprint\":\"" + FINGERPRINT + "\"},"
+                + "\"correlationId\":\"production-function-control\"}");
+
+        String response = mvc.perform(post("/api/visual/graphs/simulate")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header("X-Correlation-Id", "production-function-control")
+                        .header("X-BLOGE-Test-Envelope", envelope)
+                        .content("{\"businessPayload\":\"secret-business-payload\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(FILTER_CODE))
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat(response).doesNotContain("function-ref", FINGERPRINT, "secret-business-payload");
+        assertThat(BodyDeserializationSentinel.calls).hasValue(0);
+        assertThat(downstream.compilerCalls).hasValue(0);
+        assertThat(downstream.executorCalls).hasValue(0);
+        verify(audit).append(any());
+    }
+
     @ParameterizedTest(name = "production service rejects {0} when the filter is bypassed")
     @MethodSource("stage0Cases")
     void productionServiceRejectsFixedMatrixBeforePlanningCompilationAndExecution(

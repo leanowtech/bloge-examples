@@ -37,7 +37,7 @@ public final class TestControlHeaderCodec {
     private static final Pattern BASE64URL = Pattern.compile("[A-Za-z0-9_-]+");
     private static final Pattern TOKEN = Pattern.compile("[!#$%&'*+.^_`|~0-9A-Za-z-]+");
     private static final Set<String> ENVELOPE_FIELDS =
-            Set.of("purpose", "scenario", "worldModel", "correlationId");
+            Set.of("purpose", "scenario", "worldModel", "correlationId", "functionControl");
     private static final Set<String> REFERENCE_FIELDS = Set.of("id", "revision", "fingerprint");
     private static final JsonFactory JSON_FACTORY = JsonFactory.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
@@ -125,8 +125,10 @@ public final class TestControlHeaderCodec {
         }
         TestAssetReference scenario = hasScenario ? parseReference(root.get("scenario")) : null;
         TestAssetReference worldModel = hasWorldModel ? parseReference(root.get("worldModel")) : null;
+        TestAssetReference functionControl = root.has("functionControl")
+                ? parseReference(root.get("functionControl")) : null;
         try {
-            return new TestControlEnvelope(purpose, scenario, worldModel, correlationId);
+            return new TestControlEnvelope(purpose, scenario, worldModel, correlationId, functionControl);
         } catch (IllegalArgumentException exception) {
             throw failure(TestControlProtocolReason.ASSET_REFERENCE_CARDINALITY);
         }

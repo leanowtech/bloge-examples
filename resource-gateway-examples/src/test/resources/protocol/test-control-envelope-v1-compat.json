@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "urn:bloge:resource-gateway:test-control-envelope:v1",
+  "legacy": {
+    "purpose": "GRAPH_CONTRACT_TEST",
+    "worldModel": {
+      "id": "world-a",
+      "revision": 1,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "correlationId": "corr-a"
+  },
+  "withFunctionControl": {
+    "purpose": "GRAPH_CONTRACT_TEST",
+    "worldModel": {
+      "id": "world-a",
+      "revision": 1,
+      "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "functionControl": {
+      "id": "function-control-a",
+      "revision": 2,
+      "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "correlationId": "corr-a"
+  }
+}
