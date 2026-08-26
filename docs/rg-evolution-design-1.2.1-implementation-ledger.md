@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | [S2 实施设计](./rg-evolution-design-1.2.1-s2-stateful-world-and-function-injection.md) 已冻结为 5 个切片和 15 项出口；代码实现尚未开始 |
+| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A` 版本化状态资产已通过开发验证；`S2-B..E` 尚未实现，15 项阶段出口尚未闭合 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -71,6 +71,14 @@
 - 编译器通过结构性质、独立参考实现差分和往返三重验证。
 
 ### 4.2 阶段二
+
+| 切片 | 交付物 | 状态 | 当前证据 |
+|---|---|---|---|
+| `S2-A` | 版本化 `WorldStateSpec` / `StateSpecV2`、Scenario 初始状态覆盖、跨切片单写者证明、治理 codec 双读写 | `DEVELOPMENT_VERIFIED` | 提交 `dd3034db6`；51/51 聚焦测试与 516/516 World、Scenario、Governed Catalog 受影响回归全绿；旧 `StateSpec` / `WorldSlice.state()` 源兼容、v1 无状态指纹不变、v2 schema/default/override/tamper/上限和 null 边界均有固定证明 |
+| `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
 
 - 每个剧情拥有隔离、单写者、确定性排序、可序列化的世界状态。
 - 写后读、跨剧情隔离和并发确定顺序具有固定自动化证明。
@@ -195,3 +203,11 @@ A1 protocol archive boundary            PASS
 ```
 
 该结果关闭 `S1-D-10..12`、`S1-D` 和 `S0-EXIT-03`，并使阶段零、阶段一进入 `DEVELOPMENT_VERIFIED`。它是仓库内开发验证，不替代企业生产环境的容量、灾备、权限、密钥和运维认证。
+
+`S2-A` 于 2026-08-26 完成开发验证。版本化状态声明使用统一 JSON Schema 校验器，状态 key 的 access、schema、default 和写者切片坐标进入稳定模型；Scenario override 只允许引用已声明 key，并在构造和治理反序列化时失败关闭。v2 空声明、null override、畸形 wire object、重复或缺失写者、schema/default 漂移和治理内容篡改均被拒绝。该切片只建立可治理状态资产，不代表状态片段、运行时会话或函数注入已经可用。
+
+```text
+S2-A focused clean test       51 tests / 0 failures / 0 errors / 0 skipped
+S2-A affected regression     516 tests / 0 failures / 0 errors / 0 skipped
+implementation commit        dd3034db6
+```

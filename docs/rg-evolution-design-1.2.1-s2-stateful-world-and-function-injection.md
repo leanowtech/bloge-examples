@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `DESIGN_APPROVED_FOR_IMPLEMENTATION`。本状态只表示设计边界已经冻结，不表示任何实现切片已经完成。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产已通过开发验证，`S2-B..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
 
 ## 1. 结论先行
 
