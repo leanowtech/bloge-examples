@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A` 版本化状态资产和 `S2-B` 有状态片段独立试跑已通过开发验证；`S2-C..E` 尚未实现，15 项阶段出口尚未闭合 |
+| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..C` 已通过开发验证，状态资产、片段和整图 run-scoped 原子状态会话闭合；函数控制、证据/生产隔离和系统里程碑仍由 `S2-D..E` 交付 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -76,7 +76,7 @@
 |---|---|---|---|
 | `S2-A` | 版本化 `WorldStateSpec` / `StateSpecV2`、Scenario 初始状态覆盖、跨切片单写者证明、治理 codec 双读写 | `DEVELOPMENT_VERIFIED` | 提交 `dd3034db6`；51/51 聚焦测试与 516/516 World、Scenario、Governed Catalog 受影响回归全绿；旧 `StateSpec` / `WorldSlice.state()` 源兼容、v1 无状态指纹不变、v2 schema/default/override/tamper/上限和 null 边界均有固定证明 |
 | `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `DEVELOPMENT_VERIFIED` | 提交 `7af01cb1d`；61/61 最终聚焦回归与 7298 项全量测试全绿；固定 `{request,state}` / `{response,stateWrites}` 信封、WRITE-only 隔离、JSON Pointer、完整写集先验校验、失败零提交、20 次确定性重放及 payload-free 转换指纹均有固定证明 |
-| `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `DEVELOPMENT_VERIFIED` | 提交 `226765b41`；125/125 最终聚焦回归与 7335 项全量测试全绿；编译期访问计划、严格绑定快照、原子提交、动态坐标、防重复/重入、无冲突规范投影、失败零提交、20 次确定性运行和 v1 指纹 golden 均有固定证明 |
 | `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `NOT_STARTED` | 尚无实现证据 |
 | `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
 
@@ -214,10 +214,20 @@ implementation commit        dd3034db6
 
 `S2-B` 于 2026-08-26 完成开发验证。有状态片段使用固定输入输出信封；默认值与 Scenario override 在片段执行前完成规范化和 schema 校验，`WRITE` 状态不会进入片段可见输入。片段返回的嵌套写集先被确定性展平为规范 JSON Pointer，再整体校验未知 key、只读写入和 schema；只有全部写入合法时才一次构造新快照。重放每次都从同一初态开始，并对响应、写集、终态和绑定 fragment/stateSpec/request/initialState 的转换指纹逐项对拍。错误、默认 evidence 材料和异常信息不携带原始请求或状态值。
 
-本切片只证明单个有状态 World Fragment 可被隔离、受限、确定性地试跑；`WorldStateSession`、DAG 冲突可达性、统一运行时提交、状态 evidence 持久化和函数注入仍属于 `S2-C..E`，不得据此宣称整张有状态 DAG 已可运行。
+本切片只证明单个有状态 World Fragment 可被隔离、受限、确定性地试跑；整图状态会话由后续 `S2-C` 闭合，状态 evidence 持久化和函数注入仍属于 `S2-D..E`。
 
 ```text
 S2-B final focused regression   61 tests / 0 failures / 0 errors / 0 skipped
 resource-gateway clean verify 7298 tests / 0 failures / 0 errors / 28 skipped
 implementation commit        7af01cb1d
+```
+
+`S2-C` 于 2026-08-26 完成开发验证。编译器把每个有状态切片的精确结构调用点、读集和可能写集冻结为 `StateAccessPlan`；同一 key 上至少一个写者且没有 DAG 可达顺序时直接拒绝，不允许把抢锁顺序解释为业务顺序。运行期每个 Scenario Run 只创建一个 server-owned `WorldStateSession`，并绑定 Scenario、World、Graph 工件和 runId。Fragment 只能读取计划授权的冻结视图，返回的实际写集可以是声明写集的子集，但必须在节点输出、状态 schema、大小与指纹校验全部通过后原子提交。
+
+快照包含最终状态、规范排序的 payload-free 事务观察和完整绑定指纹；普通 Jackson 往返、错误绑定、内容篡改、伪造或缩减访问观察、重复动态坐标均有失败关闭测试。无冲突事务按规范坐标投影，因此不同提交顺序得到相同快照指纹；失败、嵌套 transition、restore/close 重入均不产生部分提交。无状态 v1 编译指纹由硬编码 golden 保护。当前 BLOGE 未公开 foreach 的稳定顺序事实，所有包含有状态子图的 foreach 暂时失败关闭，待 `S2-D` 通过通用内核 API 提供可证明事实后再开放顺序循环。
+
+```text
+S2-C final focused regression  125 tests / 0 failures / 0 errors / 0 skipped
+resource-gateway clean verify 7335 tests / 0 failures / 0 errors / 28 skipped
+implementation commit        226765b41
 ```

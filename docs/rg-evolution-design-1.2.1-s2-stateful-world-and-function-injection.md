@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产和 `S2-B` 有状态片段独立试跑已通过开发验证，`S2-C..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑和 `S2-C` 统一运行时状态会话已通过开发验证；`S2-D..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
 
 ## 1. 结论先行
 
@@ -266,6 +266,10 @@ record CompiledFunctionControlPlan(
 - `WorldDelegateRuntime` 和 `WorldScenarioRunService` 接线；
 - 跨剧情隔离、写后读、失败不提交和并发可交换性证明。
 
+开发验证证据：提交 `226765b41`；最终聚焦回归 125/125，全量 `resource-gateway-examples clean verify` 为 7335 tests、0 failures、0 errors、28 skipped。实现以编译期冻结的 `StateAccessPlan` 约束运行期读写，session 严格绑定 Scenario、World、Graph 和 runId；状态转移在响应、写集、schema 和指纹全部校验后一次提交，快照支持普通 JSON 往返并拒绝跨绑定或篡改恢复。动态调用坐标、防重复执行、防重入、事务上限、状态大小上限、无冲突事务规范排序和历史 v1 指纹 golden 均有固定测试。
+
+当前 BLOGE 尚未公开 foreach 的稳定顺序事实，因此 S2-C 对包含有状态子图的所有 foreach 失败关闭，不以私有字段、反射或实际线程顺序推断安全性。`S2-D` 补齐公开执行模式事实后，只重新开放可证明为顺序执行且坐标稳定的循环；并行或无法证明的循环继续以 `WORLD_STATE_ACCESS_ORDER_AMBIGUOUS` 拒绝。
+
 ### S2-D：函数调用点与 BLOGE resolver
 
 - BLOGE 全函数 resolver 钩子及兼容测试；
@@ -323,7 +327,7 @@ record CompiledFunctionControlPlan(
 | 维度 | 得分 | 剩余扣分 |
 |---|---:|---|
 | 边界与职责 | 98 | BLOGE 与 RG 需要两个仓库协调发布 |
-| 确定性 | 97 | 受控循环的稳定坐标需在 S2-C 用源码事实再次确认 |
+| 确定性 | 97 | 受控循环需在 S2-D 取得 BLOGE 公开稳定顺序事实后才能开放 |
 | 安全与隔离 | 97 | 原始状态快照的长期治理留到后续阶段 |
 | 兼容性 | 96 | `WorldSlice` 状态接口迁移需要兼容构造器和 codec 双读 |
 | 可测试性 | 98 | 系统级故障注入耗时较高 |
