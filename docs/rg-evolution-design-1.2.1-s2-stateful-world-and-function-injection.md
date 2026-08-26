@@ -176,11 +176,12 @@ void restore(WorldStateSnapshot snapshot);
 - 默认 `ExpressionFunctionResolver.DIRECT` 原样返回注册函数；
 - `GraphContext` 携带不进入业务 Map 的只读 `graphPathScope`，根图固定为 `/root`，嵌套图沿用 `OperatorResolutionScope` 的 path 规则；snapshot 和 node scope 必须保留该坐标；
 - `FunctionInvocationContext` 通过方法暴露 `graphPath + nodeId + source line + source column`，不要求函数从业务 context 猜路径；
+- DSL 编译时同步形成类型化、不可变的函数调用清单，至少包含所属 nodeId、函数名、源码行列和调用位置类别；清单作为 BLOGE 通用编译产物公开，不编码 Resource Gateway 规则；
 - transform 的纯净校验仍检查**原注册函数**，不能靠替身把非纯函数伪装成纯函数；
 - resolver 返回 null、名称漂移或能力声明漂移时失败关闭；
 - resolver 能读取原函数 `isPure()` 与 `requiredExecutionServices()`，但不能修改这些治理事实。
 
-这项改造不把 Resource Gateway 类型下沉进 BLOGE，也不改变未配置 resolver 的执行结果。
+这项改造不把 Resource Gateway 类型下沉进 BLOGE，也不改变未配置 resolver 的执行结果。函数调用清单必须在解析 AST 时生成并随编译图保留，不能由 Resource Gateway 反向解析 DSL、读取闭包私有字段或依赖运行一次后才发现的动态 trace。根图与嵌套图各自保存局部清单；上层沿与 operator inventory 相同的嵌套图遍历规则组合完整 graphPath，从而保持内核产物通用、调用身份完整。
 
 ### 5.2 独立函数控制计划
 
@@ -202,6 +203,8 @@ record CompiledFunctionControlPlan(
 ```
 
 函数规则至少支持 `functionName + line + column` 精确调用点；只按函数名选择属于显式宽匹配，若命中多个结构调用点且消费语义不能证明等价，则编译失败。函数规则不进入算子 `SelectorResolver`，也不生成假 NodeSpec。
+
+`CompiledFunctionControlPlan` 必须从 BLOGE 的静态函数调用清单编译，而不是只保存待运行时匹配的规则。编译器逐项对拍函数库声明与运行时注册事实，冻结所有命中调用点、原函数治理事实、行为、消费约束和证据上限；规则命中零调用点、同优先级重叠、宽匹配歧义或调用点身份不完整时失败关闭。运行时 resolver 只能消费该冻结计划，不得重新解释 selector 或读取可变函数库。
 
 如果 BLOGE 暂时不能向 resolver 提供完整 `graphPath`，Resource Gateway 必须在该范围失败关闭，不能用相同 nodeId 猜测嵌套图。完整调用点身份是阶段二出口条件，不接受长期降级。
 
@@ -273,6 +276,7 @@ record CompiledFunctionControlPlan(
 ### S2-D：函数调用点与 BLOGE resolver
 
 - BLOGE 全函数 resolver 钩子及兼容测试；
+- BLOGE 类型化静态函数调用清单及嵌套图遍历身份；
 - 精确 `FunctionInvocationSite`；
 - 函数库纯度和执行服务声明；
 - `CompiledFunctionControlPlan`、运行时 resolver 和消费证据。
