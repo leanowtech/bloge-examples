@@ -17,8 +17,8 @@
 
 | 阶段 | 设计目标 | 当前状态 | 当前判断 |
 |---|---|---|---|
-| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `IN_PROGRESS` | 执行模式、控制头协议、受控入口、生产双重拒绝、schema stand-in、visual 默认适配、无 binding descriptor 执行及完整差分/安全/确定性测试台均已形成开发证据，双项目最终回归全绿；仅授权引用式大负载解析仍待阶段一闭合 |
-| 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `IN_PROGRESS` | 逻辑资源契约、无状态世界模型、纯 BLOGE 片段准入、隔离试跑、剧情资产模型、FixtureBundle 编译、统一内核世界委托、三重 compiler oracle、三类资产持久化和两阶段授权已形成开发证据；引用式端到端运行尚未闭合 |
+| 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
+| 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | 现有 mirror state 机制尚未按本方案出口标准验收 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
 
@@ -41,7 +41,7 @@
 |---|---|---|---|
 | `S0-EXIT-01` | 无部署业务算子绑定时，描述符驱动的 `httpResource` 只替换传输并完整执行映射、URL、Header、协议和负载提取 | 图内 embedded binding、compiler registry 和 isolated engine registry 均为空时，run-scoped fail-closed binding 允许统一编译与执行；真实 `ResourceFixtureRuntime` 完成参数、URL、Header、Body、协议和负载管线，共享 registry 保持不变 | `MET` |
 | `S0-EXIT-02` | 设计期模拟通过 adapter 进入统一内核 | Spring 默认 `VisualGraphSimulationService` 通过 visual-owned `VisualSimulationExecutor` 委托统一内核；旧四参数路径只保留为差分 oracle | `MET` |
-| `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | Header admission 和 bounded inline fixture 已进入既有执行链；legacy Body 控制为兼容保留，Scenario/World Model 授权引用属于阶段一 | `PARTIAL` |
+| `S0-EXIT-03` | 控制走 Header，业务走 Body；有界 inline 可用，大负载只走引用 | bounded inline 与 Scenario/World 精确引用均进入既有执行链；真实 HTTP 系统测试证明 Header → 授权 → DB → 编译 → 运行 → 证据闭合，业务 Body 只承载输入 | `MET` |
 | `S0-EXIT-04` | 生产入口和服务端目的形成两道独立拒绝 | 6 种固定执行模式分别证明：production Filter 在 DTO 反序列化前拒绝且下游编译/执行为零；绕过 Filter 后 production TestExecution service 在规划、registry、post-compile admission 和 executor 前独立拒绝；visual production service 在 kernel 前独立拒绝 | `MET` |
 | `S0-EXIT-05` | 新内核与旧路径在节点/边上限、超时、逐节点 fixture 和混合分类上对等 | 14 项固定差分矩阵逐字段对拍 stand-in、纯原语混合、多节点分类、fixture 优先级/null/输入不匹配、输出覆盖、节点/边上限、校验/DSL 失败、双路径超时中断和异常净化 | `MET` |
 | `S0-EXIT-06` | 模拟和描述符传输路径具备 SSRF 零网络证明，匹配器具备 ReDoS 负向证明 | descriptor 与 visual kernel 对本地可计数真实端点均保持零请求；危险嵌套量词/分组/交替/lookaround/backreference、超长/畸形 pattern 与超长 candidate 在匹配前拒绝；类文件规则禁止模拟关键类构造生产网络客户端 | `MET` |
@@ -59,7 +59,7 @@
 | `S1-A` | 版本无关的逻辑资源契约、描述符投影、具体实现绑定与兼容性分析 | `DEVELOPMENT_VERIFIED` | 18/18：canonical fingerprint、Map/集合语义顺序归一化、防御拷贝、待确认投影、provider/API 版本隔离、结构化输出证明、输入/输出双向兼容、UNKNOWN 失败关闭与错误净化 |
 | `S1-B` | 无状态世界模型、纯 BLOGE 世界片段、纯净校验和片段单测台 | `DEVELOPMENT_VERIFIED` | 41/41：不可变模型、版本化片段、稳定指纹、契约与 binding 一致性、AST/compiled-inventory 双重纯净准入、真实 BLOGE 隔离执行、FIRST/default、UNIQUE 歧义、20 次确定性重放、资源上限、超时线程终止、外部算子零执行和净化错误 |
 | `S1-C` | Scenario、编译下沉、逻辑契约寻址与双向来源映射 | `DEVELOPMENT_VERIFIED` | `S1-C1..C2c`：63/63 资产/编译聚焦集与最终 106/106 受影响集全绿；精确 target/world、稳定 Scenario、assertion lowering、规范契约标签、真实 selector 对拍、多节点复用、fail-closed sentinel、无负载编译指纹、双向来源映射、统一内核 `WORLD_DELEGATE`、20 次确定性重放、真实算子/loopback 网络零调用及 compiler 三重 oracle 全部闭合 |
-| `S1-D` | 授权引用解析、分级负载托管与三类资产版本化持久化 | `IN_PROGRESS` | D1 三类资产统一目录、确定性切片选择、D2a 坐标级读取前授权和 D2b metadata-first 分级 payload 授权已形成开发证据；端到端引用运行尚未闭合 |
+| `S1-D` | 授权引用解析、分级负载托管与三类资产版本化持久化 | `DEVELOPMENT_VERIFIED` | D1/D2/D3 全部闭合；真实 HTTP 链、production profile 隔离、旧库升级失败关闭、115/115 受影响集和双项目全量回归均通过 |
 
 - 逻辑资源契约可由描述符投影初稿，并由人确认业务语义。
 - 具体实现登记时必须证明输出满足逻辑契约。
@@ -164,7 +164,7 @@ resource-gateway-test-kit clean verify  1905 tests + 2 integration tests / all g
 A1 protocol archive boundary            PASS
 ```
 
-该全量结果证明当前仓库回归分母为绿色，并闭合 `S0-EXIT-08`。阶段零仍因 `S0-EXIT-03` 为 `PARTIAL` 而保持 `IN_PROGRESS`，不得提前标记为 `DEVELOPMENT_VERIFIED`。
+该次全量结果证明当时的仓库回归分母为绿色，并闭合 `S0-EXIT-08`。在该里程碑上，阶段零仍因 `S0-EXIT-03` 为 `PARTIAL` 而保持 `IN_PROGRESS`；后续由 `S1-D/D3b3` 的真实引用运行链闭合，最终状态见本节末尾。
 
 完成 `S1-C` 场景编译、统一内核世界委托及三重 compiler oracle 后，再次执行双项目串行里程碑：
 
@@ -182,4 +182,16 @@ A1 protocol archive boundary            PASS
 
 `S1-D/D2b` 将来源、安全分级、保留期、访问策略和审批引用保存为独立治理元数据，治理指纹覆盖精确坐标和全部治理字段。默认兼容写入为 `SYNTHETIC + PUBLIC`；`REAL` 写入要求审批引用和相对固定仓库时钟仍在未来的保留期限。读取严格执行坐标授权、无 payload 元数据查询、完整性与到期检查、分级策略授权、payload 查询五步顺序；未显式配置第二阶段策略时失败关闭。错误坐标、空或错误治理指纹、策略拒绝与过期均在 payload 前停止，Scenario 的 World 依赖重复同一链路。D2 联合聚焦集为 34/34，阶段一联合回归为 114/114。治理类型只存在于资产与授权层，未进入编译控制或执行内核类型。
 
-`S1-D/D3a-D3b` 已把结构化 Scenario/World 引用从入口接入统一执行服务。引用和请求体 fixture 严格互斥；服务端以原始 `TEST_EXECUTION` 身份完成准入和证据持久化，只为治理资产解析铸造 `GRAPH_CONTRACT_TEST` 上下文。规划器验证 Scenario 的图工件和业务 context 精确绑定；仅有 World 引用时按图节点的规范逻辑契约标签生成确定性临时 Scenario，零标签、多标签、契约指纹漂移和切片非唯一均失败。运行服务按“编译 → 准入 → 世界委托执行 → 租约 checkpoint → 释放”排序，准入拒绝或空 guard 时引擎调用为零。入口、解析、规划、运行和 API 服务联合聚焦集为 107/107；真实 Spring HTTP、生产隔离故障注入和双项目全量回归尚未执行，因此本条只记组件开发证据，不关闭 `S1-D` 或 `S0-EXIT-03`。
+`S1-D/D3a-D3b` 已把结构化 Scenario/World 引用从入口接入统一执行服务。引用和请求体 fixture 严格互斥；服务端以原始 `TEST_EXECUTION` 身份完成准入和证据持久化，只为治理资产解析铸造 `GRAPH_CONTRACT_TEST` 上下文。规划器验证 Scenario 的图工件和业务 context 精确绑定；仅有 World 引用时按图节点的规范逻辑契约标签生成确定性临时 Scenario，零标签、多标签、契约指纹漂移和切片非唯一均失败。运行服务按“编译 → 准入 → 世界委托执行 → 租约 checkpoint → 释放”排序，准入拒绝或空 guard 时引擎调用为零。入口、解析、规划、运行和 API 服务最终联合聚焦集为 115/115。
+
+`S1-D/D3b3` 以真实 Spring HTTP 系统测试闭合装配事实：合成公开 World 经隔离数据库写入，编码控制头和纯业务 Body 经过认证、两阶段授权、数据库读取、规划、编译、`WORLD_DELEGATE` 与证据持久化；真实算子调用为零，响应及签名 `FULL` evidence 均绑定图工件和 World 来源。测试/预发布 profile 才装配治理引用链，production profile 无相关 Bean；既有 18/18 生产旁路矩阵继续证明入口和服务端独立失败关闭。D1 空库可升级，含缺失治理封印的旧数据在启动时拒绝。
+
+截至 2026-08-26，阶段零和阶段一最终串行里程碑结果：
+
+```text
+resource-gateway-examples clean verify  7272 tests / 0 failures / 0 errors / 28 skipped
+resource-gateway-test-kit clean verify  1905 tests + 2 integration tests / all green
+A1 protocol archive boundary            PASS
+```
+
+该结果关闭 `S1-D-10..12`、`S1-D` 和 `S0-EXIT-03`，并使阶段零、阶段一进入 `DEVELOPMENT_VERIFIED`。它是仓库内开发验证，不替代企业生产环境的容量、灾备、权限、密钥和运维认证。
