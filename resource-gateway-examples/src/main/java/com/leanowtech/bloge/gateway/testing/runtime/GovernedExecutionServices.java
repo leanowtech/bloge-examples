@@ -18,6 +18,7 @@ import com.leanowtech.bloge.gateway.testing.domain.ExecutionServiceStateSnapshot
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 
 import java.nio.ByteBuffer;
@@ -236,6 +237,20 @@ public final class GovernedExecutionServices {
     /** @return exact service object that must be passed to BLOGE {@code ExecutionOptions} */
     public ExecutionServices services() {
         return services;
+    }
+
+    /**
+     * Composes function controls while keeping controlled-call auditing inside this run owner.
+     * The callback is captured by the returned resolver and is never exposed through a function
+     * wrapper or execution-service capability.
+     */
+    public ExecutionServices composeFunctionControl(FunctionControlRuntime functionControlRuntime) {
+        Objects.requireNonNull(functionControlRuntime, "functionControlRuntime");
+        return functionControlRuntime.compose(services, (context, kinds) ->
+                stateCoordinator.mutate(() -> {
+                    usageTracker.recordFunction(context.callSite(), kinds);
+                    return null;
+                }));
     }
 
     /** @return payload-free plan bindings in stable service order */

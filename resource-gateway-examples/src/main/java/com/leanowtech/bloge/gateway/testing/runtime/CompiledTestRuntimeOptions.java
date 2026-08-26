@@ -7,6 +7,7 @@ import com.leanowtech.bloge.core.spi.OperatorResolutionRequest;
 import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
 
 import java.util.Objects;
 
@@ -132,6 +133,20 @@ public class CompiledTestRuntimeOptions {
             MirrorResolver.SessionContext sessionContext,
             MirrorStateAccessObserver stateAccessObserver,
             WorldStateSession worldStateSession) {
+        return options(compiled, recorder, mirrorObserver, invocationBudget, sessionContext,
+                stateAccessObserver, worldStateSession, null);
+    }
+
+    /** Binds an optional run-scoped function-control resolver around the existing resolver. */
+    public ExecutionOptions options(
+            CompiledExecutionControl compiled,
+            InvocationRecorder recorder,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorResolver.SessionContext sessionContext,
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession,
+            FunctionControlRuntime functionControlRuntime) {
         CompiledExecutionControl requiredControl = Objects.requireNonNull(
                 compiled, "compiled");
         InvocationRecorder requiredRecorder = Objects.requireNonNull(recorder, "recorder");
@@ -140,12 +155,16 @@ public class CompiledTestRuntimeOptions {
         MirrorStateAccessObserver requiredStateObserver =
                 Objects.requireNonNull(
                         stateAccessObserver, "stateAccessObserver");
+        var baseServices = requiredControl.executionServices().services();
+        var executionServices = functionControlRuntime == null
+                ? baseServices : requiredControl.executionServices()
+                .composeFunctionControl(functionControlRuntime);
         return ExecutionOptions.builder()
                 .operatorResolver(resolution -> resolveOperator(
                         resolution, requiredControl, requiredRecorder, requiredObserver,
                         invocationBudget, sessionContext,
                         requiredStateObserver, worldStateSession))
-                .executionServices(requiredControl.executionServices().services())
+                .executionServices(executionServices)
                 .build();
     }
 

@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** Source-boundary guard for the D2a deep module. */
+/** Source-boundary guard for the function-control deep module. */
 class FunctionControlArchitectureTest {
 
     @Test
@@ -23,6 +23,9 @@ class FunctionControlArchitectureTest {
         String selectorResolver = "Selector" + "Resolver";
         String nodeSpec = "Node" + "Spec";
         assertThat(source).doesNotContain(fixtureRule, selectorResolver, nodeSpec);
+        assertThat(source).doesNotContain("FunctionControlAuditHook", "recordControlledInvocation");
+        assertThat(source).doesNotContain("Thread.sleep", "System.currentTimeMillis",
+                "System.nanoTime");
     }
 
     private String read(Path path) {

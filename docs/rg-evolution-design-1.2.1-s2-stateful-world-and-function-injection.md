@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑和 `S2-C` 统一运行时状态会话已通过开发验证；`S2-D..E` 尚未实现，阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑、`S2-C` 统一运行时状态会话和 `S2-D` 函数控制已通过开发验证；`S2-E` 的对外证据协议、生产隔离和系统里程碑尚未闭合，因此阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
 
 ## 1. 结论先行
 
@@ -283,9 +283,11 @@ record CompiledFunctionControlPlan(
 
 `S2-D1` BLOGE 通用内核前置已完成开发验证，嵌套仓库提交为 `8d514a7f6`。所有表达式函数均经过 resolver，replacement 的名称、纯度和执行服务声明必须与注册事实一致；根图历史 invocation scope 保持不变，foreach、loop、import、transform 和 decision table 的真实引擎测试证明 graphPath/nodeId/源码坐标完整且不进入业务 context。新增 `CompiledGraph` sidecar 在不修改 `Graph` / `NodeSpec` record 结构的前提下保存根图、导入图和内联子图的静态函数调用清单；两类 foreach 公开稳定 `sequential()` 事实。`bloge-core` 1959 项、`bloge-dsl` 1567 项测试均为 0 failures / 0 errors，其中 DSL 保留 1 项既有跳过。
 
-`S2-D2a` 已关闭 Resource Gateway 静态控制面：`CompiledGraph` 与运行时 Invocation Inventory 按图对象身份对拍，可为根图、嵌套图和复用子图生成完整调用点；函数库声明与运行时名称、alias、纯度和执行服务事实逐项对拍，漂移失败关闭。控制规则支持精确参数候选与最终 wildcard fallback，冻结 RETURN、THROW、DELAY、TIMEOUT、消费上下限和纯函数强注入；精确候选始终优先，零命中、重复精确参数、多个 fallback 和宽匹配歧义均拒绝。显式 JSON `null` 与“未提供返回值”保持不同语义，schema/value、深度、数量、文本和 duration 均受限。公开计划只包含指纹和候选元数据，不暴露参数、返回值、错误文本或 schema；UNKNOWN/LEGACY、纯函数强注入和非纯函数受控替身具有明确证据上限。架构测试禁止该模块依赖 operator fixture 的 `FixtureRule`、`SelectorResolver` 或 BLOGE `NodeSpec`。聚焦验证为 18/18，0 failures、0 errors、0 skipped。
+`S2-D2a` 已关闭 Resource Gateway 静态控制面：`CompiledGraph` 与运行时 Invocation Inventory 按图对象身份对拍，可为根图、嵌套图和复用子图生成完整调用点；函数库声明与运行时名称、alias、纯度和执行服务事实逐项对拍，漂移失败关闭。控制规则支持精确参数候选与最终 wildcard fallback，冻结 RETURN、THROW、DELAY、TIMEOUT、消费上下限和纯函数强注入；精确候选始终优先，零命中、重复精确参数、多个 fallback 和宽匹配歧义均拒绝。显式 JSON `null` 与「未提供返回值」保持不同语义，schema/value、深度、数量、文本和 duration 均受限。公开计划只包含指纹和候选元数据，不暴露参数、返回值、错误文本或 schema；UNKNOWN/LEGACY、纯函数强注入和非纯函数受控替身具有明确证据上限。架构测试禁止该模块依赖 operator fixture 的 `FixtureRule`、`SelectorResolver` 或 BLOGE `NodeSpec`。静态控制面与架构边界验证为 19/19，0 failures、0 errors、0 skipped。
 
-该证据只证明函数控制可被静态、确定性、失败关闭地编译，不代表 Resource Gateway 已可在 DAG 运行中注入函数。运行 wrapper、精确参数运行期选择、RETURN/THROW/DELAY/TIMEOUT 行为、线程安全消费观察、未消费/耗尽判定、证据降级和服务端集成仍须由 `S2-D2b` 闭合。
+`S2-D2b` 已关闭测试运行时函数控制：run-scoped resolver 先经过原治理 resolver，再按完整调用点消费冻结计划；精确参数优先于 wildcard，RETURN、THROW、DELAY 和 TIMEOUT 均有确定性行为。DELAY 只调用受治理 `TimeSource.sleep`，不直接读取系统时间或调用 `Thread.sleep`。消费计数按 run 隔离并使用原子上限，最小消费、耗尽和参数未命中均失败关闭。受控调用通过 `GovernedExecutionServices` 私有闭包记录审计，不执行真实函数，也不向自定义函数暴露可伪造的审计能力。函数 evidence 包含计划、调用点、原函数与运行事实指纹、控制模式、消费摘要、调用作用域/参数/结果/错误指纹和证据降级原因，不包含原始参数、返回值、错误文本或 schema。纯函数强注入把最终 `TestRunEvidence` 降为 `EXPLORATORY`；状态会话与函数控制可在同一 TestRunService 路径组合。受影响集 98/98、Resource Gateway 全量 7371 项测试通过，详细证据见 [S2-D 验证说明](./rg-evolution-design-1.2.1-s2-function-control-verification.md)。
+
+该证据仍不代表阶段二整体完成。`S2-E` 需要把函数与状态 evidence 固定为可持久化、可对外消费的协议，关闭生产入口与服务端双重隔离，补齐真实 HTTP、Test Kit 和双项目里程碑。
 
 ### S2-E：证据、系统测试和里程碑
 

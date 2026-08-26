@@ -8,12 +8,27 @@ import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
 import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRule;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.function.FunctionEffect;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationInventory;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationSite;
+import com.leanowtech.bloge.gateway.testing.function.FunctionLibraryDeclaration;
+import com.leanowtech.bloge.core.context.GraphContext;
+import com.leanowtech.bloge.core.engine.ExecutionServices;
+import com.leanowtech.bloge.core.spi.ExpressionFunction;
+import com.leanowtech.bloge.core.spi.FunctionCallSite;
+import com.leanowtech.bloge.core.spi.FunctionInvocationContext;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +42,45 @@ class GovernedExecutionServicesTest {
     private static final String PLAN = "sha256:" + "b".repeat(64);
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules()
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+
+    @Test
+    void controlledFunctionInvocationRetainsGovernedUsageAuditWithoutCallingRealFunction() {
+        GovernedExecutionServices governed = prepared(42L);
+        AtomicBoolean realCalled = new AtomicBoolean();
+        ExpressionFunction real = new ExpressionFunction() {
+            @Override public String name() { return "f"; }
+            @Override public Object apply(Object... args) { realCalled.set(true); return "real"; }
+            @Override public String returnType(String... argTypes) { return "Any"; }
+            @Override public boolean isPure() { return false; }
+            @Override public Set<com.leanowtech.bloge.core.spi.ExecutionServiceKind>
+            requiredExecutionServices() { return Set.of(com.leanowtech.bloge.core.spi.ExecutionServiceKind.TIME); }
+        };
+        FunctionInvocationSite site = new FunctionInvocationSite("/root", "node", "f", 1, 1);
+        FunctionControlRule rule = new FunctionControlRule("f-rule",
+                new FunctionControlRule.Selector("/root", "node", "f", 1, 1), null,
+                FunctionControlRule.Behavior.RETURN, "stub", "", Duration.ZERO,
+                FunctionControlRule.Consumption.exactly(1), false, 0);
+        CompiledFunctionControlPlan plan = new FunctionControlCompiler().compile(
+                new FunctionInvocationInventory(List.of(site)), Map.of("f", real),
+                List.of(new FunctionLibraryDeclaration("f", false, Set.of("TIME"),
+                        FunctionEffect.ENVIRONMENT_FACT, Map.of(), Map.of())), List.of(rule));
+        FunctionControlRuntime runtime = FunctionControlRuntime.forTestRun(plan,
+                Map.of("f", real), governed.services());
+        ExecutionServices controlledServices = governed.composeFunctionControl(runtime);
+        ExpressionFunction controlled = controlledServices.expressionFunctionResolver().resolve(
+                new FunctionCallSite("f", 1, 1), real);
+        Object result = controlled.apply(new FunctionInvocationContext(
+                new FunctionCallSite("f", 1, 1), new GraphContext(), controlledServices,
+                "/root", "node"), "input");
+
+        assertThat(result).isEqualTo("stub");
+        assertThat(realCalled).isFalse();
+        assertThat(governed.usageSnapshot()).anySatisfy(usage ->
+                assertThat(usage.functionCalls()).isEqualTo(1));
+        assertThat(controlled.getClass().getMethods())
+                .noneMatch(method -> method.getName().equals("recordControlledInvocation"));
+        runtime.finish();
+    }
 
     @Test
     void sameSeedAndScopeSequenceReproducesRandomAndUuidValuesAcrossRuns() {

@@ -20,6 +20,10 @@ import com.leanowtech.bloge.gateway.testing.planning.ControlPlanRejectedExceptio
 import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.world.WorldDelegateRuntime;
 import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRunEvidence;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
+import com.leanowtech.bloge.core.spi.ExpressionFunction;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -174,6 +178,28 @@ public class TestRunService {
         return executeCompiled(request, compiled, MirrorResolutionObserver.noop());
     }
 
+    /** Executes one compiled generation with a run-scoped static function-control runtime. */
+    public TestExecutionResult executeCompiledWithFunctionControl(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            FunctionControlRuntime functionControlRuntime) {
+        Objects.requireNonNull(functionControlRuntime, "functionControlRuntime");
+        return executeCompiled(request, compiled, MirrorResolutionObserver.noop(), null,
+                MirrorStateAccessObserver.noop(), null, functionControlRuntime);
+    }
+
+    /** Creates the function runtime from this compiled run's exact governed resolver chain. */
+    public TestExecutionResult executeCompiledWithFunctionControl(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            CompiledFunctionControlPlan functionPlan,
+            Map<String, ? extends ExpressionFunction> registry) {
+        Objects.requireNonNull(compiled, "compiled");
+        FunctionControlRuntime runtime = FunctionControlRuntime.forTestRun(functionPlan, registry,
+                compiled.executionServices().services());
+        return executeCompiledWithFunctionControl(request, compiled, runtime);
+    }
+
     /**
      * Executes one compiled generation with a run-scoped mirror provenance observer.
      *
@@ -240,6 +266,19 @@ public class TestRunService {
             MirrorInvocationBudget invocationBudget,
             MirrorStateAccessObserver stateAccessObserver,
             Function<String, WorldStateSession> worldStateSessionFactory) {
+        return executeCompiledWithWorldSessionFactory(request, compiled, mirrorObserver,
+                invocationBudget, stateAccessObserver, worldStateSessionFactory, null);
+    }
+
+    /** Executes one compiled graph with both a server-owned world session and function controls. */
+    public TestExecutionResult executeCompiledWithWorldSessionFactory(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver,
+            Function<String, WorldStateSession> worldStateSessionFactory,
+            FunctionControlRuntime functionControlRuntime) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
@@ -256,7 +295,7 @@ public class TestRunService {
                         "WORLD_STATE_SESSION_RUN_ID_MISMATCH", List.of());
             }
             return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
-                    invocationBudget, stateAccessObserver, worldStateSession);
+                    invocationBudget, stateAccessObserver, worldStateSession, functionControlRuntime);
         }
     }
 
@@ -271,6 +310,18 @@ public class TestRunService {
             MirrorInvocationBudget invocationBudget,
             MirrorStateAccessObserver stateAccessObserver,
             WorldStateSession worldStateSession) {
+        return executeCompiled(request, compiled, mirrorObserver, invocationBudget,
+                stateAccessObserver, worldStateSession, null);
+    }
+
+    private TestExecutionResult executeCompiled(
+            TestExecutionRequest request,
+            CompiledExecutionControl compiled,
+            MirrorResolutionObserver mirrorObserver,
+            MirrorInvocationBudget invocationBudget,
+            MirrorStateAccessObserver stateAccessObserver,
+            WorldStateSession worldStateSession,
+            FunctionControlRuntime functionControlRuntime) {
         Objects.requireNonNull(request, "request");
         Objects.requireNonNull(compiled, "compiled");
         Objects.requireNonNull(mirrorObserver, "mirrorObserver");
@@ -286,7 +337,7 @@ public class TestRunService {
                         "WORLD_STATE_SESSION_RUN_ID_MISMATCH", List.of());
             }
             return runCompiled(request, runId, startedAt, compiled, admission, mirrorObserver,
-                    invocationBudget, stateAccessObserver, ownedSession);
+                    invocationBudget, stateAccessObserver, ownedSession, functionControlRuntime);
         }
     }
 
@@ -323,7 +374,7 @@ public class TestRunService {
                 admissionFactory.admit(compiled), "admission guard")) {
             return runCompiled(request, runId, startedAt, compiled, admission,
                     MirrorResolutionObserver.noop(), null,
-                    MirrorStateAccessObserver.noop(), null);
+                    MirrorStateAccessObserver.noop(), null, null);
         }
     }
 
@@ -336,7 +387,8 @@ public class TestRunService {
             MirrorResolutionObserver mirrorObserver,
             MirrorInvocationBudget invocationBudget,
             MirrorStateAccessObserver stateAccessObserver,
-            WorldStateSession worldStateSession) {
+            WorldStateSession worldStateSession,
+            FunctionControlRuntime functionControlRuntime) {
         InvocationRecorder recorder = new InvocationRecorder(objectMapper);
         GraphResult graphResult = null;
         List<String> diagnostics = new ArrayList<>();
@@ -348,12 +400,30 @@ public class TestRunService {
         try {
             ExecutionOptions options = runtimeOptions.options(
                     compiled, recorder, mirrorObserver, invocationBudget,
-                    request.mirrorSessionContext(), stateAccessObserver, worldStateSession);
+                    request.mirrorSessionContext(), stateAccessObserver, worldStateSession,
+                    functionControlRuntime);
             graphResult = engine.execute(request.graph(), executionContext, options);
         } catch (RuntimeException ex) {
             diagnostics.add(bounded("Test engine failed before producing GraphResult: " + ex.getMessage()));
         } finally {
             engine.shutdown();
+        }
+
+        FunctionControlRunEvidence functionEvidence = null;
+        if (functionControlRuntime != null) {
+            try {
+                functionEvidence = diagnostics.isEmpty()
+                        && (graphResult == null || graphResult.errors().isEmpty())
+                        ? functionControlRuntime.finish()
+                        : functionControlRuntime.finishAfterFailure();
+            } catch (RuntimeException failure) {
+                diagnostics.add("Function control finalization failed: " + failure.getMessage());
+            }
+        }
+        if (functionEvidence != null) {
+            functionEvidence.consumptions().stream()
+                    .filter(consumption -> "MINIMUM_UNSATISFIED".equals(consumption.status()))
+                    .forEach(ignored -> diagnostics.add("Function control minimum consumption unsatisfied"));
         }
 
         List<TestRunEvidence.FixtureConsumption> consumptions = recorder.consumptions(compiled.rules());
@@ -375,7 +445,7 @@ public class TestRunService {
                 TestRunEvidence.SCHEMA_VERSION,
                 runId,
                 status,
-                evidenceClass(request, compiled),
+                evidenceClass(request, compiled, functionEvidence),
                 request.authorizedPurpose(),
                 request.targetFingerprint(),
                 compiled.effectivePlan().fixtureBundleFingerprint(),
@@ -388,7 +458,7 @@ public class TestRunService {
                 assertions,
                 diagnostics,
                 evidenceMetadata(request, recorder, executionServices, executionContext,
-                        invocationBudget)));
+                        invocationBudget, functionEvidence)));
         return new TestExecutionResult(compiled.effectivePlan(), graphResult, evidence);
     }
 
@@ -471,7 +541,7 @@ public class TestRunService {
                 TestRunEvidence.EvidenceClass.EXPLORATORY,
                 request.authorizedPurpose(), request.targetFingerprint(), fixtureFingerprint, "",
                 startedAt, identitySource.now(), List.of(), List.of(), List.of(), List.of(),
-                ex.diagnostics(), evidenceMetadata(request, null, null, null, null)));
+                ex.diagnostics(), evidenceMetadata(request, null, null, null, null, null)));
     }
 
     private static TestRunEvidence.Status terminalStatus(
@@ -499,7 +569,8 @@ public class TestRunService {
     }
 
     private static TestRunEvidence.EvidenceClass evidenceClass(
-            TestExecutionRequest request, CompiledExecutionControl compiled) {
+            TestExecutionRequest request, CompiledExecutionControl compiled,
+            FunctionControlRunEvidence functionEvidence) {
         if (request.fixtureSource() != TestExecutionRequest.FixtureSource.STORED) {
             return TestRunEvidence.EvidenceClass.EXPLORATORY;
         }
@@ -531,15 +602,22 @@ public class TestRunService {
                         && (site.behavior() == FixtureRule.BehaviorKind.RETURN
                         || site.behavior() == FixtureRule.BehaviorKind.DELAY)
                         && "OUTPUT_LEVEL".equals(site.fidelity()));
-        return outputLevelResource ? TestRunEvidence.EvidenceClass.EXPLORATORY
+        TestRunEvidence.EvidenceClass base = outputLevelResource
+                ? TestRunEvidence.EvidenceClass.EXPLORATORY
                 : TestRunEvidence.EvidenceClass.CERTIFIABLE;
+        if (functionEvidence != null
+                && functionEvidence.evidenceCeiling() != com.leanowtech.bloge.gateway.testing.function.FunctionEvidenceCeiling.CERTIFIABLE) {
+            return TestRunEvidence.EvidenceClass.EXPLORATORY;
+        }
+        return base;
     }
 
     private Map<String, Object> evidenceMetadata(TestExecutionRequest request,
                                                  InvocationRecorder recorder,
                                                  GovernedExecutionServices executionServices,
                                                  GraphContext executionContext,
-                                                 MirrorInvocationBudget invocationBudget) {
+                                                 MirrorInvocationBudget invocationBudget,
+                                                 FunctionControlRunEvidence functionEvidence) {
         Map<String, Object> metadata = new LinkedHashMap<>(request.metadata());
         metadata.put("fixtureSource", request.fixtureSource().name());
         metadata.put("engineIsolation", engineFactory.configuration());
@@ -563,6 +641,9 @@ public class TestRunService {
                     "maximumInvocations", budget.maximumInvocations(),
                     "admittedInvocations", budget.admittedInvocations(),
                     "rejectedInvocations", budget.rejectedInvocations()));
+        }
+        if (functionEvidence != null) {
+            metadata.put("functionControlEvidence", functionEvidence);
         }
         GovernedExecutionServices.LogicalTimeObservation logicalTime = executionServices == null
                 ? null : executionServices.logicalTimeObservation();

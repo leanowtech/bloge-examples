@@ -45,6 +45,18 @@ import com.leanowtech.bloge.gateway.testing.planning.ExecutionControlCompiler;
 import com.leanowtech.bloge.gateway.testing.world.StateSpec;
 import com.leanowtech.bloge.gateway.testing.world.WorldModelException;
 import com.leanowtech.bloge.gateway.testing.world.WorldStateSession;
+import com.leanowtech.bloge.gateway.testing.function.CompiledFunctionControlPlan;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlCompiler;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRule;
+import com.leanowtech.bloge.gateway.testing.function.FunctionControlRuntime;
+import com.leanowtech.bloge.gateway.testing.function.FunctionEffect;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationInventory;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationInventoryBuilder;
+import com.leanowtech.bloge.gateway.testing.function.FunctionLibraryDeclaration;
+import com.leanowtech.bloge.gateway.testing.function.FunctionInvocationSite;
+import com.leanowtech.bloge.core.model.CompiledGraph;
+import com.leanowtech.bloge.core.spi.ExpressionFunction;
+import com.leanowtech.bloge.core.spi.ExecutionServiceKind;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -56,6 +68,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.leanowtech.bloge.operators.http.HttpRequestInput;
 
@@ -382,6 +395,92 @@ class TestRunServiceTest {
                 "stateFingerprint", result.evidence().metadata().get(
                         "executionServiceStateFingerprint"))))
                 .doesNotContain("tenant-sensitive-C-1001", "pricing-v2");
+    }
+
+    @Test
+    void compiledFunctionControlRunsThroughTestRunServiceAndReturnsStubWithoutRealCall() {
+        DefaultOperatorRegistry registry = new DefaultOperatorRegistry();
+        registry.register("capture", new Operator<Map<String, Object>, Map<String, Object>>() {
+            @Override
+            public Map<String, Object> execute(Map<String, Object> input, OperatorContext context) {
+                return input;
+            }
+
+            @Override
+            public SideEffectType sideEffectType() { return SideEffectType.READ_ONLY; }
+        });
+        String dsl = """
+                graph functionControlled {
+                    node capture : capture {
+                    input { value = coalesce("source", "fallback") }
+                    }
+                }
+                """;
+        CompiledGraph artifact = new GraphLoader(registry).loadArtifact(dsl);
+        Graph graph = artifact.graph();
+        TestExecutionRequest request = new TestExecutionRequest(graph, new GraphContext(), bundle(),
+                "GRAPH_CONTRACT_TEST", TARGET, TestExecutionRequest.FixtureSource.STORED, Map.of());
+        CompiledExecutionControl compiled = new ExecutionControlCompiler(registry, new ObjectMapper())
+                .compile(graph, bundle(), request.authorizedPurpose(), request.targetFingerprint());
+        TestRunService localService = new TestRunService(registry, new ObjectMapper(), null);
+        TestExecutionResult baseline = localService.executeCompiled(request, compiled);
+        assertThat(baseline.passed()).isTrue();
+        assertThat(baseline.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.CERTIFIABLE);
+        FunctionInvocationInventory inventory = new FunctionInvocationInventoryBuilder()
+                .build(artifact, compiled.inventory());
+        FunctionInvocationSite site = inventory.sites().stream()
+                .filter(candidate -> candidate.functionName().equals("coalesce"))
+                .findFirst().orElseThrow();
+        FunctionControlRule rule = new FunctionControlRule("coalesce-stub",
+                new FunctionControlRule.Selector(site.graphPath(), site.nodeId(), site.functionName(),
+                        site.line(), site.column()), null, FunctionControlRule.Behavior.RETURN,
+                "stubbed", "", Duration.ZERO, FunctionControlRule.Consumption.exactly(1), true, 0);
+        FunctionLibraryDeclaration declaration = new FunctionLibraryDeclaration(
+                "coalesce", true, Set.of(), FunctionEffect.PURE_COMPUTATION,
+                Map.of(), Map.of());
+        ExpressionFunction coalesce = new ExpressionFunction() {
+            @Override public String name() { return "coalesce"; }
+            @Override public Object apply(Object... args) { throw new AssertionError("real function called"); }
+            @Override public String returnType(String... args) { return "Any"; }
+            @Override public boolean isPure() { return true; }
+            @Override public Set<ExecutionServiceKind> requiredExecutionServices() { return Set.of(); }
+        };
+        CompiledFunctionControlPlan functionPlan = new FunctionControlCompiler().compile(
+                inventory, Map.of("coalesce", coalesce), List.of(declaration), List.of(rule));
+        TestExecutionResult result = localService.executeCompiledWithFunctionControl(
+                request, compiled, functionPlan, Map.of("coalesce", coalesce));
+
+        assertThat(result.passed()).withFailMessage("status=%s diagnostics=%s graph=%s metadata=%s",
+                result.evidence().status(), result.evidence().diagnostics(), result.graphResult(),
+                result.evidence().metadata()).isTrue();
+        assertThat(result.graphResult().getOutput("capture", Map.class))
+                .containsEntry("value", "stubbed");
+        assertThat(result.evidence().metadata()).containsKey("functionControlEvidence");
+        assertThat(((com.leanowtech.bloge.gateway.testing.function.FunctionControlRunEvidence)
+                result.evidence().metadata().get("functionControlEvidence")).evidenceCeiling())
+                .isEqualTo(com.leanowtech.bloge.gateway.testing.function.FunctionEvidenceCeiling.EXPLORATORY);
+        assertThat(result.evidence().evidenceClass())
+                .isEqualTo(TestRunEvidence.EvidenceClass.EXPLORATORY);
+
+        AtomicReference<WorldStateSession> worldSession = new AtomicReference<>();
+        FunctionControlRuntime combinedRuntime = FunctionControlRuntime.forTestRun(
+                functionPlan, Map.of("coalesce", coalesce), compiled.executionServices().services());
+        TestExecutionResult combined = localService.executeCompiledWithWorldSessionFactory(
+                request, compiled, MirrorResolutionObserver.noop(), null,
+                MirrorStateAccessObserver.noop(), runId -> {
+                    WorldStateSession session = new WorldStateSession(StateSpec.empty(), Map.of(),
+                            new WorldStateSession.Binding(TARGET, TARGET, TARGET, runId));
+                    worldSession.set(session);
+                    return session;
+                }, combinedRuntime);
+        assertThat(combined.passed()).isTrue();
+        assertThat(combined.graphResult().getOutput("capture", Map.class))
+                .containsEntry("value", "stubbed");
+        assertThatThrownBy(() -> worldSession.get().snapshot())
+                .isInstanceOfSatisfying(WorldModelException.class, error ->
+                        assertThat(error.code()).isEqualTo(WorldModelException.Code.STATE_SESSION_CLOSED));
+
     }
 
     @Test

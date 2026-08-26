@@ -1,6 +1,6 @@
 package com.leanowtech.bloge.gateway.testing.function;
 
-/** Sanitized rejection raised by the static function-control compiler. */
+/** Sanitized rejection raised by function-control compilation or runtime execution. */
 public final class FunctionControlException extends IllegalArgumentException {
 
     public enum Code {
@@ -22,7 +22,17 @@ public final class FunctionControlException extends IllegalArgumentException {
         RULE_AMBIGUOUS,
         UNKNOWN_NOT_CERTIFIABLE,
         PURE_NOT_OVERRIDDEN,
-        PLAN_INVALID
+        PLAN_INVALID,
+        RUNTIME_CONTEXT_INVALID,
+        RUNTIME_SITE_UNPLANNED,
+        RUNTIME_BINDING_DRIFT,
+        CONTROL_ARGUMENT_MISMATCH,
+        CONTROL_EXHAUSTED,
+        CONTROL_THROW,
+        CONTROL_TIMEOUT,
+        CONTROL_DELAY_FAILED,
+        MINIMUM_UNCONSUMED,
+        RUNTIME_CLOSED
     }
 
     private final Code code;
