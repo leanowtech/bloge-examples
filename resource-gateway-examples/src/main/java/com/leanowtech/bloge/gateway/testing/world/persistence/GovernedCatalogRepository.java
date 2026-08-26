@@ -15,6 +15,10 @@ public interface GovernedCatalogRepository {
 
     Optional<GovernedCatalogRevision> findExact(GovernedResourceRef ref);
 
+    /** Reads an exact asset with caller-controlled Scenario dependency resolution. */
+    Optional<GovernedCatalogRevision> findExact(GovernedResourceRef ref,
+                                                GovernedCatalogDependencyResolver dependencyResolver);
+
     default <T> Optional<T> findExact(GovernedResourceRef ref, Class<T> valueType) {
         if (valueType == null) {
             return Optional.empty();

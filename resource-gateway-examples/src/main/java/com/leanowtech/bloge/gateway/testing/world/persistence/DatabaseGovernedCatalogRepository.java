@@ -98,7 +98,8 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
                 nextRevision, value);
         try {
             transactions.executeWithoutResult(status -> {
-                CatalogRow current = selectHead(expected.tenantId(), expected.kind(), expected.id(), true)
+                CatalogRow current = selectHead(expected.tenantId(), expected.kind(), expected.id(), true,
+                        this::resolveTrustedWorld)
                         .orElseThrow(GovernedCatalogConflictException::new);
                 validateRow(current);
                 if (!current.ref().equals(expected)) {
@@ -126,23 +127,48 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
 
     @Override
     public Optional<GovernedCatalogRevision> findExact(GovernedResourceRef ref) {
+        return findExactInternal(ref, this::resolveTrustedWorld);
+    }
+
+    @Override
+    public Optional<GovernedCatalogRevision> findExact(GovernedResourceRef ref,
+                                                       GovernedCatalogDependencyResolver dependencyResolver) {
+        return findExactInternal(ref, dependencyResolver);
+    }
+
+    private ResourceWorldModel resolveTrustedWorld(GovernedResourceRef ref) {
+        return findExact(ref)
+                .filter(entry -> entry.value() instanceof ResourceWorldModel)
+                .map(entry -> (ResourceWorldModel) entry.value())
+                .orElseThrow(GovernedCatalogIntegrityException::new);
+    }
+
+    private Optional<GovernedCatalogRevision> findExactInternal(
+            GovernedResourceRef ref, GovernedCatalogDependencyResolver dependencyResolver) {
         if (ref == null) {
             return Optional.empty();
         }
-        Optional<CatalogRow> head = selectHead(ref.tenantId(), ref.kind(), ref.id(), false);
+        if (dependencyResolver == null) {
+            throw new IllegalArgumentException("RG.WORLD.CATALOG.DEPENDENCY_RESOLVER_REQUIRED");
+        }
+        Optional<StoredRow> head = selectStoredHead(ref.tenantId(), ref.kind(), ref.id(), false);
         if (head.isEmpty()) {
             return Optional.empty();
         }
-        CatalogRow current = head.get();
-        validateRow(current);
-        if (current.ref().revision() != ref.revision()) {
-            current = selectRevision(ref.tenantId(), ref.kind(), ref.id(), ref.revision())
+        StoredRow selected = head.get();
+        if (selected.revision() != ref.revision()) {
+            selected = selectStoredRevision(ref.tenantId(), ref.kind(), ref.id(), ref.revision())
                     .orElse(null);
-            if (current == null) {
+            if (selected == null) {
                 return Optional.empty();
             }
-            validateRow(current);
         }
+        preflight(selected);
+        if (!selected.fingerprint().equals(ref.fingerprint())) {
+            return Optional.empty();
+        }
+        CatalogRow current = readRow(selected, dependencyResolver);
+        validateRow(current);
         if (current.ref().revision() != ref.revision()
                 || !current.ref().fingerprint().equals(ref.fingerprint())) {
             return Optional.empty();
@@ -157,7 +183,7 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
         if (tenant == null || kind == null || id == null || id.isBlank()) {
             return List.of();
         }
-        return jdbc.query("""
+        return jdbc.<CatalogRow>query("""
                 SELECT tenant_id, kind, asset_id, revision, fingerprint, record_fingerprint, canonical_json
                   FROM rg_world_catalog_revisions
                  WHERE tenant_id = ? AND kind = ? AND asset_id = ?
@@ -166,7 +192,8 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
                         resultSet.getString("kind"), resultSet.getString("asset_id"),
                         resultSet.getLong("revision"), resultSet.getString("fingerprint"),
                         resultSet.getString("record_fingerprint"),
-                        resultSet.getString("canonical_json")), tenant.value(), kind.name(), id)
+                        resultSet.getString("canonical_json"), this::resolveTrustedWorld),
+                tenant.value(), kind.name(), id)
                 .stream().map(row -> {
                     validateRow(row);
                     return row.value();
@@ -199,7 +226,8 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
     }
 
     private Optional<CatalogRow> selectHead(String tenant, GovernedCatalogKind kind, String id,
-                                             boolean forUpdate) {
+                                             boolean forUpdate,
+                                             GovernedCatalogDependencyResolver dependencyResolver) {
         String lock = forUpdate ? " FOR UPDATE" : "";
         List<CatalogRow> rows = jdbc.query("""
                 SELECT tenant_id, kind, asset_id, revision, fingerprint, record_fingerprint, canonical_json
@@ -209,40 +237,77 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
                         resultSet.getString("kind"), resultSet.getString("asset_id"),
                         resultSet.getLong("revision"), resultSet.getString("fingerprint"),
                         resultSet.getString("record_fingerprint"),
-                        resultSet.getString("canonical_json")), tenant, kind.name(), id);
+                        resultSet.getString("canonical_json"), dependencyResolver), tenant,
+                kind.name(), id);
         return rows.stream().findFirst();
     }
 
-    private Optional<CatalogRow> selectRevision(String tenant, GovernedCatalogKind kind, String id,
-                                                long revision) {
-        List<CatalogRow> rows = jdbc.query("""
+    private Optional<StoredRow> selectStoredHead(String tenant, GovernedCatalogKind kind, String id,
+                                                 boolean forUpdate) {
+        String lock = forUpdate ? " FOR UPDATE" : "";
+        return jdbc.query("""
+                SELECT tenant_id, kind, asset_id, revision, fingerprint, record_fingerprint, canonical_json
+                  FROM rg_world_catalog_heads
+                 WHERE tenant_id = ? AND kind = ? AND asset_id = ?
+                """ + lock, (resultSet, rowNum) -> readStoredRow(resultSet.getString("tenant_id"),
+                        resultSet.getString("kind"), resultSet.getString("asset_id"),
+                        resultSet.getLong("revision"), resultSet.getString("fingerprint"),
+                        resultSet.getString("record_fingerprint"), resultSet.getString("canonical_json")),
+                tenant, kind.name(), id).stream().findFirst();
+    }
+
+    private Optional<StoredRow> selectStoredRevision(String tenant, GovernedCatalogKind kind, String id,
+                                                      long revision) {
+        return jdbc.query("""
                 SELECT tenant_id, kind, asset_id, revision, fingerprint, record_fingerprint, canonical_json
                   FROM rg_world_catalog_revisions
                  WHERE tenant_id = ? AND kind = ? AND asset_id = ? AND revision = ?
-                """, (resultSet, rowNum) -> readRow(resultSet.getString("tenant_id"),
+                """, (resultSet, rowNum) -> readStoredRow(resultSet.getString("tenant_id"),
                         resultSet.getString("kind"), resultSet.getString("asset_id"),
                         resultSet.getLong("revision"), resultSet.getString("fingerprint"),
-                        resultSet.getString("record_fingerprint"),
-                        resultSet.getString("canonical_json")), tenant, kind.name(), id, revision);
-        return rows.stream().findFirst();
+                        resultSet.getString("record_fingerprint"), resultSet.getString("canonical_json")),
+                tenant, kind.name(), id, revision).stream().findFirst();
+    }
+
+    private StoredRow readStoredRow(String tenant, String rawKind, String id, long revision,
+                                    String fingerprint, String recordFingerprint, String json) {
+        return new StoredRow(tenant, rawKind, id, revision, fingerprint, recordFingerprint, json);
+    }
+
+    private CatalogRow readRow(StoredRow stored, GovernedCatalogDependencyResolver dependencyResolver) {
+        try {
+            GovernedCatalogKind kind = preflight(stored);
+            GovernedResourceRef ref = new GovernedResourceRef(stored.tenant(), kind, stored.id(),
+                    stored.revision(), stored.fingerprint());
+            Object value = codec.decode(stored.json(), new TrustedTenant(stored.tenant()), kind,
+                    stored.id(), stored.revision(), stored.fingerprint(), dependencyResolver::resolve);
+            return new CatalogRow(ref, new GovernedCatalogRevision(ref, value));
+        } catch (GovernedCatalogDependencyAbortException exception) {
+            throw exception;
+        } catch (GovernedCatalogIntegrityException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new GovernedCatalogIntegrityException();
+        }
     }
 
     private CatalogRow readRow(String tenant, String rawKind, String id, long revision,
-                               String fingerprint, String recordFingerprint, String json) {
+                               String fingerprint, String recordFingerprint, String json,
+                               GovernedCatalogDependencyResolver dependencyResolver) {
+        return readRow(new StoredRow(tenant, rawKind, id, revision, fingerprint, recordFingerprint, json),
+                dependencyResolver);
+    }
+
+    private GovernedCatalogKind preflight(StoredRow stored) {
         try {
-            if (recordFingerprint == null || !recordFingerprint.equals(codec.recordFingerprint(json))) {
+            if (stored.recordFingerprint() == null
+                    || !stored.recordFingerprint().equals(codec.recordFingerprint(stored.json()))) {
                 throw new GovernedCatalogIntegrityException();
             }
-            GovernedCatalogKind kind = GovernedCatalogKind.valueOf(rawKind);
-            GovernedResourceRef ref = new GovernedResourceRef(tenant, kind, id, revision, fingerprint);
-            Object value = codec.decode(json, new TrustedTenant(tenant), kind, id, revision, fingerprint,
-                    worldRef -> findExact(worldRef).map(entry -> {
-                        if (!(entry.value() instanceof ResourceWorldModel world)) {
-                            throw new GovernedCatalogIntegrityException();
-                        }
-                        return world;
-                    }).orElseThrow(GovernedCatalogIntegrityException::new));
-            return new CatalogRow(ref, new GovernedCatalogRevision(ref, value));
+            GovernedCatalogKind kind = GovernedCatalogKind.valueOf(stored.rawKind());
+            codec.preflight(stored.json(), stored.tenant(), kind, stored.id(), stored.revision(),
+                    stored.fingerprint());
+            return kind;
         } catch (GovernedCatalogIntegrityException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -259,6 +324,10 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
     }
 
     private record Prepared(GovernedResourceRef ref, String json, String recordFingerprint, Object value) {
+    }
+
+    private record StoredRow(String tenant, String rawKind, String id, long revision,
+                             String fingerprint, String recordFingerprint, String json) {
     }
 
     private record CatalogRow(GovernedResourceRef ref, GovernedCatalogRevision value) {

@@ -81,6 +81,33 @@ public final class GovernedCatalogCodec {
         return canonicalJson(envelope);
     }
 
+    /** Verifies only the sealed envelope and its authoritative top-level identity. */
+    public void preflight(String json, String tenant, GovernedCatalogKind kind, String id,
+                          long revision, String fingerprint) {
+        try {
+            JsonNode parsed = mapper.readTree(json);
+            if (!(parsed instanceof ObjectNode envelope)
+                    || !hasExactlyFields(envelope, ENVELOPE_FIELDS)
+                    || !canonicalJson(envelope).equals(json)
+                    || !text(envelope, "envelopeVersion").equals(ENVELOPE_VERSION)
+                    || !text(envelope, "tenantId").equals(tenant)
+                    || !text(envelope, "kind").equals(kind.name())
+                    || !text(envelope, "id").equals(id)
+                    || !envelope.get("domainVersionIndependent").isBoolean()
+                    || envelope.get("revision") == null || !envelope.get("revision").isIntegralNumber()
+                    || envelope.get("revision").asLong(Long.MIN_VALUE) != revision
+                    || !text(envelope, "fingerprint").equals(fingerprint)
+                    || envelope.get("domainVersionIndependent").booleanValue() !=
+                    (kind == GovernedCatalogKind.LOGICAL_RESOURCE_CONTRACT)) {
+                throw new GovernedCatalogIntegrityException();
+            }
+        } catch (GovernedCatalogIntegrityException exception) {
+            throw exception;
+        } catch (JsonProcessingException | RuntimeException exception) {
+            throw new GovernedCatalogIntegrityException();
+        }
+    }
+
     public Object decode(String json, TrustedTenant tenant, GovernedCatalogKind kind, String id,
                          long revision, String fingerprint,
                          Function<GovernedResourceRef, ResourceWorldModel> worldResolver) {
@@ -113,6 +140,8 @@ public final class GovernedCatalogCodec {
             throw exception;
         } catch (JsonProcessingException exception) {
             throw new GovernedCatalogIntegrityException();
+        } catch (GovernedCatalogDependencyAbortException exception) {
+            throw exception;
         } catch (RuntimeException exception) {
             throw new GovernedCatalogIntegrityException();
         }

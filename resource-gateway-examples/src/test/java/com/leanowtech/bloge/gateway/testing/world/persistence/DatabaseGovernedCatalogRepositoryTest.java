@@ -97,6 +97,92 @@ class DatabaseGovernedCatalogRepositoryTest {
     }
 
     @Test
+    void callerSuppliedDependencyResolverReceivesExactWorldReferenceBeforeScenarioCompletes() {
+        ResourceWorldModel world = world(1, "tenant-a");
+        Scenario scenario = scenario(world, 1, "tenant-a");
+        GovernedResourceRef worldRef = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, world.worldModelId(), world);
+        GovernedResourceRef scenarioRef = repository.create("tenant-a",
+                GovernedCatalogKind.SCENARIO, scenario.scenarioId(), scenario);
+        List<GovernedResourceRef> dependencies = new java.util.ArrayList<>();
+
+        GovernedCatalogRevision resolved = repository.findExact(scenarioRef, exactWorldRef -> {
+            dependencies.add(exactWorldRef);
+            return repository.findExact(exactWorldRef)
+                    .map(entry -> (ResourceWorldModel) entry.value())
+                    .orElseThrow(GovernedCatalogIntegrityException::new);
+        }).orElseThrow();
+
+        assertThat(dependencies).containsExactly(worldRef);
+        assertThat(resolved.value()).isInstanceOf(Scenario.class);
+        assertThat(repository.findExact(scenarioRef).orElseThrow().value())
+                .isInstanceOf(Scenario.class);
+    }
+
+    @Test
+    void wrongScenarioFingerprintIsAnExactMissBeforeDependencyResolution() {
+        ResourceWorldModel world = world(1, "tenant-a");
+        Scenario scenario = scenario(world, 1, "tenant-a");
+        repository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                world.worldModelId(), world);
+        GovernedResourceRef scenarioRef = repository.create("tenant-a",
+                GovernedCatalogKind.SCENARIO, scenario.scenarioId(), scenario);
+        GovernedResourceRef wrongFingerprint = new GovernedResourceRef(scenarioRef.tenantId(),
+                scenarioRef.kind(), scenarioRef.id(), scenarioRef.revision(),
+                "sha256:" + "0".repeat(64));
+        List<GovernedResourceRef> dependencies = new java.util.ArrayList<>();
+
+        assertThat(repository.findExact(wrongFingerprint, exactWorldRef -> {
+            dependencies.add(exactWorldRef);
+            throw new AssertionError("dependency resolver must not be invoked");
+        })).isEmpty();
+        assertThat(dependencies).isEmpty();
+    }
+
+    @Test
+    void scenarioRowFingerprintColumnTamperIsIntegrityNotAnExactMiss() {
+        ResourceWorldModel world = world(1, "tenant-a");
+        Scenario scenario = scenario(world, 1, "tenant-a");
+        repository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                world.worldModelId(), world);
+        GovernedResourceRef scenarioRef = repository.create("tenant-a",
+                GovernedCatalogKind.SCENARIO, scenario.scenarioId(), scenario);
+        jdbc.update("""
+                UPDATE rg_world_catalog_heads SET fingerprint = ?
+                 WHERE tenant_id = ? AND kind = ? AND asset_id = ?
+                """, "sha256:" + "f".repeat(64), scenarioRef.tenantId(),
+                scenarioRef.kind().name(), scenarioRef.id());
+
+        assertThatThrownBy(() -> repository.findExact(scenarioRef, exactWorldRef -> {
+            throw new AssertionError("dependency resolver must not be invoked");
+        })).isInstanceOf(GovernedCatalogIntegrityException.class);
+    }
+
+    @Test
+    void historicalScenarioResolutionDoesNotDecodeCurrentHeadWorldDependency() {
+        ResourceWorldModel firstWorld = world(1, "tenant-a");
+        GovernedResourceRef firstWorldRef = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, firstWorld.worldModelId(), firstWorld);
+        ResourceWorldModel secondWorld = world(2, "tenant-a");
+        GovernedResourceRef secondWorldRef = repository.update(firstWorldRef, secondWorld);
+        Scenario firstScenario = scenario(firstWorld, 1, "tenant-a");
+        GovernedResourceRef firstScenarioRef = repository.create("tenant-a",
+                GovernedCatalogKind.SCENARIO, firstScenario.scenarioId(), firstScenario);
+        repository.update(firstScenarioRef, scenario(secondWorld, 2, "tenant-a"));
+        List<GovernedResourceRef> dependencies = new java.util.ArrayList<>();
+
+        assertThat(repository.findExact(firstScenarioRef, exactWorldRef -> {
+            dependencies.add(exactWorldRef);
+            return repository.findExact(exactWorldRef)
+                    .map(entry -> (ResourceWorldModel) entry.value())
+                    .orElseThrow(GovernedCatalogIntegrityException::new);
+        })).isPresent();
+
+        assertThat(dependencies).containsExactly(firstWorldRef);
+        assertThat(secondWorldRef).isNotEqualTo(firstWorldRef);
+    }
+
+    @Test
     void createUpdateStaleCasAndImmutableHistoryAreEnforced() {
         ResourceWorldModel first = world(1, "tenant-a");
         GovernedResourceRef revisionOne = repository.create("tenant-a",
