@@ -89,6 +89,39 @@ class FunctionControlPlaneTest {
     }
 
     @Test
+    void builderPreservesImportForeachAndLoopArtifactRuntimePaths() {
+        Graph root = new com.leanowtech.bloge.core.dsl.GraphBuilder("root")
+                .node("import", OPERATOR)
+                .node("foreach", OPERATOR)
+                .node("loop", OPERATOR)
+                .build();
+        Graph imported = graph("imported", "node");
+        Graph iterated = graph("iterated", "node");
+        Graph looped = graph("looped", "node");
+        CompiledGraph artifact = new CompiledGraph(root, List.of(), Map.of(
+                "import", new CompiledGraph(imported,
+                        List.of(new GraphFunctionCall("node", new FunctionCallSite("importFn", 1, 1)))),
+                "foreach", new CompiledGraph(iterated,
+                        List.of(new GraphFunctionCall("node", new FunctionCallSite("foreachFn", 2, 1)))),
+                "loop", new CompiledGraph(looped,
+                        List.of(new GraphFunctionCall("node", new FunctionCallSite("loopFn", 3, 1))))));
+
+        FunctionInvocationInventory result = new FunctionInvocationInventoryBuilder().build(artifact,
+                inventory(List.of(
+                        entry(root, "/root", "import"),
+                        entry(root, "/root", "foreach"),
+                        entry(root, "/root", "loop"),
+                        entry(imported, "/root/import/body", "node"),
+                        entry(iterated, "/root/foreach/body", "node"),
+                        entry(looped, "/root/loop/body", "node"))));
+
+        assertThat(result.sites()).extracting(FunctionInvocationSite::graphPath)
+                .containsExactlyInAnyOrder("/root/import/body", "/root/foreach/body", "/root/loop/body");
+        assertThat(result.sites()).extracting(FunctionInvocationSite::functionName)
+                .containsExactlyInAnyOrder("importFn", "foreachFn", "loopFn");
+    }
+
+    @Test
     void builderRejectsMissingArtifactOwner() {
         Graph graph = graph("root", "node", "other");
         CompiledGraph compiled = new CompiledGraph(graph,
@@ -387,6 +420,9 @@ class FunctionControlPlaneTest {
         assertThatThrownBy(() -> new FunctionInvocationSite("/root", "x".repeat(4_097), "f", 0, 0))
                 .isInstanceOf(FunctionControlException.class)
                 .hasMessage("RG.FUNCTION.SITE_INVALID");
+        assertThatThrownBy(() -> new FunctionInvocationSite("/root", "node\n", "f", 0, 0))
+                .isInstanceOf(FunctionControlException.class)
+                .hasMessage("RG.FUNCTION.SITE_INVALID");
         List<Object> tooMany = new ArrayList<>();
         for (int i = 0; i < 257; i++) {
             tooMany.add(i);
@@ -406,6 +442,17 @@ class FunctionControlPlaneTest {
                 FunctionEffect.EXTERNAL_QUERY, Map.of("type", "object", "x", deepSchema), Map.of()))
                 .isInstanceOf(FunctionControlException.class)
                 .hasMessageNotContaining("next");
+        assertThatThrownBy(() -> new FunctionLibraryDeclaration("large", false, Set.of(),
+                FunctionEffect.EXTERNAL_QUERY,
+                Map.of("type", "string", "description", "sensitive-schema-".repeat(10_000)), Map.of()))
+                .isInstanceOf(FunctionControlException.class)
+                .hasMessageNotContaining("sensitive-schema");
+        assertThatThrownBy(() -> new FunctionControlRule("long-error", new FunctionControlRule.Selector(
+                "/root", "n", "f", 0, 0), FunctionControlRule.Behavior.THROW, null,
+                "sensitive-error-".repeat(100), Duration.ZERO,
+                FunctionControlRule.Consumption.exactly(1), false, 0))
+                .isInstanceOf(FunctionControlException.class)
+                .hasMessageNotContaining("sensitive-error");
     }
 
     private static FunctionControlCompiler compiler() {
