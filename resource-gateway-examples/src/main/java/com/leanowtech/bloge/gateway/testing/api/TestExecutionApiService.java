@@ -47,6 +47,13 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedTestSecrets;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.testing.protocol.TestControlEnvelope;
+import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioCompilationException;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException;
+import com.leanowtech.bloge.gateway.testing.world.access.ResolvedWorldAssetControl;
 import com.leanowtech.bloge.gateway.visual.catalog.JavaOperatorInventoryProjector;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -96,6 +103,9 @@ public final class TestExecutionApiService {
     private final TestEvidenceIntegrityService evidenceIntegrity;
     private final TestEvidenceSanitizer sanitizer;
     private final TestRuntimeAdmissionGate admissions;
+    private final AuthorizedWorldAssetResolver worldAssetResolver;
+    private final WorldReferenceExecutionPlanner worldReferencePlanner;
+    private final WorldScenarioRunService worldScenarioRunService;
     private final TestBoundaryCasePlanner boundaryCases;
     private final TestDslMutationPlanner mutationCases;
     private final TestPropertyCasePlanner propertyCases;
@@ -227,6 +237,28 @@ public final class TestExecutionApiService {
                                    TestEvidenceIntegrityService evidenceIntegrity,
                                    TestRuntimeAdmissionGate admissions,
                                    TestSecretResolutionService testSecrets) {
+        this(graphService, operatorRegistry, resourceRegistry, expressionEvaluator, objectMapper,
+                fixtureRepository, runRepository, securityEvents, retention, replayPayloads,
+                evidenceIntegrity, admissions, testSecrets, null, null, null);
+    }
+
+    /** Complete explicit wiring constructor for governed Scenario/World execution. */
+    public TestExecutionApiService(GatewayGraphService graphService,
+                                   OperatorRegistry operatorRegistry,
+                                   ResourceRegistry resourceRegistry,
+                                   BlgeExpressionEvaluator expressionEvaluator,
+                                   ObjectMapper objectMapper,
+                                   FixtureBundleRepository fixtureRepository,
+                                   TestRunRepository runRepository,
+                                   TestSecurityEventRepository securityEvents,
+                                   Duration retention,
+                                   TestReplayPayloadService replayPayloads,
+                                   TestEvidenceIntegrityService evidenceIntegrity,
+                                   TestRuntimeAdmissionGate admissions,
+                                   TestSecretResolutionService testSecrets,
+                                   AuthorizedWorldAssetResolver worldAssetResolver,
+                                   WorldReferenceExecutionPlanner worldReferencePlanner,
+                                   WorldScenarioRunService worldScenarioRunService) {
         this.graphService = Objects.requireNonNull(graphService, "graphService");
         this.operatorRegistry = Objects.requireNonNull(operatorRegistry, "operatorRegistry");
         this.resourceRegistry = Objects.requireNonNull(resourceRegistry, "resourceRegistry");
@@ -239,6 +271,9 @@ public final class TestExecutionApiService {
         this.testSecrets = testSecrets;
         this.evidenceIntegrity = Objects.requireNonNull(evidenceIntegrity, "evidenceIntegrity");
         this.admissions = Objects.requireNonNull(admissions, "admissions");
+        this.worldAssetResolver = worldAssetResolver;
+        this.worldReferencePlanner = worldReferencePlanner;
+        this.worldScenarioRunService = worldScenarioRunService;
         this.boundaryCases = new TestBoundaryCasePlanner(
                 objectMapper, new JsonSchemaSampleGenerator());
         this.mutationCases = new TestDslMutationPlanner(objectMapper, operatorRegistry);
@@ -271,7 +306,79 @@ public final class TestExecutionApiService {
     TestExecutionApiResponse executeAdmittedIngress(TestExecutionIngress ingress,
                                                     IntegrationRequestContext identity) {
         Objects.requireNonNull(ingress, "ingress");
+        if (ingress.envelope() != null) {
+            return executeReferencedIngress(ingress.request(), ingress.envelope(), identity);
+        }
         return execute(ingress.request(), identity, admissions);
+    }
+
+    private TestExecutionApiResponse executeReferencedIngress(
+            TestExecutionApiRequest request,
+            TestControlEnvelope envelope,
+            IntegrationRequestContext identity) {
+        requireTestIdentity(identity);
+        validateRequest(request, identity, false);
+        Graph graph = requireGraph(request.target(), identity);
+        GraphExecutionTargetSnapshot snapshot = GraphExecutionTargetSnapshot.capture(
+                objectMapper, graph, resourceRegistry);
+        String artifactFingerprint = GraphArtifactFingerprint.of(objectMapper, graph);
+        requireReferencedTargetFingerprint(request.target(), artifactFingerprint,
+                snapshot.fingerprint(), identity);
+        try {
+            graphService.validateInput(graph.name(), new GraphContext(request.context()));
+        } catch (IllegalArgumentException invalidInput) {
+            throw badRequest(identity, "RG.TEST.GRAPH_INPUT_INVALID",
+                    invalidInput.getMessage(), Map.of());
+        }
+        if (worldAssetResolver == null || worldReferencePlanner == null
+                || worldScenarioRunService == null) {
+            throw unavailable(identity, "RG.TEST.WORLD_REFERENCE_EXECUTION_UNAVAILABLE",
+                    "Governed world-reference execution is unavailable.");
+        }
+
+        IntegrationRequestContext trustedContext = referencedWorldContext(identity);
+        ResolvedWorldAssetControl resolved;
+        try {
+            resolved = worldAssetResolver.resolve(envelope, trustedContext);
+        } catch (GovernedAssetAccessException failure) {
+            throw governedAssetFailure(identity, failure);
+        } catch (RuntimeException failure) {
+            throw unavailable(identity, "RG.TEST.WORLD_REFERENCE_RESOLVER_UNAVAILABLE",
+                    "Governed world-reference resolution is unavailable.");
+        }
+
+        WorldReferenceExecutionPlanner.Plan plan;
+        try {
+            plan = worldReferencePlanner.plan(resolved, graph, request.context());
+        } catch (WorldScenarioCompilationException failure) {
+            throw worldCompilationFailure(identity);
+        } catch (RuntimeException failure) {
+            throw unavailable(identity, "RG.TEST.WORLD_REFERENCE_PLANNER_UNAVAILABLE",
+                    "Governed world-reference planning is unavailable.");
+        }
+
+        TestExecutionRequest worldRequest = new TestExecutionRequest(
+                snapshot.graph(), new GraphContext(request.context()), plan.compilation().bundle(),
+                AUTHORIZED_PURPOSE, artifactFingerprint, TestExecutionRequest.FixtureSource.STORED,
+                referencedExecutionMetadata(request, identity, snapshot, plan),
+                snapshot.certificationEligible(), ResolvedReplayPayloads.empty(),
+                ResolvedTestSecrets.empty());
+        ResolvedFixture fixture = referencedFixture(plan.compilation().bundle());
+        TestExecutionResult result;
+        try {
+            result = worldScenarioRunService.execute(plan.compilation(), worldRequest, compiled ->
+                    admissions.admit(identity, admissionIntent(Kind.GRAPH, request,
+                            artifactFingerprint, compiled, snapshot.dependencyFingerprints().keySet())));
+        } catch (WorldScenarioCompilationException failure) {
+            throw worldCompilationFailure(identity);
+        } catch (IntegrationProblemException expected) {
+            throw expected;
+        } catch (RuntimeException failure) {
+            throw unavailable(identity, "RG.TEST.WORLD_REFERENCE_EXECUTION_UNAVAILABLE",
+                    "Governed world-reference execution is unavailable.");
+        }
+        return persistGraphExecution(request, identity, graph.name(), artifactFingerprint,
+                fixture, result);
     }
 
     /**
@@ -1140,6 +1247,12 @@ public final class TestExecutionApiService {
     }
 
     private void validateRequest(TestExecutionApiRequest request, IntegrationRequestContext identity) {
+        validateRequest(request, identity, true);
+    }
+
+    private void validateRequest(TestExecutionApiRequest request,
+                                 IntegrationRequestContext identity,
+                                 boolean requireFixtureSource) {
         if (request == null || !TestExecutionApiRequest.SCHEMA_VERSION.equals(request.schemaVersion())) {
             throw badRequest(identity, "RG.TEST.REQUEST_SCHEMA_VERSION_INVALID",
                     "Unsupported test execution request schemaVersion.", Map.of());
@@ -1151,9 +1264,13 @@ public final class TestExecutionApiService {
         }
         boolean inline = request.fixtureBundle() != null;
         boolean stored = request.fixtureBundleRef() != null;
-        if (inline == stored) {
+        if (requireFixtureSource && inline == stored) {
             throw badRequest(identity, "RG.TEST.FIXTURE_SOURCE_INVALID",
                     "Exactly one of fixtureBundle or fixtureBundleRef is required.", Map.of());
+        }
+        if (!requireFixtureSource && (inline || stored)) {
+            throw badRequest(identity, "RG.TEST.FIXTURE_SOURCE_INVALID",
+                    "Referenced world execution does not accept a request fixture source.", Map.of());
         }
         if (request.target() == null || !"GRAPH".equals(request.target().kind())
                 || request.target().id().isBlank()) {
@@ -1269,6 +1386,73 @@ public final class TestExecutionApiService {
             throw conflict(identity, "RG.TEST.TARGET_FINGERPRINT_CONFLICT",
                     "Target changed after the caller selected it.", Map.of("currentTargetFingerprint", actual));
         }
+    }
+
+    private void requireReferencedTargetFingerprint(TestExecutionApiRequest.Target requested,
+                                                    String artifactFingerprint,
+                                                    String snapshotFingerprint,
+                                                    IntegrationRequestContext identity) {
+        String supplied = requested.fingerprint();
+        if (!supplied.isBlank() && !supplied.equals(artifactFingerprint)
+                && !supplied.equals(snapshotFingerprint)) {
+            throw conflict(identity, "RG.TEST.TARGET_FINGERPRINT_CONFLICT",
+                    "Target changed after the caller selected it.", Map.of());
+        }
+    }
+
+    private IntegrationRequestContext referencedWorldContext(IntegrationRequestContext identity) {
+        if (!"TEST_EXECUTION".equals(identity.purpose())) {
+            throw badRequest(identity, "RG.TEST.EXECUTION_PURPOSE_INVALID",
+                    "Referenced world execution requires the TEST_EXECUTION authentication purpose.",
+                    Map.of());
+        }
+        return new IntegrationRequestContext(
+                identity.tenantId(), identity.organizationId(), identity.projectId(),
+                identity.environmentId(), identity.region(), identity.actorType(), identity.actorId(),
+                identity.delegatedBy(), AUTHORIZED_PURPOSE, identity.correlationId(), identity.groups(),
+                identity.clearance(), identity.delegationGrantId());
+    }
+
+    private Map<String, Object> referencedExecutionMetadata(
+            TestExecutionApiRequest request,
+            IntegrationRequestContext identity,
+            GraphExecutionTargetSnapshot snapshot,
+            WorldReferenceExecutionPlanner.Plan plan) {
+        Map<String, Object> metadata = new LinkedHashMap<>(executionMetadata(request, identity, snapshot));
+        metadata.put("assetKind", plan.primaryRef().kind().name());
+        metadata.put("assetRevision", plan.primaryRef().revision());
+        metadata.put("worldCompilationFingerprint", plan.compilation().fingerprint());
+        metadata.put("worldProvenance", plan.provenance().name());
+        return Map.copyOf(metadata);
+    }
+
+    private ResolvedFixture referencedFixture(FixtureBundle bundle) {
+        return new ResolvedFixture(bundle, TestExecutionRequest.FixtureSource.STORED,
+                new TestExecutionApiResponse.ResolvedFixtureBundleRef(
+                        "STORED", bundle.fixtureBundleId(), bundle.revision(),
+                        ProtocolFingerprint.of(objectMapper, bundle)));
+    }
+
+    private static IntegrationProblemException governedAssetFailure(
+            IntegrationRequestContext identity,
+            GovernedAssetAccessException failure) {
+        String code = failure.errorCode();
+        return switch (failure.code()) {
+            case ACCESS_DENIED -> new IntegrationProblemException(IntegrationProblem.forbidden(
+                    code, "Governed asset access is denied.", identity.correlationId(), Map.of()));
+            case INVALID_CONTEXT -> new IntegrationProblemException(IntegrationProblem.badRequest(
+                    code, "Governed asset access context is invalid.", identity.correlationId(), Map.of()));
+            case REFERENCE_NOT_FOUND -> new IntegrationProblemException(IntegrationProblem.notFound(
+                    code, "Governed asset reference was not found.", identity.correlationId(), Map.of()));
+            case INTEGRITY_FAILURE -> new IntegrationProblemException(IntegrationProblem.serviceUnavailable(
+                    code, "Governed asset integrity could not be verified.", identity.correlationId(), Map.of()));
+        };
+    }
+
+    private static IntegrationProblemException worldCompilationFailure(
+            IntegrationRequestContext identity) {
+        return conflict(identity, "RG.TEST.WORLD_REFERENCE_COMPILATION_CONFLICT",
+                "The governed world reference cannot be compiled for the registered graph.", Map.of());
     }
 
     private void requireClearance(String classification, IntegrationRequestContext identity) {

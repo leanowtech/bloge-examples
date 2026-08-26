@@ -17,6 +17,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.TestDoubleFactory;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.TestAssertionEvaluator;
 
 import java.util.LinkedHashMap;
@@ -49,6 +50,33 @@ public final class WorldScenarioRunService {
     /** Rebuilds exact sites and runs only a server-owned world-delegate generation. */
     public TestExecutionResult execute(WorldScenarioCompilation compilation,
                                        TestExecutionRequest request) {
+        return execute(compilation, request, ignored -> noAdmissionGuard());
+    }
+
+    /**
+     * Rebuilds exact sites, acquires capacity only after control compilation, and runs the
+     * server-owned world-delegate generation.
+     */
+    public TestExecutionResult execute(WorldScenarioCompilation compilation,
+                                       TestExecutionRequest request,
+                                       TestRunService.AdmissionFactory admissionFactory) {
+        CompiledExecutionControl compiled = compile(compilation, request);
+        TestRunService runtime = new TestRunService(objectMapper, new ExecutionControlCompiler(
+                registry, objectMapper), new TestDoubleFactory(objectMapper, null,
+                new WorldDelegateRuntime(compilation, fragmentTestKit)),
+                new IndependentTestEngineFactory(registry), new TestAssertionEvaluator(objectMapper));
+        AdmissionGuard admission = Objects.requireNonNull(
+                Objects.requireNonNull(admissionFactory, "admissionFactory").admit(compiled),
+                "admission guard");
+        try (admission) {
+            TestExecutionResult result = runtime.executeCompiled(request, compiled);
+            admission.checkpoint();
+            return result;
+        }
+    }
+
+    private CompiledExecutionControl compile(WorldScenarioCompilation compilation,
+                                              TestExecutionRequest request) {
         if (compilation == null || request == null
                 || !GRAPH_CONTRACT_TEST.equals(request.authorizedPurpose())
                 || request.fixtureBundle() == null
@@ -75,8 +103,6 @@ public final class WorldScenarioRunService {
                     WorldScenarioCompilationException.Code.INVALID_INPUT);
         }
         compilation.verifyFingerprint();
-        WorldDelegateRuntime worldRuntime = new WorldDelegateRuntime(
-                compilation, fragmentTestKit);
         InvocationInventory inventory = rebuildInventory(request.graph(), request.targetFingerprint());
         Map<String, CompiledExecutionControl.ResolvedControl> resolved = resolve(
                 inventory, compilation.bundle().rules());
@@ -88,12 +114,7 @@ public final class WorldScenarioRunService {
                 request.graph(), compilation.bundle(), GRAPH_CONTRACT_TEST,
                 request.targetFingerprint(), hints);
         verifyHintedControls(compiled, hints);
-
-        TestRunService runtime = new TestRunService(objectMapper, controlCompiler,
-                new TestDoubleFactory(objectMapper, null, worldRuntime),
-                new IndependentTestEngineFactory(registry),
-                new TestAssertionEvaluator(objectMapper));
-        return runtime.executeCompiled(request, compiled);
+        return compiled;
     }
 
     /** Convenience adapter for callers that already have a context and no request metadata. */
@@ -203,5 +224,19 @@ public final class WorldScenarioRunService {
     private static WorldScenarioCompilationException targetDrift() {
         return new WorldScenarioCompilationException(
                 WorldScenarioCompilationException.Code.TARGET_DRIFT);
+    }
+
+    private static AdmissionGuard noAdmissionGuard() {
+        return new AdmissionGuard() {
+            @Override
+            public void checkpoint() {
+                // Compatibility callers do not install a distributed admission gate.
+            }
+
+            @Override
+            public void close() {
+                // No permit exists for the compatibility path.
+            }
+        };
     }
 }

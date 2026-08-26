@@ -15,16 +15,33 @@ import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeBinding
 import com.leanowtech.bloge.gateway.integration.mirror.MirrorFixtureScopeRepository;
 import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureBundle;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureExecutionServices;
 import com.leanowtech.bloge.gateway.testing.domain.FixtureRule;
 import com.leanowtech.bloge.gateway.testing.domain.TestEvidenceIntegrity;
 import com.leanowtech.bloge.gateway.testing.domain.TestRunEvidence;
-import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphExecutionTargetSnapshot;
 import com.leanowtech.bloge.gateway.testing.evidence.ProtocolFingerprint;
+import com.leanowtech.bloge.gateway.testing.evidence.TestEvidenceIntegrityService;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
+import com.leanowtech.bloge.gateway.testing.planning.InvocationInventory;
 import com.leanowtech.bloge.gateway.testing.planning.TestDslMutationPlanner;
+import com.leanowtech.bloge.gateway.testing.protocol.TestAssetReference;
+import com.leanowtech.bloge.gateway.testing.protocol.TestControlEnvelope;
 import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
+import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
+import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioCompilation;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException;
+import com.leanowtech.bloge.gateway.testing.world.access.ResolvedWorldAssetControl;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogKind;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedResourceRef;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
@@ -33,6 +50,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -40,14 +58,20 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class TestExecutionApiServiceTest {
@@ -531,6 +555,185 @@ class TestExecutionApiServiceTest {
     }
 
     @Test
+    void referencedWorldExecutionFailsClosedWhenOptionalWiringIsAbsent() {
+        TestExecutionIngress ingress = new TestExecutionIngress(
+                referencedRequest(targetFingerprint), "", "", worldEnvelope());
+
+        assertThatThrownBy(() -> service.executeAdmittedIngress(ingress, identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.WORLD_REFERENCE_EXECUTION_UNAVAILABLE");
+                    assertThat(failure.problem().status()).isEqualTo(503);
+                });
+        assertThat(runs.values).isEmpty();
+    }
+
+    @Test
+    void referencedWorldExecutionRejectsBodyFixtureBeforeResolver() {
+        TestExecutionApiRequest withInline = request(bundle("body-fixture"), null,
+                TestExecutionApiRequest.Verbosity.FULL);
+        TestExecutionIngress ingress = new TestExecutionIngress(
+                withInline, "", "", worldEnvelope());
+
+        assertThatThrownBy(() -> service.executeAdmittedIngress(ingress, identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code()).isEqualTo("RG.TEST.FIXTURE_SOURCE_INVALID");
+                    assertThat(failure.toString()).doesNotContain("body-fixture", "world-a");
+                });
+        assertThat(runs.values).isEmpty();
+    }
+
+    @Test
+    void referencedWorldExecutionUsesExplicitWiringAndStoresStoredFixtureProvenance() {
+        ReferencedWiring wiring = referencedWiring();
+        TestExecutionApiRequest request = referencedRequest("");
+        TestControlEnvelope envelope = worldEnvelope();
+        IntegrationRequestContext authenticated = new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "local", "WORKLOAD", "runner-a",
+                "delegated-a", "TEST_EXECUTION", "correlation-1", java.util.Set.of("quality", "ops"),
+                "RESTRICTED", "grant-a");
+
+        TestExecutionApiResponse response = wiring.service().executeAdmittedIngress(
+                new TestExecutionIngress(request, "", "", envelope), authenticated);
+
+        ArgumentCaptor<IntegrationRequestContext> trustedContext =
+                ArgumentCaptor.forClass(IntegrationRequestContext.class);
+        verify(wiring.resolver()).resolve(eq(envelope), trustedContext.capture());
+        assertThat(trustedContext.getValue()).isEqualTo(new IntegrationRequestContext(
+                authenticated.tenantId(), authenticated.organizationId(), authenticated.projectId(),
+                authenticated.environmentId(), authenticated.region(), authenticated.actorType(),
+                authenticated.actorId(), authenticated.delegatedBy(), "GRAPH_CONTRACT_TEST",
+                authenticated.correlationId(), authenticated.groups(), authenticated.clearance(),
+                authenticated.delegationGrantId()));
+
+        assertThat(response.target().fingerprint())
+                .isEqualTo(GraphArtifactFingerprint.of(mapper, graph));
+        assertThat(response.fixtureBundleRef().source()).isEqualTo("STORED");
+        assertThat(response.fixtureBundleRef().fixtureBundleId())
+                .isEqualTo(wiring.bundle().fixtureBundleId());
+        ArgumentCaptor<TestExecutionRequest> worldRequest =
+                ArgumentCaptor.forClass(TestExecutionRequest.class);
+        verify(wiring.runner()).execute(eq(wiring.compilation()), worldRequest.capture(),
+                any(TestRunService.AdmissionFactory.class));
+        assertThat(worldRequest.getValue().fixtureSource())
+                .isEqualTo(TestExecutionRequest.FixtureSource.STORED);
+        assertThat(worldRequest.getValue().authorizedPurpose()).isEqualTo("GRAPH_CONTRACT_TEST");
+        assertThat(worldRequest.getValue().targetFingerprint())
+                .isEqualTo(GraphArtifactFingerprint.of(mapper, graph));
+        assertThat(worldRequest.getValue().metadata())
+                .containsEntry("assetKind", GovernedCatalogKind.RESOURCE_WORLD_MODEL.name())
+                .containsEntry("assetRevision", 1L)
+                .containsEntry("worldProvenance", "RESOURCE_WORLD_MODEL")
+                .doesNotContainValue("hello");
+
+        InOrder executionOrder = inOrder(wiring.resolver(), wiring.planner(), wiring.runner());
+        executionOrder.verify(wiring.resolver()).resolve(eq(envelope), any());
+        executionOrder.verify(wiring.planner()).plan(any(), eq(graph), eq(request.context()));
+        executionOrder.verify(wiring.runner()).execute(eq(wiring.compilation()),
+                any(TestExecutionRequest.class), any(TestRunService.AdmissionFactory.class));
+        assertThat(runs.find(authenticated.tenantId(), authenticated.environmentId(), response.runId()))
+                .isPresent();
+    }
+
+    @Test
+    void referencedWorldExecutionAcceptsBlankArtifactAndCompositeTargetFingerprints() {
+        String artifactFingerprint = GraphArtifactFingerprint.of(mapper, graph);
+        for (String requestedFingerprint : List.of("", artifactFingerprint, targetFingerprint)) {
+            ReferencedWiring wiring = referencedWiring();
+
+            TestExecutionApiResponse response = wiring.service().executeAdmittedIngress(
+                    new TestExecutionIngress(referencedRequest(requestedFingerprint), "", "",
+                            worldEnvelope()), identity("test"));
+
+            assertThat(response.target().fingerprint()).isEqualTo(artifactFingerprint);
+            assertThat(response.fixtureBundleRef().source()).isEqualTo("STORED");
+        }
+    }
+
+    @Test
+    void referencedScenarioExecutionPreservesScenarioProvenanceAndSucceeds() {
+        ReferencedWiring wiring = referencedWiring(GovernedCatalogKind.SCENARIO);
+
+        TestExecutionApiResponse response = wiring.service().executeAdmittedIngress(
+                new TestExecutionIngress(referencedRequest(""), "", "", scenarioEnvelope()),
+                identity("test"));
+
+        assertThat(response.target().fingerprint())
+                .isEqualTo(GraphArtifactFingerprint.of(mapper, graph));
+        assertThat(response.fixtureBundleRef().source()).isEqualTo("STORED");
+        ArgumentCaptor<TestExecutionRequest> worldRequest =
+                ArgumentCaptor.forClass(TestExecutionRequest.class);
+        verify(wiring.runner()).execute(eq(wiring.compilation()), worldRequest.capture(),
+                any(TestRunService.AdmissionFactory.class));
+        assertThat(worldRequest.getValue().metadata())
+                .containsEntry("assetKind", GovernedCatalogKind.SCENARIO.name())
+                .containsEntry("assetRevision", 1L);
+    }
+
+    @Test
+    void referencedAdmissionFactoryUsesOriginalIdentityAndRejectsBeforeEvidencePersistence() {
+        TestRuntimeAdmissionGate admissions = mock(TestRuntimeAdmissionGate.class);
+        ReferencedWiring wiring = referencedWiring(GovernedCatalogKind.RESOURCE_WORLD_MODEL, admissions);
+        IntegrationRequestContext authenticated = new IntegrationRequestContext(
+                "tenant-a", "org-a", "project-a", "test", "local", "WORKLOAD", "runner-a",
+                "delegated-a", "TEST_EXECUTION", "correlation-1", java.util.Set.of("quality"),
+                "CONFIDENTIAL", "grant-a");
+        TestExecutionApiRequest request = referencedRequest("");
+        AtomicReference<TestRunService.AdmissionFactory> factory = new AtomicReference<>();
+        when(admissions.admit(any(), any())).thenThrow(new IllegalStateException("capacity denied"));
+        doAnswer(invocation -> {
+            factory.set(invocation.getArgument(2));
+            CompiledExecutionControl compiled = mock(CompiledExecutionControl.class);
+            when(compiled.effectivePlan()).thenReturn(wiring.result().plan());
+            when(compiled.inventory()).thenReturn(new InvocationInventory(List.of(), Map.of(), Map.of()));
+            factory.get().admit(compiled);
+            return wiring.result();
+        }).when(wiring.runner()).execute(eq(wiring.compilation()), any(TestExecutionRequest.class),
+                any(TestRunService.AdmissionFactory.class));
+        int persistedBefore = runs.values.size();
+
+        assertThatThrownBy(() -> wiring.service().executeAdmittedIngress(
+                new TestExecutionIngress(request, "", "", worldEnvelope()), authenticated))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.WORLD_REFERENCE_EXECUTION_UNAVAILABLE");
+                    assertThat(failure.toString()).doesNotContain("capacity denied", "hello");
+                });
+
+        ArgumentCaptor<TestRuntimeAdmissionGate.AdmissionIntent> intent =
+                ArgumentCaptor.forClass(TestRuntimeAdmissionGate.AdmissionIntent.class);
+        verify(admissions).admit(eq(authenticated), intent.capture());
+        String artifactFingerprint = GraphArtifactFingerprint.of(mapper, graph);
+        assertThat(intent.getValue().kind()).isEqualTo(TestRuntimeAdmissionGate.Kind.GRAPH);
+        assertThat(intent.getValue().dependencyRefs()).isEqualTo(
+                GraphExecutionTargetSnapshot.capture(mapper, graph, resources)
+                        .dependencyFingerprints().keySet());
+        assertThat(intent.getValue().intentFingerprint()).isEqualTo(ProtocolFingerprint.of(mapper,
+                Map.of("schemaVersion", "bloge.testRuntimeAdmissionWorkIntent.v1",
+                        "request", request, "targetFingerprint", artifactFingerprint,
+                        "planFingerprint", wiring.result().plan().planFingerprint())));
+        assertThat(runs.values).hasSize(persistedBefore);
+    }
+
+    @Test
+    void referencedWorldAuthorizationDenialStopsBeforePlannerAndPayloadExecution() {
+        ReferencedWiring wiring = referencedWiring();
+        when(wiring.resolver().resolve(any(), any())).thenThrow(GovernedAssetAccessException.denied());
+        int persistedBefore = runs.values.size();
+
+        assertThatThrownBy(() -> wiring.service().executeAdmittedIngress(
+                new TestExecutionIngress(referencedRequest(""), "", "", worldEnvelope()),
+                identity("test")))
+                .isInstanceOfSatisfying(IntegrationProblemException.class, failure -> {
+                    assertThat(failure.problem().code())
+                            .isEqualTo("RG.TEST.GOVERNED_ASSET.ACCESS_DENIED");
+                    assertThat(failure.problem().status()).isEqualTo(403);
+                });
+        verifyNoInteractions(wiring.planner(), wiring.runner());
+        assertThat(runs.values).hasSize(persistedBefore);
+    }
+
+    @Test
     void batchIsBoundedBeforeAnyItemRuns() {
         List<TestExecutionApiRequest> tooMany = java.util.stream.IntStream.range(0, 101)
                 .mapToObj(index -> request(bundle("fixture-" + index), null,
@@ -725,6 +928,78 @@ class TestExecutionApiServiceTest {
         return new TestExecutionApiRequest.Target("GRAPH", "controlled-graph", targetFingerprint);
     }
 
+    private TestExecutionApiRequest referencedRequest(String fingerprint) {
+        return new TestExecutionApiRequest("",
+                new TestExecutionApiRequest.Target("GRAPH", "controlled-graph", fingerprint),
+                TestExecutionApiService.AUTHORIZED_PURPOSE, Map.of("input", "hello"),
+                null, null, TestExecutionApiRequest.Verbosity.FULL, Map.of("caseId", "world-case"));
+    }
+
+    private TestControlEnvelope worldEnvelope() {
+        return new TestControlEnvelope(TestExecutionApiService.AUTHORIZED_PURPOSE, null,
+                new TestAssetReference("world-a", 1, fingerprint('a')), "correlation-1");
+    }
+
+    private TestControlEnvelope scenarioEnvelope() {
+        return new TestControlEnvelope(TestExecutionApiService.AUTHORIZED_PURPOSE,
+                new TestAssetReference("scenario-a", 1, fingerprint('a')), null, "correlation-1");
+    }
+
+    private ReferencedWiring referencedWiring() {
+        return referencedWiring(GovernedCatalogKind.RESOURCE_WORLD_MODEL);
+    }
+
+    private ReferencedWiring referencedWiring(GovernedCatalogKind kind) {
+        return referencedWiring(kind, TestRuntimeAdmissionGate.unbounded());
+    }
+
+    private ReferencedWiring referencedWiring(TestRuntimeAdmissionGate admissions) {
+        return referencedWiring(GovernedCatalogKind.RESOURCE_WORLD_MODEL, admissions);
+    }
+
+    private ReferencedWiring referencedWiring(GovernedCatalogKind kind,
+                                              TestRuntimeAdmissionGate admissions) {
+        FixtureBundle referencedBundle = bundle("referenced-world");
+        TestExecutionApiResponse baseline = service.execute(
+                request(referencedBundle, null, TestExecutionApiRequest.Verbosity.FULL), identity("test"));
+        TestExecutionResult result = new TestExecutionResult(baseline.plan(), null, baseline.evidence());
+
+        WorldScenarioCompilation compilation = mock(WorldScenarioCompilation.class);
+        when(compilation.bundle()).thenReturn(referencedBundle);
+        when(compilation.fingerprint()).thenReturn(fingerprint('c'));
+        GovernedResourceRef primaryRef = new GovernedResourceRef("tenant-a",
+                kind, kind == GovernedCatalogKind.SCENARIO ? "scenario-a" : "world-a", 1,
+                fingerprint('a'));
+        WorldReferenceExecutionPlanner.Plan plan = mock(WorldReferenceExecutionPlanner.Plan.class);
+        when(plan.primaryRef()).thenReturn(primaryRef);
+        when(plan.compilation()).thenReturn(compilation);
+        when(plan.provenance()).thenReturn(
+                kind == GovernedCatalogKind.SCENARIO
+                        ? WorldReferenceExecutionPlanner.ProvenanceKind.SCENARIO
+                        : WorldReferenceExecutionPlanner.ProvenanceKind.RESOURCE_WORLD_MODEL);
+
+        AuthorizedWorldAssetResolver resolver = mock(AuthorizedWorldAssetResolver.class);
+        WorldReferenceExecutionPlanner planner = mock(WorldReferenceExecutionPlanner.class);
+        WorldScenarioRunService runner = mock(WorldScenarioRunService.class);
+        ResolvedWorldAssetControl control = mock(ResolvedWorldAssetControl.class);
+        when(resolver.resolve(any(), any())).thenReturn(control);
+        when(planner.plan(any(), any(), any())).thenReturn(plan);
+        doReturn(result).when(runner).execute(eq(compilation), any(TestExecutionRequest.class),
+                any(TestRunService.AdmissionFactory.class));
+
+        TestExecutionApiService referencedService = new TestExecutionApiService(
+                graphService, new DefaultOperatorRegistry(), resources, new BlgeExpressionEvaluator(),
+                mapper, fixtures, runs, securityEvents, Duration.ofDays(7), replayPayloadService,
+                new TestEvidenceIntegrityService(mapper, new InMemoryVisualEvidenceSigner()),
+                admissions, null, resolver, planner, runner);
+        return new ReferencedWiring(referencedService, resolver, planner, runner, compilation,
+                referencedBundle, result);
+    }
+
+    private static String fingerprint(char value) {
+        return "sha256:" + String.valueOf(value).repeat(64);
+    }
+
     private FixtureBundle bundle(String id, FixtureRule... rules) {
         return new FixtureBundle(FixtureBundle.SCHEMA_VERSION, id, 1, targetFingerprint,
                 "INTERNAL", null, null, List.of(rules), List.of(), Map.of());
@@ -809,6 +1084,17 @@ class TestExecutionApiServiceTest {
             TestExecutionApiService service,
             Graph graph,
             String targetFingerprint
+    ) {
+    }
+
+    private record ReferencedWiring(
+            TestExecutionApiService service,
+            AuthorizedWorldAssetResolver resolver,
+            WorldReferenceExecutionPlanner planner,
+            WorldScenarioRunService runner,
+            WorldScenarioCompilation compilation,
+            FixtureBundle bundle,
+            TestExecutionResult result
     ) {
     }
 

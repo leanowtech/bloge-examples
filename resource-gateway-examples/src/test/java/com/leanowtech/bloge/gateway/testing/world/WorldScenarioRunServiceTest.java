@@ -6,13 +6,13 @@ import com.leanowtech.bloge.core.dsl.GraphBuilder;
 import com.leanowtech.bloge.core.model.Graph;
 import com.leanowtech.bloge.core.operator.Operator;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.testing.admission.TestRuntimeAdmissionGate.AdmissionGuard;
 import com.leanowtech.bloge.gateway.testing.evidence.GraphArtifactFingerprint;
+import com.leanowtech.bloge.gateway.testing.planning.CompiledExecutionControl;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContract;
-import org.junit.jupiter.api.Test;
-
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -23,6 +23,8 @@ import java.net.http.HttpResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.Test;
 
 import static com.leanowtech.bloge.gateway.testing.world.LogicalResourceContractTest.confirmed;
 import static com.leanowtech.bloge.gateway.testing.world.LogicalResourceContractTest.descriptor;
@@ -66,6 +68,87 @@ class WorldScenarioRunServiceTest {
         assertThat(runs).extracting(result -> result.evidence().semanticResultFingerprint())
                 .hasSize(20)
                 .containsOnly(runs.getFirst().evidence().semanticResultFingerprint());
+    }
+
+    @Test
+    void acquiresChecksAndClosesWorldAdmissionAroundTheCompiledRun() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = graph(realCalls, "logical.customer");
+        WorldScenarioCompilation compilation = compile(graph,
+                world("provider-a", "v1", contract("logical.customer")));
+        AtomicInteger acquires = new AtomicInteger();
+        AtomicInteger checkpoints = new AtomicInteger();
+        AtomicInteger closes = new AtomicInteger();
+        AtomicReference<CompiledExecutionControl> admittedPlan = new AtomicReference<>();
+        TestExecutionRequest request = request(compilation, graph);
+
+        TestExecutionResult result = new WorldScenarioRunService(
+                new DefaultOperatorRegistry(), new ObjectMapper(), new WorldFragmentTestKit())
+                .execute(compilation, request, compiled -> {
+                    acquires.incrementAndGet();
+                    admittedPlan.set(compiled);
+                    return new AdmissionGuard() {
+                        @Override
+                        public void checkpoint() {
+                            checkpoints.incrementAndGet();
+                        }
+
+                        @Override
+                        public void close() {
+                            closes.incrementAndGet();
+                        }
+                    };
+                });
+
+        assertThat(result.passed()).isTrue();
+        assertThat(admittedPlan).hasValueSatisfying(compiled ->
+                assertThat(compiled.effectivePlan().targetFingerprint())
+                        .isEqualTo(compilation.bundle().targetFingerprint()));
+        assertThat(acquires).hasValue(1);
+        assertThat(checkpoints).hasValue(1);
+        assertThat(closes).hasValue(1);
+        assertThat(realCalls).hasValue(0);
+    }
+
+    @Test
+    void admissionRejectionHappensAfterCompilationAndBeforeAnyEngineOrFragmentCall() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = graph(realCalls, "logical.customer");
+        WorldScenarioCompilation compilation = compile(graph,
+                world("provider-a", "v1", contract("logical.customer")));
+        AtomicInteger acquires = new AtomicInteger();
+
+        assertThatThrownBy(() -> new WorldScenarioRunService(
+                new DefaultOperatorRegistry(), new ObjectMapper(), new WorldFragmentTestKit())
+                .execute(compilation, request(compilation, graph), compiled -> {
+                    acquires.incrementAndGet();
+                    assertThat(compiled).isNotNull();
+                    throw new IllegalStateException("admission rejected");
+                })).isInstanceOf(IllegalStateException.class);
+
+        assertThat(acquires).hasValue(1);
+        assertThat(realCalls).hasValue(0);
+    }
+
+    @Test
+    void nullAdmissionGuardFailsBeforeAnyEngineOrFragmentCall() {
+        AtomicInteger realCalls = new AtomicInteger();
+        Graph graph = graph(realCalls, "logical.customer");
+        WorldScenarioCompilation compilation = compile(graph,
+                world("provider-a", "v1", contract("logical.customer")));
+        AtomicInteger acquires = new AtomicInteger();
+
+        assertThatThrownBy(() -> new WorldScenarioRunService(
+                new DefaultOperatorRegistry(), new ObjectMapper(), new WorldFragmentTestKit())
+                .execute(compilation, request(compilation, graph), compiled -> {
+                    acquires.incrementAndGet();
+                    return null;
+                }))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessage("admission guard");
+
+        assertThat(acquires).hasValue(1);
+        assertThat(realCalls).hasValue(0);
     }
 
     @Test
@@ -192,6 +275,14 @@ class WorldScenarioRunServiceTest {
         return compiler.compile(scenario, world, graph, new DefaultOperatorRegistry(),
                 Map.of(contract.contractId(), new WorldSliceSelection(
                         "provider-a", "v1", world.slices().getFirst().fingerprint())));
+    }
+
+    private static TestExecutionRequest request(WorldScenarioCompilation compilation, Graph graph) {
+        return new TestExecutionRequest(
+                graph, new GraphContext(Map.of("request", Map.of("type", "vip"))),
+                compilation.bundle(), WorldScenarioRunService.GRAPH_CONTRACT_TEST,
+                compilation.bundle().targetFingerprint(), TestExecutionRequest.FixtureSource.STORED,
+                Map.of(), false, null, null);
     }
 
     private static Graph graph(AtomicInteger realCalls, String contractId) {
