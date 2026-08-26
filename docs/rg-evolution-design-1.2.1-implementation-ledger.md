@@ -20,7 +20,7 @@
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
 | 阶段二 | 有状态世界和函数返回值注入 | `NOT_STARTED` | [S2 实施设计](./rg-evolution-design-1.2.1-s2-stateful-world-and-function-injection.md) 已冻结为 5 个切片和 15 项出口；代码实现尚未开始 |
-| 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | 现有 replay/corpus 零件尚未形成本文要求的端到端闭环 |
+| 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
 
