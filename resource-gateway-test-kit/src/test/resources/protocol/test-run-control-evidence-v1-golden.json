@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "bloge.testRunControlEvidence.v1",
+  "runId": "run-1",
+  "scenarioFingerprint": "",
+  "worldFingerprint": "",
+  "targetFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "executionPlanFingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "functionPlanFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "state": null,
+  "function": {
+    "planFingerprint": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "evidenceCeiling": "CERTIFIABLE",
+    "bindings": [{"siteKey": "bloge.functionInvocationSite.v1:L3Jvb3Q.Zm9ybWF0.dXBwZXJjYXNl.1.2", "graphPath": "/root", "nodeId": "format", "functionName": "uppercase", "line": 1, "column": 2, "functionFingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "runtimeFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "mode": "CONTROLLED", "evidenceCeiling": "CERTIFIABLE", "downgradeReason": ""}],
+    "consumptions": [{"ruleId": "rule-1", "minimum": 1, "maximum": 1, "used": 1, "status": "MAX_REACHED"}],
+    "observations": [{"siteKey": "bloge.functionInvocationSite.v1:L3Jvb3Q.Zm9ybWF0.dXBwZXJjYXNl.1.2", "ruleId": "rule-1", "behavior": "RETURN", "invocationScopeFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "argumentsFingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000", "resultFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111", "errorFingerprint": "", "occurrence": 1, "logicalDurationMillis": 0}],
+    "evidenceFingerprint": "sha256:d976dcadfa8d4df35123139f91b9c75c05704a926fa83fa0020e3334857b687b"
+  },
+  "projectionFingerprint": "sha256:a1e3742d599a9a037071c14ea6883314c59cb371acb0c164b7345565efab2fcb"
+}

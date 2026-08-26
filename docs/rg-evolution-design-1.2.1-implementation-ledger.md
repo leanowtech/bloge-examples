@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
-| 阶段二 | 有状态世界和函数返回值注入 | `IN_PROGRESS` | `S2-A..D`、`S2-E1` 与 `S2-E2a` 已通过开发验证；治理函数控制已闭合真实 HTTP、权威编译产物、生产双层拒绝和能力降级，尚缺 Test Kit 协议消费与双项目最终里程碑 |
+| 阶段二 | 有状态世界和函数返回值注入 | `DEVELOPMENT_VERIFIED` | `S2-A..D`、`S2-E1`、`S2-E2a..b` 全部闭合；治理函数控制从权威编译产物、真实 HTTP、生产隔离、payload-free evidence 到独立 Test Kit 严格消费形成双项目固定证据 |
 | 阶段三 | 线上沉淀、影响分析和存量迁移 | `NOT_STARTED` | [S3 实施设计](./rg-evolution-design-1.2.1-s3-world-fidelity-and-migration-closure.md) 已冻结为 6 个切片和 17 项出口；现有 replay/corpus/review/impact/mutation 将被复用，领域闭环代码尚未开始 |
 
 ## 3. 阶段零验收矩阵
@@ -80,7 +80,7 @@
 | `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `DEVELOPMENT_VERIFIED` | `S2-D1` BLOGE 通用内核提交 `8d514a7f6` 已验证：core 1959 项、DSL 1567 项测试全绿；`S2-D2a` 静态控制面 19/19 全绿；`S2-D2b` 运行期 RETURN/THROW/DELAY/TIMEOUT、精确参数、线程安全消费、治理审计、payload-free evidence、证据降级及 World Session 组合闭合。受影响集 98/98、Resource Gateway 全量 7371 项全绿；详见 [S2-D 验证说明](./rg-evolution-design-1.2.1-s2-function-control-verification.md) |
 | `S2-E1` | 版本化 payload-free 控制证据、稳定语义投影、严格 codec 与持久化完整性 | `DEVELOPMENT_VERIFIED` | 83/83 聚焦回归与 Resource Gateway 7383 项全量测试全绿；外部投影严格绑定 run/scenario/world/target/execution plan/function plan，状态值与函数 payload 不外泄，跨运行语义指纹稳定，错绑、篡改、重复键、未知字段、超限和保留 metadata 伪造均失败关闭；详见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md) |
 | `S2-E2a` | 治理函数资产、权威编译产物、真实 HTTP 引用链、生产双层隔离和能力探针 | `DEVELOPMENT_VERIFIED` | BLOGE 20 模块目标构建成功、50/50 目标测试通过；Resource Gateway 92/92 独立聚焦测试及 7403 项全量测试通过。函数规则只接受治理目录精确引用；授权、元数据完整性、过期和策略判断均发生在 payload 读取前；真实 HTTP 覆盖函数与状态组合、20 次重放、4 路并发、篡改/跨租户/过期/inline 负向路径；生产 Filter 和服务层旁路各自证明零解析、零目录读取、零执行和零证据写入。详见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md) |
-| `S2-E2b` | Test Kit 协议、Schema、证据校验和双项目里程碑 | `NOT_STARTED` | 尚缺 Test Kit 对可选函数控制引用、能力上限和 payload-free 控制证据的严格解析与兼容验证 |
+| `S2-E2b` | Test Kit 协议、Schema、证据校验和双项目里程碑 | `DEVELOPMENT_VERIFIED` | Test Kit 以独立模型严格消费 exact-ref envelope、provider-backed capability 和 `bloge.testRunControlEvidence.v1`；Schema、旧 fixture、golden、重复键/非法 UTF-8/未知字段/超限/错绑/篡改/payload 泄漏/坐标碰撞负向矩阵固定。Test Kit 1920 项单测和 2 项集成测试全绿，Resource Gateway 7403 项全量测试全绿；详见 [S2-E2b 验证说明](./rg-evolution-design-1.2.1-s2-test-kit-protocol-verification.md) |
 
 - 每个剧情拥有隔离、单写者、确定性排序、可序列化的世界状态。
 - 写后读、跨剧情隔离和并发确定顺序具有固定自动化证明。

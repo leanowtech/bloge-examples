@@ -1,6 +1,6 @@
 # S2 有状态世界与函数返回值注入技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `IN_PROGRESS`：设计边界已经冻结，`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑、`S2-C` 统一运行时状态会话、`S2-D` 函数控制、`S2-E1` 对外控制证据协议和 `S2-E2a` 治理 HTTP 链已通过开发验证；`S2-E2b` 的 Test Kit 协议消费和双项目系统里程碑尚未闭合，因此阶段二整体尚未达到 `DEVELOPMENT_VERIFIED`。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段二展开为可直接实施、可独立验收的工程方案。当前状态为 `DEVELOPMENT_VERIFIED`：`S2-A` 版本化状态资产、`S2-B` 有状态片段独立试跑、`S2-C` 统一运行时状态会话、`S2-D` 函数控制、`S2-E1` 对外控制证据协议、`S2-E2a` 治理 HTTP 链和 `S2-E2b` Test Kit 协议消费均已通过固定自动化验证。
 
 ## 1. 结论先行
 
@@ -299,11 +299,7 @@ record CompiledFunctionControlPlan(
 
 开发验证为 83/83 聚焦测试及 Resource Gateway 7383 项全量测试全绿，详见 [S2-E1 验证说明](./rg-evolution-design-1.2.1-s2-control-evidence-verification.md)。`S2-E2a` 随后以治理目录中的精确函数控制引用贯通真实 HTTP：服务端从同一次 BLOGE 编译产物构造函数调用清单，状态与函数控制可在同一运行组合，能力探针只在实际 provider 存在时宣告支持；入口 Filter 与服务层旁路各自证明生产环境零执行。BLOGE 目标构建 20 模块成功、50/50 目标测试通过，Resource Gateway 92/92 独立聚焦测试及 7403 项全量测试通过，详见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md)。
 
-以下系统项仍属于 `S2-E2b`：
-
-- Test Kit 解析可选函数控制精确引用和 capability limits；
-- Test Kit 严格解析、绑定并校验 payload-free 控制证据；
-- Resource Gateway 与 Test Kit 双项目 `clean verify`。
+`S2-E2b` 已由独立 Test Kit 闭合：客户端只发送可选函数控制精确引用，严格 capability 投影要求四个 provider-backed flag、对象 schema 与权威 limits 一致；控制证据按 Schema、结构语义、state/function/top 三层指纹和运行绑定逐层验证。非法 UTF-8、重复键、未知字段、错绑、篡改、payload 注入和动态坐标碰撞均有负向测试。Test Kit 1920 项单测与 2 项集成测试、Resource Gateway 7403 项全量测试全部通过，详见 [S2-E2b 验证说明](./rg-evolution-design-1.2.1-s2-test-kit-protocol-verification.md)。
 
 ## 8. 固定验收矩阵
 

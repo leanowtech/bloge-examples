@@ -8,6 +8,164 @@
       "type": "string",
       "pattern": "^sha256:[a-f0-9]{64}$"
     },
+    "testControlAssetReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "fingerprint"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "revision": {"type": "integer", "minimum": 1},
+        "fingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testControlEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["purpose", "correlationId"],
+      "properties": {
+        "purpose": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "scenario": {"$ref": "#/$defs/testControlAssetReference"},
+        "worldModel": {"$ref": "#/$defs/testControlAssetReference"},
+        "correlationId": {"type": "string", "minLength": 1, "maxLength": 2048},
+        "functionControl": {"$ref": "#/$defs/testControlAssetReference"}
+      },
+      "oneOf": [
+        {"required": ["scenario"], "not": {"required": ["worldModel"]}},
+        {"required": ["worldModel"], "not": {"required": ["scenario"]}}
+      ]
+    },
+    "testRunControlCoordinate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graphPath", "nodeId", "graphOccurrence", "occurrence", "attempt",
+        "structuralInvocationSiteId"],
+      "properties": {
+        "graphPath": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^/[^/].*"},
+        "nodeId": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "graphOccurrence": {"type": "integer", "minimum": 1},
+        "occurrence": {"type": "integer", "minimum": 1},
+        "attempt": {"type": "integer", "minimum": 1},
+        "structuralInvocationSiteId": {"type": "string", "minLength": 1, "maxLength": 4096}
+      }
+    },
+    "testRunControlTransaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate", "readKeys", "writeKeys", "readFingerprint", "writeFingerprint",
+        "resultFingerprint"],
+      "properties": {
+        "coordinate": {"$ref": "#/$defs/testRunControlCoordinate"},
+        "readKeys": {"type": "array", "maxItems": 4096, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+        "writeKeys": {"type": "array", "maxItems": 4096, "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+        "readFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "writeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "resultFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testRunControlState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenarioFingerprint", "worldFingerprint", "graphArtifactFingerprint", "runId",
+        "stateSpecFingerprint", "revision", "stateEvidenceFingerprint", "transactions"],
+      "properties": {
+        "scenarioFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "worldFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "graphArtifactFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "stateSpecFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "revision": {"type": "integer", "minimum": 0},
+        "stateEvidenceFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "transactions": {"type": "array", "maxItems": 4096,
+          "items": {"$ref": "#/$defs/testRunControlTransaction"}}
+      }
+    },
+    "testRunControlBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["siteKey", "graphPath", "nodeId", "functionName", "line", "column",
+        "functionFingerprint", "runtimeFingerprint", "mode", "evidenceCeiling", "downgradeReason"],
+      "properties": {
+        "siteKey": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "graphPath": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "nodeId": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "functionName": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "line": {"type": "integer", "minimum": 0},
+        "column": {"type": "integer", "minimum": 0},
+        "functionFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "runtimeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "mode": {"enum": ["DIRECT", "CONTROLLED"]},
+        "evidenceCeiling": {"enum": ["CERTIFIABLE", "EXPLORATORY", "PREVIEW"]},
+        "downgradeReason": {"type": "string", "maxLength": 4096}
+      }
+    },
+    "testRunControlConsumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ruleId", "minimum", "maximum", "used", "status"],
+      "properties": {
+        "ruleId": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "minimum": {"type": "integer", "minimum": 0},
+        "maximum": {"type": "integer", "minimum": 0},
+        "used": {"type": "integer", "minimum": 0},
+        "status": {"enum": ["SATISFIED", "MAX_REACHED", "MINIMUM_UNSATISFIED"]}
+      }
+    },
+    "testRunControlObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["siteKey", "ruleId", "behavior", "invocationScopeFingerprint",
+        "argumentsFingerprint", "resultFingerprint", "errorFingerprint", "occurrence",
+        "logicalDurationMillis"],
+      "properties": {
+        "siteKey": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "ruleId": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "behavior": {"enum": ["RETURN", "THROW", "DELAY", "TIMEOUT"]},
+        "invocationScopeFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "argumentsFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "resultFingerprint": {"oneOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "errorFingerprint": {"oneOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "occurrence": {"type": "integer", "minimum": 1},
+        "logicalDurationMillis": {"type": "integer", "minimum": 0}
+      }
+    },
+    "testRunControlFunction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planFingerprint", "evidenceCeiling", "bindings", "consumptions",
+        "observations", "evidenceFingerprint"],
+      "properties": {
+        "planFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "evidenceCeiling": {"enum": ["CERTIFIABLE", "EXPLORATORY", "PREVIEW"]},
+        "bindings": {"type": "array", "maxItems": 4096,
+          "items": {"$ref": "#/$defs/testRunControlBinding"}},
+        "consumptions": {"type": "array", "maxItems": 4096,
+          "items": {"$ref": "#/$defs/testRunControlConsumption"}},
+        "observations": {"type": "array", "maxItems": 4096,
+          "items": {"$ref": "#/$defs/testRunControlObservation"}},
+        "evidenceFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
+    "testRunControlEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "runId", "scenarioFingerprint", "worldFingerprint",
+        "targetFingerprint", "executionPlanFingerprint", "functionPlanFingerprint", "state",
+        "function", "projectionFingerprint"],
+      "properties": {
+        "schemaVersion": {"const": "bloge.testRunControlEvidence.v1"},
+        "runId": {"type": "string", "minLength": 1, "maxLength": 256},
+        "scenarioFingerprint": {"oneOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "worldFingerprint": {"oneOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "targetFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "executionPlanFingerprint": {"$ref": "#/$defs/fingerprint"},
+        "functionPlanFingerprint": {"oneOf": [{"const": ""}, {"$ref": "#/$defs/fingerprint"}]},
+        "state": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/testRunControlState"}]},
+        "function": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/testRunControlFunction"}]},
+        "projectionFingerprint": {"$ref": "#/$defs/fingerprint"}
+      }
+    },
     "stabilityRunId": {
       "type": "string",
       "pattern": "^stability-[a-f0-9]{64}$"

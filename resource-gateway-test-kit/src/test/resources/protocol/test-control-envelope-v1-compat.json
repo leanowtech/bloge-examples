@@ -1,0 +1,6 @@
+{
+  "purpose": "TEST_EXECUTION",
+  "scenario": {"id": "scenario-1", "revision": 3, "fingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "correlationId": "corr-1",
+  "functionControl": {"id": "function-1", "revision": 7, "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+}

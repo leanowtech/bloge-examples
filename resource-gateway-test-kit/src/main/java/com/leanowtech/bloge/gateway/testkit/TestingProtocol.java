@@ -3,6 +3,12 @@ package com.leanowtech.bloge.gateway.testkit;
 /** Public wire-version constants shared by the test-kit builders and response guards. */
 public final class TestingProtocol {
 
+    /** HTTP test-control envelope carried by the optional exact reference header. */
+    public static final String TEST_CONTROL_ENVELOPE_V1 = "bloge.testControlEnvelope.v1";
+    /** Payload-free state/function execution evidence projection. */
+    public static final String TEST_RUN_CONTROL_EVIDENCE_V1 =
+            "bloge.testRunControlEvidence.v1";
+
     /** Single execution request wire version. */
     public static final String TEST_EXECUTION_REQUEST_V1 = "bloge.testExecutionRequest.v1";
     /** Single execution response wire version. */

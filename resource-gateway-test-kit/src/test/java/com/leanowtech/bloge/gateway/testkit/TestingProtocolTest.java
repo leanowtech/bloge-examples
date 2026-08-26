@@ -120,6 +120,9 @@ class TestingProtocolTest {
                     .isEqualTo("bloge.testOperatorTargetDescriptor.v1");
             assertConstant(definitions, "testRunEvidenceV1", TestingProtocol.TEST_RUN_EVIDENCE_V1);
             assertConstant(definitions, "testRunEvidenceV2", TestingProtocol.TEST_RUN_EVIDENCE_V2);
+            assertConstant(definitions, "testRunControlEvidence",
+                    TestingProtocol.TEST_RUN_CONTROL_EVIDENCE_V1);
+            assertThat(definitions.at("/testControlEnvelope/oneOf")).hasSize(2);
             assertConstant(definitions, "executionServiceStateSnapshot",
                     TestingProtocol.EXECUTION_SERVICE_STATE_SNAPSHOT_V1);
             assertConstant(definitions, "durableTestWorkerAcquisitionRequest",

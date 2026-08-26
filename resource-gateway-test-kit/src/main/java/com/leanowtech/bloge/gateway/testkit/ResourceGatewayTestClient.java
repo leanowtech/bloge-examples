@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.testkit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -38,7 +40,8 @@ import java.util.function.Supplier;
  */
 public final class ResourceGatewayTestClient {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build());
     private static final MirrorStateProtocolVerifier MIRROR_STATE_VERIFIER =
             new MirrorStateProtocolVerifier();
     private static final MirrorSessionCheckpointVerifier MIRROR_CHECKPOINT_VERIFIER =
@@ -3679,10 +3682,28 @@ public final class ResourceGatewayTestClient {
      * @return persisted run projection
      */
     public TestRun execute(JsonNode executionRequest) {
+        return execute(executionRequest, null);
+    }
+
+    /** Executes one graph request with an optional exact scenario/world/function envelope.
+     * @param executionRequest schema-complete execution request
+     * @param controlEnvelope optional exact test-control envelope
+     * @return persisted run projection
+     */
+    public TestRun execute(JsonNode executionRequest, TestControlEnvelope controlEnvelope) {
         JsonNode response = exchange("POST", "/api/testing/executions", "", "TEST_EXECUTION",
-                requiredObject(executionRequest, "executionRequest"));
+                requiredObject(executionRequest, "executionRequest"), controlEnvelope);
         requireExecutionResponseVersion(response);
         return projectRun(response);
+    }
+
+    /** Reads the machine-readable Tool Studio capability probe.
+     * @return strict capability projection
+     */
+    public ResourceGatewayCapabilities capabilities() {
+        JsonNode response = exchange("GET", "/api/integration/capabilities", "",
+                "INTEGRATION_READ", null);
+        return ResourceGatewayCapabilities.from(response);
     }
 
     /**
@@ -3774,7 +3795,12 @@ public final class ResourceGatewayTestClient {
     }
 
     private JsonNode exchange(String method, String path, String query, String purpose, JsonNode body) {
-        return exchangeResponse(method, path, query, purpose, body).body();
+        return exchangeResponse(method, path, query, purpose, body, null).body();
+    }
+
+    private JsonNode exchange(String method, String path, String query, String purpose,
+                              JsonNode body, TestControlEnvelope controlEnvelope) {
+        return exchangeResponse(method, path, query, purpose, body, controlEnvelope).body();
     }
 
     private ExchangeResponse exchangeResponse(
@@ -3783,6 +3809,16 @@ public final class ResourceGatewayTestClient {
             String query,
             String purpose,
             JsonNode body) {
+        return exchangeResponse(method, path, query, purpose, body, null);
+    }
+
+    private ExchangeResponse exchangeResponse(
+            String method,
+            String path,
+            String query,
+            String purpose,
+            JsonNode body,
+            TestControlEnvelope controlEnvelope) {
         byte[] requestBody = serialize(body);
         URI uri = endpoint(path, query);
         String token = normalized(tokenProvider.bearerToken());
@@ -3803,6 +3839,14 @@ public final class ResourceGatewayTestClient {
                 .header("X-Purpose", purpose)
                 .header("X-Correlation-Id", correlationId)
                 .method(method, publisher);
+        if (controlEnvelope != null) {
+            if (!purpose.equals(controlEnvelope.purpose())) {
+                throw ResourceGatewayTestException.local("RG.TESTKIT.CONTROL_PURPOSE_MISMATCH",
+                        "The test-control envelope purpose does not match the request purpose.", null);
+            }
+            request.header(TestControlHeaderCodec.ENVELOPE_HEADER,
+                    TestControlHeaderCodec.encode(controlEnvelope));
+        }
         if (body != null) {
             request.header("Content-Type", "application/json");
         }

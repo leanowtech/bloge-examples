@@ -74,4 +74,4 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 - capability probe、机器可读信封 Schema、版本兼容 fixture 和治理资产迁移；
 - 函数与状态组合运行、payload-free 证据持久化及读取。
 
-实现与复现证据见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md)。`S2-E2b` 尚需关闭 Test Kit 客户端解析、证据校验和双项目 `clean verify`。
+实现与复现证据见 [S2-E2a 验证说明](./rg-evolution-design-1.2.1-s2-governed-function-http-verification.md)。`S2-E2b` 随后闭合 Test Kit 客户端解析、独立证据校验和双项目 `clean verify`，详见 [S2-E2b 验证说明](./rg-evolution-design-1.2.1-s2-test-kit-protocol-verification.md)。

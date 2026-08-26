@@ -134,6 +134,30 @@ class ResourceGatewayTestClientTest {
     }
 
     @Test
+    void sendsOptionalExactFunctionControlReferenceWithoutChangingRequestBody() {
+        ResourceGatewayTestClient client = client();
+        ObjectNode execution = JSON.createObjectNode().put("case", "approved");
+        TestControlEnvelope envelope = new TestControlEnvelope("TEST_EXECUTION",
+                new TestControlAssetReference("scenario-1", 3, FINGERPRINT), null, "corr-1",
+                new TestControlAssetReference("function-1", 7, FINGERPRINT));
+
+        client.execute(execution, envelope);
+
+        CapturedRequest request = requests.getFirst();
+        assertThat(request.body()).isEqualTo(execution);
+        assertThat(TestControlHeaderCodec.decode(request.controlEnvelope())).isEqualTo(envelope);
+    }
+
+    @Test
+    void decodesProviderBackedCapabilityProbe() {
+        ResourceGatewayCapabilities capabilities = client().capabilities();
+
+        assertThat(capabilities.functionControlAvailable()).isTrue();
+        assertThat(capabilities.functionControlAssetSchemaVersion())
+                .isEqualTo(ResourceGatewayCapabilities.FUNCTION_ASSET_SCHEMA);
+    }
+
+    @Test
     void readsSchemaValidatedPayloadFreeScenarioBatchFinalization() {
         ResourceGatewayTestClient client = client();
         String jobId = "scenario-batch-" + "a".repeat(64);
@@ -1498,9 +1522,15 @@ class ResourceGatewayTestClientTest {
                 exchange.getRequestURI().getRawQuery(), exchange.getRequestHeaders().getFirst("X-Purpose"),
                 exchange.getRequestHeaders().getFirst("Authorization"),
                 exchange.getRequestHeaders().getFirst("X-Correlation-Id"),
-                exchange.getRequestHeaders().getFirst("Accept"), body));
+                exchange.getRequestHeaders().getFirst("Accept"),
+                exchange.getRequestHeaders().getFirst(TestControlHeaderCodec.ENVELOPE_HEADER), body));
 
         String path = exchange.getRequestURI().getRawPath();
+        if ("GET".equals(exchange.getRequestMethod())
+                && path.equals("/api/integration/capabilities")) {
+            respond(exchange, 200, capabilityResponse());
+            return;
+        }
         if ("POST".equals(exchange.getRequestMethod()) && path.endsWith("/executions")
                 && body.has("private")) {
             respond(exchange, 409, """
@@ -3168,7 +3198,23 @@ class ResourceGatewayTestClientTest {
         exchange.close();
     }
 
+    private static String capabilityResponse() {
+        return """
+                {"payload":{"schemaVersion":"toolStudio.resourceGateway.capabilities.v1",
+                "protocol":"ToolStudioResourceGatewayProtocol","protocolVersion":"1.2.1",
+                "supportedObjects":{"functionControlAsset":["bloge.functionControlAsset.v1"]},
+                "features":{"functionControlAssetReference":true,"functionControlGovernedCatalog":true,
+                "functionControlStateComposition":true,
+                "functionControlPayloadFreeEvidence":true},
+                "limits":{"testControlEnvelopeDecodedBytes":4096,"functionNameChars":4096,
+                "functionDeclarations":256,"functionRules":256,"functionDurationMillis":60000,
+                "functionConsumption":1000000,"functionJsonValueBytes":262144,"functionJsonValueDepth":64,
+                "functionSchemaBytes":131072,"functionSchemaDepth":32}}}
+                """;
+    }
+
     private record CapturedRequest(String method, String rawPath, String rawQuery, String purpose,
-                                   String authorization, String correlationId, String accept, JsonNode body) {
+                                   String authorization, String correlationId, String accept,
+                                   String controlEnvelope, JsonNode body) {
     }
 }

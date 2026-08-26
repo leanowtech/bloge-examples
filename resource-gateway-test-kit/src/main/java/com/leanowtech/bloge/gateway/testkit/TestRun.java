@@ -310,6 +310,13 @@ public record TestRun(
         return rawResponse == null ? null : rawResponse.deepCopy();
     }
 
+    /** Verifies and returns the optional payload-free state/function control evidence.
+     * @return verified control evidence, or null for an ordinary historical run
+     */
+    public TestRunControlEvidenceProjection controlEvidence() {
+        return TestRunControlEvidenceVerifier.verify(this);
+    }
+
     /**
      * Projects a testing-control-plane response without retaining node input/output in summary
      * fields.

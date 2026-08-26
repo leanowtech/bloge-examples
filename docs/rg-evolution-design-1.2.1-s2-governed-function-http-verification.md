@@ -1,6 +1,6 @@
 # Resource Gateway 1.2.1 S2-E2a 治理函数 HTTP 链验证说明
 
-本文记录 `S2-E2a` 的可复现开发证据。它证明治理函数控制已经贯通权威编译产物、受控资产目录、真实 HTTP、状态会话、证据持久化和生产双层隔离；它不替代 `S2-E2b` 的 Test Kit 协议消费与双项目最终里程碑。
+本文记录 `S2-E2a` 的可复现开发证据。它证明治理函数控制已经贯通权威编译产物、受控资产目录、真实 HTTP、状态会话、证据持久化和生产双层隔离；Test Kit 协议消费与双项目最终里程碑随后由 [S2-E2b](./rg-evolution-design-1.2.1-s2-test-kit-protocol-verification.md) 闭合。
 
 ## 1. 协议与资产边界
 
@@ -68,11 +68,6 @@ mvn -f resource-gateway-examples/pom.xml clean verify
 
 结果：7403 tests，0 failures，0 errors，28 skipped；`BUILD SUCCESS`。两仓库 `git diff --check` 均通过。
 
-## 6. 尚未闭合
+## 6. 后续闭合
 
-`S2-E2b` 必须让 `resource-gateway-test-kit` 成为协议消费者，而不是复制服务端内部模型：
-
-- 兼容解析可选函数控制精确引用和 capability limits；
-- 严格解析并校验 `bloge.testRunControlEvidence.v1` 的函数控制投影与绑定关系；
-- 固定旧 fixture、未知字段、超限、错绑、篡改和 payload 泄漏负向样本；
-- Resource Gateway 与 Test Kit 两个独立项目 `clean verify` 全绿后，阶段二才可标记为 `DEVELOPMENT_VERIFIED`。
+`S2-E2b` 已让 `resource-gateway-test-kit` 成为独立协议消费者：可选函数控制精确引用、capability limits、控制证据严格校验、兼容 fixture 和负向矩阵均已固定；双项目里程碑全绿后，阶段二已标记为 `DEVELOPMENT_VERIFIED`。
