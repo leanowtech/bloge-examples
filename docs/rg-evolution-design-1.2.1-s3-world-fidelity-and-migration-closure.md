@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `DESIGN_APPROVED_FOR_IMPLEMENTATION`。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A` 已完成开发验证，`S3-B..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -206,6 +206,8 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - schema 引导脱敏和残留扫描；
 - 候选 CAS 生命周期与人工复核；
 - World/Scenario 草稿物化，不自动 publish。
+
+开发验证证据：36/36 聚焦测试与 Resource Gateway 7439 项全量测试通过。实现只接受四类受治理精确来源，先校验租户、授权、过期和元数据完整性再读取 payload；schema 引导脱敏、最终树 DLP 和未知字段默认删除共同约束候选。审批与发布由外部 authority 签发并以持久化 receipt 精确绑定。物化使用真实 `WorldFragmentTestKit` 编译执行 BLOGE 片段；发布事务原子提交 receipt、治理目录、草稿资产、候选 CAS 和受保护行为数据 pin。发布资产只携带 payload-free 引用，运行时按租户与发布绑定从加密 vault 解析；跨进程重建后仍可精确执行，普通过期清理不删除 pinned 行，撤销、篡改和跨租户读取均失败关闭。详见 [S3-A 验证说明](./rg-evolution-design-1.2.1-s3-world-draft-candidate-verification.md)。
 
 ### S3-B：静态依赖与运行时消费投影
 
