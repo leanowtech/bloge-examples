@@ -89,6 +89,44 @@ public final class DatabaseGovernedCatalogRepository implements GovernedCatalogR
     public void init() {
         jdbc.execute(CREATE_HEADS);
         jdbc.execute(CREATE_REVISIONS);
+        ensureGovernanceSchema("rg_world_catalog_heads");
+        ensureGovernanceSchema("rg_world_catalog_revisions");
+        probeLegacyGovernance("rg_world_catalog_heads");
+        probeLegacyGovernance("rg_world_catalog_revisions");
+    }
+
+    private void ensureGovernanceSchema(String table) {
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS payload_origin VARCHAR(32) NOT NULL DEFAULT 'SYNTHETIC'");
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS security_classification VARCHAR(32) NOT NULL DEFAULT 'PUBLIC'");
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS retention_expires_at TIMESTAMP NULL");
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS access_policy_ref VARCHAR(512) NOT NULL DEFAULT 'builtin:synthetic-public'");
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS approval_ref VARCHAR(512) NULL");
+        jdbc.execute("ALTER TABLE " + table
+                + " ADD COLUMN IF NOT EXISTS governance_fingerprint VARCHAR(80) NULL");
+    }
+
+    private void probeLegacyGovernance(String table) {
+        Integer invalidRows = jdbc.queryForObject("""
+                SELECT COUNT(*)
+                  FROM %s
+                 WHERE governance_fingerprint IS NULL
+                    OR TRIM(governance_fingerprint) = ''
+                    OR payload_origin IS NULL
+                    OR TRIM(payload_origin) NOT IN ('SYNTHETIC', 'REDACTED', 'REAL')
+                    OR security_classification IS NULL
+                    OR TRIM(security_classification) NOT IN
+                       ('PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED')
+                    OR access_policy_ref IS NULL
+                    OR TRIM(access_policy_ref) = ''
+                """.formatted(table), Integer.class);
+        if (invalidRows != null && invalidRows > 0) {
+            throw new GovernedCatalogIntegrityException();
+        }
     }
 
     @Override

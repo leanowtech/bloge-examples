@@ -9,6 +9,7 @@ import com.leanowtech.bloge.core.runtime.work.WorkItemStore;
 import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
 import com.leanowtech.bloge.gateway.gateway.GatewayGraphService;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.integration.TestabilityAvailability;
 import com.leanowtech.bloge.gateway.integration.ToolStudioResourceGatewayProtocol;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
@@ -37,6 +38,19 @@ import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTok
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestTerminalRecoveryRuntime;
+import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetMetadataAuthorizer;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetReadAuthorizer;
+import com.leanowtech.bloge.gateway.testing.world.persistence.DatabaseGovernedCatalogRepository;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedAssetGovernance;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedAssetMetadata;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogKind;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedPayloadOrigin;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedResourceRef;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedSecurityClassification;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualGraphRunRepository;
 import com.leanowtech.bloge.gateway.visual.runtime.InMemoryVisualEvidenceSigner;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualEvidenceSigner;
@@ -62,6 +76,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
@@ -71,6 +86,10 @@ class TestRuntimeProfileIsolationTest {
     void productionProfileHasNoTestingControllerStoreOrCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("production")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).isEmpty();
+            assertThat(context.getBeansOfType(DatabaseGovernedCatalogRepository.class)).isEmpty();
+            assertThat(context.getBeansOfType(AuthorizedWorldAssetResolver.class)).isEmpty();
+            assertThat(context.getBeansOfType(WorldReferenceExecutionPlanner.class)).isEmpty();
+            assertThat(context.getBeansOfType(WorldScenarioRunService.class)).isEmpty();
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).isEmpty();
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
@@ -218,6 +237,26 @@ class TestRuntimeProfileIsolationTest {
     void testProfileAssemblesIndependentStoreControllerAndCapabilityMarker() {
         try (AnnotationConfigApplicationContext context = context("test")) {
             assertThat(context.getBeansOfType(TestExecutionController.class)).hasSize(1);
+            assertThat(context.getBeansOfType(DatabaseGovernedCatalogRepository.class)).hasSize(1);
+            assertThat(context.getBeansOfType(AuthorizedWorldAssetResolver.class)).hasSize(1);
+            assertThat(context.getBeansOfType(WorldReferenceExecutionPlanner.class)).hasSize(1);
+            assertThat(context.getBeansOfType(WorldScenarioRunService.class)).hasSize(1);
+            GovernedResourceRef safeRef = new GovernedResourceRef(
+                    "tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL, "world-a", 1,
+                    "sha256:" + "a".repeat(64));
+            IntegrationRequestContext trusted = new IntegrationRequestContext(
+                    "tenant-a", "org-a", "project-a", "test", "sg", "SERVICE", "runner",
+                    "", "GRAPH_CONTRACT_TEST", "corr-a");
+            assertThatCode(() -> context.getBean(GovernedAssetReadAuthorizer.class)
+                    .authorize(trusted, safeRef)).doesNotThrowAnyException();
+            GovernedAssetMetadata unsafe = new GovernedAssetMetadata(
+                    new GovernedAssetGovernance(GovernedPayloadOrigin.REAL,
+                            GovernedSecurityClassification.RESTRICTED, null, "custom:policy", "approval"));
+            assertThatThrownBy(() -> context.getBean(GovernedAssetMetadataAuthorizer.class)
+                    .authorize(trusted, unsafe))
+                    .isInstanceOf(GovernedAssetAccessException.class)
+                    .extracting(exception -> ((GovernedAssetAccessException) exception).code())
+                    .isEqualTo(GovernedAssetAccessException.Code.ACCESS_DENIED);
             assertThat(context.getBeansOfType(TestSuiteStabilityController.class)).hasSize(1);
             assertThat(context.getBeansOfType(
                     TestSuiteStabilityCrossRetentionTrendController.class)).isEmpty();
@@ -384,6 +423,19 @@ class TestRuntimeProfileIsolationTest {
                     .getBean(TestEvidenceIntegrityService.class).seal(evidence);
             assertThat(seal.verified()).isTrue();
             assertThat(seal.failureCode()).isEmpty();
+        }
+    }
+
+    @Test
+    void customGovernedAuthorizersReplaceFailClosedDefaults() {
+        try (AnnotationConfigApplicationContext context =
+                     contextWithCustomGovernedAuthorizers("test")) {
+            assertThat(context.getBeansOfType(GovernedAssetReadAuthorizer.class)).hasSize(1);
+            assertThat(context.getBeansOfType(GovernedAssetMetadataAuthorizer.class)).hasSize(1);
+            assertThat(context.getBean(GovernedAssetReadAuthorizer.class))
+                    .isSameAs(context.getBean("customGovernedAssetReadAuthorizer"));
+            assertThat(context.getBean(GovernedAssetMetadataAuthorizer.class))
+                    .isSameAs(context.getBean("customGovernedAssetMetadataAuthorizer"));
         }
     }
 
@@ -1561,6 +1613,19 @@ class TestRuntimeProfileIsolationTest {
 
     private static AnnotationConfigApplicationContext context(String... profiles) {
         return context(Map.of(), 0, profiles);
+    }
+
+    private static AnnotationConfigApplicationContext contextWithCustomGovernedAuthorizers(
+            String... profiles) {
+        AnnotationConfigApplicationContext context = unrefreshedContext(Map.of(), 0, profiles);
+        GovernedAssetReadAuthorizer read = (trusted, ref) -> { };
+        GovernedAssetMetadataAuthorizer metadata = (trusted, exact) -> { };
+        context.registerBean("customGovernedAssetReadAuthorizer",
+                GovernedAssetReadAuthorizer.class, () -> read);
+        context.registerBean("customGovernedAssetMetadataAuthorizer",
+                GovernedAssetMetadataAuthorizer.class, () -> metadata);
+        context.refresh();
+        return context;
     }
 
     private static AnnotationConfigApplicationContext context(

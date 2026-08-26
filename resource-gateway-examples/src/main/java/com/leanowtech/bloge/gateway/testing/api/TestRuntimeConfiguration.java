@@ -56,6 +56,18 @@ import com.leanowtech.bloge.gateway.testing.persistence.TestSuiteStabilityJobReq
 import com.leanowtech.bloge.gateway.testing.persistence.TestRuntimeDatabase;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineClaimTokenProtector;
 import com.leanowtech.bloge.gateway.testing.persistence.WorkerQuarantineRequestKeyProtector;
+import com.leanowtech.bloge.gateway.testing.world.WorldReferenceExecutionPlanner;
+import com.leanowtech.bloge.gateway.testing.world.WorldScenarioRunService;
+import com.leanowtech.bloge.gateway.testing.world.access.AuthorizedWorldAssetResolver;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetMetadataAuthorizer;
+import com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetReadAuthorizer;
+import com.leanowtech.bloge.gateway.testing.world.persistence.DatabaseGovernedCatalogRepository;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedAssetGovernance;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedAssetMetadata;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogRepository;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedPayloadOrigin;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedResourceRef;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedSecurityClassification;
 import com.leanowtech.bloge.gateway.testing.runtime.CompiledTestRuntimeOptions;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestCreationRuntime;
 import com.leanowtech.bloge.gateway.testing.runtime.DurableTestRuntimeResources;
@@ -161,6 +173,94 @@ public class TestRuntimeConfiguration {
             @Value("${gateway.testing.store.maximum-pool-size:4}") int maximumPoolSize) {
         return new TestRuntimeDatabase(new TestRuntimeDatabase.Settings(
                 jdbcUrl, username, password, maximumPoolSize));
+    }
+
+    /** Initializes the governed asset catalog on the same isolated test-runtime datasource. */
+    @Bean
+    DatabaseGovernedCatalogRepository governedCatalogRepository(
+            TestRuntimeDatabase database, ObjectMapper objectMapper) {
+        DatabaseGovernedCatalogRepository repository =
+                new DatabaseGovernedCatalogRepository(database.jdbc(), objectMapper);
+        repository.init();
+        return repository;
+    }
+
+    /** Coordinates exact references without exposing canonical asset payloads. */
+    @Bean
+    @ConditionalOnMissingBean(GovernedAssetReadAuthorizer.class)
+    GovernedAssetReadAuthorizer governedAssetReadAuthorizer() {
+        return (context, ref) -> {
+            if (!allowedTestingContext(context, ref)) {
+                throw com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException
+                        .denied();
+            }
+        };
+    }
+
+    /** Allows only the repository safe-default governance until deployment supplies a policy. */
+    @Bean
+    @ConditionalOnMissingBean(GovernedAssetMetadataAuthorizer.class)
+    GovernedAssetMetadataAuthorizer governedAssetMetadataAuthorizer() {
+        return (context, metadata) -> {
+            if (!safeSyntheticPublic(metadata)) {
+                throw com.leanowtech.bloge.gateway.testing.world.access.GovernedAssetAccessException
+                        .denied();
+            }
+        };
+    }
+
+    @Bean
+    AuthorizedWorldAssetResolver authorizedWorldAssetResolver(
+            GovernedCatalogRepository repository,
+            GovernedAssetReadAuthorizer authorizer,
+            GovernedAssetMetadataAuthorizer metadataAuthorizer) {
+        return new AuthorizedWorldAssetResolver(repository, authorizer, metadataAuthorizer);
+    }
+
+    @Bean
+    WorldReferenceExecutionPlanner worldReferenceExecutionPlanner(
+            ObjectMapper objectMapper, OperatorRegistry operatorRegistry) {
+        return new WorldReferenceExecutionPlanner(objectMapper, operatorRegistry);
+    }
+
+    @Bean
+    WorldScenarioRunService worldScenarioRunService(
+            OperatorRegistry operatorRegistry, ObjectMapper objectMapper) {
+        return new WorldScenarioRunService(operatorRegistry, objectMapper);
+    }
+
+    private static boolean allowedTestingContext(
+            com.leanowtech.bloge.gateway.integration.IntegrationRequestContext context,
+            GovernedResourceRef ref) {
+        if (context == null || ref == null || !ref.tenantId().equals(context.tenantId())
+                || !AuthorizedWorldAssetResolver.GRAPH_CONTRACT_TEST.equals(context.purpose())
+                || !("test".equalsIgnoreCase(context.environmentId())
+                || "staging".equalsIgnoreCase(context.environmentId()))
+                || !hasText(context.tenantId()) || !hasText(context.organizationId())
+                || !hasText(context.projectId()) || !hasText(context.environmentId())
+                || !hasText(context.region()) || !hasText(context.actorType())
+                || !hasText(context.actorId()) || !hasText(context.correlationId())
+                || !hasText(context.clearance())) {
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean safeSyntheticPublic(GovernedAssetMetadata metadata) {
+        if (metadata == null || metadata.governance() == null) {
+            return false;
+        }
+        GovernedAssetGovernance governance = metadata.governance();
+        return governance.payloadOrigin() == GovernedPayloadOrigin.SYNTHETIC
+                && governance.securityClassification() == GovernedSecurityClassification.PUBLIC
+                && governance.retentionExpiresAt() == null
+                && GovernedAssetGovernance.BUILTIN_SYNTHETIC_PUBLIC_POLICY
+                .equals(governance.accessPolicyRef())
+                && governance.approvalRef() == null;
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     /** Computes nested content identities for composite durable-test checkpoints. */
@@ -1948,11 +2048,15 @@ public class TestRuntimeConfiguration {
             TestSecretResolutionService testSecretResolutionService,
             TestEvidenceIntegrityService evidenceIntegrity,
             TestRuntimeAdmissionGate admissions,
-            @Value("${gateway.testing.store.retention-days:30}") long retentionDays) {
+            @Value("${gateway.testing.store.retention-days:30}") long retentionDays,
+            AuthorizedWorldAssetResolver worldAssetResolver,
+            WorldReferenceExecutionPlanner worldReferencePlanner,
+            WorldScenarioRunService worldScenarioRunService) {
         return new TestExecutionApiService(graphService, operatorRegistry, resourceRegistry,
                 expressionEvaluator, objectMapper, fixtureRepository, runRepository, securityEvents,
                 Duration.ofDays(Math.max(1, Math.min(3650, retentionDays))), replayPayloadService,
-                evidenceIntegrity, admissions, testSecretResolutionService);
+                evidenceIntegrity, admissions, testSecretResolutionService, worldAssetResolver,
+                worldReferencePlanner, worldScenarioRunService);
     }
 
     /** Assembles the dependency-validating immutable suite registry service. */

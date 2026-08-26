@@ -77,6 +77,52 @@ class DatabaseGovernedCatalogRepositoryTest {
     }
 
     @Test
+    void initUpgradesEmptyLegacySchemaAndMakesGovernanceColumnsUsable() {
+        JdbcTemplate legacyJdbc = legacyD1Jdbc();
+        DatabaseGovernedCatalogRepository legacyRepository = new DatabaseGovernedCatalogRepository(
+                legacyJdbc, codec, Clock.fixed(TEST_NOW, ZoneOffset.UTC));
+
+        legacyRepository.init();
+
+        assertThat(legacyJdbc.queryForObject("""
+                SELECT COUNT(*) FROM rg_world_catalog_heads
+                WHERE governance_fingerprint IS NOT NULL
+                """, Integer.class)).isZero();
+        GovernedResourceRef ref = legacyRepository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, "world-1", world(1, "tenant-a"));
+        assertThat(legacyRepository.findMetadata(ref).orElseThrow().exactRef()).isEqualTo(ref);
+    }
+
+    @Test
+    void initRejectsPopulatedLegacyRowWithoutAuthoritativeGovernanceSeal() {
+        JdbcTemplate legacyJdbc = legacyD1Jdbc();
+        String fingerprint = "sha256:" + "a".repeat(64);
+        legacyJdbc.update("""
+                INSERT INTO rg_world_catalog_heads
+                    (tenant_id, kind, asset_id, revision, fingerprint, record_fingerprint, canonical_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, "tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL.name(), "world-legacy", 1,
+                fingerprint, fingerprint, "{}");
+        DatabaseGovernedCatalogRepository legacyRepository = new DatabaseGovernedCatalogRepository(
+                legacyJdbc, codec, Clock.fixed(TEST_NOW, ZoneOffset.UTC));
+
+        assertThatThrownBy(legacyRepository::init)
+                .isInstanceOf(GovernedCatalogIntegrityException.class)
+                .hasMessage("RG.WORLD.CATALOG.INTEGRITY");
+    }
+
+    private JdbcTemplate legacyD1Jdbc() {
+        DriverManagerDataSource legacy = new DriverManagerDataSource();
+        legacy.setDriverClassName("org.h2.Driver");
+        legacy.setUrl("jdbc:h2:mem:legacy-" + UUID.randomUUID()
+                + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000");
+        legacy.setUsername("sa");
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260826_001__world_governed_catalog.sql")).execute(legacy);
+        return new JdbcTemplate(legacy);
+    }
+
+    @Test
     void roundTripsAllThreeKindsThroughCanonicalJson() {
         LogicalResourceContract contract = contract();
         ResourceWorldModel world = world(1, "tenant-a");
