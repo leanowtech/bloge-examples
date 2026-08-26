@@ -10,8 +10,10 @@ import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogKin
 import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogRevision;
 import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogRepository;
 import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedCatalogDependencyAbortException;
+import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedAssetMetadata;
 import com.leanowtech.bloge.gateway.testing.world.persistence.GovernedResourceRef;
 
+import java.time.Clock;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,6 +25,8 @@ public final class AuthorizedWorldAssetResolver {
 
     private final GovernedCatalogRepository repository;
     private final GovernedAssetReadAuthorizer authorizer;
+    private final GovernedAssetMetadataAuthorizer metadataAuthorizer;
+    private final Clock clock;
 
     public AuthorizedWorldAssetResolver(GovernedCatalogRepository repository) {
         this(repository, GovernedAssetReadAuthorizer.denyAll());
@@ -30,8 +34,24 @@ public final class AuthorizedWorldAssetResolver {
 
     public AuthorizedWorldAssetResolver(GovernedCatalogRepository repository,
                                         GovernedAssetReadAuthorizer authorizer) {
+        this(repository, authorizer, GovernedAssetMetadataAuthorizer.denyAll(), Clock.systemUTC());
+    }
+
+    public AuthorizedWorldAssetResolver(GovernedCatalogRepository repository,
+                                        GovernedAssetReadAuthorizer authorizer,
+                                        GovernedAssetMetadataAuthorizer metadataAuthorizer) {
+        this(repository, authorizer, metadataAuthorizer, Clock.systemUTC());
+    }
+
+    public AuthorizedWorldAssetResolver(GovernedCatalogRepository repository,
+                                        GovernedAssetReadAuthorizer authorizer,
+                                        GovernedAssetMetadataAuthorizer metadataAuthorizer,
+                                        Clock clock) {
         this.repository = Objects.requireNonNull(repository, "repository");
         this.authorizer = authorizer == null ? GovernedAssetReadAuthorizer.denyAll() : authorizer;
+        this.metadataAuthorizer = metadataAuthorizer == null
+                ? GovernedAssetMetadataAuthorizer.denyAll() : metadataAuthorizer;
+        this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
     public ResolvedWorldAssetControl resolve(TestControlEnvelope envelope,
@@ -41,6 +61,7 @@ public final class AuthorizedWorldAssetResolver {
         authorize(trustedContext, primaryRef);
         try {
             ResourceWorldModel[] dependency = new ResourceWorldModel[1];
+            authorizeMetadata(trustedContext, primaryRef);
             Optional<GovernedCatalogRevision> loaded = repository.findExact(primaryRef, worldRef -> {
                 ResourceWorldModel world = resolveAuthorizedWorld(worldRef, trustedContext);
                 dependency[0] = world;
@@ -78,6 +99,7 @@ public final class AuthorizedWorldAssetResolver {
                                                       IntegrationRequestContext trustedContext) {
         try {
             authorize(trustedContext, worldRef);
+            authorizeMetadata(trustedContext, worldRef);
             return repository.findExact(worldRef, ignored -> {
                 throw new GovernedCatalogIntegrityException();
             }).map(entry -> exactWorldDependency(entry, worldRef))
@@ -146,6 +168,41 @@ public final class AuthorizedWorldAssetResolver {
             throw exception;
         } catch (RuntimeException exception) {
             throw GovernedAssetAccessException.denied();
+        }
+    }
+
+    private void authorizeMetadata(IntegrationRequestContext context, GovernedResourceRef ref) {
+        try {
+            GovernedAssetMetadata metadata = repository.findMetadata(ref)
+                    .orElseThrow(GovernedAssetAccessException::notFound);
+            if (!trustedMetadata(ref, metadata)) {
+                throw GovernedAssetAccessException.integrity();
+            }
+            if (metadata.governance().retentionExpiresAt() != null
+                    && !metadata.governance().retentionExpiresAt().isAfter(clock.instant())) {
+                throw GovernedAssetAccessException.denied();
+            }
+            metadataAuthorizer.authorize(context, metadata);
+        } catch (GovernedAssetAccessException exception) {
+            throw exception;
+        } catch (GovernedCatalogIntegrityException exception) {
+            throw GovernedAssetAccessException.integrity();
+        } catch (RuntimeException exception) {
+            throw GovernedAssetAccessException.denied();
+        }
+    }
+
+    private static boolean trustedMetadata(GovernedResourceRef ref, GovernedAssetMetadata metadata) {
+        if (metadata == null || metadata.exactRef() == null || !metadata.exactRef().equals(ref)
+                || metadata.governance() == null || metadata.governanceFingerprint() == null
+                || metadata.governanceFingerprint().isBlank()) {
+            return false;
+        }
+        try {
+            return metadata.governanceFingerprint().equals(
+                    GovernedAssetMetadata.fingerprint(ref, metadata.governance()));
+        } catch (RuntimeException exception) {
+            return false;
         }
     }
 

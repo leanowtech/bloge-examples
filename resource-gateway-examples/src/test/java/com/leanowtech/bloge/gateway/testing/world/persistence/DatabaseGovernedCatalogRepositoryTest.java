@@ -24,6 +24,9 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import javax.sql.DataSource;
 import java.time.Duration;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -38,6 +41,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DatabaseGovernedCatalogRepositoryTest {
+    private static final Instant TEST_NOW = Instant.parse("2026-08-26T00:00:00Z");
     private static final String FRAGMENT = """
             graph customerWorld {
               decision_table response(type = ctx.type) hit=first -> String {
@@ -62,11 +66,14 @@ class DatabaseGovernedCatalogRepositoryTest {
         h2.setUsername("sa");
         dataSource = h2;
         new ResourceDatabasePopulator(new ClassPathResource(
-                "db/postgresql/V20260826_001__world_governed_catalog.sql")).execute(dataSource);
+                "db/postgresql/V20260826_001__world_governed_catalog.sql"),
+                new ClassPathResource(
+                        "db/postgresql/V20260826_002__world_asset_governance.sql")).execute(dataSource);
         jdbc = new JdbcTemplate(dataSource);
         mapper = new ObjectMapper();
         codec = new GovernedCatalogCodec(mapper);
-        repository = new DatabaseGovernedCatalogRepository(jdbc, codec);
+        repository = new DatabaseGovernedCatalogRepository(jdbc, codec,
+                Clock.fixed(TEST_NOW, ZoneOffset.UTC));
     }
 
     @Test
@@ -94,6 +101,98 @@ class DatabaseGovernedCatalogRepositoryTest {
                 .isInstanceOf(Scenario.class)
                 .extracting(value -> ((Scenario) value).fingerprint())
                 .isEqualTo(scenario.fingerprint());
+    }
+
+    @Test
+    void validatesIndependentOriginsAndClassificationsAndRealWriteRequirements() {
+        for (GovernedPayloadOrigin origin : GovernedPayloadOrigin.values()) {
+            for (GovernedSecurityClassification classification : GovernedSecurityClassification.values()) {
+                GovernedAssetGovernance governance = new GovernedAssetGovernance(origin, classification,
+                        origin == GovernedPayloadOrigin.REAL ? TEST_NOW.plusSeconds(60) : null,
+                        "policy:" + origin.name().toLowerCase(),
+                        origin == GovernedPayloadOrigin.REAL ? "approval:1" : null);
+                assertThat(governance.payloadOrigin()).isEqualTo(origin);
+                assertThat(governance.securityClassification()).isEqualTo(classification);
+            }
+        }
+        assertThatThrownBy(() -> new GovernedAssetGovernance(GovernedPayloadOrigin.REAL,
+                GovernedSecurityClassification.PUBLIC, TEST_NOW.plusSeconds(60), "policy:1", null))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new GovernedAssetGovernance(GovernedPayloadOrigin.REAL,
+                GovernedSecurityClassification.PUBLIC, TEST_NOW.plusSeconds(60), "", "approval:1"))
+                .isInstanceOf(IllegalArgumentException.class);
+        GovernedAssetGovernance expired = new GovernedAssetGovernance(GovernedPayloadOrigin.REAL,
+                GovernedSecurityClassification.PUBLIC, TEST_NOW.minusSeconds(1), "policy:1", "approval:1");
+        DatabaseGovernedCatalogRepository fixedRepository = new DatabaseGovernedCatalogRepository(
+                jdbc, codec, Clock.fixed(TEST_NOW, ZoneOffset.UTC));
+        assertThatThrownBy(() -> fixedRepository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                "world-1", world(1, "tenant-a"), expired)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void persistsExactMetadataPreservesItOnCompatibilityUpdateAndSealsHistory() {
+        GovernedAssetGovernance firstGovernance = new GovernedAssetGovernance(
+                GovernedPayloadOrigin.REDACTED, GovernedSecurityClassification.CONFIDENTIAL, null,
+                "policy:redacted", null);
+        GovernedResourceRef first = repository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                "world-1", world(1, "tenant-a"), firstGovernance);
+
+        GovernedAssetMetadata firstMetadata = repository.findMetadata(first).orElseThrow();
+        assertThat(firstMetadata.exactRef()).isEqualTo(first);
+        assertThat(firstMetadata.governance()).isEqualTo(firstGovernance);
+        GovernedResourceRef second = repository.update(first, world(2, "tenant-a"));
+        assertThat(repository.findMetadata(second).orElseThrow().governance()).isEqualTo(firstGovernance);
+
+        GovernedAssetGovernance realGovernance = new GovernedAssetGovernance(
+                GovernedPayloadOrigin.REAL, GovernedSecurityClassification.RESTRICTED,
+                TEST_NOW.plusSeconds(600), "policy:real", "approval:real-1");
+        GovernedResourceRef third = repository.update(second, world(3, "tenant-a"), realGovernance);
+        assertThat(repository.findMetadata(third).orElseThrow().governance()).isEqualTo(realGovernance);
+        assertThat(repository.history("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL, "world-1"))
+                .extracting(GovernedCatalogRevision::metadata)
+                .extracting(GovernedAssetMetadata::governance)
+                .containsExactly(realGovernance, firstGovernance, firstGovernance);
+    }
+
+    @Test
+    void metadataProjectionDoesNotParseCorruptedCanonicalJson() {
+        GovernedResourceRef ref = repository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                "world-1", world(1, "tenant-a"));
+        jdbc.update("""
+                UPDATE rg_world_catalog_heads SET canonical_json = ?
+                 WHERE tenant_id = ? AND kind = ? AND asset_id = ?
+                """, "{corrupted", ref.tenantId(), ref.kind().name(), ref.id());
+
+        assertThat(repository.findMetadata(ref).orElseThrow().exactRef()).isEqualTo(ref);
+        assertThatThrownBy(() -> repository.findExact(ref))
+                .isInstanceOf(GovernedCatalogIntegrityException.class);
+    }
+
+    @Test
+    void governanceSealTamperIsSanitizedIntegrityFailure() {
+        GovernedResourceRef ref = repository.create("tenant-a", GovernedCatalogKind.RESOURCE_WORLD_MODEL,
+                "world-1", world(1, "tenant-a"));
+        jdbc.update("""
+                UPDATE rg_world_catalog_heads SET governance_fingerprint = ?
+                 WHERE tenant_id = ? AND kind = ? AND asset_id = ?
+                """, "sha256:" + "f".repeat(64), ref.tenantId(), ref.kind().name(), ref.id());
+
+        assertThatThrownBy(() -> repository.findMetadata(ref))
+                .isInstanceOf(GovernedCatalogIntegrityException.class)
+                .hasMessage("RG.WORLD.CATALOG.INTEGRITY");
+    }
+
+    @Test
+    void compatibilityRevisionConstructorProducesExactSealedMetadata() {
+        ResourceWorldModel world = world(1, "tenant-a");
+        GovernedResourceRef ref = repository.create("tenant-a",
+                GovernedCatalogKind.RESOURCE_WORLD_MODEL, world.worldModelId(), world);
+
+        GovernedCatalogRevision revision = new GovernedCatalogRevision(ref, world);
+        GovernedAssetGovernance governance = GovernedAssetGovernance.safeDefaults();
+        assertThat(revision.metadata().exactRef()).isEqualTo(ref);
+        assertThat(revision.metadata().governanceFingerprint())
+                .isEqualTo(GovernedAssetMetadata.fingerprint(ref, governance));
     }
 
     @Test
