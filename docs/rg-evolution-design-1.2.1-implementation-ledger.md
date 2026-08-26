@@ -165,3 +165,13 @@ A1 protocol archive boundary            PASS
 ```
 
 该全量结果证明当前仓库回归分母为绿色，并闭合 `S0-EXIT-08`。阶段零仍因 `S0-EXIT-03` 为 `PARTIAL` 而保持 `IN_PROGRESS`，不得提前标记为 `DEVELOPMENT_VERIFIED`。
+
+完成 `S1-C` 场景编译、统一内核世界委托及三重 compiler oracle 后，再次执行双项目串行里程碑：
+
+```text
+resource-gateway-examples clean verify  7199 tests / 0 failures / 0 errors / 28 skipped
+resource-gateway-test-kit clean verify  1905 tests + 2 integration tests / all green
+A1 protocol archive boundary            PASS
+```
+
+首轮全量回归准确发现一项旧测试预期仍把 `WORLD_DELEGATE` 视为未实现；测试已更新为区分“已实现但缺少 run-scoped runtime”与真正不支持的执行模式。修正后完整分母重新执行并全绿，没有以聚焦测试替代里程碑证据。
