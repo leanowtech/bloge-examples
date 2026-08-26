@@ -281,6 +281,10 @@ record CompiledFunctionControlPlan(
 - 函数库纯度和执行服务声明；
 - `CompiledFunctionControlPlan`、运行时 resolver 和消费证据。
 
+`S2-D1` BLOGE 通用内核前置已完成开发验证，嵌套仓库提交为 `8d514a7f6`。所有表达式函数均经过 resolver，replacement 的名称、纯度和执行服务声明必须与注册事实一致；根图历史 invocation scope 保持不变，foreach、loop、import、transform 和 decision table 的真实引擎测试证明 graphPath/nodeId/源码坐标完整且不进入业务 context。新增 `CompiledGraph` sidecar 在不修改 `Graph` / `NodeSpec` record 结构的前提下保存根图、导入图和内联子图的静态函数调用清单；两类 foreach 公开稳定 `sequential()` 事实。`bloge-core` 1959 项、`bloge-dsl` 1567 项测试均为 0 failures / 0 errors，其中 DSL 保留 1 项既有跳过。
+
+该证据只关闭 BLOGE 通用扩展点，不代表 Resource Gateway 已可注入函数。专用函数 inventory、控制计划、运行 wrapper、消费观察、证据降级和服务端集成仍须由 `S2-D2` 闭合。
+
 ### S2-E：证据、系统测试和里程碑
 
 - 状态与函数 payload-free evidence；

@@ -77,7 +77,7 @@
 | `S2-A` | 版本化 `WorldStateSpec` / `StateSpecV2`、Scenario 初始状态覆盖、跨切片单写者证明、治理 codec 双读写 | `DEVELOPMENT_VERIFIED` | 提交 `dd3034db6`；51/51 聚焦测试与 516/516 World、Scenario、Governed Catalog 受影响回归全绿；旧 `StateSpec` / `WorldSlice.state()` 源兼容、v1 无状态指纹不变、v2 schema/default/override/tamper/上限和 null 边界均有固定证明 |
 | `S2-B` | 有状态片段信封、原子写集校验和独立试跑 | `DEVELOPMENT_VERIFIED` | 提交 `7af01cb1d`；61/61 最终聚焦回归与 7298 项全量测试全绿；固定 `{request,state}` / `{response,stateWrites}` 信封、WRITE-only 隔离、JSON Pointer、完整写集先验校验、失败零提交、20 次确定性重放及 payload-free 转换指纹均有固定证明 |
 | `S2-C` | run-scoped 状态会话、快照恢复、冲突可达性与统一运行时接线 | `DEVELOPMENT_VERIFIED` | 提交 `226765b41`；125/125 最终聚焦回归与 7335 项全量测试全绿；编译期访问计划、严格绑定快照、原子提交、动态坐标、防重复/重入、无冲突规范投影、失败零提交、20 次确定性运行和 v1 指纹 golden 均有固定证明 |
-| `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `NOT_STARTED` | 尚无实现证据 |
+| `S2-D` | BLOGE 全函数 resolver、精确调用点和函数控制计划 | `IN_PROGRESS` | `S2-D1` BLOGE 通用内核提交 `8d514a7f6` 已验证：core 1959 项、DSL 1567 项测试全绿；Resource Gateway 专用计划、运行注入、消费观察和证据降级仍待 `S2-D2` 闭合 |
 | `S2-E` | payload-free evidence、生产隔离、真实 HTTP 系统测试和双项目里程碑 | `NOT_STARTED` | 尚无实现证据 |
 
 - 每个剧情拥有隔离、单写者、确定性排序、可序列化的世界状态。
