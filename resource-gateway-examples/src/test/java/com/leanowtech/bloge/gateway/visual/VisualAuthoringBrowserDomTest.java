@@ -804,7 +804,7 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
         click(wait, By.xpath(
                 "//button[contains(concat(' ', normalize-space(@class), ' '), ' mock-setup-row ')"
-                        + " and .//span[normalize-space()='bloge:transform']]");
+                        + " and .//span[normalize-space()='bloge:transform']]"));
         openDataInspector(wait);
         WebElement outputControl = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector(".output-control")));
