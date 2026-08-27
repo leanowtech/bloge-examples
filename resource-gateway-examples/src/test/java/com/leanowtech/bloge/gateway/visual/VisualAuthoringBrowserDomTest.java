@@ -709,9 +709,8 @@ class VisualAuthoringBrowserDomTest {
     /**
      * Bounded 1.3.0 browser acceptance seam for the packaged application routes.
      *
-     * <p>The server currently redirects {@code /} to {@code /capabilities/}; this deliberately
-     * records that production boundary instead of claiming the root-only Launcher is reachable.
-     * The real author bundle is then exercised with a spine-off deep link at both supported
+     * <p>The opted-in {@code /?spine=v1} coordinate must load the packaged Launcher at the root,
+     * while the real author bundle remains exercised with a spine-off deep link at both supported
      * viewport classes, including the horizontal-overflow gate.</p>
      */
     @Test
@@ -721,8 +720,9 @@ class VisualAuthoringBrowserDomTest {
         WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
 
         driver.get("http://localhost:" + port + "/?spine=v1");
-        wait.until(ignored -> driver.getCurrentUrl().contains("/capabilities/"));
-        assertThat(driver.findElements(By.cssSelector("[data-testid='tool-spine-launcher']"))).isEmpty();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='tool-spine-launcher']")));
+        assertThat(driver.getCurrentUrl()).contains("/?spine=v1");
 
         driver.get("http://localhost:" + port
                 + "/author/?authorWorkspace=v2&spine=off&toolId=browser-tool"
@@ -737,6 +737,46 @@ class VisualAuthoringBrowserDomTest {
         assertPageNoHorizontalOverflow();
         setViewport(wait, 1280, 980);
         assertPageNoHorizontalOverflow();
+    }
+
+    /** Exercises the first real browser authoring slice from the spine launcher into a saved API. */
+    @Test
+    void onePointThreeLauncherCreatesAndSavesExternalApiInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+
+        driver.get("http://localhost:" + port + "/?spine=v1");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='tool-spine-launcher']")));
+        assertThat(driver.findElements(By.cssSelector("[data-testid='spine-intent-card']"))).hasSize(5);
+
+        setControlValue(driver.findElement(By.id("spine-build-tool-name")), "Browser API Tool");
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='spine-build-tool-link']"))).click();
+        wait.until(ignored -> driver.getCurrentUrl().contains("/author/"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='external-api-authoring']")));
+
+        click(wait, By.cssSelector("[data-testid='add-external-api']"));
+        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-resource-id']")),
+                "browser-profile");
+        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-display-name']")),
+                "Browser profile");
+        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-url']")),
+                "https://api.example.test/customers/{id}");
+        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")),
+                "data");
+        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
+                "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}");
+        click(wait, By.cssSelector("[data-testid='external-api-save']"));
+
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"), "browser-profile");
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"),
+                "resource:browser-profile");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='external-api-opaque-warning']"))).isEmpty();
     }
 
     /**
