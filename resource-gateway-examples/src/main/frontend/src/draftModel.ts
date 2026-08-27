@@ -196,6 +196,7 @@ export interface SimulationTraceRow {
   operatorRef: string;
   status: NodeRunStatus;
   outputPreview: string;
+  fidelity?: string;
 }
 
 export interface SimulationRunSummaryChip {
@@ -1994,6 +1995,7 @@ export function simulationTraceRows(
     operatorRef: node.operatorRef,
     status: statuses[node.id] ?? 'unknown',
     outputPreview: previewValue(response.results?.[node.id]),
+    ...(response.nodeFidelity?.[node.id] ? { fidelity: response.nodeFidelity[node.id] } : {}),
   }));
 }
 

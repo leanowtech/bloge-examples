@@ -1596,6 +1596,7 @@ export interface NodeFixture {
     revision: number;
     schemaFingerprint: string;
   };
+  resourceFidelity?: 'OUTPUT_LEVEL' | 'PROTOCOL_DERIVED' | 'TRANSPORT_LEVEL';
 }
 
 /** The body of POST /api/visual/graphs/simulate. */
@@ -1912,6 +1913,7 @@ export interface SimulationResponse {
   output: unknown;
   results: Record<string, unknown>;
   statusMap: Record<string, string>;
+  nodeFidelity?: Record<string, 'OUTPUT_LEVEL' | 'PROTOCOL_DERIVED' | 'TRANSPORT_LEVEL' | string>;
   mockedNodeIds: string[];
   realNodeIds: string[];
   terminalOutputConforms: boolean;

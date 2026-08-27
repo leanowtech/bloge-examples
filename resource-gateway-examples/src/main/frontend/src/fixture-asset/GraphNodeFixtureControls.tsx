@@ -278,8 +278,6 @@ export function GraphNodeFixturePicker({ assets, onSelect }: GraphNodeFixturePic
 interface ResourceFidelitySelectProps {
   value?: ResourceFidelity;
   onChange: (value: ResourceFidelity) => void;
-  /** Only OUTPUT_LEVEL is currently executed by visual simulation. */
-  outputOnly?: boolean;
 }
 
 const FIDELITY_VALUES: readonly ResourceFidelity[] = [
@@ -290,7 +288,6 @@ const FIDELITY_VALUES: readonly ResourceFidelity[] = [
 export function ResourceFidelitySelect({
   value = 'OUTPUT_LEVEL',
   onChange,
-  outputOnly = true,
 }: ResourceFidelitySelectProps) {
   const { t } = useI18n();
   return (
@@ -304,10 +301,6 @@ export function ResourceFidelitySelect({
         <option
           key={candidate}
           value={candidate}
-          disabled={outputOnly && candidate !== 'OUTPUT_LEVEL'}
-          title={outputOnly && candidate !== 'OUTPUT_LEVEL'
-            ? t('This fidelity is modelled only; visual simulation executes output-level fixtures.')
-            : undefined}
         >
           {candidate}
         </option>

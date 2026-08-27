@@ -1837,6 +1837,19 @@ describe('simulationTraceRows', () => {
   it('returns no rows before a simulation result exists', () => {
     expect(simulationTraceRows([], null)).toEqual([]);
   });
+
+  it('reports server evidence independently for each node', () => {
+    const response = {
+      validated: true, compiled: true, success: false, graphName: 'g', outputNode: 'b', output: null,
+      results: { a: null, b: null }, statusMap: {}, mockedNodeIds: [], realNodeIds: [],
+      terminalOutputConforms: false, diagnostics: [], errors: ['blocked'], generatedDsl: '',
+      nodeFidelity: { a: 'PROTOCOL_DERIVED', b: 'TRANSPORT_LEVEL' },
+    } satisfies SimulationResponse;
+    expect(simulationTraceRows([
+      { id: 'a', operatorRef: 'resource:a', position: { x: 0, y: 0 } },
+      { id: 'b', operatorRef: 'resource:b', position: { x: 0, y: 0 } },
+    ], response).map((row) => row.fidelity)).toEqual(['PROTOCOL_DERIVED', 'TRANSPORT_LEVEL']);
+  });
 });
 
 describe('simulationFixtureRows', () => {

@@ -852,6 +852,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'The governed fixture schema is stale; recapture before simulating.': '受治理 fixture Schema 已过期；重新捕获后才能模拟。',
   'Loading scenario tools…': '正在加载场景工具…',
   'Loading fixture controls…': '正在加载 fixture 控件…',
+  'Server fidelity': '服务端保真度',
   'Test table view': '测试表视图',
   'Schema contract proof': 'Schema 契约证明',
   'Runtime behavior proof': '运行时行为证明',

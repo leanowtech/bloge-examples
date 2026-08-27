@@ -4133,7 +4133,6 @@ function OperatorDetailDialog({
                   <ResourceFidelitySelect
                     value={resourceFidelity}
                     onChange={onResourceFidelityChange}
-                    outputOnly
                   />
                 </Suspense>
                 {governedFixtureRef && !governedFixtureStale && (
@@ -5520,7 +5519,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   >({});
   const [governedFixtureAssets, setGovernedFixtureAssets] = useState<GovernedFixtureAssetSummary[]>([]);
   const [governedFixtureAssetsError, setGovernedFixtureAssetsError] = useState('');
-  const [resourceFidelity, setResourceFidelity] = useState<ResourceFidelity>('OUTPUT_LEVEL');
+  const [resourceFidelityByNode, setResourceFidelityByNode] = useState<Record<string, ResourceFidelity>>({});
   const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
   const [operatorTestResults, setOperatorTestResults] = useState<Record<string, Record<string, OperatorTestCaseResult>>>({});
   const [operatorTestPublications, setOperatorTestPublications] = useState<
@@ -7474,9 +7473,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       {
         ...(fixtureCompilation.fixtures[nodeId] ?? { output: null }),
         ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
+        ...(operatorByRef.get(canvasNodes.find((node) => node.id === nodeId)?.operatorRef ?? '')
+          ?.display?.tags?.includes('resource')
+          ? { resourceFidelity: resourceFidelityByNode[nodeId] ?? 'OUTPUT_LEVEL' }
+          : {}),
       },
     ]),
-  ), [fixtureCompilation.fixtures, governedFixtureRefs]);
+  ), [canvasNodes, fixtureCompilation.fixtures, governedFixtureRefs, operatorByRef, resourceFidelityByNode]);
   const pinSimulationNode = useCallback((nodeId: string) => {
     if (!result || !Object.prototype.hasOwnProperty.call(result.results, nodeId)) return;
     const output = result.results[nodeId];
@@ -13426,10 +13429,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         className={`trace-row ${row.status}`}
                         onClick={() => setSelectedNodeId(row.nodeId)}
                       >
-                        <span className="trace-copy">
-                          <strong>{row.label}</strong>
-                          <span>{row.operatorRef}</span>
-                          <code>{row.outputPreview}</code>
+                          <span className="trace-copy">
+                            <strong>{row.label}</strong>
+                            <span>{row.operatorRef}</span>
+                            {row.fidelity && <small>{t('Server fidelity')}: {row.fidelity}</small>}
+                            <code>{row.outputPreview}</code>
                         </span>
                         <span className={`run-pill ${row.status}`}>{d(row.status)}</span>
                       </button>
@@ -13712,8 +13716,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             ? selectedGovernedFixtureStale : false}
           onGovernedFixtureSelect={selectGovernedFixture}
           onClearGovernedFixture={clearSelectedGovernedFixture}
-          resourceFidelity={resourceFidelity}
-          onResourceFidelityChange={setResourceFidelity}
+          resourceFidelity={resourceFidelityByNode[operatorDetailNode.id] ?? 'OUTPUT_LEVEL'}
+          onResourceFidelityChange={(value) => setResourceFidelityByNode((current) => ({
+            ...current,
+            [operatorDetailNode.id]: value,
+          }))}
           onCancel={cancelOperatorDetail}
           onApply={applyOperatorDetail}
           dirty={operatorDetailDirty}
