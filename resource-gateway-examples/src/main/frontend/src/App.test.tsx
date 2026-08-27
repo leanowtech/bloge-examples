@@ -93,9 +93,8 @@ describe('App route shell', () => {
 
   it('mounts the tool spine Launcher only for the exact v1 flag at root', async () => {
     await renderAt('/?spine=v1');
-    await flushLazyRoute();
 
-    expect(query('[data-testid="tool-spine-launcher"]')).toBeTruthy();
+    await queryWhenMounted('[data-testid="tool-spine-launcher"]');
     expect(document.querySelector('[data-testid="capability-studio-mock"]')).toBeNull();
     expect(document.querySelectorAll('[data-testid="spine-intent-card"]')).toHaveLength(5);
   });
@@ -110,9 +109,8 @@ describe('App route shell', () => {
 
   it('adds the object shell only when a v1 ToolCoordinate is present', async () => {
     await renderAt('/author/?spine=v1&toolId=loan&toolName=Loan%20Profile&stage=wire&graphDraftId=draft-7&nodeId=policy');
-    await flushLazyRoute();
 
-    expect(query('[data-testid="object-breadcrumb"]')).toBeTruthy();
+    await queryWhenMounted('[data-testid="object-breadcrumb"]');
     expect(query('[data-testid="tool-thread-rail"]')).toBeTruthy();
     expect(query('[data-tool-stage="wire"]').getAttribute('aria-current')).toBe('step');
     expect(query('[data-testid="author-mock"]')).toBeTruthy();
@@ -291,10 +289,15 @@ describe('App route shell', () => {
     });
   }
 
-  async function flushLazyRoute() {
-    await act(async () => {
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
-    });
+  async function queryWhenMounted(selector: string): Promise<Element> {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const element = document.querySelector(selector);
+      if (element) return element;
+      await act(async () => {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+      });
+    }
+    throw new Error(`Missing element: ${selector}`);
   }
 });
 

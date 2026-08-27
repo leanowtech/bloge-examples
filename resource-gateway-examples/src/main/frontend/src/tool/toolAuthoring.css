@@ -1,0 +1,23 @@
+.tool-signature-badge {
+  align-items: center;
+  display: inline-flex;
+  gap: .45rem;
+}
+
+.tool-signature-badge[data-tool-state="draft"] span { color: #8a5200; }
+.tool-signature-badge[data-tool-state="published"] span { color: #17653a; font-weight: 650; }
+.tool-signature-badge code { overflow-wrap: anywhere; }
+
+.tool-palette-facets { display: grid; gap: .5rem; margin: .75rem 0; }
+.tool-palette-facets > div,
+.tool-palette-facets ul { display: flex; flex-wrap: wrap; gap: .4rem; }
+.tool-palette-facets ul { list-style: none; margin: 0; padding: 0; }
+.tool-palette-facets li {
+  align-items: center;
+  border: 1px solid var(--border-subtle, #d9dee8);
+  border-radius: .5rem;
+  display: flex;
+  gap: .5rem;
+  padding: .35rem .5rem;
+}
+.tool-palette-facets code { max-width: min(100%, 28rem); overflow-wrap: anywhere; }
