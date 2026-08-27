@@ -8,6 +8,7 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioContractProjection;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoringService;
+import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationRequest;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationResult;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
@@ -19,6 +20,7 @@ import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
@@ -80,7 +82,6 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.http.ResponseEntity;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.core.Ordered;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -134,7 +135,6 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "spring.datasource.url=jdbc:h2:mem:visual-authoring-browser-dom;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
-@ActiveProfiles("test")
 @Timeout(90)
 class VisualAuthoringBrowserDomTest {
 
@@ -311,6 +311,14 @@ class VisualAuthoringBrowserDomTest {
         ScenarioDraftSetBrowserFixtureController scenarioDraftSetBrowserFixtureController(
                 ScenarioDraftSetAuthoringService service) {
             return new ScenarioDraftSetBrowserFixtureController(service);
+        }
+
+        /** Registers the production v1 Scenario transport without activating the full test profile. */
+        @Bean
+        ScenarioDraftSetController scenarioDraftSetController(
+                ScenarioDraftSetAuthoringService service,
+                IntegrationRequestAuthenticator authenticator) {
+            return new ScenarioDraftSetController(service, authenticator);
         }
     }
 
