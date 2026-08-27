@@ -798,19 +798,26 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("[data-testid='operator-button:bloge:transform']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n2'][data-operator-ref='bloge:transform']")));
-        dragConnection(wait,
-                ".react-flow__node[data-id='n1'] .port-handle.source",
-                ".react-flow__node[data-id='n2'] .port-handle.target");
-        wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector("[data-testid='canvas-edge-label']")));
-        waitForText(wait, By.cssSelector("[data-testid='author-graph-contract']"), "Input");
-        waitForText(wait, By.cssSelector("[data-testid='author-graph-contract']"), "Output");
+        dragConnectionWithNativeMouse(wait,
+                "[data-testid='canvas-node:n1'] .port-handle.source",
+                "[data-testid='canvas-node:n2'] .port-handle.target");
+        wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
+        click(wait, By.cssSelector("[data-testid='canvas-node:n2']"));
+        click(wait, By.cssSelector("[data-testid='compact-open-inspector']"));
+        click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
+        waitForText(wait, By.cssSelector(".output-control"), "Selected as simulation output.");
+        click(wait, By.xpath("//button[normalize-space()='Edit node']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='operator-detail-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
         setViewport(wait, 1280, 980);
         assertPageNoHorizontalOverflow();
         click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
         waitForAnyText(wait, By.cssSelector("[data-testid='author-continuity-status']"),
                 "SAVED", "Saved");
-        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("[data-testid='tool-publish']"))).click();
+        click(wait, By.cssSelector("[data-testid='tool-publish']"));
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Browser API Tool");
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Published");
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Typed I/O");
@@ -5623,6 +5630,24 @@ class VisualAuthoringBrowserDomTest {
                 document.dispatchEvent(new PointerEvent('pointermove', options(tx, ty, 1)));
                 document.dispatchEvent(new PointerEvent('pointerup', options(tx, ty, 0)));
                 """, source, sourceCenter[0], sourceCenter[1], targetCenter[0], targetCenter[1]);
+    }
+
+    /** Connects two handles through Selenium's native pointer actions, preserving the user path. */
+    private void dragConnectionWithNativeMouse(WebDriverWait wait,
+                                               String sourceSelector,
+                                               String targetSelector) {
+        WebElement source = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(sourceSelector)));
+        WebElement target = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(targetSelector)));
+        scrollIntoView(target);
+        new Actions(driver)
+                .moveToElement(source)
+                .pause(Duration.ofMillis(150))
+                .clickAndHold()
+                .pause(Duration.ofMillis(150))
+                .moveToElement(target)
+                .pause(Duration.ofMillis(250))
+                .release()
+                .perform();
     }
 
     private double[] elementCenter(WebElement element) {
