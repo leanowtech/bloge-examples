@@ -3705,6 +3705,64 @@ describe('AuthorCanvas connection guide', () => {
     });
   });
 
+  it('binds independent governed resources with selected fidelity and renders server evidence', async () => {
+    window.history.replaceState({}, '', '/author/?spine=v1');
+    let runCount = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [
+          resourceOperator('resource:alpha', 'Alpha', [], { ok: { type: 'boolean' } }),
+          resourceOperator('resource:beta', 'Beta', [], { ok: { type: 'boolean' } }),
+        ] });
+      }
+      if (url.startsWith('/api/visual/fixture-assets')) {
+        return jsonResponse({ data: [
+          { fixtureAssetId: 'alpha-fixture', revision: 1, name: 'Alpha fixture', lifecycle: 'ACTIVE',
+            schemaRef: { fingerprint: 'alpha-schema' }, usageCount: 1, compatibleWithOperatorRef: true },
+          { fixtureAssetId: 'beta-fixture', revision: 1, name: 'Beta fixture', lifecycle: 'ACTIVE',
+            schemaRef: { fingerprint: 'beta-schema' }, usageCount: 1, compatibleWithOperatorRef: true },
+        ] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        runCount += 1;
+        const body = JSON.parse(String(init?.body));
+        expect(body.fixtures).toEqual({
+          n1: { output: null, governedRef: { fixtureAssetId: 'alpha-fixture', revision: 1, schemaFingerprint: 'alpha-schema' }, resourceFidelity: 'PROTOCOL_DERIVED' },
+          n2: { output: null, governedRef: { fixtureAssetId: 'beta-fixture', revision: 1, schemaFingerprint: 'beta-schema' }, resourceFidelity: 'TRANSPORT_LEVEL' },
+        });
+        return jsonResponse({ validated: true, compiled: true, success: true, graphName: 'g', outputNode: 'n2', output: null,
+          results: { n1: null, n2: null }, statusMap: { n1: 'mocked', n2: 'real' }, mockedNodeIds: ['n1'], realNodeIds: ['n2'],
+          terminalOutputConforms: true, diagnostics: [], errors: [], generatedDsl: '',
+          ...(runCount === 1 ? { nodeFidelity: { n1: 'PROTOCOL_DERIVED', n2: 'TRANSPORT_LEVEL' } } : {}) });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    await act(async () => { root = createRoot(host); root.render(<AuthorCanvas />); });
+    await waitFor(() => expect(query('[data-testid="operator-button:resource:alpha"]')).toBeDefined());
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:resource:alpha"]'));
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:resource:beta"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const alphaDialog = query('[data-testid="operator-detail-dialog"]');
+    await waitFor(() => expect(alphaDialog.querySelector('[data-testid="graph-node-fixture-picker"]')).not.toBeNull());
+    await click(alphaDialog.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-alpha-fixture"]')!);
+    await setControlValue(alphaDialog.querySelector<HTMLSelectElement>('[data-testid="resource-fidelity-select"]')!, 'PROTOCOL_DERIVED');
+    await click(alphaDialog.querySelector<HTMLButtonElement>('[data-testid="operator-detail-apply"]')!);
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n2"]'));
+    const betaDialog = query('[data-testid="operator-detail-dialog"]');
+    await waitFor(() => expect(betaDialog.querySelector('[data-testid="graph-node-fixture-picker"]')).not.toBeNull());
+    await click(betaDialog.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-beta-fixture"]')!);
+    await setControlValue(betaDialog.querySelector<HTMLSelectElement>('[data-testid="resource-fidelity-select"]')!, 'TRANSPORT_LEVEL');
+    await click(betaDialog.querySelector<HTMLButtonElement>('[data-testid="operator-detail-apply"]')!);
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button.primary'))
+      .find((button) => button.textContent?.includes('Simulate'))!;
+    await click(simulateButton);
+    await waitFor(() => expect(runCount).toBe(1));
+    expect(document.body.textContent).toContain('PROTOCOL_DERIVED');
+    expect(document.body.textContent).toContain('TRANSPORT_LEVEL');
+    expect(document.body.textContent).toContain('Server fidelity');
+  });
+
   it('shows managed and blocked external-write protocols in the main authoring surface', async () => {
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       if (String(input) === '/api/visual/operators') {

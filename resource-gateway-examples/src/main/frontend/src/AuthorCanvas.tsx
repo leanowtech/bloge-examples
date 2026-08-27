@@ -7473,8 +7473,9 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       {
         ...(fixtureCompilation.fixtures[nodeId] ?? { output: null }),
         ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
-        ...(operatorByRef.get(canvasNodes.find((node) => node.id === nodeId)?.operatorRef ?? '')
-          ?.display?.tags?.includes('resource')
+        ...(canvasNodes.find((node) => node.id === nodeId)?.operatorRef.startsWith('resource:')
+          || operatorByRef.get(canvasNodes.find((node) => node.id === nodeId)?.operatorRef ?? '')
+            ?.display?.tags?.includes('resource')
           ? { resourceFidelity: resourceFidelityByNode[nodeId] ?? 'OUTPUT_LEVEL' }
           : {}),
       },
