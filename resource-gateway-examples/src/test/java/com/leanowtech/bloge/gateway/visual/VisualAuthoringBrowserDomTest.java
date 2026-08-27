@@ -199,7 +199,8 @@ class VisualAuthoringBrowserDomTest {
 
             // These projections currently have no H2 fixture script; readiness still needs their
             // names present, while browser coverage does not exercise their write paths.
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publications (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publications "
+                    + "(id INT, publication_attempt_id VARCHAR(512))");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempts (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempt_history (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_evidence_companions (id INT)");
