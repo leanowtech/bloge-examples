@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..E` 已完成开发验证，`S3-F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `DEVELOPMENT_VERIFIED`：`S3-A..F` 和 `S3-EXIT-01..17` 已形成固定仓库内证据。该状态不代表企业生产环境正式验收。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -251,6 +251,8 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - capture → redact → review → draft → run → impact 全链；
 - 未授权、跨租户、过期、篡改和 production 负向矩阵；
 - Resource Gateway 与 Test Kit 双项目全量回归。
+
+开发验证证据：5/5 端到端闭环测试与 30/30 受影响测试通过。测试使用真实候选服务、服务端 World 物化器、发布事务、BLOGE 场景编译器、发布态运行时、证据完整性服务和影响索引服务，闭合 `GOLDEN_CAPTURE -> redact -> review -> approve -> materialize -> publish -> run -> evidence -> impact`。未授权、跨租户、过期、篡改和 production purpose 均在 payload 读取前失败；DLP 残留、来源/schema/策略漂移和发布故障均失败关闭且不留下半发布状态。Resource Gateway 7559 项测试、Test Kit 1920 项单测与 2 项集成测试全绿，A1 协议归档边界通过。详见 [S3-F 验证说明](./rg-evolution-design-1.2.1-s3-system-closure-verification.md)。
 
 ## 10. 固定验收矩阵
 
