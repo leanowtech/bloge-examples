@@ -2462,6 +2462,8 @@ function DecisionTableRuleEditor({
   persistedScenarioDraftSet,
   onScenarioDraftSetChange,
   onOpenScenarios,
+  graphDraftId,
+  onOpenGraphScenarios,
 }: {
   node: Node<NodeData>;
   incomingColumns: DecisionTableColumn[];
@@ -2474,6 +2476,8 @@ function DecisionTableRuleEditor({
   persistedScenarioDraftSet?: ScenarioDraftSet | null;
   onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
   onOpenScenarios?: () => void;
+  graphDraftId?: string;
+  onOpenGraphScenarios?: () => void;
 }) {
   const { t } = useI18n();
   const editor = decisionTableEditorModel(node.data.config, incomingColumns);
@@ -2687,6 +2691,8 @@ function DecisionTableRuleEditor({
               onPersistedChange={onScenarioDraftSetChange}
               onOutputKindChange={(outputKind) => onConfigPatch?.({ outputKind })}
               onOpenScenarios={onOpenScenarios}
+              graphDraftId={graphDraftId}
+              onOpenGraphScenarios={onOpenGraphScenarios}
             />
           </Suspense>
         )}
@@ -3923,6 +3929,8 @@ function OperatorDetailDialog({
   persistedScenarioDraftSet,
   onScenarioDraftSetChange,
   onOpenScenarios,
+  graphDraftId,
+  onOpenGraphScenarios,
   governedFixtureAssets,
   governedFixtureRef,
   governedFixtureStale,
@@ -3979,6 +3987,8 @@ function OperatorDetailDialog({
   persistedScenarioDraftSet?: ScenarioDraftSet | null;
   onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
   onOpenScenarios?: () => void;
+  graphDraftId?: string;
+  onOpenGraphScenarios?: () => void;
   governedFixtureAssets: readonly GovernedFixtureAssetSummary[];
   governedFixtureRef?: GovernedGraphNodeFixtureRef;
   governedFixtureStale: boolean;
@@ -4252,6 +4262,8 @@ function OperatorDetailDialog({
               persistedScenarioDraftSet={persistedScenarioDraftSet}
               onScenarioDraftSetChange={onScenarioDraftSetChange}
               onOpenScenarios={onOpenScenarios}
+              graphDraftId={graphDraftId}
+              onOpenGraphScenarios={onOpenGraphScenarios}
             />
             </div>
           )}
@@ -13727,6 +13739,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           }}
           persistedScenarioDraftSet={scenarioDraftSet}
           onScenarioDraftSetChange={setScenarioDraftSet}
+          graphDraftId={exactSavedDraft ? graphDraftId : undefined}
+          onOpenGraphScenarios={() => {
+            setOperatorContractWorkspace(null);
+            setContractWorkspaceInitialTab('scenarios');
+            setContractWorkspaceOpen(true);
+            setOperatorDetailNodeId('');
+            setOperatorDetailBaseline(null);
+            if (isTaskWorkspace) {
+              setAuthorMode('scenarios');
+            }
+          }}
           governedFixtureAssets={governedFixtureAssets}
           governedFixtureRef={operatorDetailNode.id === selectedNode?.id
             ? governedFixtureRefs[operatorDetailNode.id] : undefined}

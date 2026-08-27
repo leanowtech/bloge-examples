@@ -281,10 +281,10 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
 }
 
 /** Builds the bounded id fallback used when an enumerator is called without an owning surface. */
-export function portableScenarioDraftSetId(sourceRef: string, digest: string): string {
+export function portableScenarioDraftSetId(sourceRef: string, digest: string, prefix = 'operator'): string {
   const safeRef = sourceRef.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'operator';
   const safeDigest = digest.replace(/^sha256:/, '');
-  return `operator-${safeRef.slice(0, 80)}-${safeDigest}-scenarios`;
+  return `${prefix}-${safeRef.slice(0, 80)}-${safeDigest}-scenarios`;
 }
 
 function domainsFor(table: DecisionTable, focusRule?: DecisionRule): Record<string, unknown[]> {

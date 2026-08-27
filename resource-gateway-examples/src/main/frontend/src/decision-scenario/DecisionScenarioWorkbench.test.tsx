@@ -2,11 +2,11 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
+import { fetchScenarioGraphContract, fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
 import type { ExactTargetRef, EnterpriseScope } from '../contract-scenario/domain';
 import { DecisionScenarioWorkbench } from './DecisionScenarioWorkbench';
 
-vi.mock('../api', () => ({ fetchScenarioOperatorContract: vi.fn(), saveScenarioDraftSet: vi.fn() }));
+vi.mock('../api', () => ({ fetchScenarioGraphContract: vi.fn(), fetchScenarioOperatorContract: vi.fn(), saveScenarioDraftSet: vi.fn() }));
 
 const target: ExactTargetRef = { kind: 'OPERATOR', id: 'bloge:decisionTable', revision: 1, fingerprint: 'sha256:operator' };
 const scope: EnterpriseScope = { tenantId: 'tenant-a', organizationId: 'org-a', projectId: 'project-a', environment: 'dev', region: 'sg' };
@@ -21,7 +21,7 @@ const editor = {
 
 describe('DecisionScenarioWorkbench', () => {
   let root: Root | undefined;
-  afterEach(() => { root?.unmount(); root = undefined; document.body.innerHTML = ''; vi.clearAllMocks(); });
+  afterEach(() => { root?.unmount(); root = undefined; document.body.innerHTML = ''; vi.resetAllMocks(); });
 
   it('generates and persists through the real ScenarioDraftSet endpoint with exact target scope', async () => {
     const onPersistedChange = vi.fn();
@@ -61,6 +61,46 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('network unavailable');
     expect(host.querySelector('[role="alert"] button')?.textContent).toBe('Retry');
+  });
+
+  it('generates a decision table for the exact saved Graph target and opens the Graph Scenario workspace', async () => {
+    const graphTarget: ExactTargetRef = { kind: 'GRAPH', id: 'graph-draft-42', revision: 7, fingerprint: 'sha256:graph-target' };
+    const onPersistedChange = vi.fn();
+    const onOpenGraphScenarios = vi.fn();
+    vi.mocked(fetchScenarioGraphContract).mockResolvedValue({
+      scope,
+      contract: { target: graphTarget, inputSchema: {}, outputSchema: {} },
+      contractFingerprint: 'sha256:graph-contract',
+    } as never);
+    vi.mocked(saveScenarioDraftSet).mockImplementation(async (draftSet) => ({ draftSet } as never));
+    const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
+    await act(async () => {
+      root?.render(<DecisionScenarioWorkbench
+        editor={editor}
+        tableId="decision-node"
+        target={target}
+        scope={scope}
+        owner="owner"
+        persisted={null}
+        onPersistedChange={onPersistedChange}
+        onOpenGraphScenarios={onOpenGraphScenarios}
+        graphDraftId="graph-draft-42"
+      />);
+    });
+    await act(async () => { (host.querySelector('[data-testid="generate-graph-decision-scenarios"]') as HTMLButtonElement).click(); });
+    expect(fetchScenarioGraphContract).toHaveBeenCalledWith('graph-draft-42');
+    expect(fetchScenarioOperatorContract).not.toHaveBeenCalled();
+    await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
+    const saved = vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0];
+    expect(saved).toMatchObject({
+      target: graphTarget,
+      contractFingerprint: 'sha256:graph-contract',
+      metadata: { provenance: { targetKind: 'GRAPH', graphDraftId: 'graph-draft-42', sourceNodeId: 'decision-node' } },
+    });
+    expect(saved?.scenarioDraftSetId).toMatch(/^graph-graph-draft-42-/);
+    expect(onPersistedChange).toHaveBeenCalledWith(saved);
+    await act(async () => { (host.querySelector('[data-testid="open-generated-scenarios"]') as HTMLButtonElement).click(); });
+    expect(onOpenGraphScenarios).toHaveBeenCalledOnce();
   });
 
   it('re-enumerates a stale persisted set and clears stale state after the authoritative save', async () => {

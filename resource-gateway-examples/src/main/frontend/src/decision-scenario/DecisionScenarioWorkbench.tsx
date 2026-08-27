@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
+import { fetchScenarioGraphContract, fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
 import type { ExactTargetRef, EnterpriseScope, ScenarioContractProjection, ScenarioDraftSet } from '../contract-scenario/domain';
 import {
   enumerateFromEditor,
+  graphScenarioDraftSetId,
   operatorScenarioDraftSetId,
   scenarioSetIsStale,
   type DecisionEditorSnapshot,
@@ -23,6 +24,10 @@ export interface DecisionScenarioWorkbenchProps {
   onOutputKindChange?: (outputKind: DecisionOutputKind) => void;
   /** Opens the persisted set in the canonical Scenarios surface. */
   onOpenScenarios?: () => void;
+  /** Opens a generated Graph-target set in the canonical Scenarios surface. */
+  onOpenGraphScenarios?: () => void;
+  /** Exact saved GraphDraft identity; omitted unless the current canvas is persisted. */
+  graphDraftId?: string;
   operatorRef?: string;
 }
 
@@ -37,17 +42,28 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authority, setAuthority] = useState<ScenarioContractProjection | null>(null);
+  const [generatedTargetKind, setGeneratedTargetKind] = useState<'OPERATOR' | 'GRAPH'>('OPERATOR');
   const stale = useMemo(() => scenarioSetIsStale({ ...props.editor, outputKind }, props.persisted, props.tableId), [props.editor, outputKind, props.persisted, props.tableId]);
   useEffect(() => { setOutputKind(props.editor.outputKind ?? 'object'); }, [props.editor.outputKind]);
 
-  const generate = async () => {
+  const generate = async (targetKind: 'OPERATOR' | 'GRAPH' = 'OPERATOR') => {
     setError(null);
     setSaved(false);
     try {
       const operatorRef = props.operatorRef ?? props.target.id;
-      const projection = await fetchScenarioOperatorContract(operatorRef);
+      const projection = targetKind === 'GRAPH'
+        ? props.graphDraftId
+          ? await fetchScenarioGraphContract(props.graphDraftId)
+          : null
+        : await fetchScenarioOperatorContract(operatorRef);
+      if (!projection) {
+        throw new Error(t('The current Graph must be saved before generating scenarios.'));
+      }
       setAuthority(projection);
-      const scenarioDraftSetId = await operatorScenarioDraftSetId(operatorRef);
+      setGeneratedTargetKind(targetKind);
+      const scenarioDraftSetId = targetKind === 'GRAPH'
+        ? await graphScenarioDraftSetId(projection.contract.target.id)
+        : await operatorScenarioDraftSetId(operatorRef);
       const colToInputPath = projection.contract.target.kind === 'OPERATOR'
         ? Object.fromEntries(props.editor.conditionColumns.map((column) => [column.id, `inputs.${column.id}`]))
         : undefined;
@@ -60,7 +76,9 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
             ...enumerated.draftSet.metadata,
             provenance: {
               ...enumerated.draftSet.metadata.provenance,
-              operatorRef: props.operatorRef ?? props.target.id,
+              ...(targetKind === 'OPERATOR'
+                ? { operatorRef }
+                : { targetKind: 'GRAPH', graphDraftId: projection.contract.target.id }),
               sourceNodeId: props.tableId,
             },
           },
@@ -89,11 +107,12 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
         <label><span>{t('Output kind')}</span><select aria-label={t('Decision output kind')} value={outputKind} onChange={(event) => { const next = event.target.value as DecisionOutputKind; setOutputKind(next); props.onOutputKindChange?.(next); }}><option value="object">object</option><option value="scalar">scalar</option><option value="plan">plan</option><option value="dispatch">{t('dispatch (model-only)')}</option></select></label>
         <label><span>{t('Scenario enumeration mode')}</span><select aria-label={t('Scenario enumeration mode')} value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="per-rule">{t('per rule')}</option><option value="combinatorial">{t('combinatorial')}</option></select></label>
         <label><span>{t('Cap')}</span><input aria-label={t('Scenario enumeration cap')} type="number" min={1} max={10000} value={cap} onChange={(event) => setCap(Number(event.target.value))} /></label>
-        <button type="button" className="secondary compact" onClick={generate} data-testid="generate-decision-scenarios">{stale ? t('Re-enumerate stale scenarios') : t('Generate scenarios')}</button>
+        <button type="button" className="secondary compact" onClick={() => void generate()} data-testid="generate-decision-scenarios">{stale ? t('Re-enumerate stale scenarios') : t('Generate scenarios')}</button>
       </div>
       {outputKind === 'dispatch' && <p className="decision-scenario-warning">{t('Dispatch output is modeled only; no dispatch is executed.')}</p>}
-      {stale && <ScenarioStalenessNotice onReenumerate={() => void generate()} />}
-      {preview && <div className="decision-scenario-preview" data-testid="decision-scenario-preview"><span>{t('{count} scenarios', { count: preview.scenarios.length })}</span><span>{t('source {fingerprint}', { fingerprint: preview.metadata.sourceFingerprint })}</span>{preview.metadata.truncated && <strong>{t('Truncated at cap; review stratified sample.')}</strong>}{preview.metadata.opaqueColumns.length > 0 && <strong>{t('Opaque columns: {columns}; not exhaustive.', { columns: preview.metadata.opaqueColumns.join(', ') })}</strong>}<button type="button" className="primary compact" onClick={() => void persist()} disabled={busy}>{busy ? t('Saving…') : t('Save generated set')}</button>{saved && props.onOpenScenarios && <button type="button" className="secondary compact" data-testid="open-generated-scenarios" onClick={props.onOpenScenarios}>{t('Open Scenarios')}</button>}</div>}
+      {stale && <ScenarioStalenessNotice onReenumerate={() => void generate(generatedTargetKind)} />}
+      {props.graphDraftId && <button type="button" className="secondary compact" data-testid="generate-graph-decision-scenarios" onClick={() => void generate('GRAPH')}>{t('Generate for current Graph')}</button>}
+      {preview && <div className="decision-scenario-preview" data-testid="decision-scenario-preview"><span>{t('{count} scenarios', { count: preview.scenarios.length })}</span><span>{t('source {fingerprint}', { fingerprint: preview.metadata.sourceFingerprint })}</span>{preview.metadata.truncated && <strong>{t('Truncated at cap; review stratified sample.')}</strong>}{preview.metadata.opaqueColumns.length > 0 && <strong>{t('Opaque columns: {columns}; not exhaustive.', { columns: preview.metadata.opaqueColumns.join(', ') })}</strong>}<button type="button" className="primary compact" onClick={() => void persist()} disabled={busy}>{busy ? t('Saving…') : t('Save generated set')}</button>{saved && (generatedTargetKind === 'GRAPH' ? props.onOpenGraphScenarios : props.onOpenScenarios) && <button type="button" className="secondary compact" data-testid="open-generated-scenarios" onClick={generatedTargetKind === 'GRAPH' ? props.onOpenGraphScenarios : props.onOpenScenarios}>{t('Open Scenarios')}</button>}</div>}
       {error && <div className="decision-scenario-error" role="alert"><span>{error}</span>{preview && <button type="button" className="secondary compact" onClick={() => void persist()} disabled={busy}>{t('Retry')}</button>}</div>}
     </section>
   );

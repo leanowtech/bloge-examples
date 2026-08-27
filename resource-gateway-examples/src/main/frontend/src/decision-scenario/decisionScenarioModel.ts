@@ -75,6 +75,12 @@ export async function operatorScenarioDraftSetId(operatorRef: string): Promise<s
   return portableScenarioDraftSetId(operatorRef, digest);
 }
 
+/** Builds the stable asset id used when a decision table is generated for a saved Graph target. */
+export async function graphScenarioDraftSetId(graphDraftId: string): Promise<string> {
+  const digest = (await sha256Fingerprint(graphDraftId)).replace(/^sha256:/, '');
+  return portableScenarioDraftSetId(graphDraftId, digest, 'graph');
+}
+
 function inferColumnType(editor: DecisionEditorSnapshot, id: string): 'integer' | 'number' | 'string' | 'enum' | 'boolean' {
   const expressions = editor.rows.map((row) => row.conditions[id] ?? '').join(' ');
   if (/\b(?:true|false)\b/i.test(expressions)) return 'boolean';
