@@ -19,10 +19,13 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResolvedReplayPayloads;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
+import com.leanowtech.bloge.gateway.visual.simulation.ResourceResponseFixture;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -32,6 +35,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 
 /** Adapts a visual simulation plan to the isolated test execution kernel. */
 @Component
@@ -43,9 +48,23 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
     private static final String PLACEHOLDER_ERROR = "VISUAL_SIMULATION_PLACEHOLDER_INVOKED";
 
     private final ObjectMapper objectMapper;
+    private final ResourceFixtureRuntime resourceRuntime;
 
     public VisualSimulationKernelAdapter(ObjectMapper objectMapper) {
+        this(objectMapper, (ResourceFixtureRuntime) null);
+    }
+
+    /** Creates an adapter with the optional real descriptor fixture runtime. */
+    public VisualSimulationKernelAdapter(ObjectMapper objectMapper, ResourceFixtureRuntime resourceRuntime) {
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+        this.resourceRuntime = resourceRuntime;
+    }
+
+    /** Spring wiring seam; absent runtime keeps legacy output-level simulations available. */
+    @Autowired
+    public VisualSimulationKernelAdapter(ObjectMapper objectMapper,
+                                         ObjectProvider<ResourceFixtureRuntime> resourceRuntime) {
+        this(objectMapper, resourceRuntime.getIfAvailable());
     }
 
     @Override
@@ -88,7 +107,7 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                     graph, new GraphContext(plan.businessContext()), bundle, PURPOSE,
                     targetFingerprint, TestExecutionRequest.FixtureSource.INLINE,
                     Map.of(), false, ResolvedReplayPayloads.empty());
-            TestExecutionResult result = new TestRunService(registry, objectMapper, null)
+            TestExecutionResult result = new TestRunService(registry, objectMapper, resourceRuntime)
                     .executeCompiled(request, compiled);
             if (placeholderExecutions.get() != 0) {
                 return failure(outputNode, PLACEHOLDER_ERROR);
@@ -108,9 +127,23 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
             selector = selector.matching(new FixtureRule.Match(
                     standin.expectedInput(), Map.of(), List.of(), List.of(), Map.of(), "", Map.of()));
         }
+        FixtureRule.Behavior behavior = behaviorFor(standin);
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, ruleId(standin), selector,
-                FixtureRule.Behavior.returning(standin.output()),
+                behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
+    }
+
+    private static FixtureRule.Behavior behaviorFor(VisualSimulationPlan.Standin standin) {
+        ResourceResponseFixture response = standin.resourceResponse();
+        if (standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL) {
+            if (response != null) throw new IllegalArgumentException("Raw response requires resource fidelity");
+            return FixtureRule.Behavior.returning(standin.output());
+        }
+        if (response == null) throw new IllegalArgumentException("Raw response is required");
+        FixtureRule.DoubleBoundary boundary = standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL
+                ? FixtureRule.DoubleBoundary.TRANSPORT : FixtureRule.DoubleBoundary.NODE;
+        return FixtureRule.Behavior.protocolResponse(response.rawBody(), response.statusCode(),
+                response.headers(), boundary);
     }
 
     private static String ruleId(VisualSimulationPlan.Standin standin) {

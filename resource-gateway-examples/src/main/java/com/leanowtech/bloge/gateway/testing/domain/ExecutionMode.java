@@ -32,6 +32,7 @@ public enum ExecutionMode {
         return Optional.empty();
     }
 
+
     /** Returns whether a fixture has the exact shape admitted for a schema stand-in hint. */
     public static boolean isSchemaStandinBehavior(
             String operatorRef, FixtureRule.Behavior behavior) {
