@@ -776,7 +776,7 @@ class VisualAuthoringBrowserDomTest {
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-display-name']")),
                 "Browser profile");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-url']")),
-                "https://api.example.test/customers/{id}");
+                "https://api.example.test/customers");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")),
                 "data");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
@@ -812,7 +812,7 @@ class VisualAuthoringBrowserDomTest {
                 "SAVED", "Saved");
         click(wait, By.cssSelector("[data-testid='tool-publish']"));
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Browser API Tool");
-        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Published");
+        waitForToolPublication(wait);
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Typed I/O");
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "#");
         assertThat(driver.getCurrentUrl())
@@ -6257,6 +6257,29 @@ class VisualAuthoringBrowserDomTest {
             throw new AssertionError("Expected text '%s' was not present in %s. Actual='%s', output='%s'"
                     .formatted(expected, locator, textOf(locator), textOf(By.id("output"))), ex);
         }
+    }
+
+    /**
+     * Waits for the visible publication receipt while surfacing a user-visible publish rejection.
+     *
+     * @param wait browser wait used to observe the badge and authoring alert
+     */
+    private void waitForToolPublication(WebDriverWait wait) {
+        By badge = By.cssSelector("[data-testid='tool-signature-badge']");
+        By error = By.cssSelector("[data-testid='tool-authoring-panel'] .tool-authoring-error[role='alert']");
+        try {
+            wait.until(ignored -> {
+                List<WebElement> errors = visibleElements(error);
+                if (!errors.isEmpty()) {
+                    throw new AssertionError("Tool publication was rejected: " + errors.getFirst().getText());
+                }
+                return textOf(badge).contains("Published");
+            });
+        } catch (TimeoutException ex) {
+            throw new AssertionError("Tool publication did not complete. badge='%s', output='%s'"
+                    .formatted(textOf(badge), textOf(By.id("output"))), ex);
+        }
+        assertThat(visibleElements(error)).as("tool publication error").isEmpty();
     }
 
     private void waitForAnyText(WebDriverWait wait, By locator, String... expectedValues) {
