@@ -133,6 +133,7 @@ import static org.assertj.core.api.Assertions.assertThat;
                 "gateway.testing.correctness.fixture-material.enabled=true",
                 "gateway.testing.correctness.fixture-material.active-key-id=browser-test-v1",
                 "gateway.testing.correctness.fixture-material.key-ring=browser-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+                "gateway.integration.identity.environment-id=test",
                 "spring.datasource.url=jdbc:h2:mem:visual-authoring-browser-dom;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
@@ -1080,7 +1081,6 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.invisibilityOfElementLocated(
                 By.cssSelector("[data-testid='author-start-dialog']")
         ));
-
         selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", "n4");
         openDataInspector(wait);
         click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
