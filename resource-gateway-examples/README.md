@@ -376,13 +376,15 @@ VITE_DEV_API_TARGET=http://localhost:18091 npm run dev
 The additive author-spine contract is enabled only by an exact, single
 `spine=v1` query parameter. Unknown, repeated, or differently-cased values
 fail closed to `off`; the existing `/` Capability Studio remains the default
-until a later slice mounts the spine UI. Navigation coordinates are UI-only
+unless the exact `/?spine=v1` rollout URL is used. That URL now opens the
+five-intent Launcher and its seven-workspace menu. Navigation coordinates are UI-only
 (`toolId`, `toolName`, `stage`, and optional draft position) and must not be
 written into GraphDraft or Scenario protocol payloads.
 
-For rollback, remove `?spine=v1` from the URL. The pure contract helpers and
-their tests live in `src/main/frontend/src/spine/authorSpine.ts`; Launcher and
-stage rail mounting are intentionally delivered in a later slice.
+For rollback, remove `?spine=v1` from the URL. The contract helpers and their
+tests live in `src/main/frontend/src/spine/authorSpine.ts`; coordinate-aware
+ObjectBreadcrumb and ToolThreadRail are mounted only when a valid ToolCoordinate
+is present. Responsive 390/1280 end-to-end geometry remains a later gate.
 
 The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
 segmented control in the global header; the choice persists across workspace navigation and reloads.

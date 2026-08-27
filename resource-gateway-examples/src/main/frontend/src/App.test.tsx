@@ -91,6 +91,33 @@ describe('App route shell', () => {
       .toBe('/capabilities/');
   });
 
+  it('mounts the tool spine Launcher only for the exact v1 flag at root', async () => {
+    await renderAt('/?spine=v1');
+    await flushLazyRoute();
+
+    expect(query('[data-testid="tool-spine-launcher"]')).toBeTruthy();
+    expect(document.querySelector('[data-testid="capability-studio-mock"]')).toBeNull();
+    expect(document.querySelectorAll('[data-testid="spine-intent-card"]')).toHaveLength(5);
+  });
+
+  it.each(['/?spine=V1', '/?spine=v1&spine=v1', '/?spine=v1&SPINE=v1'])
+    ('keeps the existing Capability Studio for fail-closed spine input %s', async (path) => {
+      await renderAt(path);
+
+      expect(query('[data-testid="capability-studio-mock"]')).toBeTruthy();
+      expect(document.querySelector('[data-testid="tool-spine-launcher"]')).toBeNull();
+    });
+
+  it('adds the object shell only when a v1 ToolCoordinate is present', async () => {
+    await renderAt('/author/?spine=v1&toolId=loan&toolName=Loan%20Profile&stage=wire&graphDraftId=draft-7&nodeId=policy');
+    await flushLazyRoute();
+
+    expect(query('[data-testid="object-breadcrumb"]')).toBeTruthy();
+    expect(query('[data-testid="tool-thread-rail"]')).toBeTruthy();
+    expect(query('[data-tool-stage="wire"]').getAttribute('aria-current')).toBe('step');
+    expect(query('[data-testid="author-mock"]')).toBeTruthy();
+  });
+
   it('renders the Capability Studio route explicitly', async () => {
     await renderAt('/capabilities/');
 
@@ -261,6 +288,12 @@ describe('App route shell', () => {
     await act(async () => {
       root = createRoot(host);
       root.render(<App />);
+    });
+  }
+
+  async function flushLazyRoute() {
+    await act(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
     });
   }
 });

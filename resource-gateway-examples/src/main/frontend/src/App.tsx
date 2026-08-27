@@ -12,6 +12,7 @@ import {
   resolveAuthorWorkspaceVersion,
 } from './author/authorWorkspaceVersion';
 import { signalHostWorkspaceReady } from './host/hostLifecycle';
+import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
 import './styles/tokens.css';
 import './styles.css';
 import './styles/responsive.css';
@@ -33,6 +34,8 @@ const CorrectnessStudio = lazy(loadCorrectnessStudio);
 const LibraryWorkbench = lazy(loadLibraryWorkbench);
 const RehearsalWorkbench = lazy(loadRehearsalWorkbench);
 const Showcase = lazy(loadShowcase);
+const Launcher = lazy(() => import('./spine/Launcher'));
+const ToolObjectShell = lazy(() => import('./spine/ToolObjectShell'));
 
 const ROUTE_PREFETCH: Record<WorkspaceRoute, () => Promise<unknown>> = {
   capabilities: loadCapabilityStudio,
@@ -71,6 +74,8 @@ function AppShell() {
   const { t, m } = useI18n();
   const [navigationOpen, setNavigationOpen] = useState(false);
   const vscodeHost = typeof globalThis.acquireVsCodeApi === 'function';
+  const spine = resolveSpine(window.location.search);
+  const toolCoordinate = spine === 'v1' ? parseToolCoordinate(window.location.href) : null;
   const route = resolveWorkspaceRoute(window.location.pathname, window.location.search, vscodeHost);
   const titleEntry = NAVIGATION_ROUTES.find((entry) => entry.route === route);
   const title = titleEntry?.titleId ? m(titleEntry.titleId) : t(titleEntry?.label ?? 'Author');
@@ -88,6 +93,8 @@ function AppShell() {
   useEffect(() => {
     document.title = t('BLOGE Visual Canvas - {title}', { title });
   }, [t, title]);
+
+  if (spine === 'v1' && window.location.pathname === '/') return <SpineLauncherFrame />;
 
   return (
     <div className={`app app-${route}`}>
@@ -156,7 +163,23 @@ function AppShell() {
       </header>
       <Suspense fallback={<WorkspaceLoading />}>
         <HostReadySignal route={route} />
-        {route === 'capabilities'
+        {toolCoordinate ? (
+          <ToolObjectShell coordinate={toolCoordinate}>
+            {route === 'capabilities'
+              ? <CapabilityStudio />
+              : route === 'business-mirror'
+              ? <BusinessMirrorWorkspace />
+              : route === 'correctness'
+              ? <CorrectnessStudio />
+              : route === 'libraries'
+              ? <LibraryWorkbench />
+              : route === 'showcase'
+              ? <Showcase />
+              : route === 'rehearsals'
+                ? <RehearsalWorkbench />
+                : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
+          </ToolObjectShell>
+        ) : route === 'capabilities'
           ? <CapabilityStudio />
           : route === 'business-mirror'
           ? <BusinessMirrorWorkspace />
@@ -169,6 +192,30 @@ function AppShell() {
           : route === 'rehearsals'
             ? <RehearsalWorkbench />
             : <AuthorCanvas workspaceVersion={authorWorkspaceVersion} />}
+      </Suspense>
+    </div>
+  );
+}
+
+function SpineLauncherFrame() {
+  const { t } = useI18n();
+  useEffect(() => {
+    document.title = t('BLOGE Visual Canvas - {title}', { title: t('Tool authoring spine') });
+  }, [t]);
+  return (
+    <div className="app app-spine-launcher">
+      <header className="topbar">
+        <div className="topbar-brand">
+          <p className="eyebrow">BLOGE Visual Canvas</p>
+          <h1>{t('Tool authoring spine')}</h1>
+        </div>
+        <div className="topbar-preferences">
+          <DensitySwitcher />
+          <LanguageSwitcher />
+        </div>
+      </header>
+      <Suspense fallback={<WorkspaceLoading />}>
+        <Launcher />
       </Suspense>
     </div>
   );
