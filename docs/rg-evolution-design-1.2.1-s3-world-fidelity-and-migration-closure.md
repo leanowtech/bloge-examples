@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..D` 已完成开发验证，`S3-E..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..E` 已完成开发验证，`S3-F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -243,6 +243,8 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - World mutation planner/evaluator；
 - 等价 mutant 治理；
 - 验证器负面对照与黄金新鲜度。
+
+开发验证证据：53/53 聚焦测试与 Resource Gateway 7554 项全量测试通过。World mutation 从真实 BLOGE AST 定位变异点，生成后的候选必须重新 parse、compile 并通过 World fragment admission；删除规则、反转条件、替换边界值、改变结果和丢弃状态写均形成可重建候选。BLOGE 纯 World 语法要求 `otherwise` 位于末尾，因此改变 default 优先级会形成稳定 `MUTANT_COMPILATION_REJECTED` gap，不伪装成可执行 mutant。图与 World 层分别输出诚实分母、得分、存活清单、等价来源与不适用原因；inconclusive/unclassified 不会从非等价分母消失，已成立的 assertion kill 不会被其他 Scenario 超时抹除。公开报告构造器重新校验层方向、父子 mutant/scenario 绑定、状态统计、survivor 和等价来源闭包；受审 mutant 物化时再次校验 World、Slice 和精确目标。等价分类只能由外部 authority 验证精确绑定的独立语义证明或人工复核收据，元数据自报、篡改、跨租户和 replay 均失败关闭。六类验证器 must-reject corpus 精确绑定 source schema、算法、策略和 golden，任一来源漂移触发 `STALE_GOLDEN`。详见 [S3-E 验证说明](./rg-evolution-design-1.2.1-s3-mutation-validator-verification.md)。
 
 ### S3-F：系统闭环与里程碑
 

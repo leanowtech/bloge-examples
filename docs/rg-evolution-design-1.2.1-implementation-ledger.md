@@ -20,7 +20,7 @@
 | 阶段零 | 收敛执行内核、描述符传输替换、控制面隔离、旧路径适配 | `DEVELOPMENT_VERIFIED` | 八项阶段出口全部闭合；受治理大负载引用已通过真实 HTTP 链进入统一执行与证据管线，双项目最终回归全绿 |
 | 阶段一 | 逻辑契约、世界模型、剧情、编译下沉和资产持久化 | `DEVELOPMENT_VERIFIED` | 四个切片全部闭合；无状态世界、Scenario、治理资产、两阶段授权和引用式端到端运行均形成固定开发证据 |
 | 阶段二 | 有状态世界和函数返回值注入 | `DEVELOPMENT_VERIFIED` | `S2-A..D`、`S2-E1`、`S2-E2a..b` 全部闭合；治理函数控制从权威编译产物、真实 HTTP、生产隔离、payload-free evidence 到独立 Test Kit 严格消费形成双项目固定证据 |
-| 阶段三 | 线上沉淀、影响分析和存量迁移 | `IN_PROGRESS` | `S3-A..D` 已完成开发验证：受治理观测可安全晋升为可执行 World 资产，静态与运行事实可形成失败关闭的影响索引，存量测试可确定性迁移，并可在非生产环境按固定样本校准真实 API 与已发布 World 的保真度；`S3-E..F` 尚未闭合 |
+| 阶段三 | 线上沉淀、影响分析和存量迁移 | `IN_PROGRESS` | `S3-A..E` 已完成开发验证：受治理观测可安全晋升为可执行 World 资产，静态与运行事实可形成失败关闭的影响索引，存量测试可确定性迁移，可在非生产环境校准 World 保真度，并以图/World 双层变异和验证器反证固定正确性分母；`S3-F` 尚未闭合 |
 
 ## 3. 阶段零验收矩阵
 
@@ -95,7 +95,7 @@
 | `S3-B` | 静态依赖索引、运行时消费投影、staleness 与影响报告 | `DEVELOPMENT_VERIFIED` | 23/23 聚焦测试与 Resource Gateway 7462 项全量测试通过；权威编译 source map 和完整性已验证 evidence 分别形成不可变索引，PostgreSQL/H2 可跨实例恢复；declared-only/observed-only、breaking 全静态分母、缺失或陈旧索引显式门禁阻断、错契约/跨租户/篡改失败关闭及 payload-free 投影均有固定证明；详见 [S3-B 验证说明](./rg-evolution-design-1.2.1-s3-world-impact-verification.md) |
 | `S3-C` | 存量 FixtureBundle/TestSuite 单向迁移 | `DEVELOPMENT_VERIFIED` | 18/18 聚焦测试与 Resource Gateway 7480 项全量测试通过；精确 legacy source、现有 `ScenarioDraftSet`、World 物化计划、双向来源映射、未映射诊断、原子幂等 sink 和 payload-free 投影形成闭环；无契约标签不猜测，legacy fixture 不伪装治理 capture，缺契约或精确输入时显式阻断，旧资产与旧 API 保持不变；详见 [S3-C 验证说明](./rg-evolution-design-1.2.1-s3-legacy-migration-verification.md) |
 | `S3-D` | 真实 API 与 World 保真校准 | `DEVELOPMENT_VERIFIED` | 21/21 聚焦测试与 Resource Gateway 7501 项全量测试通过；非生产精确授权、固定样本双跑、schema/值/错误/重试/状态迁移差异、payload-free 报告、PostgreSQL/H2 漂移状态持久化、原子审批收据、历史 evidence 非改写策略投影及缺失状态失败关闭均有固定证明；详见 [S3-D 验证说明](./rg-evolution-design-1.2.1-s3-world-fidelity-verification.md) |
-| `S3-E` | 图与 World 双层变异、验证器反证 | `NOT_STARTED` | 待实现 |
+| `S3-E` | 图与 World 双层变异、验证器反证 | `DEVELOPMENT_VERIFIED` | 53/53 聚焦测试与 Resource Gateway 7554 项全量测试通过；World planner 基于真实 BLOGE AST 生成、重编译和准入候选，图与 World 的全部非等价 mutant 均进入独立分母，存活项和等价来源显式输出；等价只能经外部 authority 精确证明；六类 must-reject corpus、golden staleness、payload-free 报告和认证/探索门禁均有固定证明；详见 [S3-E 验证说明](./rg-evolution-design-1.2.1-s3-mutation-validator-verification.md) |
 | `S3-F` | 系统闭环与双项目里程碑 | `NOT_STARTED` | 待实现 |
 
 - 生产观测只能经显式黄金捕获或受治理重放进入草稿，默认脱敏，晋升前人工复核。
