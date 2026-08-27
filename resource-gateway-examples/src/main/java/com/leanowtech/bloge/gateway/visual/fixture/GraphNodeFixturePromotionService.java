@@ -36,6 +36,9 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
 /**
  * Derives a governed Draft Fixture from an immutable graph-draft node capture.
  *
@@ -75,12 +78,17 @@ public class GraphNodeFixturePromotionService {
     /**
      * Promotes one captured node output into a new governed DRAFT Fixture.
      *
+     * <p>The controller entry point is REQUIRED-transactional so the protected material revision,
+     * its write audit, and the catalog descriptor commit or roll back as one database unit when
+     * the configured repositories share a transaction manager.</p>
+     *
      * @param draftId authoritative graph draft id
      * @param nodeId exact graph node id
      * @param request author-controlled bounded promotion request
      * @param identity authenticated integration context
      * @return payload-free governed Fixture receipt
      */
+    @Transactional(propagation = Propagation.REQUIRED)
     public PromotionResult promote(
             String draftId,
             String nodeId,
@@ -97,6 +105,10 @@ public class GraphNodeFixturePromotionService {
     /**
      * Direct-call overload used by non-Spring clients and focused service tests.
      *
+     * <p>When invoked through the Spring bean proxy this overload has the same atomic boundary as
+     * the controller entry point. Direct, non-Spring callers must provide their own transaction
+     * if they require atomicity across non-database implementations.</p>
+     *
      * @param draftId authoritative graph draft id
      * @param nodeId exact graph node id
      * @param request author-controlled bounded promotion request
@@ -104,6 +116,7 @@ public class GraphNodeFixturePromotionService {
      * @param identityForMaterialWrite trusted context used for scope and material authorization
      * @return payload-free governed Fixture receipt
      */
+    @Transactional(propagation = Propagation.REQUIRED)
     public PromotionResult promote(
             String draftId,
             String nodeId,
