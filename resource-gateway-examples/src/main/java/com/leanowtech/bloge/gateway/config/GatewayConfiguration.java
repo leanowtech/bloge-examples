@@ -107,6 +107,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.asset.DatabaseVisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.asset.VisualRuntimeBindingImplementationRepository;
 import com.leanowtech.bloge.gateway.visual.authoring.application.AuthoringCatalogOwnershipRepository;
@@ -362,6 +363,14 @@ public class GatewayConfiguration {
     @ConditionalOnMissingBean
     public ResponseValidator responseValidator(BlgeExpressionEvaluator evaluator) {
         return new ResponseValidator(evaluator);
+    }
+
+    /** Provides the descriptor-backed resource fixture runtime used by visual simulation. */
+    @Bean
+    @ConditionalOnMissingBean
+    public ResourceFixtureRuntime resourceFixtureRuntime(
+            ResourceRegistry resources, BlgeExpressionEvaluator evaluator, ObjectMapper objectMapper) {
+        return new ResourceFixtureRuntime(resources, evaluator, objectMapper);
     }
 
     /**

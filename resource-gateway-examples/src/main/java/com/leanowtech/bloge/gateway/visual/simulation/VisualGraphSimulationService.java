@@ -250,6 +250,15 @@ public class VisualGraphSimulationService {
                         List.of("Simulation cannot resolve one or more operators."), "");
             }
             boolean pinned = effectiveFixtures.containsKey(node.id());
+            if (pinned && effectiveFixtures.get(node.id()).resourceFidelity()
+                    != NodeFixture.ResourceFidelity.OUTPUT_LEVEL
+                    && !"httpResource".equals(operator.get().lowering().operatorRef())) {
+                diagnostics.add(VisualDiagnostic.error("visual.simulate.resourceFidelity.nonResource",
+                        "Protocol or transport fidelity is only valid for resource operators.",
+                        "/fixtures/" + node.id() + "/resourceFidelity"));
+                return blocked(true, diagnostics,
+                        List.of("Resource fidelity is invalid for this operator."), "");
+            }
             if (!pinned && isRealPrimitive(operator.get())) {
                 realNodeIds.add(node.id());
                 simulationNodes.add(node);
