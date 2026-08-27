@@ -4,6 +4,7 @@ import {
   transitionFixtureAsset,
 } from '../correctness-studio/api/correctnessAuthoringApi';
 import type { StoredFixtureAsset } from '../correctness-studio/model/authoring';
+import type { CorrectnessApiEnvelope } from '../correctness-studio/model/domain';
 import {
   governedRefFromReceipt,
   type GraphNodeFixturePromoteRequest,
@@ -147,7 +148,7 @@ export async function verifyGovernedFixture(
   revision: number,
   request: FixtureReviewVerificationRequest,
 ): Promise<GovernedFixtureLifecycleReceipt> {
-  return lifecycleReceipt((await exchangeCorrectnessApi(
+  return lifecycleReceipt((await exchangeCorrectnessApi<CorrectnessApiEnvelope<StoredFixtureAsset>>(
     `/api/visual/fixture-assets/${encodeURIComponent(fixtureAssetId)}:verify-review`,
     'CORRECTNESS_REVIEW',
     { method: 'POST', ifMatch: revision, body: request },
