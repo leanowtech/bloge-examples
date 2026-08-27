@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..C` 已完成开发验证，`S3-D..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..D` 已完成开发验证，`S3-E..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -232,6 +232,10 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - 受控真实 API/World 双跑；
 - schema-aware diff；
 - 漂移状态机、证据降级和发布阻断。
+
+开发验证证据：21/21 聚焦测试与 Resource Gateway 7501 项全量测试通过。校准请求精确绑定租户、用途、非生产环境、逻辑契约、真实实现、已发布 World、样本分母、比较器策略及其 fingerprint；任何未授权、生产环境、来源漂移、样本不完整或策略不一致都在 runner 调用前失败关闭。双 runner 接收同一规范请求的独立副本，比较器检测 required/type、响应值与数值容差、错误类别、状态码、重试语义和状态迁移；延迟只作为诊断，不参与等价判断。任一 runner 失败或双方均失败均产生 `UNKNOWN`，不能形成可认证结论。
+
+漂移治理复用独立的 append-only 报告历史和 CAS head。状态只允许按 `CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT` 或 `CONFIRMED -> ACCEPTED_DIVERGENCE` 推进；新观测不能绕过治理流转自动清除已有漂移。接受偏差必须由外部 authority 验证精确收据，并在同一事务内完成状态 CAS 与收据消费。PostgreSQL/H2 持久化按租户和目标隔离，可跨 repository 实例恢复；数据库只保存显式 payload-free 投影。当前漂移状态通过独立策略决策注释历史 `TestRunEvidence`，不会改写历史证据；状态缺失、疑似、确认或修复中均阻断认证发布。详见 [S3-D 验证说明](./rg-evolution-design-1.2.1-s3-world-fidelity-verification.md)。
 
 ### S3-E：双层变异与验证器反证
 
