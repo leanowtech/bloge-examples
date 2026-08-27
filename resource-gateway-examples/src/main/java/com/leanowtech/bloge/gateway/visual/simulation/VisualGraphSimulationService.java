@@ -293,9 +293,7 @@ public class VisualGraphSimulationService {
                                         .orElse(null),
                                 Optional.ofNullable(effectiveFixtures.get(nodeId))
                                         .map(NodeFixture::resourceFidelity)
-                                        .orElse(NodeFixture.ResourceFidelity.OUTPUT_LEVEL),
-                                Optional.ofNullable(effectiveFixtures.get(nodeId))
-                                        .map(NodeFixture::resourceResponse).orElse(null)))
+                                        .orElse(NodeFixture.ResourceFidelity.OUTPUT_LEVEL)))
                         .toList();
                 dynamic = runKernelWithTimeout(new VisualSimulationPlan(
                         generated.dsl(), effectiveContext, selectedOutputNode, standins));

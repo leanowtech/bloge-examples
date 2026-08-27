@@ -24,7 +24,6 @@ import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
-import com.leanowtech.bloge.gateway.visual.simulation.ResourceResponseFixture;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity;
 
 import java.time.Instant;
@@ -134,16 +133,25 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
     }
 
     private static FixtureRule.Behavior behaviorFor(VisualSimulationPlan.Standin standin) {
-        ResourceResponseFixture response = standin.resourceResponse();
         if (standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL) {
-            if (response != null) throw new IllegalArgumentException("Raw response requires resource fidelity");
             return FixtureRule.Behavior.returning(standin.output());
         }
-        if (response == null) throw new IllegalArgumentException("Raw response is required");
+        if (!(standin.output() instanceof Map<?, ?> map)) {
+            throw new IllegalArgumentException("Raw response evidence is required");
+        }
+        Object rawBody = map.get("rawBody");
+        Object status = map.get("statusCode");
+        if (!(rawBody instanceof String body) || !(status instanceof Number code)) {
+            throw new IllegalArgumentException("Raw response evidence is incomplete");
+        }
+        Map<String, String> headers = new LinkedHashMap<>();
+        Object rawHeaders = map.get("responseHeaders");
+        if (rawHeaders instanceof Map<?, ?> headerMap) {
+            headerMap.forEach((key, value) -> { if (key instanceof String k && value != null) headers.put(k, value.toString()); });
+        }
         FixtureRule.DoubleBoundary boundary = standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL
                 ? FixtureRule.DoubleBoundary.TRANSPORT : FixtureRule.DoubleBoundary.NODE;
-        return FixtureRule.Behavior.protocolResponse(response.rawBody(), response.statusCode(),
-                response.headers(), boundary);
+        return FixtureRule.Behavior.protocolResponse(body, code.intValue(), headers, boundary);
     }
 
     private static String ruleId(VisualSimulationPlan.Standin standin) {

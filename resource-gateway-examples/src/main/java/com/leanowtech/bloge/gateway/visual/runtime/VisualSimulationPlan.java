@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity;
-import com.leanowtech.bloge.gateway.visual.simulation.ResourceResponseFixture;
 
 /** Immutable visual-owned input for a generated DSL simulation. */
 public record VisualSimulationPlan(
@@ -26,8 +25,7 @@ public record VisualSimulationPlan(
             String rewrittenOperatorRef,
             Object output,
             Object expectedInput,
-            ResourceFidelity resourceFidelity,
-            ResourceResponseFixture resourceResponse
+            ResourceFidelity resourceFidelity
     ) {
         public Standin {
             originalNodeId = normalized(originalNodeId);
@@ -40,12 +38,6 @@ public record VisualSimulationPlan(
                        Object output, Object expectedInput) {
             this(originalNodeId, rewrittenOperatorRef, output, expectedInput,
                     ResourceFidelity.OUTPUT_LEVEL);
-        }
-
-        /** Backward-compatible fidelity constructor. */
-        public Standin(String originalNodeId, String rewrittenOperatorRef, Object output,
-                       Object expectedInput, ResourceFidelity resourceFidelity) {
-            this(originalNodeId, rewrittenOperatorRef, output, expectedInput, resourceFidelity, null);
         }
 
         /** Returns the optional input assertion without changing the wire shape. */
