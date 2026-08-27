@@ -229,6 +229,7 @@ function newForm(): ExternalApiFormModel {
     resourceId: '', displayName: '', urlTemplate: '', method: 'GET',
     params: [{ name: '', in: 'path', from: '' }],
     responseProtocol: { kind: 'HttpStatus' }, payloadPath: '',
+    // Structured is the safe default; handwritten JSON remains an explicit Advanced fallback.
     outputSchema: { source: 'structured', schema: EMPTY_SCHEMA },
   };
 }

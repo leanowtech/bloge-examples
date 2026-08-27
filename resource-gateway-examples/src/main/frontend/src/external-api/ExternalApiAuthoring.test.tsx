@@ -55,6 +55,22 @@ describe('ExternalApiAuthoring', () => {
     expect(host.textContent).toContain('Add external API');
   });
 
+  it('keeps structured output as the default and exposes handwritten JSON only as an Advanced fallback', async () => {
+    await act(async () => root.render(<ExternalApiAuthoring save={save} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="add-external-api"]')?.click());
+    expect(host.querySelector<HTMLSelectElement>('[data-testid="external-api-schema-mode"]')?.value).toBe('structured');
+    expect(host.querySelector('[data-testid="external-api-structured-schema"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="external-api-advanced-schema"]')).toBeNull();
+    await act(async () => {
+      const mode = host.querySelector<HTMLSelectElement>('[data-testid="external-api-schema-mode"]')!;
+      mode.value = 'manual';
+      mode.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(host.querySelector('[data-testid="external-api-structured-schema"]')).toBeNull();
+    expect(host.querySelector('[data-testid="external-api-advanced-schema"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="external-api-manual-schema"]')).not.toBeNull();
+  });
+
   it('switches protocol fields and supports path/query/header parameters plus inference', async () => {
     await act(async () => root.render(<ExternalApiAuthoring save={save} onCatalogRefresh={onCatalogRefresh} />));
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="add-external-api"]')?.click());

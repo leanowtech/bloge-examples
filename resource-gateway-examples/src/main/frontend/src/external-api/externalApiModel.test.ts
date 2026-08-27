@@ -161,6 +161,19 @@ describe('structuredObjectSchema', () => {
     });
   });
 
+  it('orders schema properties by Unicode code point regardless of locale', () => {
+    const rows = [
+      { name: 'b', type: 'string' as const, required: false },
+      { name: 'a😀', type: 'string' as const, required: false },
+      { name: 'a𐀀', type: 'string' as const, required: false },
+      { name: 'a', type: 'string' as const, required: false },
+    ];
+    const first = structuredObjectSchema(rows);
+    const second = structuredObjectSchema([...rows].reverse());
+    expect(Object.keys(first.properties as Record<string, unknown>)).toEqual(['a', 'a𐀀', 'a😀', 'b']);
+    expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+
   it('rejects invalid rows instead of silently dropping them', () => {
     expect(() => structuredObjectSchema([
       { name: ' ', type: 'string', required: false },

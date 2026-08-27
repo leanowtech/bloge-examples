@@ -47,13 +47,25 @@ export function structuredObjectSchema(rows: readonly StructuredSchemaProperty[]
   if (new Set(names).size !== names.length) {
     throw new Error('Structured schema property names must be unique.');
   }
-  const ordered = [...normalized].sort((left, right) => left.name.localeCompare(right.name));
+  const ordered = [...normalized].sort((left, right) => compareCodePoints(left.name, right.name));
   return {
     type: 'object',
     properties: Object.fromEntries(ordered.map((row) => [row.name, { type: row.type }])),
     required: ordered.filter((row) => row.required).map((row) => row.name),
     additionalProperties: false,
   };
+}
+
+/** Compares strings by Unicode code point so schema property order is locale-independent. */
+function compareCodePoints(left: string, right: string): number {
+  const leftPoints = Array.from(left, (character) => character.codePointAt(0) ?? 0);
+  const rightPoints = Array.from(right, (character) => character.codePointAt(0) ?? 0);
+  const length = Math.min(leftPoints.length, rightPoints.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftPoints[index] ?? 0) - (rightPoints[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
 }
 
 /** Pure authoring state for one external HTTP API resource. */
