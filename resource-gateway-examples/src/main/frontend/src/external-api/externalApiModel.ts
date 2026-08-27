@@ -18,7 +18,43 @@ export type ExternalApiResponseProtocol =
 /** How an API response schema was supplied by an author. */
 export type ExternalApiOutputSchema =
   | { source: 'manual'; schema: JsonSchema }
+  | { source: 'structured'; schema: JsonSchema }
   | { source: 'inferred'; sampleResponse: unknown; schema: JsonSchema };
+
+/** Primitive property types supported by the bounded structured schema editor. */
+export type StructuredSchemaPropertyType = 'string' | 'integer' | 'number' | 'boolean';
+
+/** One object property authored without requiring JSON syntax. */
+export interface StructuredSchemaProperty {
+  name: string;
+  type: StructuredSchemaPropertyType;
+  required: boolean;
+}
+
+/** Safety bound for the compact structured schema editor. */
+export const MAX_STRUCTURED_PROPERTIES = 20;
+
+/** Build a deterministic object schema while rejecting incomplete editor rows. */
+export function structuredObjectSchema(rows: readonly StructuredSchemaProperty[]): JsonSchema {
+  if (rows.length > MAX_STRUCTURED_PROPERTIES) {
+    throw new Error('Structured schema contains too many properties.');
+  }
+  const normalized = rows.map((row) => ({ ...row, name: row.name.trim() }));
+  if (normalized.some((row) => !row.name)) {
+    throw new Error('Every structured schema property needs a name.');
+  }
+  const names = normalized.map((row) => row.name);
+  if (new Set(names).size !== names.length) {
+    throw new Error('Structured schema property names must be unique.');
+  }
+  const ordered = [...normalized].sort((left, right) => left.name.localeCompare(right.name));
+  return {
+    type: 'object',
+    properties: Object.fromEntries(ordered.map((row) => [row.name, { type: row.type }])),
+    required: ordered.filter((row) => row.required).map((row) => row.name),
+    additionalProperties: false,
+  };
+}
 
 /** Pure authoring state for one external HTTP API resource. */
 export interface ExternalApiFormModel {

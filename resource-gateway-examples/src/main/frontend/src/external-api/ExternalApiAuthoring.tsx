@@ -4,10 +4,14 @@ import type { OperatorCatalogResponse } from '../types';
 import { useI18n } from '../i18n/I18nProvider';
 import {
   inferSchema,
+  MAX_STRUCTURED_PROPERTIES,
+  structuredObjectSchema,
   type ExternalApiFormModel,
   type ExternalApiParameter,
   type ExternalApiResponseProtocol,
   type JsonSchema,
+  type StructuredSchemaProperty,
+  type StructuredSchemaPropertyType,
 } from './externalApiModel';
 import {
   saveExternalApi,
@@ -44,6 +48,7 @@ export default function ExternalApiAuthoring({
   const [form, setForm] = useState<ExternalApiFormModel>(newForm());
   const [schemaText, setSchemaText] = useState(JSON.stringify(EMPTY_SCHEMA, null, 2));
   const [sampleText, setSampleText] = useState('');
+  const [structuredProperties, setStructuredProperties] = useState<StructuredSchemaProperty[]>([]);
   const [inferenceReady, setInferenceReady] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -93,6 +98,13 @@ export default function ExternalApiAuthoring({
         outputSchema = { source: 'manual', schema: parsed as Record<string, unknown> };
       } catch {
         setError(t('Manual output schema must be a JSON object.'));
+        return;
+      }
+    } else if (outputSchema.source === 'structured') {
+      try {
+        outputSchema = { source: 'structured', schema: structuredObjectSchema(structuredProperties) };
+      } catch (cause) {
+        setError(cause instanceof Error ? t(cause.message) : t('Structured output schema is invalid.'));
         return;
       }
     }
@@ -182,8 +194,18 @@ export default function ExternalApiAuthoring({
           </section>
           <section data-testid="external-api-output-schema">
             <h4>{t('Output schema')}</h4>
-            <label><span>{t('Schema mode')}</span><select data-testid="external-api-schema-mode" value={form.outputSchema.source} onChange={(event) => { const source = event.target.value as 'manual' | 'inferred'; updateForm({ outputSchema: source === 'manual' ? { source, schema: EMPTY_SCHEMA } : { source, sampleResponse: null, schema: EMPTY_SCHEMA } }); setInferenceReady(false); }}>{<><option value="manual">{t('Manual')}</option><option value="inferred">{t('Inferred')}</option></>}</select></label>
-            {form.outputSchema.source === 'manual' ? <label><span>{t('Manual JSON Schema')}</span><textarea data-testid="external-api-manual-schema" value={schemaText} onChange={(event) => setSchemaText(event.target.value)} /></label> : <><label><span>{t('Sample response JSON')}</span><textarea data-testid="external-api-inferred-sample" value={sampleText} onChange={(event) => { setSampleText(event.target.value); setInferenceReady(false); }} /></label><button type="button" className="secondary compact" data-testid="external-api-infer" onClick={inferOutputSchema}>{t('Infer schema')}</button>{inferenceReady && <span data-testid="external-api-inference-ready">{t('Inference ready')}</span>}</>}
+            <label><span>{t('Schema mode')}</span><select data-testid="external-api-schema-mode" value={form.outputSchema.source} onChange={(event) => { const source = event.target.value as 'manual' | 'structured' | 'inferred'; updateForm({ outputSchema: source === 'manual' ? { source, schema: EMPTY_SCHEMA } : source === 'structured' ? { source, schema: EMPTY_SCHEMA } : { source, sampleResponse: null, schema: EMPTY_SCHEMA } }); setInferenceReady(false); }}><option value="structured">{t('Structured')}</option><option value="manual">{t('Manual')}</option><option value="inferred">{t('Inferred')}</option></select></label>
+            {form.outputSchema.source === 'structured' ? <div className="external-api-structured-schema" data-testid="external-api-structured-schema">
+              {structuredProperties.map((property, index) => <div className="external-api-schema-property" data-testid={`external-api-schema-property-${index}`} key={index}>
+                <input aria-label={`${t('Schema property name')} ${index + 1}`} data-testid={`external-api-schema-property-name-${index}`} value={property.name} onChange={(event) => setStructuredProperties((current) => current.map((row, candidate) => candidate === index ? { ...row, name: event.target.value } : row))} />
+                <select aria-label={`${t('Schema property type')} ${index + 1}`} data-testid={`external-api-schema-property-type-${index}`} value={property.type} onChange={(event) => setStructuredProperties((current) => current.map((row, candidate) => candidate === index ? { ...row, type: event.target.value as StructuredSchemaPropertyType } : row))}>
+                  {(['string', 'integer', 'number', 'boolean'] as const).map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+                <label><input type="checkbox" data-testid={`external-api-schema-property-required-${index}`} checked={property.required} onChange={(event) => setStructuredProperties((current) => current.map((row, candidate) => candidate === index ? { ...row, required: event.target.checked } : row))} /> {t('Required')}</label>
+                <button type="button" className="secondary compact" data-testid={`external-api-schema-property-remove-${index}`} onClick={() => setStructuredProperties((current) => current.filter((_, candidate) => candidate !== index))}>{t('Remove')}</button>
+              </div>)}
+              <button type="button" className="secondary compact" data-testid="external-api-add-schema-property" disabled={structuredProperties.length >= MAX_STRUCTURED_PROPERTIES} onClick={() => setStructuredProperties((current) => [...current, { name: '', type: 'string', required: false }])}>{t('Add schema property')}</button>
+            </div> : <details data-testid="external-api-advanced-schema"><summary>{t('Advanced')}</summary>{form.outputSchema.source === 'manual' ? <label><span>{t('Manual JSON Schema')}</span><textarea data-testid="external-api-manual-schema" value={schemaText} onChange={(event) => setSchemaText(event.target.value)} /></label> : <><label><span>{t('Sample response JSON')}</span><textarea data-testid="external-api-inferred-sample" value={sampleText} onChange={(event) => { setSampleText(event.target.value); setInferenceReady(false); }} /></label><button type="button" className="secondary compact" data-testid="external-api-infer" onClick={inferOutputSchema}>{t('Infer schema')}</button>{inferenceReady && <span data-testid="external-api-inference-ready">{t('Inference ready')}</span>}</>}</details>}
           </section>
           {error && <p className="external-api-message error" role="alert" data-testid="external-api-error">{error}</p>}
           {notice && <p className="external-api-message success" role="status" data-testid="external-api-notice">{notice}</p>}
@@ -207,7 +229,7 @@ function newForm(): ExternalApiFormModel {
     resourceId: '', displayName: '', urlTemplate: '', method: 'GET',
     params: [{ name: '', in: 'path', from: '' }],
     responseProtocol: { kind: 'HttpStatus' }, payloadPath: '',
-    outputSchema: { source: 'manual', schema: EMPTY_SCHEMA },
+    outputSchema: { source: 'structured', schema: EMPTY_SCHEMA },
   };
 }
 

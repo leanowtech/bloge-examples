@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   externalApiFormToDescriptor,
   inferSchema,
+  MAX_STRUCTURED_PROPERTIES,
+  structuredObjectSchema,
   toDesignContract,
   type ExternalApiFormModel,
 } from './externalApiModel';
@@ -143,5 +145,38 @@ describe('inferSchema', () => {
       additionalProperties: true,
     });
     expect(Object.values((first.properties as Record<string, any>).wide.properties)).toContainEqual({ additionalProperties: true });
+  });
+});
+
+describe('structuredObjectSchema', () => {
+  it('emits a deterministic typed object schema from property rows', () => {
+    expect(structuredObjectSchema([
+      { name: 'name', type: 'string', required: true },
+      { name: 'score', type: 'integer', required: false },
+    ])).toEqual({
+      type: 'object',
+      properties: { name: { type: 'string' }, score: { type: 'integer' } },
+      required: ['name'],
+      additionalProperties: false,
+    });
+  });
+
+  it('rejects invalid rows instead of silently dropping them', () => {
+    expect(() => structuredObjectSchema([
+      { name: ' ', type: 'string', required: false },
+    ])).toThrow();
+    expect(() => structuredObjectSchema([
+      { name: 'name', type: 'string', required: false },
+      { name: 'name', type: 'boolean', required: true },
+    ])).toThrow();
+  });
+
+  it('enforces the bounded property budget', () => {
+    const rows = Array.from({ length: MAX_STRUCTURED_PROPERTIES + 1 }, (_, index) => ({
+      name: `field${index}`,
+      type: 'string' as const,
+      required: false,
+    }));
+    expect(() => structuredObjectSchema(rows)).toThrow('too many properties');
   });
 });

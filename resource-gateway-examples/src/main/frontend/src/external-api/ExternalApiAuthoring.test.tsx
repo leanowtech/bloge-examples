@@ -82,6 +82,63 @@ describe('ExternalApiAuthoring', () => {
     expect(host.querySelector('[data-testid="external-api-inference-ready"]')).not.toBeNull();
   });
 
+  it('saves a typed schema from structured controls without a JSON editor', async () => {
+    await act(async () => root.render(<ExternalApiAuthoring save={save} onCatalogRefresh={onCatalogRefresh} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="add-external-api"]')?.click());
+    const fill = (testId: string, value: string) => {
+      const input = host.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`)!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    await act(async () => {
+      fill('external-api-resource-id', 'orders.typed');
+      fill('external-api-display-name', 'Typed order');
+      fill('external-api-url', 'https://api.example.test/orders');
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="external-api-add-schema-property"]')?.click());
+    await act(async () => fill('external-api-schema-property-name-0', 'orderId'));
+    await act(async () => {
+      const type = host.querySelector<HTMLSelectElement>('[data-testid="external-api-schema-property-type-0"]')!;
+      type.value = 'integer';
+      type.dispatchEvent(new Event('change', { bubbles: true }));
+      host.querySelector<HTMLInputElement>('[data-testid="external-api-schema-property-required-0"]')?.click();
+      host.querySelector<HTMLButtonElement>('[data-testid="external-api-save"]')?.click();
+    });
+    expect(host.querySelector('[data-testid="external-api-manual-schema"]')).toBeNull();
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      outputSchema: {
+        source: 'structured',
+        schema: {
+          type: 'object',
+          properties: { orderId: { type: 'integer' } },
+          required: ['orderId'],
+          additionalProperties: false,
+        },
+      },
+    }));
+  });
+
+  it('fails closed when a structured property is incomplete', async () => {
+    await act(async () => root.render(<ExternalApiAuthoring save={save} onCatalogRefresh={onCatalogRefresh} />));
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="add-external-api"]')?.click());
+    const fill = (testId: string, value: string) => {
+      const input = host.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`)!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    await act(async () => {
+      fill('external-api-resource-id', 'orders.invalid');
+      fill('external-api-display-name', 'Invalid order');
+      fill('external-api-url', 'https://api.example.test/orders');
+    });
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="external-api-add-schema-property"]')?.click());
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="external-api-save"]')?.click());
+    expect(save).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-testid="external-api-error"]')?.textContent).toContain('needs a name');
+  });
+
   it('saves once, refreshes the catalog, and shows an opaque-schema warning card', async () => {
     await act(async () => root.render(<ExternalApiAuthoring save={save} onCatalogRefresh={onCatalogRefresh} />));
     await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="add-external-api"]')?.click());
@@ -91,10 +148,20 @@ describe('ExternalApiAuthoring', () => {
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     };
-    fill('external-api-resource-id', 'orders.lookup');
-    fill('external-api-display-name', 'Order lookup');
-    fill('external-api-url', 'https://api.example.test/orders/{id}');
-    await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="external-api-save"]')?.click());
+    await act(async () => {
+      fill('external-api-resource-id', 'orders.lookup');
+      fill('external-api-display-name', 'Order lookup');
+      fill('external-api-url', 'https://api.example.test/orders/{id}');
+    });
+    await act(async () => {
+      const mode = host.querySelector<HTMLSelectElement>('[data-testid="external-api-schema-mode"]')!;
+      mode.value = 'manual';
+      mode.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>('[data-testid="external-api-save"]')?.click();
+      await Promise.resolve();
+    });
     expect(save).toHaveBeenCalledTimes(1);
     expect(onCatalogRefresh).toHaveBeenCalledWith(saved.catalog);
     expect(host.querySelector('[data-testid="external-api-card"]')).not.toBeNull();
