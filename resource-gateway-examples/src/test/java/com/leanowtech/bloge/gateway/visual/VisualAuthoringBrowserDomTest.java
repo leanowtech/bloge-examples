@@ -46,6 +46,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Dimension;
+import org.openqa.selenium.ElementClickInterceptedException;
 import org.openqa.selenium.ElementNotInteractableException;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.Keys;
@@ -5267,7 +5268,8 @@ class VisualAuthoringBrowserDomTest {
                 scrollIntoView(element);
                 element.click();
                 return true;
-            } catch (NoSuchElementException | StaleElementReferenceException ex) {
+            } catch (NoSuchElementException | StaleElementReferenceException
+                     | ElementClickInterceptedException ex) {
                 return false;
             }
         });
