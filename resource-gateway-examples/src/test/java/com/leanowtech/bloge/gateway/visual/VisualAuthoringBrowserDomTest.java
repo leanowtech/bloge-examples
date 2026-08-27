@@ -842,6 +842,177 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Exercises Phase D decision-table scenario authoring through the visible v1 spine.
+     *
+     * <p>The built-in loan policy supplies a real decision table and operator fixture. This test
+     * deliberately keeps Draft separate from the four required trust dimensions: a generated set
+     * must be saved, opened, and executed before Execution, Assertions, Contract, and Governance
+     * can contribute to the honest aggregate conclusion. The operator Scenario surface does not
+     * evaluate Governance, so the expected incomplete conclusion is asserted instead of promoted
+     * to a false green result.</p>
+     */
+    @Test
+    void decisionTableGeneratesPersistsRunsPlanScenarioWithHonestTrustConclusionInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 980);
+        driver.get("http://localhost:" + port + "/author/?authorWorkspace=v2&spine=v1");
+
+        click(wait, By.cssSelector("[data-testid='author-start-choice:examples']"));
+        click(wait, By.cssSelector("[data-testid='author-start-example:loan-policy-fallback']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")
+        ));
+
+        selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", "n4");
+        openDataInspector(wait);
+        click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
+        click(wait, By.xpath(
+                "//*[@data-testid='author-context-inspector']//button[normalize-space()='Edit node']"
+        ));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector("[data-testid='operator-detail-dialog']"),
+                "data-default-tab",
+                "rules"
+        ));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='decision-scenario-workbench']")
+        ));
+
+        By outputKind = By.cssSelector(
+                "[data-testid='decision-scenario-workbench'] select[aria-label='Decision output kind']"
+        );
+        selectByValue(wait, outputKind, "plan");
+        wait.until(ignored -> "plan".equals(valueOf(outputKind)));
+        assertThat(valueOf(outputKind)).as("decision scenario output kind").isEqualTo("plan");
+
+        By enumerationMode = By.cssSelector(
+                "[data-testid='decision-scenario-workbench'] select[aria-label='Scenario enumeration mode']"
+        );
+        selectByValue(wait, enumerationMode, "per-rule");
+        wait.until(ignored -> "per-rule".equals(valueOf(enumerationMode)));
+        assertThat(valueOf(enumerationMode)).as("bounded enumeration mode").isEqualTo("per-rule");
+
+        click(wait, By.cssSelector("[data-testid='generate-decision-scenarios']"));
+        WebElement preview = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='decision-scenario-preview']")
+        ));
+        assertThat(preview.getText())
+                .as("decision table enumeration preview")
+                .containsPattern("\\b[1-9][0-9]* scenarios\\b")
+                .contains("sha256:");
+        assertThat(driver.findElements(By.cssSelector(
+                ".decision-scenario-error[role='alert']"
+        ))).as("scenario generation error").isEmpty();
+
+        click(wait, By.xpath(
+                "//*[@data-testid='decision-scenario-preview']//button[normalize-space()='Save generated set']"
+        ));
+        WebElement openGeneratedScenarios = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='open-generated-scenarios']")
+        ));
+        assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='decision-scenario-preview']")
+        )).isDisplayed()).as("saved scenario preview remains visible").isTrue();
+        openGeneratedScenarios.click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")
+        ));
+
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-mode", "scenarios"
+        ));
+        WebElement scenarioWorkspace = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        assertThat(scenarioWorkspace.getAttribute("data-presentation"))
+                .as("generated scenarios open in the task surface")
+                .isEqualTo("surface");
+        waitForText(wait, By.cssSelector("[data-testid='contract-workspace']"), "Scenario r1 saved");
+        waitForText(wait, By.cssSelector("[data-testid='contract-workspace']"), "bloge:decisionTable");
+        waitForText(wait, By.cssSelector("[data-testid='contract-workspace']"), "Decision");
+        assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
+        assertPageNoHorizontalOverflow();
+
+        click(wait, By.xpath(
+                "//*[@data-testid='contract-workspace']//button[normalize-space()='Case']"
+        ));
+        By runCase = By.cssSelector("[data-testid='scenario-run']");
+        wait.until(ignored -> {
+            try {
+                WebElement button = driver.findElement(runCase);
+                return button.isDisplayed() && button.isEnabled();
+            } catch (NoSuchElementException | StaleElementReferenceException ex) {
+                return false;
+            }
+        });
+        assertThat(driver.findElement(runCase).getAttribute("data-command-scope"))
+                .as("generated case run scope")
+                .isEqualTo("CASE");
+        assertThat(driver.findElement(runCase).getAttribute("data-scope-count"))
+                .as("generated case run count")
+                .isEqualTo("1");
+        click(wait, runCase);
+
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-mode", "evidence"
+        ));
+        WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence']")
+        ));
+        assertNoHorizontalOverflow(wait, By.cssSelector("[data-testid='contract-workspace']"));
+        assertPageNoHorizontalOverflow();
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid='scenario-run-errors']"
+        ))).as("generated scenario compilation/runtime errors").isEmpty();
+
+        List<String> requiredTrustDimensions = List.of(
+                "execution", "assertions", "contract", "governance"
+        );
+        Map<String, String> trustStates = new LinkedHashMap<>();
+        By draftDimension = By.cssSelector("[data-testid='scenario-trust:draft']");
+        WebElement draft = wait.until(ExpectedConditions.visibilityOfElementLocated(draftDimension));
+        assertThat(draft.getText()).as("Draft trust dimension").contains("Draft");
+        trustStates.put("draft", draft.getAttribute("data-state"));
+        for (String key : requiredTrustDimensions) {
+            By dimensionLocator = By.cssSelector("[data-testid='scenario-trust:" + key + "']");
+            WebElement dimension = wait.until(ExpectedConditions.visibilityOfElementLocated(dimensionLocator));
+            String label = key.substring(0, 1).toUpperCase() + key.substring(1);
+            assertThat(dimension.getText()).as("%s trust dimension", label).contains(label);
+            String state = dimension.getAttribute("data-state");
+            assertThat(state)
+                    .as("%s trust state", label)
+                    .isIn("passed", "failed", "warning", "pending", "not-checked");
+            trustStates.put(key, state);
+        }
+        assertThat(trustStates).containsKeys("draft", "execution", "assertions", "contract", "governance");
+        assertThat(trustStates.get("draft")).as("saved draft is a prerequisite").isEqualTo("passed");
+        assertThat(trustStates.get("contract")).as("operator contract is projected").isEqualTo("passed");
+        assertThat(trustStates.get("governance"))
+                .as("synthetic operator Scenario surface leaves Governance unevaluated")
+                .isEqualTo("not-checked");
+
+        String headline = evidence.findElement(By.cssSelector(
+                ".scenario-evidence-heading .contract-current-badge"
+        )).getText();
+        assertThat(headline)
+                .as("honest aggregate evidence conclusion")
+                .isIn("Promotion blocked", "Review required", "Evidence incomplete", "Ready for promotion");
+        boolean fourDimensionsPassed = requiredTrustDimensions.stream()
+                .allMatch(key -> "passed".equals(trustStates.get(key)));
+        boolean draftPassed = "passed".equals(trustStates.get("draft"));
+        if (fourDimensionsPassed && draftPassed) {
+            assertThat(headline).isEqualTo("Ready for promotion");
+        } else {
+            assertThat(headline).isNotEqualTo("Ready for promotion");
+        }
+        assertThat(evidence.findElements(By.xpath(".//*[normalize-space()='Passed']")))
+                .as("aggregate does not collapse trust evidence into generic Passed")
+                .isEmpty();
+    }
+
+    /**
      * Proves task-oriented Author is the default, the named legacy coordinate remains a URL-only
      * rollback, and the desktop operator dialog keeps both actions on the title row. The latter
      * checks a shared vertical center line and horizontal clearance rather than equal top
