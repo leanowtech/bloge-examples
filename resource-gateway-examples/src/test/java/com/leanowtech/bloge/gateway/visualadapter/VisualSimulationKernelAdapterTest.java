@@ -26,6 +26,7 @@ class VisualSimulationKernelAdapterTest {
         assertThat(response.compiled()).isTrue();
         assertThat(response.success()).isTrue();
         assertThat(response.output()).isEqualTo(Map.of("approved", true));
+        assertThat(response.nodeFidelity()).containsEntry("subject", "SCHEMA_STANDIN");
     }
 
     @Test

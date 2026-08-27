@@ -37,6 +37,8 @@ class VisualGraphSimulationKernelIntegrationTest {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
         assertEquivalent(catalog, eligibilityDraft(), Map.of(), Map.of());
+        assertThat(kernel(catalog).simulate(eligibilityDraft(), Map.of(), "").nodeFidelity())
+                .containsEntry("eligibility", "SCHEMA_STANDIN");
     }
 
     @Test

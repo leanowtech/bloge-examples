@@ -216,13 +216,17 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                                                 attempt.durationMs(), attempt.errorCode(), ""))
                                         .toList(),
                                 (left, right) -> right, LinkedHashMap::new));
+        Map<String, String> nodeFidelity = evidence == null ? Map.of() : evidence.nodeTrace().stream()
+                .collect(java.util.stream.Collectors.toMap(TestRunEvidence.NodeTrace::nodeId,
+                        TestRunEvidence.NodeTrace::fidelity, (left, right) -> right, LinkedHashMap::new));
         List<String> errors = evidenceErrors(evidence);
         return new VisualDslRunResponse(
                 true,
                 result.passed() && graphResult != null && graphResult.isSuccess(),
                 graph.name(), outputNode, output, results, statuses,
                 graphResult == null ? 0 : graphResult.elapsed().toMillis(), nodeElapsedMs,
-                nodeAttempts, Map.of(), diagnostics(evidence), errors, null, null);
+                nodeAttempts, Map.of(), diagnostics(evidence), errors, null, null,
+                com.leanowtech.bloge.gateway.visual.runtime.VisualRunControlView.unmanaged(), nodeFidelity);
     }
 
     private static List<VisualDslRunResponse.Diagnostic> diagnostics(TestRunEvidence evidence) {

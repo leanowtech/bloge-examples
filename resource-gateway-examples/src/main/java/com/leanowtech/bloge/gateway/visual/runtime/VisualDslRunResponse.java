@@ -26,6 +26,7 @@ import java.util.Map;
  * @param layout generated visual layout, when the adapter can provide one
  * @param decisionTable extracted decision-table display metadata, when available
  * @param runControl controlled-run lifecycle and termination proof
+ * @param nodeFidelity evidence-derived fixture fidelity by node
  */
 public record VisualDslRunResponse(
         boolean compiled,
@@ -43,7 +44,8 @@ public record VisualDslRunResponse(
         List<String> errors,
         VisualRunLayout layout,
         VisualDecisionTable decisionTable,
-        VisualRunControlView runControl
+        VisualRunControlView runControl,
+        Map<String, String> nodeFidelity
 ) {
     /**
      * Creates a normalized adapter response.
@@ -59,6 +61,19 @@ public record VisualDslRunResponse(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
         runControl = runControl == null ? VisualRunControlView.unmanaged() : runControl;
+        nodeFidelity = nodeFidelity == null ? Map.of() : new LinkedHashMap<>(nodeFidelity);
+    }
+
+    /** Backward-compatible canonical constructor without fidelity evidence. */
+    public VisualDslRunResponse(boolean compiled, boolean success, String graphName, String outputNode,
+                                Object output, Map<String, Object> results, Map<String, String> statusMap,
+                                long elapsedMs, Map<String, Long> nodeElapsedMs,
+                                Map<String, List<VisualNodeExecutionAttempt>> nodeAttempts,
+                                Map<String, VisualNodeExecutionFact> nodeExecutionFacts,
+                                List<Diagnostic> diagnostics, List<String> errors, VisualRunLayout layout,
+                                VisualDecisionTable decisionTable, VisualRunControlView runControl) {
+        this(compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs, nodeElapsedMs,
+                nodeAttempts, nodeExecutionFacts, diagnostics, errors, layout, decisionTable, runControl, Map.of());
     }
 
     /** Backward-compatible constructor for unmanaged executions. */

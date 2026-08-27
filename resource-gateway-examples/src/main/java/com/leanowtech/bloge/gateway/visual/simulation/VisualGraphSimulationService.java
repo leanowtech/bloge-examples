@@ -389,7 +389,8 @@ public class VisualGraphSimulationService {
                 terminalConforms,
                 diagnostics,
                 errors,
-                generated.dsl()
+                generated.dsl(),
+                dynamic.nodeFidelity()
         );
     }
 

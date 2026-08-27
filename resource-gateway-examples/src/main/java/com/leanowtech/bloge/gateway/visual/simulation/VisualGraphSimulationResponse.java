@@ -30,6 +30,7 @@ import java.util.Map;
  * @param diagnostics validation, compilation, and execution diagnostics
  * @param errors execution or blocking errors
  * @param generatedDsl the simulation DSL that was executed
+ * @param nodeFidelity evidence-derived fixture fidelity by node
  */
 public record VisualGraphSimulationResponse(
         boolean validated,
@@ -47,7 +48,8 @@ public record VisualGraphSimulationResponse(
         boolean terminalOutputConforms,
         List<VisualDiagnostic> diagnostics,
         List<String> errors,
-        String generatedDsl
+        String generatedDsl,
+        Map<String, String> nodeFidelity
 ) {
     /**
      * Normalizes nullable collections to immutable, non-null values.
@@ -63,5 +65,17 @@ public record VisualGraphSimulationResponse(
         diagnostics = diagnostics == null ? List.of() : List.copyOf(diagnostics);
         errors = errors == null ? List.of() : List.copyOf(errors);
         generatedDsl = generatedDsl == null ? "" : generatedDsl;
+        nodeFidelity = nodeFidelity == null ? Map.of() : new LinkedHashMap<>(nodeFidelity);
+    }
+
+    /** Backward-compatible constructor without node fidelity evidence. */
+    public VisualGraphSimulationResponse(boolean validated, boolean compiled, boolean success,
+            String graphName, String outputNode, Object output, Map<String, Object> results,
+            Map<String, String> statusMap, long elapsedMs, Map<String, Long> nodeElapsedMs,
+            List<String> mockedNodeIds, List<String> realNodeIds, boolean terminalOutputConforms,
+            List<VisualDiagnostic> diagnostics, List<String> errors, String generatedDsl) {
+        this(validated, compiled, success, graphName, outputNode, output, results, statusMap, elapsedMs,
+                nodeElapsedMs, mockedNodeIds, realNodeIds, terminalOutputConforms, diagnostics, errors,
+                generatedDsl, Map.of());
     }
 }
