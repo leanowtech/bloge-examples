@@ -751,24 +751,35 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='tool-spine-launcher']")));
         assertThat(driver.findElements(By.cssSelector("[data-testid='spine-intent-card']"))).hasSize(5);
 
-        setControlValue(driver.findElement(By.id("spine-build-tool-name")), "Browser API Tool");
-        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
-                "[data-testid='spine-build-tool-link']"))).click();
+        typeControlValue(driver.findElement(By.id("spine-build-tool-name")), "Browser API Tool");
+        WebElement buildToolLink = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='spine-build-tool-link']")));
+        wait.until(ignored -> "false".equals(buildToolLink.getAttribute("aria-disabled"))
+                && buildToolLink.getAttribute("href") != null
+                && buildToolLink.getAttribute("href").contains("/author/"));
+        buildToolLink.click();
         wait.until(ignored -> driver.getCurrentUrl().contains("/author/"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='external-api-authoring']")));
 
+        // AuthorCanvas starts with its normal accessible start dialog; close it through the UI
+        // before exercising the palette, so the acceptance path does not bypass real interaction.
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[aria-label='Close start dialog']"))).click();
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")));
+
         click(wait, By.cssSelector("[data-testid='add-external-api']"));
-        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-resource-id']")),
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-resource-id']")),
                 "browser-profile");
-        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-display-name']")),
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-display-name']")),
                 "Browser profile");
-        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-url']")),
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-url']")),
                 "https://api.example.test/customers/{id}");
-        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")),
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")),
                 "data");
-        setControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
                 "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}");
         click(wait, By.cssSelector("[data-testid='external-api-save']"));
 
@@ -6237,6 +6248,13 @@ class VisualAuthoringBrowserDomTest {
                 element,
                 value
         );
+    }
+
+    /** Types through the browser's native event path so controlled React inputs receive onChange. */
+    private void typeControlValue(WebElement element, String value) {
+        scrollIntoView(element);
+        element.clear();
+        element.sendKeys(value);
     }
 
     private void setControlValue(WebDriverWait wait, By locator, String value) {
