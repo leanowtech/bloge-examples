@@ -707,6 +707,39 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Bounded 1.3.0 browser acceptance seam for the packaged application routes.
+     *
+     * <p>The server currently redirects {@code /} to {@code /capabilities/}; this deliberately
+     * records that production boundary instead of claiming the root-only Launcher is reachable.
+     * The real author bundle is then exercised with a spine-off deep link at both supported
+     * viewport classes, including the horizontal-overflow gate.</p>
+     */
+    @Test
+    void onePointThreeAcceptanceRecordsRootRedirectAndResponsiveAuthorBoundary() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+
+        driver.get("http://localhost:" + port + "/?spine=v1");
+        wait.until(ignored -> driver.getCurrentUrl().contains("/capabilities/"));
+        assertThat(driver.findElements(By.cssSelector("[data-testid='tool-spine-launcher']"))).isEmpty();
+
+        driver.get("http://localhost:" + port
+                + "/author/?authorWorkspace=v2&spine=off&toolId=browser-tool"
+                + "&toolName=Browser%20Tool&stage=define");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace")));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace"), "data-author-workspace-version", "v2"));
+        assertThat(driver.findElements(By.cssSelector("[data-testid='tool-spine-launcher']"))).isEmpty();
+        assertThat(driver.getCurrentUrl()).contains("spine=off").contains("toolId=browser-tool");
+
+        setViewport(wait, 390, 980);
+        assertPageNoHorizontalOverflow();
+        setViewport(wait, 1280, 980);
+        assertPageNoHorizontalOverflow();
+    }
+
+    /**
      * Proves task-oriented Author is the default, the named legacy coordinate remains a URL-only
      * rollback, and the desktop operator dialog keeps both actions on the title row. The latter
      * checks a shared vertical center line and horizontal clearance rather than equal top
