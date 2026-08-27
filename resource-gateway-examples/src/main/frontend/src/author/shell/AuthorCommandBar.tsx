@@ -47,6 +47,12 @@ interface AuthorCommandBarProps {
   onSave: () => void;
   onUndo: () => void;
   onRedo: () => void;
+  graphSimulation?: {
+    enabled: boolean;
+    busy: boolean;
+    disabledReason?: string;
+  };
+  onGraphSimulation?: () => void;
 }
 
 const MODES: Array<{ key: AuthorMode; label: string }> = [
@@ -95,6 +101,8 @@ export default function AuthorCommandBar({
   onSave,
   onUndo,
   onRedo,
+  graphSimulation,
+  onGraphSimulation,
 }: AuthorCommandBarProps) {
   const { d, m, t } = useI18n();
   const [mobileTruthOpen, setMobileTruthOpen] = useState(false);
@@ -257,7 +265,9 @@ export default function AuthorCommandBar({
         >
           <SlidersHorizontal aria-hidden="true" size={16} />
           <span>{t('Tools')}</span>
-          <strong>{t('{count} commands', { count: mode === 'compose' ? 4 : 2 })}</strong>
+          <strong>{t('{count} commands', {
+            count: mode === 'compose' ? (graphSimulation && onGraphSimulation ? 5 : 4) : 2,
+          })}</strong>
           {mobileToolsOpen
             ? <ChevronUp aria-hidden="true" size={16} />
             : <ChevronDown aria-hidden="true" size={16} />}
@@ -268,6 +278,32 @@ export default function AuthorCommandBar({
         >
           {mode === 'compose' && (
             <>
+              {graphSimulation && onGraphSimulation && (
+                <>
+                  <button
+                    type="button"
+                    className="secondary compact author-graph-simulate-command"
+                    data-testid="author-graph-simulate"
+                    aria-label={t('Simulate graph')}
+                    aria-describedby={graphSimulation.enabled && !graphSimulation.busy
+                      ? undefined : 'author-graph-simulate-blocker'}
+                    title={graphSimulation.disabledReason}
+                    onClick={onGraphSimulation}
+                    disabled={!graphSimulation.enabled || graphSimulation.busy}
+                  >
+                    {graphSimulation.busy ? t('Simulating…') : t('Simulate')}
+                  </button>
+                  {(!graphSimulation.enabled || graphSimulation.busy) && graphSimulation.disabledReason && (
+                    <span
+                      id="author-graph-simulate-blocker"
+                      className="visually-hidden"
+                      role="status"
+                    >
+                      {graphSimulation.disabledReason}
+                    </span>
+                  )}
+                </>
+              )}
               <button
                 type="button"
                 className="secondary compact"

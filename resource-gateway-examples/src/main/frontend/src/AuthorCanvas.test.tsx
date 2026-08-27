@@ -4225,8 +4225,7 @@ describe('AuthorCanvas simulation summary', () => {
       },
     });
 
-    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
-      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'));
+    const simulateButton = query<HTMLButtonElement>('[data-testid="author-graph-simulate"]');
     expect(simulateButton).toBeDefined();
     expect(simulateButton?.disabled).toBe(false);
     await click(simulateButton as HTMLButtonElement);

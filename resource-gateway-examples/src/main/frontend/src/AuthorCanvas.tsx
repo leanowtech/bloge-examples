@@ -8217,6 +8217,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contextCompilation.error
     || (isTaskWorkspace && !runInputAssessment.ready),
   );
+  const graphSimulationDisabledReason = busy
+    ? t('Simulation is already running.')
+    : nodes.length === 0
+      ? t('Add at least one operator before simulating.')
+      : hasFixtureErrors
+        ? t('Fix fixture JSON before simulating.')
+        : hasContextError
+          ? t('Fix runtime context before simulating.')
+          : selectedGovernedFixtureStale
+            ? t('The governed fixture schema is stale; recapture before simulating.')
+            : undefined;
   const selectedFixtureDraft = selectedNode ? fixtureDrafts[selectedNode.id] ?? '' : '';
   const selectedExpectedInputDraft = selectedNode ? fixtureInputDrafts[selectedNode.id] ?? '' : '';
   const selectedFixtureHasDraft =
@@ -11688,6 +11699,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             onSave={() => void authoringContinuity.save()}
             onUndo={undoAuthoringMutation}
             onRedo={redoAuthoringMutation}
+            graphSimulation={{
+              enabled: !graphSimulationDisabledReason,
+              busy,
+              disabledReason: graphSimulationDisabledReason,
+            }}
+            onGraphSimulation={() => void runSimulation()}
           />
           <StartImportDialog
             open={startOpen}

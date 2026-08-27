@@ -36,6 +36,39 @@ describe('AuthorCommandBar', () => {
     expect(text()).toContain('Export draft');
   });
 
+  it('exposes an independent graph Simulate command in Compose', async () => {
+    const simulate = vi.fn();
+    await render('compose', false, undefined, undefined, {}, {
+      enabled: true,
+      busy: false,
+      onRun: simulate,
+    });
+
+    const button = host.querySelector<HTMLButtonElement>('[data-testid="author-graph-simulate"]');
+    expect(button).not.toBeNull();
+    expect(button?.disabled).toBe(false);
+    expect(button?.getAttribute('aria-label')).toBe('Simulate graph');
+
+    await act(async () => button?.click());
+    expect(simulate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps graph Simulate disabled with an accessible blocker reason', async () => {
+    await render('compose', false, undefined, undefined, {}, {
+      enabled: false,
+      busy: false,
+      disabledReason: 'Fix runtime context before simulating.',
+      onRun: vi.fn(),
+    });
+
+    const button = host.querySelector<HTMLButtonElement>('[data-testid="author-graph-simulate"]');
+    expect(button?.disabled).toBe(true);
+    expect(button?.getAttribute('aria-describedby')).toBe('author-graph-simulate-blocker');
+    expect(button?.title).toBe('Fix runtime context before simulating.');
+    expect(host.querySelector('#author-graph-simulate-blocker')?.textContent)
+      .toContain('Fix runtime context before simulating.');
+  });
+
   it('exposes reversible history as stable icon commands with exact labels', async () => {
     const undo = vi.fn();
     const redo = vi.fn();
@@ -230,6 +263,12 @@ describe('AuthorCommandBar', () => {
       onUndo: () => void;
       onRedo: () => void;
     }> = {},
+    graphSimulation: Partial<{
+      enabled: boolean;
+      busy: boolean;
+      disabledReason: string;
+      onRun: () => void;
+    }> = {},
   ) {
     const resolvedPrimaryCommand = primaryCommand ?? {
       commandId: 'RUN_CURRENT_SCENARIO',
@@ -298,6 +337,15 @@ describe('AuthorCommandBar', () => {
         onSave={vi.fn()}
         onUndo={history.onUndo ?? vi.fn()}
         onRedo={history.onRedo ?? vi.fn()}
+        graphSimulation={graphSimulation.enabled !== undefined || graphSimulation.busy !== undefined
+          || graphSimulation.disabledReason !== undefined
+          ? {
+              enabled: graphSimulation.enabled ?? true,
+              busy: graphSimulation.busy ?? false,
+              disabledReason: graphSimulation.disabledReason,
+            }
+          : undefined}
+        onGraphSimulation={graphSimulation.onRun}
       />
     );
     await act(async () => {
