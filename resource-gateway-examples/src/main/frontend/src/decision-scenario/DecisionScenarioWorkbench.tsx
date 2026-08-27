@@ -48,7 +48,10 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
       const projection = await fetchScenarioOperatorContract(operatorRef);
       setAuthority(projection);
       const scenarioDraftSetId = await operatorScenarioDraftSetId(operatorRef);
-      const enumerated = enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint, scenarioDraftSetId }, props.tableId);
+      const colToInputPath = projection.contract.target.kind === 'OPERATOR'
+        ? Object.fromEntries(props.editor.conditionColumns.map((column) => [column.id, `inputs.${column.id}`]))
+        : undefined;
+      const enumerated = enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint, scenarioDraftSetId, colToInputPath }, props.tableId);
       setPreview({
         ...enumerated,
         draftSet: {

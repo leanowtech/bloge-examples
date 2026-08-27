@@ -34,7 +34,6 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
-import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
@@ -282,8 +281,10 @@ class VisualAuthoringBrowserDomTest {
         /** Supplies an exact read-only Operator Contract without enabling mutable profile routes. */
         @Bean
         OperatorScenarioBrowserFixtureController
-        operatorScenarioBrowserFixtureController() {
-            return new OperatorScenarioBrowserFixtureController();
+        operatorScenarioBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service,
+                IntegrationRequestAuthenticator authenticator) {
+            return new OperatorScenarioBrowserFixtureController(service, authenticator);
         }
 
         /** Exposes the real materializer under a deterministic browser-test identity. */
@@ -433,11 +434,13 @@ class VisualAuthoringBrowserDomTest {
                 @RequestParam long expectedRevision,
                 @RequestBody ScenarioDraftSet draftSet,
                 @RequestHeader HttpHeaders headers) {
+            IntegrationRequestContext identity =
+                    authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_WRITE);
             return service.save(
                     scenarioDraftSetId,
                     expectedRevision,
                     draftSet,
-                    authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_WRITE));
+                    identity);
         }
     }
 
@@ -455,7 +458,7 @@ class VisualAuthoringBrowserDomTest {
         StoredScenarioDraftSet find(@PathVariable String scenarioDraftSetId) {
             return service.find(
                     scenarioDraftSetId,
-                    browserAuthoringIdentity("TEST_SUITE_READ", "browser-scenario-read"));
+                    browserScenarioIdentity("TEST_SUITE_READ", "browser-scenario-read"));
         }
     }
 
@@ -725,80 +728,35 @@ class VisualAuthoringBrowserDomTest {
     @RestController
     @RequestMapping("/api/visual/scenario-draft-sets/targets/operators")
     static final class OperatorScenarioBrowserFixtureController {
-        private static final String TARGET_FINGERPRINT =
-                "sha256:" + "d".repeat(64);
-        private static final String CONTRACT_FINGERPRINT =
-                "sha256:" + "e".repeat(64);
+        private final ScenarioDraftSetAuthoringService service;
+        private final IntegrationRequestAuthenticator authenticator;
 
-        /** Returns a complete schema-backed Contract for the selected catalog Operator. */
-        @GetMapping("/{operatorRef}/contract")
-        ScenarioContractProjection contract(@PathVariable String operatorRef) {
-            SchemaEnvelope input = SchemaEnvelope.object(
-                    Map.of("params", Map.of(
-                            "type", "object",
-                            "properties", Map.of(
-                                    "userId", Map.of("type", "string", "examples", List.of("user-1001"))
-                            ),
-                            "required", List.of("userId"),
-                            "additionalProperties", false
-                    )),
-                    List.of("params")
-            );
-            SchemaEnvelope output = SchemaEnvelope.object(
-                    Map.of("payload", Map.of(
-                            "type", "object",
-                            "properties", Map.of(
-                                    "displayName", Map.of(
-                                            "type", "string",
-                                            "examples", List.of("Ada Lovelace")
-                                    ),
-                                    "tier", Map.of(
-                                            "type", "string",
-                                            "examples", List.of("gold")
-                                    )
-                            ),
-                            "required", List.of("displayName", "tier"),
-                            "additionalProperties", false
-                    )),
-                    List.of("payload")
-            );
-            ContractDraft contract = new ContractDraft(
-                    ContractDraft.SCHEMA_VERSION,
-                    new ContractDraft.Target(
-                            ContractDraft.TargetKind.OPERATOR,
-                            operatorRef,
-                            0,
-                            TARGET_FINGERPRINT
-                    ),
-                    input,
-                    output,
-                    List.of(),
-                    new ContractDraft.ExecutionSemantics(
-                            ContractDraft.Effect.READ,
-                            "NOT_APPLICABLE",
-                            false,
-                            false,
-                            null
-                    ),
-                    List.of(),
-                    ContractDraft.CompatibilityPolicy.strict(),
-                    Map.of(),
-                    ContractDraft.Source.INFERRED,
-                    ContractDraft.Confidence.EXACT
-            );
-            return new ScenarioContractProjection(
-                    ScenarioContractProjection.SCHEMA_VERSION,
-                    new ScenarioDraftSet.EnterpriseScope(
-                            "tenant-a",
-                            "knowledge-governance",
-                            "tool-studio",
-                            "test",
-                            "local"
-                    ),
-                    contract,
-                    CONTRACT_FINGERPRINT
-            );
+        OperatorScenarioBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service,
+                IntegrationRequestAuthenticator authenticator) {
+            this.service = service;
+            this.authenticator = authenticator;
         }
+
+        /** Returns the same authoritative Contract used by the real Scenario write service. */
+        @GetMapping("/{operatorRef}/contract")
+        ScenarioContractProjection contract(
+                @PathVariable String operatorRef,
+                @RequestHeader HttpHeaders headers) {
+            return service.projectOperatorContract(
+                    operatorRef,
+                    authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_READ));
+        }
+    }
+
+    private static IntegrationRequestContext browserScenarioIdentity(
+            String purpose,
+            String requestId) {
+        return new IntegrationRequestContext(
+                BROWSER_FIXTURE_SCOPE.tenantId(), BROWSER_FIXTURE_SCOPE.organizationId(),
+                BROWSER_FIXTURE_SCOPE.projectId(), BROWSER_FIXTURE_SCOPE.environment(),
+                BROWSER_FIXTURE_SCOPE.region(), "HUMAN", "browser-author", "", purpose,
+                requestId, java.util.Set.of(), "RESTRICTED", "");
     }
 
     @Autowired

@@ -43,6 +43,10 @@ describe('DecisionScenarioWorkbench', () => {
       .toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
     expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0].scenarioDraftSetId.length)
       .toBeLessThanOrEqual(255);
+    expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0].scenarios[0]?.given.input)
+      .toMatchObject({ inputs: { score: expect.any(Number) } });
+    expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0].scenarios[0]?.given.input)
+      .not.toHaveProperty('score');
     expect(onPersistedChange).toHaveBeenCalledOnce();
     await act(async () => { (host.querySelector('[data-testid="open-generated-scenarios"]') as HTMLButtonElement).click(); });
     expect(onOpenScenarios).toHaveBeenCalledOnce();
