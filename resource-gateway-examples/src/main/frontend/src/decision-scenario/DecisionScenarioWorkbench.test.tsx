@@ -26,10 +26,11 @@ describe('DecisionScenarioWorkbench', () => {
   it('generates and persists through the real ScenarioDraftSet endpoint with exact target scope', async () => {
     const onPersistedChange = vi.fn();
     const onOutputKindChange = vi.fn();
+    const onOpenScenarios = vi.fn();
     vi.mocked(fetchScenarioOperatorContract).mockResolvedValue({ scope, contract: { target, inputSchema: {}, outputSchema: {} }, contractFingerprint: 'sha256:contract' } as never);
     vi.mocked(saveScenarioDraftSet).mockResolvedValue({ draftSet: { metadata: {}, scenarios: [] } } as never);
     const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
-    await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={onPersistedChange} onOutputKindChange={onOutputKindChange} />); });
+    await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" operatorRef="bloge:decisionTable" persisted={null} onPersistedChange={onPersistedChange} onOutputKindChange={onOutputKindChange} onOpenScenarios={onOpenScenarios} />); });
     await act(async () => { (host.querySelector('[aria-label="Decision output kind"]') as HTMLSelectElement).value = 'plan'; (host.querySelector('[aria-label="Decision output kind"]') as HTMLSelectElement).dispatchEvent(new Event('change', { bubbles: true })); });
     expect(onOutputKindChange).toHaveBeenCalledWith('plan');
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
@@ -37,8 +38,10 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
     expect(fetchScenarioOperatorContract).toHaveBeenCalledWith(target.id);
     expect(saveScenarioDraftSet).toHaveBeenCalledOnce();
-    expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0]).toMatchObject({ target, scope, metadata: { owner: 'owner' } });
+    expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0]).toMatchObject({ target, scope, metadata: { owner: 'owner', provenance: { operatorRef: 'bloge:decisionTable', sourceNodeId: 'decision-node' } } });
     expect(onPersistedChange).toHaveBeenCalledOnce();
+    await act(async () => { (host.querySelector('[data-testid="open-generated-scenarios"]') as HTMLButtonElement).click(); });
+    expect(onOpenScenarios).toHaveBeenCalledOnce();
   });
 
   it('keeps a failed save retryable instead of reporting local-only success', async () => {

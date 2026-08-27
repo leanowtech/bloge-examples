@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decisionTableFromEditor, decisionTableSourceFingerprint, scenarioSetIsStale } from './decisionScenarioModel';
+import { decisionTableFromEditor, decisionTableSourceFingerprint, scenarioSetIsStale, scenarioSetMatchesOperator } from './decisionScenarioModel';
 
 const editor = {
   hitPolicy: 'unique', outputType: '{ decision: String }',
@@ -24,5 +24,17 @@ describe('decision scenario workbench model', () => {
     const first = decisionTableSourceFingerprint(editor, 'risk');
     expect(first).toBe(decisionTableSourceFingerprint(structuredClone(editor), 'risk'));
     expect(scenarioSetIsStale(editor, { metadata: { provenance: { sourceFingerprint: 'sha256:changed' } } } as never, 'risk')).toBe(true);
+  });
+
+  it('reopens only a generated set with the exact operator and contract coordinate', () => {
+    const draftSet = {
+      metadata: { provenance: { operatorRef: 'bloge:decisionTable' } },
+      target: { kind: 'OPERATOR', id: 'bloge:decisionTable', fingerprint: 'sha256:operator' },
+      contractFingerprint: 'sha256:contract',
+    } as any;
+    expect(scenarioSetMatchesOperator(draftSet, 'bloge:decisionTable', draftSet.target, 'sha256:contract')).toBe(true);
+    expect(scenarioSetMatchesOperator(draftSet, 'bloge:decisionTable', { ...draftSet.target, revision: 2 }, 'sha256:contract')).toBe(false);
+    expect(scenarioSetMatchesOperator(draftSet, 'bloge:decisionTable', draftSet.target, 'sha256:changed')).toBe(false);
+    expect(scenarioSetMatchesOperator(draftSet, 'bloge:other', draftSet.target, 'sha256:contract')).toBe(false);
   });
 });

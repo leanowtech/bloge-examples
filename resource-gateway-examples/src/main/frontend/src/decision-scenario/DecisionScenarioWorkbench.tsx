@@ -16,6 +16,8 @@ export interface DecisionScenarioWorkbenchProps {
   persisted: ScenarioDraftSet | null;
   onPersistedChange: (draftSet: ScenarioDraftSet) => void;
   onOutputKindChange?: (outputKind: DecisionOutputKind) => void;
+  /** Opens the persisted set in the canonical Scenarios surface. */
+  onOpenScenarios?: () => void;
   operatorRef?: string;
 }
 
@@ -27,6 +29,7 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
   const [outputKind, setOutputKind] = useState<DecisionOutputKind>(props.editor.outputKind ?? 'object');
   const [preview, setPreview] = useState<EnumerationResult | null>(null);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authority, setAuthority] = useState<ScenarioContractProjection | null>(null);
   const stale = useMemo(() => scenarioSetIsStale({ ...props.editor, outputKind }, props.persisted, props.tableId), [props.editor, outputKind, props.persisted, props.tableId]);
@@ -34,10 +37,25 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
 
   const generate = async () => {
     setError(null);
+    setSaved(false);
     try {
       const projection = await fetchScenarioOperatorContract(props.operatorRef ?? props.target.id);
       setAuthority(projection);
-      setPreview(enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint }, props.tableId));
+      const enumerated = enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint }, props.tableId);
+      setPreview({
+        ...enumerated,
+        draftSet: {
+          ...enumerated.draftSet,
+          metadata: {
+            ...enumerated.draftSet.metadata,
+            provenance: {
+              ...enumerated.draftSet.metadata.provenance,
+              operatorRef: props.operatorRef ?? props.target.id,
+              sourceNodeId: props.tableId,
+            },
+          },
+        },
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('Unable to enumerate decision scenarios.'));
       setPreview(null);
@@ -50,6 +68,7 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
     try {
       const stored = await saveScenarioDraftSet(preview.draftSet);
       props.onPersistedChange(stored.draftSet);
+      setSaved(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : t('Unable to save generated scenarios. Retry.'));
     } finally { setBusy(false); }
@@ -64,7 +83,7 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
       </div>
       {outputKind === 'dispatch' && <p className="decision-scenario-warning">{t('Dispatch output is modeled only; no dispatch is executed.')}</p>}
       {stale && <ScenarioStalenessNotice onReenumerate={() => void generate()} />}
-      {preview && <div className="decision-scenario-preview" data-testid="decision-scenario-preview"><span>{t('{count} scenarios', { count: preview.scenarios.length })}</span><span>{t('source {fingerprint}', { fingerprint: preview.metadata.sourceFingerprint })}</span>{preview.metadata.truncated && <strong>{t('Truncated at cap; review stratified sample.')}</strong>}{preview.metadata.opaqueColumns.length > 0 && <strong>{t('Opaque columns: {columns}; not exhaustive.', { columns: preview.metadata.opaqueColumns.join(', ') })}</strong>}<button type="button" className="primary compact" onClick={() => void persist()} disabled={busy}>{busy ? t('Saving…') : t('Save generated set')}</button></div>}
+      {preview && <div className="decision-scenario-preview" data-testid="decision-scenario-preview"><span>{t('{count} scenarios', { count: preview.scenarios.length })}</span><span>{t('source {fingerprint}', { fingerprint: preview.metadata.sourceFingerprint })}</span>{preview.metadata.truncated && <strong>{t('Truncated at cap; review stratified sample.')}</strong>}{preview.metadata.opaqueColumns.length > 0 && <strong>{t('Opaque columns: {columns}; not exhaustive.', { columns: preview.metadata.opaqueColumns.join(', ') })}</strong>}<button type="button" className="primary compact" onClick={() => void persist()} disabled={busy}>{busy ? t('Saving…') : t('Save generated set')}</button>{saved && props.onOpenScenarios && <button type="button" className="secondary compact" data-testid="open-generated-scenarios" onClick={props.onOpenScenarios}>{t('Open Scenarios')}</button>}</div>}
       {error && <div className="decision-scenario-error" role="alert"><span>{error}</span>{preview && <button type="button" className="secondary compact" onClick={() => void persist()} disabled={busy}>{t('Retry')}</button>}</div>}
     </section>
   );

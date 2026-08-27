@@ -240,7 +240,10 @@ import {
 } from './author/input/authorRunInput';
 import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
 import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
-import type { DecisionEditorSnapshot } from './decision-scenario/decisionScenarioModel';
+import {
+  scenarioSetMatchesOperator,
+  type DecisionEditorSnapshot,
+} from './decision-scenario/decisionScenarioModel';
 import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
@@ -2455,6 +2458,7 @@ function DecisionTableRuleEditor({
   scenarioScope,
   persistedScenarioDraftSet,
   onScenarioDraftSetChange,
+  onOpenScenarios,
 }: {
   node: Node<NodeData>;
   incomingColumns: DecisionTableColumn[];
@@ -2466,6 +2470,7 @@ function DecisionTableRuleEditor({
   scenarioScope?: EnterpriseScope;
   persistedScenarioDraftSet?: ScenarioDraftSet | null;
   onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
+  onOpenScenarios?: () => void;
 }) {
   const { t } = useI18n();
   const editor = decisionTableEditorModel(node.data.config, incomingColumns);
@@ -2674,9 +2679,11 @@ function DecisionTableRuleEditor({
               target={scenarioTarget}
               scope={scenarioScope}
               owner={scenarioScope.tenantId}
+              operatorRef={node.data.operatorRef}
               persisted={persistedScenarioDraftSet ?? null}
               onPersistedChange={onScenarioDraftSetChange}
               onOutputKindChange={(outputKind) => onConfigPatch?.({ outputKind })}
+              onOpenScenarios={onOpenScenarios}
             />
           </Suspense>
         )}
@@ -3912,6 +3919,7 @@ function OperatorDetailDialog({
   scenarioScope,
   persistedScenarioDraftSet,
   onScenarioDraftSetChange,
+  onOpenScenarios,
   governedFixtureAssets,
   governedFixtureRef,
   governedFixtureStale,
@@ -3967,6 +3975,7 @@ function OperatorDetailDialog({
   scenarioScope?: EnterpriseScope;
   persistedScenarioDraftSet?: ScenarioDraftSet | null;
   onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
+  onOpenScenarios?: () => void;
   governedFixtureAssets: readonly GovernedFixtureAssetSummary[];
   governedFixtureRef?: GovernedGraphNodeFixtureRef;
   governedFixtureStale: boolean;
@@ -4239,6 +4248,7 @@ function OperatorDetailDialog({
               scenarioScope={scenarioScope}
               persistedScenarioDraftSet={persistedScenarioDraftSet}
               onScenarioDraftSetChange={onScenarioDraftSetChange}
+              onOpenScenarios={onOpenScenarios}
             />
             </div>
           )}
@@ -8129,7 +8139,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         legacyProjection.diagnostics,
       );
       const scenarioDraftSetId = await operatorScenarioDraftSetId(operator.operatorRef);
-      const nextDraftSet = {
+      const generatedDraftSet = {
         ...draftSet,
         scenarioDraftSetId,
         metadata: {
@@ -8141,6 +8151,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           },
         },
       };
+      const nextDraftSet = scenarioDraftSet && scenarioSetMatchesOperator(
+        scenarioDraftSet,
+        operator.operatorRef,
+        projection.contract.target,
+        projection.contractFingerprint,
+      ) ? scenarioDraftSet : generatedDraftSet;
       setOperatorContractWorkspace({
         graphDraft: syntheticGraph,
         contract: projection.contract,
@@ -8158,7 +8174,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     } catch (cause: unknown) {
       setError(`Operator Contract projection failed: ${String(cause)}`);
     }
-  }, [isTaskWorkspace, nodes, operatorTestSuites, selectedNodeId]);
+  }, [isTaskWorkspace, nodes, operatorTestSuites, scenarioDraftSet, selectedNodeId]);
 
   const updateContractSemantics = useCallback((nextContract: ContractDraft) => {
     if (contractDraft && canonicalJson(contractDraft) === canonicalJson(nextContract)) {
@@ -13734,6 +13750,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               void openOperatorContractWorkspace(
                 operatorDetailDefinition,
                 'interface',
+                operatorDetailNode.id,
+              );
+            }
+          }}
+          onOpenScenarios={() => {
+            if (operatorDetailDefinition) {
+              void openOperatorContractWorkspace(
+                operatorDetailDefinition,
+                'scenarios',
                 operatorDetailNode.id,
               );
             }

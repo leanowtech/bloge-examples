@@ -45,6 +45,29 @@ export function scenarioSetIsStale(editor: DecisionEditorSnapshot, draftSet: Sce
   return typeof source === 'string' && source !== decisionTableSourceFingerprint(editor, tableId);
 }
 
+/**
+ * Identifies a generated set that can be reopened in the matching operator Scenarios surface.
+ *
+ * <p>The operator reference, target coordinate, and Contract fingerprint are checked because an
+ * operator name alone is not an authoritative contract identity.</p>
+ */
+export function scenarioSetMatchesOperator(
+  draftSet: ScenarioDraftSet | null,
+  operatorRef: string,
+  target: ScenarioDraftSet['target'],
+  contractFingerprint: string,
+): boolean {
+  return Boolean(
+    draftSet
+      && draftSet.metadata.provenance?.operatorRef === operatorRef
+      && draftSet.target.kind === target.kind
+      && draftSet.target.id === target.id
+      && draftSet.target.revision === target.revision
+      && draftSet.target.fingerprint === target.fingerprint
+      && draftSet.contractFingerprint === contractFingerprint,
+  );
+}
+
 function inferColumnType(editor: DecisionEditorSnapshot, id: string): 'integer' | 'number' | 'string' | 'enum' | 'boolean' {
   const expressions = editor.rows.map((row) => row.conditions[id] ?? '').join(' ');
   if (/\b(?:true|false)\b/i.test(expressions)) return 'boolean';
