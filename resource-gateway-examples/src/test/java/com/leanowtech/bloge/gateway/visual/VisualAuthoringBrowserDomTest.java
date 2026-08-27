@@ -5069,13 +5069,30 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void closeAuthorStartDialog(WebDriverWait wait) {
+        By startDialog = By.cssSelector("[data-testid='author-start-dialog']");
+        By startBackdrop = By.cssSelector("[data-testid='author-start-backdrop']");
         if (!driver.findElements(By.cssSelector("[aria-label='Close start dialog']")).isEmpty()) {
             click(wait, By.cssSelector("[aria-label='Close start dialog']"));
-            wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                    By.cssSelector("[data-testid='author-start-dialog']")));
-            wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                    By.cssSelector("[data-testid='author-start-backdrop']")));
+            wait.until(ignored -> noDisplayedElements(startDialog));
+            wait.until(ignored -> noDisplayedElements(startBackdrop));
         }
+    }
+
+    /**
+     * v2 and legacy surfaces may briefly render duplicate start elements during a route transition;
+     * consider the modal closed only after every matching element is hidden or removed.
+     */
+    private boolean noDisplayedElements(By locator) {
+        for (WebElement element : driver.findElements(locator)) {
+            try {
+                if (element.isDisplayed()) {
+                    return false;
+                }
+            } catch (StaleElementReferenceException ignored) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void saveAuthorWorkspace(WebDriverWait wait) {
@@ -5261,13 +5278,15 @@ class VisualAuthoringBrowserDomTest {
     private void click(WebDriverWait wait, By locator) {
         wait.until(ignored -> {
             try {
-                WebElement element = driver.findElement(locator);
-                if (!element.isDisplayed() || !element.isEnabled()) {
-                    return false;
+                for (WebElement element : driver.findElements(locator)) {
+                    if (!element.isDisplayed() || !element.isEnabled()) {
+                        continue;
+                    }
+                    scrollIntoView(element);
+                    element.click();
+                    return true;
                 }
-                scrollIntoView(element);
-                element.click();
-                return true;
+                return false;
             } catch (NoSuchElementException | StaleElementReferenceException
                      | ElementClickInterceptedException ex) {
                 return false;
