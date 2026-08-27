@@ -386,6 +386,16 @@ tests live in `src/main/frontend/src/spine/authorSpine.ts`; coordinate-aware
 ObjectBreadcrumb and ToolThreadRail are mounted only when a valid ToolCoordinate
 is present. Responsive 390/1280 end-to-end geometry remains a later gate.
 
+#### Graph-node Fixture promotion
+
+`POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` turns an exact
+captured node output into governed correctness material. The request is bounded to
+`bloge.graphNodeFixturePromote.v1`, classification, 1--30 day retention, and redaction paths;
+the server derives scope, lineage, schema reference, fingerprints, retention expiry, and the
+DRAFT lifecycle. Missing drafts/nodes return 404; absent captured output or an opaque/incompatible
+schema returns 422; an existing governed id returns 409. The response and persisted audit contain no
+business payload. Activation continues through the existing four-eyes Fixture governance endpoints.
+
 The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
 segmented control in the global header; the choice persists across workspace navigation and reloads.
 For deterministic demo links, append `?lang=en` or `?lang=zh-CN`, for example

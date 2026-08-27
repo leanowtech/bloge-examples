@@ -31,6 +31,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSou
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureUsageProjectionService;
 import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceService;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.RepositoryFixtureMaterialMetadataSource;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionEvaluatorProfile;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.AssertionSetCompiler;
@@ -285,6 +287,36 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     ) {
         return new FixtureCatalogService(
                 fixtures, materials, schemas, authorizer, receipts, mapper, Clock.systemUTC());
+    }
+
+    /**
+     * Exposes the graph-node promotion slice only when protected materials are also available.
+     *
+     * @param drafts authoritative graph-draft repository
+     * @param operators exact operator-catalog view
+     * @param fixtures governed fixture catalog
+     * @param materials protected material write boundary
+     * @param mapper canonical JSON mapper
+     * @return promotion service
+     */
+    @Bean
+    @ConditionalOnBean({GraphDraftRepository.class, VisualOperatorCatalog.class,
+            FixtureCatalogService.class, FixtureMaterialService.class})
+    @ConditionalOnMissingBean
+    com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService
+            graphNodeFixturePromotionService(
+                    GraphDraftRepository drafts,
+                    VisualOperatorCatalog operators,
+                    FixtureCatalogService fixtures,
+                    FixtureMaterialService materials,
+                    ObjectMapper mapper) {
+        return new com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService(
+                drafts,
+                operators,
+                fixtures,
+                materials::write,
+                mapper,
+                java.time.Clock.systemUTC());
     }
 
     @Bean
