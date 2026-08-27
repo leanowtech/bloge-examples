@@ -26,14 +26,29 @@ import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityR
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionController;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetController;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureCatalogService;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureApprovalReceiptRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.DatabaseFixtureApprovalReceiptRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialMetadataSource;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.RepositoryFixtureMaterialMetadataSource;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.DatabaseProtectedFixtureMaterialRepository;
+import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
+import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionController;
+import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
@@ -54,7 +69,6 @@ import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.OutputType;
 import org.openqa.selenium.StaleElementReferenceException;
 import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
@@ -69,6 +83,7 @@ import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -98,6 +113,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Clock;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Comparator;
@@ -324,6 +340,104 @@ class VisualAuthoringBrowserDomTest {
                 ScenarioDraftSetAuthoringService service,
                 IntegrationRequestAuthenticator authenticator) {
             return new ScenarioDraftSetWriteBrowserFixtureController(service, authenticator);
+        }
+
+        /** Supplies the protected material repository when conditional component ordering omits it. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureMaterialRepository.class)
+        FixtureMaterialRepository browserFixtureMaterialRepository(
+                JdbcTemplate jdbc,
+                ObjectMapper mapper) {
+            return new DatabaseProtectedFixtureMaterialRepository(jdbc, mapper);
+        }
+
+        /** Supplies the real encrypted material write boundary for visible promotion. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureMaterialService.class)
+        FixtureMaterialService browserFixtureMaterialService(
+                FixtureMaterialRepository repository,
+                ObjectMapper mapper) {
+            return new FixtureMaterialService(
+                    repository,
+                    AuthoringFixturePayloadProtector.fromConfiguration(
+                            "browser-test-v1",
+                            "browser-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="),
+                    mapper);
+        }
+
+        /** Narrows the material repository to the catalog's receipt-only metadata view. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureMaterialMetadataSource.class)
+        FixtureMaterialMetadataSource browserFixtureMaterialMetadataSource(
+                FixtureMaterialRepository repository) {
+            return new RepositoryFixtureMaterialMetadataSource(repository);
+        }
+
+        /** Provides the idempotency receipt store required by the visible approval command. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureApprovalReceiptRepository.class)
+        FixtureApprovalReceiptRepository browserFixtureApprovalReceiptRepository(
+                JdbcTemplate jdbc,
+                ObjectMapper mapper) {
+            return new DatabaseFixtureApprovalReceiptRepository(jdbc, mapper);
+        }
+
+        /** Assembles the catalog after browser-only schema and review authorities are available. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureCatalogService.class)
+        FixtureCatalogService browserFixtureCatalogService(
+                FixtureAssetRepository fixtures,
+                FixtureMaterialMetadataSource materials,
+                FixtureSchemaSource schemas,
+                FixtureReviewAuthorizer authorizer,
+                FixtureApprovalReceiptRepository approvalReceipts,
+                ObjectMapper mapper) {
+            return new FixtureCatalogService(
+                    fixtures, materials, schemas, authorizer, approvalReceipts, mapper, Clock.systemUTC());
+        }
+
+        /** Assembles graph-node promotion after the catalog and protected material seams exist. */
+        @Bean
+        @ConditionalOnMissingBean(GraphNodeFixturePromotionService.class)
+        GraphNodeFixturePromotionService browserGraphNodeFixturePromotionService(
+                GraphDraftRepository drafts,
+                VisualOperatorCatalog operators,
+                FixtureCatalogService fixtures,
+                FixtureMaterialService materials,
+                ObjectMapper mapper) {
+            return new GraphNodeFixturePromotionService(
+                    drafts, operators, fixtures, materials::write, mapper, Clock.systemUTC());
+        }
+
+        /**
+         * Registers the production Fixture command transport after its conditional service graph
+         * has been assembled. Component-scan conditions run before these @Bean methods and would
+         * otherwise omit the controller despite the correctness runtime being enabled.
+         */
+        @Bean
+        @ConditionalOnMissingBean(GraphNodeFixturePromotionController.class)
+        GraphNodeFixturePromotionController graphNodeFixturePromotionBrowserController(
+                GraphNodeFixturePromotionService service,
+                IntegrationRequestAuthenticator authenticator) {
+            return new GraphNodeFixturePromotionController(service, authenticator);
+        }
+
+        /** Exposes the production CAS lifecycle transport to this packaged browser context. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureAssetController.class)
+        FixtureAssetController fixtureAssetBrowserController(
+                FixtureCatalogService service,
+                IntegrationRequestAuthenticator authenticator) {
+            return new FixtureAssetController(service, authenticator);
+        }
+
+        /** Exposes the production metadata-only Fixture collection transport to the picker. */
+        @Bean
+        @ConditionalOnMissingBean(FixtureAssetCollectionController.class)
+        FixtureAssetCollectionController fixtureAssetCollectionBrowserController(
+                FixtureAssetCollectionService service,
+                IntegrationRequestAuthenticator authenticator) {
+            return new FixtureAssetCollectionController(service, authenticator);
         }
     }
 
@@ -4978,16 +5092,17 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] .context-extra-actions button"));
         saveAuthorWorkspace(wait);
         clickVisibleGraphSimulation(wait);
-        click(wait, By.cssSelector("[data-testid='trace-pin-fixture-n1']"));
+        click(wait, By.cssSelector(
+                ".workspace-v2 [data-testid='v2-trace-pin-fixture-n1']"));
         saveAuthorWorkspace(wait);
 
-        click(wait, By.cssSelector("[data-testid='trace-promote-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-promote-fixture-n1']"));
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='promote-fixture-id']"))), fixtureId);
         selectByValue(wait, By.cssSelector("[data-testid='promote-fixture-classification']"), "RESTRICTED");
         click(wait, By.cssSelector("[data-testid='submit-promote-fixture']"));
         waitForLifecycle(wait, "DRAFT");
-        click(wait, By.cssSelector("[data-testid='trace-review-ready-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-review-ready-fixture-n1']"));
         waitForLifecycle(wait, "PROPOSED");
 
         String authorWindow = driver.getWindowHandle();
@@ -4999,30 +5114,30 @@ class VisualAuthoringBrowserDomTest {
         driver.close();
         driver.switchTo().window(authorWindow);
 
-        click(wait, By.cssSelector("[data-testid='trace-redaction-reviewed-fixture-n1']"));
-        click(wait, By.cssSelector("[data-testid='trace-redaction-verified-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-reviewed-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-verified-fixture-n1']"));
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='trace-review-comment-fixture-n1']"))),
+                By.cssSelector("[data-testid='v2-trace-review-comment-fixture-n1']"))),
                 "Independent reviewer verified redaction metadata");
-        click(wait, By.cssSelector("[data-testid='trace-verify-review-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-verify-review-fixture-n1']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector("[data-testid='trace-review-verified-fixture-n1']")));
+                By.cssSelector("[data-testid='v2-trace-review-verified-fixture-n1']")));
         StoredFixtureAsset verified = fixtureHead(fixtureId);
         assertThat(verified.descriptor().lifecycle().name()).isEqualTo("PROPOSED");
         assertThat(verified.descriptor().redaction().reviewed()).isTrue();
         assertThat(verified.descriptor().quality().redactionVerified()).isTrue();
 
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='trace-approval-comment-fixture-n1']"))),
+                By.cssSelector("[data-testid='v2-trace-approval-comment-fixture-n1']"))),
                 "Independent reviewer approval");
-        click(wait, By.cssSelector("[data-testid='trace-approve-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-approve-fixture-n1']"));
         waitForLifecycle(wait, "APPROVED");
         StoredFixtureAsset approved = fixtureHead(fixtureId);
         assertThat(approved.descriptor().metadata().updatedBy().id())
                 .isEqualTo("browser-reviewer");
         assertThat(approved.descriptor().metadata().createdBy().id())
                 .isNotEqualTo(approved.descriptor().metadata().updatedBy().id());
-        click(wait, By.cssSelector("[data-testid='trace-activate-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-activate-fixture-n1']"));
         waitForLifecycle(wait, "ACTIVE");
         StoredFixtureAsset active = fixtureHead(fixtureId);
         assertThat(active.descriptor().lifecycle().name()).isEqualTo("ACTIVE");
@@ -5130,7 +5245,9 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void waitForLifecycle(WebDriverWait wait, String lifecycle) {
-        By locator = By.cssSelector(".trace-list [data-testid='fixture-governance-lifecycle']");
+        By locator = By.cssSelector(
+                ".workspace-v2 .author-context-simulation-result "
+                        + "[data-testid='fixture-governance-lifecycle']");
         wait.until(ignored -> {
             try {
                 return lifecycle.equals(driver.findElement(locator).getAttribute("data-lifecycle"));
