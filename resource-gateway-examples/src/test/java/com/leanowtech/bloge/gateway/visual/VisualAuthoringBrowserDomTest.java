@@ -781,10 +781,11 @@ class VisualAuthoringBrowserDomTest {
                 "data");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
                 "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}");
-        armExternalApiSaveDiagnostics();
         click(wait, By.cssSelector("[data-testid='external-api-save']"));
 
-        waitForExternalApiCard(wait, "browser-profile");
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"), "browser-profile");
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"),
+                "resource:browser-profile");
         assertThat(driver.findElements(By.cssSelector(
                 "[data-testid='external-api-opaque-warning']"))).isEmpty();
     }
@@ -6181,63 +6182,6 @@ class VisualAuthoringBrowserDomTest {
             throw new AssertionError("Expected text '%s' was not present in %s. Actual='%s', output='%s'"
                     .formatted(expected, locator, textOf(locator), textOf(By.id("output"))), ex);
         }
-    }
-
-    /**
-     * Waits for the saved external-API card and reports only safe browser evidence when it is absent.
-     *
-     * <p>The request observer records method, same-origin path, status, and an allow-listed subset of
-     * structured problem fields. It never records request or response bodies, credentials, or business
-     * payloads, so a failed browser acceptance test remains actionable without becoming a data leak.</p>
-     */
-    private void waitForExternalApiCard(WebDriverWait wait, String resourceId) {
-        try {
-            wait.until(ignored -> textOf(By.cssSelector("[data-testid='external-api-card']"))
-                    .contains(resourceId));
-        } catch (TimeoutException ex) {
-            Object diagnostics = ((JavascriptExecutor) driver).executeScript("""
-                    const error = document.querySelector('[data-testid="external-api-error"]')?.textContent?.trim() || '<none>';
-                    const requests = Array.isArray(window.__externalApiSaveDiagnostics)
-                      ? window.__externalApiSaveDiagnostics : [];
-                    return JSON.stringify({ visibleError: error, requests });
-                    """);
-            throw new AssertionError("External API card was not saved for '%s'. diagnostics=%s"
-                    .formatted(resourceId, diagnostics), ex);
-        }
-    }
-
-    private void armExternalApiSaveDiagnostics() {
-        ((JavascriptExecutor) driver).executeScript("""
-                (() => {
-                  const safeFields = ['type', 'title', 'status', 'code', 'retryable', 'correlationId'];
-                  window.__externalApiSaveDiagnostics = [];
-                  const originalFetch = window.fetch;
-                  window.fetch = async (...arguments_) => {
-                    const request = arguments_[0];
-                    const url = new URL(request instanceof Request ? request.url : request, location.href);
-                    const method = String(arguments_[1]?.method || (request instanceof Request ? request.method : 'GET'));
-                    const response = await originalFetch(...arguments_);
-                    if (url.origin === location.origin && (url.pathname.startsWith('/admin/resources/')
-                        || url.pathname.startsWith('/admin/resource-design-contracts/')
-                        || url.pathname === '/api/visual/operators')) {
-                      const entry = { method, path: url.pathname, status: response.status, problem: {} };
-                      response.clone().json().then((body) => {
-                        if (body && typeof body === 'object') {
-                          for (const field of safeFields) {
-                            if (Object.prototype.hasOwnProperty.call(body, field)
-                                && (typeof body[field] === 'string' || typeof body[field] === 'number'
-                                    || typeof body[field] === 'boolean')) {
-                              entry.problem[field] = body[field];
-                            }
-                          }
-                        }
-                      }).catch(() => {});
-                      window.__externalApiSaveDiagnostics.push(entry);
-                    }
-                    return response;
-                  };
-                })();
-                """);
     }
 
     private void waitForAnyText(WebDriverWait wait, By locator, String... expectedValues) {
