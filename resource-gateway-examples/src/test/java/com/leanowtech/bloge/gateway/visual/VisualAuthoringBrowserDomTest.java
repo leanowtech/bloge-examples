@@ -4977,7 +4977,7 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[aria-label='Context extra value 1']"))), "user-1001");
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] .context-extra-actions button"));
         saveAuthorWorkspace(wait);
-        clickVisibleScenarioRun(wait);
+        clickVisibleGraphSimulation(wait);
         click(wait, By.cssSelector("[data-testid='trace-pin-fixture-n1']"));
         saveAuthorWorkspace(wait);
 
@@ -5048,7 +5048,7 @@ class VisualAuthoringBrowserDomTest {
             click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
             wait.until(ExpectedConditions.invisibilityOfElementLocated(
                     By.cssSelector("[data-testid='operator-detail-dialog']")));
-            clickVisibleScenarioRun(wait);
+            clickVisibleGraphSimulation(wait);
             waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), fidelity);
             assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                     .as("usage count for %s", fidelity)
@@ -5061,7 +5061,7 @@ class VisualAuthoringBrowserDomTest {
                 click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
             }
         }
-        clickVisibleScenarioRun(wait);
+        clickVisibleGraphSimulation(wait);
         waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), "TRANSPORT_LEVEL");
         assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                 .as("replaying the same saved graph remains idempotent")
@@ -5102,24 +5102,13 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
-     * Clicks the v2 command-bar run action rather than the hidden legacy toolbar's Simulate button.
-     * The command bar only becomes runnable once the saved Scenario coordinate is complete.
+     * Clicks the visible v2 Graph simulation action while avoiding duplicate hidden legacy chrome.
      */
-    private void clickVisibleScenarioRun(WebDriverWait wait) {
-        By workspace = By.cssSelector(".workspace-v2");
-        if (!"compose".equals(driver.findElement(workspace).getAttribute("data-author-mode"))) {
-            click(wait, By.cssSelector("[data-testid='author-mode:compose']"));
-            wait.until(ExpectedConditions.attributeToBe(workspace, "data-author-mode", "compose"));
-        }
-        By action = By.cssSelector(".workspace-v2 [data-testid='author-primary-action']");
-        wait.until(ignored -> {
-            WebElement button = driver.findElement(action);
-            String label = button.getText().trim();
-            return button.isDisplayed()
-                    && button.isEnabled()
-                    && ("Run & Compare".equals(label) || "Rerun & Compare".equals(label));
-        });
-        click(wait, action);
+    private void clickVisibleGraphSimulation(WebDriverWait wait) {
+        click(wait, By.xpath(
+                "//*[contains(concat(' ', normalize-space(@class), ' '), ' workspace-v2 ')]"
+                        + "//button[contains(concat(' ', normalize-space(@class), ' '), ' primary ')"
+                        + " and normalize-space()='Simulate']"));
     }
 
     private void waitForLifecycle(WebDriverWait wait, String lifecycle) {
