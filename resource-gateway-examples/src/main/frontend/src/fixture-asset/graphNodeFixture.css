@@ -6,6 +6,8 @@
 .fixture-governance-lifecycle { align-items: center; display: inline-flex; flex-wrap: wrap; gap: .35rem; }
 .fixture-governance-lifecycle label { align-items: center; display: inline-flex; gap: .25rem; }
 .fixture-governance-lifecycle label span { font-size: .8rem; }
+.fixture-review-verification, .fixture-review-approved-ready { display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.fixture-review-verification label, .fixture-review-approved-ready label { align-items: center; display: inline-flex; gap: .25rem; }
 .fixture-governance-lifecycle [role="alert"] { color: #9e2b25; }
 .fixture-asset-reuse { border-top: 1px solid var(--border-subtle, #d9dee8); display: grid; gap: .5rem; margin-top: .65rem; padding-top: .65rem; }
 .fixture-asset-reuse > label { align-items: center; display: flex; gap: .5rem; justify-content: space-between; }

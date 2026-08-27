@@ -5,7 +5,9 @@ import {
   activateGovernedFixture,
   approveGovernedFixture,
   reviewReadyGovernedFixture,
+  verifyGovernedFixture,
   type FixtureAssetLifecycleActions,
+  type FixtureReviewVerificationRequest,
   type GovernedFixtureLifecycleReceipt,
 } from './api';
 import {
@@ -77,6 +79,7 @@ export function SimulationFixtureControls({
   onGoverned,
   lifecycleActions = {
     reviewReady: reviewReadyGovernedFixture,
+    verifyReview: verifyGovernedFixture,
     approve: approveGovernedFixture,
     activate: activateGovernedFixture,
   },
@@ -275,7 +278,11 @@ function GovernedFixtureLifecycleActions({
 }: GovernedFixtureLifecycleActionsProps) {
   const { t } = useI18n();
   const [current, setCurrent] = useState(initial);
-  const [comment, setComment] = useState('');
+  const [reviewComment, setReviewComment] = useState('');
+  const [approvalComment, setApprovalComment] = useState('');
+  const [redactionReviewed, setRedactionReviewed] = useState(false);
+  const [redactionVerified, setRedactionVerified] = useState(false);
+  const [reviewVerified, setReviewVerified] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const id = (action: string) => testIdPrefix === 'fixture'
@@ -313,28 +320,82 @@ function GovernedFixtureLifecycleActions({
       )}
       {lifecycle === 'PROPOSED' && (
         <>
-          <label>
-            <span>{t('Review comment')}</span>
-            <input
-              value={comment}
-              onChange={(event) => setComment(event.target.value)}
-              data-testid={id('approval-comment')}
-            />
-          </label>
-          <button
-            type="button"
-            className="secondary compact"
-            data-testid={id('approve')}
-            disabled={busy || !comment.trim()}
-            onClick={() => void transition(() => actions.approve(
-              fixtureAssetId,
-              current.revision,
-              comment.trim(),
-              `approve:${fixtureAssetId}:${current.revision}`,
-            ))}
-          >
-            {t('Approve metadata')}
-          </button>
+          {!reviewVerified ? (
+            <div className="fixture-review-verification" data-testid={id('review-verification')}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={redactionReviewed}
+                  onChange={(event) => setRedactionReviewed(event.target.checked)}
+                  data-testid={id('redaction-reviewed')}
+                />
+                <span>{t('I reviewed the redaction metadata')}</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={redactionVerified}
+                  onChange={(event) => setRedactionVerified(event.target.checked)}
+                  data-testid={id('redaction-verified')}
+                />
+                <span>{t('I verified the redaction metadata')}</span>
+              </label>
+              <label>
+                <span>{t('Verification comment')}</span>
+                <input
+                  value={reviewComment}
+                  onChange={(event) => setReviewComment(event.target.value)}
+                  data-testid={id('review-comment')}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary compact"
+                data-testid={id('verify-review')}
+                disabled={busy || !redactionReviewed || !redactionVerified || !reviewComment.trim()}
+                onClick={() => void transition(async () => {
+                  const request: FixtureReviewVerificationRequest = {
+                    redactionReviewed,
+                    redactionVerified,
+                    comment: reviewComment.trim(),
+                  };
+                  const receipt = await actions.verifyReview(
+                    fixtureAssetId, current.revision, request,
+                  );
+                  setReviewVerified(true);
+                  return receipt;
+                })}
+              >
+                {t('Verify review')}
+              </button>
+            </div>
+          ) : (
+            <div className="fixture-review-approved-ready" data-testid={id('review-verified')}>
+              <span role="status" aria-live="polite">{t('Review verified by server')}</span>
+              <label>
+                <span>{t('Approval comment')}</span>
+                <input
+                  value={approvalComment}
+                  onChange={(event) => setApprovalComment(event.target.value)}
+                  data-testid={id('approval-comment')}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary compact"
+                data-testid={id('approve')}
+                disabled={busy || !approvalComment.trim()}
+                onClick={() => void transition(() => actions.approve(
+                  fixtureAssetId,
+                  current.revision,
+                  approvalComment.trim(),
+                  `approve:${fixtureAssetId}:${current.revision}`,
+                ))}
+              >
+                {t('Approve metadata')}
+              </button>
+            </div>
+          )}
         </>
       )}
       {lifecycle === 'APPROVED' && (

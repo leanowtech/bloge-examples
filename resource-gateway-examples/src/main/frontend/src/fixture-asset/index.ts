@@ -20,11 +20,13 @@ export {
   promoteGraphNodeFixture,
   resetFixtureAssetTransport,
   reviewReadyGovernedFixture,
+  verifyGovernedFixture,
   setFixtureAssetTransport,
 } from './api';
 export type {
   FixtureAssetLifecycleActions,
   FixtureAssetTransport,
+  FixtureReviewVerificationRequest,
   GovernedFixtureAssetSummary,
   GovernedFixtureLifecycleReceipt,
 } from './api';

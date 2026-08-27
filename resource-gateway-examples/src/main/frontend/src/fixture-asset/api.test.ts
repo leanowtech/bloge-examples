@@ -7,6 +7,7 @@ import {
   promoteGraphNodeFixture,
   resetFixtureAssetTransport,
   reviewReadyGovernedFixture,
+  verifyGovernedFixture,
   approveGovernedFixture,
   setFixtureAssetTransport,
 } from './api';
@@ -125,7 +126,7 @@ describe('fixture asset transport', () => {
     setBlogeApiTransport(async (input, init) => {
       requests.push({ input: String(input), init });
       const path = String(input);
-      const lifecycle = path.endsWith(':review-ready')
+      const lifecycle = path.endsWith(':review-ready') || path.endsWith(':verify-review')
         ? 'PROPOSED' : path.endsWith(':approve') ? 'APPROVED' : 'ACTIVE';
       const descriptor = {
         fixtureAssetId: 'profile.v1', revision: lifecycle === 'PROPOSED' ? 3 : 4, lifecycle,
@@ -138,6 +139,11 @@ describe('fixture asset transport', () => {
     await expect(reviewReadyGovernedFixture('profile.v1', 2)).resolves.toMatchObject({
       revision: 3, lifecycle: 'PROPOSED',
     });
+    await expect(verifyGovernedFixture('profile.v1', 3, {
+      redactionReviewed: true,
+      redactionVerified: true,
+      comment: 'Redaction reviewed',
+    })).resolves.toMatchObject({ revision: 3, lifecycle: 'PROPOSED' });
     await expect(approveGovernedFixture('profile.v1', 3, 'Reviewed', 'approve:profile.v1:3'))
       .resolves.toMatchObject({ revision: 4, lifecycle: 'APPROVED' });
     await expect(activateGovernedFixture('profile.v1', 4)).resolves.toMatchObject({
@@ -146,12 +152,17 @@ describe('fixture asset transport', () => {
 
     expect(requests.map((request) => request.input)).toEqual([
       '/api/visual/fixture-assets/profile.v1:review-ready',
+      '/api/visual/fixture-assets/profile.v1:verify-review',
       '/api/visual/fixture-assets/profile.v1:approve',
       '/api/visual/fixture-assets/profile.v1:activate',
     ]);
     expect(new Headers(requests[0]?.init?.headers).get('If-Match')).toBe('2');
     expect(new Headers(requests[1]?.init?.headers).get('If-Match')).toBe('3');
-    expect(new Headers(requests[1]?.init?.headers).get('Idempotency-Key')).toBe('approve:profile.v1:3');
-    expect(new Headers(requests[2]?.init?.headers).get('If-Match')).toBe('4');
+    expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
+      redactionReviewed: true, redactionVerified: true, comment: 'Redaction reviewed',
+    });
+    expect(new Headers(requests[2]?.init?.headers).get('If-Match')).toBe('3');
+    expect(new Headers(requests[2]?.init?.headers).get('Idempotency-Key')).toBe('approve:profile.v1:3');
+    expect(new Headers(requests[3]?.init?.headers).get('If-Match')).toBe('4');
   });
 });

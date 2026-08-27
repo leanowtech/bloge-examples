@@ -1,4 +1,4 @@
-import { integrationRequestHeaders } from '../api';
+import { exchangeCorrectnessApi, integrationRequestHeaders } from '../api';
 import {
   approveFixtureAsset,
   transitionFixtureAsset,
@@ -32,6 +32,11 @@ export interface GovernedFixtureLifecycleReceipt {
 /** Commands required to move a promoted fixture through the governed lifecycle. */
 export interface FixtureAssetLifecycleActions {
   reviewReady: (fixtureAssetId: string, revision: number) => Promise<GovernedFixtureLifecycleReceipt>;
+  verifyReview: (
+    fixtureAssetId: string,
+    revision: number,
+    request: FixtureReviewVerificationRequest,
+  ) => Promise<GovernedFixtureLifecycleReceipt>;
   approve: (
     fixtureAssetId: string,
     revision: number,
@@ -39,6 +44,13 @@ export interface FixtureAssetLifecycleActions {
     idempotencyKey: string,
   ) => Promise<GovernedFixtureLifecycleReceipt>;
   activate: (fixtureAssetId: string, revision: number) => Promise<GovernedFixtureLifecycleReceipt>;
+}
+
+/** Metadata-only reviewer attestations accepted before Fixture approval. */
+export interface FixtureReviewVerificationRequest {
+  redactionReviewed: boolean;
+  redactionVerified: boolean;
+  comment: string;
 }
 
 /** HTTP transport seam for fixture authoring; production defaults to same-origin fetch. */
@@ -127,6 +139,19 @@ export async function reviewReadyGovernedFixture(
   revision: number,
 ): Promise<GovernedFixtureLifecycleReceipt> {
   return lifecycleReceipt((await transitionFixtureAsset(fixtureAssetId, revision, 'review-ready')).data);
+}
+
+/** Records the server-owned redaction verification revision before approval is enabled. */
+export async function verifyGovernedFixture(
+  fixtureAssetId: string,
+  revision: number,
+  request: FixtureReviewVerificationRequest,
+): Promise<GovernedFixtureLifecycleReceipt> {
+  return lifecycleReceipt((await exchangeCorrectnessApi(
+    `/api/visual/fixture-assets/${encodeURIComponent(fixtureAssetId)}:verify-review`,
+    'CORRECTNESS_REVIEW',
+    { method: 'POST', ifMatch: revision, body: request },
+  )).data);
 }
 
 /** Records reviewer approval using the existing four-eyes command endpoint. */

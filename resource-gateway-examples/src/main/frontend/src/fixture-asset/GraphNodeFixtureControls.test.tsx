@@ -87,8 +87,16 @@ describe('graph-node fixture controls', () => {
     const promoter = vi.fn(async () => promoted);
     const lifecycle: FixtureAssetLifecycleActions = {
       reviewReady: vi.fn(async () => ({ revision: 3, lifecycle: 'PROPOSED' })),
-      approve: vi.fn(async () => ({ revision: 4, lifecycle: 'APPROVED' })),
-      activate: vi.fn(async () => ({ revision: 5, lifecycle: 'ACTIVE' })),
+      verifyReview: vi.fn(async (_fixtureAssetId, _revision, request) => {
+        expect(request).toEqual({
+          redactionReviewed: true,
+          redactionVerified: true,
+          comment: 'Redaction reviewed by reviewer',
+        });
+        return { revision: 4, lifecycle: 'PROPOSED' };
+      }),
+      approve: vi.fn(async () => ({ revision: 5, lifecycle: 'APPROVED' })),
+      activate: vi.fn(async () => ({ revision: 6, lifecycle: 'ACTIVE' })),
     };
     renderControls({ promoter, lifecycleActions: lifecycle });
 
@@ -103,6 +111,21 @@ describe('graph-node fixture controls', () => {
     expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
       .toBe('PROPOSED');
 
+    expect(host.querySelector('[data-testid="fixture-verify-review-node_1"]')).not.toBeNull();
+    expect(host.querySelector<HTMLButtonElement>('[data-testid="fixture-verify-review-node_1"]')?.disabled)
+      .toBe(true);
+    check('[data-testid="fixture-redaction-reviewed-node_1"]');
+    check('[data-testid="fixture-redaction-verified-node_1"]');
+    setControlled('[data-testid="fixture-review-comment-node_1"]', 'Redaction reviewed by reviewer');
+    await clickAsync('[data-testid="fixture-verify-review-node_1"]');
+    expect(lifecycle.verifyReview).toHaveBeenCalledWith('profile.v1', 3, {
+      redactionReviewed: true,
+      redactionVerified: true,
+      comment: 'Redaction reviewed by reviewer',
+    });
+    expect(host.querySelector('[data-testid="fixture-review-verified-node_1"]')?.textContent)
+      .toContain('Review verified by server');
+
     const comment = host.querySelector<HTMLInputElement>('[data-testid="fixture-approval-comment-node_1"]')!;
     await act(async () => {
       const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
@@ -112,13 +135,13 @@ describe('graph-node fixture controls', () => {
     });
     await clickAsync('[data-testid="fixture-approve-node_1"]');
     expect(lifecycle.approve).toHaveBeenCalledWith(
-      'profile.v1', 3, 'Reviewed by data governance', 'approve:profile.v1:3',
+      'profile.v1', 4, 'Reviewed by data governance', 'approve:profile.v1:4',
     );
     expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
       .toBe('APPROVED');
 
     await clickAsync('[data-testid="fixture-activate-node_1"]');
-    expect(lifecycle.activate).toHaveBeenCalledWith('profile.v1', 4);
+    expect(lifecycle.activate).toHaveBeenCalledWith('profile.v1', 5);
     expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
       .toBe('ACTIVE');
     expect(host.querySelector('[data-testid="fixture-approval-comment-node_1"]')).toBeNull();
@@ -205,6 +228,10 @@ describe('graph-node fixture controls', () => {
     act(() => host.querySelector<HTMLButtonElement>(selector)?.click());
   }
 
+  function check(selector: string): void {
+    act(() => host.querySelector<HTMLInputElement>(selector)?.click());
+  }
+
   async function clickAsync(selector: string): Promise<void> {
     await act(async () => {
       host.querySelector<HTMLButtonElement>(selector)?.click();
@@ -221,5 +248,16 @@ describe('graph-node fixture controls', () => {
     }
     element.value = value;
     element.dispatchEvent(new Event(event, { bubbles: true }));
+  }
+
+  function setControlled(selector: string, value: string): void {
+    const element = host.querySelector<HTMLInputElement>(selector);
+    if (!element) throw new Error(`Missing controlled element: ${selector}`);
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(element, value);
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+    });
   }
 });
