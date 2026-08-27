@@ -3545,8 +3545,30 @@ describe('AuthorCanvas connection guide', () => {
   });
 
   it('surfaces resource and streaming readiness directly in palette, nodes, and inspector', async () => {
+    window.history.replaceState({}, '', '/author/?spine=v1');
+    let fixtureCollectionCalls = 0;
     fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.startsWith('/api/visual/fixture-assets')) {
+        fixtureCollectionCalls += 1;
+        return jsonResponse({ data: [{
+          fixtureAssetId: 'customer-fixture', revision: 1, name: 'Customer fixture',
+          lifecycle: 'ACTIVE', schemaRef: { fingerprint: 'schema-fp' },
+          usageCount: fixtureCollectionCalls > 1 ? 3 : 2,
+          compatibleWithOperatorRef: true,
+          currentSchemaFingerprint: 'schema-fp',
+        }] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.fixtures.n1).toEqual({
+          output: null,
+          governedRef: {
+            fixtureAssetId: 'customer-fixture', revision: 1, schemaFingerprint: 'schema-fp',
+          },
+        });
+        return jsonResponse({ success: true, results: { n1: { ok: true } }, statusMap: { n1: 'mocked' } });
+      }
       if (url === '/api/visual/operators') {
         return jsonResponse({ operators: [httpResourceOperator(), streamingOperator()] });
       }
@@ -3615,13 +3637,15 @@ describe('AuthorCanvas connection guide', () => {
     expect(dialog.textContent).toContain('Key properties');
     expect(dialog.textContent).toContain('Resource contract');
     expect(dialogQuery('[data-testid="operator-detail-resource-config"]').textContent).toContain('Resource ID');
+    await waitFor(() => expect(dialogQuery('[data-testid="graph-node-fixture-picker"]')).toBeDefined());
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="reuse-fixture-customer-fixture"]'));
+    expect(dialogQuery('[data-testid="governed-fixture-bound"]').textContent).toContain('customer-fixture');
 
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="operator-detail-label"]'), 'Customer HTTP call');
     await setControlValue(dialogQuery<HTMLSelectElement>('[data-testid="operator-detail-http-method"]'), 'POST');
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="operator-detail-resource-url"]'), '/customers/{customerId}');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="node-input-add"]'));
     await setControlValue(dialogQuery<HTMLInputElement>('[data-testid="node-input-context-path:0"]'), 'request.customerId');
-    await setControlValue(dialogQuery<HTMLTextAreaElement>('[data-testid="operator-detail-output-fixture"]'), '{"ok":true}');
     expect(dialogQuery('[data-testid="operator-test-suite"]').textContent).toContain('Executable Operator Suite');
     expect(dialogQuery('[data-testid="operator-test-status:0"]').textContent).toContain('valid');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-add"]'));
@@ -3643,6 +3667,12 @@ describe('AuthorCanvas connection guide', () => {
     expect(dialogQuery('[data-testid="operator-test-result:1"]').textContent)
       .toContain('Real micro-graph PASSED · EXPLORATORY · run operator-run-2');
     await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-test-apply:1"]'));
+    await click(dialogQuery<HTMLButtonElement>('[data-testid="operator-detail-apply"]'));
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button.primary'))
+      .find((button) => button.textContent?.includes('Simulate'));
+    expect(simulateButton).toBeDefined();
+    await click(simulateButton!);
+    await waitFor(() => expect(fixtureCollectionCalls).toBeGreaterThanOrEqual(2));
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported.nodes[0]).toMatchObject({

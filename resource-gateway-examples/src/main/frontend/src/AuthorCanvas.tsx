@@ -4118,7 +4118,7 @@ function OperatorDetailDialog({
               <ForeachLoopGuide inputs={inputs} outputs={outputs} />
             )}
 
-            {node.data.operatorRef.startsWith('resource:') && (
+            {(node.data.operatorRef.startsWith('resource:') || operator?.display?.tags?.includes('resource')) && (
               <section className="fixture-asset-reuse" data-testid="fixture-asset-reuse">
                 <h3>{t('Governed fixture reuse')}</h3>
                 <Suspense fallback={<p className="muted" role="status">{t('Loading fixture controls…')}</p>}>
@@ -6028,7 +6028,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     if (!spineEnabled) return undefined;
     let active = true;
     const selectedResourceRef = nodes.find((node) => node.id === selectedNodeId)?.data.operatorRef;
-    fetchGovernedFixtureAssets(selectedResourceRef?.startsWith('resource:') ? selectedResourceRef : undefined)
+    fetchGovernedFixtureAssets(selectedResourceRef)
       .then((assets) => {
         if (active) {
           setGovernedFixtureAssets(assets);
@@ -7495,7 +7495,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setGovernedFixtureRefs((current) => ({ ...current, [nodeId]: coordinate }));
   }, []);
   const selectedFixtureState = selectedNode ? fixtureForNode(selectedNode.id) : undefined;
-  const selectedIsResource = selectedNode?.data.operatorRef.startsWith('resource:') ?? false;
+  const selectedIsResource = Boolean(
+    selectedNode
+    && (selectedNode.data.operatorRef.startsWith('resource:')
+      || operatorByRef.get(selectedNode.data.operatorRef)?.display?.tags?.includes('resource')),
+  );
   const selectedGovernedFixtureRef = selectedNode ? governedFixtureRefs[selectedNode.id] : undefined;
   // Compatibility is server-derived by the fixture catalogue; the client must not
   // compare unrelated operator and material fingerprints.
