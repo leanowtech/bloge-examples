@@ -21,7 +21,7 @@ import java.util.Collection;
  *
  * <h3>Error handling</h3>
  * <ul>
- *   <li>{@code 404} — descriptor not found (GET / PUT / DELETE with unknown ID)</li>
+ *   <li>{@code 404} — descriptor not found (GET / DELETE with unknown ID)</li>
  *   <li>{@code 409} — duplicate descriptor on POST</li>
  *   <li>{@code 400} — invalid descriptor (expression compilation failure)</li>
  * </ul>
@@ -80,10 +80,13 @@ public class ResourceRegistryAdminController {
     }
 
     /**
-     * Replaces an existing resource descriptor.
+     * Creates or replaces a resource descriptor idempotently.
      *
      * <p>The {@code resourceId} in the URL path must match the descriptor body's
-     * {@code resourceId}. Expressions are re-validated on update.
+     * {@code resourceId}. A first PUT creates the descriptor, while later PUTs replace
+     * it using the same validation and persistence path as an update. This is the
+     * controlled upsert contract used by external-API authoring; POST remains strict
+     * create-only and still reports duplicates as conflicts.
      *
      * @param resourceId the logical resource identifier (must match the body)
      * @param descriptor the updated descriptor
@@ -97,8 +100,13 @@ public class ResourceRegistryAdminController {
                     "Path resourceId '%s' does not match body resourceId '%s'"
                             .formatted(resourceId, descriptor.resourceId()));
         }
-        registry.update(descriptor);
-        log.info("Updated resource descriptor via admin API: {}", resourceId);
+        if (registry.contains(resourceId)) {
+            registry.update(descriptor);
+            log.info("Updated resource descriptor via admin API: {}", resourceId);
+        } else {
+            registry.register(descriptor);
+            log.info("Created resource descriptor via admin API PUT: {}", resourceId);
+        }
         return descriptor;
     }
 

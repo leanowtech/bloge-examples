@@ -132,6 +132,25 @@ class ResourceRegistryAdminControllerTest {
     }
 
     @Test
+    void putDescriptor_createsWhenMissingAndIsIdempotent() throws Exception {
+        var descriptor = simpleDescriptor("browser-profile", "https://api.example.test/profile", "GET");
+        String json = objectMapper.writeValueAsString(descriptor);
+
+        mockMvc.perform(put("/admin/resources/browser-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.resourceId").value("browser-profile"));
+        mockMvc.perform(put("/admin/resources/browser-profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.urlTemplate").value("https://api.example.test/profile"));
+        mockMvc.perform(get("/admin/resources/browser-profile"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
     void deleteDescriptor_returns204() throws Exception {
         var descriptor = simpleDescriptor("svc-delete", "http://example.com/api/d", "DELETE");
         mockMvc.perform(post("/admin/resources")
