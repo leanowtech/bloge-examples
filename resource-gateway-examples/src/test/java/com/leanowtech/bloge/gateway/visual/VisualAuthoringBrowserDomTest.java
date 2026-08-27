@@ -34,6 +34,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureApprovalR
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.DatabaseFixtureApprovalReceiptRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialMetadataSource;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialService;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
@@ -44,6 +45,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionController;
 import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService;
+import com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -364,6 +366,21 @@ class VisualAuthoringBrowserDomTest {
                             "browser-test-v1",
                             "browser-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="),
                     mapper);
+        }
+
+        /**
+         * Supplies the real governed-fixture resolver when conditional production bean discovery
+         * precedes the test's explicit material adapters. Production configuration provides the
+         * same resolver; this fallback keeps the browser path authenticated and payload-free.
+         */
+        @Bean
+        @ConditionalOnMissingBean(GovernedFixtureSimulationResolver.class)
+        GovernedFixtureSimulationResolver browserGovernedFixtureSimulationResolver(
+                FixtureAssetRepository fixtures,
+                FixtureMaterialResolver materials,
+                VisualOperatorCatalog catalog,
+                ObjectMapper mapper) {
+            return new GovernedFixtureSimulationResolver(fixtures, materials, catalog, mapper);
         }
 
         /** Narrows the material repository to the catalog's receipt-only metadata view. */
@@ -5082,6 +5099,10 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n1']")));
         saveAuthorWorkspace(wait);
+        String firstGraphDraftId = graphDraftRepository.all().stream()
+                .map(draft -> draft.draftId())
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("First visible graph was not persisted."));
         click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] summary"));
         click(wait, By.xpath("//button[normalize-space()='Add Context Extra']"));
@@ -5143,13 +5164,26 @@ class VisualAuthoringBrowserDomTest {
         StoredFixtureAsset active = fixtureHead(fixtureId);
         assertThat(active.descriptor().lifecycle().name()).isEqualTo("ACTIVE");
 
-        driver.get(authorUrl);
-        closeAuthorStartDialog(wait);
+        String secondAuthorUrl = baseUrl
+                + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
+                + "&namespace=local-second&environment=test";
+        driver.get(secondAuthorUrl);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-choice:blank']")));
+        click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")));
         click(wait, By.cssSelector(
                 "[data-testid='operator-button:resource:order-service.listOrders']"));
         WebElement secondNode = wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='canvas-node:n1']")));
         saveAuthorWorkspace(wait);
+        String secondGraphDraftId = graphDraftRepository.all().stream()
+                .map(draft -> draft.draftId())
+                .filter(candidate -> !candidate.equals(firstGraphDraftId))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Second visible graph was not persisted."));
+        assertThat(secondGraphDraftId).isNotEqualTo(firstGraphDraftId);
         new Actions(driver).doubleClick(secondNode).perform();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='operator-detail-dialog']")));
