@@ -458,6 +458,16 @@ operator's current unique typed output schema and returns
 comparison is treated as incompatible. A stale reference cannot be submitted for
 simulation.
 
+Resource nodes expose three per-node fidelity selections: `OUTPUT_LEVEL`,
+`PROTOCOL_DERIVED`, and `TRANSPORT_LEVEL`. The selection is request metadata;
+the server decides and returns the executed `nodeFidelity` evidence, which the
+AuthorCanvas trace displays instead of echoing the selected value. Requests
+contain only `resourceFidelity` and, when reused, the exact governed reference;
+raw bodies, material payloads, and response sidecars are not accepted. The
+resource selector is mounted on the selected resource node in the v1 spine and
+is absent when the spine is off. Reverse-index usage links are idempotent, with
+a residual crash window between simulation completion and usage-link commit.
+
 During `POST /api/visual/graphs/simulate`, a node-level governed reference is
 resolved only after an authenticated material-read in the exact server-derived
 scope. Resolution requires the exact ACTIVE revision, exact descriptor/schema

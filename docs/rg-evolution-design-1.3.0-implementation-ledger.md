@@ -44,8 +44,8 @@ the existing evidence is insufficient.
 | Graph-node fixture promotion endpoint with server-derived provenance | Implemented | `GraphNodeFixturePromotionService`, controller, transaction test, service test, and controller test. |
 | Payload-free governed fixture catalog with exact scope, pagination, compatibility filtering, reverse usage count, and no-store caching | Implemented | `FixtureAssetCollectionController`, `FixtureAssetCollectionService`, database repository test, controller test, and service test. |
 | Governed fixture resolution during visual simulation with schema/staleness checks and idempotent usage accounting | Implemented | `GovernedFixtureSimulationResolver`, `VisualGraphSimulationControllerTest`, `GovernedFixtureSimulationResolverTest`, and repository/accounting tests. |
-| Output/protocol/transport fidelity routing through the bounded kernel adapter | Implemented | `ExecutionModeHints`, `ExecutionControlCompiler`, `TestDoubleFactory`, `VisualSimulationKernelAdapter`, and focused compiler/runtime/adapter tests. |
-| AuthorCanvas picker, pin/promote controls, compatibility filtering, refresh, staleness, and fidelity projection | Implemented | `AuthorCanvas.tsx`, `fixture-asset/*`, `draftModel.ts`, and focused frontend tests. The latest fidelity-control test has an uncommitted assertion and needs packaging with the docs update. |
+| Output/protocol/transport fidelity routing through the bounded kernel adapter | Implemented | `ExecutionModeHints`, `ExecutionControlCompiler`, `TestDoubleFactory`, `VisualSimulationKernelAdapter`, and focused compiler/runtime/adapter tests. Authoritative output/raw evidence remains server-owned; the browser sends only `resourceFidelity` and governed coordinates, never raw material or a response sidecar. |
+| AuthorCanvas picker, pin/promote controls, compatibility filtering, refresh, staleness, and per-node fidelity projection | Implemented | `AuthorCanvas.tsx`, `fixture-asset/*`, `draftModel.ts`, `AuthorCanvas.test.tsx`, and focused frontend tests. Three fidelity values are request-selectable per resource node; displayed fidelity is server `nodeFidelity` evidence and is never inferred from the selection. |
 | Real-browser chain: simulate → capture → promote → reuse in another graph with usage count increment | Open | Backend and component levels are covered separately. The explicit 1280 px browser acceptance chain remains missing. |
 
 ### 8.4 Phase D: decision-table scenario enumeration and plan output
@@ -61,7 +61,7 @@ the existing evidence is insufficient.
 
 | Requirement | Status | Current evidence and remaining work |
 | --- | --- | --- |
-| Unit/component test gates | Pending acceptance | Source and tests are present. Fresh independent frontend and focused backend command evidence is required after the final slices. |
+| Unit/component test gates | Pending acceptance | Focused frontend evidence includes 39/39 i18n checks and 92/92 fixture/draft tests; AuthorCanvas component evidence covers the governed two-node path. Fresh independent full frontend and focused backend command evidence is still required for final acceptance. |
 | Full backend `clean verify` | Pending acceptance | The latest fidelity commits have focused evidence but do not yet have a post-HEAD full gate. |
 | Four-dimensional honest result, no new giant dialog, no main-line regression | Pending acceptance | Existing UX/domain tests provide partial evidence. The final E2E must exercise these properties together. |
 | Real-browser 1280 px acceptance chain across define → compose → publish → simulate → capture → promote → reuse → enumerate → simulate → four-dimensional result | Open | This is the dominant remaining acceptance gap. Existing Selenium launchers cover other flows but not this 1.3.0 chain. |
@@ -75,14 +75,16 @@ the existing evidence is insufficient.
   tests cover protocol/transport behavior.
 * Remaining gap is concentrated in the explicit end-to-end acceptance chain and
   final independent green gates/docs packaging.
-* Current assessed gap: approximately 12%. The largest unclosed requirement is
-  the 8.5 real-browser chain; secondary risk is that full-suite evidence does not
-  yet include the newest commits.
+* Current assessed gap: approximately 5–6%. The remaining work is concentrated in
+  E2 and the final independent gates/review; no browser or full clean-verify result
+  is claimed as Accepted here.
+* Reverse-index usage accounting is idempotent, but a crash window between the
+  simulation outcome and usage-link commit remains a documented residual risk.
 
 ## Next slice
 
-1. Run fresh frontend and focused backend gates after packaging the current
-   README and fidelity-control assertion.
+1. Run the fresh frontend and focused backend gates after packaging the current
+   README and per-node fidelity evidence.
 2. Add a bounded 1280 px real-browser acceptance producer/test for the 8.5
    chain, reusing `VisualAuthoringBrowserDomTest` infrastructure.
 3. Run the full backend gate and record all commands, counts, and artifact
