@@ -16,10 +16,20 @@ import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkCommand;
 import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkReceipt;
 import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkService;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
+import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
+import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
+import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessAuthoringSchemaReadiness;
+import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessFixtureMaterialSchemaReadiness;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -48,6 +58,7 @@ import org.openqa.selenium.TimeoutException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.WebElement;
+import org.openqa.selenium.WindowType;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -63,7 +74,13 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.http.ResponseEntity;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.core.Ordered;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -78,11 +95,22 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.IntStream;
+
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.http.HttpServletResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -98,11 +126,35 @@ import static org.assertj.core.api.Assertions.assertThat;
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
                 "gateway.seed-descriptors=false",
+                "gateway.testing.correctness.enabled=true",
+                "gateway.testing.correctness.fixture-material.enabled=true",
+                "gateway.testing.correctness.fixture-material.active-key-id=browser-test-v1",
+                "gateway.testing.correctness.fixture-material.key-ring=browser-test-v1=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
                 "spring.datasource.url=jdbc:h2:mem:visual-authoring-browser-dom;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false"
         }
 )
+@ActiveProfiles("test")
 @Timeout(90)
 class VisualAuthoringBrowserDomTest {
+
+    private static final String BROWSER_AUTHOR_TOKEN = "bloge-aneke-demo-token";
+    private static final String BROWSER_REVIEWER_TOKEN = "bloge-browser-reviewer-token";
+    private static final String REVIEWER_SESSION_COOKIE = "visual-browser-reviewer";
+    private static final EnterpriseScope BROWSER_FIXTURE_SCOPE = new EnterpriseScope(
+            "tenant-a", "knowledge-governance", "local", "test", "local");
+    private static final Set<String> BROWSER_ALLOWED_PURPOSES = Set.of(
+            "CORRECTNESS_READ", "CORRECTNESS_WRITE", "CORRECTNESS_REVIEW",
+            "CORRECTNESS_FIXTURE_MATERIAL_WRITE", "CORRECTNESS_FIXTURE_MATERIAL_READ",
+            "CAPABILITY_PROJECTION", "GOVERNANCE_GATE_FEEDBACK", "TEST_SUITE_READ",
+            "TEST_SUITE_WRITE", "TEST_EXECUTION", "TEST_SCENARIO_PUBLISH");
+
+    private static IntegrationWorkloadIdentity browserIdentity(String identityId, String actorId) {
+        return new IntegrationWorkloadIdentity(
+                identityId, BROWSER_FIXTURE_SCOPE.tenantId(), BROWSER_FIXTURE_SCOPE.organizationId(),
+                BROWSER_FIXTURE_SCOPE.projectId(), BROWSER_FIXTURE_SCOPE.environment(),
+                BROWSER_FIXTURE_SCOPE.region(), "HUMAN", actorId, "", BROWSER_ALLOWED_PURPOSES,
+                Instant.MAX, true, Set.of("visual-browser"), "RESTRICTED", "", Instant.MAX);
+    }
 
     private static final Duration WAIT_TIMEOUT = Duration.ofSeconds(12);
     private static final Duration WEBDRIVER_TIMEOUT = Duration.ofSeconds(15);
@@ -121,6 +173,101 @@ class VisualAuthoringBrowserDomTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class RehearsalBrowserFixtureConfiguration {
+        /** Installs the smallest correctness schema needed by this browser-only fixture slice. */
+        @Bean
+        CorrectnessAuthoringSchemaReadiness browserCorrectnessSchema(JdbcTemplate jdbc) {
+            ResourceDatabasePopulator schema = new ResourceDatabasePopulator(
+                    new ClassPathResource("correctness/h2-correctness-fixture-schema.sql"));
+            schema.execute(jdbc.getDataSource());
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_heads (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_revisions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_inventory_heads (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_inventory_revisions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_obligation_index (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_business_oracle_heads (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_business_oracle_revisions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_assertion_set_heads (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_assertion_set_revisions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_draft_set_v2_heads (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_draft_set_v2_revisions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_case_v2_index (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_case_obligation_ref_index (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publications (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempts (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempt_history (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_evidence_companions (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_outcome_calibration_proposals (id INT)");
+            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_governance_feedback (id INT)");
+            return new CorrectnessAuthoringSchemaReadiness(jdbc);
+        }
+
+        /** Installs the encrypted-material tables before the opt-in material gate is constructed. */
+        @Bean
+        CorrectnessFixtureMaterialSchemaReadiness browserFixtureMaterialSchema(JdbcTemplate jdbc) {
+            new ResourceDatabasePopulator(
+                    new ClassPathResource("correctness/h2-correctness-fixture-material-schema.sql"))
+                    .execute(jdbc.getDataSource());
+            return new CorrectnessFixtureMaterialSchemaReadiness(jdbc);
+        }
+
+        /** Allows only this test's two server-owned identities to review the promoted fixture. */
+        @Bean
+        FixtureReviewAuthorizer browserFixtureReviewAuthorizer() {
+            return (scope, descriptor, actor) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview();
+        }
+
+        /** The browser test uses the seeded operator contract as its exact schema authority. */
+        @Bean
+        FixtureSchemaSource browserFixtureSchemaSource() {
+            return (scope, schema) -> BROWSER_FIXTURE_SCOPE.equals(scope);
+        }
+
+        /** Maps the author bearer and the visible reviewer handoff bearer to distinct identities. */
+        @Bean
+        IntegrationIdentityResolver browserIdentityResolver() {
+            IntegrationWorkloadIdentity author = browserIdentity(
+                    "browser-author-identity", "browser-author");
+            IntegrationWorkloadIdentity reviewer = browserIdentity(
+                    "browser-reviewer-identity", "browser-reviewer");
+            StaticBearerIntegrationIdentityResolver authorResolver =
+                    new StaticBearerIntegrationIdentityResolver(BROWSER_AUTHOR_TOKEN, author, false);
+            StaticBearerIntegrationIdentityResolver reviewerResolver =
+                    new StaticBearerIntegrationIdentityResolver(BROWSER_REVIEWER_TOKEN, reviewer, false);
+            return new IntegrationIdentityResolver() {
+                @Override
+                public Optional<IntegrationWorkloadIdentity> resolve(String credential) {
+                    return authorResolver.resolve(credential).or(() -> reviewerResolver.resolve(credential));
+                }
+
+                @Override
+                public Optional<Resolution> resolveVerified(String credential) {
+                    return authorResolver.resolveVerified(credential)
+                            .or(() -> reviewerResolver.resolveVerified(credential));
+                }
+
+                @Override
+                public Descriptor descriptor() {
+                    return new Descriptor("TEST_BROWSER_SESSION", "TEST_CONFIGURATION", true, true, false);
+                }
+            };
+        }
+
+        /** Registers the cookie-to-reviewer handoff before protected API controllers run. */
+        @Bean
+        FilterRegistrationBean<BrowserReviewerSessionFilter> browserReviewerSessionFilter() {
+            FilterRegistrationBean<BrowserReviewerSessionFilter> registration =
+                    new FilterRegistrationBean<>(new BrowserReviewerSessionFilter());
+            registration.setOrder(Ordered.HIGHEST_PRECEDENCE);
+            registration.addUrlPatterns("/*");
+            return registration;
+        }
+
+        /** Exposes a visible same-origin account handoff used by the browser acceptance. */
+        @Bean
+        BrowserReviewerSignInController browserReviewerSignInController() {
+            return new BrowserReviewerSignInController();
+        }
+
         /** Supplies a deterministic signed-workbook projection only to this real-browser test. */
         @Bean
         RehearsalBrowserFixtureController
@@ -162,6 +309,67 @@ class VisualAuthoringBrowserDomTest {
         ScenarioDraftSetBrowserFixtureController scenarioDraftSetBrowserFixtureController(
                 ScenarioDraftSetAuthoringService service) {
             return new ScenarioDraftSetBrowserFixtureController(service);
+        }
+    }
+
+    /** Test-only visible account handoff; it deliberately exposes no credential value. */
+    @RestController
+    @RequestMapping("/test-auth")
+    static final class BrowserReviewerSignInController {
+        @GetMapping(value = "/reviewer", produces = "text/html")
+        String reviewerPage() {
+            return "<html><body><main><h1>Reviewer sign-in</h1>"
+                    + "<form method=post action=/test-auth/reviewer/sign-in>"
+                    + "<button type=submit data-testid=test-sign-in-reviewer>Sign in as reviewer</button>"
+                    + "</form></main></body></html>";
+        }
+
+        @PostMapping(value = "/reviewer/sign-in", produces = "text/html")
+        ResponseEntity<String> signIn() {
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE, REVIEWER_SESSION_COOKIE + "=active; Path=/; SameSite=Lax")
+                    .body("<html><body><p data-testid=test-reviewer-session>"
+                            + "Reviewer session active</p></body></html>");
+        }
+    }
+
+    /** Converts the visible reviewer session cookie into the server-owned bearer identity. */
+    static final class BrowserReviewerSessionFilter extends OncePerRequestFilter {
+        @Override
+        protected void doFilterInternal(
+                HttpServletRequest request,
+                HttpServletResponse response,
+                FilterChain filterChain) throws ServletException, IOException {
+            if (!hasReviewerSession(request)) {
+                filterChain.doFilter(request, response);
+                return;
+            }
+            HttpServletRequest wrapped = new HttpServletRequestWrapper(request) {
+                @Override
+                public String getHeader(String name) {
+                    return "Authorization".equalsIgnoreCase(name)
+                            ? "Bearer " + BROWSER_REVIEWER_TOKEN : super.getHeader(name);
+                }
+
+                @Override
+                public Enumeration<String> getHeaders(String name) {
+                    return "Authorization".equalsIgnoreCase(name)
+                            ? Collections.enumeration(List.of("Bearer " + BROWSER_REVIEWER_TOKEN))
+                            : super.getHeaders(name);
+                }
+            };
+            filterChain.doFilter(wrapped, response);
+        }
+
+        private boolean hasReviewerSession(HttpServletRequest request) {
+            if (request.getCookies() == null) return false;
+            for (var cookie : request.getCookies()) {
+                if (REVIEWER_SESSION_COOKIE.equals(cookie.getName())
+                        && "active".equals(cookie.getValue())) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -558,6 +766,9 @@ class VisualAuthoringBrowserDomTest {
 
     @Autowired
     private ResourceDesignContractRegistry resourceDesignContractRegistry;
+
+    @Autowired
+    private FixtureAssetRepository fixtureAssetRepository;
 
     @LocalServerPort
     private int port;
@@ -4724,6 +4935,147 @@ class VisualAuthoringBrowserDomTest {
                 "[data-binding-expression][data-binding-port='inputs'][data-binding-path='']")).isBlank());
         assertThat(valueOf(By.id("composer-dsl")))
                 .doesNotContain("riskDynamicStringFacts.output.facts");
+    }
+
+    /**
+     * Proves the visible governed-fixture path, including four-eyes review, activation, reuse,
+     * all server-projected resource fidelities, and idempotent usage accounting.
+     *
+     * <p>The reviewer identity is acquired only by opening the visible same-origin test sign-in
+     * page in a second tab. No graph or fixture state is created outside the rendered controls.</p>
+     */
+    @Test
+    void governedFixtureLifecycleAndReuseAreVisibleAndIdempotentInRealBrowser() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        String baseUrl = "http://localhost:" + port;
+        String authorUrl = baseUrl
+                + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
+                + "&namespace=local&environment=test";
+        String fixtureId = "browser-order-fixture-" + Long.toUnsignedString(System.nanoTime());
+
+        driver.get(authorUrl);
+        closeAuthorStartDialog(wait);
+        click(wait, By.cssSelector(
+                "[data-testid='operator-button:resource:order-service.listOrders']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n1']")));
+        saveAuthorWorkspace(wait);
+        click(wait, By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']"));
+        click(wait, By.cssSelector("[data-testid='trace-pin-fixture-n1']"));
+        saveAuthorWorkspace(wait);
+
+        click(wait, By.cssSelector("[data-testid='trace-promote-fixture-n1']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='promote-fixture-id']"))), fixtureId);
+        selectByValue(wait, By.cssSelector("[data-testid='promote-fixture-classification']"), "RESTRICTED");
+        click(wait, By.cssSelector("[data-testid='submit-promote-fixture']"));
+        waitForLifecycle(wait, "DRAFT");
+        click(wait, By.cssSelector("[data-testid='trace-review-ready-fixture-n1']"));
+        waitForLifecycle(wait, "PROPOSED");
+
+        String authorWindow = driver.getWindowHandle();
+        driver.switchTo().newWindow(WindowType.TAB);
+        driver.get(baseUrl + "/test-auth/reviewer");
+        click(wait, By.cssSelector("[data-testid='test-sign-in-reviewer']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='test-reviewer-session']")));
+        driver.close();
+        driver.switchTo().window(authorWindow);
+
+        click(wait, By.cssSelector("[data-testid='trace-redaction-reviewed-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='trace-redaction-verified-fixture-n1']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='trace-review-comment-fixture-n1']"))),
+                "Independent reviewer verified redaction metadata");
+        click(wait, By.cssSelector("[data-testid='trace-verify-review-fixture-n1']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='trace-review-verified-fixture-n1']")));
+        StoredFixtureAsset verified = fixtureHead(fixtureId);
+        assertThat(verified.descriptor().lifecycle().name()).isEqualTo("PROPOSED");
+        assertThat(verified.descriptor().redaction().reviewed()).isTrue();
+        assertThat(verified.descriptor().quality().redactionVerified()).isTrue();
+
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='trace-approval-comment-fixture-n1']"))),
+                "Independent reviewer approval");
+        click(wait, By.cssSelector("[data-testid='trace-approve-fixture-n1']"));
+        waitForLifecycle(wait, "APPROVED");
+        StoredFixtureAsset approved = fixtureHead(fixtureId);
+        assertThat(approved.descriptor().metadata().updatedBy().id())
+                .isEqualTo("browser-reviewer");
+        assertThat(approved.descriptor().metadata().createdBy().id())
+                .isNotEqualTo(approved.descriptor().metadata().updatedBy().id());
+        click(wait, By.cssSelector("[data-testid='trace-activate-fixture-n1']"));
+        waitForLifecycle(wait, "ACTIVE");
+        StoredFixtureAsset active = fixtureHead(fixtureId);
+        assertThat(active.descriptor().lifecycle().name()).isEqualTo("ACTIVE");
+
+        driver.get(authorUrl);
+        closeAuthorStartDialog(wait);
+        click(wait, By.cssSelector(
+                "[data-testid='operator-button:resource:order-service.listOrders']"));
+        WebElement secondNode = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='canvas-node:n1']")));
+        saveAuthorWorkspace(wait);
+        new Actions(driver).doubleClick(secondNode).perform();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='graph-node-fixture-picker']")));
+        click(wait, By.cssSelector("[data-testid='reuse-fixture-" + fixtureId + "']"));
+        waitForText(wait, By.cssSelector("[data-testid='governed-fixture-bound']"), fixtureId);
+
+        for (String fidelity : List.of("OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL")) {
+            selectByValue(wait, By.cssSelector("[data-testid='resource-fidelity-select']"), fidelity);
+            click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+            wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                    By.cssSelector("[data-testid='operator-detail-dialog']")));
+            click(wait, By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']"));
+            waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), fidelity);
+            assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
+                    .as("usage count for %s", fidelity)
+                    .isEqualTo(1);
+            if (!"TRANSPORT_LEVEL".equals(fidelity)) {
+                new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
+                        By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+                wait.until(ExpectedConditions.visibilityOfElementLocated(
+                        By.cssSelector("[data-testid='operator-detail-dialog']")));
+                click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
+            }
+        }
+        click(wait, By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']"));
+        waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), "TRANSPORT_LEVEL");
+        assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
+                .as("replaying the same saved graph remains idempotent")
+                .isEqualTo(1);
+    }
+
+    private void closeAuthorStartDialog(WebDriverWait wait) {
+        if (!driver.findElements(By.cssSelector("[aria-label='Close start dialog']")).isEmpty()) {
+            click(wait, By.cssSelector("[aria-label='Close start dialog']"));
+            wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                    By.cssSelector("[data-testid='author-start-dialog']")));
+        }
+    }
+
+    private void saveAuthorWorkspace(WebDriverWait wait) {
+        click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
+        wait.until(ignored -> driver.findElement(By.cssSelector(
+                "[data-testid='author-continuity-status']")).getText().matches("(?s).*SAVED|.*Saved"));
+    }
+
+    private void waitForLifecycle(WebDriverWait wait, String lifecycle) {
+        wait.until(ExpectedConditions.attributeTo(
+                By.cssSelector(".trace-list [data-testid='fixture-governance-lifecycle']"),
+                "data-lifecycle", lifecycle));
+    }
+
+    private StoredFixtureAsset fixtureHead(String fixtureId) {
+        return fixtureAssetRepository.findHead(BROWSER_FIXTURE_SCOPE, fixtureId).orElseThrow(
+                () -> new AssertionError("Fixture head is not readable after visible action: " + fixtureId));
     }
 
     private WebDriver newChromeDriverOrSkip() {
