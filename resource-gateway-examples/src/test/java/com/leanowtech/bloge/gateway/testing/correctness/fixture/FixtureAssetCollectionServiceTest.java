@@ -69,11 +69,37 @@ class FixtureAssetCollectionServiceTest {
         verify(repository, times(2)).countUsages(scope, stored.exactRef());
     }
 
+    @Test
+    void reportsCompatibleWhenStoredSchemaUsesTheSharedExactSchemaDerivation() {
+        FixtureAssetRepository repository = mock(FixtureAssetRepository.class);
+        VisualOperatorCatalog catalog = mock(VisualOperatorCatalog.class);
+        ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+        EnterpriseScope scope = new EnterpriseScope("t", "o", "p", "test", "sg");
+        OperatorDefinition operator = operator();
+        String fingerprint = com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService
+                .exactOutputSchemaRef(operator, mapper).fingerprint();
+        StoredFixtureAsset stored = StoredFixtureAsset.verified(mapper,
+                descriptor(scope, new ExactSchemaRef("profile", 1, fingerprint)));
+        when(repository.listHeads(scope, true, 50, 0)).thenReturn(List.of(stored));
+        when(repository.countUsages(scope, stored.exactRef())).thenReturn(0);
+        when(catalog.find("resource:profile")).thenReturn(java.util.Optional.of(operator));
+
+        var summary = new FixtureAssetCollectionService(repository, catalog, mapper)
+                .list(scope, true, 50, 0, "resource:profile").getFirst();
+
+        assertThat(summary.compatibleWithOperatorRef()).isTrue();
+        assertThat(summary.currentSchemaFingerprint()).isEqualTo(fingerprint);
+    }
+
     private static FixtureAssetDescriptor descriptor(EnterpriseScope scope) {
+        return descriptor(scope, new ExactSchemaRef("profile", 1, fp('b')));
+    }
+
+    private static FixtureAssetDescriptor descriptor(EnterpriseScope scope, ExactSchemaRef schema) {
         var ref = new ExactAssetRef("FIXTURE_MATERIAL", "profile", 1, fp('a'));
         return new FixtureAssetDescriptor("", "profile", 1, scope, "Profile",
                 new FixtureSource(SourceKind.SAMPLE, null), ref,
-                new ExactSchemaRef("profile", 1, fp('b')), "default", FixtureLifecycle.ACTIVE,
+                schema, "default", FixtureLifecycle.ACTIVE,
                 "INTERNAL", new PrincipalRef("owner", PrincipalKind.USER, ""),
                 new RedactionDescriptor("r1", List.of(), true),
                 new RetentionDescriptor("t1", 1, Instant.parse("2026-09-01T00:00:00Z")),
