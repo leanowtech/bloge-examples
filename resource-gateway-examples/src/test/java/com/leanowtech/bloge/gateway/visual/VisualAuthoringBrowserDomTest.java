@@ -832,7 +832,7 @@ class VisualAuthoringBrowserDomTest {
         waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "#");
         assertThat(driver.getCurrentUrl())
                 .contains("spine=v1")
-                .contains("toolId=browser-api-tool")
+                .contains("toolId=tool-browser-api-tool")
                 .contains("toolName=Browser+API+Tool")
                 .contains("stage=define");
         click(wait, By.cssSelector("[data-testid='tool-palette-publication']"));
