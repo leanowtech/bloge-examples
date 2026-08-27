@@ -3,10 +3,10 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { FixtureAssetLifecycleActions } from './api';
 import type { GraphNodeFixturePromoteRequest } from './graphNodeFixtureModel';
 import {
   FixtureStalenessNotice,
-  type FixtureAssetLifecycleActions,
   GraphNodeFixturePicker,
   ProvenanceBadge,
   ResourceFidelitySelect,
