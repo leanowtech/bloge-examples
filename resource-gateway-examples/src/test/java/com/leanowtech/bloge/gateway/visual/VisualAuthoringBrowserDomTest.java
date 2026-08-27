@@ -5165,7 +5165,7 @@ class VisualAuthoringBrowserDomTest {
             wait.until(ExpectedConditions.invisibilityOfElementLocated(
                     By.cssSelector("[data-testid='operator-detail-dialog']")));
             clickVisibleGraphSimulation(wait);
-            waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), fidelity);
+            waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), fidelity);
             assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                     .as("usage count for %s", fidelity)
                     .isEqualTo(1);
@@ -5178,7 +5178,7 @@ class VisualAuthoringBrowserDomTest {
             }
         }
         clickVisibleGraphSimulation(wait);
-        waitForText(wait, By.cssSelector("[data-testid='server-fidelity:n1']"), "TRANSPORT_LEVEL");
+        waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), "TRANSPORT_LEVEL");
         assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                 .as("replaying the same saved graph remains idempotent")
                 .isEqualTo(1);
