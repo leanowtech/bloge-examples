@@ -65,7 +65,18 @@ public class VisualGraphSimulationController {
         return simulate(request, null);
     }
 
-    /** Simulates a request while optionally resolving authenticated governed Fixtures. */
+    /**
+     * Simulates a request while optionally resolving authenticated governed Fixtures.
+     *
+     * <p>Governed material is resolved to a protected output before simulation. The request's
+     * exact Fixture coordinate, expected-input assertion, and caller-selected evidence fidelity
+     * remain intact, so material resolution cannot silently downgrade the server's evidence
+     * boundary.</p>
+     *
+     * @param request transient graph and request-scoped Fixture references
+     * @param headers authenticated request headers used for governed material reads
+     * @return server-authoritative simulation result
+     */
     @PostMapping("/simulate")
     public VisualGraphSimulationResponse simulate(
             @RequestBody VisualGraphSimulationRequest request,
@@ -88,11 +99,22 @@ public class VisualGraphSimulationController {
             final EnterpriseScope resolvedScope = governedScope;
             VisualGraphSimulationRequest requestForResolution = incoming;
             Map<String, NodeFixture> resolved = new LinkedHashMap<>();
-            requestForResolution.fixtures().forEach((nodeId, fixture) -> resolved.put(nodeId,
-                    fixture == null || fixture.governedRef() == null
-                            ? fixture
-                            : governedFixtures.resolve(resolvedScope, fixture.governedRef(), resolvedIdentity,
-                                    requestForResolution.draft(), nodeId)));
+            requestForResolution.fixtures().forEach((nodeId, fixture) -> {
+                if (fixture == null || fixture.governedRef() == null) {
+                    resolved.put(nodeId, fixture);
+                    return;
+                }
+                NodeFixture materialized = governedFixtures.resolve(
+                        resolvedScope, fixture.governedRef(), resolvedIdentity,
+                        requestForResolution.draft(), nodeId);
+                // The resolver intentionally returns only protected output. The caller-selected
+                // evidence boundary, input assertion, and exact coordinate remain request facts;
+                // dropping them here silently downgraded protocol/transport simulations to output
+                // fidelity and made the server response contradict the visible authoring choice.
+                resolved.put(nodeId, new NodeFixture(
+                        materialized.output(), fixture.expectedInput(), fixture.governedRef(),
+                        fixture.resourceFidelity()));
+            });
             incoming = new VisualGraphSimulationRequest(
                     requestForResolution.draft(), requestForResolution.context(),
                     requestForResolution.outputNode(), resolved);

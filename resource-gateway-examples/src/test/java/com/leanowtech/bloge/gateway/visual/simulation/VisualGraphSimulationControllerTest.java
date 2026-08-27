@@ -13,6 +13,7 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpHeaders;
+import org.mockito.ArgumentCaptor;
 
 import org.junit.jupiter.api.Test;
 
@@ -56,7 +57,7 @@ class VisualGraphSimulationControllerTest {
     }
 
     @Test
-    void governedFixtureUsesAuthenticatedReadHandlerAndInjectsOnlyResolvedOutput() {
+    void governedFixturePreservesProtocolFidelityAndInjectsResolvedOutput() {
         VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
         GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
@@ -78,10 +79,20 @@ class VisualGraphSimulationControllerTest {
                 simulation, authenticator, provider);
         VisualGraphSimulationRequest request = new VisualGraphSimulationRequest(
                 eligibilityDraft(), Map.of(), "", Map.of("eligibility",
-                        new NodeFixture(null, null, new GovernedFixtureRef(
-                                "fixture", 1, "sha256:" + "a".repeat(64)))));
+                        new NodeFixture(null, Map.of("score", 720), new GovernedFixtureRef(
+                                "fixture", 1, "sha256:" + "a".repeat(64)),
+                                NodeFixture.ResourceFidelity.PROTOCOL_DERIVED)));
 
         assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(expected);
+        ArgumentCaptor<Map<String, NodeFixture>> forwarded =
+                ArgumentCaptor.forClass(Map.class);
+        verify(simulation).simulate(any(), any(), any(), forwarded.capture());
+        NodeFixture forwardedFixture = forwarded.getValue().get("eligibility");
+        assertThat(forwardedFixture.output()).isEqualTo(Map.of("eligible", true));
+        assertThat(forwardedFixture.expectedInput()).isEqualTo(Map.of("score", 720));
+        assertThat(forwardedFixture.governedRef()).isEqualTo(request.fixtures().get("eligibility").governedRef());
+        assertThat(forwardedFixture.resourceFidelity())
+                .isEqualTo(NodeFixture.ResourceFidelity.PROTOCOL_DERIVED);
         verify(authenticator).authenticate(any(HttpHeaders.class), eq(
                 IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ));
         verify(resolver).resolve(any(), any(), eq(identity), any(), eq("eligibility"));
@@ -94,6 +105,43 @@ class VisualGraphSimulationControllerTest {
         when(simulation.simulate(any(), any(), any(), any())).thenReturn(failed);
         assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(failed);
         verify(resolver, times(1)).recordReuse(any(), eq(request.draft()), anyList());
+    }
+
+    @Test
+    void governedFixturePreservesTransportFidelity() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
+        @SuppressWarnings("unchecked") ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(resolver);
+        IntegrationRequestContext identity = new IntegrationRequestContext(
+                "tenant", "org", "project", "test", "sg", "USER", "author", "",
+                "CORRECTNESS_FIXTURE_MATERIAL_READ", "corr");
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ)))
+                .thenReturn(identity);
+        when(resolver.resolve(any(), any(), eq(identity), any(), eq("eligibility")))
+                .thenReturn(new NodeFixture(Map.of("eligible", true)));
+        VisualGraphSimulationResponse expected = new VisualGraphSimulationResponse(
+                true, true, true, "graph", "eligibility", Map.of("eligible", true),
+                Map.of(), Map.of(), 1, Map.of(), List.of("eligibility"), List.of(), true,
+                List.of(), List.of(), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(expected);
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+        VisualGraphSimulationRequest request = new VisualGraphSimulationRequest(
+                eligibilityDraft(), Map.of(), "", Map.of("eligibility",
+                        new NodeFixture(null, Map.of("score", 720), new GovernedFixtureRef(
+                                "fixture", 1, "sha256:" + "a".repeat(64)),
+                                NodeFixture.ResourceFidelity.TRANSPORT_LEVEL)));
+
+        assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(expected);
+        ArgumentCaptor<Map<String, NodeFixture>> forwarded =
+                ArgumentCaptor.forClass(Map.class);
+        verify(simulation).simulate(any(), any(), any(), forwarded.capture());
+        assertThat(forwarded.getValue().get("eligibility").resourceFidelity())
+                .isEqualTo(NodeFixture.ResourceFidelity.TRANSPORT_LEVEL);
+        assertThat(forwarded.getValue().get("eligibility").output())
+                .isEqualTo(Map.of("eligible", true));
     }
 
     @Test
