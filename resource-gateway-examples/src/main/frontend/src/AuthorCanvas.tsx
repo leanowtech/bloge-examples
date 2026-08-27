@@ -240,6 +240,7 @@ import {
 } from './author/input/authorRunInput';
 import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
 import {
+  operatorScenarioDraftSetId,
   scenarioSetMatchesOperator,
   type DecisionEditorSnapshot,
 } from './decision-scenario/decisionScenarioModel';
@@ -4330,15 +4331,6 @@ function operatorNodePortSchema(
     required: ports.filter((port) => port.required).map((port) => port.name || fallbackName),
     additionalProperties: false,
   });
-}
-
-async function operatorScenarioDraftSetId(operatorRef: string): Promise<string> {
-  const digest = (await sha256Fingerprint(operatorRef)).replace(/^sha256:/, '');
-  const safeRef = operatorRef.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
-    || 'operator';
-  const fixed = `operator--${digest}-scenarios`;
-  const prefixLimit = Math.max(1, 255 - fixed.length);
-  return `operator-${safeRef.slice(0, prefixLimit)}-${digest}-scenarios`;
 }
 
 interface OperatorLibraryExample {

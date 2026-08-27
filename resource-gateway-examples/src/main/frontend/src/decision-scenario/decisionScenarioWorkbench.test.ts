@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { decisionTableFromEditor, decisionTableSourceFingerprint, scenarioSetIsStale, scenarioSetMatchesOperator } from './decisionScenarioModel';
+import {
+  decisionTableFromEditor,
+  decisionTableSourceFingerprint,
+  operatorScenarioDraftSetId,
+  scenarioSetIsStale,
+  scenarioSetMatchesOperator,
+} from './decisionScenarioModel';
 
 const editor = {
   hitPolicy: 'unique', outputType: '{ decision: String }',
@@ -36,5 +42,17 @@ describe('decision scenario workbench model', () => {
     expect(scenarioSetMatchesOperator(draftSet, 'bloge:decisionTable', { ...draftSet.target, revision: 2 }, 'sha256:contract')).toBe(false);
     expect(scenarioSetMatchesOperator(draftSet, 'bloge:decisionTable', draftSet.target, 'sha256:changed')).toBe(false);
     expect(scenarioSetMatchesOperator(draftSet, 'bloge:other', draftSet.target, 'sha256:contract')).toBe(false);
+  });
+
+  it('builds deterministic portable ids with bounded readable prefixes and digest distinction', async () => {
+    const longRef = `catalog:${'very-long-operator-name.'.repeat(30)}`;
+    const first = await operatorScenarioDraftSetId(longRef);
+    const second = await operatorScenarioDraftSetId(longRef);
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]*$/);
+    expect(first.length).toBeLessThanOrEqual(255);
+    expect(first).toContain('catalog-very-long-operator-name');
+    expect(await operatorScenarioDraftSetId('catalog:other-operator')).not.toBe(first);
   });
 });

@@ -1,5 +1,5 @@
 import type { ScenarioDraftSet } from '../contract-scenario/domain';
-import { sha256FingerprintSync } from '../contract-scenario/fingerprint';
+import { sha256Fingerprint, sha256FingerprintSync } from '../contract-scenario/fingerprint';
 import {
   enumerateDecisionTableScenarios,
   type DecisionOutputKind,
@@ -66,6 +66,14 @@ export function scenarioSetMatchesOperator(
       && draftSet.target.fingerprint === target.fingerprint
       && draftSet.contractFingerprint === contractFingerprint,
   );
+}
+
+/** Builds the stable, portable asset id used by an operator's Scenario workspace. */
+export async function operatorScenarioDraftSetId(operatorRef: string): Promise<string> {
+  const digest = (await sha256Fingerprint(operatorRef)).replace(/^sha256:/, '');
+  const safeRef = operatorRef.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '')
+    || 'operator';
+  return `operator-${safeRef.slice(0, 80)}-${digest}-scenarios`;
 }
 
 function inferColumnType(editor: DecisionEditorSnapshot, id: string): 'integer' | 'number' | 'string' | 'enum' | 'boolean' {
