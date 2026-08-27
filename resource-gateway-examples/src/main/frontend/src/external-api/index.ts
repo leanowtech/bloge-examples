@@ -5,6 +5,7 @@ export {
   MAX_NODES,
   toDesignContract,
 } from './externalApiModel';
+export { saveExternalApi } from './externalApiTransport';
 export type {
   ExternalApiFormModel,
   ExternalApiOutputSchema,
@@ -15,3 +16,4 @@ export type {
   ResourceDesignContractPayload,
   SchemaEnvelopePayload,
 } from './externalApiModel';
+export type { ExternalApiRequester, ExternalApiSaveResult } from './externalApiTransport';

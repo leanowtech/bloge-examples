@@ -4101,6 +4101,20 @@ describe('AuthorCanvas simulation summary', () => {
       }),
     );
   });
+
+  it('mounts the external API authoring object only for the spine rollout', async () => {
+    window.history.replaceState({}, '', '/author/');
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+    expect(document.querySelector('[data-testid="add-external-api"]')).toBeNull();
+    await act(async () => root?.unmount());
+    root = createRoot(host);
+    window.history.replaceState({}, '', '/author/?spine=v1');
+    await act(async () => root?.render(<AuthorCanvas workspaceVersion="v2" />));
+    await waitFor(() => expect(document.querySelector('[data-testid="add-external-api"]')).not.toBeNull());
+  });
 });
 
 const sampleLibraryYaml = [

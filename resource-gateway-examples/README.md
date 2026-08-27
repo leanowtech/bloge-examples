@@ -395,6 +395,15 @@ tool signatures, and existing-publication references. They are intentionally
 transport- and UI-free: API persistence, Launcher integration, and the E2
 390/1280 geometry gate remain later slices.
 
+#### External API authoring (B1)
+
+When the exact `spine=v1` rollout is active, the Author palette exposes one
+inline External API object. Its Request, Response, and Output schema sections
+save through the real descriptor and visual-contract PUT endpoints in order;
+only a completed pair refreshes the visual operator catalog. Failed saves stay
+retryable and never display response bodies. This is still a browser authoring
+surface, not a GraphDraft mutation; full E2 geometry evidence remains pending.
+
 #### Graph-node Fixture promotion
 
 `POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` turns an exact

@@ -236,6 +236,8 @@ import {
   compileTaskRunContext,
   reconcileRunInputWithSchema,
 } from './author/input/authorRunInput';
+import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
+import { resolveSpine } from './spine/authorSpine';
 import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
 import {
   authorTaskElapsedMs,
@@ -5277,6 +5279,7 @@ export interface AuthorCanvasProps {
 export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasProps = {}) {
   const { locale, t, m, d } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
+  const spineEnabled = resolveSpine(window.location.search) === 'v1';
   const [initialWorkspaceLocation] = useState(() => (
     parseAuthorWorkspaceLocation(window.location.search)
   ));
@@ -11487,6 +11490,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             </label>
           )}
         </div>
+        {spineEnabled && (
+          <ExternalApiAuthoring
+            onCatalogRefresh={(catalog) => {
+              setOperators(catalog.operators);
+              setBuiltInFunctions(catalog.builtInFunctions ?? []);
+            }}
+            onAddOperator={(operatorRef) => {
+              const operator = operatorByRef.get(operatorRef);
+              if (operator) addOperator(operator);
+            }}
+          />
+        )}
         <section className="library-intake" aria-label={t('Operator library intake')} data-testid="library-intake">
           <div className="library-intake-heading">
             <h2>{t('Library')}</h2>
