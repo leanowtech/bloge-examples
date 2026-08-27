@@ -19,6 +19,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescr
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.FixtureSubject;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureMaterialProtocolV2.Receipt;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.DatabaseFixtureAssetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -133,7 +134,7 @@ class FixtureCatalogServiceTest {
         assertThat(verified.descriptor().retention()).isEqualTo(proposed.descriptor().retention());
         assertThat(repository.revisions(scope(), "prime-applicant"))
                 .extracting(stored -> stored.descriptor().revision())
-                .containsExactly(3, 2, 1);
+                .containsExactly(3L, 2L, 1L);
     }
 
     @Test
