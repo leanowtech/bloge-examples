@@ -803,8 +803,7 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='canvas-node:n2'] .port-handle.target");
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
         click(wait, By.cssSelector("[data-testid='canvas-node:n2']"));
-        click(wait, By.cssSelector("[data-testid='compact-open-inspector']"));
-        click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
+        openConfigInspector(wait);
         waitForText(wait, By.cssSelector(".output-control"), "Selected as simulation output.");
         click(wait, By.xpath("//button[normalize-space()='Edit node']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
@@ -5802,6 +5801,38 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         return width.doubleValue();
+    }
+
+    /**
+     * Opens the task inspector Config tab in both expanded desktop and compact layouts.
+     *
+     * <p>Expanded layouts expose the tab directly. Compact layouts expose only the inspector
+     * launcher, so the opener order mirrors {@link #openDataInspector(WebDriverWait)} before the
+     * same tab is selected.</p>
+     *
+     * @param wait browser wait used to resolve the current inspector presentation
+     */
+    private void openConfigInspector(WebDriverWait wait) {
+        By configTab = By.cssSelector("[data-testid='inspector-tab:config']");
+        if (visibleElements(configTab).stream().noneMatch(WebElement::isEnabled)) {
+            WebElement opener = wait.until(ignored -> {
+                for (By locator : List.of(
+                        By.cssSelector("[data-testid='compact-open-inspector']"),
+                        By.cssSelector("[aria-label='Expand context inspector']"),
+                        By.cssSelector(".inspector-panel-toggle[aria-expanded='false']"))) {
+                    List<WebElement> candidates = visibleElements(locator);
+                    if (!candidates.isEmpty() && candidates.getFirst().isEnabled()) {
+                        return candidates.getFirst();
+                    }
+                }
+                return null;
+            });
+            opener.click();
+        }
+        wait.until(ignored -> visibleElements(configTab).stream()
+                .filter(WebElement::isEnabled)
+                .findFirst()
+                .orElse(null)).click();
     }
 
     private void openDataInspector(WebDriverWait wait) {
