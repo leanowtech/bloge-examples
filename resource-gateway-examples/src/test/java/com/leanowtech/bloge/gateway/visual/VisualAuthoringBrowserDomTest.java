@@ -802,7 +802,7 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='canvas-node:n1'] .port-handle.source",
                 "[data-testid='canvas-node:n2'] .port-handle.target");
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
-        click(wait, By.cssSelector("[data-testid='canvas-node:n2']"));
+        click(wait, By.cssSelector(".react-flow__node[data-id='n2']"));
         openConfigInspector(wait);
         waitForText(wait, By.cssSelector(".output-control"), "Selected as simulation output.");
         click(wait, By.xpath("//button[normalize-space()='Edit node']"));
