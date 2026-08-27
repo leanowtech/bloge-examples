@@ -67,6 +67,8 @@ export interface EnumerationOptions {
   contractFingerprint?: string;
   owner?: string;
   classification?: ScenarioDraftSet['metadata']['classification'];
+  /** Stable portable id selected by the owning authoring surface. */
+  scenarioDraftSetId?: string;
 }
 
 /** A generated set plus explicit boundedness/provenance information. */
@@ -266,7 +268,8 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
   const target = options.target ?? { kind: 'GRAPH', id: table.tableId ?? 'decision-table', revision: 1, fingerprint: sourceFingerprint };
   const draftSet: ScenarioDraftSet = {
     schemaVersion: 'bloge.scenarioDraftSet.v1',
-    scenarioDraftSetId: `${table.tableId ?? 'decision-table'}:${sourceFingerprint.slice(-16)}`,
+    scenarioDraftSetId: options.scenarioDraftSetId
+      ?? portableScenarioDraftSetId(table.tableId ?? 'decision-table', sourceFingerprint),
     revision: 0,
     scope: options.scope ?? { tenantId: '', organizationId: '', projectId: '', environment: '', region: '' },
     target: { ...target },
@@ -275,6 +278,13 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
     metadata: { owner: options.owner ?? '', classification: options.classification ?? 'INTERNAL', createdAt: null, updatedAt: null, provenance: { sourceFingerprint, provenance: 'DECISION_TABLE_ENUMERATION', mode: options.mode, cap, exhaustive: opaqueColumns.length === 0 && !product.truncated } },
   };
   return { scenarios, draftSet, metadata: { mode: options.mode, cap, truncated: product.truncated, strategy: product.strategy, exhaustive: opaqueColumns.length === 0 && !product.truncated, provenance: 'DECISION_TABLE_ENUMERATION', sourceFingerprint, opaqueColumns, diagnostics: opaqueColumns.length ? ['Opaque predicates use author samples and are not exhaustive.'] : [] } };
+}
+
+/** Builds the bounded id fallback used when an enumerator is called without an owning surface. */
+export function portableScenarioDraftSetId(sourceRef: string, digest: string): string {
+  const safeRef = sourceRef.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'operator';
+  const safeDigest = digest.replace(/^sha256:/, '');
+  return `operator-${safeRef.slice(0, 80)}-${safeDigest}-scenarios`;
 }
 
 function domainsFor(table: DecisionTable, focusRule?: DecisionRule): Record<string, unknown[]> {

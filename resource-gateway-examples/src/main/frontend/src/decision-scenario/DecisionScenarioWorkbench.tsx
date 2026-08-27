@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
 import type { ExactTargetRef, EnterpriseScope, ScenarioContractProjection, ScenarioDraftSet } from '../contract-scenario/domain';
-import { enumerateFromEditor, scenarioSetIsStale, type DecisionEditorSnapshot } from './decisionScenarioModel';
+import {
+  enumerateFromEditor,
+  operatorScenarioDraftSetId,
+  scenarioSetIsStale,
+  type DecisionEditorSnapshot,
+} from './decisionScenarioModel';
 import type { DecisionOutputKind, EnumerationResult } from './decisionScenario';
 import './decisionScenario.css';
 import { useI18n } from '../i18n/I18nProvider';
@@ -39,9 +44,11 @@ export function DecisionScenarioWorkbench(props: DecisionScenarioWorkbenchProps)
     setError(null);
     setSaved(false);
     try {
-      const projection = await fetchScenarioOperatorContract(props.operatorRef ?? props.target.id);
+      const operatorRef = props.operatorRef ?? props.target.id;
+      const projection = await fetchScenarioOperatorContract(operatorRef);
       setAuthority(projection);
-      const enumerated = enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint }, props.tableId);
+      const scenarioDraftSetId = await operatorScenarioDraftSetId(operatorRef);
+      const enumerated = enumerateFromEditor({ ...props.editor, outputKind }, { mode, cap: Math.min(10_000, Math.max(1, cap)), target: projection.contract.target, scope: projection.scope, owner: props.owner, contractFingerprint: projection.contractFingerprint, scenarioDraftSetId }, props.tableId);
       setPreview({
         ...enumerated,
         draftSet: {
