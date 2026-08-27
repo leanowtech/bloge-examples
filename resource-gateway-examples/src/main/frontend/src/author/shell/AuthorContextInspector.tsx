@@ -31,6 +31,7 @@ interface AuthorContextInspectorProps {
   runProvenance: string;
   dataContent: ReactNode;
   advancedContent: ReactNode;
+  simulationContent: ReactNode;
   onEditNode: () => void;
   onOpenNodeContract: () => void;
   onOpenScenarios: () => void;
@@ -60,6 +61,7 @@ export default function AuthorContextInspector({
   runProvenance,
   dataContent,
   advancedContent,
+  simulationContent,
   onEditNode,
   onOpenNodeContract,
   onOpenScenarios,
@@ -181,6 +183,7 @@ export default function AuthorContextInspector({
         )}
         {activeTab === 'advanced' && advancedContent}
       </div>
+      {simulationContent}
     </section>
   );
 }

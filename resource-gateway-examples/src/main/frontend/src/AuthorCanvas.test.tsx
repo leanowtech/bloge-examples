@@ -4232,6 +4232,12 @@ describe('AuthorCanvas simulation summary', () => {
     await waitFor(() =>
       expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Simulation succeeded'),
     );
+    expect(query('[data-testid="author-context-inspector"] [data-testid="author-context-simulation-result"]'))
+      .not.toBeNull();
+    expect(query('[data-testid="author-context-simulation-result"] [data-testid="v2-trace-pin-fixture-n1"]'))
+      .not.toBeNull();
+    expect(query('[data-testid="author-context-simulation-result"] [data-testid="v2-trace-promote-fixture-n1"]'))
+      .not.toBeNull();
     expect(fetchMock.mock.calls.filter(([request]) => String(request) === '/api/visual/graphs/simulate'))
       .toHaveLength(1);
   });

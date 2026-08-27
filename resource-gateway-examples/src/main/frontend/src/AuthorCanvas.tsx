@@ -13055,6 +13055,45 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 />
               </div>
             )}
+            simulationContent={result && traceRows.length > 0 ? (
+              <section className="author-context-simulation-result" data-testid="author-context-simulation-result">
+                <h3>{t('Latest simulation')}</h3>
+                <ol className="trace-list">
+                  {traceRows.map((row) => (
+                    <li key={row.nodeId}>
+                      <div className={`trace-row ${row.status}`}>
+                        <span className="trace-copy">
+                          <strong>{row.label}</strong>
+                          <span>{row.operatorRef}</span>
+                          {row.fidelity && (
+                            <small data-testid={`v2-server-fidelity:${row.nodeId}`}>
+                              {t('Server fidelity')}: {row.fidelity}
+                            </small>
+                          )}
+                          <code>{row.outputPreview}</code>
+                        </span>
+                        <span className={`run-pill ${row.status}`}>{d(row.status)}</span>
+                      </div>
+                      <Suspense fallback={null}>
+                        <SimulationFixtureControls
+                          draftId={graphDraftId}
+                          nodeId={row.nodeId}
+                          label={row.label}
+                          operatorRef={row.operatorRef}
+                          output={Object.prototype.hasOwnProperty.call(result.results, row.nodeId)
+                            ? result.results[row.nodeId] : undefined}
+                          fixture={fixtureForNode(row.nodeId)}
+                          onPin={() => pinSimulationNode(row.nodeId)}
+                          promoter={promoteGraphNodeFixture}
+                          onGoverned={acceptGovernedFixture}
+                          testIdPrefix="v2-trace"
+                        />
+                      </Suspense>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
             onEditNode={() => {
               if (selectedNode) {
                 openNodeEditor(selectedNode);

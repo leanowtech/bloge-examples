@@ -1479,6 +1479,7 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'Select a node to edit its configuration.': '选择一个节点以编辑其配置。',
   'Open Scenarios': '打开测试场景',
   'Latest result': '最近结果',
+  'Latest simulation': '最新模拟',
   'No Scenario result yet.': '尚无测试场景运行结果。',
   'Ports': '端口',
   'Input Contract': '输入契约',
