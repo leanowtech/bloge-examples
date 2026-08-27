@@ -60,6 +60,7 @@ export function operatorScenarioGraphDraft(
   contract: ContractDraft,
   tenantId: string,
   environment: string,
+  operatorConfig: Record<string, unknown> = {},
 ): GraphDraft {
   const safeRef = operator.operatorRef.replace(/[^A-Za-z0-9._-]+/g, '-');
   return {
@@ -75,7 +76,7 @@ export function operatorScenarioGraphDraft(
       operatorRef: operator.operatorRef,
       label: operator.display?.name || operator.operatorRef,
       inputs: operatorScenarioInputBindings(operator, contract),
-      config: {},
+      config: operatorConfig,
       position: { x: 160, y: 120 },
     }],
     edges: [],

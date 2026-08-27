@@ -61,6 +61,24 @@ function operator(inputPorts: string[]): OperatorDefinition {
 }
 
 describe('operatorScenarioInputBindings', () => {
+  it('retains the authored operator configuration for executable projections', () => {
+    const config = {
+      hitPolicy: 'unique',
+      outputType: '{ decision: String }',
+      rules: [{ conditions: { score: 'score >= 720' }, output: { decision: 'approve' } }],
+    };
+
+    const graph = operatorScenarioGraphDraft(
+      operator(['inputs']),
+      contract(schema({ inputs: { type: 'object' } })),
+      'tenant-a',
+      'test',
+      config,
+    );
+
+    expect(graph.nodes[0].config).toEqual(config);
+  });
+
   it('binds a wrapped single-port Contract to the root of that port', () => {
     const bindings = operatorScenarioInputBindings(
       operator(['params']),

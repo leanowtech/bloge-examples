@@ -8101,16 +8101,17 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setContractWorkspaceInitialTab(initialTab);
     try {
       const projection = await fetchScenarioOperatorContract(operator.operatorRef);
+      const sourceNode = nodes.find((node) => (
+        node.id === (requestedNodeId || selectedNodeId)
+        && node.data.operatorRef === operator.operatorRef
+      )) ?? nodes.find((node) => node.data.operatorRef === operator.operatorRef);
       const syntheticGraph = operatorScenarioGraphDraft(
         operator,
         projection.contract,
         projection.scope.tenantId,
         projection.scope.environment,
+        sourceNode?.data.config,
       );
-      const sourceNode = nodes.find((node) => (
-        node.id === (requestedNodeId || selectedNodeId)
-        && node.data.operatorRef === operator.operatorRef
-      )) ?? nodes.find((node) => node.data.operatorRef === operator.operatorRef);
       const legacyRows = sourceNode
         ? operatorTestSuites[sourceNode.id] ?? defaultOperatorTestSuiteRows(sourceNode, operator)
         : [];
