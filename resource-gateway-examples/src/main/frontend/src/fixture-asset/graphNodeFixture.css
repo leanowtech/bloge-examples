@@ -2,6 +2,10 @@
 .fixture-provenance[data-provenance="pinned"] { color: #8a5200; }
 .fixture-provenance[data-provenance="governed"] { color: #17653a; font-weight: 650; }
 .simulation-fixture-controls { align-items: center; display: inline-flex; gap: .35rem; }
+.simulation-fixture-controls .secondary { white-space: nowrap; }
+.fixture-asset-reuse { border-top: 1px solid var(--border-subtle, #d9dee8); display: grid; gap: .5rem; margin-top: .65rem; padding-top: .65rem; }
+.fixture-asset-reuse > label { align-items: center; display: flex; gap: .5rem; justify-content: space-between; }
+.fixture-asset-reuse small { color: var(--text-muted, #667085); }
 .fixture-stale { color: #9e2b25; }
 .governed-fixture-dialog {
   background: var(--surface-raised, #fff); border: 1px solid var(--border-subtle, #d9dee8);
@@ -13,3 +17,4 @@
 .graph-node-fixture-picker ul { display: grid; gap: .35rem; list-style: none; margin: 0; padding: 0; }
 .graph-node-fixture-picker button { text-align: left; width: 100%; }
 .graph-node-fixture-picker button * { overflow-wrap: anywhere; }
+.graph-node-fixture-picker code, .graph-node-fixture-picker small { display: block; margin-top: .15rem; }

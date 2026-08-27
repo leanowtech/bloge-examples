@@ -4,6 +4,7 @@ import { useI18n } from '../i18n/I18nProvider';
 import {
   promoteRequestFrom,
   provenanceOf,
+  governedRefFromReceipt,
   type GraphNodeFixtureClassification,
   type GraphNodeFixturePromoteRequest,
   type GraphNodeFixturePromotionReceipt,
@@ -45,6 +46,7 @@ interface SimulationFixtureControlsProps {
   onPin?: () => void;
   promoter?: FixturePromoter;
   onGoverned?: (reference: GovernedGraphNodeFixtureRef & { nodeId: string }) => void;
+  testIdPrefix?: string;
 }
 
 /**
@@ -65,11 +67,18 @@ export function SimulationFixtureControls({
   onPin,
   promoter,
   onGoverned,
+  testIdPrefix = 'fixture',
 }: SimulationFixtureControlsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const canPin = Boolean(output && onPin);
-  const canPromote = Boolean(output && draftId?.trim() && promoter);
+  // `0`, `false`, and an empty string are valid schema-shaped outputs. Only an
+  // absent value means that the simulation did not produce an output.
+  const hasOutput = output !== undefined;
+  const canPin = hasOutput && typeof onPin === 'function';
+  const canPromote = hasOutput && Boolean(draftId?.trim() && promoter);
+  const controlTestId = (action: string) => testIdPrefix === 'fixture'
+    ? `${action}-fixture-${nodeId}`
+    : `${testIdPrefix}-${action}-fixture-${nodeId}`;
   return (
     <span className="simulation-fixture-controls">
       <ProvenanceBadge fixture={fixture} />
@@ -84,7 +93,7 @@ export function SimulationFixtureControls({
       <button
         type="button"
         className="secondary compact"
-        data-testid={`pin-fixture-${nodeId}`}
+        data-testid={controlTestId('pin')}
         disabled={!canPin || provenanceOf(fixture) !== 'sample'}
         onClick={onPin}
       >
@@ -93,7 +102,7 @@ export function SimulationFixtureControls({
       <button
         type="button"
         className="secondary compact"
-        data-testid={`promote-fixture-${nodeId}`}
+        data-testid={controlTestId('promote')}
         disabled={!canPromote}
         onClick={() => setOpen(true)}
       >
@@ -105,12 +114,7 @@ export function SimulationFixtureControls({
           onCancel={() => setOpen(false)}
           onSubmit={async (request) => {
             const receipt = await promoter(draftId!, nodeId, request);
-            onGoverned?.({
-              nodeId,
-              fixtureAssetId: receipt.fixtureAssetId,
-              revision: receipt.revision,
-              schemaFingerprint: receipt.schemaRef.fingerprint ?? '',
-            });
+            onGoverned?.(governedRefFromReceipt(nodeId, receipt));
             setOpen(false);
             return receipt;
           }}

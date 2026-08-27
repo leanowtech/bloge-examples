@@ -124,6 +124,21 @@ describe('graph-node fixture controls', () => {
     expect(host.textContent).not.toContain('760');
   });
 
+  it.each([0, false, ''])('keeps valid falsy output %j actionable', (output) => {
+    const onPin = vi.fn();
+    renderControls({ output, onPin });
+    const pin = host.querySelector<HTMLButtonElement>('[data-testid="pin-fixture-node_1"]')!;
+    expect(pin.disabled).toBe(false);
+    click('[data-testid="pin-fixture-node_1"]');
+    expect(onPin).toHaveBeenCalledOnce();
+  });
+
+  it('uses an explicit UI pin marker without adding provenance to GraphDraft fixtures', () => {
+    act(() => root.render(<ProvenanceBadge fixture={{ output: false, pinned: true }} />));
+    expect(host.querySelector('[data-testid="fixture-provenance"]')?.getAttribute('data-provenance'))
+      .toBe('pinned');
+  });
+
   function baseProps() {
     return { ...{ draftId: 'draft-1', nodeId: 'node_1', label: 'Applicant', operatorRef: 'resource:applicant', output: { score: 760 } } };
   }

@@ -33,6 +33,8 @@ export interface GraphNodeFixtureState extends NodeFixture {
   governedRef?: GovernedGraphNodeFixtureRef;
   resourceFidelity?: ResourceFidelity;
   schemaStale?: boolean;
+  /** UI-only pin marker; callers must strip it before serialising GraphDraft. */
+  pinned?: boolean;
 }
 
 /** Payload-free request sent to the only new Phase C backend endpoint. */
@@ -75,6 +77,7 @@ const CLASSIFICATIONS: ReadonlySet<string> = new Set([
 export function provenanceOf(fixture?: NodeFixture | GraphNodeFixtureState): GraphNodeFixtureProvenance {
   if (!fixture) return 'sample';
   if ('governedRef' in fixture && isExactGovernedRef(fixture.governedRef)) return 'governed';
+  if ('pinned' in fixture && fixture.pinned === true) return 'pinned';
   if (fixture.expectedInput !== undefined) return 'pinned';
   return 'sample';
 }

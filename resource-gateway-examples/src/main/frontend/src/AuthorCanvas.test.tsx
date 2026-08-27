@@ -2946,6 +2946,9 @@ describe('AuthorCanvas connection guide', () => {
           summary: { message: 'Connection accepted.' },
         });
       }
+      if (url === '/api/visual/fixture-assets') {
+        return jsonResponse({ items: [] });
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -3970,6 +3973,9 @@ describe('AuthorCanvas simulation summary', () => {
           generatedDsl: 'graph visualGraph {}',
         });
       }
+      if (url === '/api/visual/fixture-assets') {
+        return jsonResponse({ items: [] });
+      }
       throw new Error(`Unexpected fetch: ${url}`);
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -4012,6 +4018,27 @@ describe('AuthorCanvas simulation summary', () => {
     );
     expect(query('[data-testid="simulation-run-summary:trust"]').textContent).toContain('0 real / 1 mocked');
     expect(query('[data-testid="simulation-run-summary:diagnostics"]').textContent).toContain('0 diagnostics');
+    expect(document.querySelector('[data-testid="trace-pin-fixture-n1"]')).toBeNull();
+  });
+
+  it('keeps graph fixture actions behind spine and reports unsupported reuse honestly', async () => {
+    window.history.replaceState({}, '', '/author/?spine=v1&toolId=loan-tool&toolName=Loan&stage=feed');
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:risk:eligibility"]')).not.toBeNull(),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:risk:eligibility"]'));
+    await click(Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'))!);
+    await waitFor(() =>
+      expect(query('[data-testid="trace-pin-fixture-n1"]')).not.toBeNull(),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="trace-pin-fixture-n1"]'));
+    expect(authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]')).nodeFixtures)
+      .toEqual({ n1: { output: { eligible: true } } });
   });
 
   it('binds start-node inputs to runtime context paths', async () => {

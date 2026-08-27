@@ -11,6 +11,14 @@ export {
   promoteRequestFrom,
   provenanceOf,
 } from './graphNodeFixtureModel';
+export {
+  fetchGovernedFixtureAssets,
+  governedReferenceFromPromotion,
+  promoteGraphNodeFixture,
+  resetFixtureAssetTransport,
+  setFixtureAssetTransport,
+} from './api';
+export type { FixtureAssetTransport, GovernedFixtureAssetSummary } from './api';
 export type {
   GovernedGraphNodeFixtureRef,
   GraphNodeFixtureClassification,

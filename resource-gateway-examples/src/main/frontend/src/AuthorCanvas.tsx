@@ -241,6 +241,14 @@ import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
 import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
+import {
+  SimulationFixtureControls,
+  fetchGovernedFixtureAssets,
+  promoteGraphNodeFixture,
+  type GovernedFixtureAssetSummary,
+  type GovernedGraphNodeFixtureRef,
+  type GraphNodeFixtureState,
+} from './fixture-asset';
 import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
 import {
   authorTaskElapsedMs,
@@ -5397,6 +5405,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [explicitOutputNodeId, setExplicitOutputNodeId] = useState('');
   const [fixtureDrafts, setFixtureDrafts] = useState<Record<string, string>>({});
   const [fixtureInputDrafts, setFixtureInputDrafts] = useState<Record<string, string>>({});
+  /** UI-only fixture lifecycle markers; durable GraphDraft carries only NodeFixture values. */
+  const [fixturePinnedNodeIds, setFixturePinnedNodeIds] = useState<Set<string>>(new Set());
+  const [governedFixtureRefs, setGovernedFixtureRefs] = useState<
+    Record<string, GovernedGraphNodeFixtureRef>
+  >({});
+  const [governedFixtureAssets, setGovernedFixtureAssets] = useState<GovernedFixtureAssetSummary[]>([]);
+  const [governedFixtureAssetsError, setGovernedFixtureAssetsError] = useState('');
   const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
   const [operatorTestResults, setOperatorTestResults] = useState<Record<string, Record<string, OperatorTestCaseResult>>>({});
   const [operatorTestPublications, setOperatorTestPublications] = useState<
@@ -5901,6 +5916,29 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [reloadOperators]);
 
   useEffect(() => {
+    if (!spineEnabled) return undefined;
+    let active = true;
+    fetchGovernedFixtureAssets()
+      .then((assets) => {
+        if (active) {
+          setGovernedFixtureAssets(assets);
+          setGovernedFixtureAssetsError('');
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active) {
+          setGovernedFixtureAssets([]);
+          setGovernedFixtureAssetsError(
+            cause instanceof Error ? cause.message : 'Governed fixture catalogue unavailable.',
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [spineEnabled]);
+
+  useEffect(() => {
     if (!isTaskWorkspace || authorWorkspaceEventRecordedRef.current) {
       return;
     }
@@ -6232,6 +6270,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setNodes((current) => current.filter((node) => !selected.has(node.id)));
     setFixtureDrafts((current) => omitRecordKeys(current, nodeIds));
     setFixtureInputDrafts((current) => omitRecordKeys(current, nodeIds));
+    setGovernedFixtureRefs((current) => omitRecordKeys(current, nodeIds));
+    setFixturePinnedNodeIds((current) => {
+      const next = new Set(current);
+      nodeIds.forEach((nodeId) => next.delete(nodeId));
+      return next;
+    });
     setOperatorTestSuites((current) => omitRecordKeys(current, nodeIds));
     setOperatorTestResults((current) => omitRecordKeys(current, nodeIds));
     setOperatorTestPublications((current) => omitRecordKeys(current, nodeIds));
@@ -7295,6 +7339,37 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     ),
     [canvasNodes, fixtureCompilation, fixtureDrafts, fixtureInputDrafts, operators, result],
   );
+  const fixtureForNode = useCallback((nodeId: string): GraphNodeFixtureState | undefined => {
+    const durable = fixtureCompilation.fixtures[nodeId];
+    const hasRunOutput = Boolean(
+      result && Object.prototype.hasOwnProperty.call(result.results, nodeId),
+    );
+    if (!durable && !hasRunOutput) return undefined;
+    return {
+      ...(durable ?? { output: result?.results[nodeId] }),
+      ...(fixturePinnedNodeIds.has(nodeId) ? { pinned: true } : {}),
+      ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
+    };
+  }, [fixtureCompilation.fixtures, fixturePinnedNodeIds, governedFixtureRefs, result]);
+  const pinSimulationNode = useCallback((nodeId: string) => {
+    if (!result || !Object.prototype.hasOwnProperty.call(result.results, nodeId)) return;
+    const output = result.results[nodeId];
+    setFixtureDrafts((current) => ({
+      ...current,
+      [nodeId]: JSON.stringify(output, null, 2),
+    }));
+    setFixturePinnedNodeIds((current) => {
+      const next = new Set(current);
+      next.add(nodeId);
+      return next;
+    });
+  }, [result]);
+  const acceptGovernedFixture = useCallback((reference: GovernedGraphNodeFixtureRef & { nodeId: string }) => {
+    const { nodeId, ...coordinate } = reference;
+    setGovernedFixtureRefs((current) => ({ ...current, [nodeId]: coordinate }));
+  }, []);
+  const selectedFixtureState = selectedNode ? fixtureForNode(selectedNode.id) : undefined;
+  const selectedIsResource = selectedNode?.data.operatorRef.startsWith('resource:') ?? false;
   const runSummary = useMemo(
     () => simulationRunSummary(canvasSummary, fixtureRows, result),
     [canvasSummary, fixtureRows, result],
@@ -13061,6 +13136,38 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 />
               </label>
               {selectedFixtureError && <p className="fixture-error">{d(selectedFixtureError)}</p>}
+              {spineEnabled && (
+                <>
+                  <SimulationFixtureControls
+                    draftId={graphDraftId}
+                    nodeId={selectedNode.id}
+                    label={selectedNode.data.label}
+                    operatorRef={selectedNode.data.operatorRef}
+                    output={result && Object.prototype.hasOwnProperty.call(result.results, selectedNode.id)
+                      ? result.results[selectedNode.id] : undefined}
+                    fixture={selectedFixtureState}
+                    onPin={() => pinSimulationNode(selectedNode.id)}
+                    promoter={promoteGraphNodeFixture}
+                    onGoverned={acceptGovernedFixture}
+                    testIdPrefix="inspector"
+                  />
+                  {selectedIsResource && (
+                    <div className="fixture-asset-reuse" data-testid="fixture-asset-reuse">
+                      {governedFixtureAssetsError && (
+                        <p className="fixture-error" role="status">{d(governedFixtureAssetsError)}</p>
+                      )}
+                      <p className="muted" data-testid="fixture-reuse-unavailable">
+                        {governedFixtureAssets.length > 0
+                          ? t('ACTIVE governed fixture metadata is visible, but reuse is unavailable until simulate accepts a material reference.')
+                          : t('Governed fixture reuse is unavailable in this deployment.')}
+                      </p>
+                      <p className="muted" data-testid="fixture-fidelity-unavailable">
+                        {t('Resource fidelity selection is unavailable until simulate accepts a fidelity field.')}
+                      </p>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </section>
         ) : (
@@ -13143,6 +13250,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         </span>
                         <span className={`run-pill ${row.status}`}>{d(row.status)}</span>
                       </button>
+                      {spineEnabled && (
+                        <SimulationFixtureControls
+                          draftId={graphDraftId}
+                          nodeId={row.nodeId}
+                          label={row.label}
+                          operatorRef={row.operatorRef}
+                          output={Object.prototype.hasOwnProperty.call(result.results, row.nodeId)
+                            ? result.results[row.nodeId] : undefined}
+                          fixture={fixtureForNode(row.nodeId)}
+                          onPin={() => pinSimulationNode(row.nodeId)}
+                          promoter={promoteGraphNodeFixture}
+                          onGoverned={acceptGovernedFixture}
+                          testIdPrefix="trace"
+                        />
+                      )}
                     </li>
                   ))}
                 </ol>
