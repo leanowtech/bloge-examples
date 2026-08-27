@@ -4125,6 +4125,118 @@ describe('AuthorCanvas simulation summary', () => {
     expect(document.querySelector('[data-testid="trace-pin-fixture-n1"]')).toBeNull();
   });
 
+  it('keeps bound context extras and the simulation action after an authoritative graph save', async () => {
+    window.history.replaceState({}, '', '/author/?authorWorkspace=v2&authorMode=compose&spine=v1');
+    let persistedDraft: Record<string, any> | null = null;
+    let saveRevision = 0;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({
+          operators: [resourceOperator(
+            'resource:order-service.listOrders',
+            'List orders',
+            [],
+            { total: { type: 'integer' }, status: { type: 'string' } },
+          )],
+        });
+      }
+      if (url.startsWith('/api/visual/drafts') && init?.method === 'POST') {
+        persistedDraft = JSON.parse(String(init.body));
+        saveRevision = 1;
+        persistedDraft = { ...persistedDraft, draftId: 'draft-context-save', revision: saveRevision, status: 'DRAFT' };
+        return jsonResponse(persistedDraft);
+      }
+      if (url.startsWith('/api/visual/drafts/draft-context-save') && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        saveRevision += 1;
+        persistedDraft = { ...body, draftId: 'draft-context-save', revision: saveRevision, status: 'DRAFT' };
+        return jsonResponse(persistedDraft);
+      }
+      if (url === '/api/visual/scenario-draft-sets/targets/graphs/draft-context-save/contract') {
+        return jsonResponse(graphContractProjection(
+          'draft-context-save',
+          saveRevision,
+          persistedDraft ?? {},
+        ));
+      }
+      if (url === '/api/visual/fixture-assets' || url.startsWith('/api/visual/fixture-assets?')) {
+        return jsonResponse({ items: [] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        const body = JSON.parse(String(init?.body));
+        expect(body.context).toEqual({ params: { userId: 'user-1001' } });
+        return jsonResponse({
+          validated: true,
+          compiled: true,
+          success: true,
+          graphName: 'visualGraph',
+          outputNode: 'n1',
+          output: { total: 1, status: 'READY' },
+          results: { n1: { total: 1, status: 'READY' } },
+          statusMap: {},
+          mockedNodeIds: ['n1'],
+          realNodeIds: [],
+          terminalOutputConforms: true,
+          diagnostics: [],
+          errors: [],
+          generatedDsl: 'graph visualGraph {}',
+        });
+      }
+      if (url.startsWith('/api/visual/governance-gates/drafts/')) {
+        return jsonResponse({ code: 'RG.GATE.NOT_FOUND' }, { status: 404 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas workspaceVersion="v2" />);
+    });
+
+    await waitFor(() =>
+      expect(query('[data-testid="operator-button:resource:order-service.listOrders"]')).toBeDefined(),
+    );
+    await click(query<HTMLButtonElement>('[data-testid="operator-button:resource:order-service.listOrders"]'));
+    await click(query<HTMLButtonElement>('[data-testid="author-save-workspace"]'));
+    await waitFor(() => expect(query('[data-testid="author-continuity-status"]').textContent).toBe('SAVED'));
+
+    await click(query<HTMLButtonElement>('[data-testid="inspector-tab:advanced"]'));
+    await click(query<HTMLElement>('[data-testid="context-extras-panel"] summary'));
+    await click(buttonByText('Add Context Extra'));
+    await setControlValue(query<HTMLInputElement>('[aria-label="Context extra path 1"]'), 'params.userId');
+    await setControlValue(query<HTMLSelectElement>('[aria-label="Context extra type 1"]'), 'string');
+    await setControlValue(query<HTMLInputElement>('[aria-label="Context extra value 1"]'), 'user-1001');
+    await click(query<HTMLButtonElement>('[data-testid="context-extras-panel"] .context-extra-actions button'));
+
+    await click(query<HTMLButtonElement>('[data-testid="author-save-workspace"]'));
+    await waitFor(() => expect(query('[data-testid="author-continuity-status"]').textContent).toBe('SAVED'));
+    const graphUpdates = fetchMock.mock.calls.filter(([request, requestInit]) =>
+      String(request).startsWith('/api/visual/drafts/draft-context-save')
+      && requestInit?.method === 'PUT',
+    );
+    expect(graphUpdates).toHaveLength(1);
+    expect(JSON.parse(String(graphUpdates[0]?.[1]?.body)).nodes[0].inputs).toMatchObject({
+      userId: {
+        kind: 'contextPath',
+        path: 'params.userId',
+        targetPort: 'params',
+        targetPath: 'userId',
+      },
+    });
+
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button'))
+      .find((button) => button.textContent === 'Simulate' && button.className.includes('primary'));
+    expect(simulateButton).toBeDefined();
+    expect(simulateButton?.disabled).toBe(false);
+    await click(simulateButton as HTMLButtonElement);
+    await waitFor(() =>
+      expect(query('[data-testid="simulation-run-summary"]').textContent).toContain('Simulation succeeded'),
+    );
+    expect(fetchMock.mock.calls.filter(([request]) => String(request) === '/api/visual/graphs/simulate'))
+      .toHaveLength(1);
+  });
+
   it('keeps graph fixture actions behind spine and reports unsupported reuse honestly', async () => {
     window.history.replaceState({}, '', '/author/?spine=v1&toolId=loan-tool&toolName=Loan&stage=feed');
     await act(async () => {
