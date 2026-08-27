@@ -14,12 +14,20 @@ export {
 } from './graphNodeFixtureModel';
 export {
   fetchGovernedFixtureAssets,
+  activateGovernedFixture,
+  approveGovernedFixture,
   governedReferenceFromPromotion,
   promoteGraphNodeFixture,
   resetFixtureAssetTransport,
+  reviewReadyGovernedFixture,
   setFixtureAssetTransport,
 } from './api';
-export type { FixtureAssetTransport, GovernedFixtureAssetSummary } from './api';
+export type {
+  FixtureAssetLifecycleActions,
+  FixtureAssetTransport,
+  GovernedFixtureAssetSummary,
+  GovernedFixtureLifecycleReceipt,
+} from './api';
 export type {
   GovernedGraphNodeFixtureRef,
   GraphNodeFixtureClassification,

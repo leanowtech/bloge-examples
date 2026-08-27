@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GraphNodeFixturePromoteRequest } from './graphNodeFixtureModel';
 import {
   FixtureStalenessNotice,
+  type FixtureAssetLifecycleActions,
   GraphNodeFixturePicker,
   ProvenanceBadge,
   ResourceFidelitySelect,
@@ -82,6 +83,47 @@ describe('graph-node fixture controls', () => {
     expect(document.querySelector('[data-testid="governed-fixture-promote-dialog"]')).not.toBeNull();
   });
 
+  it('moves a promoted governed fixture through review-ready, approval, and activation', async () => {
+    const promoter = vi.fn(async () => promoted);
+    const lifecycle: FixtureAssetLifecycleActions = {
+      reviewReady: vi.fn(async () => ({ revision: 3, lifecycle: 'PROPOSED' })),
+      approve: vi.fn(async () => ({ revision: 4, lifecycle: 'APPROVED' })),
+      activate: vi.fn(async () => ({ revision: 5, lifecycle: 'ACTIVE' })),
+    };
+    renderControls({ promoter, lifecycleActions: lifecycle });
+
+    click('[data-testid="promote-fixture-node_1"]');
+    set('#promote-fixture-id', 'profile.v1');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="submit-promote-fixture"]')?.click());
+
+    expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
+      .toBe('DRAFT');
+    await clickAsync('[data-testid="fixture-review-ready-node_1"]');
+    expect(lifecycle.reviewReady).toHaveBeenCalledWith('profile.v1', 2);
+    expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
+      .toBe('PROPOSED');
+
+    const comment = host.querySelector<HTMLInputElement>('[data-testid="fixture-approval-comment-node_1"]')!;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(comment, 'Reviewed by data governance');
+      comment.dispatchEvent(new Event('input', { bubbles: true }));
+      comment.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await clickAsync('[data-testid="fixture-approve-node_1"]');
+    expect(lifecycle.approve).toHaveBeenCalledWith(
+      'profile.v1', 3, 'Reviewed by data governance', 'approve:profile.v1:3',
+    );
+    expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
+      .toBe('APPROVED');
+
+    await clickAsync('[data-testid="fixture-activate-node_1"]');
+    expect(lifecycle.activate).toHaveBeenCalledWith('profile.v1', 4);
+    expect(host.querySelector('[data-testid="fixture-governance-lifecycle"]')?.getAttribute('data-lifecycle'))
+      .toBe('ACTIVE');
+    expect(host.querySelector('[data-testid="fixture-approval-comment-node_1"]')).toBeNull();
+  });
+
   it('offers only reusable governed assets and records the exact selection', () => {
     const onSelect = vi.fn();
     const assets = [
@@ -93,6 +135,12 @@ describe('graph-node fixture controls', () => {
     expect(host.textContent).not.toContain('Alpha draft');
     act(() => host.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-z-active"]')?.click());
     expect(onSelect).toHaveBeenCalledWith(assets[0]);
+  });
+
+  it('explains when no active governed fixture can be reused', () => {
+    act(() => root.render(<GraphNodeFixturePicker assets={[]} onSelect={vi.fn()} />));
+    expect(host.querySelector('[data-testid="fixture-picker-empty"]')?.textContent)
+      .toContain('No ACTIVE governed fixtures available.');
   });
 
   it('renders three fidelities and reports staleness only when changed', () => {
@@ -155,6 +203,13 @@ describe('graph-node fixture controls', () => {
 
   function click(selector: string): void {
     act(() => host.querySelector<HTMLButtonElement>(selector)?.click());
+  }
+
+  async function clickAsync(selector: string): Promise<void> {
+    await act(async () => {
+      host.querySelector<HTMLButtonElement>(selector)?.click();
+      await Promise.resolve();
+    });
   }
 
   function set(selector: string, value: string, event: string = 'input'): void {

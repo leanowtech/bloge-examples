@@ -2,6 +2,13 @@ import { useMemo, useState } from 'react';
 
 import { useI18n } from '../i18n/I18nProvider';
 import {
+  activateGovernedFixture,
+  approveGovernedFixture,
+  reviewReadyGovernedFixture,
+  type FixtureAssetLifecycleActions,
+  type GovernedFixtureLifecycleReceipt,
+} from './api';
+import {
   promoteRequestFrom,
   provenanceOf,
   governedRefFromReceipt,
@@ -46,6 +53,7 @@ interface SimulationFixtureControlsProps {
   onPin?: () => void;
   promoter?: FixturePromoter;
   onGoverned?: (reference: GovernedGraphNodeFixtureRef & { nodeId: string }) => void;
+  lifecycleActions?: FixtureAssetLifecycleActions;
   testIdPrefix?: string;
 }
 
@@ -67,10 +75,18 @@ export function SimulationFixtureControls({
   onPin,
   promoter,
   onGoverned,
+  lifecycleActions = {
+    reviewReady: reviewReadyGovernedFixture,
+    approve: approveGovernedFixture,
+    activate: activateGovernedFixture,
+  },
   testIdPrefix = 'fixture',
 }: SimulationFixtureControlsProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+  const [governedLifecycle, setGovernedLifecycle] = useState<(
+    GovernedFixtureLifecycleReceipt & { fixtureAssetId: string }
+  ) | null>(null);
   // `0`, `false`, and an empty string are valid schema-shaped outputs. Only an
   // absent value means that the simulation did not produce an output.
   const hasOutput = output !== undefined;
@@ -115,9 +131,23 @@ export function SimulationFixtureControls({
           onSubmit={async (request) => {
             const receipt = await promoter(draftId!, nodeId, request);
             onGoverned?.(governedRefFromReceipt(nodeId, receipt));
+            setGovernedLifecycle({
+              fixtureAssetId: receipt.fixtureAssetId,
+              revision: receipt.revision,
+              lifecycle: receipt.lifecycle,
+            });
             setOpen(false);
             return receipt;
           }}
+        />
+      )}
+      {governedLifecycle && (
+        <GovernedFixtureLifecycleActions
+          fixtureAssetId={governedLifecycle.fixtureAssetId}
+          initial={governedLifecycle}
+          actions={lifecycleActions}
+          testIdPrefix={testIdPrefix}
+          nodeId={nodeId}
         />
       )}
     </span>
@@ -222,6 +252,107 @@ function GovernedFixturePromoteDialog({
   );
 }
 
+interface GovernedFixtureLifecycleActionsProps {
+  fixtureAssetId: string;
+  initial: GovernedFixtureLifecycleReceipt;
+  actions: FixtureAssetLifecycleActions;
+  testIdPrefix: string;
+  nodeId: string;
+}
+
+/**
+ * Runs the explicit governance transitions for a fixture just promoted from a simulation.
+ *
+ * <p>Each command uses the server-returned revision, so a stale browser cannot silently skip a
+ * reviewer decision. The component intentionally exposes no fixture material.</p>
+ */
+function GovernedFixtureLifecycleActions({
+  fixtureAssetId,
+  initial,
+  actions,
+  testIdPrefix,
+  nodeId,
+}: GovernedFixtureLifecycleActionsProps) {
+  const { t } = useI18n();
+  const [current, setCurrent] = useState(initial);
+  const [comment, setComment] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const id = (action: string) => testIdPrefix === 'fixture'
+    ? `fixture-${action}-${nodeId}`
+    : `${testIdPrefix}-${action}-fixture-${nodeId}`;
+
+  const transition = async (
+    operation: () => Promise<GovernedFixtureLifecycleReceipt>,
+  ) => {
+    setBusy(true);
+    setError('');
+    try {
+      setCurrent(await operation());
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : t('Governed fixture lifecycle update failed.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const lifecycle = current.lifecycle.toUpperCase();
+  return (
+    <span className="fixture-governance-lifecycle" data-testid="fixture-governance-lifecycle" data-lifecycle={lifecycle}>
+      <span role="status" aria-live="polite">{t('Governed fixture')}: {t(lifecycle)}</span>
+      {lifecycle === 'DRAFT' && (
+        <button
+          type="button"
+          className="secondary compact"
+          data-testid={id('review-ready')}
+          disabled={busy}
+          onClick={() => void transition(() => actions.reviewReady(fixtureAssetId, current.revision))}
+        >
+          {t('Send to review')}
+        </button>
+      )}
+      {lifecycle === 'PROPOSED' && (
+        <>
+          <label>
+            <span>{t('Review comment')}</span>
+            <input
+              value={comment}
+              onChange={(event) => setComment(event.target.value)}
+              data-testid={id('approval-comment')}
+            />
+          </label>
+          <button
+            type="button"
+            className="secondary compact"
+            data-testid={id('approve')}
+            disabled={busy || !comment.trim()}
+            onClick={() => void transition(() => actions.approve(
+              fixtureAssetId,
+              current.revision,
+              comment.trim(),
+              `approve:${fixtureAssetId}:${current.revision}`,
+            ))}
+          >
+            {t('Approve metadata')}
+          </button>
+        </>
+      )}
+      {lifecycle === 'APPROVED' && (
+        <button
+          type="button"
+          className="primary compact"
+          data-testid={id('activate')}
+          disabled={busy}
+          onClick={() => void transition(() => actions.activate(fixtureAssetId, current.revision))}
+        >
+          {t('Activate Fixture')}
+        </button>
+      )}
+      {error && <span role="alert" data-testid={id('lifecycle-error')}>{error}</span>}
+    </span>
+  );
+}
+
 export interface PickerAsset {
   fixtureAssetId: string;
   revision: number;
@@ -256,21 +387,27 @@ export function GraphNodeFixturePicker({ assets, onSelect }: GraphNodeFixturePic
         value={query}
         onChange={(event) => setQuery(event.target.value)}
       />
-      <ul>
-        {visible.map((asset) => (
-          <li key={`${asset.fixtureAssetId}:${asset.revision}`}>
-            <button
-              type="button"
-              data-testid={`reuse-fixture-${asset.fixtureAssetId}`}
-              onClick={() => onSelect(asset)}
-            >
-              <strong>{asset.name}</strong>
-              <code>{`${asset.fixtureAssetId} r${asset.revision} · ${asset.schemaFingerprint.slice(0, 10)}`}</code>
-              <small>{`${t('Used')} ${asset.usageCount ?? 0}`}</small>
-            </button>
-          </li>
-        ))}
-      </ul>
+      {visible.length === 0 ? (
+        <p role="status" data-testid="fixture-picker-empty">
+          {query.trim() ? t('No matching ACTIVE governed fixtures.') : t('No ACTIVE governed fixtures available.')}
+        </p>
+      ) : (
+        <ul>
+          {visible.map((asset) => (
+            <li key={`${asset.fixtureAssetId}:${asset.revision}`}>
+              <button
+                type="button"
+                data-testid={`reuse-fixture-${asset.fixtureAssetId}`}
+                onClick={() => onSelect(asset)}
+              >
+                <strong>{asset.name}</strong>
+                <code>{`${asset.fixtureAssetId} r${asset.revision} · ${asset.schemaFingerprint.slice(0, 10)}`}</code>
+                <small>{`${t('Used')} ${asset.usageCount ?? 0}`}</small>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

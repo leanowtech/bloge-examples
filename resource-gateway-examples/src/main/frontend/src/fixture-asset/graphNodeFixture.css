@@ -3,6 +3,10 @@
 .fixture-provenance[data-provenance="governed"] { color: #17653a; font-weight: 650; }
 .simulation-fixture-controls { align-items: center; display: inline-flex; gap: .35rem; }
 .simulation-fixture-controls .secondary { white-space: nowrap; }
+.fixture-governance-lifecycle { align-items: center; display: inline-flex; flex-wrap: wrap; gap: .35rem; }
+.fixture-governance-lifecycle label { align-items: center; display: inline-flex; gap: .25rem; }
+.fixture-governance-lifecycle label span { font-size: .8rem; }
+.fixture-governance-lifecycle [role="alert"] { color: #9e2b25; }
 .fixture-asset-reuse { border-top: 1px solid var(--border-subtle, #d9dee8); display: grid; gap: .5rem; margin-top: .65rem; padding-top: .65rem; }
 .fixture-asset-reuse > label { align-items: center; display: flex; gap: .5rem; justify-content: space-between; }
 .fixture-asset-reuse small { color: var(--text-muted, #667085); }

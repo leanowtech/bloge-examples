@@ -13343,13 +13343,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                       {governedFixtureAssetsError && (
                         <p className="fixture-error" role="status">{d(governedFixtureAssetsError)}</p>
                       )}
-                      <p className="muted" data-testid="fixture-reuse-unavailable">
+                      <p className="muted" data-testid="fixture-reuse-status">
                         {governedFixtureAssets.length > 0
-                          ? t('ACTIVE governed fixture metadata is visible, but reuse is unavailable until simulate accepts a material reference.')
+                          ? t('ACTIVE governed fixture metadata can be reused by visual simulation; select one to bind its exact revision.')
                           : t('Governed fixture reuse is unavailable in this deployment.')}
                       </p>
-                      <p className="muted" data-testid="fixture-fidelity-unavailable">
-                        {t('Resource fidelity selection is unavailable until simulate accepts a fidelity field.')}
+                      <p className="muted" data-testid="fixture-fidelity-status">
+                        {t('Resource fidelity is sent to the server for the selected resource fixture.')}
                       </p>
                     </div>
                   )}

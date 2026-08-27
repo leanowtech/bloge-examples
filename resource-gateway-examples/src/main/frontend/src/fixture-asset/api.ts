@@ -1,5 +1,10 @@
 import { integrationRequestHeaders } from '../api';
 import {
+  approveFixtureAsset,
+  transitionFixtureAsset,
+} from '../correctness-studio/api/correctnessAuthoringApi';
+import type { StoredFixtureAsset } from '../correctness-studio/model/authoring';
+import {
   governedRefFromReceipt,
   type GraphNodeFixturePromoteRequest,
   type GraphNodeFixturePromotionReceipt,
@@ -16,6 +21,24 @@ export interface GovernedFixtureAssetSummary {
   lifecycle: string;
   compatible?: boolean;
   currentSchemaFingerprint?: string;
+}
+
+/** Small lifecycle receipt used by the visual authoring controls after promotion. */
+export interface GovernedFixtureLifecycleReceipt {
+  revision: number;
+  lifecycle: string;
+}
+
+/** Commands required to move a promoted fixture through the governed lifecycle. */
+export interface FixtureAssetLifecycleActions {
+  reviewReady: (fixtureAssetId: string, revision: number) => Promise<GovernedFixtureLifecycleReceipt>;
+  approve: (
+    fixtureAssetId: string,
+    revision: number,
+    comment: string,
+    idempotencyKey: string,
+  ) => Promise<GovernedFixtureLifecycleReceipt>;
+  activate: (fixtureAssetId: string, revision: number) => Promise<GovernedFixtureLifecycleReceipt>;
 }
 
 /** HTTP transport seam for fixture authoring; production defaults to same-origin fetch. */
@@ -98,6 +121,37 @@ export async function fetchGovernedFixtureAssets(operatorRef?: string): Promise<
       || left.fixtureAssetId.localeCompare(right.fixtureAssetId));
 }
 
+/** Submits a promoted fixture for an accountable review without copying its material. */
+export async function reviewReadyGovernedFixture(
+  fixtureAssetId: string,
+  revision: number,
+): Promise<GovernedFixtureLifecycleReceipt> {
+  return lifecycleReceipt((await transitionFixtureAsset(fixtureAssetId, revision, 'review-ready')).data);
+}
+
+/** Records reviewer approval using the existing four-eyes command endpoint. */
+export async function approveGovernedFixture(
+  fixtureAssetId: string,
+  revision: number,
+  comment: string,
+  idempotencyKey: string,
+): Promise<GovernedFixtureLifecycleReceipt> {
+  return lifecycleReceipt((await approveFixtureAsset(
+    fixtureAssetId,
+    revision,
+    comment,
+    idempotencyKey,
+  )).data.stored);
+}
+
+/** Activates an approved fixture so it becomes eligible for metadata-only reuse. */
+export async function activateGovernedFixture(
+  fixtureAssetId: string,
+  revision: number,
+): Promise<GovernedFixtureLifecycleReceipt> {
+  return lifecycleReceipt((await transitionFixtureAsset(fixtureAssetId, revision, 'activate')).data);
+}
+
 /** Validates a receipt and returns its exact UI-only coordinate. */
 export function governedReferenceFromPromotion(
   nodeId: string,
@@ -156,6 +210,13 @@ function summaryFromUnknown(value: unknown): GovernedFixtureAssetSummary | null 
     ...(typeof compatible === 'boolean' ? { compatible } : {}),
     ...(stringField(value.currentSchemaFingerprint)
       ? { currentSchemaFingerprint: stringField(value.currentSchemaFingerprint) } : {}),
+  };
+}
+
+function lifecycleReceipt(stored: StoredFixtureAsset): GovernedFixtureLifecycleReceipt {
+  return {
+    revision: stored.descriptor.revision,
+    lifecycle: stored.descriptor.lifecycle,
   };
 }
 

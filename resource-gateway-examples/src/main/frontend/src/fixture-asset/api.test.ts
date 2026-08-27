@@ -1,14 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { resetBlogeApiTransport, setBlogeApiTransport } from '../api';
 import {
+  activateGovernedFixture,
   fetchGovernedFixtureAssets,
   promoteGraphNodeFixture,
   resetFixtureAssetTransport,
+  reviewReadyGovernedFixture,
+  approveGovernedFixture,
   setFixtureAssetTransport,
 } from './api';
 
 afterEach(() => {
   resetFixtureAssetTransport();
+  resetBlogeApiTransport();
 });
 
 describe('fixture asset transport', () => {
@@ -113,5 +118,40 @@ describe('fixture asset transport', () => {
     await expect(fetchGovernedFixtureAssets()).rejects.toThrow('invalid data payload');
     setFixtureAssetTransport(async () => new Response(JSON.stringify({ data: [{}] }), { status: 200 }));
     await expect(fetchGovernedFixtureAssets()).rejects.toThrow('invalid summary');
+  });
+
+  it('uses the existing fixture lifecycle endpoints with CAS and reviewer idempotency', async () => {
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    setBlogeApiTransport(async (input, init) => {
+      requests.push({ input: String(input), init });
+      const path = String(input);
+      const lifecycle = path.endsWith(':review-ready')
+        ? 'PROPOSED' : path.endsWith(':approve') ? 'APPROVED' : 'ACTIVE';
+      const descriptor = {
+        fixtureAssetId: 'profile.v1', revision: lifecycle === 'PROPOSED' ? 3 : 4, lifecycle,
+      };
+      return new Response(JSON.stringify({ data: {
+        ...(lifecycle === 'APPROVED' ? { stored: { descriptor } } : { descriptor }),
+      } }), { status: 200 });
+    });
+
+    await expect(reviewReadyGovernedFixture('profile.v1', 2)).resolves.toMatchObject({
+      revision: 3, lifecycle: 'PROPOSED',
+    });
+    await expect(approveGovernedFixture('profile.v1', 3, 'Reviewed', 'approve:profile.v1:3'))
+      .resolves.toMatchObject({ revision: 4, lifecycle: 'APPROVED' });
+    await expect(activateGovernedFixture('profile.v1', 4)).resolves.toMatchObject({
+      revision: 4, lifecycle: 'ACTIVE',
+    });
+
+    expect(requests.map((request) => request.input)).toEqual([
+      '/api/visual/fixture-assets/profile.v1:review-ready',
+      '/api/visual/fixture-assets/profile.v1:approve',
+      '/api/visual/fixture-assets/profile.v1:activate',
+    ]);
+    expect(new Headers(requests[0]?.init?.headers).get('If-Match')).toBe('2');
+    expect(new Headers(requests[1]?.init?.headers).get('If-Match')).toBe('3');
+    expect(new Headers(requests[1]?.init?.headers).get('Idempotency-Key')).toBe('approve:profile.v1:3');
+    expect(new Headers(requests[2]?.init?.headers).get('If-Match')).toBe('4');
   });
 });
