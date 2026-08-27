@@ -110,6 +110,85 @@ class FixtureCatalogServiceTest {
     }
 
     @Test
+    void verifiesProposedMetadataWithFourEyesAndPreservesServerOwnedFields() {
+        service.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        service.submitForReview(scope(), "prime-applicant", 1, author());
+        FixtureCatalogService reviewerService = serviceWith(
+                (reviewScope, fixture, reviewer) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview());
+
+        StoredFixtureAsset proposed = repository.findHead(scope(), "prime-applicant").orElseThrow();
+        StoredFixtureAsset verified = reviewerService.verifyForApproval(
+                scope(), "prime-applicant", proposed.descriptor().revision(),
+                new FixtureReviewVerificationRequest(true, true, "Redaction reviewed by reviewer"),
+                owner());
+
+        assertThat(verified.descriptor().lifecycle()).isEqualTo(FixtureLifecycle.PROPOSED);
+        assertThat(verified.descriptor().redaction().reviewed()).isTrue();
+        assertThat(verified.descriptor().quality())
+                .isEqualTo(new QualityProfile(true, true, 0, 0));
+        assertThat(verified.descriptor().materialRef()).isEqualTo(proposed.descriptor().materialRef());
+        assertThat(verified.descriptor().schemaRef()).isEqualTo(proposed.descriptor().schemaRef());
+        assertThat(verified.descriptor().scope()).isEqualTo(proposed.descriptor().scope());
+        assertThat(verified.descriptor().owner()).isEqualTo(proposed.descriptor().owner());
+        assertThat(verified.descriptor().retention()).isEqualTo(proposed.descriptor().retention());
+        assertThat(repository.revisions(scope(), "prime-applicant"))
+                .extracting(stored -> stored.descriptor().revision())
+                .containsExactly(3, 2, 1);
+    }
+
+    @Test
+    void rejectsIncompleteUnauthorizedSameCreatorAndStaleReviewVerification() {
+        FixtureCatalogService reviewerService = serviceWith(
+                (reviewScope, fixture, reviewer) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview());
+        service.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        assertThatThrownBy(() -> reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 1,
+                new FixtureReviewVerificationRequest(true, true, "Not yet proposed"), author()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_TRANSITION_INVALID");
+
+        service.submitForReview(scope(), "prime-applicant", 1, author());
+        assertThatThrownBy(() -> reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(false, true, "Missing acknowledgement"), owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_REVIEW_INVALID");
+        assertThatThrownBy(() -> reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 2, null, owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_REVIEW_INVALID");
+
+        assertThatThrownBy(() -> reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Creator cannot attest"), author()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FOUR_EYES_REQUIRED");
+
+        StoredFixtureAsset verified = reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Independent review"), owner());
+        assertThatThrownBy(() -> reviewerService.verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Stale revision"), owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.REVISION_CONFLICT");
+        assertThat(verified.descriptor().revision()).isEqualTo(3);
+
+        FixtureCatalogService unauthorized = serviceWith(FixtureReviewAuthorizer.denyAll());
+        assertThatThrownBy(() -> unauthorized.verifyForApproval(
+                scope(), "prime-applicant", 3,
+                new FixtureReviewVerificationRequest(true, true, "Denied reviewer"), owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_APPROVAL_FORBIDDEN");
+    }
+
+    @Test
     void failsClosedOnSchemaMaterialBindingOrRetentionDrift() {
         FixtureCatalogService noSchema = new FixtureCatalogService(
                 repository, (scope, ref) -> Optional.of(receipt),
@@ -202,6 +281,14 @@ class FixtureCatalogServiceTest {
                 receipt.materialRef(), receipt.schemaRef(), "prime", lifecycle, "RESTRICTED", owner,
                 receipt.redaction(), receipt.retention(),
                 new QualityProfile(false, false, 17, 23), List.of("loan"), metadata());
+    }
+
+    private FixtureCatalogService serviceWith(FixtureReviewAuthorizer authorizer) {
+        return new FixtureCatalogService(
+                repository, (scope, ref) -> scope.equals(scope()) && ref.equals(receipt.materialRef())
+                        ? Optional.of(receipt) : Optional.empty(),
+                (scope, schema) -> scope.equals(scope()) && schema.equals(schema()),
+                authorizer, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private static Receipt receipt() {

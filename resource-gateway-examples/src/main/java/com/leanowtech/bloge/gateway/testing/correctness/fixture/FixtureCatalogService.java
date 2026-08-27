@@ -104,6 +104,68 @@ public class FixtureCatalogService {
                 FixtureLifecycle.DRAFT, FixtureLifecycle.PROPOSED, false);
     }
 
+    /**
+     * Records reviewer-owned metadata verification on an exact proposed Fixture revision.
+     *
+     * <p>Only the redaction review flags change. Material/schema references, scope, owner,
+     * classification, retention, source, tags, and server-derived quality counters are copied
+     * from the catalog head. The repository creates the next immutable revision atomically.</p>
+     *
+     * @param scope exact enterprise scope of the Fixture
+     * @param fixtureAssetId exact Fixture identifier
+     * @param expectedRevision exact proposed head revision supplied through CAS
+     * @param request bounded reviewer attestations and comment
+     * @param actor authenticated reviewer
+     * @return the newly persisted PROPOSED revision
+     */
+    public StoredFixtureAsset verifyForApproval(
+            EnterpriseScope scope,
+            String fixtureAssetId,
+            long expectedRevision,
+            FixtureReviewVerificationRequest request,
+            PrincipalRef actor) {
+        requireActor(actor);
+        if (request == null) {
+            throw failure("RG.CORRECTNESS.FIXTURE_REVIEW_INVALID",
+                    "Fixture review attestations are required");
+        }
+        request.requireComplete();
+        StoredFixtureAsset current = requireHead(scope, fixtureAssetId, expectedRevision);
+        if (current.descriptor().lifecycle() != FixtureLifecycle.PROPOSED) {
+            throw failure("RG.CORRECTNESS.FIXTURE_TRANSITION_INVALID",
+                    "Only a proposed Fixture can be metadata-verified");
+        }
+        ApprovalDecision decision = authorizer.authorize(scope, current.descriptor(), actor);
+        if (decision == null || !decision.allowed()) {
+            throw failure("RG.CORRECTNESS.FIXTURE_APPROVAL_FORBIDDEN",
+                    "The actor is not authorized to verify this Fixture");
+        }
+        if (decision.independentReviewRequired()
+                && current.descriptor().metadata().createdBy().id().equals(actor.id())) {
+            throw failure("RG.CORRECTNESS.FOUR_EYES_REQUIRED",
+                    "Fixture verification requires a reviewer other than its creator");
+        }
+        if (!current.descriptor().quality().schemaValid()) {
+            throw failure("RG.CORRECTNESS.FIXTURE_REVIEW_INCOMPLETE",
+                    "Fixture review requires a server-verified schema");
+        }
+        FixtureAssetDescriptor descriptor = current.descriptor();
+        FixtureAssetDescriptor verified = new FixtureAssetDescriptor(
+                descriptor.schemaVersion(), descriptor.fixtureAssetId(), descriptor.revision(),
+                descriptor.scope(), descriptor.name(), descriptor.source(), descriptor.materialRef(),
+                descriptor.schemaRef(), descriptor.variantKey(), FixtureLifecycle.PROPOSED,
+                descriptor.classification(), descriptor.owner(),
+                new FixtureAssetDescriptor.RedactionDescriptor(
+                        descriptor.redaction().profileVersion(), descriptor.redaction().redactedPaths(), true),
+                descriptor.retention(),
+                new FixtureAssetDescriptor.QualityProfile(
+                        descriptor.quality().schemaValid(), true,
+                        descriptor.quality().duplicateCandidateCount(), descriptor.quality().usageCount()),
+                descriptor.tags(), descriptor.metadata());
+        return fixtures.saveIfRevision(expectedRevision, verified, actor)
+                .orElseThrow(FixtureCatalogService::conflict);
+    }
+
     public StoredFixtureAsset approve(
             EnterpriseScope scope,
             String fixtureAssetId,

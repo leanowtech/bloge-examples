@@ -80,6 +80,33 @@ public final class FixtureAssetController {
                         scope, fixtureAssetId, revision, actor));
     }
 
+    /**
+     * Records bounded metadata-only reviewer attestations on a proposed Fixture.
+     *
+     * @param fixtureAssetId exact Fixture identifier
+     * @param headers authenticated reviewer headers and exact If-Match revision
+     * @param request explicit redaction acknowledgements and bounded comment
+     * @return payload-free catalog metadata receipt
+     */
+    @PostMapping("/{fixtureAssetId}:verify-review")
+    public ResponseEntity<CorrectnessApiEnvelope<StoredFixtureAsset>> verifyReview(
+            @PathVariable String fixtureAssetId,
+            @RequestHeader HttpHeaders headers,
+            @RequestBody(required = false) FixtureReviewVerificationRequest request) {
+        IntegrationRequestContext identity = authenticator.authenticate(
+                headers, IntegrationOperation.CORRECTNESS_FIXTURE_APPROVE);
+        try {
+            EnterpriseScope scope = scope(identity);
+            StoredFixtureAsset stored = service.verifyForApproval(
+                    scope, fixtureAssetId, expectedRevision(headers), request, actor(identity));
+            return ResponseEntity.ok()
+                    .eTag(Long.toString(stored.descriptor().revision()))
+                    .body(envelope(identity, scope, "FIXTURE_REVIEW_VERIFIED_V1", stored));
+        } catch (FixtureCatalogCommandException failure) {
+            throw problem(failure, identity);
+        }
+    }
+
     @PostMapping("/{fixtureAssetId}:approve")
     public ResponseEntity<CorrectnessApiEnvelope<FixtureCatalogService.ApprovalResult>> approve(
             @PathVariable String fixtureAssetId,

@@ -85,9 +85,12 @@ class FixtureControllersTest {
         FixtureAssetDescriptor draft = descriptor(0, FixtureLifecycle.DRAFT);
         StoredFixtureAsset storedDraft = stored(descriptor(1, FixtureLifecycle.DRAFT));
         StoredFixtureAsset proposed = stored(descriptor(2, FixtureLifecycle.PROPOSED));
-        StoredFixtureAsset approved = stored(descriptor(3, FixtureLifecycle.APPROVED));
+        StoredFixtureAsset verified = stored(descriptor(3, FixtureLifecycle.PROPOSED));
+        StoredFixtureAsset approved = stored(descriptor(4, FixtureLifecycle.APPROVED));
         when(catalog.saveDraft(anyLong(), any(), any())).thenReturn(storedDraft);
         when(catalog.submitForReview(any(), anyString(), anyLong(), any())).thenReturn(proposed);
+        when(catalog.verifyForApproval(
+                any(), anyString(), anyLong(), any(), any())).thenReturn(verified);
         when(catalog.approveIdempotently(
                 any(), anyString(), anyLong(), anyString(), any(), anyString()))
                 .thenReturn(new FixtureCatalogService.ApprovalResult(approved, false));
@@ -109,10 +112,21 @@ class FixtureControllersTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.descriptor.lifecycle").value("PROPOSED"));
 
-        mvc.perform(post("/api/visual/fixture-assets/prime-applicant:approve")
+        mvc.perform(post("/api/visual/fixture-assets/prime-applicant:verify-review")
                         .header("Authorization", "Bearer reviewer-token")
                         .header("X-Purpose", "CORRECTNESS_REVIEW")
                         .header("If-Match", "2")
+                        .contentType("application/json")
+                        .content("{\"redactionReviewed\":true,\"redactionVerified\":true,"
+                                + "\"comment\":\"Redaction reviewed\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"3\""))
+                .andExpect(jsonPath("$.data.descriptor.lifecycle").value("PROPOSED"));
+
+        mvc.perform(post("/api/visual/fixture-assets/prime-applicant:approve")
+                        .header("Authorization", "Bearer reviewer-token")
+                        .header("X-Purpose", "CORRECTNESS_REVIEW")
+                        .header("If-Match", "3")
                         .header("Idempotency-Key", "fixture-approve-1")
                         .contentType("application/json")
                         .content("{\"comment\":\"Owner reviewed lineage\"}"))
@@ -120,8 +134,12 @@ class FixtureControllersTest {
                 .andExpect(header().string("Idempotency-Replayed", "false"))
                 .andExpect(jsonPath("$.data.stored.descriptor.lifecycle").value("APPROVED"));
 
+        verify(catalog).verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Redaction reviewed"),
+                new PrincipalRef("reviewer-a", PrincipalKind.USER, ""));
         verify(catalog).approveIdempotently(
-                scope(), "prime-applicant", 2, "Owner reviewed lineage",
+                scope(), "prime-applicant", 3, "Owner reviewed lineage",
                 new PrincipalRef("reviewer-a", PrincipalKind.USER, ""), "fixture-approve-1");
     }
 
