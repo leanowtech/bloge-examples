@@ -185,22 +185,20 @@ class VisualAuthoringBrowserDomTest {
         }
 
         private static void initializeCorrectnessSchemas(JdbcTemplate jdbc) {
-            new ResourceDatabasePopulator(
-                    new ClassPathResource("correctness/h2-correctness-fixture-schema.sql"))
-                    .execute(jdbc.getDataSource());
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_heads (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_revisions (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_inventory_heads (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_inventory_revisions (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_obligation_index (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_business_oracle_heads (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_business_oracle_revisions (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_assertion_set_heads (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_assertion_set_revisions (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_draft_set_v2_heads (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_draft_set_v2_revisions (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_case_v2_index (id INT)");
-            jdbc.execute("CREATE TABLE IF NOT EXISTS rg_scenario_case_obligation_ref_index (id INT)");
+            // Each focused H2 script owns complete table definitions for one domain. The shared
+            // outbox/receipt DDL appears in several scripts, so failed duplicate CREATEs are the
+            // only errors intentionally ignored while the full definitions are applied.
+            ResourceDatabasePopulator coreSchemas = new ResourceDatabasePopulator(
+                    new ClassPathResource("correctness/h2-correctness-fixture-schema.sql"),
+                    new ClassPathResource("correctness/h2-correctness-definition-schema.sql"),
+                    new ClassPathResource("correctness/h2-coverage-inventory-schema.sql"),
+                    new ClassPathResource("correctness/h2-oracle-assertion-schema.sql"),
+                    new ClassPathResource("correctness/h2-scenario-v2-schema.sql"));
+            coreSchemas.setContinueOnError(true);
+            coreSchemas.execute(jdbc.getDataSource());
+
+            // These projections currently have no H2 fixture script; readiness still needs their
+            // names present, while browser coverage does not exercise their write paths.
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publications (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempts (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_publication_attempt_history (id INT)");
