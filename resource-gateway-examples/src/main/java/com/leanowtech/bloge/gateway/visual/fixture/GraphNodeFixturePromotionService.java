@@ -168,10 +168,7 @@ public class GraphNodeFixturePromotionService {
                     "OUTPUT_SCHEMA_INVALID",
                     "The captured node output does not satisfy its exact operator schema");
         }
-        ExactSchemaRef schemaRef = new ExactSchemaRef(
-                sourceId(node.operatorRef()), 1, fingerprint(Map.of(
-                        "operatorFingerprint", operator.fingerprint(),
-                        "schema", outputSchema.schema())));
+        ExactSchemaRef schemaRef = exactOutputSchemaRef(operator, mapper);
         boolean isResource = node.operatorRef().startsWith("resource:");
         String sourceValue = isResource ? nodeIdOperatorResource(node.operatorRef()) : node.operatorRef();
         ExactAssetRef sourceRef = new ExactAssetRef(
@@ -236,6 +233,21 @@ public class GraphNodeFixturePromotionService {
         return operator.ports().outputs().size() != 1
                 ? null
                 : operator.ports().outputs().getFirst().schema();
+    }
+
+    /** Derives the canonical schema reference shared by promotion and governed simulation. */
+    public static ExactSchemaRef exactOutputSchemaRef(OperatorDefinition operator, ObjectMapper mapper) {
+        Objects.requireNonNull(operator, "operator");
+        Objects.requireNonNull(mapper, "mapper");
+        SchemaEnvelope schema = operatorPorts(operator);
+        if (schema == null || schema.equals(SchemaEnvelope.opaque())) {
+            throw unprocessable("OUTPUT_SCHEMA_OPAQUE", "An exact single output schema is required");
+        }
+        return new ExactSchemaRef(
+                sourceId(operator.operatorRef()), 1,
+                com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint
+                        .derivedFingerprint(mapper, Map.of(
+                                "operatorFingerprint", operator.fingerprint(), "schema", schema.schema())));
     }
 
     private void requireIdentity(IntegrationRequestContext identity) {

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 /**
  * An author-supplied per-node simulation fixture.
  *
@@ -16,7 +18,8 @@ package com.leanowtech.bloge.gateway.visual.simulation;
  * @param expectedInput optional input payload expected by the node during simulation; {@code null}
  *                      means no input assertion is evaluated
  */
-public record NodeFixture(Object output, Object expectedInput) {
+public record NodeFixture(Object output, Object expectedInput,
+                          @JsonInclude(JsonInclude.Include.NON_NULL) GovernedFixtureRef governedRef) {
 
     /**
      * Backward-compatible constructor for output-only pins.
@@ -24,6 +27,11 @@ public record NodeFixture(Object output, Object expectedInput) {
      * @param output the value injected as the node's simulated output; may be {@code null}
      */
     public NodeFixture(Object output) {
-        this(output, null);
+        this(output, null, null);
+    }
+
+    /** Backward-compatible constructor for output and input assertion fixtures. */
+    public NodeFixture(Object output, Object expectedInput) {
+        this(output, expectedInput, null);
     }
 }

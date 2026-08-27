@@ -319,6 +319,24 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
                 java.time.Clock.systemUTC());
     }
 
+    /**
+     * Exposes the authenticated, payload-free governed Fixture resolver used by visual simulation.
+     *
+     * @param fixtures scope-authorized Fixture catalog
+     * @param materials protected material resolver
+     * @return governed simulation resolver
+     */
+    @Bean
+    @ConditionalOnBean({FixtureAssetRepository.class, FixtureMaterialResolver.class})
+    @ConditionalOnMissingBean
+            com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver
+            governedFixtureSimulationResolver(
+                    FixtureAssetRepository fixtures, FixtureMaterialResolver materials,
+                    VisualOperatorCatalog catalog, ObjectMapper mapper) {
+        return new com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver(
+                fixtures, materials, catalog, mapper);
+    }
+
     @Bean
     @ConditionalOnBean(ScenarioExternalReferenceSource.class)
     @ConditionalOnMissingBean
