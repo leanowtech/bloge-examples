@@ -386,6 +386,15 @@ tests live in `src/main/frontend/src/spine/authorSpine.ts`; coordinate-aware
 ObjectBreadcrumb and ToolThreadRail are mounted only when a valid ToolCoordinate
 is present. Responsive 390/1280 end-to-end geometry remains a later gate.
 
+#### External API and tool authoring models (B0)
+
+The pure model seams in `src/main/frontend/src/external-api/` and
+`src/main/frontend/src/tool/` now provide deterministic form-to-descriptor and
+visual-contract projections, bounded sample schema inference, draft/published
+tool signatures, and existing-publication references. They are intentionally
+transport- and UI-free: API persistence, Launcher integration, and the E2
+390/1280 geometry gate remain later slices.
+
 #### Graph-node Fixture promotion
 
 `POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` turns an exact
