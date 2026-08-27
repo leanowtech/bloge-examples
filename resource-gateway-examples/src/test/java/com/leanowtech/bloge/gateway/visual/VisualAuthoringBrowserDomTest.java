@@ -802,6 +802,21 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='canvas-node:n1'] .port-handle.source",
                 "[data-testid='canvas-node:n2'] .port-handle.target");
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
+
+        // A data edge becomes publishable only after the target transform's visible mapping
+        // references the source node. Configure that semantic binding through the same details
+        // editor an author uses, rather than mutating the draft or its React state directly.
+        WebElement transformNode = wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='node-wrapper:n2']")));
+        new Actions(driver).doubleClick(transformNode).perform();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='transform-assignment-editor']")));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='transform-assignment-expression:0']"))), "n1.output");
+        click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
+
         selectCanvasNodeFromNavigator(wait, "bloge:transform", "n2");
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n2'] .output-pill")));
