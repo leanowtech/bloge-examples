@@ -19,6 +19,19 @@ const editor = {
   ],
 };
 
+async function waitForElement(host: ParentNode, selector: string): Promise<HTMLElement> {
+  const startedAt = Date.now();
+  let element = host.querySelector<HTMLElement>(selector);
+  while (!element) {
+    if (Date.now() - startedAt >= 2000) {
+      throw new Error(`Timed out after 2000ms waiting for "${selector}"`);
+    }
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    element = host.querySelector<HTMLElement>(selector);
+  }
+  return element;
+}
+
 describe('DecisionScenarioWorkbench', () => {
   let root: Root | undefined;
   afterEach(() => { root?.unmount(); root = undefined; document.body.innerHTML = ''; vi.resetAllMocks(); });
@@ -34,8 +47,9 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[aria-label="Decision output kind"]') as HTMLSelectElement).value = 'plan'; (host.querySelector('[aria-label="Decision output kind"]') as HTMLSelectElement).dispatchEvent(new Event('change', { bubbles: true })); });
     expect(onOutputKindChange).toHaveBeenCalledWith('plan');
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
-    expect(host.querySelector('[data-testid="decision-scenario-preview"]')).not.toBeNull();
-    await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
+    const preview = await waitForElement(host, '[data-testid="decision-scenario-preview"]');
+    expect(preview).not.toBeNull();
+    await act(async () => { (preview.querySelector('button') as HTMLButtonElement).click(); });
     expect(fetchScenarioOperatorContract).toHaveBeenCalledWith(target.id);
     expect(saveScenarioDraftSet).toHaveBeenCalledOnce();
     expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0]).toMatchObject({ target, scope, metadata: { owner: 'owner', provenance: { operatorRef: 'bloge:decisionTable', sourceNodeId: 'decision-node' } } });
@@ -58,8 +72,10 @@ describe('DecisionScenarioWorkbench', () => {
     const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
     await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={vi.fn()} />); });
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
+    await waitForElement(host, '[data-testid="decision-scenario-preview"]');
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('network unavailable');
+    const alert = await waitForElement(host, '[role="alert"]');
+    expect(alert.textContent).toContain('network unavailable');
     expect(host.querySelector('[role="alert"] button')?.textContent).toBe('Retry');
   });
 
@@ -90,7 +106,8 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[data-testid="generate-graph-decision-scenarios"]') as HTMLButtonElement).click(); });
     expect(fetchScenarioGraphContract).toHaveBeenCalledWith('graph-draft-42');
     expect(fetchScenarioOperatorContract).not.toHaveBeenCalled();
-    await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
+    const preview = await waitForElement(host, '[data-testid="decision-scenario-preview"]');
+    await act(async () => { (preview.querySelector('button') as HTMLButtonElement).click(); });
     const saved = vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0];
     expect(saved).toMatchObject({
       target: graphTarget,
@@ -114,7 +131,8 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { root?.render(<Harness />); });
     expect(host.querySelector('[data-testid="decision-scenario-stale"]')).not.toBeNull();
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-stale"] button') as HTMLButtonElement).click(); });
-    await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
+    const preview = await waitForElement(host, '[data-testid="decision-scenario-preview"]');
+    await act(async () => { (preview.querySelector('button') as HTMLButtonElement).click(); });
     expect(saveScenarioDraftSet).toHaveBeenCalledOnce();
     expect(host.querySelector('[data-testid="decision-scenario-stale"]')).toBeNull();
   });
@@ -124,7 +142,8 @@ describe('DecisionScenarioWorkbench', () => {
     const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
     await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={vi.fn()} />); });
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('contract unavailable');
+    const alert = await waitForElement(host, '[role="alert"]');
+    expect(alert.textContent).toContain('contract unavailable');
     expect(host.querySelector('[data-testid="decision-scenario-preview"]')).toBeNull();
     expect(saveScenarioDraftSet).not.toHaveBeenCalled();
   });
