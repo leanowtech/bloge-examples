@@ -417,6 +417,15 @@ schema returns 422, and an existing governed id returns 409. A successful respon
 with `Cache-Control: no-store`; both response and persisted audit contain no business payload.
 Activation continues through the existing four-eyes Fixture governance endpoints.
 
+#### Graph-node Fixture controls (C1a)
+
+The independent `src/main/frontend/src/fixture-asset/` slice now owns the pure
+promotion request/provenance/staleness model and reusable pin/promote/picker
+controls. Its request matches the backend contract exactly: redaction paths are
+bounded, non-root JSON Pointers such as `/phone`, and no client provenance flag
+is sent. Only a complete governed fixture reference can produce `governed`; the
+controls are intentionally not mounted in AuthorCanvas yet (that is C1b).
+
 The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
 segmented control in the global header; the choice persists across workspace navigation and reloads.
 For deterministic demo links, append `?lang=en` or `?lang=zh-CN`, for example

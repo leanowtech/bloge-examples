@@ -1,0 +1,15 @@
+.fixture-provenance[data-provenance="sample"] { color: #6b7280; }
+.fixture-provenance[data-provenance="pinned"] { color: #8a5200; }
+.fixture-provenance[data-provenance="governed"] { color: #17653a; font-weight: 650; }
+.simulation-fixture-controls { align-items: center; display: inline-flex; gap: .35rem; }
+.fixture-stale { color: #9e2b25; }
+.governed-fixture-dialog {
+  background: var(--surface-raised, #fff); border: 1px solid var(--border-subtle, #d9dee8);
+  border-radius: .65rem; display: grid; gap: .55rem; margin-top: .35rem; padding: .75rem;
+}
+.governed-fixture-dialog h4, .governed-fixture-dialog p { margin: 0; }
+.governed-fixture-dialog label { display: grid; gap: .25rem; }
+.governed-fixture-dialog textarea { min-height: 3rem; }
+.graph-node-fixture-picker ul { display: grid; gap: .35rem; list-style: none; margin: 0; padding: 0; }
+.graph-node-fixture-picker button { text-align: left; width: 100%; }
+.graph-node-fixture-picker button * { overflow-wrap: anywhere; }
