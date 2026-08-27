@@ -404,6 +404,19 @@ only a completed pair refreshes the visual operator catalog. Failed saves stay
 retryable and never display response bodies. This is still a browser authoring
 surface, not a GraphDraft mutation; full E2 geometry evidence remains pending.
 
+#### Tool publication and composition (B2)
+
+With an exact `spine=v1` ToolCoordinate, the Author palette now projects the current
+GraphDraft's real lifecycle and input/output schemas. Missing draft facts remain
+`Unknown`/`Opaque I/O`; the UI never invents a typed or published state. Publish uses
+`POST /api/visual/drafts/{draftId}/publish` with the current revision and only treats
+the returned immutable `publicationId` plus frozen source `draftRevision` as a
+published tool. A successful publication refreshes `GET /api/visual/operators`, where
+`resource:` entries are External APIs and `publication:` entries are Published tools;
+the latter retain their frozen port types when added through the existing operator
+insertion path. A publication remains visible if catalog refresh fails, with an
+explicit retryable warning. Removing `spine=v1` keeps these new controls unmounted.
+
 #### Graph-node Fixture promotion
 
 `POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` turns an exact

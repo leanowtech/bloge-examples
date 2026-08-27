@@ -237,7 +237,10 @@ import {
   reconcileRunInputWithSchema,
 } from './author/input/authorRunInput';
 import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
-import { resolveSpine } from './spine/authorSpine';
+import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
+import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
+import ToolPaletteFacets from './tool/ToolPaletteFacets';
+import type { ToolPublicationMetadata } from './tool/toolModel';
 import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
 import {
   authorTaskElapsedMs,
@@ -5280,6 +5283,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const { locale, t, m, d } = useI18n();
   const isTaskWorkspace = workspaceVersion === 'v2';
   const spineEnabled = resolveSpine(window.location.search) === 'v1';
+  const toolCoordinate = spineEnabled ? parseToolCoordinate(window.location.href) : null;
   const [initialWorkspaceLocation] = useState(() => (
     parseAuthorWorkspaceLocation(window.location.search)
   ));
@@ -5322,6 +5326,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [formalContextRailOpen, setFormalContextRailOpen] = useState(false);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [operators, setOperators] = useState<OperatorDefinition[]>([]);
+  const [toolPublication, setToolPublication] = useState<ToolPublicationMetadata>();
+  const [toolCatalogError, setToolCatalogError] = useState('');
   const [builtInFunctions, setBuiltInFunctions] = useState<BuiltInFunctionDefinition[]>([]);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
   const [edges, setEdges] = useState<Edge<CanvasEdgeData>[]>([]);
@@ -5406,6 +5412,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   const [graphName, setGraphName] = useState('visualGraph');
   const [graphDraftId, setGraphDraftId] = useState('');
   const [graphDraftRevision, setGraphDraftRevision] = useState(0);
+  const [graphDraftStatus, setGraphDraftStatus] = useState<string | undefined>();
   const sourcePreviewReadOnly = Boolean(initialBusinessMirrorSeed && !graphDraftId);
   const lastSavedGraphRef = useRef<GraphDraft | null>(null);
   const [sourceCopyBusy, setSourceCopyBusy] = useState(false);
@@ -5833,6 +5840,20 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setOperators(catalog.operators);
     setBuiltInFunctions(catalog.builtInFunctions ?? []);
   }, []);
+
+  const refreshToolCatalog = useCallback(async () => {
+    try {
+      await reloadOperators();
+      setToolCatalogError('');
+    } catch {
+      setToolCatalogError('Tool published, but the operator catalog could not be refreshed. Retry refresh.');
+    }
+  }, [reloadOperators]);
+
+  const handleToolPublished = useCallback(async (publication: ToolPublicationMetadata) => {
+    setToolPublication(publication);
+    await refreshToolCatalog();
+  }, [refreshToolCatalog]);
 
   useEffect(() => {
     if (!isTaskWorkspace || typeof window.matchMedia !== 'function') {
@@ -7141,6 +7162,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setGraphName(template.graphName);
     setGraphDraftId('');
     setGraphDraftRevision(0);
+    setGraphDraftStatus(undefined);
     setGraphTenantId('tenant-a');
     setGraphNamespace('local');
     setGraphEnvironment('test');
@@ -7722,6 +7744,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setDraftSaveConflict(null);
       setGraphDraftId(stored.draftId);
       setGraphDraftRevision(stored.revision);
+      setGraphDraftStatus(stored.status);
       setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
       setGraphNamespace(savedCanvasDraft.namespace || 'local');
       setGraphEnvironment(savedCanvasDraft.environment || 'test');
@@ -7793,6 +7816,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       setOperatorTestPublications({});
       setGraphDraftId(stored.draftId);
       setGraphDraftRevision(stored.revision);
+      setGraphDraftStatus(stored.status);
       setGraphTenantId(savedCanvasDraft.tenantId || 'tenant-a');
       setGraphNamespace(savedCanvasDraft.namespace || 'local');
       setGraphEnvironment(savedCanvasDraft.environment || 'test');
@@ -8333,6 +8357,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setGraphName(imported.graphName);
     setGraphDraftId(imported.draftId ?? '');
     setGraphDraftRevision(imported.revision ?? 0);
+    setGraphDraftStatus(projection.draft.status);
     setGraphTenantId(projection.draft.tenantId || 'tenant-a');
     setGraphNamespace(projection.draft.namespace || 'local');
     setGraphEnvironment(projection.draft.environment || 'test');
@@ -10353,6 +10378,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     && graphDraftRevision > 0
     && authoritativeContractRef.current?.canvasSnapshot === canonicalJson(exportableDraft),
   );
+  const toolMutationFingerprintRef = useRef(currentMutationFingerprint);
+  useEffect(() => {
+    if (toolMutationFingerprintRef.current !== currentMutationFingerprint) {
+      setToolPublication(undefined);
+      toolMutationFingerprintRef.current = currentMutationFingerprint;
+    }
+  }, [currentMutationFingerprint]);
   useEffect(() => {
     if (!isTaskWorkspace || !exactSavedDraft) return;
     const next = markSavedCheckpoint(mutationJournalRef.current, currentMutationFingerprint);
@@ -11491,16 +11523,38 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           )}
         </div>
         {spineEnabled && (
-          <ExternalApiAuthoring
-            onCatalogRefresh={(catalog) => {
-              setOperators(catalog.operators);
-              setBuiltInFunctions(catalog.builtInFunctions ?? []);
-            }}
-            onAddOperator={(operatorRef) => {
-              const operator = operatorByRef.get(operatorRef);
-              if (operator) addOperator(operator);
-            }}
-          />
+          <>
+            {toolCoordinate && (
+              <ToolAuthoringPanel
+                draft={{
+                  ...exportableDraft,
+                  ...(graphDraftStatus ? { status: graphDraftStatus } : {}),
+                }}
+                coordinate={toolCoordinate}
+                publication={toolPublication}
+                onPublished={handleToolPublished}
+                catalogError={toolCatalogError}
+                onRefreshCatalog={refreshToolCatalog}
+              />
+            )}
+            <ToolPaletteFacets
+              operators={operators}
+              onAddOperator={(operatorRef) => {
+                const operator = operatorByRef.get(operatorRef);
+                if (operator) addOperator(operator);
+              }}
+            />
+            <ExternalApiAuthoring
+              onCatalogRefresh={(catalog) => {
+                setOperators(catalog.operators);
+                setBuiltInFunctions(catalog.builtInFunctions ?? []);
+              }}
+              onAddOperator={(operatorRef) => {
+                const operator = operatorByRef.get(operatorRef);
+                if (operator) addOperator(operator);
+              }}
+            />
+          </>
         )}
         <section className="library-intake" aria-label={t('Operator library intake')} data-testid="library-intake">
           <div className="library-intake-heading">

@@ -5,6 +5,7 @@ import {
   toolSignatureFromDraft,
   type ToolDraftLike,
 } from './toolModel';
+import type { ToolCoordinate } from '../spine/authorSpine';
 
 const draft: ToolDraftLike = {
   graphName: 'loan-tool',
@@ -22,6 +23,7 @@ describe('toolSignatureFromDraft', () => {
       input: draft.inputSchema,
       output: draft.outputSchema,
       state: 'draft',
+      schemaState: 'typed',
     });
   });
 
@@ -36,6 +38,51 @@ describe('toolSignatureFromDraft', () => {
       input: draft.inputSchema,
       output: draft.outputSchema,
       state: 'published',
+      schemaState: 'typed',
+      publicationId: 'pub-42',
+      publicationRevision: 3,
+    });
+  });
+
+  it('uses the navigation coordinate and stays honest when draft facts are missing', () => {
+    const coordinate: ToolCoordinate = {
+      toolId: 'tool-loan',
+      toolName: 'Loan tool',
+      stage: 'publish',
+    };
+    expect(toolSignatureFromDraft(undefined, coordinate)).toEqual({
+      toolId: 'tool-loan',
+      toolName: 'Loan tool',
+      state: 'unknown',
+      schemaState: 'unknown',
+    });
+  });
+
+  it('marks a real draft with incomplete schemas as opaque instead of typed', () => {
+    expect(toolSignatureFromDraft(
+      { graphName: 'loan-tool', status: 'DRAFT', inputSchema: draft.inputSchema },
+      { toolId: 'tool-loan', toolName: 'Loan tool', stage: 'define' },
+    )).toEqual({
+      toolId: 'tool-loan',
+      toolName: 'Loan tool',
+      input: draft.inputSchema,
+      state: 'draft',
+      schemaState: 'opaque',
+    });
+  });
+
+  it('uses the actual publication receipt as the only published transition', () => {
+    expect(toolSignatureFromDraft(
+      { ...draft, status: 'DRAFT' },
+      { toolId: 'tool-loan', toolName: 'Loan tool', stage: 'publish' },
+      { publicationId: 'pub-42', publicationRevision: 3 },
+    )).toEqual({
+      toolId: 'tool-loan',
+      toolName: 'Loan tool',
+      input: draft.inputSchema,
+      output: draft.outputSchema,
+      state: 'published',
+      schemaState: 'typed',
       publicationId: 'pub-42',
       publicationRevision: 3,
     });

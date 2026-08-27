@@ -46,6 +46,27 @@ describe('ToolPaletteFacets', () => {
     expect(host.querySelectorAll('li button')).toHaveLength(1);
   });
 
+  it('keeps frozen publication port information visible while preserving its add ref', () => {
+    const publication = {
+      operatorRef: 'publication:loan-tool-v1',
+      display: { name: 'Loan tool' },
+      ports: {
+        inputs: [{ name: 'request', schema: { schema: { type: 'object' } } }],
+        outputs: [{ name: 'result', schema: { schema: { type: 'string' } } }],
+      },
+    } as unknown as OperatorDefinition;
+    const addOperator = vi.fn();
+    act(() => root.render(<ToolPaletteFacets operators={[publication]} onAddOperator={addOperator} />));
+    click('[data-testid="tool-palette-publication"]');
+    expect(host.textContent).toContain('Loan tool');
+    expect(host.textContent).toContain('request');
+    expect(host.textContent).toContain('result');
+    expect(host.textContent).toContain('request: object');
+    expect(host.textContent).toContain('result: string');
+    host.querySelector<HTMLButtonElement>('li button')?.click();
+    expect(addOperator).toHaveBeenCalledWith('publication:loan-tool-v1');
+  });
+
   function click(selector: string): void {
     act(() => host.querySelector<HTMLButtonElement>(selector)?.click());
   }

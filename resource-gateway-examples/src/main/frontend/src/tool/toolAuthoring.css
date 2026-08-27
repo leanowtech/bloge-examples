@@ -20,4 +20,9 @@
   gap: .5rem;
   padding: .35rem .5rem;
 }
+.tool-palette-facets li > strong { overflow-wrap: anywhere; }
+.tool-palette-facets li > small { color: var(--text-muted, #5d6878); overflow-wrap: anywhere; }
 .tool-palette-facets code { max-width: min(100%, 28rem); overflow-wrap: anywhere; }
+.tool-authoring-panel { align-items: center; display: flex; flex-wrap: wrap; gap: .6rem; margin: .75rem 0; }
+.tool-authoring-error { flex-basis: 100%; color: #9a2d24; margin: 0; }
+.tool-authoring-warning { flex-basis: 100%; color: #8a5200; margin: 0; }

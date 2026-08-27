@@ -1,7 +1,10 @@
 import type { SchemaEnvelope } from '../types';
+import type { ToolCoordinate } from '../spine/authorSpine';
 
 /** The smallest draft projection accepted by the tool-signature seam. */
 export interface ToolDraftLike {
+  draftId?: string;
+  revision?: number;
   graphName?: string;
   status?: string;
   inputSchema?: SchemaEnvelope;
@@ -11,13 +14,20 @@ export interface ToolDraftLike {
   publicationRevision?: number;
 }
 
+/** Lifecycle state derived from a server draft or an immutable publication receipt. */
+export type ToolLifecycleState = 'draft' | 'published' | 'unknown';
+
+/** Honest schema availability for the current draft projection. */
+export type ToolSchemaState = 'typed' | 'opaque' | 'unknown';
+
 /** Frozen I/O and lifecycle projection used when a graph is presented as a tool. */
 export interface ToolSignature {
   toolId: string;
   toolName: string;
   input?: SchemaEnvelope;
   output?: SchemaEnvelope;
-  state: 'draft' | 'published';
+  state: ToolLifecycleState;
+  schemaState: ToolSchemaState;
   publicationId?: string;
   publicationRevision?: number;
 }
@@ -37,31 +47,45 @@ export interface ToolPublicationMetadata {
  *
  * @param draft graph draft projection
  * @param identity tool identity, or a tool id when `toolName` is provided
- * @param toolName display name when the second argument is a string
+ * @param toolNameOrPublication legacy display name or the immutable publication receipt
  * @param publication existing publication metadata, when available
  * @returns a minimal tool signature
  */
 export function toolSignatureFromDraft(
-  draft: ToolDraftLike,
-  identity: { toolId: string; toolName: string } | string,
-  toolName?: string,
+  draft: ToolDraftLike | undefined,
+  identity: ToolCoordinate | { toolId: string; toolName: string } | string,
+  toolNameOrPublication?: string | ToolPublicationMetadata,
   publication?: ToolPublicationMetadata,
 ): ToolSignature {
+  const suppliedPublication = typeof toolNameOrPublication === 'object'
+    ? toolNameOrPublication
+    : publication;
+  const legacyToolName = typeof toolNameOrPublication === 'string' ? toolNameOrPublication : undefined;
   const resolvedIdentity = typeof identity === 'string'
-    ? { toolId: identity, toolName: toolName ?? identity }
-    : identity;
-  const state = draft.status?.trim().toLowerCase() === 'published' ? 'published' : 'draft';
-  const existingPublication = publication ?? (
-    draft.publicationId && draft.publicationRevision !== undefined
+    ? { toolId: identity, toolName: legacyToolName ?? identity }
+    : { toolId: identity.toolId, toolName: identity.toolName };
+  const state = suppliedPublication
+    ? 'published'
+    : draft?.status?.trim().toLowerCase() === 'published'
+      ? 'published'
+      : draft?.status?.trim().toLowerCase() === 'draft'
+        ? 'draft'
+        : 'unknown';
+  const schemaState: ToolSchemaState = !draft
+    ? 'unknown'
+    : draft.inputSchema?.schema && draft.outputSchema?.schema ? 'typed' : 'opaque';
+  const existingPublication = suppliedPublication ?? (
+    draft?.publicationId && draft.publicationRevision !== undefined
       ? { publicationId: draft.publicationId, publicationRevision: draft.publicationRevision }
       : undefined
   );
   const signature: ToolSignature = {
     toolId: resolvedIdentity.toolId,
     toolName: resolvedIdentity.toolName,
-    input: draft.inputSchema,
-    output: draft.outputSchema,
+    ...(draft?.inputSchema ? { input: draft.inputSchema } : {}),
+    ...(draft?.outputSchema ? { output: draft.outputSchema } : {}),
     state,
+    schemaState,
   };
   if (state === 'published' && existingPublication) {
     signature.publicationId = existingPublication.publicationId;

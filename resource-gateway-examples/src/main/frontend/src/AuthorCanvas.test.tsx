@@ -304,6 +304,96 @@ describe('AuthorCanvas operator-library intake', () => {
     });
   });
 
+  it('publishes the coordinate-bound graph draft and exposes the publication facet for composition', async () => {
+    const projection = dslProjection() as { draft: Record<string, any> };
+    const draft = { ...projection.draft, draftId: 'tool-draft', revision: 4, status: 'DRAFT' };
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?spine=v1&toolId=loan-tool&toolName=Loan+tool&stage=publish&draftId=tool-draft',
+    );
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [{
+          operatorRef: 'publication:published-loan',
+          display: { name: 'Published loan' },
+          ports: { inputs: [], outputs: [] },
+        }] });
+      }
+      if (url === '/api/visual/drafts/tool-draft') return jsonResponse(draft);
+      if (url === '/api/visual/drafts/tool-draft/publish') {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toMatchObject({ expectedRevision: 4 });
+        return jsonResponse({ published: true, publication: { publicationId: 'pub-loan', draftRevision: 4 } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() => {
+      expect(query('[data-testid="tool-authoring-panel"]')).toBeDefined();
+      expect(query('[data-testid="tool-palette-publication"]')).toBeDefined();
+    });
+    expect(query('[data-testid="tool-signature-badge"]')
+      .getAttribute('data-tool-state')).toBe('draft');
+    await click(query<HTMLButtonElement>('[data-testid="tool-publish"]'));
+    await waitFor(() => expect(query('[data-testid="tool-signature-badge"]')
+      .textContent).toContain('#pub-loan · r4'));
+    expect(query('[data-testid="tool-signature-badge"]')
+      .getAttribute('data-tool-state')).toBe('published');
+    await click(query<HTMLButtonElement>('[data-testid="tool-palette-publication"]'));
+    expect(query('[data-testid="tool-palette-facets"]').textContent)
+      .toContain('publication:published-loan');
+    const nodeCount = document.querySelectorAll('[data-testid^="node-wrapper:"]').length;
+    await click(query<HTMLButtonElement>('[data-testid="tool-palette-facets"] li button'));
+    await waitFor(() => expect(document.querySelectorAll('[data-testid^="node-wrapper:"]').length)
+      .toBe(nodeCount + 1));
+  });
+
+  it('retains a successful publication when catalog refresh fails and recovers on retry', async () => {
+    const projection = dslProjection() as { draft: Record<string, any> };
+    const draft = { ...projection.draft, draftId: 'tool-draft', revision: 4, status: 'DRAFT' };
+    let catalogCalls = 0;
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?spine=v1&toolId=loan-tool&toolName=Loan+tool&stage=publish&draftId=tool-draft',
+    );
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        catalogCalls += 1;
+        if (catalogCalls === 2) return jsonResponse({ detail: 'catalog unavailable' }, { status: 503 });
+        return jsonResponse({ operators: catalogCalls > 2 ? [{ operatorRef: 'publication:published-loan' }] : [] });
+      }
+      if (url === '/api/visual/drafts/tool-draft') return jsonResponse(draft);
+      if (url === '/api/visual/drafts/tool-draft/publish') {
+        return jsonResponse({ published: true, publication: { publicationId: 'pub-loan', draftRevision: 4 } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() => expect(query('[data-testid="tool-publish"]')).toBeDefined());
+    await click(query<HTMLButtonElement>('[data-testid="tool-publish"]'));
+    await waitFor(() => expect(query('[data-testid="tool-signature-badge"]').textContent)
+      .toContain('#pub-loan · r4'));
+    expect(query('[data-testid="tool-authoring-panel"]').textContent)
+      .toContain('catalog could not be refreshed');
+    await click(query<HTMLButtonElement>('[data-testid="tool-catalog-refresh"]'));
+    await waitFor(() => expect(query('[data-testid="tool-palette-facets"]').textContent)
+      .toContain('publication:published-loan'));
+    expect(query('[data-testid="tool-authoring-panel"]').textContent)
+      .not.toContain('catalog could not be refreshed');
+  });
+
   it('describes a transient run by its immutable fingerprint instead of calling it unlinked', async () => {
     window.history.replaceState(
       {},
