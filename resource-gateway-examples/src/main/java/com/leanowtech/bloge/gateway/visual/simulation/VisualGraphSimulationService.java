@@ -428,15 +428,36 @@ public class VisualGraphSimulationService {
                 && evidence.containsKey("statusCode");
     }
 
-    private static String resourceEvidenceId(GraphDraft draft, String nodeId) {
+    /**
+     * Resolves the protected resource identity from the catalog-owned lowering contract.
+     *
+     * <p>Visual resource nodes intentionally keep their instance configuration empty; their
+     * resource identity lives in the catalog lowering parameters. A legacy/configured value is
+     * accepted only as a compatibility fallback. Returning {@code null} remains fail-closed for
+     * governed protocol or transport projection.</p>
+     *
+     * @param draft graph being simulated
+     * @param nodeId mocked node whose resource identity is required
+     * @return catalog resource identity, compatibility config identity, or {@code null}
+     */
+    private String resourceEvidenceId(GraphDraft draft, String nodeId) {
         return draft.nodes().stream()
                 .filter(node -> node.id().equals(nodeId))
                 .findFirst()
-                .map(GraphDraft.DraftNode::config)
-                .map(config -> config.get("resourceId"))
-                .filter(String.class::isInstance)
-                .map(String.class::cast)
-                .filter(resourceId -> !resourceId.isBlank())
+                .map(node -> {
+                    Optional<String> catalogResource = catalog.find(node.operatorRef())
+                            .map(OperatorDefinition::lowering)
+                            .map(OperatorDefinition.Lowering::parameters)
+                            .map(parameters -> parameters.get("resourceId"))
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .filter(resourceId -> !resourceId.isBlank());
+                    return catalogResource.or(() -> Optional.ofNullable(node.config().get("resourceId"))
+                            .filter(String.class::isInstance)
+                            .map(String.class::cast)
+                            .filter(resourceId -> !resourceId.isBlank()));
+                })
+                .orElse(Optional.empty())
                 .orElse(null);
     }
 

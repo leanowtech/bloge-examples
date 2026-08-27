@@ -60,6 +60,32 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
+    void unboundResourceNodeRetainsSchemaSampleWithEmptyConfiguration() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "unboundResource", "", "", "", "", null,
+                List.of(new GraphDraft.DraftNode(
+                        "operator",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.constant("applicant-1001")),
+                        Map.of(),
+                        null)),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("operator", ""));
+
+        VisualGraphSimulationResponse response = kernel(catalog).simulate(draft, Map.of(), "");
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.results()).containsKey("operator");
+        assertThat(response.results().get("operator"))
+                .as("an unbound resource node must expose a schema-shaped sample")
+                .isNotNull();
+        assertThat(response.output()).isNotNull();
+    }
+
+    @Test
     void nonResourceCannotRequestProtocolOrTransportFidelity() {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
