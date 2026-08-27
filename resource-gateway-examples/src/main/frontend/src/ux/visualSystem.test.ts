@@ -122,6 +122,13 @@ describe('Stage 5 visual-system contract', () => {
     expect(legacyCss).toMatch(/data-canvas-task-mode="inspect"[\s\S]*\.operator-node \.operator-node-port-grid[\s\S]*display: none/);
   });
 
+  it('keeps modal authoring commands above the diagnostics drawer', () => {
+    const modalZIndex = Number(legacyCss.match(/\.rule-editor-backdrop\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);
+    const drawerZIndex = Number(legacyCss.match(/\.author-diagnostics-drawer\s*\{[\s\S]*?z-index:\s*(\d+)/)?.[1]);
+    expect(drawerZIndex).toBe(30);
+    expect(modalZIndex).toBeGreaterThan(drawerZIndex);
+  });
+
   it('lets expanded v2 canvas override later responsive grid rows', () => {
     expect(legacyCss).toMatch(/\.workspace\.workspace-v2\.canvas-focus\s*\{[\s\S]*grid-template-rows: minmax\(0, 1fr\)/);
     expect(legacyCss).toMatch(/\.workspace\.workspace-v2\.canvas-focus > \.author-command-bar\s*\{[\s\S]*display: none/);

@@ -7938,7 +7938,8 @@ button.primary:disabled {
 .rule-editor-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  /* Modal commands must remain actionable when the diagnostics drawer is open underneath. */
+  z-index: 40;
   display: grid;
   place-items: center;
   padding: 18px;
