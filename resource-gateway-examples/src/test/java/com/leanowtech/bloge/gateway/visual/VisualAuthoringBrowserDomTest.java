@@ -72,6 +72,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -224,6 +225,7 @@ class VisualAuthoringBrowserDomTest {
 
         /** Maps the author bearer and the visible reviewer handoff bearer to distinct identities. */
         @Bean
+        @Primary
         IntegrationIdentityResolver browserIdentityResolver() {
             IntegrationWorkloadIdentity author = browserIdentity(
                     "browser-author-identity", "browser-author");
