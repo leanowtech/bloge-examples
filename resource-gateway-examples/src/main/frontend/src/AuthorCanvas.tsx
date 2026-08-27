@@ -244,7 +244,10 @@ import {
   scenarioSetMatchesOperator,
   type DecisionEditorSnapshot,
 } from './decision-scenario/decisionScenarioModel';
-import ToolPaletteFacets from './tool/ToolPaletteFacets';
+import ToolPaletteFacets, {
+  OPERATOR_DRAG_MIME,
+  setOperatorDragData,
+} from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
 import {
   fetchGovernedFixtureAssets,
@@ -2016,7 +2019,6 @@ function OperatorNode({ id, data, selected }: NodeProps<NodeData>) {
 }
 
 const NODE_TYPES = { operator: OperatorNode };
-const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
 const DEFAULT_DECISION_OUTPUT_TYPE = '{ decision: String, ruleId: String }';
 const DEFAULT_DECISION_CONDITION_COLUMNS: DecisionTableColumn[] = [{ id: 'value', label: 'value' }];
 const DEFAULT_DECISION_OUTPUT_COLUMNS: DecisionTableColumn[] = [
@@ -8305,9 +8307,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [nodes]);
 
   const startOperatorDrag = useCallback((event: DragEvent<HTMLButtonElement>, operator: OperatorDefinition) => {
-    event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData(OPERATOR_DRAG_MIME, operator.operatorRef);
-    event.dataTransfer.setData('text/plain', operator.operatorRef);
+    setOperatorDragData(event, operator);
   }, []);
 
   const allowOperatorDrop = useCallback((event: DragEvent<HTMLDivElement>) => {

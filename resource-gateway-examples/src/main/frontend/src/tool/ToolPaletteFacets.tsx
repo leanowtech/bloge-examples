@@ -6,6 +6,19 @@ import './toolAuthoring.css';
 
 type OperatorKind = 'all' | 'publication' | 'resource';
 
+/** Native drag MIME shared with the main operator palette and Author flow drop target. */
+export const OPERATOR_DRAG_MIME = 'application/bloge-operator-ref';
+
+/** Populate the canonical operator drag payload without serializing mutable operator state. */
+export function setOperatorDragData(
+  event: { dataTransfer: DataTransfer },
+  operator: OperatorDefinition,
+): void {
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData(OPERATOR_DRAG_MIME, operator.operatorRef);
+  event.dataTransfer.setData('text/plain', operator.operatorRef);
+}
+
 export interface ToolPaletteFacetsProps {
   operators: readonly OperatorDefinition[];
   onAddOperator?: (operatorRef: string) => void;
@@ -52,7 +65,14 @@ export default function ToolPaletteFacets({ operators, onAddOperator }: ToolPale
       ))}
       <ul>
         {visible.map((operator) => (
-          <li key={operator.operatorRef}>
+          <li
+            key={operator.operatorRef}
+            data-testid={`tool-palette-item:${operator.operatorRef}`}
+            draggable={kindOf(operator.operatorRef) === 'publication'}
+            onDragStart={kindOf(operator.operatorRef) === 'publication'
+              ? (event) => setOperatorDragData(event, operator)
+              : undefined}
+          >
             <strong>{operator.display?.name || operator.operatorRef}</strong>
             <code>{operator.operatorRef}</code>
             <span>{kindOf(operator.operatorRef) ?? 'built-in'}</span>

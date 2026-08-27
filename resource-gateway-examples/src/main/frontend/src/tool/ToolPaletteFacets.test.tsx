@@ -67,6 +67,22 @@ describe('ToolPaletteFacets', () => {
     expect(addOperator).toHaveBeenCalledWith('publication:loan-tool-v1');
   });
 
+  it('exposes the canonical native drag payload for publications only', () => {
+    const publication = operators.find((operator) => operator.operatorRef.startsWith('publication:'))!;
+    act(() => root.render(<ToolPaletteFacets operators={operators} onAddOperator={vi.fn()} />));
+    click('[data-testid="tool-palette-publication"]');
+    const item = host.querySelector<HTMLElement>('[data-testid="tool-palette-item:publication:loan-tool-v1"]')!;
+    expect(item.draggable).toBe(true);
+    const dataTransfer = { effectAllowed: '', setData: vi.fn() } as unknown as DataTransfer;
+    const event = new Event('dragstart', { bubbles: true });
+    Object.defineProperty(event, 'dataTransfer', { value: dataTransfer });
+    act(() => item.dispatchEvent(event));
+    expect(dataTransfer.effectAllowed).toBe('copy');
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, 'application/bloge-operator-ref', publication.operatorRef);
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, 'text/plain', publication.operatorRef);
+    expect(host.querySelector<HTMLElement>('[data-testid="tool-palette-item:resource:orders.lookup"]')).toBeNull();
+  });
+
   function click(selector: string): void {
     act(() => host.querySelector<HTMLButtonElement>(selector)?.click());
   }
