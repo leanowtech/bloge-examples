@@ -3557,6 +3557,10 @@ describe('AuthorCanvas connection guide', () => {
           usageCount: fixtureCollectionCalls > 1 ? 3 : 2,
           compatibleWithOperatorRef: true,
           currentSchemaFingerprint: 'schema-fp',
+        }, {
+          fixtureAssetId: 'incompatible-fixture', revision: 1, name: 'Incompatible',
+          lifecycle: 'ACTIVE', schemaRef: { fingerprint: 'other-schema' }, usageCount: 0,
+          compatibleWithOperatorRef: false, currentSchemaFingerprint: 'schema-fp',
         }] });
       }
       if (url === '/api/visual/graphs/simulate') {
@@ -3673,6 +3677,10 @@ describe('AuthorCanvas connection guide', () => {
     expect(simulateButton).toBeDefined();
     await click(simulateButton!);
     await waitFor(() => expect(fixtureCollectionCalls).toBeGreaterThanOrEqual(2));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const refreshedDialog = query('[data-testid="operator-detail-dialog"]');
+    await waitFor(() => expect(refreshedDialog.textContent).toContain('Used 3'));
+    expect(refreshedDialog.querySelector('[data-testid="reuse-fixture-incompatible-fixture"]')).toBeNull();
 
     const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
     expect(exported.nodes[0]).toMatchObject({
