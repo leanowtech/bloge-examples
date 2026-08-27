@@ -5008,7 +5008,20 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n1']")));
         saveAuthorWorkspace(wait);
-        click(wait, By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']"));
+        click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
+        click(wait, By.cssSelector("[data-testid='context-variable-add']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='context-variable-path:0']"))), "params.userId");
+        selectByValue(wait, By.cssSelector("[data-testid='context-variable-type:0']"), "string");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='context-variable-value:0']"))), "user-1001");
+        click(wait, By.cssSelector("[data-testid='context-variable-bind:0']"));
+        By simulateButton = By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']");
+        wait.until(ignored -> driver.findElement(simulateButton).isEnabled());
+        assertThat(driver.findElement(simulateButton).isEnabled())
+                .as("the visible context editor must satisfy the simulation gate")
+                .isTrue();
+        click(wait, simulateButton);
         click(wait, By.cssSelector("[data-testid='trace-pin-fixture-n1']"));
         saveAuthorWorkspace(wait);
 
