@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Enforces the independent business-owner lifecycle for Business Oracles. */
-public final class BusinessOracleService {
+public class BusinessOracleService {
 
     private final BusinessOracleRepository oracles;
     private final OracleReviewAuthorizer authorizer;

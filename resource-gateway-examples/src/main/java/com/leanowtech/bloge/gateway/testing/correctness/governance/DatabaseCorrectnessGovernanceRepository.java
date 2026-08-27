@@ -15,7 +15,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** PostgreSQL/H2 immutable repository with canonical-document and indexed-column verification. */
-public final class DatabaseCorrectnessGovernanceRepository
+public class DatabaseCorrectnessGovernanceRepository
         implements CorrectnessGovernanceRepository {
 
     private final JdbcTemplate jdbc;

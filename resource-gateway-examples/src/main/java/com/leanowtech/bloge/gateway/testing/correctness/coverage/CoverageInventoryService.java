@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /** Application boundary for draft save, reviewed freeze and non-mutating impact analysis. */
-public final class CoverageInventoryService {
+public class CoverageInventoryService {
 
     private final CoverageInventoryRepository inventories;
     private final CoverageReviewAuthorizer authorizer;

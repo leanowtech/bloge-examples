@@ -27,7 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /** PostgreSQL/H2 Coverage Inventory store with CAS, retained history and atomic outbox. */
-public final class DatabaseCoverageInventoryRepository implements CoverageInventoryRepository {
+public class DatabaseCoverageInventoryRepository implements CoverageInventoryRepository {
 
     private static final String HEAD_TABLE = "rg_coverage_inventory_heads";
     private static final String REVISION_TABLE = "rg_coverage_inventory_revisions";

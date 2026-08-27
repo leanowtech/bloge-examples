@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /** PostgreSQL/H2 Business Oracle store with CAS, retained history and atomic outbox. */
-public final class DatabaseBusinessOracleRepository implements BusinessOracleRepository {
+public class DatabaseBusinessOracleRepository implements BusinessOracleRepository {
 
     private static final String HEAD_TABLE = "rg_business_oracle_heads";
     private static final String REVISION_TABLE = "rg_business_oracle_revisions";

@@ -22,7 +22,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** PostgreSQL/H2 repository for immutable Publication manifests and a CAS publication Saga. */
-public final class DatabaseCorrectnessPublicationRepository
+public class DatabaseCorrectnessPublicationRepository
         implements CorrectnessPublicationRepository {
 
     private final JdbcTemplate jdbc;

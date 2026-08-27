@@ -25,7 +25,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 /** PostgreSQL/H2 Assertion Set store with CAS, retained history and atomic outbox. */
-public final class DatabaseAssertionSetRepository implements AssertionSetRepository {
+public class DatabaseAssertionSetRepository implements AssertionSetRepository {
 
     private static final String HEAD_TABLE = "rg_assertion_set_heads";
     private static final String REVISION_TABLE = "rg_assertion_set_revisions";

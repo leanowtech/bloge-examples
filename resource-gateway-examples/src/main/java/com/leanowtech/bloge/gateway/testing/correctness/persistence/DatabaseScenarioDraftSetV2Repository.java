@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 
 /** PostgreSQL/H2 Scenario v2 authority with bounded Matrix and obligation projections. */
-public final class DatabaseScenarioDraftSetV2Repository
+public class DatabaseScenarioDraftSetV2Repository
         implements ScenarioDraftSetV2Repository {
 
     private static final String HEAD_TABLE = "rg_scenario_draft_set_v2_heads";

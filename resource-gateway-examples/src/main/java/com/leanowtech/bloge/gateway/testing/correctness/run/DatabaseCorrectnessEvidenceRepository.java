@@ -15,7 +15,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 /** PostgreSQL/H2 immutable repository with indexed-column and canonical-JSON integrity checks. */
-public final class DatabaseCorrectnessEvidenceRepository
+public class DatabaseCorrectnessEvidenceRepository
         implements CorrectnessEvidenceRepository {
 
     private final JdbcTemplate jdbc;

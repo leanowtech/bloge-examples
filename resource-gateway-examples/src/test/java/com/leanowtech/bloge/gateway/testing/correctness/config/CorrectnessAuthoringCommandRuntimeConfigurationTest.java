@@ -5,21 +5,36 @@ import com.leanowtech.bloge.gateway.integration.CorrectnessAuthoringRuntimeAvail
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteExecutionService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
+import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageInventoryService;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageDerivationSource;
 import com.leanowtech.bloge.gateway.testing.correctness.coverage.CoverageReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
+import com.leanowtech.bloge.gateway.testing.correctness.oracle.BusinessOracleService;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleBasisSource;
 import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleReviewAuthorizer;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.AssertionSetRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.BusinessOracleRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.CoverageInventoryRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.persistence.ScenarioDraftSetV2Repository;
+import com.leanowtech.bloge.gateway.testing.correctness.publication.CorrectnessPublicationRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.governance.CorrectnessGovernanceRepository;
+import com.leanowtech.bloge.gateway.testing.correctness.run.CorrectnessEvidenceRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioExternalReferenceSource;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioReviewAuthorizer;
 
+import org.springframework.aop.support.AopUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Bean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 
 import java.util.List;
 
@@ -57,9 +72,20 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
             .withPropertyValues("gateway.testing.correctness.enabled=true")
             .withBean(ObjectMapper.class, () -> new ObjectMapper().findAndRegisterModules())
+            .withUserConfiguration(TransactionalCorrectnessRuntimeConfiguration.class)
             .withConfiguration(AutoConfigurations.of(
                     CorrectnessAuthoringRuntimeConfiguration.class,
                     CorrectnessAuthoringCommandRuntimeConfiguration.class));
+
+    /** Enables the same class-based transaction proxy mode used by the application runtime. */
+    @TestConfiguration(proxyBeanMethods = false)
+    @EnableTransactionManagement(proxyTargetClass = true)
+    static class TransactionalCorrectnessRuntimeConfiguration {
+        @Bean
+        PlatformTransactionManager transactionManager(JdbcTemplate jdbc) {
+            return new DataSourceTransactionManager(jdbc.getDataSource());
+        }
+    }
 
     @Test
     void remainsReadOnlyWithoutEnterpriseGovernanceAuthorities() {
@@ -117,6 +143,24 @@ class CorrectnessAuthoringCommandRuntimeConfigurationTest {
                     assertThat(context).hasSingleBean(
                             com.leanowtech.bloge.gateway.testing.correctness.run
                                     .CorrectnessRunService.class);
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(CoverageInventoryRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(BusinessOracleRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(AssertionSetRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(ScenarioDraftSetV2Repository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(CorrectnessPublicationRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(CorrectnessEvidenceRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(CorrectnessGovernanceRepository.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(CoverageInventoryService.class))).isTrue();
+                    assertThat(AopUtils.isCglibProxy(
+                            context.getBean(BusinessOracleService.class))).isTrue();
                 });
     }
 
