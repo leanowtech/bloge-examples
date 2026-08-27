@@ -25,8 +25,6 @@ import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import com.leanowtech.bloge.gateway.integration.StaticBearerIntegrationIdentityResolver;
 import com.leanowtech.bloge.gateway.gateway.ResourceDescriptorBootstrap;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
-import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessAuthoringSchemaReadiness;
-import com.leanowtech.bloge.gateway.testing.correctness.config.CorrectnessFixtureMaterialSchemaReadiness;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureReviewAuthorizer;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureSchemaSource;
@@ -70,6 +68,7 @@ import org.openqa.selenium.support.ui.ExpectedConditions;
 import org.openqa.selenium.support.ui.Select;
 import org.openqa.selenium.support.ui.WebDriverWait;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.config.BeanFactoryPostProcessor;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -174,12 +173,21 @@ class VisualAuthoringBrowserDomTest {
 
     @TestConfiguration(proxyBeanMethods = false)
     static class RehearsalBrowserFixtureConfiguration {
-        /** Installs the smallest correctness schema needed by this browser-only fixture slice. */
+        /**
+         * Prepares the browser database before production correctness readiness beans are
+         * instantiated. The initializer is deliberately not itself a readiness bean: the
+         * opt-in runtime owns the single authoritative readiness instance for each schema.
+         */
         @Bean
-        CorrectnessAuthoringSchemaReadiness browserCorrectnessSchema(JdbcTemplate jdbc) {
-            ResourceDatabasePopulator schema = new ResourceDatabasePopulator(
-                    new ClassPathResource("correctness/h2-correctness-fixture-schema.sql"));
-            schema.execute(jdbc.getDataSource());
+        static BeanFactoryPostProcessor browserCorrectnessSchemaInitializer() {
+            return beanFactory -> initializeCorrectnessSchemas(
+                    beanFactory.getBean(JdbcTemplate.class));
+        }
+
+        private static void initializeCorrectnessSchemas(JdbcTemplate jdbc) {
+            new ResourceDatabasePopulator(
+                    new ClassPathResource("correctness/h2-correctness-fixture-schema.sql"))
+                    .execute(jdbc.getDataSource());
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_heads (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_definition_revisions (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_coverage_inventory_heads (id INT)");
@@ -199,16 +207,9 @@ class VisualAuthoringBrowserDomTest {
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_evidence_companions (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_outcome_calibration_proposals (id INT)");
             jdbc.execute("CREATE TABLE IF NOT EXISTS rg_correctness_governance_feedback (id INT)");
-            return new CorrectnessAuthoringSchemaReadiness(jdbc);
-        }
-
-        /** Installs the encrypted-material tables before the opt-in material gate is constructed. */
-        @Bean
-        CorrectnessFixtureMaterialSchemaReadiness browserFixtureMaterialSchema(JdbcTemplate jdbc) {
             new ResourceDatabasePopulator(
                     new ClassPathResource("correctness/h2-correctness-fixture-material-schema.sql"))
                     .execute(jdbc.getDataSource());
-            return new CorrectnessFixtureMaterialSchemaReadiness(jdbc);
         }
 
         /** Allows only this test's two server-owned identities to review the promoted fixture. */
