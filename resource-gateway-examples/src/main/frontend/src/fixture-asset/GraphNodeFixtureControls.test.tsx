@@ -108,6 +108,7 @@ describe('graph-node fixture controls', () => {
     expect([...select.options].map((option) => option.value)).toEqual([
       'OUTPUT_LEVEL', 'PROTOCOL_DERIVED', 'TRANSPORT_LEVEL',
     ]);
+    expect([...select.options].every((option) => !option.disabled)).toBe(true);
     act(() => {
       select.value = 'TRANSPORT_LEVEL';
       select.dispatchEvent(new Event('change', { bubbles: true }));

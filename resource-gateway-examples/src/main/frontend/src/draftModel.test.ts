@@ -391,6 +391,26 @@ describe('toSimulationRequest', () => {
       },
     });
   });
+
+  it('keeps independent resource fidelity and governed coordinates per node', () => {
+    const request = toSimulationRequest('g', [
+      { id: 'a', operatorRef: 'resource:a', position: { x: 0, y: 0 } },
+      { id: 'b', operatorRef: 'resource:b', position: { x: 0, y: 0 } },
+    ], [], 'b', {
+      a: { output: null, resourceFidelity: 'PROTOCOL_DERIVED', governedRef: {
+        fixtureAssetId: 'fa', revision: 1, schemaFingerprint: 'sfa',
+      } },
+      b: { output: null, resourceFidelity: 'TRANSPORT_LEVEL', governedRef: {
+        fixtureAssetId: 'fb', revision: 2, schemaFingerprint: 'sfb',
+      } },
+    });
+    expect(request.fixtures).toMatchObject({
+      a: { resourceFidelity: 'PROTOCOL_DERIVED', governedRef: { fixtureAssetId: 'fa' } },
+      b: { resourceFidelity: 'TRANSPORT_LEVEL', governedRef: { fixtureAssetId: 'fb' } },
+    });
+    expect(request.fixtures?.a).not.toHaveProperty('rawBody');
+    expect(request.fixtures?.b).not.toHaveProperty('material');
+  });
 });
 
 describe('toExportableGraphDraft', () => {
