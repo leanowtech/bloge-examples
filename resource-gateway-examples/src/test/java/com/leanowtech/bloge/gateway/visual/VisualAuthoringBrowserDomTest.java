@@ -5017,6 +5017,7 @@ class VisualAuthoringBrowserDomTest {
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[aria-label='Context extra value 1']"))), "user-1001");
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] .context-extra-actions button"));
+        saveAuthorWorkspace(wait);
         By simulateButton = By.xpath("//button[contains(@class,'primary') and normalize-space()='Simulate']");
         wait.until(ignored -> driver.findElement(simulateButton).isEnabled());
         assertThat(driver.findElement(simulateButton).isEnabled())
