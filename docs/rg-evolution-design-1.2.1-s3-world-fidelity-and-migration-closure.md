@@ -1,6 +1,6 @@
 # S3 世界保真、影响分析与存量迁移闭环技术方案
 
-本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..B` 已完成开发验证，`S3-C..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
+本文把 [`rg-evolution-design-1.2.1.md`](./rg-evolution-design-1.2.1.md) 的阶段三展开为可实施方案。当前状态为 `IN_PROGRESS`：`S3-A..C` 已完成开发验证，`S3-D..F` 尚未闭合。阶段三不重做现有 replay、corpus、review、impact 和 mutation 基础设施，而是在这些能力之上补齐面向 `Scenario + ResourceWorldModel` 的收敛层。
 
 ## 1. 差距判断
 
@@ -224,6 +224,8 @@ CURRENT -> SUSPECTED -> CONFIRMED -> REMEDIATING -> CURRENT
 - 双向来源映射和未映射诊断；
 - 幂等迁移包；
 - 旧协议兼容证明。
+
+开发验证证据：18/18 聚焦测试与 Resource Gateway 7480 项全量测试通过。迁移输入精确绑定 FixtureBundle、TestSuite、目标图、权威编译产物和调用清单；输出复用现有 `ScenarioDraftSet` 保存可编辑、可校验、可编译的业务输入、依赖行为和断言，并以 `MIGRATED` 标记来源。World 侧生成只携带精确 legacy rule 引用的未发布物化计划，`READY_TO_MATERIALIZE` 与 `NEEDS_PREREQUISITES` 不冒充资产生命周期状态；legacy fixture 不伪装为受治理 capture。无逻辑契约标签、模糊 selector、SPY、ALLOW_REAL、未冻结 replay、契约未绑定或精确输入缺失均诊断或失败关闭。迁移包具备双向来源映射和确定性指纹，sink 故障不留下半成品，重复迁移幂等，旧资产和旧 API 不变。详见 [S3-C 验证说明](./rg-evolution-design-1.2.1-s3-legacy-migration-verification.md)。
 
 ### S3-D：世界保真校准
 
