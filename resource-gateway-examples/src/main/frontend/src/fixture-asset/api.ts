@@ -12,8 +12,10 @@ export interface GovernedFixtureAssetSummary {
   revision: number;
   name: string;
   schemaFingerprint: string;
-  usageCount: number;
+  usageCount?: number;
   lifecycle: string;
+  compatible?: boolean;
+  currentSchemaFingerprint?: string;
 }
 
 /** HTTP transport seam for fixture authoring; production defaults to same-origin fetch. */
@@ -77,21 +79,20 @@ export async function promoteGraphNodeFixture(
  *
  * @returns sorted metadata rows with no material payload
  */
-export async function fetchGovernedFixtureAssets(): Promise<GovernedFixtureAssetSummary[]> {
-  const response = await transport('/api/visual/fixture-assets', {
+export async function fetchGovernedFixtureAssets(operatorRef?: string): Promise<GovernedFixtureAssetSummary[]> {
+  const query = operatorRef?.trim() ? `?operatorRef=${encodeURIComponent(operatorRef.trim())}` : '';
+  const response = await transport(`/api/visual/fixture-assets${query}`, {
     headers: integrationRequestHeaders('CORRECTNESS_READ'),
   });
   if (response.status === 404 || response.status === 405) return [];
   const payload = await safeJson(response);
   if (!response.ok) throw new Error(`Governed fixture catalogue unavailable (${response.status}).`);
-  const rows = Array.isArray(payload)
-    ? payload
-    : isRecord(payload)
-      ? (Array.isArray(payload.assets) ? payload.assets
-        : Array.isArray(payload.items) ? payload.items
-          : Array.isArray(payload.content) ? payload.content : [])
-      : [];
-  return rows.map(summaryFromUnknown).filter((row): row is GovernedFixtureAssetSummary => row !== null)
+  const rows = collectionRows(payload);
+  const parsed = rows.map(summaryFromUnknown);
+  if (parsed.some((row) => row === null)) {
+    throw new Error('Governed fixture catalogue contains an invalid summary.');
+  }
+  return parsed.filter((row): row is GovernedFixtureAssetSummary => row !== null)
     .filter((row) => row.lifecycle === 'ACTIVE')
     .sort((left, right) => left.name.localeCompare(right.name)
       || left.fixtureAssetId.localeCompare(right.fixtureAssetId));
@@ -119,6 +120,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+function collectionRows(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (!isRecord(value)) throw new Error('Governed fixture catalogue returned an invalid envelope.');
+  if (Object.prototype.hasOwnProperty.call(value, 'data')) {
+    if (Array.isArray(value.data)) return value.data;
+    throw new Error('Governed fixture catalogue returned an invalid data payload.');
+  }
+  if (Array.isArray(value.assets)) return value.assets;
+  if (Array.isArray(value.items)) return value.items;
+  if (Array.isArray(value.content)) return value.content;
+  throw new Error('Governed fixture catalogue returned an invalid collection shape.');
+}
+
 function summaryFromUnknown(value: unknown): GovernedFixtureAssetSummary | null {
   if (!isRecord(value)) return null;
   const descriptor = isRecord(value.descriptor) ? value.descriptor : value;
@@ -129,7 +143,8 @@ function summaryFromUnknown(value: unknown): GovernedFixtureAssetSummary | null 
   const revision = descriptor.revision;
   if (!fixtureAssetId || !schemaFingerprint || typeof revision !== 'number'
     || !Number.isInteger(revision) || revision < 1) return null;
-  const usageCount = quality.usageCount;
+  const usageCount = value.usageCount ?? quality.usageCount;
+  const compatible = value.compatibleWithOperatorRef;
   return {
     fixtureAssetId,
     revision,
@@ -138,6 +153,9 @@ function summaryFromUnknown(value: unknown): GovernedFixtureAssetSummary | null 
     usageCount: typeof usageCount === 'number' && Number.isInteger(usageCount) && usageCount >= 0
       ? usageCount : 0,
     lifecycle: stringField(descriptor.lifecycle),
+    ...(typeof compatible === 'boolean' ? { compatible } : {}),
+    ...(stringField(value.currentSchemaFingerprint)
+      ? { currentSchemaFingerprint: stringField(value.currentSchemaFingerprint) } : {}),
   };
 }
 

@@ -246,12 +246,17 @@ import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
 import {
+  FixtureStalenessNotice,
+  GraphNodeFixturePicker,
+  ResourceFidelitySelect,
   SimulationFixtureControls,
   fetchGovernedFixtureAssets,
   promoteGraphNodeFixture,
   type GovernedFixtureAssetSummary,
   type GovernedGraphNodeFixtureRef,
   type GraphNodeFixtureState,
+  type PickerAsset,
+  type ResourceFidelity,
 } from './fixture-asset';
 import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
 import {
@@ -3897,6 +3902,13 @@ function OperatorDetailDialog({
   scenarioScope,
   persistedScenarioDraftSet,
   onScenarioDraftSetChange,
+  governedFixtureAssets,
+  governedFixtureRef,
+  governedFixtureStale,
+  onGovernedFixtureSelect,
+  onClearGovernedFixture,
+  resourceFidelity,
+  onResourceFidelityChange,
 }: {
   node: Node<NodeData>;
   operator: OperatorDefinition | undefined;
@@ -3945,6 +3957,13 @@ function OperatorDetailDialog({
   scenarioScope?: EnterpriseScope;
   persistedScenarioDraftSet?: ScenarioDraftSet | null;
   onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
+  governedFixtureAssets: readonly GovernedFixtureAssetSummary[];
+  governedFixtureRef?: GovernedGraphNodeFixtureRef;
+  governedFixtureStale: boolean;
+  onGovernedFixtureSelect: (asset: PickerAsset) => void;
+  onClearGovernedFixture: () => void;
+  resourceFidelity: ResourceFidelity;
+  onResourceFidelityChange: (value: ResourceFidelity) => void;
 }) {
   const { t, d } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
@@ -4087,6 +4106,39 @@ function OperatorDetailDialog({
 
             {node.data.summary.visualKind === 'foreach' && (
               <ForeachLoopGuide inputs={inputs} outputs={outputs} />
+            )}
+
+            {node.data.operatorRef.startsWith('resource:') && (
+              <section className="fixture-asset-reuse" data-testid="fixture-asset-reuse">
+                <h3>{t('Governed fixture reuse')}</h3>
+                <GraphNodeFixturePicker
+                  assets={governedFixtureAssets}
+                  onSelect={onGovernedFixtureSelect}
+                />
+                <FixtureStalenessNotice
+                  stale={governedFixtureStale}
+                  onRecapture={onClearGovernedFixture}
+                />
+                {governedFixtureRef && !governedFixtureStale && (
+                  <p className="fixture-provenance" data-testid="governed-fixture-bound">
+                    {t('Governed fixture bound')}: {governedFixtureRef.fixtureAssetId} r{governedFixtureRef.revision}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="secondary compact"
+                  onClick={onClearGovernedFixture}
+                  disabled={!governedFixtureRef}
+                >
+                  {t('Clear governed fixture')}
+                </button>
+                <ResourceFidelitySelect
+                  value={resourceFidelity}
+                  onChange={onResourceFidelityChange}
+                  outputOnly
+                />
+                <small className="muted">{t('Only output-level fidelity is executed by visual simulation.')}</small>
+              </section>
             )}
           </div>
 
@@ -5456,6 +5508,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   >({});
   const [governedFixtureAssets, setGovernedFixtureAssets] = useState<GovernedFixtureAssetSummary[]>([]);
   const [governedFixtureAssetsError, setGovernedFixtureAssetsError] = useState('');
+  const [resourceFidelity, setResourceFidelity] = useState<ResourceFidelity>('OUTPUT_LEVEL');
   const [operatorTestSuites, setOperatorTestSuites] = useState<Record<string, OperatorTestSuiteDraftRow[]>>({});
   const [operatorTestResults, setOperatorTestResults] = useState<Record<string, Record<string, OperatorTestCaseResult>>>({});
   const [operatorTestPublications, setOperatorTestPublications] = useState<
@@ -5962,7 +6015,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   useEffect(() => {
     if (!spineEnabled) return undefined;
     let active = true;
-    fetchGovernedFixtureAssets()
+    const selectedResourceRef = nodes.find((node) => node.id === selectedNodeId)?.data.operatorRef;
+    fetchGovernedFixtureAssets(selectedResourceRef?.startsWith('resource:') ? selectedResourceRef : undefined)
       .then((assets) => {
         if (active) {
           setGovernedFixtureAssets(assets);
@@ -5980,7 +6034,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     return () => {
       active = false;
     };
-  }, [spineEnabled]);
+  }, [
+    spineEnabled,
+    nodes,
+    selectedNodeId,
+  ]);
 
   useEffect(() => {
     if (!isTaskWorkspace || authorWorkspaceEventRecordedRef.current) {
@@ -7395,6 +7453,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
     };
   }, [fixtureCompilation.fixtures, fixturePinnedNodeIds, governedFixtureRefs, result]);
+  const simulationFixtures = useMemo(() => Object.fromEntries(
+    [...new Set([
+      ...Object.keys(fixtureCompilation.fixtures),
+      ...Object.keys(governedFixtureRefs),
+    ])].map((nodeId) => [
+      nodeId,
+      {
+        ...(fixtureCompilation.fixtures[nodeId] ?? { output: null }),
+        ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
+      },
+    ]),
+  ), [fixtureCompilation.fixtures, governedFixtureRefs]);
   const pinSimulationNode = useCallback((nodeId: string) => {
     if (!result || !Object.prototype.hasOwnProperty.call(result.results, nodeId)) return;
     const output = result.results[nodeId];
@@ -7414,6 +7484,41 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, []);
   const selectedFixtureState = selectedNode ? fixtureForNode(selectedNode.id) : undefined;
   const selectedIsResource = selectedNode?.data.operatorRef.startsWith('resource:') ?? false;
+  const selectedGovernedFixtureRef = selectedNode ? governedFixtureRefs[selectedNode.id] : undefined;
+  // Compatibility is server-derived by the fixture catalogue; the client must not
+  // compare unrelated operator and material fingerprints.
+  const selectedGovernedAsset = governedFixtureAssets.find((asset) => (
+    selectedGovernedFixtureRef
+    && asset.fixtureAssetId === selectedGovernedFixtureRef.fixtureAssetId
+    && asset.revision === selectedGovernedFixtureRef.revision
+  ));
+  const selectedGovernedFixtureStale = Boolean(
+    selectedGovernedFixtureRef && (!selectedGovernedAsset || selectedGovernedAsset.compatible !== true),
+  );
+  const selectGovernedFixture = useCallback((asset: PickerAsset) => {
+    if (asset.compatible !== true) {
+      setError(t('This governed fixture is not compatible with the current operator.'));
+      return;
+    }
+    if (!selectedNode) return;
+    setGovernedFixtureRefs((current) => ({
+      ...current,
+      [selectedNode.id]: {
+        fixtureAssetId: asset.fixtureAssetId,
+        revision: asset.revision,
+        schemaFingerprint: asset.schemaFingerprint,
+      },
+    }));
+    setError('');
+  }, [selectedNode]);
+  const clearSelectedGovernedFixture = useCallback(() => {
+    if (!selectedNode) return;
+    setGovernedFixtureRefs((current) => {
+      const next = { ...current };
+      delete next[selectedNode.id];
+      return next;
+    });
+  }, [selectedNode]);
   const runSummary = useMemo(
     () => simulationRunSummary(canvasSummary, fixtureRows, result),
     [canvasSummary, fixtureRows, result],
@@ -9674,6 +9779,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
   }, [canvasNodes, operatorByRef]);
 
   const runSimulation = useCallback(async () => {
+    if (selectedGovernedFixtureStale) {
+      setError(t('The governed fixture schema is stale; recapture before simulating.'));
+      return;
+    }
     const startedAt = performance.now();
     if (isTaskWorkspace) {
       recordAuthorTaskEvent('RUN_STARTED', {
@@ -9691,13 +9800,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         canvasNodes,
         canvasEdges,
         outputNodeId,
-        fixtureCompilation.fixtures,
+        simulationFixtures,
         contextCompilation.value,
         graphInputSchema,
         effectiveGraphOutputSchema,
       ));
       showSimulationResponse(response);
       status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
+      if (status === 'PASSED' && spineEnabled && selectedIsResource) {
+        void fetchGovernedFixtureAssets(selectedOperator?.operatorRef)
+          .then(setGovernedFixtureAssets)
+          .catch(() => undefined);
+      }
     } catch (cause: unknown) {
       setError(String(cause));
     } finally {
@@ -9718,13 +9832,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     canvasEdges,
     canvasNodes,
     contextCompilation.value,
-    fixtureCompilation.fixtures,
+    simulationFixtures,
     effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
     isTaskWorkspace,
     outputNodeId,
+    selectedGovernedFixtureStale,
+    selectedIsResource,
+    selectedOperator?.operatorRef,
+    spineEnabled,
     showSimulationResponse,
+    t,
   ]);
 
   const runSimulationTable = useCallback(async () => {
@@ -9770,7 +9889,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             canvasNodes,
             canvasEdges,
             outputNodeId,
-            mergeNodeFixtures(fixtureCompilation.fixtures, testCase.fixtures),
+            mergeNodeFixtures(simulationFixtures, testCase.fixtures),
             testCase.context,
             graphInputSchema,
             effectiveGraphOutputSchema,
@@ -9830,7 +9949,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     canvasEdges,
     canvasNodes,
     evidenceCoordinateForScenario,
-    fixtureCompilation.fixtures,
+    simulationFixtures,
     effectiveGraphOutputSchema,
     graphName,
     graphInputSchema,
@@ -12380,12 +12499,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           <button
             className="primary"
             onClick={runSimulation}
-            disabled={busy || nodes.length === 0 || hasFixtureErrors || hasContextError}
+            disabled={busy || nodes.length === 0 || hasFixtureErrors || hasContextError || selectedGovernedFixtureStale}
             title={
               hasFixtureErrors
                 ? 'Fix fixture JSON before simulating.'
                 : hasContextError
                   ? 'Fix runtime context before simulating.'
+                  : selectedGovernedFixtureStale
+                    ? t('The governed fixture schema is stale; recapture before simulating.')
                   : undefined
             }
           >
@@ -13564,6 +13685,15 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           }}
           persistedScenarioDraftSet={scenarioDraftSet}
           onScenarioDraftSetChange={setScenarioDraftSet}
+          governedFixtureAssets={governedFixtureAssets}
+          governedFixtureRef={operatorDetailNode.id === selectedNode?.id
+            ? governedFixtureRefs[operatorDetailNode.id] : undefined}
+          governedFixtureStale={operatorDetailNode.id === selectedNode?.id
+            ? selectedGovernedFixtureStale : false}
+          onGovernedFixtureSelect={selectGovernedFixture}
+          onClearGovernedFixture={clearSelectedGovernedFixture}
+          resourceFidelity={resourceFidelity}
+          onResourceFidelityChange={setResourceFidelity}
           onCancel={cancelOperatorDetail}
           onApply={applyOperatorDetail}
           dirty={operatorDetailDirty}

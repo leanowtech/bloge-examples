@@ -363,6 +363,34 @@ describe('toSimulationRequest', () => {
     expect(request.draft.output.nodeId).toBe('b');
     expect(request).not.toHaveProperty('fixtures');
   });
+
+  it('serializes a governed reference without requiring local material', () => {
+    const request = toSimulationRequest(
+      'myGraph',
+      [{ id: 'resource', operatorRef: 'resource:payment', position: { x: 0, y: 0 } }],
+      [],
+      'resource',
+      {
+        resource: {
+          output: null,
+          governedRef: {
+            fixtureAssetId: 'payment',
+            revision: 4,
+            schemaFingerprint: 'sha256:schema',
+          },
+        },
+      },
+    );
+
+    expect(request.fixtures?.resource).toEqual({
+      output: null,
+      governedRef: {
+        fixtureAssetId: 'payment',
+        revision: 4,
+        schemaFingerprint: 'sha256:schema',
+      },
+    });
+  });
 });
 
 describe('toExportableGraphDraft', () => {

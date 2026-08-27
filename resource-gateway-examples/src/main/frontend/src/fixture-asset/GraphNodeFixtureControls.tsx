@@ -222,13 +222,15 @@ function GovernedFixturePromoteDialog({
   );
 }
 
-interface PickerAsset {
+export interface PickerAsset {
   fixtureAssetId: string;
   revision: number;
   name: string;
   schemaFingerprint: string;
   usageCount?: number;
   lifecycle?: string;
+  compatible?: boolean;
+  currentSchemaFingerprint?: string;
 }
 
 interface GraphNodeFixturePickerProps {
@@ -241,7 +243,8 @@ export function GraphNodeFixturePicker({ assets, onSelect }: GraphNodeFixturePic
   const { t } = useI18n();
   const [query, setQuery] = useState('');
   const visible = useMemo(() => assets.filter((asset) => (
-    asset.lifecycle === undefined || asset.lifecycle === 'ACTIVE'
+    (asset.lifecycle === undefined || asset.lifecycle === 'ACTIVE')
+    && (asset.compatible === undefined || asset.compatible)
   )).filter((asset) => `${asset.name} ${asset.fixtureAssetId}`.toLowerCase().includes(
     query.trim().toLowerCase(),
   )).sort((left, right) => left.name.localeCompare(right.name)), [assets, query]);
@@ -275,6 +278,8 @@ export function GraphNodeFixturePicker({ assets, onSelect }: GraphNodeFixturePic
 interface ResourceFidelitySelectProps {
   value?: ResourceFidelity;
   onChange: (value: ResourceFidelity) => void;
+  /** Only OUTPUT_LEVEL is currently executed by visual simulation. */
+  outputOnly?: boolean;
 }
 
 const FIDELITY_VALUES: readonly ResourceFidelity[] = [
@@ -282,15 +287,31 @@ const FIDELITY_VALUES: readonly ResourceFidelity[] = [
 ];
 
 /** Chooses one of the runtime's three declared resource simulation fidelities. */
-export function ResourceFidelitySelect({ value = 'OUTPUT_LEVEL', onChange }: ResourceFidelitySelectProps) {
+export function ResourceFidelitySelect({
+  value = 'OUTPUT_LEVEL',
+  onChange,
+  outputOnly = true,
+}: ResourceFidelitySelectProps) {
+  const { t } = useI18n();
   return (
     <select
-      aria-label="Resource fidelity"
+      aria-label={t('Resource fidelity')}
       data-testid="resource-fidelity-select"
       value={value}
       onChange={(event) => onChange(event.target.value as ResourceFidelity)}
     >
-      {FIDELITY_VALUES.map((candidate) => <option key={candidate} value={candidate}>{candidate}</option>)}
+      {FIDELITY_VALUES.map((candidate) => (
+        <option
+          key={candidate}
+          value={candidate}
+          disabled={outputOnly && candidate !== 'OUTPUT_LEVEL'}
+          title={outputOnly && candidate !== 'OUTPUT_LEVEL'
+            ? t('This fidelity is modelled only; visual simulation executes output-level fixtures.')
+            : undefined}
+        >
+          {candidate}
+        </option>
+      ))}
     </select>
   );
 }

@@ -1590,6 +1590,12 @@ export interface VisualGraphRunRecord {
 export interface NodeFixture {
   output: unknown;
   expectedInput?: unknown;
+  /** Exact server-governed fixture coordinate; material is never copied into the request. */
+  governedRef?: {
+    fixtureAssetId: string;
+    revision: number;
+    schemaFingerprint: string;
+  };
 }
 
 /** The body of POST /api/visual/graphs/simulate. */

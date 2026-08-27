@@ -5,6 +5,7 @@ export {
   ResourceFidelitySelect,
   SimulationFixtureControls,
 } from './GraphNodeFixtureControls';
+export type { PickerAsset } from './GraphNodeFixtureControls';
 export {
   fixtureSchemaStale,
   governedRefFromReceipt,

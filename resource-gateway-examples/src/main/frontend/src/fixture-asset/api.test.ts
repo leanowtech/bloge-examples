@@ -70,18 +70,14 @@ describe('fixture asset transport', () => {
   it('projects only ACTIVE metadata from the optional collection endpoint', async () => {
     setFixtureAssetTransport(async (input) => {
       expect(String(input)).toBe('/api/visual/fixture-assets');
-      return new Response(JSON.stringify({ items: [
+      return new Response(JSON.stringify({ data: [
         {
-          descriptor: {
-            fixtureAssetId: 'zeta', revision: 2, name: 'Zulu', lifecycle: 'ACTIVE',
-            schemaRef: { fingerprint: 'sha256:z' }, quality: { usageCount: 4 },
-          },
+          fixtureAssetId: 'zeta', revision: 2, name: 'Zulu', lifecycle: 'ACTIVE',
+          schemaRef: { fingerprint: 'sha256:z' }, usageCount: 4,
         },
         {
-          descriptor: {
-            fixtureAssetId: 'draft', revision: 1, name: 'Draft', lifecycle: 'DRAFT',
-            schemaRef: { fingerprint: 'sha256:d' }, quality: { usageCount: 0 },
-          },
+          fixtureAssetId: 'draft', revision: 1, name: 'Draft', lifecycle: 'DRAFT',
+          schemaRef: { fingerprint: 'sha256:d' }, usageCount: 0,
         },
       ] }), { status: 200 });
     });
@@ -94,5 +90,28 @@ describe('fixture asset transport', () => {
   it('treats an unavailable legacy collection endpoint as an empty picker', async () => {
     setFixtureAssetTransport(async () => new Response('', { status: 404 }));
     await expect(fetchGovernedFixtureAssets()).resolves.toEqual([]);
+    setFixtureAssetTransport(async () => new Response('', { status: 405 }));
+    await expect(fetchGovernedFixtureAssets()).resolves.toEqual([]);
+  });
+
+  it('passes the selected operator and preserves server compatibility metadata', async () => {
+    setFixtureAssetTransport(async (input) => {
+      expect(String(input)).toBe('/api/visual/fixture-assets?operatorRef=resource%3Apayment');
+      return new Response(JSON.stringify({ data: [{
+        fixtureAssetId: 'payment', revision: 3, name: 'Payment', lifecycle: 'ACTIVE',
+        schemaRef: { fingerprint: 'sha256:s' }, usageCount: 6,
+        compatibleWithOperatorRef: true, currentSchemaFingerprint: 'sha256:current',
+      }] }), { status: 200 });
+    });
+    await expect(fetchGovernedFixtureAssets('resource:payment')).resolves.toMatchObject([{
+      compatible: true, currentSchemaFingerprint: 'sha256:current', usageCount: 6,
+    }]);
+  });
+
+  it('fails closed for malformed successful responses', async () => {
+    setFixtureAssetTransport(async () => new Response(JSON.stringify({ data: { nope: true } }), { status: 200 }));
+    await expect(fetchGovernedFixtureAssets()).rejects.toThrow('invalid data payload');
+    setFixtureAssetTransport(async () => new Response(JSON.stringify({ data: [{}] }), { status: 200 }));
+    await expect(fetchGovernedFixtureAssets()).rejects.toThrow('invalid summary');
   });
 });
