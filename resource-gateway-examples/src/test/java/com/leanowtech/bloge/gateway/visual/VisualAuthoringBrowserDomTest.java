@@ -5118,6 +5118,8 @@ class VisualAuthoringBrowserDomTest {
             click(wait, By.cssSelector("[aria-label='Close start dialog']"));
             wait.until(ExpectedConditions.invisibilityOfElementLocated(
                     By.cssSelector("[data-testid='author-start-dialog']")));
+            wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                    By.cssSelector("[data-testid='author-start-backdrop']")));
         }
     }
 
