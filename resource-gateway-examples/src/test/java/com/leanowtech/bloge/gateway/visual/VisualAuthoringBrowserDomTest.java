@@ -802,6 +802,7 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='canvas-node:n1'] .port-handle.source",
                 "[data-testid='canvas-node:n2'] .port-handle.target");
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
+        openDataInspector(wait);
         click(wait, By.xpath(
                 "//button[contains(concat(' ', normalize-space(@class), ' '), ' mock-setup-row ')"
                         + " and .//span[normalize-space()='bloge:transform']]"));
