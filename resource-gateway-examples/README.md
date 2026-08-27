@@ -437,7 +437,46 @@ promotion request/provenance/staleness model and reusable pin/promote/picker
 controls. Its request matches the backend contract exactly: redaction paths are
 bounded, non-root JSON Pointers such as `/phone`, and no client provenance flag
 is sent. Only a complete governed fixture reference can produce `governed`; the
-controls are intentionally not mounted in AuthorCanvas yet (that is C1b).
+resource-node controls are mounted in AuthorCanvas.
+
+#### Governed fixture reuse and simulation (C1b)
+
+`GET /api/visual/fixture-assets` returns a payload-free
+`bloge.correctnessApi.v1` metadata envelope. The server authenticates the caller
+and derives the tenant, organization, project, environment, and region scope from
+that identity; caller-supplied scope is never accepted. Every row contains
+descriptor metadata, an integer reverse-index `usageCount`, and no fixture
+material or business payload. Responses are `Cache-Control: no-store`.
+
+The collection accepts `activeOnly` (default `true`), `limit` (default `50`,
+maximum `100`), `offset` (`0..100000`), and optional `operatorRef`. The fixture
+picker uses the default `ACTIVE` collection, defensively filters `ACTIVE` rows,
+and sorts by fixture name then id for deterministic display. When `operatorRef`
+is supplied, the service compares the fixture's schema fingerprint with the
+operator's current unique typed output schema and returns
+`currentSchemaFingerprint` plus a boolean `compatibleWithOperatorRef`; an absent
+comparison is treated as incompatible. A stale reference cannot be submitted for
+simulation.
+
+During `POST /api/visual/graphs/simulate`, a node-level governed reference is
+resolved only after an authenticated material-read in the exact server-derived
+scope. Resolution requires the exact ACTIVE revision, exact descriptor/schema
+closure, the referenced node in the submitted draft, that operator's current
+single non-opaque output schema, and a value that still validates against that
+schema. Protected material remains request-scoped and is never returned as
+catalog metadata. A successful simulation records an idempotent graph-consumer
+usage link; failures are payload-free.
+
+#### Decision scenario enumeration
+
+The decision-table workbench enumerates from the current editor snapshot with
+`per-rule` or bounded `combinatorial` mode and a cap from `1..10000`. Enumeration
+requires an authoritative target and contract fingerprint, records opaque or
+non-exhaustive coverage explicitly, and stratifies truncation toward boundaries.
+The supported output kinds are `object`, `scalar`, `plan`, and model-only
+`dispatch`. A persisted set is marked stale when its source fingerprint no
+longer matches the table; the explicit re-enumerate action rebuilds it from the
+current snapshot and contract evidence.
 
 The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
 segmented control in the global header; the choice persists across workspace navigation and reloads.
@@ -814,6 +853,7 @@ secret setup. A `staging` start fails closed unless both `RG_AUTHORING_FIXTURE_A
 | `POST http://localhost:8080/api/testing/suites/{suiteId}/stability-jobs` | Submit an exact stability request without blocking; returns `202`, deterministic `jobId`, query `Location`, and payload-free lifecycle (test/staging only; fresh submission requires the opt-in worker) |
 | `GET http://localhost:8080/api/testing/stability-jobs/{jobId}` | Read one organization/project-scoped durable job without exposing principal, request metadata, lease fence, cancellation fingerprint, or row seal (test/staging only) |
 | `POST http://localhost:8080/api/testing/stability-jobs/{jobId}/cancellations` | Idempotently cancel queued work or request cooperative running cancellation; every first command, including `COMMITTING`/terminal no-ops, commits one payload-free semantic audit event with the job mutation (test/staging only) |
+| `GET http://localhost:8080/api/visual/fixture-assets` | Read a payload-free, exact-scope governed fixture metadata page with deterministic ACTIVE picker ordering, compatibility metadata, and reverse-index usage counts |
 | `POST http://localhost:8080/api/testing/executions` | Run an isolated inline or governed fixture plan and retain sanitized evidence (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions` | Idempotently create an exact graph test at its first unique signal suspension (test/staging only) |
 | `POST http://localhost:8080/api/testing/durable-executions/operators/{operatorRef}` | Idempotently freeze an exact operator test at its server-owned start gate (test/staging only) |
