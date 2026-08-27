@@ -788,6 +788,42 @@ class VisualAuthoringBrowserDomTest {
                 "resource:browser-profile");
         assertThat(driver.findElements(By.cssSelector(
                 "[data-testid='external-api-opaque-warning']"))).isEmpty();
+
+        // Continue through the real compose surface: add the saved operator, persist the graph,
+        // publish the stored revision, and verify the server-refreshed publication facet.
+        click(wait, By.xpath("//*[@data-testid='external-api-card']//button[normalize-space()='Add to canvas']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n1'][data-operator-ref='resource:browser-profile']")));
+        typeControlValue(driver.findElement(By.id("operator-palette-search")), "Transform");
+        click(wait, By.cssSelector("[data-testid='operator-button:bloge:transform']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n2'][data-operator-ref='bloge:transform']")));
+        dragConnection(wait,
+                ".react-flow__node[data-id='n1'] .port-handle.source",
+                ".react-flow__node[data-id='n2'] .port-handle.target");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-edge-label']")));
+        waitForText(wait, By.cssSelector("[data-testid='author-graph-contract']"), "Input");
+        waitForText(wait, By.cssSelector("[data-testid='author-graph-contract']"), "Output");
+        setViewport(wait, 1280, 980);
+        assertPageNoHorizontalOverflow();
+        click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
+        waitForAnyText(wait, By.cssSelector("[data-testid='author-continuity-status']"),
+                "SAVED", "Saved");
+        wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector("[data-testid='tool-publish']"))).click();
+        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Browser API Tool");
+        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Published");
+        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Typed I/O");
+        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "#");
+        assertThat(driver.getCurrentUrl())
+                .contains("spine=v1")
+                .contains("toolId=browser-api-tool")
+                .contains("toolName=Browser+API+Tool")
+                .contains("stage=define");
+        click(wait, By.cssSelector("[data-testid='tool-palette-publication']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid^='tool-publication-signature:publication:']")));
+        assertPageNoHorizontalOverflow();
     }
 
     /**
