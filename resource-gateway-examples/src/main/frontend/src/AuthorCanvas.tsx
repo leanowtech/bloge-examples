@@ -157,6 +157,8 @@ import {
 import ContractRail from './contract-scenario/ContractRail';
 import {
   contractDraftFromGraphDraft,
+  type ExactTargetRef,
+  type EnterpriseScope,
   type ContractDraft,
   type ScenarioDraftSet,
   type VisualAuthoringWorkspaceBundle,
@@ -238,6 +240,8 @@ import {
 } from './author/input/authorRunInput';
 import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
 import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
+import { DecisionScenarioWorkbench } from './decision-scenario/DecisionScenarioWorkbench';
+import type { DecisionEditorSnapshot } from './decision-scenario/decisionScenarioModel';
 import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
@@ -786,6 +790,7 @@ interface DecisionTableRuleRow {
 interface DecisionTableEditorModel {
   hitPolicy: string;
   outputType: string;
+  outputKind?: 'scalar' | 'object' | 'plan' | 'dispatch';
   conditionColumns: DecisionTableColumn[];
   outputColumns: DecisionTableColumn[];
   rows: DecisionTableRuleRow[];
@@ -2038,6 +2043,9 @@ function decisionTableEditorModel(
     outputType: typeof config?.outputType === 'string' && config.outputType
       ? config.outputType
       : DEFAULT_DECISION_OUTPUT_TYPE,
+    outputKind: config?.outputKind === 'scalar' || config?.outputKind === 'plan' || config?.outputKind === 'dispatch'
+      ? config.outputKind
+      : 'object',
     conditionColumns: effectiveConditionColumns,
     outputColumns: effectiveOutputColumns,
     rows: rows.length > 0
@@ -2095,6 +2103,7 @@ function decisionTableConfigFromEditor(
     ...(existing ?? {}),
     hitPolicy: editor.hitPolicy || 'unique',
     outputType: editor.outputType || decisionOutputTypeFromColumns(outputColumns),
+    outputKind: editor.outputKind ?? 'object',
     conditionColumns: conditionColumns.map((column) => column.id),
     outputColumns: outputColumns.map((column) => column.id),
     rules: editor.rows.map((row, index) => {
@@ -2428,12 +2437,22 @@ function DecisionTableRuleEditor({
   onClose,
   onChange,
   embedded = false,
+  onConfigPatch,
+  scenarioTarget,
+  scenarioScope,
+  persistedScenarioDraftSet,
+  onScenarioDraftSetChange,
 }: {
   node: Node<NodeData>;
   incomingColumns: DecisionTableColumn[];
   onClose: () => void;
   onChange: (editor: DecisionTableEditorModel) => void;
   embedded?: boolean;
+  onConfigPatch?: (patch: Record<string, unknown>) => void;
+  scenarioTarget?: ExactTargetRef;
+  scenarioScope?: EnterpriseScope;
+  persistedScenarioDraftSet?: ScenarioDraftSet | null;
+  onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
 }) {
   const { t } = useI18n();
   const editor = decisionTableEditorModel(node.data.config, incomingColumns);
@@ -2634,6 +2653,18 @@ function DecisionTableRuleEditor({
             />
           </label>
         </div>
+        {resolveSpine(window.location.search) === 'v1' && scenarioTarget && scenarioScope && onScenarioDraftSetChange && (
+          <DecisionScenarioWorkbench
+            editor={editor as DecisionEditorSnapshot}
+            tableId={node.id}
+            target={scenarioTarget}
+            scope={scenarioScope}
+            owner={scenarioScope.tenantId}
+            persisted={persistedScenarioDraftSet ?? null}
+            onPersistedChange={onScenarioDraftSetChange}
+            onOutputKindChange={(outputKind) => onConfigPatch?.({ outputKind })}
+          />
+        )}
         <div className="rule-editor-column-tools">
           {incomingColumns.length > 0 && (
             <div className="rule-editor-incoming" data-testid="decision-incoming-inputs">
@@ -3862,6 +3893,10 @@ function OperatorDetailDialog({
   onDecisionChange,
   onTransformChange,
   onAcceptInference,
+  scenarioTarget,
+  scenarioScope,
+  persistedScenarioDraftSet,
+  onScenarioDraftSetChange,
 }: {
   node: Node<NodeData>;
   operator: OperatorDefinition | undefined;
@@ -3906,6 +3941,10 @@ function OperatorDetailDialog({
   onDecisionChange: (editor: DecisionTableEditorModel) => void;
   onTransformChange: (editor: TransformEditorModel) => void;
   onAcceptInference?: () => void;
+  scenarioTarget?: ExactTargetRef;
+  scenarioScope?: EnterpriseScope;
+  persistedScenarioDraftSet?: ScenarioDraftSet | null;
+  onScenarioDraftSetChange?: (draftSet: ScenarioDraftSet) => void;
 }) {
   const { t, d } = useI18n();
   const inputs = operator?.ports?.inputs ?? [];
@@ -4132,6 +4171,11 @@ function OperatorDetailDialog({
               onClose={onApply}
               onChange={onDecisionChange}
               embedded
+              onConfigPatch={onConfigPatch}
+              scenarioTarget={scenarioTarget}
+              scenarioScope={scenarioScope}
+              persistedScenarioDraftSet={persistedScenarioDraftSet}
+              onScenarioDraftSetChange={onScenarioDraftSetChange}
             />
             </div>
           )}
@@ -13505,6 +13549,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             operators: [...operatorByRef.values()],
             run: result,
           })}
+          scenarioTarget={operatorDetailDefinition?.fingerprint ? {
+            kind: 'OPERATOR',
+            id: operatorDetailDefinition.operatorRef,
+            revision: 1,
+            fingerprint: operatorDetailDefinition.fingerprint,
+          } : undefined}
+          scenarioScope={{
+            tenantId: exportableDraft.tenantId ?? '',
+            organizationId: '',
+            projectId: '',
+            environment: exportableDraft.environment ?? '',
+            region: '',
+          }}
+          persistedScenarioDraftSet={scenarioDraftSet}
+          onScenarioDraftSetChange={setScenarioDraftSet}
           onCancel={cancelOperatorDetail}
           onApply={applyOperatorDetail}
           dirty={operatorDetailDirty}

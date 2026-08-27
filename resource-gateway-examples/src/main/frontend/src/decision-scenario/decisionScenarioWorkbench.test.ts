@@ -1,0 +1,28 @@
+import { describe, expect, it } from 'vitest';
+import { decisionTableFromEditor, decisionTableSourceFingerprint, scenarioSetIsStale } from './decisionScenarioModel';
+
+const editor = {
+  hitPolicy: 'unique', outputType: '{ decision: String }',
+  conditionColumns: [{ id: 'score' }], outputColumns: [{ id: 'decision' }],
+  rows: [
+    { conditions: { score: 'score >= 720' }, outputs: { decision: 'approve' }, otherwise: false },
+    { conditions: { score: 'score < 720' }, outputs: { decision: 'review' }, otherwise: false },
+    { conditions: { score: '' }, outputs: { decision: 'decline' }, otherwise: true },
+  ],
+};
+
+describe('decision scenario workbench model', () => {
+  it('adapts the real editor rows into four compatible rules including otherwise output', () => {
+    const table = decisionTableFromEditor(editor, 'risk');
+    expect(table.rules).toHaveLength(3);
+    expect(table.rules[0]?.output).toEqual({ decision: 'approve' });
+    expect(table.rules[2]?.otherwise).toBe(true);
+    expect(decisionTableFromEditor({ ...editor, rows: [{ ...editor.rows[0], conditions: { score: '>= 720' } }] }).rules[0]?.conditions?.score).toBe('score >= 720');
+  });
+
+  it('fingerprints equivalent editor snapshots deterministically and detects stale source', () => {
+    const first = decisionTableSourceFingerprint(editor, 'risk');
+    expect(first).toBe(decisionTableSourceFingerprint(structuredClone(editor), 'risk'));
+    expect(scenarioSetIsStale(editor, { metadata: { provenance: { sourceFingerprint: 'sha256:changed' } } } as never, 'risk')).toBe(true);
+  });
+});

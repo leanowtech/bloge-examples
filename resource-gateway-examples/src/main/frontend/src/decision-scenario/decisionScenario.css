@@ -1,0 +1,7 @@
+.decision-scenario-workbench { margin: 14px 0; padding: 12px; border: 1px solid var(--border-subtle, #d8dee8); border-radius: 8px; background: var(--surface-raised, #fff); }
+.decision-scenario-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.decision-scenario-controls label { display: grid; gap: 4px; font-size: 12px; }
+.decision-scenario-controls select, .decision-scenario-controls input { min-height: 30px; }
+.decision-scenario-preview, .decision-scenario-error, .decision-scenario-stale { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 10px; font-size: 12px; }
+.decision-scenario-preview strong, .decision-scenario-warning, .decision-scenario-stale { color: #9a6700; }
+.decision-scenario-error { color: #b42318; }
