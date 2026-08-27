@@ -103,7 +103,6 @@ import com.leanowtech.bloge.gateway.operator.UrlTemplateRenderer;
 import com.leanowtech.bloge.gateway.testing.security.ExecutionControlBoundaryGuardFilter;
 import com.leanowtech.bloge.gateway.testing.api.FixtureBundleRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRepository;
-import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.resource.DatabaseResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
 import com.leanowtech.bloge.gateway.resource.WritableResourceRegistry;
