@@ -802,17 +802,9 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='canvas-node:n1'] .port-handle.source",
                 "[data-testid='canvas-node:n2'] .port-handle.target");
         wait.until(ignored -> !driver.findElements(By.cssSelector(".react-flow__edge")).isEmpty());
-        openDataInspector(wait);
-        click(wait, By.xpath(
-                "//button[contains(concat(' ', normalize-space(@class), ' '), ' mock-setup-row ')"
-                        + " and .//span[normalize-space()='bloge:transform']]"));
-        openDataInspector(wait);
-        WebElement outputControl = wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector(".output-control")));
-        if (!outputControl.getText().contains("Selected as simulation output.")) {
-            click(wait, By.cssSelector(".output-control button"));
-        }
-        waitForText(wait, By.cssSelector(".output-control"), "Selected as simulation output.");
+        selectCanvasNodeFromNavigator(wait, "bloge:transform", "n2");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n2'] .output-pill")));
         setViewport(wait, 1280, 980);
         assertPageNoHorizontalOverflow();
         click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
@@ -5803,6 +5795,27 @@ class VisualAuthoringBrowserDomTest {
                 element
         );
         return width.doubleValue();
+    }
+
+    /**
+     * Selects a node through the visible task navigator rather than relying on canvas hit testing.
+     *
+     * <p>The navigator owns the same selection state as the graph and remains available after a
+     * native edge drag, so this is a real user path that is stable across canvas geometry.</p>
+     *
+     * @param wait browser wait used to resolve the finder and selected result
+     * @param operatorRef operator reference shown in the finder
+     * @param nodeId expected node identifier selected by the finder
+     */
+    private void selectCanvasNodeFromNavigator(WebDriverWait wait, String operatorRef, String nodeId) {
+        WebElement finder = wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
+                "[data-testid='canvas-navigator'] input[aria-label='Find canvas node']")));
+        typeControlValue(finder, operatorRef);
+        click(wait, By.cssSelector("[data-testid='canvas-node-result:" + nodeId + "']"));
+        wait.until(ExpectedConditions.attributeContains(
+                By.cssSelector("[data-testid='canvas-node:" + nodeId + "']"),
+                "class",
+                "selected"));
     }
 
     private void openDataInspector(WebDriverWait wait) {
