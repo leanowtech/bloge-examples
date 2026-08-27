@@ -5068,9 +5068,14 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void waitForLifecycle(WebDriverWait wait, String lifecycle) {
-        wait.until(ExpectedConditions.attributeTo(
-                By.cssSelector(".trace-list [data-testid='fixture-governance-lifecycle']"),
-                "data-lifecycle", lifecycle));
+        By locator = By.cssSelector(".trace-list [data-testid='fixture-governance-lifecycle']");
+        wait.until(ignored -> {
+            try {
+                return lifecycle.equals(driver.findElement(locator).getAttribute("data-lifecycle"));
+            } catch (NoSuchElementException | StaleElementReferenceException ignoredException) {
+                return false;
+            }
+        });
     }
 
     private StoredFixtureAsset fixtureHead(String fixtureId) {
