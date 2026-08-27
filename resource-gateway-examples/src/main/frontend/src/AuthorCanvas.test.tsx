@@ -1706,7 +1706,7 @@ describe('AuthorCanvas built-in canvas examples', () => {
     expect(query('[data-testid="legacy-dsl-import"]').textContent).toContain('Legacy DSL');
 
     await click(query<HTMLButtonElement>('[aria-label="Close start dialog"]'));
-    await click(query<HTMLButtonElement>('.author-secondary-actions button:first-child'));
+    await click(buttonByText('Import'));
     expect(query<HTMLAnchorElement>('[data-testid="author-start-choice:library"]').getAttribute('href'))
       .toBe('/libraries/');
   });
