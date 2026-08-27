@@ -145,7 +145,11 @@ export function representativeValues(column: DecisionColumn, predicates: ParsedP
   if (unique.length === 0 && (column.type === 'integer' || column.type === 'number')) return [0];
   if (unique.length === 0 && column.type === 'string') return [''];
   if (column.type === 'number' || column.type === 'integer') {
-    return unique.filter((value): value is number => typeof value === 'number' && Number.isFinite(value)).sort((a, b) => a - b);
+    const numeric = unique.filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+    const thresholds = relevant.flatMap((predicate) => predicate.kind === 'comparison' ? [predicate.value] : predicate.kind === 'range' ? [predicate.lower, predicate.upper] : []);
+    const epsilon = column.type === 'integer' ? 1 : 0.000001;
+    const neighborhoods = thresholds.flatMap((threshold) => [threshold - epsilon, threshold, threshold + epsilon]);
+    return dedupe([...neighborhoods, ...numeric]).filter((value): value is number => typeof value === 'number').sort((a, b) => a - b);
   }
   if (column.type === 'boolean') return dedupe([false, true, ...unique.filter((value): value is boolean => typeof value === 'boolean')]);
   return unique;
@@ -173,13 +177,18 @@ export function evalDecisionTable(table: DecisionTable, input: Record<string, un
 export function pickCombo(table: DecisionTable, ruleId: string, cap = 500): Record<string, unknown> | null {
   const rule = table.rules.find((candidate) => candidate.id === ruleId);
   if (!rule) return null;
-  const domains = domainsFor(table);
+  const domains = domainsFor(table, rule);
   const product = boundedCartesian(domains, Math.max(1, cap));
   for (const combo of product.combinations) {
     if (rule.otherwise) {
       const evalResult = evalDecisionTable(table, combo);
       if (evalResult.status === 'MATCHED' && evalResult.ruleId === rule.id) return combo;
     } else if (ruleMatches(rule, combo, true).matches) {
+      if (table.hitPolicy === 'unique') {
+        const evaluation = evalDecisionTable(table, combo);
+        if (evaluation.status !== 'MATCHED' || evaluation.ruleId !== rule.id) continue;
+        return combo;
+      }
       const preceding = table.rules.slice(0, table.rules.indexOf(rule));
       const intercepted = preceding.some((higher) => !higher.otherwise && ruleMatches(higher, combo, true).matches);
       if (!intercepted) return combo;
@@ -197,8 +206,8 @@ export function boundedCartesian(valuesByColumn: Record<string, unknown[]>, cap:
   const total = values.reduce((count, domain) => Math.min(Number.MAX_SAFE_INTEGER, count * domain.length), 1);
   const count = Math.min(total, boundedCap);
   const combinations: Array<Record<string, unknown>> = [];
-  for (let ordinal = 0; ordinal < count; ordinal += 1) {
-    const index = total <= boundedCap || count === 1 ? ordinal : Math.floor((ordinal * (total - 1)) / (count - 1));
+  const indexes = total <= boundedCap ? [...Array(count).keys()] : stratifiedIndexes(values, count, total);
+  for (const index of indexes) {
     let remainder = index;
     const combination: Record<string, unknown> = {};
     for (let dimension = values.length - 1; dimension >= 0; dimension -= 1) {
@@ -211,6 +220,25 @@ export function boundedCartesian(valuesByColumn: Record<string, unknown[]>, cap:
     combinations.push(combination);
   }
   return { combinations, truncated: total > boundedCap, strategy: total > boundedCap ? 'STRATIFIED' : 'EXHAUSTIVE', totalCombinations: total, emittedCombinations: combinations.length };
+}
+
+/** Selects corners before evenly spaced products so booleans and range boundaries survive truncation. */
+function stratifiedIndexes(domains: unknown[][], count: number, total: number): number[] {
+  const prioritized = new Set<number>([0, total - 1]);
+  for (let dimension = 0; dimension < domains.length; dimension += 1) {
+    let multiplier = 1;
+    for (let next = dimension + 1; next < domains.length; next += 1) multiplier *= domains[next]?.length ?? 1;
+    const last = (domains[dimension]?.length ?? 1) - 1;
+    prioritized.add(last * multiplier);
+    prioritized.add(total - 1 - last * multiplier);
+  }
+  const selected = [...prioritized].filter((index) => index >= 0 && index < total).slice(0, count);
+  for (let ordinal = 0; selected.length < count && ordinal < count * 4; ordinal += 1) {
+    const candidate = Math.floor((ordinal * (total - 1)) / Math.max(1, count * 4 - 1));
+    if (!selected.includes(candidate)) selected.push(candidate);
+  }
+  for (let index = 0; selected.length < count && index < total; index += 1) if (!selected.includes(index)) selected.push(index);
+  return selected.slice(0, count);
 }
 
 /** Enumerates per-rule or combinatorial scenarios and preserves the existing ScenarioDraft wire shape. */
@@ -249,9 +277,20 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
   return { scenarios, draftSet, metadata: { mode: options.mode, cap, truncated: product.truncated, strategy: product.strategy, exhaustive: opaqueColumns.length === 0 && !product.truncated, provenance: 'DECISION_TABLE_ENUMERATION', sourceFingerprint, opaqueColumns, diagnostics: opaqueColumns.length ? ['Opaque predicates use author samples and are not exhaustive.'] : [] } };
 }
 
-function domainsFor(table: DecisionTable): Record<string, unknown[]> {
+function domainsFor(table: DecisionTable, focusRule?: DecisionRule): Record<string, unknown[]> {
   const parsed = allPredicates(table);
-  return Object.fromEntries(table.columns.map((column) => [column.name, representativeValues(column, parsed.filter((entry) => entry.column === column.name).map((entry) => entry.predicate))]));
+  return Object.fromEntries(table.columns.map((column) => {
+    const values = representativeValues(column, parsed.filter((entry) => entry.column === column.name).map((entry) => entry.predicate));
+    if (!focusRule || focusRule.otherwise || !focusRule.conditions?.[column.name]) return [column.name, values];
+    const condition = focusRule.conditions[column.name];
+    const predicates = typeof condition === 'string' ? splitConjunction(condition).map((part) => parsePredicate(part, column.name)) : [condition as ParsedPredicate];
+    const ordered = [...values].sort((left, right) => {
+      const leftScore = predicates.every((predicate) => predicate.kind === 'opaque' || evaluatePredicate(predicate, left)) ? 0 : 1;
+      const rightScore = predicates.every((predicate) => predicate.kind === 'opaque' || evaluatePredicate(predicate, right)) ? 0 : 1;
+      return leftScore - rightScore;
+    });
+    return [column.name, ordered];
+  }));
 }
 
 function allPredicates(table: DecisionTable): Array<{ column: string; predicate: ParsedPredicate }> {

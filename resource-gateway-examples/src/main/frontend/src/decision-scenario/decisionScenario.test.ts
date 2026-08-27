@@ -46,6 +46,7 @@ describe('decision scenario enumeration', () => {
   it('picks a representative combo for a rule without being intercepted by higher rules', () => {
     expect(pickCombo(table, 'review')).toEqual({ score: 680, segment: 'A' });
     expect(pickCombo(table, 'decline')).not.toBeNull();
+    expect(pickCombo({ ...table, rules: [{ id: 'a', conditions: { score: 'score >= 0' }, output: 'a' }, { id: 'b', conditions: { score: 'score >= 0' }, output: 'b' }] }, 'b')).toBeNull();
   });
 
   it('reports deterministic truncation metadata from bounded cartesian products', () => {
@@ -53,6 +54,7 @@ describe('decision scenario enumeration', () => {
     const second = boundedCartesian({ a: [1, 2, 3], b: ['x', 'y', 'z'] }, 4);
     expect(first).toEqual(second);
     expect(first).toMatchObject({ truncated: true, strategy: 'STRATIFIED', totalCombinations: 9, emittedCombinations: 4 });
+    expect(first.combinations).toEqual(expect.arrayContaining([{ a: 1, b: 'x' }, { a: 1, b: 'z' }, { a: 3, b: 'x' }, { a: 3, b: 'z' }]));
   });
 
   it('emits ScenarioDraft-compatible deterministic scenarios and truthful opaque metadata', () => {
