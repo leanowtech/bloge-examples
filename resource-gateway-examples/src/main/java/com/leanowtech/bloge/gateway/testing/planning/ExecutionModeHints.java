@@ -67,6 +67,16 @@ public final class ExecutionModeHints {
             return put(invocationSiteId, ruleId, ExecutionMode.SCHEMA_STANDIN);
         }
 
+        /** Adds a descriptor protocol execution hint for one exact site/rule pair. */
+        public Builder descriptorProtocol(String invocationSiteId, String ruleId) {
+            return put(invocationSiteId, ruleId, ExecutionMode.DESCRIPTOR_PROTOCOL);
+        }
+
+        /** Adds a descriptor transport execution hint for one exact site/rule pair. */
+        public Builder descriptorTransport(String invocationSiteId, String ruleId) {
+            return put(invocationSiteId, ruleId, ExecutionMode.DESCRIPTOR_TRANSPORT);
+        }
+
         /** Adds one exact server-owned world-delegate site/rule pair. */
         public Builder worldDelegate(String invocationSiteId, String ruleId) {
             return put(invocationSiteId, ruleId, ExecutionMode.WORLD_DELEGATE);

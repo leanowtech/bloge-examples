@@ -97,7 +97,13 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
 
             ExecutionModeHints.Builder hints = ExecutionModeHints.builder();
             for (VisualSimulationPlan.Standin standin : plan.standins()) {
-                hints.schemaStandin(siteFor(standin.originalNodeId()), ruleId(standin));
+                if (standin.resourceFidelity() == ResourceFidelity.PROTOCOL_DERIVED) {
+                    hints.descriptorProtocol(siteFor(standin.originalNodeId()), ruleId(standin));
+                } else if (standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL) {
+                    hints.descriptorTransport(siteFor(standin.originalNodeId()), ruleId(standin));
+                } else {
+                    hints.schemaStandin(siteFor(standin.originalNodeId()), ruleId(standin));
+                }
             }
             var compiled = new ExecutionControlCompiler(registry, objectMapper)
                     .compileWithExecutionModeHints(

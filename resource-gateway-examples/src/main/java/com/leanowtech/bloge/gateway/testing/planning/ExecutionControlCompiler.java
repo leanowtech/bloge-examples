@@ -907,6 +907,24 @@ public class ExecutionControlCompiler {
                 modes.put(rule.ruleId(), hint.getValue());
                 continue;
             }
+            if (hint.getValue() == ExecutionMode.DESCRIPTOR_PROTOCOL
+                    || hint.getValue() == ExecutionMode.DESCRIPTOR_TRANSPORT) {
+                FixtureRule.Behavior behavior = rule.behavior();
+                boolean transport = hint.getValue() == ExecutionMode.DESCRIPTOR_TRANSPORT;
+                if (behavior.kind() != FixtureRule.BehaviorKind.RETURN
+                        || behavior.value() != null || behavior.statusCode() == null
+                        || behavior.boundary() != (transport ? FixtureRule.DoubleBoundary.TRANSPORT : FixtureRule.DoubleBoundary.NODE)) {
+                    reject("CONTROL_PLAN_DESCRIPTOR_FIXTURE_SHAPE_INVALID",
+                            "Descriptor execution hints require a raw response RETURN shape.");
+                }
+                ExecutionMode existing = modes.get(rule.ruleId());
+                if (existing != null && existing != hint.getValue()) {
+                    reject("CONTROL_PLAN_EXECUTION_MODE_MISMATCH",
+                            "Execution-mode hint conflicts with compiled fixture semantics.");
+                }
+                modes.put(rule.ruleId(), hint.getValue());
+                continue;
+            }
             if (hint.getValue() != ExecutionMode.SCHEMA_STANDIN) {
                 reject("CONTROL_PLAN_EXECUTION_MODE_HINT_UNSUPPORTED",
                         "Execution-mode hint is not supported by the stage-zero runtime.");

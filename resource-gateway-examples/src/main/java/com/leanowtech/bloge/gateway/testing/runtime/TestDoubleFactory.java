@@ -573,7 +573,9 @@ public class TestDoubleFactory {
                 recorder.markFidelity(site, "SCHEMA_STANDIN");
                 recorder.markControlMode(site, "SCHEMA_STANDIN");
                 output = behavior.value();
-            } else if (classifiedMode == ExecutionMode.DESCRIPTOR_PROTOCOL
+            } else if (compiledMode == ExecutionMode.DESCRIPTOR_PROTOCOL
+                    || compiledMode == ExecutionMode.DESCRIPTOR_TRANSPORT
+                    || classifiedMode == ExecutionMode.DESCRIPTOR_PROTOCOL
                     || classifiedMode == ExecutionMode.DESCRIPTOR_TRANSPORT) {
                 if (resourceRuntime == null) {
                     throw new TestControlException("RESOURCE_FIXTURE_RUNTIME_UNAVAILABLE",
