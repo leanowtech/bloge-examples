@@ -5125,10 +5125,8 @@ class VisualAuthoringBrowserDomTest {
      * Clicks the visible v2 Graph simulation action while avoiding duplicate hidden legacy chrome.
      */
     private void clickVisibleGraphSimulation(WebDriverWait wait) {
-        click(wait, By.xpath(
-                "//*[contains(concat(' ', normalize-space(@class), ' '), ' workspace-v2 ')]"
-                        + "//button[contains(concat(' ', normalize-space(@class), ' '), ' primary ')"
-                        + " and normalize-space()='Simulate']"));
+        click(wait, By.cssSelector(
+                ".workspace-v2 [data-testid='author-graph-simulate']"));
     }
 
     private void waitForLifecycle(WebDriverWait wait, String lifecycle) {
