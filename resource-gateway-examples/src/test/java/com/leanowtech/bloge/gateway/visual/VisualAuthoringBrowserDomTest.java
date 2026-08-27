@@ -457,6 +457,7 @@ class VisualAuthoringBrowserDomTest {
                 IntegrationRequestAuthenticator authenticator) {
             return new FixtureAssetCollectionController(service, authenticator);
         }
+
     }
 
     /** Test-only visible account handoff; it deliberately exposes no credential value. */
@@ -5098,11 +5099,18 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='operator-button:resource:order-service.listOrders']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='canvas-node:n1']")));
+        Set<String> firstGraphDraftIdsBeforeSave = graphDraftIds();
         saveAuthorWorkspace(wait);
-        String firstGraphDraftId = graphDraftRepository.all().stream()
-                .map(draft -> draft.draftId())
+        Set<String> firstGraphDraftIdsAfterSave = graphDraftIds();
+        String firstGraphDraftId = firstGraphDraftIdsAfterSave.stream()
+                .filter(candidate -> !firstGraphDraftIdsBeforeSave.contains(candidate))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("First visible graph was not persisted."));
+                .orElseThrow(() -> new AssertionError(
+                        "First visible graph save did not create a draft: before="
+                                + firstGraphDraftIdsBeforeSave + ", after=" + firstGraphDraftIdsAfterSave));
+        assertThat(firstGraphDraftIdsAfterSave)
+                .containsAll(firstGraphDraftIdsBeforeSave)
+                .hasSize(firstGraphDraftIdsBeforeSave.size() + 1);
         click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] summary"));
         click(wait, By.xpath("//button[normalize-space()='Add Context Extra']"));
@@ -5177,12 +5185,15 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='operator-button:resource:order-service.listOrders']"));
         WebElement secondNode = wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='canvas-node:n1']")));
+        Set<String> secondGraphDraftIdsBeforeSave = graphDraftIds();
         saveAuthorWorkspace(wait);
-        String secondGraphDraftId = graphDraftRepository.all().stream()
-                .map(draft -> draft.draftId())
-                .filter(candidate -> !candidate.equals(firstGraphDraftId))
+        Set<String> secondGraphDraftIdsAfterSave = graphDraftIds();
+        String secondGraphDraftId = secondGraphDraftIdsAfterSave.stream()
+                .filter(candidate -> !secondGraphDraftIdsBeforeSave.contains(candidate))
                 .findFirst()
-                .orElseThrow(() -> new AssertionError("Second visible graph was not persisted."));
+                .orElseThrow(() -> new AssertionError(
+                        "Second visible graph save did not create a draft: before="
+                                + secondGraphDraftIdsBeforeSave + ", after=" + secondGraphDraftIdsAfterSave));
         assertThat(secondGraphDraftId).isNotEqualTo(firstGraphDraftId);
         new Actions(driver).doubleClick(secondNode).perform();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
@@ -5195,11 +5206,15 @@ class VisualAuthoringBrowserDomTest {
 
         for (String fidelity : List.of("OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL")) {
             selectByValue(wait, By.cssSelector("[data-testid='resource-fidelity-select']"), fidelity);
+            String selectedFidelity = new Select(driver.findElement(
+                    By.cssSelector("[data-testid='resource-fidelity-select']")))
+                    .getFirstSelectedOption().getAttribute("value");
+            assertThat(selectedFidelity).isEqualTo(fidelity);
             click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
             wait.until(ExpectedConditions.invisibilityOfElementLocated(
                     By.cssSelector("[data-testid='operator-detail-dialog']")));
             clickVisibleGraphSimulation(wait);
-            waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), fidelity);
+            waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), selectedFidelity);
             assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                     .as("usage count for %s", fidelity)
                     .isEqualTo(1);
@@ -5295,6 +5310,18 @@ class VisualAuthoringBrowserDomTest {
     private StoredFixtureAsset fixtureHead(String fixtureId) {
         return fixtureAssetRepository.findHead(BROWSER_FIXTURE_SCOPE, fixtureId).orElseThrow(
                 () -> new AssertionError("Fixture head is not readable after visible action: " + fixtureId));
+    }
+
+    /**
+     * Returns the currently persisted graph identities so a visible save can be proven to create
+     * a new draft without accidentally selecting a seeded or previously recovered graph.
+     *
+     * @return immutable snapshot of persisted graph draft ids
+     */
+    private Set<String> graphDraftIds() {
+        return graphDraftRepository.all().stream()
+                .map(draft -> draft.draftId())
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private WebDriver newChromeDriverOrSkip() {
