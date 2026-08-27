@@ -138,6 +138,57 @@ class FixtureCatalogServiceTest {
     }
 
     @Test
+    void allowsApprovalAfterOnlyReviewerRedactionAttestationChanges() {
+        receipt = receipt(false);
+        service.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        service.submitForReview(scope(), "prime-applicant", 1, author());
+
+        StoredFixtureAsset verified = serviceWith(
+                (reviewScope, fixture, reviewer) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview())
+                .verifyForApproval(
+                        scope(), "prime-applicant", 2,
+                        new FixtureReviewVerificationRequest(true, true, "Independent review"), owner());
+
+        assertThat(verified.descriptor().redaction().reviewed()).isTrue();
+        assertThat(service.approve(scope(), "prime-applicant", 3, owner())
+                .descriptor().lifecycle()).isEqualTo(FixtureLifecycle.APPROVED);
+    }
+
+    @Test
+    void rejectsProtectedRedactionProfileVersionDriftAfterVerification() {
+        receipt = receipt(false);
+        service.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        service.submitForReview(scope(), "prime-applicant", 1, author());
+        serviceWith((reviewScope, fixture, reviewer) ->
+                FixtureReviewAuthorizer.ApprovalDecision.ownerReview()).verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Independent review"), owner());
+        receipt = receipt(true, "redaction-tampered", List.of("/phone"));
+
+        assertThatThrownBy(() -> service.approve(scope(), "prime-applicant", 3, owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_MATERIAL_BINDING_MISMATCH");
+    }
+
+    @Test
+    void rejectsProtectedRedactedPathsDriftAfterVerification() {
+        receipt = receipt(false);
+        service.saveDraft(0, descriptor(0, FixtureLifecycle.DRAFT, owner()), author());
+        service.submitForReview(scope(), "prime-applicant", 1, author());
+        serviceWith((reviewScope, fixture, reviewer) ->
+                FixtureReviewAuthorizer.ApprovalDecision.ownerReview()).verifyForApproval(
+                scope(), "prime-applicant", 2,
+                new FixtureReviewVerificationRequest(true, true, "Independent review"), owner());
+        receipt = receipt(true, "redaction-v2", List.of("/email"));
+
+        assertThatThrownBy(() -> service.approve(scope(), "prime-applicant", 3, owner()))
+                .isInstanceOf(FixtureCatalogCommandException.class)
+                .extracting(error -> ((FixtureCatalogCommandException) error).code())
+                .isEqualTo("RG.CORRECTNESS.FIXTURE_MATERIAL_BINDING_MISMATCH");
+    }
+
+    @Test
     void rejectsIncompleteUnauthorizedSameCreatorAndStaleReviewVerification() {
         FixtureCatalogService reviewerService = serviceWith(
                 (reviewScope, fixture, reviewer) -> FixtureReviewAuthorizer.ApprovalDecision.ownerReview());
@@ -293,6 +344,15 @@ class FixtureCatalogServiceTest {
     }
 
     private static Receipt receipt() {
+        return receipt(true);
+    }
+
+    private static Receipt receipt(boolean reviewed) {
+        return receipt(reviewed, "redaction-v2", List.of("/phone"));
+    }
+
+    private static Receipt receipt(
+            boolean reviewed, String profileVersion, List<String> redactedPaths) {
         return new Receipt(
                 "", "prime-applicant", asset("FIXTURE_MATERIAL", "prime-applicant", 1, 'c'),
                 fingerprint('c'), new FixtureSource(SourceKind.INCIDENT_CAPTURE,
@@ -301,7 +361,7 @@ class FixtureCatalogServiceTest {
                 new ExactTargetRef(TargetKind.GRAPH, "loan-graph", 7, fingerprint('a')),
                 schema(), "RESTRICTED",
                 new RetentionDescriptor("retention-v2", 1, NOW.plusSeconds(86_400)),
-                new RedactionDescriptor("redaction-v2", List.of("/phone"), true),
+                new RedactionDescriptor(profileVersion, redactedPaths, reviewed),
                 List.of(asset("INCIDENT", "incident-17", 2, 'd')), true, false);
     }
 

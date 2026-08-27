@@ -348,7 +348,7 @@ public class FixtureCatalogService {
                 && receipt.source().equals(descriptor.source())
                 && receipt.classification().equals(descriptor.classification())
                 && receipt.retention().equals(descriptor.retention())
-                && receipt.redaction().equals(descriptor.redaction());
+                && sameMaterialRedactionFacts(receipt.redaction(), descriptor.redaction());
         if (!matches) {
             throw failure("RG.CORRECTNESS.FIXTURE_MATERIAL_BINDING_MISMATCH",
                     "Fixture descriptor does not match the protected material receipt");
@@ -358,6 +358,26 @@ public class FixtureCatalogService {
                     "Fixture material retention elapsed before catalog activation");
         }
         return receipt;
+    }
+
+    /**
+     * Compares the protected material facts of two redaction descriptors.
+     *
+     * <p>The profile version and redacted paths are emitted by the material producer and are
+     * immutable closure facts. The {@code reviewed} flag is deliberately excluded: it is a
+     * catalog reviewer attestation that may advance from {@code false} to {@code true} on the
+     * next descriptor revision after independent verification. All other receipt closure fields
+     * remain strict comparisons in {@link #requireExactClosure(FixtureAssetDescriptor)}.</p>
+     *
+     * @param receiptRedaction protected redaction facts recorded with the material receipt
+     * @param descriptorRedaction redaction facts recorded with the catalog descriptor
+     * @return whether both descriptors describe the same protected redaction material
+     */
+    private static boolean sameMaterialRedactionFacts(
+            FixtureAssetDescriptor.RedactionDescriptor receiptRedaction,
+            FixtureAssetDescriptor.RedactionDescriptor descriptorRedaction) {
+        return Objects.equals(receiptRedaction.profileVersion(), descriptorRedaction.profileVersion())
+                && Objects.equals(receiptRedaction.redactedPaths(), descriptorRedaction.redactedPaths());
     }
 
     private static FixtureAssetDescriptor normalized(
