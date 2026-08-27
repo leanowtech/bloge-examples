@@ -240,16 +240,11 @@ import {
 } from './author/input/authorRunInput';
 import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
 import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
-import { DecisionScenarioWorkbench } from './decision-scenario/DecisionScenarioWorkbench';
 import type { DecisionEditorSnapshot } from './decision-scenario/decisionScenarioModel';
 import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
 import {
-  FixtureStalenessNotice,
-  GraphNodeFixturePicker,
-  ResourceFidelitySelect,
-  SimulationFixtureControls,
   fetchGovernedFixtureAssets,
   promoteGraphNodeFixture,
   type GovernedFixtureAssetSummary,
@@ -327,6 +322,19 @@ import {
 const ContractScenarioWorkspace = lazy(
   () => import('./contract-scenario/ContractScenarioWorkspace'),
 );
+const DecisionScenarioWorkbench = lazy(
+  () => import('./decision-scenario/DecisionScenarioWorkbench').then((module) => ({
+    default: module.DecisionScenarioWorkbench,
+  })),
+);
+const GraphNodeFixturePicker = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
+  .then((module) => ({ default: module.GraphNodeFixturePicker })));
+const FixtureStalenessNotice = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
+  .then((module) => ({ default: module.FixtureStalenessNotice })));
+const ResourceFidelitySelect = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
+  .then((module) => ({ default: module.ResourceFidelitySelect })));
+const SimulationFixtureControls = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
+  .then((module) => ({ default: module.SimulationFixtureControls })));
 
 interface NodeData {
   label: string;
@@ -2659,16 +2667,18 @@ function DecisionTableRuleEditor({
           </label>
         </div>
         {resolveSpine(window.location.search) === 'v1' && scenarioTarget && scenarioScope && onScenarioDraftSetChange && (
-          <DecisionScenarioWorkbench
-            editor={editor as DecisionEditorSnapshot}
-            tableId={node.id}
-            target={scenarioTarget}
-            scope={scenarioScope}
-            owner={scenarioScope.tenantId}
-            persisted={persistedScenarioDraftSet ?? null}
-            onPersistedChange={onScenarioDraftSetChange}
-            onOutputKindChange={(outputKind) => onConfigPatch?.({ outputKind })}
-          />
+          <Suspense fallback={<p className="muted" role="status">{t('Loading scenario tools…')}</p>}>
+            <DecisionScenarioWorkbench
+              editor={editor as DecisionEditorSnapshot}
+              tableId={node.id}
+              target={scenarioTarget}
+              scope={scenarioScope}
+              owner={scenarioScope.tenantId}
+              persisted={persistedScenarioDraftSet ?? null}
+              onPersistedChange={onScenarioDraftSetChange}
+              onOutputKindChange={(outputKind) => onConfigPatch?.({ outputKind })}
+            />
+          </Suspense>
         )}
         <div className="rule-editor-column-tools">
           {incomingColumns.length > 0 && (
@@ -4111,14 +4121,21 @@ function OperatorDetailDialog({
             {node.data.operatorRef.startsWith('resource:') && (
               <section className="fixture-asset-reuse" data-testid="fixture-asset-reuse">
                 <h3>{t('Governed fixture reuse')}</h3>
-                <GraphNodeFixturePicker
-                  assets={governedFixtureAssets}
-                  onSelect={onGovernedFixtureSelect}
-                />
-                <FixtureStalenessNotice
-                  stale={governedFixtureStale}
-                  onRecapture={onClearGovernedFixture}
-                />
+                <Suspense fallback={<p className="muted" role="status">{t('Loading fixture controls…')}</p>}>
+                  <GraphNodeFixturePicker
+                    assets={governedFixtureAssets}
+                    onSelect={onGovernedFixtureSelect}
+                  />
+                  <FixtureStalenessNotice
+                    stale={governedFixtureStale}
+                    onRecapture={onClearGovernedFixture}
+                  />
+                  <ResourceFidelitySelect
+                    value={resourceFidelity}
+                    onChange={onResourceFidelityChange}
+                    outputOnly
+                  />
+                </Suspense>
                 {governedFixtureRef && !governedFixtureStale && (
                   <p className="fixture-provenance" data-testid="governed-fixture-bound">
                     {t('Governed fixture bound')}: {governedFixtureRef.fixtureAssetId} r{governedFixtureRef.revision}
@@ -4132,11 +4149,6 @@ function OperatorDetailDialog({
                 >
                   {t('Clear governed fixture')}
                 </button>
-                <ResourceFidelitySelect
-                  value={resourceFidelity}
-                  onChange={onResourceFidelityChange}
-                  outputOnly
-                />
                 <small className="muted">{t('Only output-level fidelity is executed by visual simulation.')}</small>
               </section>
             )}
@@ -13303,19 +13315,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               {selectedFixtureError && <p className="fixture-error">{d(selectedFixtureError)}</p>}
               {spineEnabled && (
                 <>
-                  <SimulationFixtureControls
-                    draftId={graphDraftId}
-                    nodeId={selectedNode.id}
-                    label={selectedNode.data.label}
-                    operatorRef={selectedNode.data.operatorRef}
-                    output={result && Object.prototype.hasOwnProperty.call(result.results, selectedNode.id)
-                      ? result.results[selectedNode.id] : undefined}
-                    fixture={selectedFixtureState}
-                    onPin={() => pinSimulationNode(selectedNode.id)}
-                    promoter={promoteGraphNodeFixture}
-                    onGoverned={acceptGovernedFixture}
-                    testIdPrefix="inspector"
-                  />
+                  <Suspense fallback={<p className="muted" role="status">{t('Loading fixture controls…')}</p>}>
+                    <SimulationFixtureControls
+                      draftId={graphDraftId}
+                      nodeId={selectedNode.id}
+                      label={selectedNode.data.label}
+                      operatorRef={selectedNode.data.operatorRef}
+                      output={result && Object.prototype.hasOwnProperty.call(result.results, selectedNode.id)
+                        ? result.results[selectedNode.id] : undefined}
+                      fixture={selectedFixtureState}
+                      onPin={() => pinSimulationNode(selectedNode.id)}
+                      promoter={promoteGraphNodeFixture}
+                      onGoverned={acceptGovernedFixture}
+                      testIdPrefix="inspector"
+                    />
+                  </Suspense>
                   {selectedIsResource && (
                     <div className="fixture-asset-reuse" data-testid="fixture-asset-reuse">
                       {governedFixtureAssetsError && (
@@ -13416,19 +13430,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         <span className={`run-pill ${row.status}`}>{d(row.status)}</span>
                       </button>
                       {spineEnabled && (
-                        <SimulationFixtureControls
-                          draftId={graphDraftId}
-                          nodeId={row.nodeId}
-                          label={row.label}
-                          operatorRef={row.operatorRef}
-                          output={Object.prototype.hasOwnProperty.call(result.results, row.nodeId)
-                            ? result.results[row.nodeId] : undefined}
-                          fixture={fixtureForNode(row.nodeId)}
-                          onPin={() => pinSimulationNode(row.nodeId)}
-                          promoter={promoteGraphNodeFixture}
-                          onGoverned={acceptGovernedFixture}
-                          testIdPrefix="trace"
-                        />
+                        <Suspense fallback={null}>
+                          <SimulationFixtureControls
+                            draftId={graphDraftId}
+                            nodeId={row.nodeId}
+                            label={row.label}
+                            operatorRef={row.operatorRef}
+                            output={Object.prototype.hasOwnProperty.call(result.results, row.nodeId)
+                              ? result.results[row.nodeId] : undefined}
+                            fixture={fixtureForNode(row.nodeId)}
+                            onPin={() => pinSimulationNode(row.nodeId)}
+                            promoter={promoteGraphNodeFixture}
+                            onGoverned={acceptGovernedFixture}
+                            testIdPrefix="trace"
+                          />
+                        </Suspense>
                       )}
                     </li>
                   ))}

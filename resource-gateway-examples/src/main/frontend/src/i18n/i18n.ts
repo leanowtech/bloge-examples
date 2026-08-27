@@ -850,6 +850,8 @@ const ZH_CN_MESSAGES: Record<string, string> = {
   'The governed fixture schema does not match the current operator schema.': '受治理 fixture Schema 与当前算子 Schema 不匹配。',
   'This governed fixture is not compatible with the current operator.': '此受治理 fixture 与当前算子不兼容。',
   'The governed fixture schema is stale; recapture before simulating.': '受治理 fixture Schema 已过期；重新捕获后才能模拟。',
+  'Loading scenario tools…': '正在加载场景工具…',
+  'Loading fixture controls…': '正在加载 fixture 控件…',
   'Test table view': '测试表视图',
   'Schema contract proof': 'Schema 契约证明',
   'Runtime behavior proof': '运行时行为证明',
