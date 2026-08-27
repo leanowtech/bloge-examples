@@ -19,7 +19,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  *                      means no input assertion is evaluated
  */
 public record NodeFixture(Object output, Object expectedInput,
-                          @JsonInclude(JsonInclude.Include.NON_NULL) GovernedFixtureRef governedRef) {
+                          @JsonInclude(JsonInclude.Include.NON_NULL) GovernedFixtureRef governedRef,
+                          ResourceFidelity resourceFidelity) {
+
+    /** Evidence boundary used when a resource fixture is applied. */
+    public enum ResourceFidelity { OUTPUT_LEVEL, PROTOCOL_DERIVED, TRANSPORT_LEVEL }
 
     /**
      * Backward-compatible constructor for output-only pins.
@@ -27,11 +31,21 @@ public record NodeFixture(Object output, Object expectedInput,
      * @param output the value injected as the node's simulated output; may be {@code null}
      */
     public NodeFixture(Object output) {
-        this(output, null, null);
+        this(output, null, null, ResourceFidelity.OUTPUT_LEVEL);
     }
 
     /** Backward-compatible constructor for output and input assertion fixtures. */
     public NodeFixture(Object output, Object expectedInput) {
-        this(output, expectedInput, null);
+        this(output, expectedInput, null, ResourceFidelity.OUTPUT_LEVEL);
+    }
+
+    /** Backward-compatible governed fixture constructor with output-level fidelity. */
+    public NodeFixture(Object output, Object expectedInput, GovernedFixtureRef governedRef) {
+        this(output, expectedInput, governedRef, ResourceFidelity.OUTPUT_LEVEL);
+    }
+
+    /** Normalizes omitted fidelity to the historical output-level behavior. */
+    public NodeFixture {
+        resourceFidelity = resourceFidelity == null ? ResourceFidelity.OUTPUT_LEVEL : resourceFidelity;
     }
 }

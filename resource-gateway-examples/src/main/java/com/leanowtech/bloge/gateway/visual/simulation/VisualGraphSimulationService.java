@@ -290,7 +290,10 @@ public class VisualGraphSimulationService {
                                 mockOutputsByNodeId.get(nodeId),
                                 Optional.ofNullable(effectiveFixtures.get(nodeId))
                                         .map(NodeFixture::expectedInput)
-                                        .orElse(null)))
+                                        .orElse(null),
+                                Optional.ofNullable(effectiveFixtures.get(nodeId))
+                                        .map(NodeFixture::resourceFidelity)
+                                        .orElse(NodeFixture.ResourceFidelity.OUTPUT_LEVEL)))
                         .toList();
                 dynamic = runKernelWithTimeout(new VisualSimulationPlan(
                         generated.dsl(), effectiveContext, selectedOutputNode, standins));
