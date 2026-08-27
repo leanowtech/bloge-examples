@@ -5069,13 +5069,33 @@ class VisualAuthoringBrowserDomTest {
     }
 
     private void closeAuthorStartDialog(WebDriverWait wait) {
+        By workspace = By.cssSelector(".workspace-v2");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(workspace));
         By startDialog = By.cssSelector("[data-testid='author-start-dialog']");
         By startBackdrop = By.cssSelector("[data-testid='author-start-backdrop']");
-        if (!driver.findElements(By.cssSelector("[aria-label='Close start dialog']")).isEmpty()) {
-            click(wait, By.cssSelector("[aria-label='Close start dialog']"));
-            wait.until(ignored -> noDisplayedElements(startDialog));
-            wait.until(ignored -> noDisplayedElements(startBackdrop));
-        }
+        By closeButton = By.cssSelector("[aria-label='Close start dialog']");
+        wait.until(ignored -> {
+            boolean clicked = false;
+            for (WebElement element : driver.findElements(closeButton)) {
+                try {
+                    if (!element.isDisplayed() || !element.isEnabled()) {
+                        continue;
+                    }
+                    scrollIntoView(element);
+                    element.click();
+                    clicked = true;
+                } catch (ElementClickInterceptedException | StaleElementReferenceException ex) {
+                    return false;
+                }
+            }
+            if (clicked) {
+                return false;
+            }
+            WebElement root = driver.findElement(workspace);
+            return "closed".equals(root.getAttribute("data-start-section"))
+                    && noDisplayedElements(startDialog)
+                    && noDisplayedElements(startBackdrop);
+        });
     }
 
     /**
