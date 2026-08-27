@@ -807,7 +807,7 @@ class VisualAuthoringBrowserDomTest {
         // references the source node. Configure that semantic binding through the same details
         // editor an author uses, rather than mutating the draft or its React state directly.
         WebElement transformNode = wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='node-wrapper:n2']")));
+                By.cssSelector("[data-testid='canvas-node:n2']")));
         new Actions(driver).doubleClick(transformNode).perform();
         wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='transform-assignment-editor']")));
