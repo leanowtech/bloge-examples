@@ -96,6 +96,13 @@ public class GraphNodeFixturePromotionService {
 
     /**
      * Direct-call overload used by non-Spring clients and focused service tests.
+     *
+     * @param draftId authoritative graph draft id
+     * @param nodeId exact graph node id
+     * @param request author-controlled bounded promotion request
+     * @param owner authenticated actor that owns the resulting Fixture
+     * @param identityForMaterialWrite trusted context used for scope and material authorization
+     * @return payload-free governed Fixture receipt
      */
     public PromotionResult promote(
             String draftId,
@@ -105,7 +112,11 @@ public class GraphNodeFixturePromotionService {
             IntegrationRequestContext identityForMaterialWrite) {
         requireIdentity(identityForMaterialWrite);
         if (request == null) throw invalid("REQUEST_INVALID", "A promotion request is required");
-        request.requireValid();
+        try {
+            request.requireValid();
+        } catch (IllegalArgumentException invalidRequest) {
+            throw invalid("REQUEST_INVALID", invalidRequest.getMessage());
+        }
         if (owner == null) throw invalid("ACTOR_REQUIRED", "An authenticated actor is required");
 
         GraphDraft draft = drafts.find(requiredText(draftId, "draftId"))
@@ -127,6 +138,11 @@ public class GraphNodeFixturePromotionService {
                 .orElseThrow(() -> unprocessable(
                         "OPERATOR_NOT_FOUND", "The selected node operator is unavailable"));
         SchemaEnvelope outputSchema = operatorPorts(operator);
+        if (operator.ports().outputs().size() > 1) {
+            throw unprocessable(
+                    "OUTPUT_SCHEMA_NON_UNIQUE",
+                    "Governed Fixture promotion requires one unambiguous operator output schema");
+        }
         if (outputSchema == null || outputSchema.equals(SchemaEnvelope.opaque())) {
             throw unprocessable(
                     "OUTPUT_SCHEMA_OPAQUE",
@@ -160,8 +176,9 @@ public class GraphNodeFixturePromotionService {
                 now.plus(Duration.ofDays(request.retentionDays())));
         RedactionDescriptor redaction = new RedactionDescriptor(
                 "graph-node-fixture-redaction-v1", request.redactionPaths(), false);
-        FixtureSource source = new FixtureSource(
-                request.capturedFromSimulate() ? SourceKind.SCENARIO : SourceKind.SAMPLE, sourceRef);
+        // The promotion request carries no client provenance claim. This endpoint only receives
+        // the persisted draft capture, so simulation lineage is not server-proven here.
+        FixtureSource source = new FixtureSource(SourceKind.SAMPLE, sourceRef);
         Receipt materialReceipt = materials.write(new WriteRequest(
                 "",
                 request.fixtureAssetId(),
@@ -203,7 +220,7 @@ public class GraphNodeFixturePromotionService {
     }
 
     private static SchemaEnvelope operatorPorts(OperatorDefinition operator) {
-        return operator.ports().outputs().isEmpty()
+        return operator.ports().outputs().size() != 1
                 ? null
                 : operator.ports().outputs().getFirst().schema();
     }
@@ -258,7 +275,7 @@ public class GraphNodeFixturePromotionService {
     }
 
     private static GraphNodeFixturePromotionException invalid(String code, String message) {
-        return new GraphNodeFixturePromotionException(422, "RG.VISUAL.PROMOTION." + code, message);
+        return new GraphNodeFixturePromotionException(400, "RG.VISUAL.PROMOTION." + code, message);
     }
 
     private static GraphNodeFixturePromotionException unprocessable(String code, String message) {
@@ -273,11 +290,17 @@ public class GraphNodeFixturePromotionService {
      * Payload-free receipt returned after successful promotion.
      */
     public record PromotionResult(
+            /** Newly created governed Fixture id. */
             String fixtureAssetId,
+            /** Persisted Fixture revision. */
             long revision,
+            /** Persisted lifecycle, initially {@code DRAFT}. */
             String lifecycle,
+            /** Payload-free exact Fixture reference. */
             ExactAssetRef assetRef,
+            /** Exact output schema reference used by the Fixture. */
             ExactSchemaRef schemaRef,
+            /** Stable provenance label for this promotion result. */
             String provenance
     ) { }
 }

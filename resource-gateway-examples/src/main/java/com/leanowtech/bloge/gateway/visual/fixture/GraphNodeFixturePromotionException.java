@@ -18,6 +18,10 @@ public final class GraphNodeFixturePromotionException extends RuntimeException {
 
     /**
      * Creates a typed client-facing promotion failure.
+     *
+     * @param status client response status in the 4xx range
+     * @param code stable machine-readable failure code
+     * @param message operator-safe failure explanation
      */
     public GraphNodeFixturePromotionException(int status, String code, String message) {
         super(message);

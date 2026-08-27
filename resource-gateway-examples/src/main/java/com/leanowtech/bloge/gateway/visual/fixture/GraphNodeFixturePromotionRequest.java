@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.fixture;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.core.JsonPointer;
 
 import java.util.List;
 import java.util.Locale;
@@ -13,7 +14,6 @@ import java.util.Locale;
  * @param classification confidentiality label
  * @param retentionDays bounded retention in days
  * @param redactionPaths JSON paths removed before material persistence
- * @param capturedFromSimulate whether the node fixture originated from a simulation run
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record GraphNodeFixturePromotionRequest(
@@ -21,8 +21,7 @@ public record GraphNodeFixturePromotionRequest(
         String fixtureAssetId,
         String classification,
         int retentionDays,
-        List<String> redactionPaths,
-        boolean capturedFromSimulate
+        List<String> redactionPaths
 ) {
     /** Wire contract published by the Resource Gateway tool-authoring workbench. */
     public static final String SCHEMA_VERSION = "bloge.graphNodeFixturePromote.v1";
@@ -37,7 +36,7 @@ public record GraphNodeFixturePromotionRequest(
     public GraphNodeFixturePromotionRequest {
         schemaVersion = schemaVersion == null ? "" : schemaVersion.trim();
         fixtureAssetId = fixtureAssetId == null ? "" : fixtureAssetId.trim();
-        classification = classification.trim().toUpperCase(Locale.ROOT);
+        classification = classification == null ? "" : classification.trim().toUpperCase(Locale.ROOT);
         List<String> normalizedPaths = redactionPaths == null ? List.of() : redactionPaths.stream()
                 .distinct()
                 .map(path -> path == null ? "" : path.trim())
@@ -68,8 +67,21 @@ public record GraphNodeFixturePromotionRequest(
                     "Graph-node Fixture promotion requires 1..30 retention days");
         }
         if (redactionPaths.size() > MAX_PATHS || redactionPaths.stream().anyMatch(
-                path -> path.isBlank() || path.length() > MAX_PATH_LENGTH)) {
-            throw new IllegalArgumentException("Redaction paths must be non-blank and bounded");
+                path -> !validRedactionPath(path))) {
+            throw new IllegalArgumentException("Redaction paths must be bounded non-root JSON Pointers");
+        }
+    }
+
+    private static boolean validRedactionPath(String path) {
+        if (path == null || path.isBlank() || path.length() > MAX_PATH_LENGTH
+                || !path.startsWith("/") || "/".equals(path)) {
+            return false;
+        }
+        try {
+            JsonPointer.compile(path);
+            return true;
+        } catch (IllegalArgumentException invalidPointer) {
+            return false;
         }
     }
 }

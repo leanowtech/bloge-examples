@@ -94,11 +94,11 @@ class GraphNodeFixturePromotionServiceTest {
         WriteRequest write = materialWrites.getFirst();
         assertThat(write.subject()).isEqualTo(com.leanowtech.bloge.gateway.testing.correctness.domain
                 .FixtureMaterialProtocolV2.FixtureSubject.GRAPH);
-        assertThat(write.source().kind()).isEqualTo(FixtureAssetDescriptor.SourceKind.SCENARIO);
+        assertThat(write.source().kind()).isEqualTo(FixtureAssetDescriptor.SourceKind.SAMPLE);
         assertThat(write.source().sourceRef().kind()).isEqualTo("RESOURCE");
         assertThat(write.source().sourceRef().id()).isEqualTo("applicant");
         assertThat(write.classification()).isEqualTo("RESTRICTED");
-        assertThat(write.redaction().redactedPaths()).containsExactly("$.phone");
+        assertThat(write.redaction().redactedPaths()).containsExactly("/score");
         assertThat(write.payload()).isEqualTo(Map.of("score", 760));
         assertThat(descriptor.get().scope()).isEqualTo(new com.leanowtech.bloge.gateway.testing
                 .correctness.domain.CorrectnessProtocol.EnterpriseScope(
@@ -142,9 +142,9 @@ class GraphNodeFixturePromotionServiceTest {
         assertThatThrownBy(() -> service.promote(
                 "draft-1", "node_1",
                 new GraphNodeFixturePromotionRequest("wrong-version", "new-id", "INTERNAL", 3,
-                        List.of(), true), identity))
+                        List.of()), identity))
                 .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
-                    assertThat(failure.status()).isEqualTo(422);
+                    assertThat(failure.status()).isEqualTo(400);
                     assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.REQUEST_INVALID");
                 });
         assertThatThrownBy(() -> service.promote(
@@ -153,10 +153,82 @@ class GraphNodeFixturePromotionServiceTest {
                         assertThat(failure.status()).isEqualTo(409));
     }
 
+    @Test
+    void mapsEveryClientControlledRequestViolationToBadRequest() {
+        List<GraphNodeFixturePromotionRequest> invalidRequests = List.of(
+                new GraphNodeFixturePromotionRequest("wrong-version", "fixture", "INTERNAL", 3, List.of()),
+                new GraphNodeFixturePromotionRequest(GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
+                        "fixture", null, 3, List.of()),
+                new GraphNodeFixturePromotionRequest(GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
+                        "fixture", "INTERNAL", 0, List.of()),
+                new GraphNodeFixturePromotionRequest(GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
+                        "fixture", "INTERNAL", 3, List.of(" ")),
+                new GraphNodeFixturePromotionRequest(GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
+                        "fixture", "INTERNAL", 3, List.of("$.score")));
+
+        for (GraphNodeFixturePromotionRequest invalidRequest : invalidRequests) {
+            assertThatThrownBy(() -> service.promote("draft-1", "node_1", invalidRequest, identity))
+                    .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                        assertThat(failure.status()).isEqualTo(400);
+                        assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.REQUEST_INVALID");
+                    });
+        }
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
+    void mapsMissingRequestBodyToBadRequest() {
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", null, identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(400);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.REQUEST_INVALID");
+                });
+    }
+
+    @Test
+    void rejectsUnknownNodeAndAmbiguousOutputSchemaBeforeWritingMaterial() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(
+                Map.of("node_1", new GraphDraft.NodeFixture(Map.of("score", 760))))));
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperatorWithOutputs(2)));
+
+        assertThatThrownBy(() -> service.promote("draft-1", "missing", request("fixture"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(404);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.NODE_NOT_FOUND");
+                });
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(422);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.OUTPUT_SCHEMA_NON_UNIQUE");
+                });
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
+    void rejectsOpaqueOutputSchemaAndIncompleteIdentity() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(
+                Map.of("node_1", new GraphDraft.NodeFixture(Map.of("score", 760))))));
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(resourceOperatorWithSchema(
+                SchemaEnvelope.opaque(), 1)));
+
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), identity))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(422);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.OUTPUT_SCHEMA_OPAQUE");
+                });
+        IntegrationRequestContext incomplete = new IntegrationRequestContext(
+                "tenant-a", "", "project-a", "test", "sg", "USER", "author-1", "",
+                "TEST_FIXTURE_MATERIAL_WRITE", "correlation-1");
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), incomplete))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure ->
+                        assertThat(failure.status()).isEqualTo(400));
+        assertThat(materialWrites).isEmpty();
+    }
+
     private GraphNodeFixturePromotionRequest request(String fixtureId) {
         return new GraphNodeFixturePromotionRequest(
                 GraphNodeFixturePromotionRequest.SCHEMA_VERSION, fixtureId, "restricted", 3,
-                List.of("$.phone"), true);
+                List.of("/score"));
     }
 
     private static GraphDraft draft(Map<String, GraphDraft.NodeFixture> fixtures) {
@@ -170,15 +242,25 @@ class GraphNodeFixturePromotionServiceTest {
     }
 
     private static OperatorDefinition resourceOperator() {
-        SchemaEnvelope output = SchemaEnvelope.object(
-                Map.of("score", Map.of("type", "integer")), List.of("score"));
+        return resourceOperatorWithOutputs(1);
+    }
+
+    private static OperatorDefinition resourceOperatorWithOutputs(int outputCount) {
+        return resourceOperatorWithSchema(SchemaEnvelope.object(
+                Map.of("score", Map.of("type", "integer")), List.of("score")), outputCount);
+    }
+
+    private static OperatorDefinition resourceOperatorWithSchema(SchemaEnvelope output, int outputCount) {
+        List<OperatorDefinition.Port> outputPorts = new java.util.ArrayList<>();
+        for (int index = 0; index < outputCount; index++) {
+            outputPorts.add(new OperatorDefinition.Port("payload-" + index, output, true, ""));
+        }
         return new OperatorDefinition(
                 "", "resource:applicant", "1.0.0", "",
                 new OperatorDefinition.Display("Applicant profile", "", List.of()),
                 new OperatorDefinition.Source(
                         "resource-descriptor", "applicant", "GET", "/applicants/{id}", true),
-                new OperatorDefinition.Ports(List.of(), List.of(
-                        new OperatorDefinition.Port("payload", output, true, ""))),
+                new OperatorDefinition.Ports(List.of(), outputPorts),
                 SchemaEnvelope.object(Map.of(), List.of()),
                 OperatorDefinition.Capabilities.pure(),
                 null,

@@ -409,10 +409,13 @@ surface, not a GraphDraft mutation; full E2 geometry evidence remains pending.
 `POST /api/visual/graphs/{draftId}/nodes/{nodeId}/fixtures:promote` turns an exact
 captured node output into governed correctness material. The request is bounded to
 `bloge.graphNodeFixturePromote.v1`, classification, 1--30 day retention, and redaction paths;
-the server derives scope, lineage, schema reference, fingerprints, retention expiry, and the
-DRAFT lifecycle. Missing drafts/nodes return 404; absent captured output or an opaque/incompatible
-schema returns 422; an existing governed id returns 409. The response and persisted audit contain no
-business payload. Activation continues through the existing four-eyes Fixture governance endpoints.
+there is no client-controlled simulation/provenance flag. The server derives scope, lineage, schema
+reference, fingerprints, retention expiry, and the DRAFT lifecycle; because this endpoint cannot
+prove simulation lineage, promoted material is recorded with `source=SAMPLE`. Invalid body fields
+return 400, missing drafts/nodes return 404, absent captured output or an opaque/non-unique/incompatible
+schema returns 422, and an existing governed id returns 409. A successful response is `201 Created`
+with `Cache-Control: no-store`; both response and persisted audit contain no business payload.
+Activation continues through the existing four-eyes Fixture governance endpoints.
 
 The React workspaces support English and Simplified Chinese. Use the `EN / 中文`
 segmented control in the global header; the choice persists across workspace navigation and reloads.

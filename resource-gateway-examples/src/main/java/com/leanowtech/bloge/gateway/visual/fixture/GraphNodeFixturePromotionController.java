@@ -7,6 +7,8 @@ import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,9 +59,11 @@ public class GraphNodeFixturePromotionController {
             if (request == null) {
                 throw new IllegalArgumentException("A graph-node Fixture promotion request is required");
             }
-            return ResponseEntity.accepted().body(service.promote(draftId, nodeId, request, identity));
+            return ResponseEntity.status(HttpStatus.CREATED)
+                    .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                    .body(service.promote(draftId, nodeId, request, identity));
         } catch (IllegalArgumentException invalid) {
-            throw problem(422, "RG.VISUAL.PROMOTION.REQUEST_INVALID", invalid.getMessage(),
+            throw problem(400, "RG.VISUAL.PROMOTION.REQUEST_INVALID", invalid.getMessage(),
                     identity.correlationId());
         } catch (GraphNodeFixturePromotionException failure) {
             throw problem(failure.status(), failure.code(), failure.getMessage(),
