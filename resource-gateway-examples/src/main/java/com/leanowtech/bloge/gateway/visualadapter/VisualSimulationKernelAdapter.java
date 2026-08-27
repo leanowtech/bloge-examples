@@ -20,6 +20,7 @@ import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionRequest;
 import com.leanowtech.bloge.gateway.testing.runtime.TestExecutionResult;
 import com.leanowtech.bloge.gateway.testing.runtime.TestRunService;
 import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualNodeExecutionAttempt;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationExecutor;
@@ -98,11 +99,11 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
             ExecutionModeHints.Builder hints = ExecutionModeHints.builder();
             for (VisualSimulationPlan.Standin standin : plan.standins()) {
                 if (standin.resourceFidelity() == ResourceFidelity.PROTOCOL_DERIVED) {
-                    hints.descriptorProtocol(siteFor(standin.originalNodeId()), ruleId(standin));
+                    hints.descriptorProtocol(siteFor(standin), ruleId(standin));
                 } else if (standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL) {
-                    hints.descriptorTransport(siteFor(standin.originalNodeId()), ruleId(standin));
+                    hints.descriptorTransport(siteFor(standin), ruleId(standin));
                 } else {
-                    hints.schemaStandin(siteFor(standin.originalNodeId()), ruleId(standin));
+                    hints.schemaStandin(siteFor(standin), ruleId(standin));
                 }
             }
             var compiled = new ExecutionControlCompiler(registry, objectMapper)
@@ -127,7 +128,9 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
     }
 
     private static FixtureRule ruleFor(VisualSimulationPlan.Standin standin) {
-        FixtureRule.Selector selector = FixtureRule.Selector.node(standin.originalNodeId());
+        FixtureRule.Selector selector = standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL
+                ? FixtureRule.Selector.node(standin.originalNodeId())
+                : FixtureRule.Selector.resource(resourceIdFrom(standin));
         if (standin.expectedInputOptional().isPresent()) {
             selector = selector.matching(new FixtureRule.Match(
                     standin.expectedInput(), Map.of(), List.of(), List.of(), Map.of(), "", Map.of()));
@@ -142,16 +145,27 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         if (standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL) {
             return FixtureRule.Behavior.returning(standin.output());
         }
-        if (!(standin.output() instanceof Map<?, ?> map)) {
+        Object rawBody;
+        Object status;
+        Object rawHeaders = null;
+        if (standin.output() instanceof HttpResourceOutput output) {
+            rawBody = output.rawBody();
+            status = output.statusCode();
+        } else if (standin.output() instanceof Map<?, ?> map) {
+            rawBody = map.get("rawBody");
+            status = map.get("statusCode");
+            rawHeaders = map.get("responseHeaders");
+        } else {
             throw new IllegalArgumentException("Raw response evidence is required");
         }
-        Object rawBody = map.get("rawBody");
-        Object status = map.get("statusCode");
+        resourceIdFrom(standin);
         if (!(rawBody instanceof String body) || !(status instanceof Number code)) {
             throw new IllegalArgumentException("Raw response evidence is incomplete");
         }
+        if (code.intValue() < 100 || code.intValue() > 599) {
+            throw new IllegalArgumentException("Raw response status is invalid");
+        }
         Map<String, String> headers = new LinkedHashMap<>();
-        Object rawHeaders = map.get("responseHeaders");
         if (rawHeaders instanceof Map<?, ?> headerMap) {
             headerMap.forEach((key, value) -> { if (key instanceof String k && value != null) headers.put(k, value.toString()); });
         }
@@ -160,12 +174,27 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         return FixtureRule.Behavior.protocolResponse(body, code.intValue(), headers, boundary);
     }
 
+    private static String resourceIdFrom(VisualSimulationPlan.Standin standin) {
+        if (standin.output() instanceof HttpResourceOutput output
+                && output.resourceId() != null && !output.resourceId().isBlank()) {
+            return output.resourceId().trim();
+        }
+        if (!(standin.output() instanceof Map<?, ?> map)
+                || !(map.get("resourceId") instanceof String resourceId)
+                || resourceId.isBlank()) {
+            throw new IllegalArgumentException("Resource response evidence requires resourceId");
+        }
+        return resourceId.trim();
+    }
+
     private static String ruleId(VisualSimulationPlan.Standin standin) {
         return "visual-standin-" + standin.originalNodeId();
     }
 
-    private static String siteFor(String nodeId) {
-        return "/root/" + escapeJsonPointer(nodeId) + "#PRIMARY";
+    private static String siteFor(VisualSimulationPlan.Standin standin) {
+        String kind = standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL
+                ? "PRIMARY" : "RESOURCE";
+        return "/root/" + escapeJsonPointer(standin.originalNodeId()) + "#" + kind;
     }
 
     private static String escapeJsonPointer(String value) {

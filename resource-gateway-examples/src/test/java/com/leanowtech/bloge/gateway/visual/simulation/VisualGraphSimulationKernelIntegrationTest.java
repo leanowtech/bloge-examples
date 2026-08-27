@@ -42,6 +42,22 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
+    void nonResourceCannotRequestProtocolOrTransportFidelity() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+        NodeFixture fixture = new NodeFixture(
+                Map.of("resourceId", "profile", "statusCode", 200, "rawBody", "{}"),
+                null, null, NodeFixture.ResourceFidelity.PROTOCOL_DERIVED);
+
+        VisualGraphSimulationResponse response = kernel(catalog).simulate(
+                eligibilityDraft(), Map.of(), "", Map.of("eligibility", fixture));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.errors()).contains("Resource fidelity is invalid for this operator.");
+        assertThat(response.nodeFidelity()).doesNotContainKey("eligibility");
+    }
+
+    @Test
     void pureTransformAndStandInGraphHasEquivalentSemanticResult() {
         OperatorDefinition primitive = VisualCatalogTestSupport.eligibilityOperator("integer");
         OperatorDefinition standIn = copyAsDesignOnly(primitive, "risk:standin");

@@ -1,12 +1,24 @@
 package com.leanowtech.bloge.gateway.visualadapter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
+import com.leanowtech.bloge.gateway.resource.ParameterMapping;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualDslRunResponse;
 import com.leanowtech.bloge.gateway.visual.runtime.VisualSimulationPlan;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -24,18 +36,60 @@ class VisualSimulationKernelAdapterTest {
                                 "subject", "customer.lookup", Map.of("approved", true), null))));
 
         assertThat(response.compiled()).isTrue();
-        assertThat(response.success()).isTrue();
+        assertThat(response.success()).as("response=%s", response).isTrue();
         assertThat(response.output()).isEqualTo(Map.of("approved", true));
         assertThat(response.nodeFidelity()).containsEntry("subject", "OUTPUT_LEVEL");
     }
 
     @Test
-    void highFidelityWithoutRuntimeOrRawEvidenceFailsClosed() {
+    void highFidelityWithoutRuntimeFailsClosed() {
         VisualDslRunResponse response = adapter.execute(plan(
                 "graph resource { node subject : httpResource }", Map.of(), "subject", List.of(
                         new VisualSimulationPlan.Standin("subject", "httpResource",
-                                Map.of("rawBody", "{}", "statusCode", 200), null,
+                                Map.of("resourceId", "profile", "rawBody", "{}", "statusCode", 200), null,
                                 com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity.PROTOCOL_DERIVED))));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.nodeFidelity()).doesNotContainEntry("subject", "PROTOCOL_DERIVED");
+    }
+
+    @Test
+    void protocolFidelityUsesRealResponseProtocolAndProjectsEvidence() {
+        VisualDslRunResponse response = resourceAdapter().execute(resourcePlan(
+            NodeFixture.ResourceFidelity.PROTOCOL_DERIVED));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isInstanceOfSatisfying(HttpResourceOutput.class,
+                output -> assertThat(output.payload()).isEqualTo(Map.of("name", "Ada")));
+        assertThat(response.nodeFidelity()).containsEntry("subject", "PROTOCOL_DERIVED");
+    }
+
+    @Test
+    void transportFidelityUsesRealDescriptorMappingAndProjectsEvidence() {
+        VisualDslRunResponse response = resourceAdapter().execute(resourcePlan(
+            NodeFixture.ResourceFidelity.TRANSPORT_LEVEL));
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.output()).isInstanceOfSatisfying(HttpResourceOutput.class,
+                output -> assertThat(output.payload()).isEqualTo(Map.of("name", "Ada")));
+        assertThat(response.nodeFidelity()).containsEntry("subject", "TRANSPORT_LEVEL");
+    }
+
+    @Test
+    void invalidRawEvidenceFailsClosedWithoutRequestedFidelity() {
+        VisualDslRunResponse response = resourceAdapter().execute(resourcePlan(
+                NodeFixture.ResourceFidelity.PROTOCOL_DERIVED,
+                Map.of("resourceId", "profile", "statusCode", 99, "rawBody", "{}")));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.nodeFidelity()).doesNotContainEntry("subject", "PROTOCOL_DERIVED");
+    }
+
+    @Test
+    void missingRawBodyFailsClosedWithoutRequestedFidelity() {
+        VisualDslRunResponse response = resourceAdapter().execute(resourcePlan(
+                NodeFixture.ResourceFidelity.PROTOCOL_DERIVED,
+                Map.of("resourceId", "profile", "statusCode", 200)));
 
         assertThat(response.success()).isFalse();
         assertThat(response.nodeFidelity()).doesNotContainEntry("subject", "PROTOCOL_DERIVED");
@@ -190,5 +244,68 @@ class VisualSimulationKernelAdapterTest {
                                              String outputNode,
                                              List<VisualSimulationPlan.Standin> standins) {
         return new VisualSimulationPlan(dsl, context, outputNode, standins);
+    }
+
+    private static VisualSimulationKernelAdapter resourceAdapter() {
+        MapRegistry registry = new MapRegistry();
+        registry.put(new ResourceDescriptor("profile", "https://api.test/customers/{id}", "GET",
+                Map.of("Accept", "application/json"), null, Duration.ofSeconds(3),
+                new ParameterMapping(Map.of("id", "ctx.params.id"),
+                        Map.of("view", "ctx.params.view"), null),
+                new ResponseProtocol.BodyCode("code", Set.of(0), "message"), "data"));
+        return new VisualSimulationKernelAdapter(new ObjectMapper(),
+                new ResourceFixtureRuntime(registry, new BlgeExpressionEvaluator(), new ObjectMapper()));
+    }
+
+    private static VisualSimulationPlan resourcePlan(
+            NodeFixture.ResourceFidelity fidelity) {
+        return resourcePlan(fidelity, Map.of("resourceId", "profile", "statusCode", 200,
+                "rawBody", "{\"code\":0,\"data\":{\"name\":\"Ada\"}}",
+                "payload", Map.of("wrong", true), "success", true));
+    }
+
+    private static VisualSimulationPlan resourcePlan(
+            NodeFixture.ResourceFidelity fidelity, Map<String, Object> output) {
+        return plan("""
+                        graph resource {
+                          node subject : httpResource {
+                            input {
+                              resourceId = "profile"
+                              params = { id: ctx.id, view: ctx.view }
+                            }
+                          }
+                        }
+                        """,
+                Map.of("id", "C-42", "view", "full"), "subject", List.of(
+                        new VisualSimulationPlan.Standin("subject", "httpResource",
+                                output, null,
+                                fidelity)));
+    }
+
+    private static final class MapRegistry implements ResourceRegistry {
+        private final Map<String, ResourceDescriptor> descriptors = new LinkedHashMap<>();
+
+        void put(ResourceDescriptor descriptor) {
+            descriptors.put(descriptor.resourceId(), descriptor);
+        }
+
+        @Override
+        public ResourceDescriptor resolve(String resourceId) {
+            ResourceDescriptor descriptor = descriptors.get(resourceId);
+            if (descriptor == null) {
+                throw new IllegalArgumentException("Unknown resource: " + resourceId);
+            }
+            return descriptor;
+        }
+
+        @Override
+        public boolean contains(String resourceId) {
+            return descriptors.containsKey(resourceId);
+        }
+
+        @Override
+        public Collection<ResourceDescriptor> all() {
+            return descriptors.values();
+        }
     }
 }
