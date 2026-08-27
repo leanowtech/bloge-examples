@@ -26,7 +26,19 @@ class VisualSimulationKernelAdapterTest {
         assertThat(response.compiled()).isTrue();
         assertThat(response.success()).isTrue();
         assertThat(response.output()).isEqualTo(Map.of("approved", true));
-        assertThat(response.nodeFidelity()).containsEntry("subject", "SCHEMA_STANDIN");
+        assertThat(response.nodeFidelity()).containsEntry("subject", "OUTPUT_LEVEL");
+    }
+
+    @Test
+    void highFidelityWithoutRuntimeOrRawEvidenceFailsClosed() {
+        VisualDslRunResponse response = adapter.execute(plan(
+                "graph resource { node subject : httpResource }", Map.of(), "subject", List.of(
+                        new VisualSimulationPlan.Standin("subject", "httpResource",
+                                Map.of("rawBody", "{}", "statusCode", 200), null,
+                                com.leanowtech.bloge.gateway.visual.simulation.NodeFixture.ResourceFidelity.PROTOCOL_DERIVED))));
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.nodeFidelity()).doesNotContainEntry("subject", "PROTOCOL_DERIVED");
     }
 
     @Test

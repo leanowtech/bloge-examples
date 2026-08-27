@@ -117,7 +117,7 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
             if (placeholderExecutions.get() != 0) {
                 return failure(outputNode, PLACEHOLDER_ERROR);
             }
-            return toVisualResponse(outputNode, graph, result);
+            return toVisualResponse(outputNode, graph, result, plan.standins());
         } catch (AssertionError error) {
             return failure(outputNode, placeholderExecutions.get() == 0
                     ? COMPILE_ERROR : PLACEHOLDER_ERROR);
@@ -188,7 +188,8 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
     }
 
     private static VisualDslRunResponse toVisualResponse(String outputNode, Graph graph,
-                                                         TestExecutionResult result) {
+                                                         TestExecutionResult result,
+                                                         List<VisualSimulationPlan.Standin> standins) {
         GraphResult graphResult = result.graphResult();
         TestRunEvidence evidence = result.evidence();
         Map<String, Object> results = graphResult == null
@@ -216,9 +217,15 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
                                                 attempt.durationMs(), attempt.errorCode(), ""))
                                         .toList(),
                                 (left, right) -> right, LinkedHashMap::new));
+        Map<String, ResourceFidelity> requested = standins.stream().collect(java.util.stream.Collectors.toMap(
+                VisualSimulationPlan.Standin::originalNodeId,
+                VisualSimulationPlan.Standin::resourceFidelity, (left, right) -> right));
         Map<String, String> nodeFidelity = evidence == null ? Map.of() : evidence.nodeTrace().stream()
                 .collect(java.util.stream.Collectors.toMap(TestRunEvidence.NodeTrace::nodeId,
-                        TestRunEvidence.NodeTrace::fidelity, (left, right) -> right, LinkedHashMap::new));
+                        trace -> "SCHEMA_STANDIN".equals(trace.fidelity())
+                                && requested.get(trace.nodeId()) == ResourceFidelity.OUTPUT_LEVEL
+                                ? "OUTPUT_LEVEL" : trace.fidelity(),
+                        (left, right) -> right, LinkedHashMap::new));
         List<String> errors = evidenceErrors(evidence);
         return new VisualDslRunResponse(
                 true,
