@@ -60,6 +60,15 @@ public class GraphDraftValidator {
     private static final Set<String> SUPPORTED_EDGE_KINDS = Set.of("data", "dependency", "route");
     private static final Set<String> EXECUTION_CONFIG_KEYS = Set.of("timeout", "retryAttempts");
     private static final Set<String> SERVICE_MANAGED_PUBLICATION_CONFIG_KEYS = Set.of("publicationId", "outputNode");
+    /**
+     * Opaque schema used only while resolving runtime context extras below an open object schema.
+     * It deliberately keeps {@code additionalProperties:true} so an undeclared nested path can be
+     * resolved without changing the persisted graph input contract.
+     */
+    private static final Map<String, Object> OPEN_RUNTIME_CONTEXT_PROPERTY_SCHEMA = Map.of(
+            "type", "any",
+            "additionalProperties", true
+    );
     private static final Set<String> RESERVED_DSL_FIELD_NAMES = Set.of(
             "graph", "node", "branch", "decision_table", "on", "input", "depends_on",
             "timeout", "retry", "fallback", "execution_mode", "worker_topic", "compensate",
@@ -1008,7 +1017,8 @@ public class GraphDraftValidator {
                                                    SchemaEnvelope inputSchema,
                                                    String targetPath,
                                                    List<VisualDiagnostic> diagnostics) {
-        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, binding.path());
+        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, binding.path(), Map.of(), null,
+                List.of(), true);
         validateDslPathSegments(inputSchema, binding.path(), targetPath + "/path", diagnostics);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
@@ -1399,7 +1409,9 @@ public class GraphDraftValidator {
                                                                SchemaEnvelope inputSchema,
                                                                String targetPath,
                                                                List<VisualDiagnostic> diagnostics) {
-        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, path);
+        // Context Extras are runtime-only values. Keep expression validation consistent with
+        // direct context bindings when the declared input object intentionally remains open.
+        Map<String, Object> sourceProperty = propertyAtPath(inputSchema, path, Map.of(), null, List.of(), true);
         if (sourceProperty == null) {
             diagnostics.add(VisualDiagnostic.error("visual.binding.unknownContextPath",
                     "Graph input path does not exist: %s".formatted(path.isBlank() ? "ctx" : "ctx." + path),
@@ -1616,6 +1628,21 @@ public class GraphDraftValidator {
                                                       Map<String, GraphDraft.UnionBranchSelection> branchSelections,
                                                       String targetPath,
                                                       List<VisualDiagnostic> diagnostics) {
+        return propertyAtPath(schema, path, branchSelections, targetPath, diagnostics, false);
+    }
+
+    /**
+     * Resolves a schema path, optionally treating open residual properties as runtime-only context.
+     * Context Extras are intentionally outside the declared graph input contract, so a schema with
+     * {@code additionalProperties:true} permits further nested segments. All name, pattern, false
+     * residual, and typed residual checks still run before this fallback is considered.
+     */
+    private static Map<String, Object> propertyAtPath(SchemaEnvelope schema,
+                                                      String path,
+                                                      Map<String, GraphDraft.UnionBranchSelection> branchSelections,
+                                                      String targetPath,
+                                                      List<VisualDiagnostic> diagnostics,
+                                                      boolean allowOpenRuntimeContextProperties) {
         if (path == null || path.isBlank()) {
             Map<String, Object> root = new LinkedHashMap<>(schema.schema());
             if (!root.containsKey("type") && !root.containsKey("kind")) {
@@ -1658,7 +1685,7 @@ public class GraphDraftValidator {
                 current = patternPropertySchema(currentSchema, segment);
             }
             if (current == null) {
-                current = additionalPropertySchema(currentSchema);
+                current = additionalPropertySchema(currentSchema, allowOpenRuntimeContextProperties);
                 if (current == null) {
                     return null;
                 }
@@ -2762,9 +2789,14 @@ public class GraphDraftValidator {
     }
 
     private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema) {
+        return additionalPropertySchema(schema, false);
+    }
+
+    private static Map<String, Object> additionalPropertySchema(Map<String, Object> schema,
+                                                                boolean allowOpenRuntimeContextProperties) {
         Object residual = residualPropertiesPolicy(schema);
         if (Boolean.TRUE.equals(residual)) {
-            return Map.of();
+            return allowOpenRuntimeContextProperties ? OPEN_RUNTIME_CONTEXT_PROPERTY_SCHEMA : Map.of();
         }
         if (residual instanceof Map<?, ?> residualSchema) {
             return objectProperty(residualSchema);

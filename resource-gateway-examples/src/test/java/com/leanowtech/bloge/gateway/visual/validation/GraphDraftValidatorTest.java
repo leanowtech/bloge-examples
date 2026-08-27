@@ -1865,6 +1865,60 @@ class GraphDraftValidatorTest {
     }
 
     @Test
+    void acceptsNestedContextPathBindingThroughOpenAdditionalPropertiesSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(dynamicAdditionalGraphInputSchema(true), Map.of(
+                "score", GraphDraft.Binding.contextPath("params.userId"),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).noneMatch(diagnostic ->
+                diagnostic.code().equals("visual.binding.unknownContextPath"));
+    }
+
+    @Test
+    void acceptsNestedContextReferenceExpressionThroughOpenAdditionalPropertiesSchema() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(dynamicAdditionalGraphInputSchema(true), Map.of(
+                "score", GraphDraft.Binding.expression("ctx.params.userId"),
+                "amount", GraphDraft.Binding.constant(1000)
+        ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.diagnostics()).noneMatch(diagnostic ->
+                diagnostic.code().equals("visual.binding.unknownContextPath"));
+    }
+
+    @Test
+    void rejectsNestedContextPathWhenOpenAdditionalPropertyNameViolatesPropertyNames() {
+        GraphDraftValidator validator = new GraphDraftValidator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = contextEligibilityDraft(
+                dynamicAdditionalGraphInputSchema(true, Map.of("pattern", "^params$")), Map.of(
+                        "score", GraphDraft.Binding.contextPath("runtime.userId"),
+                        "amount", GraphDraft.Binding.constant(1000)
+                ));
+
+        VisualValidationResult result = validator.validate(draft);
+
+        assertThat(result.valid()).isFalse();
+        assertThat(result.diagnostics()).anySatisfy(diagnostic -> {
+            assertThat(diagnostic.code()).isEqualTo("visual.binding.unknownContextPath");
+            assertThat(diagnostic.message()).contains("ctx.runtime.userId");
+        });
+    }
+
+    @Test
     void rejectsContextPathBindingWhenDynamicPropertyNameViolatesGraphInputSchema() {
         GraphDraftValidator validator = new GraphDraftValidator(
                 VisualCatalogTestSupport.catalogWithLibrary(
