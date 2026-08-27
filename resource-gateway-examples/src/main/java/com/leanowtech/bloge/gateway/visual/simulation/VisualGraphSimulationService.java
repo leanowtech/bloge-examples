@@ -293,16 +293,28 @@ public class VisualGraphSimulationService {
         try {
             if (simulationExecutor != null) {
                 List<VisualSimulationPlan.Standin> standins = mockedNodeIds.stream()
-                        .map(nodeId -> new VisualSimulationPlan.Standin(
-                                nodeId,
-                                SIM_OPERATOR_PREFIX + nodeId,
-                                mockOutputsByNodeId.get(nodeId),
-                                Optional.ofNullable(effectiveFixtures.get(nodeId))
-                                        .map(NodeFixture::expectedInput)
-                                        .orElse(null),
-                                Optional.ofNullable(effectiveFixtures.get(nodeId))
-                                        .map(NodeFixture::resourceFidelity)
-                                        .orElse(NodeFixture.ResourceFidelity.OUTPUT_LEVEL)))
+                        .map(nodeId -> {
+                            NodeFixture fixture = effectiveFixtures.get(nodeId);
+                            Object output = fixture == null
+                                    ? mockOutputsByNodeId.get(nodeId)
+                                    : fixture.output();
+                            if (fixture != null
+                                    && fixture.resourceFidelity() != NodeFixture.ResourceFidelity.OUTPUT_LEVEL
+                                    && !hasRawResourceEvidence(output)) {
+                                String resourceId = resourceEvidenceId(draft, nodeId);
+                                if (resourceId != null) {
+                                    output = Map.of("resourceId", resourceId, "governedPayload", output);
+                                }
+                            }
+                            return new VisualSimulationPlan.Standin(
+                                    nodeId,
+                                    SIM_OPERATOR_PREFIX + nodeId,
+                                    output,
+                                    fixture == null ? null : fixture.expectedInput(),
+                                    fixture == null
+                                            ? NodeFixture.ResourceFidelity.OUTPUT_LEVEL
+                                            : fixture.resourceFidelity());
+                        })
                         .toList();
                 dynamic = runKernelWithTimeout(new VisualSimulationPlan(
                         generated.dsl(), effectiveContext, selectedOutputNode, standins));
@@ -360,8 +372,13 @@ public class VisualGraphSimulationService {
             output = mockOutputsByNodeId.get(dynamic.outputNode());
         }
         boolean terminalConforms = terminalOutputConforms(draft, dynamic.outputNode(), output);
-        Map<String, Object> results = dynamic.results();
+        Map<String, Object> results = new LinkedHashMap<>(dynamic.results());
         Map<String, String> statusMap = dynamic.statusMap();
+        // Graph execution omits completed nodes whose mock output is null.  Authors still need an
+        // observable result key so "no output" samples remain pinnable in the browser.
+        for (String nodeId : mockOutputsByNodeId.keySet()) {
+            results.putIfAbsent(nodeId, mockOutputsByNodeId.get(nodeId));
+        }
         if (kernelFixtureMismatch) {
             results = new LinkedHashMap<>(results);
             statusMap = new LinkedHashMap<>(statusMap);
@@ -399,6 +416,28 @@ public class VisualGraphSimulationService {
             return;
         }
         throw new VisualSimulationProductionAdmissionException();
+    }
+
+    private static boolean hasRawResourceEvidence(Object output) {
+        if (output instanceof com.leanowtech.bloge.gateway.operator.HttpResourceOutput) {
+            return true;
+        }
+        return output instanceof Map<?, ?> evidence
+                && evidence.containsKey("resourceId")
+                && evidence.containsKey("rawBody")
+                && evidence.containsKey("statusCode");
+    }
+
+    private static String resourceEvidenceId(GraphDraft draft, String nodeId) {
+        return draft.nodes().stream()
+                .filter(node -> node.id().equals(nodeId))
+                .findFirst()
+                .map(GraphDraft.DraftNode::config)
+                .map(config -> config.get("resourceId"))
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .filter(resourceId -> !resourceId.isBlank())
+                .orElse(null);
     }
 
     private VisualDslRunResponse runDslWithTimeout(DefaultOperatorRegistry simulationRegistry,

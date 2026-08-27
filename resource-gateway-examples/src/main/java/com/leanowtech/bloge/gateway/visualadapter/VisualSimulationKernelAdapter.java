@@ -90,7 +90,7 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         try {
             graph = new GraphLoader(registry).load(dsl);
             List<FixtureRule> rules = plan.standins().stream()
-                    .map(VisualSimulationKernelAdapter::ruleFor)
+                    .map(standin -> ruleFor(standin, resourceRuntime))
                     .toList();
             bundle = new FixtureBundle(
                     FixtureBundle.SCHEMA_VERSION, "visual-simulation", 1,
@@ -127,7 +127,8 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
         }
     }
 
-    private static FixtureRule ruleFor(VisualSimulationPlan.Standin standin) {
+    private static FixtureRule ruleFor(
+            VisualSimulationPlan.Standin standin, ResourceFixtureRuntime resourceRuntime) {
         FixtureRule.Selector selector = standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL
                 ? FixtureRule.Selector.node(standin.originalNodeId())
                 : FixtureRule.Selector.resource(resourceIdFrom(standin));
@@ -135,15 +136,26 @@ public final class VisualSimulationKernelAdapter implements VisualSimulationExec
             selector = selector.matching(new FixtureRule.Match(
                     standin.expectedInput(), Map.of(), List.of(), List.of(), Map.of(), "", Map.of()));
         }
-        FixtureRule.Behavior behavior = behaviorFor(standin);
+        FixtureRule.Behavior behavior = behaviorFor(standin, resourceRuntime);
         return new FixtureRule(FixtureRule.SCHEMA_VERSION, ruleId(standin), selector,
                 behavior,
                 FixtureRule.Consumption.once(), FixtureRule.SchemaCheck.strict());
     }
 
-    private static FixtureRule.Behavior behaviorFor(VisualSimulationPlan.Standin standin) {
+    private static FixtureRule.Behavior behaviorFor(
+            VisualSimulationPlan.Standin standin, ResourceFixtureRuntime resourceRuntime) {
         if (standin.resourceFidelity() == ResourceFidelity.OUTPUT_LEVEL) {
             return FixtureRule.Behavior.returning(standin.output());
+        }
+        if (standin.output() instanceof Map<?, ?> governed && governed.containsKey("governedPayload")) {
+            if (resourceRuntime == null) {
+                throw new IllegalArgumentException("Raw response evidence is required");
+            }
+            return resourceRuntime.projectGovernedPayload(
+                    resourceIdFrom(standin), governed.get("governedPayload"),
+                    standin.resourceFidelity() == ResourceFidelity.TRANSPORT_LEVEL
+                            ? FixtureRule.DoubleBoundary.TRANSPORT
+                            : FixtureRule.DoubleBoundary.NODE);
         }
         Object rawBody;
         Object status;

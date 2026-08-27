@@ -42,6 +42,24 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
+    void unboundStandInRetainsSchemaSampleForKernelResult() {
+        DefaultVisualOperatorCatalog catalog = catalog(
+                VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
+
+        VisualGraphSimulationResponse response = kernel(catalog).simulate(
+                eligibilityDraft(), Map.of(), "");
+
+        assertThat(response.success()).as("response=%s", response).isTrue();
+        assertThat(response.results()).containsKey("eligibility");
+        assertThat(response.results().get("eligibility"))
+                .as("an unbound stand-in must keep its schema-shaped sample")
+                .isNotNull();
+        assertThat(response.output())
+                .as("the selected terminal node must expose the same sample")
+                .isNotNull();
+    }
+
+    @Test
     void nonResourceCannotRequestProtocolOrTransportFidelity() {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));

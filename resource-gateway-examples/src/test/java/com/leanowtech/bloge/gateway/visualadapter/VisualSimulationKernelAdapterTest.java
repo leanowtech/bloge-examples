@@ -76,6 +76,27 @@ class VisualSimulationKernelAdapterTest {
     }
 
     @Test
+    void governedMaterialIsProjectedThroughDescriptorProtocolAndTransport() {
+        Map<String, Object> governedOutput = Map.of(
+                "resourceId", "profile",
+                "governedPayload", Map.of("name", "Ada"));
+
+        VisualDslRunResponse protocol = resourceAdapter().execute(resourcePlan(
+                NodeFixture.ResourceFidelity.PROTOCOL_DERIVED, governedOutput));
+        VisualDslRunResponse transport = resourceAdapter().execute(resourcePlan(
+                NodeFixture.ResourceFidelity.TRANSPORT_LEVEL, governedOutput));
+
+        assertThat(protocol.success()).as("protocol=%s", protocol).isTrue();
+        assertThat(protocol.output()).isInstanceOfSatisfying(HttpResourceOutput.class,
+                output -> assertThat(output.payload()).isEqualTo(Map.of("name", "Ada")));
+        assertThat(protocol.nodeFidelity()).containsEntry("subject", "PROTOCOL_DERIVED");
+        assertThat(transport.success()).as("transport=%s", transport).isTrue();
+        assertThat(transport.output()).isInstanceOfSatisfying(HttpResourceOutput.class,
+                output -> assertThat(output.payload()).isEqualTo(Map.of("name", "Ada")));
+        assertThat(transport.nodeFidelity()).containsEntry("subject", "TRANSPORT_LEVEL");
+    }
+
+    @Test
     void invalidRawEvidenceFailsClosedWithoutRequestedFidelity() {
         VisualDslRunResponse response = resourceAdapter().execute(resourcePlan(
                 NodeFixture.ResourceFidelity.PROTOCOL_DERIVED,

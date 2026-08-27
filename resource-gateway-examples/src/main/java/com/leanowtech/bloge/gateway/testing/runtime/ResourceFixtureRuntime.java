@@ -19,6 +19,7 @@ import com.leanowtech.bloge.operators.http.HttpResponseOutput;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -29,6 +30,7 @@ public class ResourceFixtureRuntime {
 
     private final ResourceRegistry registry;
     private final BlgeExpressionEvaluator evaluator;
+    private final ObjectMapper objectMapper;
     private final PayloadExtractor extractor;
     private final ResponseValidator validator;
 
@@ -41,9 +43,45 @@ public class ResourceFixtureRuntime {
                                   ObjectMapper objectMapper) {
         this.registry = java.util.Objects.requireNonNull(registry, "registry");
         this.evaluator = java.util.Objects.requireNonNull(evaluator, "evaluator");
+        this.objectMapper = java.util.Objects.requireNonNull(objectMapper, "objectMapper");
         this.extractor = new PayloadExtractor(
                 java.util.Objects.requireNonNull(objectMapper, "objectMapper"));
         this.validator = new ResponseValidator(evaluator);
+    }
+
+    /**
+     * Projects governed business material through the descriptor's real success protocol and
+     * payload path. This keeps protocol/transport evidence server-authoritative while ensuring
+     * the subsequent execution still exercises the real descriptor pipeline.
+     *
+     * @param resourceId exact configured resource descriptor id
+     * @param payload governed, schema-compatible business payload
+     * @param boundary descriptor protocol or complete descriptor transport boundary
+     * @return raw-response behavior consumable by the descriptor-backed fixture runtime
+     */
+    public FixtureRule.Behavior projectGovernedPayload(
+            String resourceId, Object payload, FixtureRule.DoubleBoundary boundary) {
+        ResourceDescriptor descriptor = registry.resolve(resourceId);
+        if (descriptor.responseProtocol() instanceof ResponseProtocol.BlgeExpression) {
+            throw new IllegalArgumentException(
+                    "Expression response protocols cannot project governed material");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (descriptor.responseProtocol() instanceof ResponseProtocol.BodyCode protocol) {
+            setPath(body, protocol.codePath(), protocol.successValues().iterator().next());
+        } else if (descriptor.responseProtocol() instanceof ResponseProtocol.BodyFlag protocol) {
+            setPath(body, protocol.flagPath(), true);
+        }
+        setPath(body, descriptor.payloadPath(), payload);
+        String rawBody;
+        try {
+            rawBody = objectMapper.writeValueAsString(body);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException failure) {
+            throw new IllegalStateException("Governed material could not be serialized", failure);
+        }
+        return FixtureRule.Behavior.protocolResponse(
+                rawBody, successStatus(descriptor.responseProtocol()),
+                Map.of("Content-Type", "application/json"), boundary);
     }
 
     /**
@@ -126,6 +164,35 @@ public class ResourceFixtureRuntime {
             return evaluator.evaluate(expression.payloadExpr(), expressionContext);
         }
         return extractor.extract(response.body(), descriptor.payloadPath());
+    }
+
+    private static int successStatus(ResponseProtocol protocol) {
+        if (protocol instanceof ResponseProtocol.BodyCode bodyCode
+                && bodyCode.successValues().iterator().next() instanceof Number code) {
+            return code.intValue();
+        }
+        if (protocol instanceof ResponseProtocol.StatusCodes statusCodes) {
+            return statusCodes.successCodes().iterator().next();
+        }
+        return 200;
+    }
+
+    private static void setPath(Map<String, Object> target, String path, Object value) {
+        if (path == null || path.isBlank()) {
+            throw new IllegalArgumentException("Descriptor response path must not be blank");
+        }
+        String[] segments = path.split("\\.");
+        Map<String, Object> current = target;
+        for (int index = 0; index < segments.length - 1; index += 1) {
+            Object child = current.computeIfAbsent(segments[index], key -> new LinkedHashMap<String, Object>());
+            if (!(child instanceof Map<?, ?>)) {
+                throw new IllegalArgumentException("Descriptor response path conflicts with success marker");
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nested = (Map<String, Object>) child;
+            current = nested;
+        }
+        current.put(segments[segments.length - 1], value);
     }
 
     private static String resourceId(Object input) {
