@@ -6,6 +6,13 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visualadapter.DynamicGatewayComposerVisualDslRunner;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblem;
+import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpHeaders;
 
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * Endpoint-level tests for {@link VisualGraphSimulationController} using direct instantiation,
@@ -44,6 +53,78 @@ class VisualGraphSimulationControllerTest {
         assertThat(response.success()).isTrue();
         assertThat(response.realNodeIds()).containsExactly("eligibility");
         assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "ELIGIBILITY_V1"));
+    }
+
+    @Test
+    void governedFixtureUsesAuthenticatedReadHandlerAndInjectsOnlyResolvedOutput() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
+        @SuppressWarnings("unchecked") ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(resolver);
+        IntegrationRequestContext identity = new IntegrationRequestContext(
+                "tenant", "org", "project", "test", "sg", "USER", "author", "",
+                "CORRECTNESS_FIXTURE_MATERIAL_READ", "corr");
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ)))
+                .thenReturn(identity);
+        when(resolver.resolve(any(), any(), eq(identity), any(), eq("eligibility")))
+                .thenReturn(new NodeFixture(Map.of("eligible", true)));
+        VisualGraphSimulationResponse expected = new VisualGraphSimulationResponse(
+                true, true, true, "graph", "eligibility", Map.of("eligible", true),
+                Map.of(), Map.of(), 1, Map.of(), List.of("eligibility"), List.of(), true,
+                List.of(), List.of(), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(expected);
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+        VisualGraphSimulationRequest request = new VisualGraphSimulationRequest(
+                eligibilityDraft(), Map.of(), "", Map.of("eligibility",
+                        new NodeFixture(null, null, new GovernedFixtureRef(
+                                "fixture", 1, "sha256:" + "a".repeat(64)))));
+
+        assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(expected);
+        verify(authenticator).authenticate(any(HttpHeaders.class), eq(
+                IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ));
+        verify(resolver).resolve(any(), any(), eq(identity), any(), eq("eligibility"));
+    }
+
+    @Test
+    void governedFixtureWithoutAuthenticationFailsBeforeResolution() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
+        when(provider.getIfAvailable()).thenReturn(resolver);
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(
+                IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ))).thenThrow(
+                new IntegrationProblemException(IntegrationProblem.unauthorized(
+                        "AUTH_REQUIRED", "Authentication required", "corr", Map.of())));
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> controller.simulate(
+                new VisualGraphSimulationRequest(eligibilityDraft(), Map.of(), "",
+                        Map.of("eligibility", new NodeFixture(null, null,
+                                new GovernedFixtureRef("fixture", 1, "sha256:" + "a".repeat(64))))),
+                new HttpHeaders())).isInstanceOf(IntegrationProblemException.class);
+        verifyNoInteractions(resolver, simulation);
+    }
+
+    @Test
+    void legacyFixtureDoesNotRequireOrAttemptAuthentication() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(mock(GovernedFixtureSimulationResolver.class));
+        VisualGraphSimulationResponse expected = new VisualGraphSimulationResponse(
+                true, true, true, "graph", "eligibility", Map.of(), Map.of(), Map.of(), 1,
+                Map.of(), List.of(), List.of("eligibility"), true, List.of(), List.of(), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(expected);
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+
+        assertThat(controller.simulate(new VisualGraphSimulationRequest(eligibilityDraft(), Map.of(), "",
+                Map.of("eligibility", new NodeFixture(Map.of("eligible", true)))))).isSameAs(expected);
+        verifyNoInteractions(authenticator);
     }
 
     private static VisualGraphSimulationController controllerFor(

@@ -2,7 +2,6 @@ package com.leanowtech.bloge.gateway.visual.simulation;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
-import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.FixtureLifecycle;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.MaterialAccessContext;
@@ -77,10 +76,21 @@ public final class GovernedFixtureSimulationResolver {
         return new NodeFixture(resolved.payload());
     }
 
-    /** Resolves a node-bound reference and rejects operator schema drift or ambiguous outputs. */
+    /**
+     * Resolves a node-bound reference and rejects operator schema drift or ambiguous outputs.
+     *
+     * @param scope server-derived authorized scope
+     * @param ref exact client-provided Fixture identity
+     * @param identity authenticated material-read identity
+     * @param draft authoritative draft lineage containing the node
+     * @param nodeId exact node lineage key for the Fixture
+     * @return output-only request-scoped fixture
+     * @throws GovernedFixtureResolutionException if any lineage or schema check fails
+     */
     public NodeFixture resolve(EnterpriseScope scope, GovernedFixtureRef ref,
                                IntegrationRequestContext identity, GraphDraft draft, String nodeId) {
-        if (catalog == null || draft == null || nodeId == null) throw invalid();
+        if (catalog == null || scope == null || ref == null || identity == null
+                || draft == null || nodeId == null || nodeId.isBlank()) throw invalid();
         GraphDraft.DraftNode node = draft.nodes().stream().filter(value -> value.id().equals(nodeId))
                 .findFirst().orElseThrow(GovernedFixtureSimulationResolver::notFound);
         OperatorDefinition operator = catalog.find(node.operatorRef())

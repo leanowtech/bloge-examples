@@ -70,7 +70,9 @@ public class VisualGraphSimulationController {
     public VisualGraphSimulationResponse simulate(
             @RequestBody VisualGraphSimulationRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(required = false) HttpHeaders headers) {
-        if (request != null && request.fixtures().values().stream()
+        VisualGraphSimulationRequest incoming = request;
+        final VisualGraphSimulationRequest requestForCheck = incoming;
+        if (requestForCheck != null && requestForCheck.fixtures().values().stream()
                 .anyMatch(fixture -> fixture != null && fixture.governedRef() != null)) {
             if (authenticator == null || governedFixtures == null) {
                 throw new GovernedFixtureResolutionException(503,
@@ -80,18 +82,19 @@ public class VisualGraphSimulationController {
                     headers, IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ);
             EnterpriseScope scope = new EnterpriseScope(identity.tenantId(), identity.organizationId(),
                     identity.projectId(), identity.environmentId(), identity.region());
-            VisualGraphSimulationRequest incoming = request;
+            VisualGraphSimulationRequest requestForResolution = incoming;
             Map<String, NodeFixture> resolved = new LinkedHashMap<>();
-            incoming.fixtures().forEach((nodeId, fixture) -> resolved.put(nodeId,
+            requestForResolution.fixtures().forEach((nodeId, fixture) -> resolved.put(nodeId,
                     fixture == null || fixture.governedRef() == null
                             ? fixture
                             : governedFixtures.resolve(scope, fixture.governedRef(), identity,
-                                    incoming.draft(), nodeId)));
-            request = new VisualGraphSimulationRequest(
-                    incoming.draft(), incoming.context(), incoming.outputNode(), resolved);
+                                    requestForResolution.draft(), nodeId)));
+            incoming = new VisualGraphSimulationRequest(
+                    requestForResolution.draft(), requestForResolution.context(),
+                    requestForResolution.outputNode(), resolved);
         }
         return simulationService.simulate(
-                request.draft(), request.context(), request.outputNode(), request.fixtures());
+                incoming.draft(), incoming.context(), incoming.outputNode(), incoming.fixtures());
     }
 
     /** Maps fail-closed governed Fixture resolution failures to a payload-free problem response. */
