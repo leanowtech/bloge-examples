@@ -8,7 +8,6 @@ import com.leanowtech.bloge.gateway.ResourceGatewayApplication;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioContractProjection;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSet;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetAuthoringService;
-import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioDraftSetController;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationRequest;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationResult;
 import com.leanowtech.bloge.gateway.authoring.scenario.ScenarioImportMaterializationService;
@@ -18,6 +17,7 @@ import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkReceipt;
 import com.leanowtech.bloge.gateway.authoring.workspace.WorkspaceForkService;
 import com.leanowtech.bloge.gateway.gateway.GatewayProperties;
 import com.leanowtech.bloge.gateway.integration.IntegrationIdentityResolver;
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblemException;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
@@ -85,9 +85,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -313,12 +315,12 @@ class VisualAuthoringBrowserDomTest {
             return new ScenarioDraftSetBrowserFixtureController(service);
         }
 
-        /** Registers the production v1 Scenario transport without activating the full test profile. */
+        /** Exposes only the production v1 write contract; GET is owned by the test fixture below. */
         @Bean
-        ScenarioDraftSetController scenarioDraftSetController(
+        ScenarioDraftSetWriteBrowserFixtureController scenarioDraftSetWriteBrowserFixtureController(
                 ScenarioDraftSetAuthoringService service,
                 IntegrationRequestAuthenticator authenticator) {
-            return new ScenarioDraftSetController(service, authenticator);
+            return new ScenarioDraftSetWriteBrowserFixtureController(service, authenticator);
         }
     }
 
@@ -402,6 +404,40 @@ class VisualAuthoringBrowserDomTest {
                     idempotencyKey,
                     command,
                     browserAuthoringIdentity("TEST_SUITE_WRITE", "browser-workspace-fork"));
+        }
+    }
+
+    /**
+     * PUT-only test transport for the real Scenario authoring service.
+     *
+     * <p>The browser fixture owns the Scenario GET and Graph Contract GET projections. Keeping
+     * this adapter write-only avoids ambiguous mappings while preserving production auth and CAS
+     * persistence semantics for the browser's save path.</p>
+     */
+    @RestController
+    @RequestMapping("/api/visual/scenario-draft-sets")
+    static final class ScenarioDraftSetWriteBrowserFixtureController {
+        private final ScenarioDraftSetAuthoringService service;
+        private final IntegrationRequestAuthenticator authenticator;
+
+        ScenarioDraftSetWriteBrowserFixtureController(
+                ScenarioDraftSetAuthoringService service,
+                IntegrationRequestAuthenticator authenticator) {
+            this.service = service;
+            this.authenticator = authenticator;
+        }
+
+        @PutMapping("/{scenarioDraftSetId}")
+        StoredScenarioDraftSet save(
+                @PathVariable String scenarioDraftSetId,
+                @RequestParam long expectedRevision,
+                @RequestBody ScenarioDraftSet draftSet,
+                @RequestHeader HttpHeaders headers) {
+            return service.save(
+                    scenarioDraftSetId,
+                    expectedRevision,
+                    draftSet,
+                    authenticator.authenticate(headers, IntegrationOperation.TEST_SUITE_WRITE));
         }
     }
 
