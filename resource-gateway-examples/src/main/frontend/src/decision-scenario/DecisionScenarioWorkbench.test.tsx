@@ -2,11 +2,11 @@
 import { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { saveScenarioDraftSet } from '../api';
+import { fetchScenarioOperatorContract, saveScenarioDraftSet } from '../api';
 import type { ExactTargetRef, EnterpriseScope } from '../contract-scenario/domain';
 import { DecisionScenarioWorkbench } from './DecisionScenarioWorkbench';
 
-vi.mock('../api', () => ({ saveScenarioDraftSet: vi.fn() }));
+vi.mock('../api', () => ({ fetchScenarioOperatorContract: vi.fn(), saveScenarioDraftSet: vi.fn() }));
 
 const target: ExactTargetRef = { kind: 'OPERATOR', id: 'bloge:decisionTable', revision: 1, fingerprint: 'sha256:operator' };
 const scope: EnterpriseScope = { tenantId: 'tenant-a', organizationId: 'org-a', projectId: 'project-a', environment: 'dev', region: 'sg' };
@@ -26,6 +26,7 @@ describe('DecisionScenarioWorkbench', () => {
   it('generates and persists through the real ScenarioDraftSet endpoint with exact target scope', async () => {
     const onPersistedChange = vi.fn();
     const onOutputKindChange = vi.fn();
+    vi.mocked(fetchScenarioOperatorContract).mockResolvedValue({ scope, contract: { target, inputSchema: {}, outputSchema: {} }, contractFingerprint: 'sha256:contract' } as never);
     vi.mocked(saveScenarioDraftSet).mockResolvedValue({ draftSet: { metadata: {}, scenarios: [] } } as never);
     const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
     await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={onPersistedChange} onOutputKindChange={onOutputKindChange} />); });
@@ -34,6 +35,7 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
     expect(host.querySelector('[data-testid="decision-scenario-preview"]')).not.toBeNull();
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
+    expect(fetchScenarioOperatorContract).toHaveBeenCalledWith(target.id);
     expect(saveScenarioDraftSet).toHaveBeenCalledOnce();
     expect(vi.mocked(saveScenarioDraftSet).mock.calls[0]?.[0]).toMatchObject({ target, scope, metadata: { owner: 'owner' } });
     expect(onPersistedChange).toHaveBeenCalledOnce();
@@ -41,6 +43,7 @@ describe('DecisionScenarioWorkbench', () => {
 
   it('keeps a failed save retryable instead of reporting local-only success', async () => {
     vi.mocked(saveScenarioDraftSet).mockRejectedValue(new Error('network unavailable'));
+    vi.mocked(fetchScenarioOperatorContract).mockResolvedValue({ scope, contract: { target, inputSchema: {}, outputSchema: {} }, contractFingerprint: 'sha256:contract' } as never);
     const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
     await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={vi.fn()} />); });
     await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
@@ -50,6 +53,7 @@ describe('DecisionScenarioWorkbench', () => {
   });
 
   it('re-enumerates a stale persisted set and clears stale state after the authoritative save', async () => {
+    vi.mocked(fetchScenarioOperatorContract).mockResolvedValue({ scope, contract: { target, inputSchema: {}, outputSchema: {} }, contractFingerprint: 'sha256:contract' } as never);
     vi.mocked(saveScenarioDraftSet).mockImplementation(async (draftSet) => ({ draftSet } as never));
     function Harness() {
       const [persisted, setPersisted] = useState<any>({ metadata: { provenance: { sourceFingerprint: 'sha256:old' } } });
@@ -62,5 +66,15 @@ describe('DecisionScenarioWorkbench', () => {
     await act(async () => { (host.querySelector('[data-testid="decision-scenario-preview"] button') as HTMLButtonElement).click(); });
     expect(saveScenarioDraftSet).toHaveBeenCalledOnce();
     expect(host.querySelector('[data-testid="decision-scenario-stale"]')).toBeNull();
+  });
+
+  it('does not expose save when the authoritative projection cannot be loaded', async () => {
+    vi.mocked(fetchScenarioOperatorContract).mockRejectedValue(new Error('contract unavailable'));
+    const host = document.createElement('div'); document.body.appendChild(host); root = createRoot(host);
+    await act(async () => { root?.render(<DecisionScenarioWorkbench editor={editor} tableId="decision-node" target={target} scope={scope} owner="owner" persisted={null} onPersistedChange={vi.fn()} />); });
+    await act(async () => { (host.querySelector('[data-testid="generate-decision-scenarios"]') as HTMLButtonElement).click(); });
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('contract unavailable');
+    expect(host.querySelector('[data-testid="decision-scenario-preview"]')).toBeNull();
+    expect(saveScenarioDraftSet).not.toHaveBeenCalled();
   });
 });
