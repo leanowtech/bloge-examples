@@ -11,6 +11,9 @@ import java.util.Optional;
 /** Scope-exact Fixture catalog and reverse-usage index. No method can return material payloads. */
 public interface FixtureAssetRepository {
 
+    /** Lists current descriptor heads in one exact authorized scope. */
+    List<StoredFixtureAsset> listHeads(EnterpriseScope scope, boolean activeOnly, int limit, int offset);
+
     Optional<StoredFixtureAsset> findHead(EnterpriseScope scope, String fixtureAssetId);
 
     Optional<StoredFixtureAsset> findRevision(
@@ -35,6 +38,9 @@ public interface FixtureAssetRepository {
             EnterpriseScope scope,
             ExactAssetRef fixtureAssetRef,
             int limit);
+
+    /** Counts all reverse-usage rows exactly, without a presentation-page limit. */
+    int countUsages(EnterpriseScope scope, ExactAssetRef fixtureAssetRef);
 
     record FixtureUsage(ExactAssetRef fixtureAssetRef, ExactAssetRef consumerRef) {
         public FixtureUsage {

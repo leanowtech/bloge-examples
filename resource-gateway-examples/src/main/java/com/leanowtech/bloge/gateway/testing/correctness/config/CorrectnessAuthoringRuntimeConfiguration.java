@@ -124,6 +124,14 @@ public class CorrectnessAuthoringRuntimeConfiguration {
         return new DatabaseFixtureAssetRepository(jdbc, mapper);
     }
 
+    /** Creates the payload-free governed Fixture collection projection. */
+    @Bean
+    @ConditionalOnMissingBean
+    com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService
+            fixtureAssetCollectionService(FixtureAssetRepository fixtures) {
+        return new com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService(fixtures);
+    }
+
     @Bean
     @ConditionalOnMissingBean
     CorrectnessGovernanceRepository correctnessGovernanceRepository(

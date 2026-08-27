@@ -82,6 +82,30 @@ class DatabaseFixtureAssetRepositoryTest {
     }
 
     @Test
+    void listsOnlyCurrentHeadsInExactScopeAndCanFilterActive() {
+        StoredFixtureAsset active = repository.saveIfRevision(
+                0, descriptor(scope("tenant-a"), "active", 0, FixtureLifecycle.ACTIVE), author()).orElseThrow();
+        repository.saveIfRevision(
+                0, descriptor(scope("tenant-a"), "draft", 0, FixtureLifecycle.DRAFT), author()).orElseThrow();
+        repository.saveIfRevision(
+                0, descriptor(scope("tenant-b"), "other-scope", 0, FixtureLifecycle.ACTIVE), author()).orElseThrow();
+        repository.saveIfRevision(
+                1, descriptor(scope("tenant-a"), "draft", 1, FixtureLifecycle.DRAFT), author()).orElseThrow();
+
+        assertThat(repository.listHeads(scope("tenant-a"), false, 1, 0))
+                .extracting(value -> value.descriptor().fixtureAssetId()).containsExactly("active");
+        assertThat(repository.listHeads(scope("tenant-a"), false, 1, 1))
+                .extracting(value -> value.descriptor().fixtureAssetId()).containsExactly("draft");
+        assertThat(repository.listHeads(scope("tenant-b"), true, 10, 0))
+                .extracting(value -> value.descriptor().lifecycle()).containsExactly(FixtureLifecycle.ACTIVE);
+        assertThat(repository.listHeads(scope("tenant-a"), true, 10, 0))
+                .extracting(value -> value.descriptor().fixtureAssetId()).containsExactly("active");
+        assertThat(active.descriptor().scope()).isEqualTo(scope("tenant-a"));
+        assertThatThrownBy(() -> repository.listHeads(scope("tenant-a"), true, 101, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void enforcesFullScopeCasAndImmutableHistory() throws Exception {
         StoredFixtureAsset tenantA = repository.saveIfRevision(
                 0, descriptor(scope("tenant-a"), 0, FixtureLifecycle.DRAFT), author())
@@ -171,9 +195,14 @@ class DatabaseFixtureAssetRepositoryTest {
 
     private FixtureAssetDescriptor descriptor(
             EnterpriseScope scope, long revision, FixtureLifecycle lifecycle) {
+        return descriptor(scope, "prime-applicant", revision, lifecycle);
+    }
+
+    private FixtureAssetDescriptor descriptor(
+            EnterpriseScope scope, String id, long revision, FixtureLifecycle lifecycle) {
         Instant forged = Instant.parse("2001-01-01T00:00:00Z");
         return new FixtureAssetDescriptor(
-                "", "prime-applicant", revision, scope, "Prime applicant",
+                "", id, revision, scope, id,
                 new FixtureSource(SourceKind.SAMPLE, null),
                 asset("FIXTURE_MATERIAL", "prime-applicant", 3, 'a'),
                 new ExactSchemaRef("loan-request", 2, fingerprint('b')),

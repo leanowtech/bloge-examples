@@ -72,29 +72,51 @@ public class VisualGraphSimulationController {
             @org.springframework.web.bind.annotation.RequestHeader(required = false) HttpHeaders headers) {
         VisualGraphSimulationRequest incoming = request;
         final VisualGraphSimulationRequest requestForCheck = incoming;
+        IntegrationRequestContext governedIdentity = null;
+        EnterpriseScope governedScope = null;
+        java.util.List<GovernedFixtureRef> governedRefs = new java.util.ArrayList<>();
         if (requestForCheck != null && requestForCheck.fixtures().values().stream()
                 .anyMatch(fixture -> fixture != null && fixture.governedRef() != null)) {
             if (authenticator == null || governedFixtures == null) {
                 throw new GovernedFixtureResolutionException(503,
                         "Governed Fixture simulation is unavailable");
             }
-            IntegrationRequestContext identity = authenticator.authenticate(
+            governedIdentity = authenticator.authenticate(
                     headers, IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ);
-            EnterpriseScope scope = new EnterpriseScope(identity.tenantId(), identity.organizationId(),
-                    identity.projectId(), identity.environmentId(), identity.region());
+            governedScope = new EnterpriseScope(governedIdentity.tenantId(), governedIdentity.organizationId(),
+                    governedIdentity.projectId(), governedIdentity.environmentId(), governedIdentity.region());
+            final IntegrationRequestContext resolvedIdentity = governedIdentity;
+            final EnterpriseScope resolvedScope = governedScope;
             VisualGraphSimulationRequest requestForResolution = incoming;
             Map<String, NodeFixture> resolved = new LinkedHashMap<>();
             requestForResolution.fixtures().forEach((nodeId, fixture) -> resolved.put(nodeId,
                     fixture == null || fixture.governedRef() == null
                             ? fixture
-                            : governedFixtures.resolve(scope, fixture.governedRef(), identity,
+                            : resolveGoverned(governedRefs, resolvedScope, fixture.governedRef(), resolvedIdentity,
                                     requestForResolution.draft(), nodeId)));
             incoming = new VisualGraphSimulationRequest(
                     requestForResolution.draft(), requestForResolution.context(),
                     requestForResolution.outputNode(), resolved);
         }
-        return simulationService.simulate(
+        VisualGraphSimulationResponse response = simulationService.simulate(
                 incoming.draft(), incoming.context(), incoming.outputNode(), incoming.fixtures());
+        if (response.success() && request != null && governedFixtures != null) {
+            java.util.List<GovernedFixtureRef> refs = request.fixtures().values().stream()
+                    .filter(fixture -> fixture != null && fixture.governedRef() != null)
+                    .map(NodeFixture::governedRef).toList();
+            if (!refs.isEmpty() && governedIdentity != null && governedScope != null) {
+                governedFixtures.recordReuse(governedScope, request.draft(), refs);
+            }
+        }
+        return response;
+    }
+
+    private NodeFixture resolveGoverned(java.util.List<GovernedFixtureRef> refs,
+                                        EnterpriseScope scope, GovernedFixtureRef ref,
+                                        IntegrationRequestContext identity, com.leanowtech.bloge.gateway.visual.draft.GraphDraft draft,
+                                        String nodeId) {
+        refs.add(ref);
+        return governedFixtures.resolve(scope, ref, identity, draft, nodeId);
     }
 
     /** Maps fail-closed governed Fixture resolution failures to a payload-free problem response. */

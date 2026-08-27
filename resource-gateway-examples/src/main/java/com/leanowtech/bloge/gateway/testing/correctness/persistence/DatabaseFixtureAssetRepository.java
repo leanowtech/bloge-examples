@@ -46,6 +46,28 @@ public class DatabaseFixtureAssetRepository implements FixtureAssetRepository {
     }
 
     @Override
+    public List<StoredFixtureAsset> listHeads(
+            EnterpriseScope scope, boolean activeOnly, int limit, int offset) {
+        EnterpriseScope exactScope = exactScope(scope);
+        if (limit < 1 || limit > 100 || offset < 0 || offset > 100_000) {
+            throw new IllegalArgumentException("Fixture listing bounds are invalid");
+        }
+        String lifecycle = activeOnly ? " AND lifecycle = 'ACTIVE'" : "";
+        return jdbc.query("""
+                        SELECT * FROM rg_fixture_asset_heads
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?%s
+                        ORDER BY fixture_asset_id, revision DESC
+                        LIMIT ? OFFSET ?
+                        """.formatted(lifecycle),
+                (result, row) -> readAndVerify(result, exactScope,
+                        result.getString("fixture_asset_id")),
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), limit, offset)
+                .stream().flatMap(Optional::stream).toList();
+    }
+
+    @Override
     public Optional<StoredFixtureAsset> findHead(EnterpriseScope scope, String fixtureAssetId) {
         return queryOne(HEAD_TABLE, exactScope(scope), exactId(fixtureAssetId), 0);
     }
@@ -202,6 +224,23 @@ public class DatabaseFixtureAssetRepository implements FixtureAssetRepository {
                 exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
                 exactScope.environment(), exactScope.region(), fixtureAssetRef.id(),
                 fixtureAssetRef.revision(), fixtureAssetRef.fingerprint(), limit);
+    }
+
+    @Override
+    public int countUsages(EnterpriseScope scope, ExactAssetRef fixtureAssetRef) {
+        EnterpriseScope exactScope = exactScope(scope);
+        requireFixtureRef(fixtureAssetRef);
+        Long count = jdbc.queryForObject("""
+                        SELECT COUNT(*) FROM rg_fixture_usage_index
+                        WHERE tenant_id = ? AND organization_id = ? AND project_id = ?
+                          AND environment_id = ? AND region_id = ?
+                          AND fixture_asset_id = ? AND fixture_revision = ?
+                          AND fixture_fingerprint = ?
+                        """, Long.class,
+                exactScope.tenantId(), exactScope.organizationId(), exactScope.projectId(),
+                exactScope.environment(), exactScope.region(), fixtureAssetRef.id(),
+                fixtureAssetRef.revision(), fixtureAssetRef.fingerprint());
+        return count == null ? 0 : Math.toIntExact(count);
     }
 
     private Optional<StoredFixtureAsset> queryOne(

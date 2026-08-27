@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.simulation;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
+import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.ExactAssetRef;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.FixtureAssetDescriptor.FixtureLifecycle;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialResolver.MaterialAccessContext;
@@ -17,6 +18,9 @@ import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.Objects;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 /** Resolves exact ACTIVE governed Fixture metadata and protected output for simulation only. */
 public final class GovernedFixtureSimulationResolver {
@@ -108,6 +112,23 @@ public final class GovernedFixtureSimulationResolver {
             throw blocked("Governed Fixture output no longer satisfies the current schema");
         }
         return resolved;
+    }
+
+    /** Records one idempotent graph consumer reference after a successful simulation. */
+    public void recordReuse(EnterpriseScope scope, GraphDraft draft,
+                            List<GovernedFixtureRef> refs) {
+        if (scope == null || draft == null || refs == null || refs.isEmpty()) return;
+        String contentFingerprint =
+                com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocolFingerprint
+                        .derivedFingerprint(mapper, draft.withNodeFixtures(Map.of()));
+        ExactAssetRef consumer = new ExactAssetRef("GRAPH_SIMULATION",
+                draft.draftId() + "@" + contentFingerprint, 1, contentFingerprint);
+        List<ExactAssetRef> fixtureRefs = refs.stream()
+                .map(ref -> fixtures.findRevision(scope, ref.fixtureAssetId(), ref.revision()))
+                .flatMap(Optional::stream)
+                .map(StoredFixtureAsset::exactRef)
+                .distinct().toList();
+        if (!fixtureRefs.isEmpty()) fixtures.replaceUsageForConsumer(scope, consumer, fixtureRefs);
     }
 
     private static GovernedFixtureResolutionException invalid() {
