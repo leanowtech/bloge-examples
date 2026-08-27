@@ -463,7 +463,12 @@ export function GraphNodeFixturePicker({ assets, onSelect }: GraphNodeFixturePic
               >
                 <strong>{asset.name}</strong>
                 <code>{`${asset.fixtureAssetId} r${asset.revision} · ${asset.schemaFingerprint.slice(0, 10)}`}</code>
-                <small>{`${t('Used')} ${asset.usageCount ?? 0}`}</small>
+                <small
+                  data-testid={`fixture-usage-count-${asset.fixtureAssetId}-r${asset.revision}`}
+                  aria-label={`${t('Used')} ${Number.isInteger(asset.usageCount) && (asset.usageCount ?? 0) >= 0 ? asset.usageCount : 0}`}
+                >
+                  {`${t('Used')} ${Number.isInteger(asset.usageCount) && (asset.usageCount ?? 0) >= 0 ? asset.usageCount : 0}`}
+                </small>
               </button>
             </li>
           ))}

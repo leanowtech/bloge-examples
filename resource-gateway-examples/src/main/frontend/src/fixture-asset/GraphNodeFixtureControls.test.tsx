@@ -147,17 +147,26 @@ describe('graph-node fixture controls', () => {
     expect(host.querySelector('[data-testid="fixture-approval-comment-node_1"]')).toBeNull();
   });
 
-  it('offers only reusable governed assets and records the exact selection', () => {
+  it('renders authoritative usage counts by fixture revision and preserves them on selection', () => {
     const onSelect = vi.fn();
     const assets = [
       { fixtureAssetId: 'z-active', revision: 4, name: 'Zulu profile', schemaFingerprint: 'fp-z', usageCount: 8 },
+      { fixtureAssetId: 'z-active', revision: 5, name: 'Zulu profile', schemaFingerprint: 'fp-z5', usageCount: 1 },
+      { fixtureAssetId: 'zero-active', revision: 1, name: 'Zero profile', schemaFingerprint: 'fp-0', usageCount: 0 },
       { fixtureAssetId: 'a-draft', revision: 1, name: 'Alpha draft', schemaFingerprint: 'fp-a', lifecycle: 'DRAFT' },
     ];
     act(() => root.render(<GraphNodeFixturePicker assets={assets} onSelect={onSelect} />));
     expect(host.textContent).toContain('Zulu profile');
     expect(host.textContent).not.toContain('Alpha draft');
+    expect(host.querySelector('[data-testid="fixture-usage-count-z-active-r4"]')?.textContent).toBe('Used 8');
+    expect(host.querySelector('[data-testid="fixture-usage-count-z-active-r5"]')?.textContent).toBe('Used 1');
+    expect(host.querySelector('[data-testid="fixture-usage-count-zero-active-r1"]')?.textContent).toBe('Used 0');
+    expect(host.querySelector('[data-testid="fixture-usage-count-z-active-r4"]')?.getAttribute('aria-label')).toBe('Used 8');
     act(() => host.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-z-active"]')?.click());
     expect(onSelect).toHaveBeenCalledWith(assets[0]);
+    expect(host.querySelector('[data-testid="fixture-usage-count-z-active-r4"]')?.textContent).toBe('Used 8');
+    expect(host.querySelector('[data-testid="fixture-usage-count-z-active-r5"]')?.textContent).toBe('Used 1');
+    expect(host.querySelector('[data-testid="fixture-usage-count-zero-active-r1"]')?.textContent).toBe('Used 0');
   });
 
   it('explains when no active governed fixture can be reused', () => {
