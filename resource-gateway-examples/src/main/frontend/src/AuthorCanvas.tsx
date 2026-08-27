@@ -238,13 +238,11 @@ import {
   compileTaskRunContext,
   reconcileRunInputWithSchema,
 } from './author/input/authorRunInput';
-import ExternalApiAuthoring from './external-api/ExternalApiAuthoring';
 import { parseToolCoordinate, resolveSpine } from './spine/authorSpine';
 import {
   scenarioSetMatchesOperator,
   type DecisionEditorSnapshot,
 } from './decision-scenario/decisionScenarioModel';
-import ToolAuthoringPanel from './tool/ToolAuthoringPanel';
 import ToolPaletteFacets from './tool/ToolPaletteFacets';
 import type { ToolPublicationMetadata } from './tool/toolModel';
 import {
@@ -330,6 +328,8 @@ const DecisionScenarioWorkbench = lazy(
     default: module.DecisionScenarioWorkbench,
   })),
 );
+const ToolAuthoringPanel = lazy(() => import('./tool/ToolAuthoringPanel'));
+const ExternalApiAuthoring = lazy(() => import('./external-api/ExternalApiAuthoring'));
 const GraphNodeFixturePicker = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
   .then((module) => ({ default: module.GraphNodeFixturePicker })));
 const FixtureStalenessNotice = lazy(() => import('./fixture-asset/GraphNodeFixtureControls')
@@ -11798,19 +11798,21 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         </div>
         {spineEnabled && (
           <>
-            {toolCoordinate && (
-              <ToolAuthoringPanel
-                draft={{
-                  ...exportableDraft,
-                  ...(graphDraftStatus ? { status: graphDraftStatus } : {}),
-                }}
-                coordinate={toolCoordinate}
-                publication={toolPublication}
-                onPublished={handleToolPublished}
-                catalogError={toolCatalogError}
-                onRefreshCatalog={refreshToolCatalog}
-              />
-            )}
+            <Suspense fallback={<p className="muted" role="status">{t('Loading scenario tools…')}</p>}>
+              {toolCoordinate && (
+                <ToolAuthoringPanel
+                  draft={{
+                    ...exportableDraft,
+                    ...(graphDraftStatus ? { status: graphDraftStatus } : {}),
+                  }}
+                  coordinate={toolCoordinate}
+                  publication={toolPublication}
+                  onPublished={handleToolPublished}
+                  catalogError={toolCatalogError}
+                  onRefreshCatalog={refreshToolCatalog}
+                />
+              )}
+            </Suspense>
             <ToolPaletteFacets
               operators={operators}
               onAddOperator={(operatorRef) => {
@@ -11818,16 +11820,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                 if (operator) addOperator(operator);
               }}
             />
-            <ExternalApiAuthoring
-              onCatalogRefresh={(catalog) => {
-                setOperators(catalog.operators);
-                setBuiltInFunctions(catalog.builtInFunctions ?? []);
-              }}
-              onAddOperator={(operatorRef) => {
-                const operator = operatorByRef.get(operatorRef);
-                if (operator) addOperator(operator);
-              }}
-            />
+            <Suspense fallback={<p className="muted" role="status">{t('Loading scenario tools…')}</p>}>
+              <ExternalApiAuthoring
+                onCatalogRefresh={(catalog) => {
+                  setOperators(catalog.operators);
+                  setBuiltInFunctions(catalog.builtInFunctions ?? []);
+                }}
+                onAddOperator={(operatorRef) => {
+                  const operator = operatorByRef.get(operatorRef);
+                  if (operator) addOperator(operator);
+                }}
+              />
+            </Suspense>
           </>
         )}
         <section className="library-intake" aria-label={t('Operator library intake')} data-testid="library-intake">
