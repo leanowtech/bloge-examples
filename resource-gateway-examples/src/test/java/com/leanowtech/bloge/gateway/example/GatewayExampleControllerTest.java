@@ -85,6 +85,9 @@ class GatewayExampleControllerTest {
     void pageControllerMakesCapabilityStudioTheDefaultProductWorkspace() throws Exception {
         MockMvc pageMvc = MockMvcBuilders.standaloneSetup(new GatewayExamplePageController()).build();
 
+        pageMvc.perform(get("/").param("spine", "v1"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/index.html"));
         pageMvc.perform(get("/"))
                 .andExpect(status().is3xxRedirection())
                 .andExpect(redirectedUrl("/capabilities/"));

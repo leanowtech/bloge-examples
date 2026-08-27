@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.example;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Serves browser entry points at clean URLs while the concrete assets stay under static resources.
@@ -14,9 +15,21 @@ public class GatewayExamplePageController {
      *
      * @return canonical workspace redirect target
      */
-    @GetMapping({"/", "/capabilities"})
+    @GetMapping("/capabilities")
     public String capabilityStudioRedirect() {
         return "redirect:/capabilities/";
+    }
+
+    /**
+     * Selects the packaged React Launcher for the opted-in 1.3.0 spine coordinate while
+     * retaining Capability Studio as the default root workspace for legacy callers.
+     *
+     * @param spine optional launcher generation selector; only {@code v1} opts in
+     * @return the Launcher static entry point or the legacy Capability Studio redirect
+     */
+    @GetMapping("/")
+    public String rootWorkspace(@RequestParam(name = "spine", required = false) String spine) {
+        return "v1".equals(spine) ? "forward:/index.html" : "redirect:/capabilities/";
     }
 
     /**

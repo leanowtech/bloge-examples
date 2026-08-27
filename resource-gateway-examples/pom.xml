@@ -390,6 +390,21 @@
                                 </configuration>
                             </execution>
                             <execution>
+                                <id>copy-frontend-launcher-dist</id>
+                                <phase>process-classes</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${project.build.outputDirectory}/static</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>src/main/frontend/dist</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <execution>
                                 <id>copy-frontend-libraries-dist</id>
                                 <phase>process-classes</phase>
                                 <goals>
