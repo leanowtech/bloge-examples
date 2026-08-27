@@ -16,6 +16,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.oracle.OracleAssertionCo
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Controller;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.LegacyScenarioV1MigrationController;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetController;
+import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionController;
 import com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureMaterialController;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessCompilationController;
 import com.leanowtech.bloge.gateway.testing.correctness.compilation.CorrectnessPublicationController;
@@ -67,6 +68,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
         ScenarioDraftSetV2Controller.class,
         LegacyScenarioV1MigrationController.class,
         FixtureAssetController.class,
+        FixtureAssetCollectionController.class,
         FixtureMaterialController.class,
         CorrectnessCompilationController.class,
         CorrectnessPublicationController.class,

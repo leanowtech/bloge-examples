@@ -41,7 +41,8 @@ public final class FixtureAssetCollectionController {
             @RequestHeader HttpHeaders headers,
             @RequestParam(defaultValue = "true") boolean activeOnly,
             @RequestParam(defaultValue = "" + FixtureAssetCollectionService.DEFAULT_LIMIT) int limit,
-            @RequestParam(defaultValue = "0") int offset) {
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(required = false) String operatorRef) {
         IntegrationRequestContext identity = authenticator.authenticate(
                 headers, IntegrationOperation.CORRECTNESS_WORKSPACE_READ);
         if (limit < 1 || limit > FixtureAssetCollectionService.MAX_LIMIT
@@ -49,10 +50,14 @@ public final class FixtureAssetCollectionController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Fixture collection bounds are invalid");
         }
+        if (operatorRef != null && (operatorRef.isBlank() || operatorRef.trim().length() > 256)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Operator reference is invalid");
+        }
         EnterpriseScope scope = new EnterpriseScope(identity.tenantId(), identity.organizationId(),
                 identity.projectId(), identity.environmentId(), identity.region());
         List<FixtureAssetCollectionService.FixtureAssetSummary> summaries = service.list(
-                scope, activeOnly, limit, offset);
+                scope, activeOnly, limit, offset, operatorRef);
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.noStore())
                 .header(HttpHeaders.PRAGMA, "no-cache")

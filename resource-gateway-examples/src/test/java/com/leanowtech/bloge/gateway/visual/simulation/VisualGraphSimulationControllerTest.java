@@ -85,6 +85,15 @@ class VisualGraphSimulationControllerTest {
         verify(authenticator).authenticate(any(HttpHeaders.class), eq(
                 IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ));
         verify(resolver).resolve(any(), any(), eq(identity), any(), eq("eligibility"));
+        verify(resolver).recordReuse(any(), eq(request.draft()), anyList());
+
+        VisualGraphSimulationResponse failed = new VisualGraphSimulationResponse(
+                true, true, false, "graph", "eligibility", null,
+                Map.of(), Map.of(), 1, Map.of(), List.of(), List.of(), false,
+                List.of(), List.of("simulation failed"), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(failed);
+        assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(failed);
+        verify(resolver, times(1)).recordReuse(any(), eq(request.draft()), anyList());
     }
 
     @Test

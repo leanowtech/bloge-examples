@@ -63,6 +63,7 @@ class GovernedFixtureSimulationResolverTest {
         when(descriptor.materialRef()).thenReturn(materialRef);
         stored = mock(StoredFixtureAsset.class);
         when(stored.descriptor()).thenReturn(descriptor);
+        when(stored.exactRef()).thenReturn(materialRef);
         when(fixtures.findRevision(scope, "fixture", 1)).thenReturn(Optional.of(stored));
         Receipt receipt = receiptFor(schemaRef);
         var resolved = new FixtureMaterialResolver.ResolvedFixtureMaterial(
@@ -144,6 +145,23 @@ class GovernedFixtureSimulationResolverTest {
         assertThatThrownBy(() -> current.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, fingerprint), identity, draft, "node"))
                 .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+    }
+
+    @Test
+    void recordsContentAddressedReuseIdempotentlyForSuccessfulConsumers() {
+        GovernedFixtureSimulationResolver usageResolver =
+                new GovernedFixtureSimulationResolver(fixtures, materials);
+        GovernedFixtureRef ref = new GovernedFixtureRef("fixture", 1, FINGERPRINT);
+
+        usageResolver.recordReuse(scope, draft(), List.of(ref, ref));
+        usageResolver.recordReuse(scope, draft(), List.of(ref));
+
+        ArgumentCaptor<ExactAssetRef> consumer = ArgumentCaptor.forClass(ExactAssetRef.class);
+        verify(fixtures, times(2)).replaceUsageForConsumer(
+                eq(scope), consumer.capture(), eq(List.of(materialRef)));
+        assertThat(consumer.getAllValues()).hasSize(2)
+                .allSatisfy(value -> assertThat(value.kind()).isEqualTo("GRAPH_SIMULATION"));
+        assertThat(consumer.getAllValues().get(0)).isEqualTo(consumer.getAllValues().get(1));
     }
 
     private static GraphDraft draft() {

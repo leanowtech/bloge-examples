@@ -169,6 +169,21 @@ class DatabaseFixtureAssetRepositoryTest {
     }
 
     @Test
+    void countsDistinctTrustedUsageRowsExactlyAndKeepsScopesIsolated() {
+        StoredFixtureAsset stored = repository.saveIfRevision(
+                0, descriptor(scope("tenant-a"), 0, FixtureLifecycle.ACTIVE), author())
+                .orElseThrow();
+        ExactAssetRef first = asset("GRAPH_SIMULATION", "draft-a@one", 1, '1');
+        ExactAssetRef second = asset("GRAPH_SIMULATION", "draft-a@two", 1, '2');
+        repository.replaceUsageForConsumer(scope("tenant-a"), first, List.of(stored.exactRef()));
+        repository.replaceUsageForConsumer(scope("tenant-a"), second, List.of(stored.exactRef()));
+        repository.replaceUsageForConsumer(scope("tenant-a"), first, List.of(stored.exactRef()));
+
+        assertThat(repository.countUsages(scope("tenant-a"), stored.exactRef())).isEqualTo(2);
+        assertThat(repository.countUsages(scope("tenant-b"), stored.exactRef())).isZero();
+    }
+
+    @Test
     void refusesColumnTamperingAndRollsBackWhenOutboxFails() {
         repository.saveIfRevision(
                 0, descriptor(scope("tenant-a"), 0, FixtureLifecycle.DRAFT), author())

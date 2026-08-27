@@ -128,8 +128,12 @@ public class CorrectnessAuthoringRuntimeConfiguration {
     @Bean
     @ConditionalOnMissingBean
     com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService
-            fixtureAssetCollectionService(FixtureAssetRepository fixtures) {
-        return new com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService(fixtures);
+            fixtureAssetCollectionService(
+                    FixtureAssetRepository fixtures,
+                    ObjectMapper mapper,
+                    ObjectProvider<com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog> catalog) {
+        return new com.leanowtech.bloge.gateway.testing.correctness.fixture.FixtureAssetCollectionService(
+                fixtures, catalog.getIfAvailable(), mapper);
     }
 
     @Bean

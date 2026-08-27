@@ -74,7 +74,6 @@ public class VisualGraphSimulationController {
         final VisualGraphSimulationRequest requestForCheck = incoming;
         IntegrationRequestContext governedIdentity = null;
         EnterpriseScope governedScope = null;
-        java.util.List<GovernedFixtureRef> governedRefs = new java.util.ArrayList<>();
         if (requestForCheck != null && requestForCheck.fixtures().values().stream()
                 .anyMatch(fixture -> fixture != null && fixture.governedRef() != null)) {
             if (authenticator == null || governedFixtures == null) {
@@ -92,7 +91,7 @@ public class VisualGraphSimulationController {
             requestForResolution.fixtures().forEach((nodeId, fixture) -> resolved.put(nodeId,
                     fixture == null || fixture.governedRef() == null
                             ? fixture
-                            : resolveGoverned(governedRefs, resolvedScope, fixture.governedRef(), resolvedIdentity,
+                            : governedFixtures.resolve(resolvedScope, fixture.governedRef(), resolvedIdentity,
                                     requestForResolution.draft(), nodeId)));
             incoming = new VisualGraphSimulationRequest(
                     requestForResolution.draft(), requestForResolution.context(),
@@ -109,14 +108,6 @@ public class VisualGraphSimulationController {
             }
         }
         return response;
-    }
-
-    private NodeFixture resolveGoverned(java.util.List<GovernedFixtureRef> refs,
-                                        EnterpriseScope scope, GovernedFixtureRef ref,
-                                        IntegrationRequestContext identity, com.leanowtech.bloge.gateway.visual.draft.GraphDraft draft,
-                                        String nodeId) {
-        refs.add(ref);
-        return governedFixtures.resolve(scope, ref, identity, draft, nodeId);
     }
 
     /** Maps fail-closed governed Fixture resolution failures to a payload-free problem response. */
