@@ -13433,7 +13433,11 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         <span className="trace-copy">
                           <strong>{row.label}</strong>
                           <span>{row.operatorRef}</span>
-                          {row.fidelity && <small>{t('Server fidelity')}: {row.fidelity}</small>}
+                          {row.fidelity && (
+                            <small data-testid={`server-fidelity:${row.nodeId}`}>
+                              {t('Server fidelity')}: {row.fidelity}
+                            </small>
+                          )}
                           <code>{row.outputPreview}</code>
                         </span>
                         <span className={`run-pill ${row.status}`}>{d(row.status)}</span>

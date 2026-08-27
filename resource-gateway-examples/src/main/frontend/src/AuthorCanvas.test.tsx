@@ -3761,6 +3761,13 @@ describe('AuthorCanvas connection guide', () => {
     expect(document.body.textContent).toContain('PROTOCOL_DERIVED');
     expect(document.body.textContent).toContain('TRANSPORT_LEVEL');
     expect(document.body.textContent).toContain('Server fidelity');
+    expect(query('[data-testid="server-fidelity:n1"]')).toBeDefined();
+    expect(query('[data-testid="server-fidelity:n2"]')).toBeDefined();
+    await click(simulateButton);
+    await waitFor(() => expect(runCount).toBe(2));
+    expect(document.querySelector('[data-testid="server-fidelity:n1"]')).toBeNull();
+    expect(document.querySelector('[data-testid="server-fidelity:n2"]')).toBeNull();
+    expect(document.body.textContent).not.toContain('Server fidelity');
   });
 
   it('shows managed and blocked external-write protocols in the main authoring surface', async () => {
