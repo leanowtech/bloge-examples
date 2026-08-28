@@ -65,7 +65,9 @@ import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioExterna
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioReviewAuthorizer;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -299,6 +301,7 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
      * @param fixtures governed fixture catalog
      * @param materials protected material write boundary
      * @param mapper canonical JSON mapper
+     * @param simulationCaptures optional server-derived simulation capture store
      * @return promotion service
      */
     @Bean
@@ -307,18 +310,20 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     @ConditionalOnMissingBean
     com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService
             graphNodeFixturePromotionService(
-                    GraphDraftRepository drafts,
-                    VisualOperatorCatalog operators,
-                    FixtureCatalogService fixtures,
-                    FixtureMaterialService materials,
-                    ObjectMapper mapper) {
+            GraphDraftRepository drafts,
+            VisualOperatorCatalog operators,
+            FixtureCatalogService fixtures,
+            FixtureMaterialService materials,
+            ObjectMapper mapper,
+            ObjectProvider<VisualSimulationCaptureEvidenceRepository> simulationCaptures) {
         return new com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService(
                 drafts,
                 operators,
                 fixtures,
                 materials::write,
                 mapper,
-                java.time.Clock.systemUTC());
+                java.time.Clock.systemUTC(),
+                simulationCaptures.getIfAvailable());
     }
 
     /**
@@ -347,9 +352,12 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
             governedFixtureSimulationAdapter(
                     VisualGraphSimulationService simulation,
                     IntegrationRequestAuthenticator authenticator,
-                    com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver resolver) {
+                    com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver resolver,
+                    ObjectProvider<VisualOperatorCatalog> operators,
+                    ObjectProvider<VisualSimulationCaptureEvidenceRepository> simulationCaptures) {
         return new com.leanowtech.bloge.gateway.visualadapter.GovernedFixtureSimulationAdapter(
-                simulation, authenticator, resolver);
+                simulation, authenticator, resolver, operators.getIfAvailable(),
+                simulationCaptures.getIfAvailable());
     }
 
     @Bean

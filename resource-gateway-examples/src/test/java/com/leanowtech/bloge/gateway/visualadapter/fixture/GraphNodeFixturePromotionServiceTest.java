@@ -15,6 +15,10 @@ import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.simulation.InMemoryVisualSimulationCaptureEvidenceRepository;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationRequest;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationResponse;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -108,6 +112,82 @@ class GraphNodeFixturePromotionServiceTest {
         assertThat(descriptor.get().redaction().reviewed()).isFalse();
         assertThat(descriptor.get().retention().expiresAt()).isEqualTo(NOW.plusSeconds(3 * 86_400));
         assertThat(descriptor.get().variantKey()).isEqualTo("node_1");
+    }
+
+    @Test
+    void derivesScenarioSourceOnlyFromMatchingServerSimulationCapture() {
+        GraphDraft unpinnedDraft = draft(Map.of());
+        GraphDraft pinnedDraft = draft(Map.of("node_1", new GraphDraft.NodeFixture(
+                Map.of("score", 760))));
+        when(drafts.find("draft-1")).thenReturn(Optional.of(pinnedDraft));
+        OperatorDefinition operator = resourceOperator();
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(operator));
+        when(fixtureCatalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
+            FixtureAssetDescriptor candidate = invocation.getArgument(1);
+            return StoredFixtureAsset.verified(mapper, candidate.persistedAs(1, candidate.metadata()));
+        });
+        InMemoryVisualSimulationCaptureEvidenceRepository captures =
+                new InMemoryVisualSimulationCaptureEvidenceRepository(
+                        mapper, Clock.fixed(NOW, ZoneOffset.UTC), java.time.Duration.ofMinutes(10), 8);
+        VisualGraphSimulationResponse simulation = new VisualGraphSimulationResponse(
+                true, true, true, "Loan tool", "node_1", Map.of("score", 760),
+                Map.of("node_1", Map.of("score", 760)), Map.of("node_1", "COMPLETED"),
+                1, Map.of("node_1", 1L), List.of("node_1"), List.of(), true,
+                List.of(), List.of(), "graph Loan_tool {}", Map.of("node_1", "OUTPUT_LEVEL"));
+        captures.recordSuccessfulSimulation(
+                new VisualGraphSimulationRequest(unpinnedDraft, Map.of(), "node_1", Map.of()),
+                simulation,
+                operators);
+        GraphNodeFixturePromotionService lineageService = new GraphNodeFixturePromotionService(
+                drafts, operators, fixtureCatalog, (request, requestIdentity) -> {
+                    materialWrites.add(request);
+                    return receipt(request);
+                }, mapper, Clock.fixed(NOW, ZoneOffset.UTC), captures);
+
+        lineageService.promote("draft-1", "node_1", request("scenario-fixture"), identity);
+
+        assertThat(materialWrites).singleElement()
+                .extracting(WriteRequest::source)
+                .extracting(FixtureAssetDescriptor.FixtureSource::kind)
+                .isEqualTo(FixtureAssetDescriptor.SourceKind.SCENARIO);
+    }
+
+    @Test
+    void fallsBackToSampleWhenServerCaptureDoesNotMatchPinnedOutput() {
+        GraphDraft unpinnedDraft = draft(Map.of());
+        GraphDraft pinnedDraft = draft(Map.of("node_1", new GraphDraft.NodeFixture(
+                Map.of("score", 761))));
+        when(drafts.find("draft-1")).thenReturn(Optional.of(pinnedDraft));
+        OperatorDefinition operator = resourceOperator();
+        when(operators.find("resource:applicant")).thenReturn(Optional.of(operator));
+        when(fixtureCatalog.saveDraft(eq(0L), any(), any())).thenAnswer(invocation -> {
+            FixtureAssetDescriptor candidate = invocation.getArgument(1);
+            return StoredFixtureAsset.verified(mapper, candidate.persistedAs(1, candidate.metadata()));
+        });
+        InMemoryVisualSimulationCaptureEvidenceRepository captures =
+                new InMemoryVisualSimulationCaptureEvidenceRepository(
+                        mapper, Clock.fixed(NOW, ZoneOffset.UTC), java.time.Duration.ofMinutes(10), 8);
+        Object simulatedOutput = Map.of("score", 760);
+        captures.recordSuccessfulSimulation(
+                new VisualGraphSimulationRequest(unpinnedDraft, Map.of(), "node_1", Map.of()),
+                new VisualGraphSimulationResponse(
+                        true, true, true, "Loan tool", "node_1", simulatedOutput,
+                        Map.of("node_1", simulatedOutput), Map.of("node_1", "COMPLETED"), 1,
+                        Map.of("node_1", 1L), List.of("node_1"), List.of(), true,
+                        List.of(), List.of(), "graph Loan_tool {}", Map.of()),
+                operators);
+        GraphNodeFixturePromotionService lineageService = new GraphNodeFixturePromotionService(
+                drafts, operators, fixtureCatalog, (request, requestIdentity) -> {
+                    materialWrites.add(request);
+                    return receipt(request);
+                }, mapper, Clock.fixed(NOW, ZoneOffset.UTC), captures);
+
+        lineageService.promote("draft-1", "node_1", request("sample-fallback"), identity);
+
+        assertThat(materialWrites).singleElement()
+                .extracting(WriteRequest::source)
+                .extracting(FixtureAssetDescriptor.FixtureSource::kind)
+                .isEqualTo(FixtureAssetDescriptor.SourceKind.SAMPLE);
     }
 
     @Test

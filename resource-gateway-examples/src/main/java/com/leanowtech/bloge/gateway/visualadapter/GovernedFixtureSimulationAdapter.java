@@ -12,6 +12,8 @@ import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationRespo
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureResolutionException;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureSimulationPort;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
+import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver;
 
 import org.springframework.http.HttpHeaders;
@@ -33,15 +35,37 @@ public final class GovernedFixtureSimulationAdapter
     private final VisualGraphSimulationService simulationService;
     private final IntegrationRequestAuthenticator authenticator;
     private final GovernedFixtureSimulationResolver governedFixtures;
+    private final VisualOperatorCatalog operators;
+    private final VisualSimulationCaptureEvidenceRepository simulationCaptures;
 
     /** Creates the authenticated adapter around the visual simulation service. */
     public GovernedFixtureSimulationAdapter(
             VisualGraphSimulationService simulationService,
             IntegrationRequestAuthenticator authenticator,
             GovernedFixtureSimulationResolver governedFixtures) {
+        this(simulationService, authenticator, governedFixtures, null, null);
+    }
+
+    /**
+     * Creates the adapter with the server-owned catalog and bounded simulation capture store.
+     *
+     * @param simulationService visual simulation executor
+     * @param authenticator authenticated integration identity resolver
+     * @param governedFixtures protected fixture resolver
+     * @param operators authoritative visual operator catalog, or {@code null} when capture is disabled
+     * @param simulationCaptures short-lived server simulation evidence store, or {@code null}
+     */
+    public GovernedFixtureSimulationAdapter(
+            VisualGraphSimulationService simulationService,
+            IntegrationRequestAuthenticator authenticator,
+            GovernedFixtureSimulationResolver governedFixtures,
+            VisualOperatorCatalog operators,
+            VisualSimulationCaptureEvidenceRepository simulationCaptures) {
         this.simulationService = simulationService;
         this.authenticator = authenticator;
         this.governedFixtures = governedFixtures;
+        this.operators = operators;
+        this.simulationCaptures = simulationCaptures;
     }
 
     /**
@@ -72,6 +96,11 @@ public final class GovernedFixtureSimulationAdapter
         }
         VisualGraphSimulationResponse response = simulationService.simulate(
                 request.draft(), request.context(), request.outputNode(), request.fixtures());
+        if (response.success() && operators != null && simulationCaptures != null) {
+            // Capture the original request: governed material is resolved only for execution, and
+            // the repository excludes all client fixture overrides before deriving evidence.
+            simulationCaptures.recordSuccessfulSimulation(originalRequest, response, operators);
+        }
         if (response.success() && identity != null && scope != null) {
             List<GovernedFixtureRef> refs = effectiveOriginalFixtures.entrySet().stream()
                     .filter(entry -> entry.getValue() != null

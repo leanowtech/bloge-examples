@@ -178,6 +178,8 @@ import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionServi
 import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.visual.simulation.VisualProductionAdmissionPolicy;
+import com.leanowtech.bloge.gateway.visual.simulation.InMemoryVisualSimulationCaptureEvidenceRepository;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 import com.leanowtech.bloge.gateway.testing.api.TestExecutionApiService;
 import com.leanowtech.bloge.gateway.testing.api.TestSuiteRegistryService;
 import com.leanowtech.bloge.gateway.example.DatabaseDynamicRunControlRepository;
@@ -1328,6 +1330,22 @@ public class GatewayConfiguration {
                                                              VisualRunPayloadRepository payloadRepository) {
         return new DatabaseVisualGraphRunRepository(jdbc, objectMapper, evidenceSigner, outbox,
                 payloadRepository);
+    }
+
+    /**
+     * Bounded server receipt store used to derive SCENARIO promotion lineage after Simulate.
+     *
+     * <p>Only fingerprints and coordinates are retained for a short TTL; simulation payloads and
+     * client provenance claims never enter this store.</p>
+     *
+     * @param objectMapper canonical mapper used for evidence fingerprints
+     * @return process-local bounded capture repository
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public VisualSimulationCaptureEvidenceRepository visualSimulationCaptureEvidenceRepository(
+            ObjectMapper objectMapper) {
+        return new InMemoryVisualSimulationCaptureEvidenceRepository(objectMapper);
     }
 
     /** Durable claim/fencing and signed refinement store for UNKNOWN_COMMIT attempts. */

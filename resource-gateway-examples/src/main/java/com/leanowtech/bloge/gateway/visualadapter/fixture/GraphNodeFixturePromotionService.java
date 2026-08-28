@@ -26,6 +26,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -56,6 +57,7 @@ public class GraphNodeFixturePromotionService {
     private final PromotedGraphNodeFixtureMaterialWriter materials;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final VisualSimulationCaptureEvidenceRepository simulationCaptures;
 
     /**
      * Creates the graph-node Fixture promotion service.
@@ -67,12 +69,39 @@ public class GraphNodeFixturePromotionService {
             PromotedGraphNodeFixtureMaterialWriter materials,
             ObjectMapper mapper,
             Clock clock) {
+        this(drafts, operators, fixtures, materials, mapper, clock, null);
+    }
+
+    /**
+     * Creates promotion with the bounded server simulation-capture store.
+     *
+     * <p>The optional store is deliberately a separate seam: deployments without a capture
+     * repository retain the historical SAMPLE fallback, while configured deployments can prove
+     * SCENARIO lineage from a server response rather than from client metadata.</p>
+     *
+     * @param drafts authoritative graph-draft repository
+     * @param operators exact operator-catalog view
+     * @param fixtures governed Fixture catalog
+     * @param materials protected material write boundary
+     * @param mapper canonical JSON mapper
+     * @param clock source of server time
+     * @param simulationCaptures short-lived successful-simulation evidence, or {@code null}
+     */
+    public GraphNodeFixturePromotionService(
+            GraphDraftRepository drafts,
+            VisualOperatorCatalog operators,
+            FixtureCatalogService fixtures,
+            PromotedGraphNodeFixtureMaterialWriter materials,
+            ObjectMapper mapper,
+            Clock clock,
+            VisualSimulationCaptureEvidenceRepository simulationCaptures) {
         this.drafts = Objects.requireNonNull(drafts, "drafts");
         this.operators = Objects.requireNonNull(operators, "operators");
         this.fixtures = Objects.requireNonNull(fixtures, "fixtures");
         this.materials = Objects.requireNonNull(materials, "materials");
         this.mapper = Objects.requireNonNull(mapper, "mapper");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.simulationCaptures = simulationCaptures;
     }
 
     /**
@@ -186,9 +215,17 @@ public class GraphNodeFixturePromotionService {
                 now.plus(Duration.ofDays(request.retentionDays())));
         RedactionDescriptor redaction = new RedactionDescriptor(
                 "graph-node-fixture-redaction-v1", request.redactionPaths(), false);
-        // The promotion request carries no client provenance claim. This endpoint only receives
-        // the persisted draft capture, so simulation lineage is not server-proven here.
-        FixtureSource source = new FixtureSource(SourceKind.SAMPLE, sourceRef);
+        // Provenance is derived only from a server capture that closes the current draft/node/
+        // operator/output coordinates. A missing, stale, or mismatched receipt stays SAMPLE;
+        // client fixture fields and promotion request metadata are never consulted.
+        boolean capturedFromSimulation = simulationCaptures != null
+                && simulationCaptures.find(draft.tenantId(), draft.namespace(), draft.environment(),
+                        draft.draftId(), nodeId)
+                .map(evidence -> evidence.matches(
+                        draft, nodeId, operator, fixture.output(), mapper, now))
+                .orElse(false);
+        FixtureSource source = new FixtureSource(
+                capturedFromSimulation ? SourceKind.SCENARIO : SourceKind.SAMPLE, sourceRef);
         Receipt materialReceipt = materials.write(new WriteRequest(
                 "",
                 request.fixtureAssetId(),

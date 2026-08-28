@@ -423,8 +423,11 @@ explicit retryable warning. Removing `spine=v1` keeps these new controls unmount
 captured node output into governed correctness material. The request is bounded to
 `bloge.graphNodeFixturePromote.v1`, classification, 1--30 day retention, and redaction paths;
 there is no client-controlled simulation/provenance flag. The server derives scope, lineage, schema
-reference, fingerprints, retention expiry, and the DRAFT lifecycle; because this endpoint cannot
-prove simulation lineage, promoted material is recorded with `source=SAMPLE`. Invalid body fields
+reference, fingerprints, retention expiry, and the DRAFT lifecycle. When the server has a recent,
+matching successful `POST /api/visual/graphs/simulate` receipt for the same saved draft/node,
+operator, and output, promotion records `source=SCENARIO`; otherwise it fails closed to
+`source=SAMPLE`. The receipt contains only bounded fingerprints, is short-lived, and is never
+derived from a client provenance flag. Invalid body fields
 return 400, missing drafts/nodes return 404, absent captured output or an opaque/non-unique/incompatible
 schema returns 422, and an existing governed id returns 409. A successful response is `201 Created`
 with `Cache-Control: no-store`; both response and persisted audit contain no business payload.
@@ -477,8 +480,9 @@ scope. Resolution requires the exact ACTIVE revision, exact descriptor/schema
 closure, the referenced node in the submitted draft, that operator's current
 single non-opaque output schema, and a value that still validates against that
 schema. Protected material remains request-scoped and is never returned as
-catalog metadata. A successful simulation records an idempotent graph-consumer
-usage link; failures are payload-free.
+catalog metadata. A successful simulation records both an idempotent graph-consumer
+usage link and a short-lived, payload-free server capture receipt; failed simulations and
+client-supplied fixture overrides do not establish promotion lineage.
 
 #### Decision scenario enumeration
 
