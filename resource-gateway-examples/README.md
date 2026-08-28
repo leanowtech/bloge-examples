@@ -464,7 +464,10 @@ the server decides and returns the executed `nodeFidelity` evidence, which the
 AuthorCanvas trace displays instead of echoing the selected value. Requests
 contain only `resourceFidelity` and, when reused, the exact governed reference;
 raw bodies, material payloads, and response sidecars are not accepted. The
-resource selector is mounted on the selected resource node in the v1 spine and
+saved draft also carries that payload-free coordinate and requested fidelity so
+reloading a graph restores the picker and fidelity choice; executable fingerprints
+continue to exclude node fixtures.
+The resource selector is mounted on the selected resource node in the v1 spine and
 is absent when the spine is off. Reverse-index usage links are idempotent, with
 a residual crash window between simulation completion and usage-link commit.
 

@@ -3,12 +3,14 @@ package com.leanowtech.bloge.gateway.visual.draft;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Editable visual graph draft submitted by the canvas.
@@ -650,20 +652,82 @@ public record GraphDraft(
      * injects {@link #output()} when the node is mocked and can assert {@link #expectedInput()} after
      * the stand-in observes its runtime input. Normal run, compile, publication DSL, fingerprinting,
      * and action-readiness checks ignore both values, while raw-secret hygiene still scans them before
-     * persistence or validation succeeds.</p>
+     * persistence or validation succeeds. A governed reference carries only the exact server-owned
+     * fixture coordinate so a saved draft can restore reuse state without copying protected material.</p>
      *
      * @param output value injected as the node's simulated output; may be {@code null}
      * @param expectedInput optional input payload expected by the node during simulation; {@code null}
      *                      means no input assertion is evaluated
+     * @param governedRef optional payload-free coordinate of an ACTIVE governed fixture
+     * @param resourceFidelity requested resource evidence boundary; omitted values retain the
+     *                         historical output-level behavior
      */
-    public record NodeFixture(Object output, Object expectedInput) {
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record NodeFixture(
+            Object output,
+            Object expectedInput,
+            GovernedFixtureRef governedRef,
+            ResourceFidelity resourceFidelity
+    ) {
+        /** Resource evidence boundaries transported with a persisted fixture. */
+        public enum ResourceFidelity { OUTPUT_LEVEL, PROTOCOL_DERIVED, TRANSPORT_LEVEL }
+
         /**
          * Backward-compatible constructor for output-only pins.
          *
          * @param output value injected as the node's simulated output; may be {@code null}
          */
         public NodeFixture(Object output) {
-            this(output, null);
+            this(output, null, null, null);
+        }
+
+        /**
+         * Backward-compatible constructor for output and input assertion fixtures.
+         *
+         * @param output value injected as the node's simulated output; may be {@code null}
+         * @param expectedInput optional input assertion; may be {@code null}
+         */
+        public NodeFixture(Object output, Object expectedInput) {
+            this(output, expectedInput, null, null);
+        }
+
+        /** Normalizes omitted evidence metadata while preserving legacy fixture constructors. */
+        public NodeFixture {
+            resourceFidelity = resourceFidelity == null ? ResourceFidelity.OUTPUT_LEVEL : resourceFidelity;
+        }
+    }
+
+    /**
+     * Payload-free persisted identity of the governed fixture bound to a node.
+     *
+     * @param fixtureAssetId exact governance asset id
+     * @param revision exact ACTIVE revision used by simulation
+     * @param schemaFingerprint exact output-schema fingerprint at bind time
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record GovernedFixtureRef(String fixtureAssetId, long revision, String schemaFingerprint) {
+        private static final Pattern FINGERPRINT = Pattern.compile("sha256:[0-9a-f]{64}");
+
+        /**
+         * Creates an exact reference and rejects a coordinate that could silently bind different material.
+         */
+        public GovernedFixtureRef {
+            fixtureAssetId = required(fixtureAssetId, "fixtureAssetId");
+            if (revision < 1) {
+                throw new IllegalArgumentException("revision must be positive");
+            }
+            schemaFingerprint = required(schemaFingerprint, "schemaFingerprint");
+            if (!FINGERPRINT.matcher(schemaFingerprint).matches()) {
+                throw new IllegalArgumentException("schemaFingerprint must be an exact sha256 fingerprint");
+            }
+        }
+
+        private static String required(String value, String field) {
+            String normalized = value == null ? "" : value.trim();
+            if (normalized.isEmpty()) {
+                throw new IllegalArgumentException(field + " is required");
+            }
+            return normalized;
         }
     }
 
