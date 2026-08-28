@@ -51,8 +51,36 @@ class GraphNodeFixturePromotionControllerTest {
         assertThat(serializedReceipt).doesNotContain("payload")
                 .doesNotContain("output")
                 .doesNotContain("expectedInput")
-                .doesNotContain("material");
+                .doesNotContain("material")
+                .contains("\"fixtureAssetId\":\"fixture-1\"");
         verify(service).promote("draft-1", "node-1", request, identity);
+    }
+
+    @Test
+    void serializesCanonicalFixtureIdAndAcceptsLegacyFixtureAssetIdAlias() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        var canonical = mapper.readTree(mapper.writeValueAsString(request()));
+
+        assertThat(canonical.get("fixtureId").asText()).isEqualTo("fixture-1");
+        assertThat(canonical.has("fixtureAssetId")).isFalse();
+
+        String json = """
+                {
+                  "schemaVersion": "bloge.graphNodeFixturePromote.v1",
+                  "fixtureId": "fixture-1",
+                  "classification": "INTERNAL",
+                  "retentionDays": 3,
+                  "redactionPaths": ["/secret"]
+                }
+                """;
+        GraphNodeFixturePromotionRequest canonicalRequest =
+                mapper.readValue(json, GraphNodeFixturePromotionRequest.class);
+        GraphNodeFixturePromotionRequest legacyRequest = mapper.readValue(
+                json.replace("\"fixtureId\"", "\"fixtureAssetId\""),
+                GraphNodeFixturePromotionRequest.class);
+
+        assertThat(canonicalRequest).isEqualTo(request());
+        assertThat(legacyRequest).isEqualTo(request());
     }
 
     @ParameterizedTest
@@ -111,7 +139,7 @@ class GraphNodeFixturePromotionControllerTest {
     private static GraphNodeFixturePromotionRequest request() {
         return new GraphNodeFixturePromotionRequest(
                 GraphNodeFixturePromotionRequest.SCHEMA_VERSION,
-                "fixture-1", "INTERNAL", 3, List.of("$.secret"));
+                "fixture-1", "INTERNAL", 3, List.of("/secret"));
     }
 
     private static IntegrationRequestContext identity() {

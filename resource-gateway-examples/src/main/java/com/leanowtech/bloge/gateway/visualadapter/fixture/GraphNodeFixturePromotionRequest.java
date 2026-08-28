@@ -1,6 +1,8 @@
 package com.leanowtech.bloge.gateway.visualadapter.fixture;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonPointer;
 
 import java.util.List;
@@ -10,7 +12,8 @@ import java.util.Locale;
  * Author request to promote one captured graph-node output into governed Fixture governance.
  *
  * @param schemaVersion wire-contract version
- * @param fixtureAssetId requested governed Fixture id
+ * @param fixtureAssetId requested governed Fixture id; serialized as the canonical {@code fixtureId}
+ *        and accepted as {@code fixtureAssetId} for legacy clients
  * @param classification confidentiality label
  * @param retentionDays bounded retention in days
  * @param redactionPaths JSON paths removed before material persistence
@@ -18,6 +21,8 @@ import java.util.Locale;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record GraphNodeFixturePromotionRequest(
         String schemaVersion,
+        @JsonProperty("fixtureId")
+        @JsonAlias("fixtureAssetId")
         String fixtureAssetId,
         String classification,
         int retentionDays,
