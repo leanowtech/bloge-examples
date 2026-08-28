@@ -54,8 +54,10 @@ import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualCatalogTestSupport;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
+import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraftRepository;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualSimulationCaptureEvidenceRepository;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractBootstrap;
 import com.leanowtech.bloge.gateway.visual.resource.ResourceDesignContractRegistry;
 
@@ -392,8 +394,11 @@ class VisualAuthoringBrowserDomTest {
         GovernedFixtureSimulationAdapter browserGovernedFixtureSimulationAdapter(
                 VisualGraphSimulationService simulation,
                 IntegrationRequestAuthenticator authenticator,
-                GovernedFixtureSimulationResolver resolver) {
-            return new GovernedFixtureSimulationAdapter(simulation, authenticator, resolver);
+                GovernedFixtureSimulationResolver resolver,
+                VisualOperatorCatalog operators,
+                VisualSimulationCaptureEvidenceRepository simulationCaptures) {
+            return new GovernedFixtureSimulationAdapter(
+                    simulation, authenticator, resolver, operators, simulationCaptures);
         }
 
         /** Narrows the material repository to the catalog's receipt-only metadata view. */
@@ -435,9 +440,11 @@ class VisualAuthoringBrowserDomTest {
                 VisualOperatorCatalog operators,
                 FixtureCatalogService fixtures,
                 FixtureMaterialService materials,
-                ObjectMapper mapper) {
+                ObjectMapper mapper,
+                VisualSimulationCaptureEvidenceRepository simulationCaptures) {
             return new GraphNodeFixturePromotionService(
-                    drafts, operators, fixtures, materials::write, mapper, Clock.systemUTC());
+                    drafts, operators, fixtures, materials::write, mapper, Clock.systemUTC(),
+                    simulationCaptures);
         }
 
         /**
@@ -1254,8 +1261,8 @@ class VisualAuthoringBrowserDomTest {
         String baseUrl = "http://localhost:" + port;
         String suffix = Long.toUnsignedString(System.nanoTime());
 
-        runStructuredExternalApiPublicationStage(wait, baseUrl, suffix);
-        runGovernedFixtureStage(wait, baseUrl, suffix);
+        ChainBusinessCoordinate chain = runStructuredExternalApiPublicationStage(wait, baseUrl, suffix);
+        runGovernedFixtureStage(wait, baseUrl, suffix, chain);
         runDecisionScenarioStage(wait, baseUrl);
 
         driver.get(baseUrl + "/author/?authorWorkspace=v2&spine=off&toolId=chain-" + suffix
@@ -5320,7 +5327,36 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(1);
     }
 
-    private void runStructuredExternalApiPublicationStage(
+    /**
+     * Immutable hand-off from the external API authoring phase to governed fixture authoring.
+     *
+     * <p>All values originate from the visible Save receipt or the server-persisted draft. This
+     * coordinate carries no output payload, fixture claim, or client-authored provenance.</p>
+     */
+    private record ChainBusinessCoordinate(
+            String resourceId,
+            String draftId,
+            long revision,
+            String resourceNodeId,
+            String tenantId,
+            String namespace,
+            String environment) {
+    }
+
+    /**
+     * Coordinates the saved external resource graph into the following governed phase.
+     *
+     * <p>The publication UI may leave an unsaved publication node selected after the visible Add
+     * action. The saved Graph Contract remains the authoritative hand-off, so this helper resolves
+     * the exact persisted draft and resource node after the Save receipt and returns only bounded
+     * identity coordinates. Phase C then opens that coordinate in the same browser tab.</p>
+     *
+     * @param wait browser wait bound to the single acceptance driver
+     * @param baseUrl local server origin
+     * @param suffix unique chain suffix
+     * @return persisted resource graph coordinate for Phase C
+     */
+    private ChainBusinessCoordinate runStructuredExternalApiPublicationStage(
             WebDriverWait wait,
             String baseUrl,
             String suffix) {
@@ -5393,50 +5429,71 @@ class VisualAuthoringBrowserDomTest {
         assertThat(driver.findElement(By.cssSelector("[data-testid='canvas-node:" + publicationNodeId + "']"))
                 .getAttribute("data-operator-ref")).isEqualTo(publicationRef);
         assertPageNoHorizontalOverflow();
-    }
-
-    private void runGovernedFixtureStage(WebDriverWait wait, String baseUrl, String suffix) {
-        String fixtureId = "browser-chain-fixture-" + suffix;
-        String authorUrl = baseUrl
-                + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
-                + "&namespace=local&environment=test";
-        openFreshAuthoringTab(authorUrl);
-        wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector("[data-testid='author-start-choice:blank']")));
-        click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
-        wait.until(ExpectedConditions.invisibilityOfElementLocated(
-                By.cssSelector("[data-testid='author-start-dialog']")));
-        click(wait, By.cssSelector("[data-testid='operator-button:resource:order-service.listOrders']"));
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
-        Set<String> firstGraphDraftIdsBeforeSave = graphDraftIds();
-        saveAuthorWorkspace(wait);
-        Set<String> firstGraphDraftIdsAfterSave = graphDraftIds();
-        String firstDraftId = firstGraphDraftIdsAfterSave.stream()
-                .filter(candidate -> !firstGraphDraftIdsBeforeSave.contains(candidate))
+        String resourceRef = "resource:" + resourceId;
+        GraphDraft persistedDraft = graphDraftRepository.all().stream()
+                .filter(draft -> draft.nodes().stream()
+                        .anyMatch(node -> resourceRef.equals(node.operatorRef())))
+                .max(Comparator.comparingLong(GraphDraft::revision))
+                .orElseThrow(() -> new AssertionError(
+                        "External resource save did not produce a persisted graph draft for "
+                                + resourceRef));
+        GraphDraft.DraftNode resourceNode = persistedDraft.nodes().stream()
+                .filter(node -> resourceRef.equals(node.operatorRef()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
-                        "First chain graph save did not create a draft: before="
-                                + firstGraphDraftIdsBeforeSave + ", after=" + firstGraphDraftIdsAfterSave));
-        click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
-        click(wait, By.cssSelector("[data-testid='context-extras-panel'] summary"));
-        click(wait, By.xpath("//button[normalize-space()='Add Context Extra']"));
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[aria-label='Context extra path 1']"))), "params.userId");
-        selectByValue(wait, By.cssSelector("[aria-label='Context extra type 1']"), "string");
-        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[aria-label='Context extra value 1']"))), "user-1001");
-        click(wait, By.cssSelector("[data-testid='context-extras-panel'] .context-extra-actions button"));
-        saveAuthorWorkspace(wait);
+                        "Persisted graph draft omitted external resource node " + resourceRef));
+        assertThat(persistedDraft.revision()).isPositive();
+        return new ChainBusinessCoordinate(
+                resourceId,
+                persistedDraft.draftId(),
+                persistedDraft.revision(),
+                resourceNode.id(),
+                persistedDraft.tenantId(),
+                persistedDraft.namespace(),
+                persistedDraft.environment());
+    }
+
+    private void runGovernedFixtureStage(
+            WebDriverWait wait,
+            String baseUrl,
+            String suffix,
+            ChainBusinessCoordinate chain) {
+        String fixtureId = "browser-chain-fixture-" + suffix;
+        String resourceRef = "resource:" + chain.resourceId();
+        String authorUrl = baseUrl
+                + "/author/?authorWorkspace=v2&spine=v1&tenantId=" + chain.tenantId()
+                + "&namespace=" + chain.namespace() + "&environment=" + chain.environment()
+                + "&draftId=" + chain.draftId() + "&nodeId=" + chain.resourceNodeId();
+        // Phase B and Phase C intentionally share this top-level tab and saved draft coordinate.
+        // The only fresh tab below belongs to the second graph/reuse leg of the chain.
+        driver.get(authorUrl);
+        By firstResourceNode = By.cssSelector(
+                "[data-testid='canvas-node:" + chain.resourceNodeId()
+                        + "'][data-operator-ref='" + resourceRef + "']");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(firstResourceNode));
+        selectCanvasNodeFromNavigator(wait, resourceRef, chain.resourceNodeId());
+        GraphDraft phaseBDraft = graphDraftRepository.find(chain.draftId())
+                .orElseThrow(() -> new AssertionError(
+                        "Phase B saved draft is the Phase C source; later visible actions may autosave it"));
+        assertThat(phaseBDraft.revision())
+                .as("Phase B saved draft is the Phase C source; later visible actions may autosave it")
+                .isGreaterThanOrEqualTo(chain.revision());
         clickVisibleGraphSimulation(wait);
-        click(wait, By.cssSelector(".workspace-v2 [data-testid='v2-trace-pin-fixture-n1']"));
+        click(wait, By.cssSelector(
+                ".workspace-v2 [data-testid='v2-trace-pin-fixture-" + chain.resourceNodeId() + "']"));
+        // Pin changes the visible fixture draft first; the promotion service reads only the
+        // server-persisted GraphDraft, so preserve the authoring contract by saving visibly before
+        // opening Promote.
         saveAuthorWorkspace(wait);
-        click(wait, By.cssSelector("[data-testid='v2-trace-promote-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-promote-fixture-" + chain.resourceNodeId() + "']"));
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='promote-fixture-id']"))), fixtureId);
         selectByValue(wait, By.cssSelector("[data-testid='promote-fixture-classification']"), "RESTRICTED");
         click(wait, By.cssSelector("[data-testid='submit-promote-fixture']"));
         waitForLifecycle(wait, "DRAFT");
-        click(wait, By.cssSelector("[data-testid='v2-trace-review-ready-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-review-ready-fixture-" + chain.resourceNodeId() + "']"));
         waitForLifecycle(wait, "PROPOSED");
 
         String authorWindow = driver.getWindowHandle();
@@ -5447,24 +5504,35 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='test-reviewer-session']")));
         driver.close();
         driver.switchTo().window(authorWindow);
-        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-reviewed-fixture-n1']"));
-        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-verified-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-redaction-reviewed-fixture-" + chain.resourceNodeId() + "']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-redaction-verified-fixture-" + chain.resourceNodeId() + "']"));
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='v2-trace-review-comment-fixture-n1']"))),
+                By.cssSelector("[data-testid='v2-trace-review-comment-fixture-"
+                        + chain.resourceNodeId() + "']"))),
                 "Chain reviewer verified redaction metadata");
-        click(wait, By.cssSelector("[data-testid='v2-trace-verify-review-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-verify-review-fixture-" + chain.resourceNodeId() + "']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
-                By.cssSelector("[data-testid='v2-trace-review-verified-fixture-n1']")));
+                By.cssSelector("[data-testid='v2-trace-review-verified-fixture-"
+                        + chain.resourceNodeId() + "']")));
         assertThat(fixtureHead(fixtureId).descriptor().lifecycle().name()).isEqualTo("PROPOSED");
         typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='v2-trace-approval-comment-fixture-n1']"))),
+                By.cssSelector("[data-testid='v2-trace-approval-comment-fixture-"
+                        + chain.resourceNodeId() + "']"))),
                 "Chain reviewer approval");
-        click(wait, By.cssSelector("[data-testid='v2-trace-approve-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-approve-fixture-" + chain.resourceNodeId() + "']"));
         waitForLifecycle(wait, "APPROVED");
-        click(wait, By.cssSelector("[data-testid='v2-trace-activate-fixture-n1']"));
+        click(wait, By.cssSelector(
+                "[data-testid='v2-trace-activate-fixture-" + chain.resourceNodeId() + "']"));
         waitForLifecycle(wait, "ACTIVE");
         StoredFixtureAsset active = fixtureHead(fixtureId);
         assertThat(active.descriptor().lifecycle().name()).isEqualTo("ACTIVE");
+        assertThat(active.descriptor().source().kind().name())
+                .as("promotion lineage must be derived from the successful Phase C simulation")
+                .isEqualTo("SCENARIO");
 
         String secondUrl = baseUrl
                 + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
@@ -5475,15 +5543,19 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
         wait.until(ExpectedConditions.invisibilityOfElementLocated(
                 By.cssSelector("[data-testid='author-start-dialog']")));
-        click(wait, By.cssSelector("[data-testid='operator-button:resource:order-service.listOrders']"));
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        click(wait, By.cssSelector(
+                "[data-testid='operator-button:" + resourceRef + "']"));
+        WebElement secondResourceNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid^='canvas-node:'][data-operator-ref='" + resourceRef + "']")));
+        String secondResourceNodeId = secondResourceNode.getAttribute("data-testid")
+                .substring("canvas-node:".length());
         Set<String> secondBefore = graphDraftIds();
         saveAuthorWorkspace(wait);
         String secondDraftId = graphDraftIds().stream().filter(candidate -> !secondBefore.contains(candidate)).findFirst()
                 .orElseThrow(() -> new AssertionError("Second chain graph save did not create a draft"));
-        assertThat(secondDraftId).isNotEqualTo(firstDraftId);
+        assertThat(secondDraftId).isNotEqualTo(chain.draftId());
         new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+                By.cssSelector("[data-testid='canvas-node:" + secondResourceNodeId + "']")))).perform();
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
         click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='graph-node-fixture-picker']")));
@@ -5493,14 +5565,15 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
         wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
         saveAuthorWorkspace(wait);
-        driver.get(secondUrl + "&draftId=" + secondDraftId + "&nodeId=n1");
-        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        driver.get(secondUrl + "&draftId=" + secondDraftId + "&nodeId=" + secondResourceNodeId);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:" + secondResourceNodeId + "']")));
         // Deep-link selection can leave a restored React Flow node outside the hit-tested
         // viewport under a loaded browser session. The visible navigator settles that node
         // before the user opens its details.
-        selectCanvasNodeFromNavigator(wait, "resource:order-service.listOrders", "n1");
+        selectCanvasNodeFromNavigator(wait, resourceRef, secondResourceNodeId);
         new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+                By.cssSelector("[data-testid='canvas-node:" + secondResourceNodeId + "']")))).perform();
         WebElement reloadedDialog = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='operator-detail-dialog']")));
         click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
@@ -5513,7 +5586,7 @@ class VisualAuthoringBrowserDomTest {
             if (!"OUTPUT_LEVEL".equals(fidelity) || !"OUTPUT_LEVEL".equals(valueOf(
                     By.cssSelector("[data-testid='resource-fidelity-select']")))) {
                 new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
-                        By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+                        By.cssSelector("[data-testid='canvas-node:" + secondResourceNodeId + "']")))).perform();
                 wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
                 click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
             }
@@ -5525,12 +5598,14 @@ class VisualAuthoringBrowserDomTest {
                         .as("usage count before first chain simulation").isZero();
             }
             clickVisibleGraphSimulation(wait);
-            waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), fidelity);
+            waitForText(wait, By.cssSelector(
+                    "[data-testid='v2-server-fidelity:" + secondResourceNodeId + "']"), fidelity);
             assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
                     .as("chain usage count for " + fidelity).isEqualTo(1);
         }
         clickVisibleGraphSimulation(wait);
-        waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), "TRANSPORT_LEVEL");
+        waitForText(wait, By.cssSelector(
+                "[data-testid='v2-server-fidelity:" + secondResourceNodeId + "']"), "TRANSPORT_LEVEL");
         assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef())).isEqualTo(1);
         assertPageNoHorizontalOverflow();
     }
