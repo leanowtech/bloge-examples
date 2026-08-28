@@ -269,9 +269,20 @@ public class VisualGraphSimulationService {
                         ? effectiveFixtures.get(node.id()).output()
                         : sampleGenerator.generate(firstOutputSchema(operator.get()));
                 mockOutputsByNodeId.put(node.id(), mockOutput);
-                syntheticDefinitions.put(simulationRef,
-                        syntheticNativeDefinition(simulationRef, operator.get()));
-                simulationNodes.add(rewriteToSimulation(node, simulationRef));
+                if (preserveGovernedResourceNode(operator.get(), pinned,
+                        effectiveFixtures.get(node.id()))) {
+                    /*
+                     * Protocol/transport fixtures must retain the descriptor-backed lowering. The
+                     * kernel needs the real httpResource invocation site to apply its resource
+                     * selector and execute the descriptor boundary; only output-level fixtures use
+                     * a synthetic native stand-in.
+                     */
+                    simulationNodes.add(node);
+                } else {
+                    syntheticDefinitions.put(simulationRef,
+                            syntheticNativeDefinition(simulationRef, operator.get()));
+                    simulationNodes.add(rewriteToSimulation(node, simulationRef));
+                }
             }
         }
 
@@ -308,7 +319,7 @@ public class VisualGraphSimulationService {
                             }
                             return new VisualSimulationPlan.Standin(
                                     nodeId,
-                                    SIM_OPERATOR_PREFIX + nodeId,
+                                    rewrittenSimulationOperatorRef(draft, nodeId, fixture),
                                     output,
                                     fixture == null ? null : fixture.expectedInput(),
                                     fixture == null
@@ -426,6 +437,35 @@ public class VisualGraphSimulationService {
                 && evidence.containsKey("resourceId")
                 && evidence.containsKey("rawBody")
                 && evidence.containsKey("statusCode");
+    }
+
+    /**
+     * Keeps a governed resource fixture on its descriptor-backed lowering so the kernel can
+     * apply protocol or transport semantics. Output-level fixtures remain synthetic stand-ins
+     * and therefore cannot accidentally perform a real resource invocation.
+     */
+    private boolean preserveGovernedResourceNode(OperatorDefinition operator,
+                                                  boolean pinned,
+                                                  NodeFixture fixture) {
+        return pinned
+                && fixture != null
+                && fixture.resourceFidelity() != NodeFixture.ResourceFidelity.OUTPUT_LEVEL
+                && "httpResource".equals(operator.lowering().operatorRef());
+    }
+
+    private String rewrittenSimulationOperatorRef(GraphDraft draft, String nodeId,
+                                                  NodeFixture fixture) {
+        if (fixture != null && fixture.resourceFidelity() != NodeFixture.ResourceFidelity.OUTPUT_LEVEL) {
+            Optional<OperatorDefinition> operator = draft.nodes().stream()
+                    .filter(node -> node.id().equals(nodeId))
+                    .findFirst()
+                    .flatMap(node -> catalog.find(node.operatorRef()));
+            if (operator.map(value -> "httpResource".equals(value.lowering().operatorRef()))
+                    .orElse(false)) {
+                return "httpResource";
+            }
+        }
+        return SIM_OPERATOR_PREFIX + nodeId;
     }
 
     /**

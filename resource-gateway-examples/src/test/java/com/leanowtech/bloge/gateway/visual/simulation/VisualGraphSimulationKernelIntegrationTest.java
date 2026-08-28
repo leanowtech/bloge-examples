@@ -2,6 +2,13 @@ package com.leanowtech.bloge.gateway.visual.simulation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.core.spi.DefaultOperatorRegistry;
+import com.leanowtech.bloge.gateway.expression.BlgeExpressionEvaluator;
+import com.leanowtech.bloge.gateway.operator.HttpResourceOutput;
+import com.leanowtech.bloge.gateway.resource.ParameterMapping;
+import com.leanowtech.bloge.gateway.resource.ResourceDescriptor;
+import com.leanowtech.bloge.gateway.resource.ResourceRegistry;
+import com.leanowtech.bloge.gateway.resource.ResponseProtocol;
+import com.leanowtech.bloge.gateway.testing.runtime.ResourceFixtureRuntime;
 import com.leanowtech.bloge.gateway.visual.catalog.DefaultVisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
@@ -18,9 +25,11 @@ import com.leanowtech.bloge.gateway.visual.validation.GraphDraftValidator;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -83,6 +92,52 @@ class VisualGraphSimulationKernelIntegrationTest {
                 .as("an unbound resource node must expose a schema-shaped sample")
                 .isNotNull();
         assertThat(response.output()).isNotNull();
+    }
+
+    @Test
+    void governedResourceFixtureRetainsProtocolAndTransportFidelityThroughKernel() {
+        assertGovernedResourceFixture(NodeFixture.ResourceFidelity.PROTOCOL_DERIVED);
+        assertGovernedResourceFixture(NodeFixture.ResourceFidelity.TRANSPORT_LEVEL);
+    }
+
+    /**
+     * Verifies the complete production simulation seam for a resource-backed governed fixture.
+     * The visual catalog supplies the authoritative resource id while the real fixture runtime
+     * applies the descriptor response protocol and payload extraction at the requested boundary.
+     */
+    private static void assertGovernedResourceFixture(NodeFixture.ResourceFidelity fidelity) {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "governedResource", "", "", "", "", null, null,
+                List.of(new GraphDraft.DraftNode(
+                        "operator",
+                        "resource:" + VisualCatalogTestSupport.RESOURCE_ID,
+                        "",
+                        Map.of("applicantId", GraphDraft.Binding.constant("applicant-1001")),
+                        Map.of(),
+                        null)),
+                List.of(),
+                Map.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("operator", ""),
+                Map.of(), Map.of(), GraphDraft.RevisionMetadata.empty());
+
+        VisualGraphSimulationResponse response = kernelWithResourceRuntime(catalog)
+                .simulate(draft, Map.of(), "", Map.of("operator", new NodeFixture(
+                        Map.of("score", 728, "segment", "prime"), null, null, fidelity)));
+
+        assertThat(response).as("fidelity=%s", fidelity).satisfies(result -> {
+            assertThat(result.compiled()).as("response=%s", result).isTrue();
+            assertThat(result.success()).as("response=%s", result).isTrue();
+            assertThat(result.results()).containsKey("operator");
+            assertThat(result.results().get("operator")).isInstanceOfSatisfying(HttpResourceOutput.class,
+                    output -> assertThat(output.payload())
+                            .isEqualTo(Map.of("score", 728, "segment", "prime")));
+            assertThat(result.output()).isInstanceOfSatisfying(HttpResourceOutput.class,
+                    output -> assertThat(output.payload())
+                            .isEqualTo(Map.of("score", 728, "segment", "prime")));
+            assertThat(result.nodeFidelity()).containsEntry("operator", fidelity.name());
+        });
     }
 
     @Test
@@ -453,6 +508,56 @@ class VisualGraphSimulationKernelIntegrationTest {
         return new VisualGraphSimulationService(new GraphDraftValidator(catalog), catalog,
                 new JsonSchemaSampleGenerator(), null, executor, Duration.ofSeconds(10),
                 VisualProductionAdmissionPolicy.nonProductionTest());
+    }
+
+    private static VisualGraphSimulationService kernelWithResourceRuntime(
+            DefaultVisualOperatorCatalog catalog) {
+        MapResourceRegistry registry = new MapResourceRegistry();
+        registry.put(new ResourceDescriptor(
+                VisualCatalogTestSupport.RESOURCE_ID,
+                "https://example.test/api/loan-applicants/{applicantId}",
+                "GET",
+                Map.of("Accept", "application/json"),
+                null,
+                Duration.ofSeconds(3),
+                new ParameterMapping(Map.of("applicantId", "ctx.params.applicantId"),
+                        Map.of(), null),
+                new ResponseProtocol.HttpStatus(),
+                "data"));
+        ResourceFixtureRuntime runtime = new ResourceFixtureRuntime(
+                registry, new BlgeExpressionEvaluator(), new ObjectMapper());
+        VisualSimulationExecutor executor = new VisualSimulationKernelAdapter(
+                new ObjectMapper(), runtime);
+        return new VisualGraphSimulationService(new GraphDraftValidator(catalog), catalog,
+                new JsonSchemaSampleGenerator(), null, executor, Duration.ofSeconds(10),
+                VisualProductionAdmissionPolicy.nonProductionTest());
+    }
+
+    private static final class MapResourceRegistry implements ResourceRegistry {
+        private final Map<String, ResourceDescriptor> descriptors = new LinkedHashMap<>();
+
+        void put(ResourceDescriptor descriptor) {
+            descriptors.put(descriptor.resourceId(), descriptor);
+        }
+
+        @Override
+        public ResourceDescriptor resolve(String resourceId) {
+            ResourceDescriptor descriptor = descriptors.get(resourceId);
+            if (descriptor == null) {
+                throw new IllegalArgumentException("Unknown resource: " + resourceId);
+            }
+            return descriptor;
+        }
+
+        @Override
+        public boolean contains(String resourceId) {
+            return descriptors.containsKey(resourceId);
+        }
+
+        @Override
+        public Collection<ResourceDescriptor> all() {
+            return descriptors.values();
+        }
     }
 
     private static DefaultVisualOperatorCatalog catalog(OperatorDefinition... operators) {
