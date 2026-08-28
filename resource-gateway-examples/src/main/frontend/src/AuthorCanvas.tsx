@@ -228,10 +228,13 @@ import {
   resolveNodeEditor,
   type NodeEditorTab,
 } from './author/node-editor/nodeEditorRegistry';
-import GraphRunInputPanel, {
-  ContextExtrasPanel,
-  RawRunContextPanel,
-} from './author/input/GraphRunInputPanel';
+const GraphRunInputPanel = lazy(() => import('./author/input/GraphRunInputPanel'));
+const ContextExtrasPanel = lazy(() => import('./author/input/GraphRunInputPanel').then((module) => ({
+  default: module.ContextExtrasPanel,
+})));
+const RawRunContextPanel = lazy(() => import('./author/input/GraphRunInputPanel').then((module) => ({
+  default: module.RawRunContextPanel,
+})));
 import {
   assessRunInput,
   compileTaskRunContext,
@@ -251,12 +254,14 @@ import type { ToolPublicationMetadata } from './tool/toolModel';
 import {
   fetchGovernedFixtureAssets,
   promoteGraphNodeFixture,
-  type GovernedFixtureAssetSummary,
-  type GovernedGraphNodeFixtureRef,
-  type GraphNodeFixtureState,
-  type PickerAsset,
-  type ResourceFidelity,
-} from './fixture-asset';
+} from './fixture-asset/api';
+import type { PickerAsset } from './fixture-asset/GraphNodeFixtureControls';
+import type {
+  GovernedGraphNodeFixtureRef,
+  GraphNodeFixtureState,
+  ResourceFidelity,
+} from './fixture-asset/graphNodeFixtureModel';
+import type { GovernedFixtureAssetSummary } from './fixture-asset/api';
 import useDialogFocusTrap from './author/accessibility/useDialogFocusTrap';
 import {
   authorTaskElapsedMs,
@@ -299,9 +304,8 @@ import {
   type EffectiveInputBinding,
 } from './author/contract/effectiveContractProjection';
 import { projectAuthorReadiness } from './author/readiness/authorReadiness';
-import CanvasTaskNavigator, {
-  type CanvasTaskMode,
-} from './author/canvas/CanvasTaskNavigator';
+const CanvasTaskNavigator = lazy(() => import('./author/canvas/CanvasTaskNavigator'));
+import type { CanvasTaskMode } from './author/canvas/CanvasTaskNavigator';
 import {
   adaptiveCanvasChromePolicy,
   assessCanvasPerceptualQuality,
@@ -12740,7 +12744,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           onDrop={dropOperatorOnFlow}
         >
           {isTaskWorkspace && nodes.length > 0 && (
-            <CanvasTaskNavigator
+            <Suspense fallback={<span role="status">{t('Loading...')}</span>}>
+              <CanvasTaskNavigator
               mode={canvasTaskMode}
               nodes={canvasTaskNodes}
               selectedNodeId={selectedNodeId}
@@ -12770,7 +12775,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               onOverrideLayout={overrideLayoutPreview}
               onCancelLayout={cancelLayoutPreview}
               onUndoLayout={undoAutoLayout}
-            />
+              />
+            </Suspense>
           )}
           {coachPrompt && (
             <div
@@ -13045,7 +13051,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     </details>
                   </>
                 )}
-                <GraphRunInputPanel
+                <Suspense fallback={<span role="status">{t('Loading...')}</span>}>
+                  <GraphRunInputPanel
                   inputSchema={graphInputSchema}
                   value={runInputValue}
                   assessmentValue={contextCompilation.value}
@@ -13059,11 +13066,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                     setContractWorkspaceInitialTab('interface');
                     setContractWorkspaceOpen(true);
                   }}
-                />
+                  />
+                </Suspense>
               </div>
             )}
             advancedContent={(
-              <div className="author-inspector-advanced">
+              <Suspense fallback={<span role="status">{t('Loading...')}</span>}>
+                <div className="author-inspector-advanced">
                 <ContextExtrasPanel
                   rows={contextVariables}
                   compilation={variableContextCompilation}
@@ -13081,7 +13090,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                   onRawModeChange={updateRawContextMode}
                   onRawTextChange={updateSimulationContextDraft}
                 />
-              </div>
+                </div>
+              </Suspense>
             )}
             simulationContent={result && traceRows.length > 0 ? (
               <section className="author-context-simulation-result" data-testid="author-context-simulation-result">

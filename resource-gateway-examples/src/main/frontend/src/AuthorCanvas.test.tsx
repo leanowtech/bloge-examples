@@ -1547,8 +1547,8 @@ describe('AuthorCanvas built-in canvas examples', () => {
     );
     await click(query<HTMLButtonElement>('[data-testid="author-start-example:loan-policy-fallback"]'));
 
-    expect(query('[data-testid="production-command-backdrop"]').textContent)
-      .toContain('PRODUCTION');
+    await waitFor(() => expect(query('[data-testid="production-command-backdrop"]').textContent)
+      .toContain('PRODUCTION'));
     const confirmation = query<HTMLInputElement>('[aria-label="Production confirmation"]');
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')
@@ -1942,6 +1942,9 @@ describe('AuthorCanvas built-in canvas examples', () => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true }));
     });
 
+    await waitFor(() => expect(
+      document.querySelector<HTMLElement>('[role="dialog"][aria-labelledby="node-delete-impact-title"]'),
+    ).not.toBeNull());
     const impactDialog = query<HTMLElement>('[role="dialog"][aria-labelledby="node-delete-impact-title"]');
     expect(impactDialog.textContent).toContain('Fetch applicant');
     expect(impactDialog.textContent).toContain('fixture output');
