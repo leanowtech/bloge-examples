@@ -45,7 +45,10 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionController;
 import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
-import com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureSimulationPort;
+import com.leanowtech.bloge.gateway.visualadapter.GovernedFixtureSimulationAdapter;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibraryRegistry;
@@ -381,6 +384,16 @@ class VisualAuthoringBrowserDomTest {
                 VisualOperatorCatalog catalog,
                 ObjectMapper mapper) {
             return new GovernedFixtureSimulationResolver(fixtures, materials, catalog, mapper);
+        }
+
+        /** Keeps browser governed simulation behind the same visual-owned port as production. */
+        @Bean
+        @ConditionalOnMissingBean(VisualGovernedFixtureSimulationPort.class)
+        GovernedFixtureSimulationAdapter browserGovernedFixtureSimulationAdapter(
+                VisualGraphSimulationService simulation,
+                IntegrationRequestAuthenticator authenticator,
+                GovernedFixtureSimulationResolver resolver) {
+            return new GovernedFixtureSimulationAdapter(simulation, authenticator, resolver);
         }
 
         /** Narrows the material repository to the catalog's receipt-only metadata view. */

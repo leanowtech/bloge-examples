@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.simulation;
+package com.leanowtech.bloge.gateway.visualadapter.fixture;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
@@ -12,7 +12,9 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtur
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
-import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
+import com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureRef;
+import com.leanowtech.bloge.gateway.visual.simulation.NodeFixture;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureResolutionException;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -58,7 +60,7 @@ public final class GovernedFixtureSimulationResolver {
      * @param ref exact client-provided Fixture identity
      * @param identity authenticated material-read identity
      * @return output-only request-scoped fixture
-     * @throws GovernedFixtureResolutionException if closure or lifecycle is not exact
+     * @throws VisualGovernedFixtureResolutionException if closure or lifecycle is not exact
      */
     public NodeFixture resolve(
             EnterpriseScope scope, GovernedFixtureRef ref, IntegrationRequestContext identity) {
@@ -89,7 +91,7 @@ public final class GovernedFixtureSimulationResolver {
      * @param draft authoritative draft lineage containing the node
      * @param nodeId exact node lineage key for the Fixture
      * @return output-only request-scoped fixture
-     * @throws GovernedFixtureResolutionException if any lineage or schema check fails
+     * @throws VisualGovernedFixtureResolutionException if any lineage or schema check fails
      */
     public NodeFixture resolve(EnterpriseScope scope, GovernedFixtureRef ref,
                                IntegrationRequestContext identity, GraphDraft draft, String nodeId) {
@@ -131,31 +133,16 @@ public final class GovernedFixtureSimulationResolver {
         if (!fixtureRefs.isEmpty()) fixtures.replaceUsageForConsumer(scope, consumer, fixtureRefs);
     }
 
-    private static GovernedFixtureResolutionException invalid() {
-        return new GovernedFixtureResolutionException(400, "GOVERNED_FIXTURE_REFERENCE_INVALID");
+    private static VisualGovernedFixtureResolutionException invalid() {
+        return new VisualGovernedFixtureResolutionException(400, "GOVERNED_FIXTURE_REFERENCE_INVALID");
     }
 
-    private static GovernedFixtureResolutionException notFound() {
-        return new GovernedFixtureResolutionException(404, "GOVERNED_FIXTURE_NOT_FOUND");
+    private static VisualGovernedFixtureResolutionException notFound() {
+        return new VisualGovernedFixtureResolutionException(404, "GOVERNED_FIXTURE_NOT_FOUND");
     }
 
-    private static GovernedFixtureResolutionException blocked(String message) {
-        return new GovernedFixtureResolutionException(422, message);
+    private static VisualGovernedFixtureResolutionException blocked(String message) {
+        return new VisualGovernedFixtureResolutionException(422, message);
     }
 
-    /** Stable fail-closed error for governed simulation resolution. */
-    public static final class GovernedFixtureResolutionException extends RuntimeException {
-        private final int status;
-
-        /** Creates a governed Fixture resolution failure. */
-        public GovernedFixtureResolutionException(int status, String message) {
-            super(message);
-            this.status = status;
-        }
-
-        /** @return HTTP-compatible status for this safe failure */
-        public int status() {
-            return status;
-        }
-    }
 }

@@ -63,6 +63,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioClosure
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioDraftSetV2Service;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioExternalReferenceSource;
 import com.leanowtech.bloge.gateway.testing.correctness.scenario.ScenarioReviewAuthorizer;
+import com.leanowtech.bloge.gateway.integration.IntegrationRequestAuthenticator;
+import com.leanowtech.bloge.gateway.visual.simulation.VisualGraphSimulationService;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -329,12 +331,25 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     @Bean
     @ConditionalOnBean({FixtureAssetRepository.class, FixtureMaterialResolver.class})
     @ConditionalOnMissingBean
-            com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver
+            com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver
             governedFixtureSimulationResolver(
                     FixtureAssetRepository fixtures, FixtureMaterialResolver materials,
                     VisualOperatorCatalog catalog, ObjectMapper mapper) {
-        return new com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver(
+        return new com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver(
                 fixtures, materials, catalog, mapper);
+    }
+
+    /** Composes authenticated correctness services behind the visual simulation port. */
+    @Bean
+    @ConditionalOnBean({VisualGraphSimulationService.class, IntegrationRequestAuthenticator.class})
+    @ConditionalOnMissingBean(com.leanowtech.bloge.gateway.visual.simulation.VisualGovernedFixtureSimulationPort.class)
+    com.leanowtech.bloge.gateway.visualadapter.GovernedFixtureSimulationAdapter
+            governedFixtureSimulationAdapter(
+                    VisualGraphSimulationService simulation,
+                    IntegrationRequestAuthenticator authenticator,
+                    com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver resolver) {
+        return new com.leanowtech.bloge.gateway.visualadapter.GovernedFixtureSimulationAdapter(
+                simulation, authenticator, resolver);
     }
 
     @Bean

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.simulation;
 
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GovernedFixtureSimulationResolver;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;
 import com.leanowtech.bloge.gateway.testing.correctness.domain.CorrectnessProtocol.EnterpriseScope;
@@ -93,7 +95,7 @@ class GovernedFixtureSimulationResolverTest {
         when(stored.descriptor().lifecycle()).thenReturn(FixtureLifecycle.DRAFT);
         assertThatThrownBy(() -> resolver.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, FINGERPRINT), identity))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
         verifyNoInteractions(materials);
 
         when(stored.descriptor().lifecycle()).thenReturn(FixtureLifecycle.ACTIVE);
@@ -101,11 +103,11 @@ class GovernedFixtureSimulationResolverTest {
                 "sha256:" + "b".repeat(64)));
         assertThatThrownBy(() -> resolver.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, FINGERPRINT), identity))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
         verifyNoInteractions(materials);
         assertThatThrownBy(() -> resolver.resolve(scope,
                 new GovernedFixtureRef("fixture", 2, FINGERPRINT), identity))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
     }
 
     @Test
@@ -128,23 +130,23 @@ class GovernedFixtureSimulationResolverTest {
 
         assertThatThrownBy(() -> current.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, FINGERPRINT), identity, draft, "node"))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
         when(catalog.find("resource:applicant")).thenReturn(Optional.of(operator(2, operator.ports().outputs().getFirst().schema())));
         assertThatThrownBy(() -> current.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, fingerprint), identity, draft, "node"))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
         when(catalog.find("resource:applicant")).thenReturn(Optional.of(operator(1,
                 SchemaEnvelope.opaque())));
         assertThatThrownBy(() -> current.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, fingerprint), identity, draft, "node"))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
         when(materials.resolve(eq(scope), eq(materialRef), any())).thenReturn(
                 new FixtureMaterialResolver.ResolvedFixtureMaterial(materialRef,
                         receiptFor(new ExactSchemaRef("applicant", 1, fingerprint)),
                         Map.of("score", "not-an-integer")));
         assertThatThrownBy(() -> current.resolve(scope,
                 new GovernedFixtureRef("fixture", 1, fingerprint), identity, draft, "node"))
-                .isInstanceOf(GovernedFixtureSimulationResolver.GovernedFixtureResolutionException.class);
+                .isInstanceOf(VisualGovernedFixtureResolutionException.class);
     }
 
     @Test
