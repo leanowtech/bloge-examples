@@ -65,6 +65,10 @@ class VisualSimulationCaptureEvidenceTest {
                 pinned.withVisualLayout(Map.of("nodes", List.of(Map.of("id", "node_1", "x", 99)))),
                 "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isTrue();
         assertThat(evidence.matches(
+                pinned.withOperatorFingerprints(Map.of("node_1", "sha256:" + "2".repeat(64)))
+                        .withOperatorSnapshots(Map.of("node_1", operator())),
+                "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isTrue();
+        assertThat(evidence.matches(
                 graphDraftLike(pinned,
                         List.of(new GraphDraft.DraftNode(
                                 "node_1", "bloge:transform", "Orders", Map.of(), Map.of(), null)),

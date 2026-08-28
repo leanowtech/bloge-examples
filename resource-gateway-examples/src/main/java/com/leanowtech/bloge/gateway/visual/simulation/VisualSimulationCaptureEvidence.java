@@ -213,10 +213,10 @@ public record VisualSimulationCaptureEvidence(
     /**
      * Computes the semantic draft fingerprint shared by capture and promotion.
      *
-     * <p>Fixtures, revision audit metadata, and {@link GraphDraft#visualLayout() visual layout}
-     * are excluded deliberately. Layout is a visual-only projection and may be normalized by the
-     * canvas while a pinned output is saved; nodes, edges, schemas, output selection, and operator
-     * snapshots remain part of this closure.</p>
+     * <p>Fixtures, revision audit metadata, visual layout, and server-enriched operator snapshot
+     * maps are excluded deliberately. These fields can be added or normalized while a pinned
+     * output is saved; nodes, edges, schemas, output selection, and the independently checked
+     * current operator fingerprint remain part of this closure.</p>
      */
     public static String draftFingerprint(ObjectMapper mapper, GraphDraft draft) {
         Objects.requireNonNull(draft, "draft");
@@ -224,6 +224,8 @@ public record VisualSimulationCaptureEvidence(
                 .withIdentity(draft.draftId(), 0)
                 .withVisualLayout(Map.of())
                 .withNodeFixtures(Map.of())
+                .withOperatorFingerprints(Map.of())
+                .withOperatorSnapshots(Map.of())
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.empty());
         return valueFingerprint(mapper, semanticDraft);
     }
