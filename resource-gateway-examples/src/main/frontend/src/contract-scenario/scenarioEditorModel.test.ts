@@ -217,6 +217,28 @@ describe('Scenario graphical editor model', () => {
     expect(second?.dependencies[0]?.behavior.output).toEqual(changed);
   });
 
+  it('targets an operator-authored Return fixture by operator reference instead of node id', () => {
+    const scenario = scenarioDraftSetFromCanvas(
+      contractDraftFromGraphDraft(graphDraft(), fingerprint('a')).target,
+      fingerprint('b'),
+      graphDraft(),
+      nodes().slice(0, 1),
+      [],
+    ).scenarios[0];
+    const expected = { decision: { approved: false, reason: 'policy' } };
+    const source = { ...scenario, then: { assertions: [{ ...scenario.then.assertions[0], expected }] } };
+
+    const actual = upsertExpectedReturnDependency(source, nodes().slice(0, 1), 'OPERATOR');
+
+    expect(actual?.dependencies).toHaveLength(1);
+    expect(actual?.dependencies[0]).toMatchObject({
+      dependencyId: 'expected-return-score',
+      selector: { nodeId: '', operatorRef: 'risk:score' },
+      behavior: { kind: 'RETURN', boundary: 'NODE', output: expected },
+    });
+    expect(actual?.dependencies[0]?.behavior.output).not.toBe(expected);
+  });
+
   it('does not offer an expected Return fixture without one executable node and whole output', () => {
     const scenario = scenarioDraftSetFromCanvas(
       contractDraftFromGraphDraft(graphDraft(), fingerprint('a')).target,

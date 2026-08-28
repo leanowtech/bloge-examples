@@ -5490,10 +5490,32 @@ class VisualAuthoringBrowserDomTest {
         assertThat(preview.getText()).containsPattern("\\b[1-9][0-9]* scenarios\\b").contains("sha256:");
         click(wait, By.xpath("//*[@data-testid='decision-scenario-preview']//button[normalize-space()='Save generated set']"));
         click(wait, By.cssSelector("[data-testid='open-generated-scenarios']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
         wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace-v2"), "data-author-mode", "scenarios"));
-        waitForText(wait, By.cssSelector("[data-testid='contract-workspace']"), "Scenario r1 saved");
+        By scenarioWorkspace = By.cssSelector("[data-testid='contract-workspace']");
+        waitForText(wait, scenarioWorkspace, "Scenario r1 saved");
+        waitForText(wait, scenarioWorkspace, "bloge:decisionTable");
+        waitForText(wait, scenarioWorkspace, "Decision");
         click(wait, By.xpath("//*[@data-testid='contract-workspace']//button[normalize-space()='Case']"));
-        click(wait, By.cssSelector("[data-testid='scenario-run']"));
+        By expectedReturnButton = By.cssSelector("[data-testid='scenario-use-expected-return-fixture']");
+        wait.until(ExpectedConditions.elementToBeClickable(expectedReturnButton));
+        click(wait, expectedReturnButton);
+        By expectedReturnDependency = By.cssSelector(
+                "[data-testid='scenario-dependency:expected-return-operator']");
+        waitForText(wait, expectedReturnDependency, "RETURN");
+        click(wait, By.xpath("//*[@data-testid='contract-workspace']//button[normalize-space()='Save Scenario']"));
+        waitForText(wait, scenarioWorkspace, "Scenario r2 saved");
+        By runCase = By.cssSelector("[data-testid='scenario-run']");
+        wait.until(ignored -> {
+            try {
+                WebElement button = driver.findElement(runCase);
+                return button.isDisplayed() && button.isEnabled();
+            } catch (NoSuchElementException | StaleElementReferenceException ignoredException) {
+                return false;
+            }
+        });
+        click(wait, runCase);
         wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace-v2"), "data-author-mode", "evidence"));
         WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='scenario-evidence']")));
@@ -5505,6 +5527,8 @@ class VisualAuthoringBrowserDomTest {
             trustStates.put(key, dimension.getAttribute("data-state"));
         }
         assertThat(trustStates.get("draft")).isEqualTo("passed");
+        assertThat(trustStates.get("execution")).isEqualTo("passed");
+        assertThat(trustStates.get("assertions")).isEqualTo("passed");
         assertThat(trustStates.get("contract")).isEqualTo("passed");
         assertThat(trustStates.get("governance")).isEqualTo("not-checked");
         assertThat(evidence.findElement(By.cssSelector(".scenario-evidence-heading .contract-current-badge")).getText())

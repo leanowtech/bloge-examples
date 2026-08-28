@@ -196,8 +196,9 @@ export function dependencyNeedsAttention(dependency: DependencyBehaviorDraft): b
  *
  * Generated decision scenarios deliberately keep {@code dependencies} empty. This
  * helper is the separate authoring action that turns one expected result into a
- * NODE fixture. Only the immutable coordinate and expected value cross this seam;
- * credentials and governed material remain server-owned.
+ * node-bound Return fixture. For OPERATOR contracts the immutable coordinate is the
+ * canonical operatorRef; for GRAPH contracts it is the concrete nodeId. Credentials
+ * and governed material remain server-owned.
  */
 export function upsertExpectedReturnDependency(
   scenario: ScenarioDraft,
