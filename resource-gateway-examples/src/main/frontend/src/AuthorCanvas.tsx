@@ -9886,6 +9886,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         contextCompilation.value,
         graphInputSchema,
         effectiveGraphOutputSchema,
+        graphDraftId && graphDraftRevision > 0 ? {
+          draftId: graphDraftId,
+          revision: graphDraftRevision,
+          tenantId: graphTenantId,
+          namespace: graphNamespace,
+          environment: graphEnvironment,
+        } : undefined,
       ));
       showSimulationResponse(response);
       status = isRunSuccessful(response) ? 'PASSED' : 'FAILED';
@@ -9916,8 +9923,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     contextCompilation.value,
     simulationFixtures,
     effectiveGraphOutputSchema,
+    graphDraftId,
+    graphDraftRevision,
+    graphEnvironment,
     graphName,
     graphInputSchema,
+    graphNamespace,
+    graphTenantId,
     isTaskWorkspace,
     outputNodeId,
     selectedGovernedFixtureStale,
@@ -9975,6 +9987,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             testCase.context,
             graphInputSchema,
             effectiveGraphOutputSchema,
+            graphDraftId && graphDraftRevision > 0 ? {
+              draftId: graphDraftId,
+              revision: graphDraftRevision,
+              tenantId: graphTenantId,
+              namespace: graphNamespace,
+              environment: graphEnvironment,
+            } : undefined,
           );
           const requestFingerprint = await sha256Fingerprint(request);
           const response = await simulate(request);
@@ -10033,8 +10052,13 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     evidenceCoordinateForScenario,
     simulationFixtures,
     effectiveGraphOutputSchema,
+    graphDraftId,
+    graphDraftRevision,
+    graphEnvironment,
     graphName,
     graphInputSchema,
+    graphNamespace,
+    graphTenantId,
     isTaskWorkspace,
     outputNodeId,
     showSimulationResponse,

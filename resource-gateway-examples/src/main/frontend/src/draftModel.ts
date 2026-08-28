@@ -88,6 +88,15 @@ export interface GraphDraftExportOptions {
   operatorSnapshots?: Record<string, OperatorDefinition>;
 }
 
+/** Persisted graph coordinate carried by simulation requests when a draft has been saved. */
+export interface GraphDraftIdentity {
+  draftId?: string;
+  revision?: number;
+  tenantId?: string;
+  namespace?: string;
+  environment?: string;
+}
+
 /** Compact operator facts shown directly on canvas cards and palette rows. */
 export interface OperatorSummary {
   operatorRef: string;
@@ -396,6 +405,7 @@ export function toGraphDraft(
   outputNodeId: string,
   inputSchema?: SchemaEnvelope,
   outputSchema?: SchemaEnvelope,
+  identity: GraphDraftIdentity = {},
 ): GraphDraft {
   const edgeInputs = nodeInputsFromEdges(edges);
   const draftNodes: DraftNode[] = nodes.map((node) => ({
@@ -420,6 +430,13 @@ export function toGraphDraft(
 
   return {
     graphName: graphName || 'visualGraph',
+    ...(identity.draftId ? { draftId: identity.draftId } : {}),
+    ...(typeof identity.revision === 'number' && identity.revision > 0
+      ? { revision: identity.revision }
+      : {}),
+    ...(identity.tenantId ? { tenantId: identity.tenantId } : {}),
+    ...(identity.namespace ? { namespace: identity.namespace } : {}),
+    ...(identity.environment ? { environment: identity.environment } : {}),
     ...(inputSchema ? { inputSchema } : {}),
     ...(outputSchema ? { outputSchema } : {}),
     nodes: draftNodes,
@@ -600,8 +617,10 @@ export function toSimulationRequest(
   context: Record<string, unknown> = {},
   inputSchema?: SchemaEnvelope,
   outputSchema?: SchemaEnvelope,
+  identity: GraphDraftIdentity = {},
 ): SimulationRequest {
-  const draft = toGraphDraft(graphName, nodes, edges, outputNodeId, inputSchema, outputSchema);
+  const draft = toGraphDraft(
+    graphName, nodes, edges, outputNodeId, inputSchema, outputSchema, identity);
   const selectedOutputNode = draft.output.nodeId;
   return {
     draft,

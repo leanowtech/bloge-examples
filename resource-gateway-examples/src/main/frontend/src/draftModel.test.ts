@@ -315,6 +315,52 @@ describe('fromGraphDraft', () => {
 });
 
 describe('toSimulationRequest', () => {
+  it('carries persisted draft identity and scope without server-owned material', () => {
+    const request = toSimulationRequest(
+      'savedGraph',
+      [{ id: 'resource', operatorRef: 'resource:orders', position: { x: 0, y: 0 } }],
+      [],
+      'resource',
+      {},
+      {},
+      undefined,
+      undefined,
+      {
+        draftId: 'draft-42',
+        revision: 7,
+        tenantId: 'tenant-a',
+        namespace: 'orders',
+        environment: 'test',
+      },
+    );
+
+    expect(request.draft).toMatchObject({
+      draftId: 'draft-42',
+      revision: 7,
+      tenantId: 'tenant-a',
+      namespace: 'orders',
+      environment: 'test',
+    });
+    expect(request.draft).not.toHaveProperty('operatorSnapshots');
+    expect(request.draft).not.toHaveProperty('operatorFingerprints');
+    expect(request.draft).not.toHaveProperty('nodeFixtures');
+  });
+
+  it('keeps unsaved simulation drafts free of persisted identity fields', () => {
+    const request = toSimulationRequest(
+      'workingGraph',
+      [{ id: 'a', operatorRef: 'producer', position: { x: 0, y: 0 } }],
+      [],
+      'a',
+    );
+
+    expect(request.draft).not.toHaveProperty('draftId');
+    expect(request.draft).not.toHaveProperty('revision');
+    expect(request.draft).not.toHaveProperty('tenantId');
+    expect(request.draft).not.toHaveProperty('namespace');
+    expect(request.draft).not.toHaveProperty('environment');
+  });
+
   it('keeps request outputNode aligned with the draft output selection', () => {
     const inputSchema = {
       format: 'json-schema',
