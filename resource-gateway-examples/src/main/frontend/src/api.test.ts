@@ -52,6 +52,7 @@ import {
   runLibraryAuthoringOperatorTest,
   runOperatorTestCase,
   runGatewayScenario,
+  simulate,
   resetBlogeApiTransport,
   setBlogeApiTransport,
   setRehearsalRemediationCredentialsProvider,
@@ -64,6 +65,7 @@ import {
   validateOperatorLibraryText,
 } from './api';
 import type {
+  GraphDraft,
   VisualAuthoringFixtureSaveRequest,
   VisualFunctionTestSuite,
   VisualLibraryAuthoringCompileResult,
@@ -117,6 +119,75 @@ describe('Workspace fork API client', () => {
       }),
       body: JSON.stringify(command),
     }));
+  });
+});
+
+describe('visual simulation API client', () => {
+  const simulationDraft = {
+    graphName: 'orders',
+    nodes: [],
+    edges: [],
+    output: { nodeId: 'n1' },
+  } satisfies GraphDraft;
+
+  afterEach(() => {
+    resetBlogeApiTransport();
+    resetOperatorTestHeadersProvider();
+    vi.restoreAllMocks();
+  });
+
+  it('keeps ordinary simulations on the unauthenticated public visual transport', async () => {
+    const request = {
+      draft: simulationDraft,
+      context: {},
+      outputNode: 'n1',
+    } as Parameters<typeof simulate>[0];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(String(input)).toBe('/api/visual/graphs/simulate');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(request),
+      });
+      expect(init?.headers).not.toHaveProperty('X-Purpose');
+      return jsonResponse({});
+    });
+
+    await expect(simulate(request)).resolves.toEqual({});
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('reads governed fixture material with the exact correctness purpose', async () => {
+    const request = {
+      draft: simulationDraft,
+      context: {},
+      outputNode: 'n1',
+      fixtures: {
+        n1: {
+          output: { approved: true },
+          governedRef: {
+            fixtureAssetId: 'order-fixture',
+            revision: 1,
+            schemaFingerprint: 'sha256:orders',
+          },
+        },
+      },
+    } as Parameters<typeof simulate>[0];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      expect(String(input)).toBe('/api/visual/graphs/simulate');
+      expect(init).toMatchObject({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Purpose': 'CORRECTNESS_FIXTURE_MATERIAL_READ',
+        },
+        body: JSON.stringify(request),
+      });
+      return jsonResponse({});
+    });
+
+    await expect(simulate(request)).resolves.toEqual({});
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 

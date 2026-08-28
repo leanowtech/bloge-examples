@@ -1027,10 +1027,16 @@ export async function commitLibraryAuthoringDraft(
 
 /** Runs a mock simulation of the current draft. */
 export async function simulate(request: SimulationRequest): Promise<SimulationResponse> {
+  const requiresGovernedMaterialRead = Object.values(request.fixtures ?? {})
+    .some((fixture) => Boolean(fixture?.governedRef));
   return readJson<SimulationResponse>(
     await sendRequest('/api/visual/graphs/simulate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: requiresGovernedMaterialRead
+        ? integrationRequestHeaders('CORRECTNESS_FIXTURE_MATERIAL_READ', {
+          'Content-Type': 'application/json',
+        })
+        : { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
     }),
   );
