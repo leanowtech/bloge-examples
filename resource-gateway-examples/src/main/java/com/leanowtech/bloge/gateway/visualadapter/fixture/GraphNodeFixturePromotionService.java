@@ -163,9 +163,12 @@ public class GraphNodeFixturePromotionService {
 
         GraphDraft draft = drafts.find(requiredText(draftId, "draftId"))
                 .orElseThrow(() -> notFound("DRAFT_NOT_FOUND", "Graph draft was not found"));
-        if (identityForMaterialWrite.tenantId() != null
-                && !identityForMaterialWrite.tenantId().isBlank()
-                && !identityForMaterialWrite.tenantId().equals(draft.tenantId())) {
+        // Scope closure is checked before node/operator/output reads or protected-material writes.
+        // A caller who is authenticated as an actor in another tenant or environment must receive
+        // the same not-found response as an unknown draft; exposing the mismatch would become a
+        // cross-scope draft oracle.
+        if (!identityForMaterialWrite.tenantId().equals(draft.tenantId())
+                || !identityForMaterialWrite.environmentId().equals(draft.environment())) {
             throw notFound("DRAFT_NOT_FOUND", "Graph draft was not found");
         }
         GraphDraft.DraftNode node = draft.nodes().stream()
@@ -287,11 +290,21 @@ public class GraphNodeFixturePromotionService {
                                 "operatorFingerprint", operator.fingerprint(), "schema", schema.schema())));
     }
 
+    /**
+     * Requires the authenticated identity fields needed to close promotion to a draft scope.
+     *
+     * <p>Tenant and environment are security coordinates, not optional display metadata. They
+     * must be present before any draft lookup; a later mismatch is deliberately reported as the
+     * same not-found result as an unknown draft.</p>
+     *
+     * @param identity authenticated request context
+     */
     private void requireIdentity(IntegrationRequestContext identity) {
         if (identity == null || identity.actorId().isBlank()
-                || identity.organizationId().isBlank() || identity.region().isBlank()) {
+                || identity.organizationId().isBlank() || identity.region().isBlank()
+                || identity.tenantId().isBlank() || identity.environmentId().isBlank()) {
             throw invalid("IDENTITY_REQUIRED",
-                    "Actor id, organization id, and region are required for promotion");
+                    "Tenant, environment, actor id, organization id, and region are required for promotion");
         }
     }
 

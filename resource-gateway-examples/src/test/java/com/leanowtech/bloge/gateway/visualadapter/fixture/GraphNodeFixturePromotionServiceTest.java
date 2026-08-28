@@ -37,6 +37,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /** Proves server-owned derivation and typed HTTP semantics for graph-node promotion. */
@@ -305,10 +308,80 @@ class GraphNodeFixturePromotionServiceTest {
         assertThat(materialWrites).isEmpty();
     }
 
+    @Test
+    void rejectsIdentityWithoutTenantBeforeReadingDraft() {
+        IntegrationRequestContext missingTenant = identityWith("", "test");
+
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), missingTenant))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(400);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.IDENTITY_REQUIRED");
+                });
+
+        verify(drafts, never()).find(any());
+        verifyNoInteractions(operators, fixtureCatalog);
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
+    void rejectsIdentityWithoutEnvironmentBeforeReadingDraft() {
+        IntegrationRequestContext missingEnvironment = identityWith("tenant-a", "");
+
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), missingEnvironment))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(400);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.IDENTITY_REQUIRED");
+                });
+
+        verify(drafts, never()).find(any());
+        verifyNoInteractions(operators, fixtureCatalog);
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
+    void returnsNotFoundForTenantOutsideDraftScopeBeforeMaterialWrite() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(Map.of())));
+        IntegrationRequestContext foreignTenant = identityWith("tenant-b", "test");
+
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), foreignTenant))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(404);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.DRAFT_NOT_FOUND");
+                });
+
+        verify(drafts).find("draft-1");
+        verifyNoInteractions(operators, fixtureCatalog);
+        assertThat(materialWrites).isEmpty();
+    }
+
+    @Test
+    void returnsNotFoundForEnvironmentOutsideDraftScopeBeforeMaterialWrite() {
+        when(drafts.find("draft-1")).thenReturn(Optional.of(draft(
+                Map.of("node_1", new GraphDraft.NodeFixture(Map.of("score", 760))))));
+        IntegrationRequestContext foreignEnvironment = identityWith("tenant-a", "production");
+
+        assertThatThrownBy(() -> service.promote("draft-1", "node_1", request("fixture"), foreignEnvironment))
+                .isInstanceOfSatisfying(GraphNodeFixturePromotionException.class, failure -> {
+                    assertThat(failure.status()).isEqualTo(404);
+                    assertThat(failure.code()).isEqualTo("RG.VISUAL.PROMOTION.DRAFT_NOT_FOUND");
+                });
+
+        verify(drafts).find("draft-1");
+        verifyNoInteractions(operators, fixtureCatalog);
+        assertThat(materialWrites).isEmpty();
+    }
+
     private GraphNodeFixturePromotionRequest request(String fixtureId) {
         return new GraphNodeFixturePromotionRequest(
                 GraphNodeFixturePromotionRequest.SCHEMA_VERSION, fixtureId, "restricted", 3,
                 List.of("/score"));
+    }
+
+    private IntegrationRequestContext identityWith(String tenantId, String environmentId) {
+        return new IntegrationRequestContext(
+                tenantId, "org-a", "project-a", environmentId, "sg", "USER", "author-1",
+                "", FixtureMaterialWriterPurpose.VALUE, "correlation-1",
+                Set.of(), "RESTRICTED", "");
     }
 
     private static GraphDraft draft(Map<String, GraphDraft.NodeFixture> fixtures) {
