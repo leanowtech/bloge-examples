@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.authoring.scenario;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leanowtech.bloge.gateway.visual.ScenarioOperatorTestSupport;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraft;
 import com.leanowtech.bloge.gateway.visual.contract.ContractDraftProjectionService;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
@@ -8,6 +9,7 @@ import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +43,36 @@ class ScenarioSimulationCompilerTest {
     }
 
     @Test
+    void compilesOperatorReturnSelectorIntoTheMatchingGraphNodeFixture() {
+        GraphDraft graph = operatorGraph(ScenarioOperatorTestSupport.OPERATOR_REF);
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet draftSet = operatorDraftSet(
+                contract,
+                operatorDependency(ScenarioOperatorTestSupport.OPERATOR_REF,
+                        new ScenarioDraftSet.DependencyBehavior(
+                                ScenarioDraftSet.BehaviorKind.RETURN,
+                                ScenarioDraftSet.BehaviorBoundary.NODE,
+                                Map.of("score", 720),
+                                Map.of("applicantId", "A-1"),
+                                "",
+                                null,
+                                Map.of(),
+                                "",
+                                "",
+                                "",
+                                null,
+                                "")));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isTrue();
+        assertThat(plan.request().fixtures()).containsKey("crm");
+        assertThat(plan.request().fixtures().get("crm").output()).isEqualTo(Map.of("score", 720));
+        assertThat(plan.request().fixtures().get("crm").expectedInput())
+                .isEqualTo(Map.of("applicantId", "A-1"));
+    }
+
+    @Test
     void explicitRealBehaviorRemovesPersistedAuthoringFixture() {
         GraphDraft graph = ScenarioValidationServiceTest.graphDraft();
         ContractDraft contract = projector.project(graph, ScenarioValidationServiceTest.fingerprint('a'));
@@ -67,6 +99,92 @@ class ScenarioSimulationCompilerTest {
         assertThat(plan.compiled()).isTrue();
         assertThat(plan.request().draft().nodeFixtures()).doesNotContainKey("crm");
         assertThat(plan.request().fixtures()).isEmpty();
+    }
+
+    @Test
+    void compilesOperatorRealSelectorByRemovingTheMatchingGraphNodeFixture() {
+        GraphDraft graph = operatorGraph(ScenarioOperatorTestSupport.OPERATOR_REF);
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet draftSet = operatorDraftSet(
+                contract,
+                operatorDependency(ScenarioOperatorTestSupport.OPERATOR_REF,
+                        ScenarioDraftSet.DependencyBehavior.real()));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isTrue();
+        assertThat(plan.request().draft().nodeFixtures()).doesNotContainKey("crm");
+        assertThat(plan.request().fixtures()).isEmpty();
+    }
+
+    @Test
+    void rejectsOperatorSelectorWhenItDoesNotMatchTheExactTarget() {
+        GraphDraft graph = operatorGraph(ScenarioOperatorTestSupport.OPERATOR_REF);
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet draftSet = operatorDraftSet(
+                contract,
+                operatorDependency("risk:other",
+                        ScenarioDraftSet.DependencyBehavior.returning(Map.of("score", 720))));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isFalse();
+        assertThat(plan.request()).isNull();
+        assertThat(plan.diagnostics()).extracting("code")
+                .contains("visual.scenario.compile.operatorSelectorTargetMismatch");
+    }
+
+    @Test
+    void rejectsOperatorSelectorWhenNoGraphNodeMatches() {
+        GraphDraft graph = operatorGraph("risk:other");
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet draftSet = operatorDraftSet(
+                contract,
+                operatorDependency(ScenarioOperatorTestSupport.OPERATOR_REF,
+                        ScenarioDraftSet.DependencyBehavior.returning(Map.of("score", 720))));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isFalse();
+        assertThat(plan.request()).isNull();
+        assertThat(plan.diagnostics()).extracting("code")
+                .contains("visual.scenario.compile.operatorSelectorNodeMissing");
+    }
+
+    @Test
+    void rejectsOperatorSelectorWhenMultipleGraphNodesMatch() {
+        GraphDraft graph = operatorGraph(ScenarioOperatorTestSupport.OPERATOR_REF,
+                ScenarioOperatorTestSupport.OPERATOR_REF);
+        ContractDraft contract = projector.project(ScenarioOperatorTestSupport.operator());
+        ScenarioDraftSet draftSet = operatorDraftSet(
+                contract,
+                operatorDependency(ScenarioOperatorTestSupport.OPERATOR_REF,
+                        ScenarioDraftSet.DependencyBehavior.returning(Map.of("score", 720))));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isFalse();
+        assertThat(plan.request()).isNull();
+        assertThat(plan.diagnostics()).extracting("code")
+                .contains("visual.scenario.compile.operatorSelectorNodeAmbiguous");
+    }
+
+    @Test
+    void rejectsOperatorSelectorForGraphTarget() {
+        GraphDraft graph = ScenarioValidationServiceTest.graphDraft();
+        ContractDraft contract = projector.project(graph, ScenarioValidationServiceTest.fingerprint('a'));
+        ScenarioDraftSet draftSet = draftSet(
+                graph,
+                contract,
+                List.of(operatorDependency(ScenarioOperatorTestSupport.OPERATOR_REF,
+                        ScenarioDraftSet.DependencyBehavior.returning(Map.of("score", 720)))));
+
+        ScenarioSimulationPlan plan = compiler.compile(graph, contract, draftSet, "fallback");
+
+        assertThat(plan.compiled()).isFalse();
+        assertThat(plan.request()).isNull();
+        assertThat(plan.diagnostics()).extracting("code")
+                .contains("visual.scenario.compile.operatorSelectorUnsupported");
     }
 
     @Test
@@ -162,6 +280,67 @@ class ScenarioSimulationCompilerTest {
 
     private static ScenarioDraftSet.DependencyBehaviorDraft returnDependency() {
         return dependency(ScenarioDraftSet.DependencyBehavior.returning(Map.of("score", 720)));
+    }
+
+    private ScenarioDraftSet operatorDraftSet(
+            ContractDraft contract,
+            ScenarioDraftSet.DependencyBehaviorDraft dependency) {
+        ScenarioDraftSet.ScenarioDraft scenario = new ScenarioDraftSet.ScenarioDraft(
+                "fallback",
+                "Operator fallback",
+                "Return a controlled operator response.",
+                ScenarioDraftSet.CaseType.REGRESSION,
+                List.of("operator"),
+                new ScenarioDraftSet.Given(
+                        Map.of("applicantId", "A-1"),
+                        ScenarioDraftSet.ValueProvenance.AUTHORED),
+                List.of(dependency),
+                ScenarioDraftSet.Then.empty());
+        return new ScenarioDraftSet(
+                "",
+                "risk-operator-scenarios",
+                1,
+                new ScenarioDraftSet.EnterpriseScope(
+                        "tenant-a", "org-a", "project-a", "test", "sg"),
+                contract.target(),
+                contract.fingerprint(objectMapper),
+                List.of(scenario),
+                new ScenarioDraftSet.Metadata("credit-platform", "INTERNAL", null, null, Map.of()));
+    }
+
+    private static ScenarioDraftSet.DependencyBehaviorDraft operatorDependency(
+            String operatorRef,
+            ScenarioDraftSet.DependencyBehavior behavior) {
+        return new ScenarioDraftSet.DependencyBehaviorDraft(
+                "operator-control",
+                new ScenarioDraftSet.DependencySelector(
+                        "", "", operatorRef, "", "", List.of(), List.of(), "", Map.of()),
+                behavior,
+                ScenarioDraftSet.Consumption.once(),
+                ScenarioDraftSet.SchemaCheck.strict(),
+                "AUTHORED");
+    }
+
+    private static GraphDraft operatorGraph(String... operatorRefs) {
+        GraphDraft base = ScenarioValidationServiceTest.graphDraft();
+        List<GraphDraft.DraftNode> nodes = new ArrayList<>();
+        for (int index = 0; index < operatorRefs.length; index++) {
+            GraphDraft.DraftNode source = base.nodes().getFirst();
+            nodes.add(new GraphDraft.DraftNode(
+                    index == 0 ? "crm" : "crm-" + index,
+                    operatorRefs[index],
+                    source.label(),
+                    source.inputs(),
+                    source.config(),
+                    source.position()));
+        }
+        nodes.add(base.nodes().get(1));
+        return new GraphDraft(
+                base.schemaVersion(), base.draftId(), base.revision(), base.graphName(),
+                base.tenantId(), base.namespace(), base.environment(), base.status(),
+                base.inputSchema(), base.outputSchema(), nodes, base.edges(), base.visualLayout(),
+                base.nodeFixtures(), base.output(), base.operatorFingerprints(), base.operatorSnapshots(),
+                base.revisionMetadata());
     }
 
     private static ScenarioDraftSet.DependencyBehaviorDraft dependency(
