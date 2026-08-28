@@ -327,7 +327,11 @@ class VisualGraphSimulationKernelIntegrationTest {
     }
 
     @Test
-    void dslGenerationFailureHasEquivalentDiagnosticsAndErrors() {
+    /**
+     * Proves output-level stand-ins isolate visual operator configuration while preserving
+     * equivalent legacy/kernel results; codegen still rejects invalid keys before direct DSL use.
+     */
+    void syntheticStandInIsolatesInvalidVisualConfig() {
         DefaultVisualOperatorCatalog catalog = catalog(
                 VisualCatalogTestSupport.designOnlyEligibilityOperator("integer"));
         GraphDraft draft = new GraphDraft(
@@ -339,9 +343,20 @@ class VisualGraphSimulationKernelIntegrationTest {
                         Map.of("bad-key", "value"), null)),
                 List.of(), Map.of(), new GraphDraft.OutputSelection("eligibility", ""));
 
-        assertBlockedEquivalent(catalog, draft,
-                Map.of("score", 720, "amount", 250_000), Map.of(),
-                "visual.codegen.configKey.invalid");
+        assertEquivalent(catalog, draft,
+                Map.of("score", 720, "amount", 250_000), Map.of());
+        VisualGraphSimulationResponse legacy = legacyOracle(catalog)
+                .simulate(draft, Map.of("score", 720, "amount", 250_000), "", Map.of());
+        VisualGraphSimulationResponse kernel = kernel(catalog)
+                .simulate(draft, Map.of("score", 720, "amount", 250_000), "", Map.of());
+        assertThat(legacy.validated()).isTrue();
+        assertThat(legacy.compiled()).isTrue();
+        assertThat(legacy.success()).isTrue();
+        assertThat(legacy.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(kernel.validated()).isTrue();
+        assertThat(kernel.compiled()).isTrue();
+        assertThat(kernel.success()).isTrue();
+        assertThat(kernel.mockedNodeIds()).containsExactly("eligibility");
     }
 
     @Test
