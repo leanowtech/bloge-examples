@@ -109,16 +109,19 @@ export function projectScenarioRunPreflight(
     }
     const nodeDependencies = new Map<string, DependencyBehaviorDraft[]>();
     for (const dependency of scenario.dependencies) {
-      const nodeId = dependency.selector.nodeId;
-      if (!nodeId || !input.graphDraft.nodes.some((node) => node.id === nodeId)) {
+      const nodeId = resolveDependencyNodeId(dependency, input.graphDraft);
+      if (!nodeId) {
         addReason(reasonCounts, 'UNRESOLVED_DEPENDENCY', 'BLOCKING', 1);
         addUnsupportedReason(reasonCounts, dependency);
         continue;
       }
+      const resolvedDependency = dependency.selector.nodeId === nodeId
+        ? dependency
+        : { ...dependency, selector: { ...dependency.selector, nodeId: nodeId, operatorRef: '' } };
       const current = nodeDependencies.get(nodeId) ?? [];
-      current.push(dependency);
+      current.push(resolvedDependency);
       nodeDependencies.set(nodeId, current);
-      if (fallbackToReal(dependency)) {
+      if (fallbackToReal(resolvedDependency)) {
         invocationCounts.fallbackToReal += 1;
         addReason(reasonCounts, 'REAL_FALLBACK', 'BLOCKING', 1);
       }
@@ -191,6 +194,19 @@ export function projectScenarioRunPreflight(
     invocationGroups: allGroups.slice(0, MAX_INVOCATION_GROUPS),
     truncatedGroupCount: Math.max(0, allGroups.length - MAX_INVOCATION_GROUPS),
   };
+}
+
+/** Resolves an immutable operator coordinate to its one executable graph node for preflight only. */
+function resolveDependencyNodeId(
+  dependency: DependencyBehaviorDraft,
+  graphDraft: GraphDraft,
+): string | null {
+  if (dependency.selector.nodeId && graphDraft.nodes.some((node) => node.id === dependency.selector.nodeId)) {
+    return dependency.selector.nodeId;
+  }
+  if (!dependency.selector.operatorRef) return null;
+  const matches = graphDraft.nodes.filter((node) => node.operatorRef === dependency.selector.operatorRef);
+  return matches.length === 1 ? matches[0]?.id ?? null : null;
 }
 
 function invocationForDependency(dependency: DependencyBehaviorDraft): Omit<

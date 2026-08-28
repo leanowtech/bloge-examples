@@ -16,6 +16,49 @@ describe('Scenario run preflight risk projection', () => {
     });
   });
 
+  it('resolves a unique operator selector to the executable node for a mocked preflight', () => {
+    const projection = projectScenarioRunPreflight({
+      graphDraft: graph(),
+      draftSet: draftSet([operatorDependency('risk:score', 'RETURN')]),
+      targetEffect: 'READ',
+      caseIds: ['case-a'],
+    });
+
+    expect(projection.status).toBe('SAFE');
+    expect(projection.counts).toMatchObject({ mocked: 1, subjectReal: 1, real: 0, fallbackToReal: 0 });
+    expect(reasonCodes(projection)).not.toContain('UNRESOLVED_DEPENDENCY');
+    expect(reasonCodes(projection)).not.toContain('TRANSIENT_RUNTIME_UNSUPPORTED');
+    expect(projection.invocationGroups).toContainEqual(expect.objectContaining({
+      nodeId: 'score', operatorRef: 'risk:score', mode: 'MOCKED',
+    }));
+  });
+
+  it('fails closed for an unknown operator selector', () => {
+    const projection = projectScenarioRunPreflight({
+      graphDraft: graph(),
+      draftSet: draftSet([operatorDependency('risk:missing', 'RETURN')]),
+      targetEffect: 'READ',
+      caseIds: ['case-a'],
+    });
+
+    expect(projection.status).toBe('BLOCKED');
+    expect(reasonCodes(projection)).toContain('UNRESOLVED_DEPENDENCY');
+  });
+
+  it('fails closed when an operator selector matches more than one node', () => {
+    const graphDraft = graph();
+    graphDraft.nodes.push({ id: 'score-copy', operatorRef: 'risk:score' });
+    const projection = projectScenarioRunPreflight({
+      graphDraft,
+      draftSet: draftSet([operatorDependency('risk:score', 'RETURN')]),
+      targetEffect: 'READ',
+      caseIds: ['case-a'],
+    });
+
+    expect(projection.status).toBe('BLOCKED');
+    expect(reasonCodes(projection)).toContain('UNRESOLVED_DEPENDENCY');
+  });
+
   it('finds implicit, explicit, observed, and fallback real-call paths before execution', () => {
     const real = dependency('score', 'REAL');
     real.consumption.onUnmatched = 'ALLOW_REAL';
@@ -208,6 +251,21 @@ function dependency(
     consumption: { required: true, minUses: 1, maxUses: 1, onExhausted: 'FAIL', onUnmatched: 'FAIL' },
     schemaCheck: { mode: 'STRICT', waiverReason: '' },
     origin: 'TEST',
+  };
+}
+
+function operatorDependency(
+  operatorRef: string,
+  kind: DependencyBehaviorDraft['behavior']['kind'],
+): DependencyBehaviorDraft {
+  return {
+    ...dependency('', kind),
+    dependencyId: `dependency-${operatorRef}`,
+    selector: {
+      ...dependency('', kind).selector,
+      nodeId: '',
+      operatorRef,
+    },
   };
 }
 
