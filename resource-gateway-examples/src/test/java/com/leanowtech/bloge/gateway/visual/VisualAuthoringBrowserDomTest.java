@@ -1262,16 +1262,41 @@ class VisualAuthoringBrowserDomTest {
         String suffix = Long.toUnsignedString(System.nanoTime());
 
         ChainBusinessCoordinate chain = runStructuredExternalApiPublicationStage(wait, baseUrl, suffix);
-        runGovernedFixtureStage(wait, baseUrl, suffix, chain);
-        runDecisionScenarioStage(wait, baseUrl);
+        DecisionBusinessCoordinate decision = runGovernedFixtureStage(wait, baseUrl, suffix, chain);
+        runDecisionScenarioStage(wait, decision);
 
-        driver.get(baseUrl + "/author/?authorWorkspace=v2&spine=off&toolId=chain-" + suffix
-                + "&toolName=Chain%20Tool&stage=define");
+        assertV2RollbackSurface(wait, baseUrl + "/author/?authorWorkspace=v2&spine=off&toolId=chain-" + suffix
+                + "&toolName=Chain%20Tool&stage=define", true);
+        assertV2RollbackSurface(wait, baseUrl + "/author/?authorWorkspace=v2&toolId=chain-" + suffix
+                + "&toolName=Chain%20Tool&stage=define", false);
+    }
+
+    /**
+     * Verifies the v2 rollback surface with and without an explicit spine query.
+     *
+     * <p>Both URLs must keep the legacy spine launcher and publication palette out of the rendered
+     * tree while preserving the v2 workspace contract and desktop geometry.  The query-free case
+     * is the default-route rollback required by the 1.3.0 design, not an implicit alias for
+     * {@code spine=off}.</p>
+     *
+     * @param wait browser wait bound to the acceptance session
+     * @param url rollback URL under test
+     * @param explicitSpine whether the URL intentionally includes {@code spine=off}
+     */
+    private void assertV2RollbackSurface(WebDriverWait wait, String url, boolean explicitSpine) {
+        driver.get(url);
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace-v2")));
         wait.until(ExpectedConditions.attributeToBe(
                 By.cssSelector(".workspace-v2"), "data-author-workspace-version", "v2"));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-mode", "compose"));
         assertThat(driver.findElements(By.cssSelector("[data-testid='tool-spine-launcher']"))).isEmpty();
         assertThat(driver.findElements(By.cssSelector("[data-testid='tool-palette-publication']"))).isEmpty();
+        if (explicitSpine) {
+            assertThat(driver.getCurrentUrl()).contains("spine=off");
+        } else {
+            assertThat(driver.getCurrentUrl()).doesNotContain("spine=");
+        }
         assertPageNoHorizontalOverflow();
     }
 
@@ -5344,6 +5369,20 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Coordinates the decision-table node authored on the governed chain's second graph.
+     *
+     * <p>The decision scenario must remain attached to the same business graph that exercised
+     * the dynamic resource.  This record therefore carries the persisted draft identity together
+     * with the exact visible decision node, rather than allowing the scenario phase to load an
+     * unrelated built-in example.</p>
+     *
+     * @param draftId persisted second-graph draft identity
+     * @param nodeId visible decision-table graph-node identity
+     */
+    private record DecisionBusinessCoordinate(String draftId, String nodeId) {
+    }
+
+    /**
      * Coordinates the saved external resource graph into the following governed phase.
      *
      * <p>The publication UI may leave an unsaved publication node selected after the visible Add
@@ -5453,7 +5492,16 @@ class VisualAuthoringBrowserDomTest {
                 persistedDraft.environment());
     }
 
-    private void runGovernedFixtureStage(
+    /**
+     * Completes fixture governance and authors the decision-table node on the same second graph.
+     *
+     * @param wait browser wait bound to the acceptance session
+     * @param baseUrl local server origin
+     * @param suffix unique chain suffix
+     * @param chain persisted Phase B resource coordinate
+     * @return persisted second-graph decision coordinate for Phase D
+     */
+    private DecisionBusinessCoordinate runGovernedFixtureStage(
             WebDriverWait wait,
             String baseUrl,
             String suffix,
@@ -5607,18 +5655,43 @@ class VisualAuthoringBrowserDomTest {
                 "[data-testid='v2-server-fidelity:" + secondResourceNodeId + "']"), "TRANSPORT_LEVEL");
         assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef())).isEqualTo(1);
         assertPageNoHorizontalOverflow();
+
+        // Keep Phase D on this same saved business graph.  The palette action is the visible
+        // authoring seam for the decision table; no GraphDraft or scenario state is injected.
+        typeControlValue(driver.findElement(By.id("operator-palette-search")), "Decision");
+        click(wait, By.cssSelector("[data-testid='operator-button:bloge:decisionTable']"));
+        WebElement decisionNode = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid^='canvas-node:'][data-operator-ref='bloge:decisionTable']")));
+        String decisionNodeId = decisionNode.getAttribute("data-testid").substring("canvas-node:".length());
+        selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", decisionNodeId);
+        saveAuthorWorkspace(wait);
+        GraphDraft decisionDraft = graphDraftRepository.find(secondDraftId)
+                .orElseThrow(() -> new AssertionError(
+                        "The decision-table node must be persisted on the governed second graph"));
+        assertThat(decisionDraft.nodes().stream().anyMatch(node ->
+                decisionNodeId.equals(node.id()) && "bloge:decisionTable".equals(node.operatorRef())))
+                .as("Phase D decision table remains on the Phase C second-graph draft")
+                .isTrue();
+        return new DecisionBusinessCoordinate(secondDraftId, decisionNodeId);
     }
 
-    private void runDecisionScenarioStage(WebDriverWait wait, String baseUrl) {
-        driver.get(baseUrl + "/author/?authorWorkspace=v2&spine=v1");
-        click(wait, By.cssSelector("[data-testid='author-start-choice:examples']"));
-        click(wait, By.cssSelector("[data-testid='author-start-example:loan-policy-fallback']"));
-        wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[data-testid='author-start-dialog']")));
-        selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", "n4");
+    private void runDecisionScenarioStage(WebDriverWait wait, DecisionBusinessCoordinate decision) {
+        // The browser remains on the second governed graph.  Selecting its persisted node through
+        // the navigator keeps Scenario source and Return fixture coordinates on one draft.
+        GraphDraft decisionDraft = graphDraftRepository.find(decision.draftId())
+                .orElseThrow(() -> new AssertionError(
+                        "Phase D must use the persisted Phase C second-graph draft"));
+        assertThat(decisionDraft.nodes().stream().anyMatch(node ->
+                decision.nodeId().equals(node.id()) && "bloge:decisionTable".equals(node.operatorRef())))
+                .as("Phase D decision coordinate belongs to the governed second graph")
+                .isTrue();
+        selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", decision.nodeId());
         openDataInspector(wait);
         click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
         click(wait, By.xpath("//*[@data-testid='author-context-inspector']//button[normalize-space()='Edit node']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='decision-scenario-workbench']")));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid^='decision-rule-condition:0:']"))), "value >= 0");
         selectByValue(wait, By.cssSelector("[data-testid='decision-scenario-workbench'] select[aria-label='Decision output kind']"), "plan");
         selectByValue(wait, By.cssSelector("[data-testid='decision-scenario-workbench'] select[aria-label='Scenario enumeration mode']"), "per-rule");
         click(wait, By.cssSelector("[data-testid='generate-decision-scenarios']"));
