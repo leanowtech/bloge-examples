@@ -1192,6 +1192,39 @@ class VisualAuthoringBrowserDomTest {
     }
 
     /**
+     * Runs the 1.3.0 happy path in one browser session so navigation, publication, governance,
+     * decision evidence, and the spine-off rollback share one user-visible session boundary.
+     *
+     * <p>This deliberately asserts only rendered controls and repository receipts after actions;
+     * it does not inject draft state, credentials, or lifecycle values. The chain proves the
+     * browser contract across coordinates, while server repositories remain the authority for
+     * persisted revisions, publication identity, fixture lifecycle, and idempotent usage.</p>
+     */
+    @Test
+    @Timeout(180)
+    void onePointThreeAcceptanceChainUsesOneBrowserSession() {
+        assumeReactAuthorBundlePresent();
+        driver = newChromeDriverOrSkip();
+        WebDriverWait wait = new WebDriverWait(driver, WAIT_TIMEOUT);
+        setViewport(wait, 1280, 980);
+        String baseUrl = "http://localhost:" + port;
+        String suffix = Long.toUnsignedString(System.nanoTime());
+
+        runStructuredExternalApiPublicationStage(wait, baseUrl, suffix);
+        runGovernedFixtureStage(wait, baseUrl, suffix);
+        runDecisionScenarioStage(wait, baseUrl);
+
+        driver.get(baseUrl + "/author/?authorWorkspace=v2&spine=off&toolId=chain-" + suffix
+                + "&toolName=Chain%20Tool&stage=define");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(".workspace-v2")));
+        wait.until(ExpectedConditions.attributeToBe(
+                By.cssSelector(".workspace-v2"), "data-author-workspace-version", "v2"));
+        assertThat(driver.findElements(By.cssSelector("[data-testid='tool-spine-launcher']"))).isEmpty();
+        assertThat(driver.findElements(By.cssSelector("[data-testid='tool-palette-publication']"))).isEmpty();
+        assertPageNoHorizontalOverflow();
+    }
+
+    /**
      * Exercises Phase D decision-table scenario authoring through the visible v1 spine.
      *
      * <p>The built-in loan policy supplies a real decision table and operator fixture. This test
@@ -5233,6 +5266,253 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(1);
     }
 
+    private void runStructuredExternalApiPublicationStage(
+            WebDriverWait wait,
+            String baseUrl,
+            String suffix) {
+        String toolName = "Chain Tool " + suffix;
+        String resourceId = "chain-resource-" + suffix;
+        driver.get(baseUrl + "/?spine=v1");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='tool-spine-launcher']")));
+        typeControlValue(driver.findElement(By.id("spine-build-tool-name")), toolName);
+        wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='spine-build-tool-link']"))).click();
+        wait.until(ignored -> driver.getCurrentUrl().contains("/author/"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='external-api-authoring']")));
+        closeAuthorStartDialog(wait);
+        click(wait, By.cssSelector("[data-testid='add-external-api']"));
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-resource-id']")), resourceId);
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-display-name']")), "Chain resource");
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-url']")),
+                "https://api.example.test/orders");
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")), "data");
+        assertThat(driver.findElement(By.cssSelector("[data-testid='external-api-form']")).findElements(
+                By.cssSelector("[data-testid='external-api-structured-schema']"))).hasSize(1);
+        assertThat(driver.findElements(By.cssSelector("[data-testid='rule-editor-backdrop']"))).isEmpty();
+        click(wait, By.cssSelector("[data-testid='external-api-add-schema-property']"));
+        typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-schema-property-name-0']")), "orderId");
+        selectByValue(wait, By.cssSelector("[data-testid='external-api-schema-property-type-0']"), "string");
+        click(wait, By.cssSelector("[data-testid='external-api-schema-property-required-0']"));
+        click(wait, By.cssSelector("[data-testid='external-api-save']"));
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"), resourceId);
+        waitForText(wait, By.cssSelector("[data-testid='external-api-card']"), "resource:" + resourceId);
+        click(wait, By.xpath("//*[@data-testid='external-api-card']//button[normalize-space()='Add to canvas']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n1'][data-operator-ref='resource:" + resourceId + "']")));
+        typeControlValue(driver.findElement(By.id("operator-palette-search")), "Transform");
+        click(wait, By.cssSelector("[data-testid='operator-button:bloge:transform']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='canvas-node:n2'][data-operator-ref='bloge:transform']")));
+        dragConnectionWithNativeMouse(wait,
+                "[data-testid='canvas-node:n1'] .port-handle.source",
+                "[data-testid='canvas-node:n2'] .port-handle.target");
+        new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='canvas-node:n2']")))).perform();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='transform-assignment-editor']")));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='transform-assignment-expression:0']"))), "n1.output");
+        click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
+        setViewport(wait, 1280, 980);
+        assertPageNoHorizontalOverflow();
+        click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
+        waitForAnyText(wait, By.cssSelector("[data-testid='author-continuity-status']"), "SAVED", "Saved");
+        click(wait, By.cssSelector("[data-testid='tool-publish']"));
+        waitForToolPublication(wait);
+        waitForText(wait, By.cssSelector("[data-testid='tool-signature-badge']"), "Typed I/O");
+        assertThat(driver.findElements(By.cssSelector(
+                "[data-testid^='tool-publication-signature:publication:']"))).isNotEmpty();
+        click(wait, By.cssSelector("[data-testid='tool-palette-publication']"));
+        By publicationItem = By.cssSelector("[data-testid^='tool-palette-item:publication:']");
+        WebElement item = wait.until(ExpectedConditions.visibilityOfElementLocated(publicationItem));
+        String publicationRef = item.getAttribute("data-testid").substring(
+                "tool-palette-item:".length());
+        click(wait, By.xpath("//*[@data-testid='" + item.getAttribute("data-testid") + "']//button[normalize-space()='Add']"));
+        WebElement publicationNode = wait.until(ExpectedConditions.presenceOfElementLocated(
+                By.cssSelector("[data-testid^='canvas-node:'][data-operator-ref='" + publicationRef + "']")));
+        String publicationNodeId = publicationNode.getAttribute("data-testid").substring("canvas-node:".length());
+        selectCanvasNodeFromNavigator(wait, publicationRef, publicationNodeId);
+        assertThat(driver.findElement(By.cssSelector("[data-testid='canvas-node:" + publicationNodeId + "']"))
+                .getAttribute("data-operator-ref")).isEqualTo(publicationRef);
+        assertPageNoHorizontalOverflow();
+    }
+
+    private void runGovernedFixtureStage(WebDriverWait wait, String baseUrl, String suffix) {
+        String fixtureId = "browser-chain-fixture-" + suffix;
+        String authorUrl = baseUrl
+                + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
+                + "&namespace=local&environment=test";
+        openFreshAuthoringTab(authorUrl);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-choice:blank']")));
+        click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-button:resource:order-service.listOrders']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        Set<String> before = graphDraftIds();
+        saveAuthorWorkspace(wait);
+        String firstDraftId = graphDraftIds().stream().filter(candidate -> !before.contains(candidate)).findFirst()
+                .orElseThrow(() -> new AssertionError("First chain graph save did not create a draft"));
+        click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
+        click(wait, By.cssSelector("[data-testid='context-extras-panel'] summary"));
+        click(wait, By.xpath("//button[normalize-space()='Add Context Extra']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[aria-label='Context extra path 1']"))), "params.userId");
+        selectByValue(wait, By.cssSelector("[aria-label='Context extra type 1']"), "string");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[aria-label='Context extra value 1']"))), "user-1001");
+        click(wait, By.cssSelector("[data-testid='context-extras-panel'] .context-extra-actions button"));
+        saveAuthorWorkspace(wait);
+        clickVisibleGraphSimulation(wait);
+        click(wait, By.cssSelector(".workspace-v2 [data-testid='v2-trace-pin-fixture-n1']"));
+        saveAuthorWorkspace(wait);
+        click(wait, By.cssSelector("[data-testid='v2-trace-promote-fixture-n1']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='promote-fixture-id']"))), fixtureId);
+        selectByValue(wait, By.cssSelector("[data-testid='promote-fixture-classification']"), "RESTRICTED");
+        click(wait, By.cssSelector("[data-testid='submit-promote-fixture']"));
+        waitForLifecycle(wait, "DRAFT");
+        click(wait, By.cssSelector("[data-testid='v2-trace-review-ready-fixture-n1']"));
+        waitForLifecycle(wait, "PROPOSED");
+
+        String authorWindow = driver.getWindowHandle();
+        driver.switchTo().newWindow(WindowType.TAB);
+        driver.get(baseUrl + "/test-auth/reviewer");
+        click(wait, By.cssSelector("[data-testid='test-sign-in-reviewer']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='test-reviewer-session']")));
+        driver.close();
+        driver.switchTo().window(authorWindow);
+        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-reviewed-fixture-n1']"));
+        click(wait, By.cssSelector("[data-testid='v2-trace-redaction-verified-fixture-n1']"));
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='v2-trace-review-comment-fixture-n1']"))),
+                "Chain reviewer verified redaction metadata");
+        click(wait, By.cssSelector("[data-testid='v2-trace-verify-review-fixture-n1']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='v2-trace-review-verified-fixture-n1']")));
+        assertThat(fixtureHead(fixtureId).descriptor().lifecycle().name()).isEqualTo("PROPOSED");
+        typeControlValue(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='v2-trace-approval-comment-fixture-n1']"))),
+                "Chain reviewer approval");
+        click(wait, By.cssSelector("[data-testid='v2-trace-approve-fixture-n1']"));
+        waitForLifecycle(wait, "APPROVED");
+        click(wait, By.cssSelector("[data-testid='v2-trace-activate-fixture-n1']"));
+        waitForLifecycle(wait, "ACTIVE");
+        StoredFixtureAsset active = fixtureHead(fixtureId);
+        assertThat(active.descriptor().lifecycle().name()).isEqualTo("ACTIVE");
+
+        String secondUrl = baseUrl
+                + "/author/?authorWorkspace=v2&spine=v1&tenantId=tenant-a"
+                + "&namespace=chain-orders-second-" + suffix + "&environment=test";
+        openFreshAuthoringTab(secondUrl);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-choice:blank']")));
+        click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-button:resource:order-service.listOrders']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        Set<String> secondBefore = graphDraftIds();
+        saveAuthorWorkspace(wait);
+        String secondDraftId = graphDraftIds().stream().filter(candidate -> !secondBefore.contains(candidate)).findFirst()
+                .orElseThrow(() -> new AssertionError("Second chain graph save did not create a draft"));
+        assertThat(secondDraftId).isNotEqualTo(firstDraftId);
+        new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='graph-node-fixture-picker']")));
+        click(wait, By.cssSelector("[data-testid='reuse-fixture-" + fixtureId + "']"));
+        waitForText(wait, By.cssSelector("[data-testid='governed-fixture-bound']"), fixtureId);
+        selectByValue(wait, By.cssSelector("[data-testid='resource-fidelity-select']"), "PROTOCOL_DERIVED");
+        click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
+        saveAuthorWorkspace(wait);
+        driver.get(secondUrl + "&draftId=" + secondDraftId + "&nodeId=n1");
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
+                By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+        WebElement reloadedDialog = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='operator-detail-dialog']")));
+        click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='graph-node-fixture-picker']")));
+        assertThat(valueOf(By.cssSelector("[data-testid='resource-fidelity-select']"))).isEqualTo("PROTOCOL_DERIVED");
+        waitForText(wait, By.cssSelector("[data-testid='governed-fixture-bound']"), fixtureId);
+        assertThat(reloadedDialog.isDisplayed()).isTrue();
+        waitForText(wait, By.cssSelector("[data-testid='graph-node-fixture-picker']"), fixtureId);
+        for (String fidelity : List.of("OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL")) {
+            if (!"OUTPUT_LEVEL".equals(fidelity) || !"OUTPUT_LEVEL".equals(valueOf(
+                    By.cssSelector("[data-testid='resource-fidelity-select']")))) {
+                new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
+                        By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
+                wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
+                click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
+            }
+            selectByValue(wait, By.cssSelector("[data-testid='resource-fidelity-select']"), fidelity);
+            click(wait, By.cssSelector("[data-testid='operator-detail-apply']"));
+            wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[data-testid='operator-detail-dialog']")));
+            if ("OUTPUT_LEVEL".equals(fidelity)) {
+                assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
+                        .as("usage count before first chain simulation").isZero();
+            }
+            clickVisibleGraphSimulation(wait);
+            waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), fidelity);
+            assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef()))
+                    .as("chain usage count for " + fidelity).isEqualTo(1);
+        }
+        clickVisibleGraphSimulation(wait);
+        waitForText(wait, By.cssSelector("[data-testid='v2-server-fidelity:n1']"), "TRANSPORT_LEVEL");
+        assertThat(fixtureAssetRepository.countUsages(BROWSER_FIXTURE_SCOPE, active.exactRef())).isEqualTo(1);
+        assertPageNoHorizontalOverflow();
+    }
+
+    private void runDecisionScenarioStage(WebDriverWait wait, String baseUrl) {
+        driver.get(baseUrl + "/author/?authorWorkspace=v2&spine=v1");
+        click(wait, By.cssSelector("[data-testid='author-start-choice:examples']"));
+        click(wait, By.cssSelector("[data-testid='author-start-example:loan-policy-fallback']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(By.cssSelector("[data-testid='author-start-dialog']")));
+        selectCanvasNodeFromNavigator(wait, "bloge:decisionTable", "n4");
+        openDataInspector(wait);
+        click(wait, By.cssSelector("[data-testid='inspector-tab:config']"));
+        click(wait, By.xpath("//*[@data-testid='author-context-inspector']//button[normalize-space()='Edit node']"));
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='decision-scenario-workbench']")));
+        selectByValue(wait, By.cssSelector("[data-testid='decision-scenario-workbench'] select[aria-label='Decision output kind']"), "plan");
+        selectByValue(wait, By.cssSelector("[data-testid='decision-scenario-workbench'] select[aria-label='Scenario enumeration mode']"), "per-rule");
+        click(wait, By.cssSelector("[data-testid='generate-decision-scenarios']"));
+        WebElement preview = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='decision-scenario-preview']")));
+        assertThat(preview.getText()).containsPattern("\\b[1-9][0-9]* scenarios\\b").contains("sha256:");
+        click(wait, By.xpath("//*[@data-testid='decision-scenario-preview']//button[normalize-space()='Save generated set']"));
+        click(wait, By.cssSelector("[data-testid='open-generated-scenarios']"));
+        wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace-v2"), "data-author-mode", "scenarios"));
+        waitForText(wait, By.cssSelector("[data-testid='contract-workspace']"), "Scenario r1 saved");
+        click(wait, By.xpath("//*[@data-testid='contract-workspace']//button[normalize-space()='Case']"));
+        click(wait, By.cssSelector("[data-testid='scenario-run']"));
+        wait.until(ExpectedConditions.attributeToBe(By.cssSelector(".workspace-v2"), "data-author-mode", "evidence"));
+        WebElement evidence = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='scenario-evidence']")));
+        assertThat(evidence.getText()).contains("1 mocked and 0 real nodes completed.");
+        Map<String, String> trustStates = new LinkedHashMap<>();
+        for (String key : List.of("draft", "execution", "assertions", "contract", "governance")) {
+            WebElement dimension = wait.until(ExpectedConditions.visibilityOfElementLocated(
+                    By.cssSelector("[data-testid='scenario-trust:" + key + "']")));
+            trustStates.put(key, dimension.getAttribute("data-state"));
+        }
+        assertThat(trustStates.get("draft")).isEqualTo("passed");
+        assertThat(trustStates.get("contract")).isEqualTo("passed");
+        assertThat(trustStates.get("governance")).isEqualTo("not-checked");
+        assertThat(evidence.findElement(By.cssSelector(".scenario-evidence-heading .contract-current-badge")).getText())
+                .isNotEqualTo("Ready for promotion");
+        assertThat(evidence.findElements(By.xpath(".//*[normalize-space()='Passed']"))).isEmpty();
+        assertPageNoHorizontalOverflow();
+    }
+
     private void closeAuthorStartDialog(WebDriverWait wait) {
         By workspace = By.cssSelector(".workspace-v2");
         wait.until(ExpectedConditions.visibilityOfElementLocated(workspace));
@@ -5280,10 +5560,76 @@ class VisualAuthoringBrowserDomTest {
         return true;
     }
 
+    /**
+     * Opens a fresh top-level authoring tab while retaining this single WebDriver session.
+     *
+     * <p>Authoring recovery is scoped to browser-tab session storage, whereas authentication
+     * cookies remain available to the new tab.  This gives the acceptance chain a visible Blank
+     * graph entry point without clearing storage, injecting state, or constructing another
+     * browser session.  The handle-count assertion proves that Selenium created a tab through the
+     * existing driver.</p>
+     *
+     * @param url visible authoring coordinate to open
+     */
+    private void openFreshAuthoringTab(String url) {
+        int handlesBefore = driver.getWindowHandles().size();
+        driver.switchTo().newWindow(WindowType.TAB);
+        assertThat(driver.getWindowHandles()).hasSize(handlesBefore + 1);
+        driver.get(url);
+    }
+
+    /**
+     * Saves through the visible workspace command and waits for both persistence and UI
+     * continuity.  The continuity label can already say {@code SAVED} before the click, so a
+     * text-only wait would let the test inspect stale repository state.  A changed draft id or
+     * revision is the server-side save receipt; only after that receipt is observed do we accept
+     * the rendered workspace as saved.
+     *
+     * @param wait WebDriver wait bound to the current browser session
+     */
     private void saveAuthorWorkspace(WebDriverWait wait) {
+        Map<String, Long> revisionsBeforeSave = graphDraftRevisions();
         click(wait, By.cssSelector("[data-testid='author-save-workspace']"));
-        wait.until(ignored -> driver.findElement(By.cssSelector(
-                "[data-testid='author-continuity-status']")).getText().matches("(?s).*SAVED|.*Saved"));
+        wait.until(ignored -> draftRevisionsChanged(revisionsBeforeSave));
+        wait.until(ignored -> workspaceContinuityIsSaved());
+    }
+
+    private boolean draftRevisionsChanged(Map<String, Long> revisionsBeforeSave) {
+        return !graphDraftRevisions().equals(revisionsBeforeSave);
+    }
+
+    /**
+     * Requires the visible status and, when exposed by the v2 workspace, its machine-readable
+     * continuity attribute to report SAVED.  Legacy surfaces have the status label but no root
+     * attribute, hence the deliberate fallback.
+     */
+    private boolean workspaceContinuityIsSaved() {
+        boolean hasVisibleContinuityAttribute = false;
+        boolean continuityAttributeIsSaved = false;
+        for (WebElement workspace : driver.findElements(By.cssSelector("[data-workspace-continuity]"))) {
+            try {
+                if (workspace.isDisplayed()) {
+                    hasVisibleContinuityAttribute = true;
+                    continuityAttributeIsSaved = "saved".equalsIgnoreCase(
+                            workspace.getAttribute("data-workspace-continuity"));
+                    if (continuityAttributeIsSaved) {
+                        break;
+                    }
+                }
+            } catch (StaleElementReferenceException ignored) {
+                return false;
+            }
+        }
+        boolean visibleStatusIsSaved = driver.findElements(
+                By.cssSelector("[data-testid='author-continuity-status']")).stream().anyMatch(status -> {
+                    try {
+                        return status.isDisplayed() && status.getText().matches("(?s).*SAVED|.*Saved");
+                    } catch (StaleElementReferenceException ignored) {
+                        return false;
+                    }
+                });
+        return visibleStatusIsSaved
+                && (!hasVisibleContinuityAttribute || continuityAttributeIsSaved);
     }
 
     /**
@@ -5322,6 +5668,12 @@ class VisualAuthoringBrowserDomTest {
         return graphDraftRepository.all().stream()
                 .map(draft -> draft.draftId())
                 .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private Map<String, Long> graphDraftRevisions() {
+        LinkedHashMap<String, Long> revisions = new LinkedHashMap<>();
+        graphDraftRepository.all().forEach(draft -> revisions.put(draft.draftId(), draft.revision()));
+        return Map.copyOf(revisions);
     }
 
     private WebDriver newChromeDriverOrSkip() {
