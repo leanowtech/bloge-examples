@@ -198,9 +198,8 @@ import type { MessageDescriptor } from './i18n/messageCatalog';
 import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import AuthorSurfaceRouter from './author/shell/AuthorSurfaceRouter';
 import TopologyContextRail from './author/shell/TopologyContextRail';
-import StartImportDialog, {
-  type StartImportSection,
-} from './author/shell/StartImportDialog';
+import type { StartImportSection } from './author/shell/StartImportDialog';
+const StartImportDialog = lazy(() => import('./author/shell/StartImportDialog'));
 import type { AuthorMode } from './author/shell/authorWorkspaceState';
 import {
   projectAuthorTaskState,
@@ -219,7 +218,7 @@ import {
   authorWorkspaceUrl,
   parseAuthorWorkspaceLocation,
 } from './author/shell/authorWorkspaceLocation';
-import AuthorDiagnosticsDrawer from './author/review/AuthorDiagnosticsDrawer';
+const AuthorDiagnosticsDrawer = lazy(() => import('./author/review/AuthorDiagnosticsDrawer'));
 import {
   projectAuthorDiagnostics,
   type AuthorDiagnosticItem,
@@ -267,12 +266,15 @@ import {
   useWorkspaceContinuity,
   type WorkspaceSaveAttempt,
 } from './author/continuity/useWorkspaceContinuity';
-import SaveConflictResolutionDialog from './author/continuity/SaveConflictResolutionDialog';
+const SaveConflictResolutionDialog = lazy(
+  () => import('./author/continuity/SaveConflictResolutionDialog'),
+);
 import type { SaveConflictSnapshot } from './author/continuity/saveConflictModel';
-import EffectiveContractPanel from './author/contract/EffectiveContractPanel';
-import NodeDeletionImpactDialog, {
-  MutationNotice,
-} from './author/mutations/NodeDeletionImpactDialog';
+const EffectiveContractPanel = lazy(() => import('./author/contract/EffectiveContractPanel'));
+const NodeDeletionImpactDialog = lazy(
+  () => import('./author/mutations/NodeDeletionImpactDialog'),
+);
+import MutationNotice from './author/mutations/MutationNotice';
 import {
   createMutation,
   initialMutationJournal,
@@ -4209,7 +4211,7 @@ function OperatorDetailDialog({
             hidden={activeTab !== 'contract'}
             data-testid="operator-editor-pane:contract"
           >
-            <EffectiveContractPanel
+            <Suspense fallback={<span role="status">{t('Loading...')}</span>}><EffectiveContractPanel
               projection={effectiveContract}
               onTraceField={() => setActiveTab(
                 node.data.summary.visualKind === 'transform'
@@ -4220,7 +4222,7 @@ function OperatorDetailDialog({
               )}
               onAcceptInference={onAcceptInference}
               acceptInferenceLabel="Accept as Graph Output Contract"
-            />
+            /></Suspense>
             <SchemaPortCards title={t('Input schema')} direction="input" ports={inputs} />
             <SchemaPortCards title={t('Output schema')} direction="output" ports={outputs} />
           </div>
@@ -11730,7 +11732,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             }}
             onGraphSimulation={() => void runSimulation()}
           />
-          <StartImportDialog
+          <Suspense fallback={<div className="canvas-loading-state" role="status">{t('Loading...')}</div>}>
+            <StartImportDialog
             open={startOpen}
             section={startSection}
             examples={canvasExamples.map(({
@@ -11789,7 +11792,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setStartOpen(false);
               setStartSection('menu');
             }}
-          />
+            />
+          </Suspense>
         </>
       )}
       {isTaskWorkspace && !paletteCollapsed && (
@@ -13015,7 +13019,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               <div className="author-inspector-data">
                 {selectedNode && selectedEffectiveContract && (
                   <>
-                    <EffectiveContractPanel
+                    <Suspense fallback={<span role="status">{t('Loading...')}</span>}><EffectiveContractPanel
                       projection={selectedEffectiveContract}
                       compact
                       onTraceBinding={traceEffectiveBinding}
@@ -13024,7 +13028,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
                         selectedInferenceAcceptable ? acceptSelectedInference : undefined
                       }
                       acceptInferenceLabel="Accept as Graph Output Contract"
-                    />
+                    /></Suspense>
                     <details className="direct-binding-tools">
                       <summary>{t('Edit direct bindings')}</summary>
                       <NodeInputBindingsEditor
@@ -13589,12 +13593,14 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         )}
       </aside>
       {isTaskWorkspace && (
-        <AuthorDiagnosticsDrawer
-          open={diagnosticsOpen}
-          items={diagnosticItems}
-          onToggle={() => setDiagnosticsOpen((current) => !current)}
-          onSelect={(item: AuthorDiagnosticItem) => openAuthorDiagnostic(item)}
-        />
+        <Suspense fallback={<div className="canvas-loading-state" role="status">{t('Loading...')}</div>}>
+          <AuthorDiagnosticsDrawer
+            open={diagnosticsOpen}
+            items={diagnosticItems}
+            onToggle={() => setDiagnosticsOpen((current) => !current)}
+            onSelect={(item: AuthorDiagnosticItem) => openAuthorDiagnostic(item)}
+          />
+        </Suspense>
       )}
       {!isTaskWorkspace && operatorContractWorkspace && (
         <Suspense
@@ -13719,46 +13725,50 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         </div>
       )}
       {pendingNodeDeletion && (
-        <NodeDeletionImpactDialog
-          open
-          nodeLabels={pendingNodeDeletion.nodeLabels}
-          impact={pendingNodeDeletion.impact}
-          productionSafeguard={pendingNodeDeletion.productionSafeguard}
-          onCancel={() => setPendingNodeDeletion(null)}
-          onConfirm={() => deleteNodesAtomically(
-            pendingNodeDeletion.nodeIds,
-            pendingNodeDeletion.impact,
-          )}
-        />
+        <Suspense fallback={<div role="status">{t('Loading...')}</div>}>
+          <NodeDeletionImpactDialog
+            open
+            nodeLabels={pendingNodeDeletion.nodeLabels}
+            impact={pendingNodeDeletion.impact}
+            productionSafeguard={pendingNodeDeletion.productionSafeguard}
+            onCancel={() => setPendingNodeDeletion(null)}
+            onConfirm={() => deleteNodesAtomically(
+              pendingNodeDeletion.nodeIds,
+              pendingNodeDeletion.impact,
+            )}
+          />
+        </Suspense>
       )}
       {draftSaveConflict && (
-        <SaveConflictResolutionDialog
-          open
-          subjectLabel={t('Graph draft')}
-          local={graphConflictSnapshot(
-            draftSaveConflict.localDraft,
-            draftSaveConflict.localFingerprint,
-            draftSaveConflict.localScenarioDraftSet,
-          )}
-          authoritative={draftSaveConflict.authoritative
-            ? graphConflictSnapshot(
-                draftSaveConflict.authoritative,
-                draftSaveConflict.authoritativeFingerprint,
-                undefined,
-              )
-            : null}
-          authorityLoading={draftSaveConflict.loading}
-          busyAction={draftSaveConflict.busyAction}
-          error={draftSaveConflict.error}
-          onFork={() => void forkConflictedGraph()}
-          onReload={() => void reloadAuthoritativeGraph()}
-          onRetryAuthority={() => void openGraphSaveConflict(
-            draftSaveConflict.localDraft,
-            draftSaveConflict.localScenarioDraftSet,
-            '',
-            draftSaveConflict.forkIdempotencyKey,
-          )}
-        />
+        <Suspense fallback={<div role="status">{t('Loading...')}</div>}>
+          <SaveConflictResolutionDialog
+            open
+            subjectLabel={t('Graph draft')}
+            local={graphConflictSnapshot(
+              draftSaveConflict.localDraft,
+              draftSaveConflict.localFingerprint,
+              draftSaveConflict.localScenarioDraftSet,
+            )}
+            authoritative={draftSaveConflict.authoritative
+              ? graphConflictSnapshot(
+                  draftSaveConflict.authoritative,
+                  draftSaveConflict.authoritativeFingerprint,
+                  undefined,
+                )
+              : null}
+            authorityLoading={draftSaveConflict.loading}
+            busyAction={draftSaveConflict.busyAction}
+            error={draftSaveConflict.error}
+            onFork={() => void forkConflictedGraph()}
+            onReload={() => void reloadAuthoritativeGraph()}
+            onRetryAuthority={() => void openGraphSaveConflict(
+              draftSaveConflict.localDraft,
+              draftSaveConflict.localScenarioDraftSet,
+              '',
+              draftSaveConflict.forkIdempotencyKey,
+            )}
+          />
+        </Suspense>
       )}
       {pendingProductionCommand && (
         <ProductionCommandDialog

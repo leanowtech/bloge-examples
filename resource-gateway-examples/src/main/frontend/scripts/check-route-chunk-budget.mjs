@@ -52,7 +52,12 @@ for (const chunk of applicationChunks) {
 
 const manifest = JSON.parse(readFileSync(resolve('dist/.vite/manifest.json'), 'utf8'));
 const routeTransfers = routePrefixes.map((prefix) => {
-  const routeEntry = Object.values(manifest).find((entry) => basename(entry.file).startsWith(prefix));
+  const routeEntry = Object.values(manifest).find((entry) => (
+    entry.isDynamicEntry === true
+      && typeof entry.file === 'string'
+      && entry.file.endsWith('.js')
+      && basename(entry.file).startsWith(prefix)
+  ));
   if (!routeEntry) {
     violations.push(`Missing route manifest entry ${prefix}*.js.`);
     return { name: prefix.slice(0, -1), gzipBytes: 0, files: [] };

@@ -53,5 +53,7 @@ describe('Route chunk contract', () => {
     expect(packageJson.scripts['check:host']).toContain('vscodeWebviewBridge.test.ts');
     expect(packageJson.scripts.build).toContain('vite build && npm run check:bundle');
     expect(budgetSource).toContain("'CapabilityStudio-'");
+    expect(budgetSource).toContain("entry.isDynamicEntry === true");
+    expect(budgetSource).toContain("entry.file.endsWith('.js')");
   });
 });

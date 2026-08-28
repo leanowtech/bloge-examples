@@ -4,7 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import I18nProvider from '../../i18n/I18nProvider';
-import NodeDeletionImpactDialog, { MutationNotice } from './NodeDeletionImpactDialog';
+import NodeDeletionImpactDialog from './NodeDeletionImpactDialog';
+import MutationNotice from './MutationNotice';
 
 describe('NodeDeletionImpactDialog', () => {
   let root: Root | null = null;

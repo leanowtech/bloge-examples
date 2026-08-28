@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Redo2, Trash2, Undo2, X } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 
 import useDialogFocusTrap from '../accessibility/useDialogFocusTrap';
 import { useI18n } from '../../i18n/I18nProvider';
@@ -16,13 +16,6 @@ interface NodeDeletionImpactDialogProps {
   productionSafeguard?: boolean;
   onCancel: () => void;
   onConfirm: () => void;
-}
-
-interface MutationNoticeProps {
-  message: string;
-  action: 'undo' | 'redo';
-  onAction: () => void;
-  onDismiss: () => void;
 }
 
 const IMPACT_LABELS: Record<AssetImpactKind, { singular: string; plural: string }> = {
@@ -90,29 +83,6 @@ export default function NodeDeletionImpactDialog({
           </button>
         </div>
       </section>
-    </div>
-  );
-}
-
-export function MutationNotice({ message, action, onAction, onDismiss }: MutationNoticeProps) {
-  const { t } = useI18n();
-  const ActionIcon = action === 'undo' ? Undo2 : Redo2;
-  return (
-    <div className="author-mutation-notice" data-testid="author-mutation-notice">
-      <span role="status" aria-live="polite">{message}</span>
-      <button type="button" className="compact" onClick={onAction}>
-        <ActionIcon size={15} aria-hidden="true" />
-        {t(action === 'undo' ? 'Undo' : 'Redo')}
-      </button>
-      <button
-        type="button"
-        className="icon-button"
-        aria-label={t('Dismiss')}
-        title={t('Dismiss')}
-        onClick={onDismiss}
-      >
-        <X size={15} aria-hidden="true" />
-      </button>
     </div>
   );
 }
