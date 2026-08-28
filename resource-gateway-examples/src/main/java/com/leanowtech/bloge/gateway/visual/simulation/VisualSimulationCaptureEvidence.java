@@ -210,11 +210,19 @@ public record VisualSimulationCaptureEvidence(
         return List.copyOf(captures);
     }
 
-    /** Computes the semantic draft fingerprint shared by capture and promotion. */
+    /**
+     * Computes the semantic draft fingerprint shared by capture and promotion.
+     *
+     * <p>Fixtures, revision audit metadata, and {@link GraphDraft#visualLayout() visual layout}
+     * are excluded deliberately. Layout is a visual-only projection and may be normalized by the
+     * canvas while a pinned output is saved; nodes, edges, schemas, output selection, and operator
+     * snapshots remain part of this closure.</p>
+     */
     public static String draftFingerprint(ObjectMapper mapper, GraphDraft draft) {
         Objects.requireNonNull(draft, "draft");
         GraphDraft semanticDraft = draft
                 .withIdentity(draft.draftId(), 0)
+                .withVisualLayout(Map.of())
                 .withNodeFixtures(Map.of())
                 .withRevisionMetadata(GraphDraft.RevisionMetadata.empty());
         return valueFingerprint(mapper, semanticDraft);

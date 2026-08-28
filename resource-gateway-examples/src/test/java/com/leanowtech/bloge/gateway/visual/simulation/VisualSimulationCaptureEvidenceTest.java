@@ -50,6 +50,44 @@ class VisualSimulationCaptureEvidenceTest {
     }
 
     @Test
+    void ignoresVisualLayoutDriftButRejectsGraphOutputAndOperatorDrift() {
+        VisualOperatorCatalog catalog = catalog();
+        InMemoryVisualSimulationCaptureEvidenceRepository repository = repository();
+        GraphDraft original = draft(3, Map.of());
+        Object output = Map.of("orders", List.of(Map.of("id", "order-1")));
+        repository.recordSuccessfulSimulation(request(original, Map.of()), response(output), catalog);
+        VisualSimulationCaptureEvidence evidence = repository.find(
+                        "tenant-a", "local", "test", "draft-1", "node_1")
+                .orElseThrow();
+        GraphDraft pinned = draft(4, Map.of("node_1", new GraphDraft.NodeFixture(output)));
+
+        assertThat(evidence.matches(
+                pinned.withVisualLayout(Map.of("nodes", List.of(Map.of("id", "node_1", "x", 99)))),
+                "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isTrue();
+        assertThat(evidence.matches(
+                graphDraftLike(pinned,
+                        List.of(new GraphDraft.DraftNode(
+                                "node_1", "bloge:transform", "Orders", Map.of(), Map.of(), null)),
+                        pinned.edges(), pinned.output()),
+                "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isFalse();
+        assertThat(evidence.matches(
+                graphDraftLike(pinned, pinned.nodes(), List.of(new GraphDraft.DraftEdge(
+                        "edge-1", "data", new GraphDraft.Endpoint("node_1", "output", ""),
+                        new GraphDraft.Endpoint("node_2", "input", ""), "")), pinned.output()),
+                "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isFalse();
+        assertThat(evidence.matches(
+                graphDraftLike(pinned, pinned.nodes(), pinned.edges(),
+                        new GraphDraft.OutputSelection("node_2", "")),
+                "node_1", operator(), output, MAPPER, NOW.plusSeconds(1))).isFalse();
+
+        OperatorDefinition changedOperator = mock(OperatorDefinition.class);
+        when(changedOperator.operatorRef()).thenReturn("resource:orders");
+        when(changedOperator.fingerprint()).thenReturn("sha256:" + "2".repeat(64));
+        assertThat(evidence.matches(
+                pinned, "node_1", changedOperator, output, MAPPER, NOW.plusSeconds(1))).isFalse();
+    }
+
+    @Test
     void ignoresSuccessfulResponsesForClientProvidedFixtures() {
         InMemoryVisualSimulationCaptureEvidenceRepository repository = repository();
         GraphDraft draft = draft(3, Map.of());
@@ -133,6 +171,17 @@ class VisualSimulationCaptureEvidenceTest {
                 SchemaEnvelope.opaque(), SchemaEnvelope.opaque(), List.of(node()), List.of(), Map.of(), fixtures,
                 new GraphDraft.OutputSelection("node_1", ""), Map.of(), Map.of(),
                 GraphDraft.RevisionMetadata.empty());
+    }
+
+    private static GraphDraft graphDraftLike(GraphDraft base,
+                                              List<GraphDraft.DraftNode> nodes,
+                                              List<GraphDraft.DraftEdge> edges,
+                                              GraphDraft.OutputSelection output) {
+        return new GraphDraft(
+                base.schemaVersion(), base.draftId(), base.revision(), base.graphName(), base.tenantId(),
+                base.namespace(), base.environment(), base.status(), base.inputSchema(), base.outputSchema(),
+                nodes, edges, base.visualLayout(), base.nodeFixtures(), output,
+                base.operatorFingerprints(), base.operatorSnapshots(), base.revisionMetadata());
     }
 
     private static GraphDraft.DraftNode node() {
