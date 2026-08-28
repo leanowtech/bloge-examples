@@ -125,13 +125,18 @@ export function parsePredicate(expression: string, column: string): ParsedPredic
   return { kind: 'opaque', column, expression: text, values: [] };
 }
 
-/** Builds a stable representative set, using integer epsilon 1 around numeric thresholds. */
+/**
+ * Builds a stable representative set, using author samples as the only domain for opaque
+ * predicates; opaque expressions are never interpreted by the enumerator.
+ */
 export function representativeValues(column: DecisionColumn, predicates: ParsedPredicate[]): unknown[] {
   const relevant = predicates.filter((predicate) => predicate.kind !== 'otherwise' && predicate.column === column.name);
-  const supplied = [...(column.values ?? []), ...(column.authorSamples ?? [])];
-  if (relevant.some((predicate) => predicate.kind === 'opaque') && supplied.length === 0) {
-    throw new OpaquePredicateRequiresAuthorSamplesError(column.name);
+  const authorSamples = [...(column.authorSamples ?? [])];
+  if (relevant.some((predicate) => predicate.kind === 'opaque')) {
+    if (authorSamples.length === 0) throw new OpaquePredicateRequiresAuthorSamplesError(column.name);
+    return dedupe(authorSamples);
   }
+  const supplied = [...(column.values ?? []), ...authorSamples];
   const candidates: unknown[] = [...supplied];
   for (const predicate of relevant) {
     if (predicate.kind === 'comparison') candidates.push(predicate.value);
@@ -187,6 +192,7 @@ export function pickCombo(table: DecisionTable, ruleId: string, cap = 500): Reco
       if (evalResult.status === 'MATCHED' && evalResult.ruleId === rule.id) return combo;
     } else if (ruleMatches(rule, combo, true).matches) {
       if (table.hitPolicy === 'unique') {
+        if (hasOpaquePredicate(rule)) return combo;
         const evaluation = evalDecisionTable(table, combo);
         if (evaluation.status !== 'MATCHED' || evaluation.ruleId !== rule.id) continue;
         return combo;
@@ -243,16 +249,23 @@ function stratifiedIndexes(domains: unknown[][], count: number, total: number): 
   return selected.slice(0, count);
 }
 
-/** Enumerates per-rule or combinatorial scenarios and preserves the existing ScenarioDraft wire shape. */
+/**
+ * Enumerates per-rule or combinatorial scenarios and preserves the existing ScenarioDraft wire shape.
+ *
+ * <p>Combinatorial requests with opaque predicates deliberately fall back to bounded per-rule
+ * author-sample candidates. The opaque expression remains unevaluated and the result is marked
+ * non-exhaustive.</p>
+ */
 export function enumerateDecisionTableScenarios(table: DecisionTable, options: EnumerationOptions): EnumerationResult {
   const cap = Math.max(1, Math.floor(options.cap));
   const sourceFingerprint = sha256FingerprintSync(table);
   const parsed = allPredicates(table);
   const opaqueColumns = [...new Set(parsed.filter((entry) => entry.predicate.kind === 'opaque').map((entry) => entry.column))].sort();
+  const opaqueFallback = options.mode === 'combinatorial' && opaqueColumns.length > 0;
   const domains = domainsFor(table);
   const product = boundedCartesian(domains, cap);
   const candidates: Array<{ input: Record<string, unknown>; rule: DecisionRule }> = [];
-  if (options.mode === 'per-rule') {
+  if (options.mode === 'per-rule' || opaqueFallback) {
     for (const rule of table.rules) {
       const input = pickCombo(table, rule.id, cap);
       if (input) candidates.push({ input, rule });
@@ -264,7 +277,14 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
       if (rule) candidates.push({ input, rule });
     }
   }
-  const scenarios = dedupeScenarios(candidates.map(({ input, rule }, index) => scenarioFrom(table, sourceFingerprint, input, rule, options, index)));
+  const candidateLimitReached = opaqueFallback && candidates.length > cap;
+  const boundedCandidates = opaqueFallback ? candidates.slice(0, cap) : candidates;
+  const scenarios = dedupeScenarios(boundedCandidates.map(({ input, rule }, index) => scenarioFrom(table, sourceFingerprint, input, rule, options, index)));
+  const truncated = product.truncated || candidateLimitReached;
+  const exhaustive = opaqueColumns.length === 0 && !truncated;
+  const diagnostics = opaqueColumns.length
+    ? ['Opaque predicates fall back to per-rule author samples; generated scenarios are not exhaustive.']
+    : [];
   const target = options.target ?? { kind: 'GRAPH', id: table.tableId ?? 'decision-table', revision: 1, fingerprint: sourceFingerprint };
   const draftSet: ScenarioDraftSet = {
     schemaVersion: 'bloge.scenarioDraftSet.v1',
@@ -275,9 +295,9 @@ export function enumerateDecisionTableScenarios(table: DecisionTable, options: E
     target: { ...target },
     contractFingerprint: options.contractFingerprint ?? sourceFingerprint,
     scenarios,
-    metadata: { owner: options.owner ?? '', classification: options.classification ?? 'INTERNAL', createdAt: null, updatedAt: null, provenance: { sourceFingerprint, provenance: 'DECISION_TABLE_ENUMERATION', mode: options.mode, cap, exhaustive: opaqueColumns.length === 0 && !product.truncated } },
+    metadata: { owner: options.owner ?? '', classification: options.classification ?? 'INTERNAL', createdAt: null, updatedAt: null, provenance: { sourceFingerprint, provenance: 'DECISION_TABLE_ENUMERATION', mode: options.mode, cap, exhaustive } },
   };
-  return { scenarios, draftSet, metadata: { mode: options.mode, cap, truncated: product.truncated, strategy: product.strategy, exhaustive: opaqueColumns.length === 0 && !product.truncated, provenance: 'DECISION_TABLE_ENUMERATION', sourceFingerprint, opaqueColumns, diagnostics: opaqueColumns.length ? ['Opaque predicates use author samples and are not exhaustive.'] : [] } };
+  return { scenarios, draftSet, metadata: { mode: options.mode, cap, truncated, strategy: product.strategy, exhaustive, provenance: 'DECISION_TABLE_ENUMERATION', sourceFingerprint, opaqueColumns, diagnostics } };
 }
 
 /** Builds the bounded id fallback used when an enumerator is called without an owning surface. */
@@ -324,6 +344,14 @@ function ruleMatches(rule: DecisionRule, input: Record<string, unknown>, allowOp
     }
   }
   return { matches: true, opaque };
+}
+
+function hasOpaquePredicate(rule: DecisionRule): boolean {
+  return Object.entries(rule.conditions ?? {}).some(([column, condition]) => (
+    typeof condition === 'string'
+      ? splitConjunction(condition).some((part) => parsePredicate(part, column).kind === 'opaque')
+      : condition.kind === 'opaque'
+  ));
 }
 
 function evaluatePredicate(predicate: DecisionPredicate, value: unknown): boolean {

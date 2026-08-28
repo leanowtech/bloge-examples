@@ -72,6 +72,29 @@ describe('decision scenario enumeration', () => {
     expect(opaqueResult.metadata.opaqueColumns).toEqual(['score']);
   });
 
+  it('falls back to bounded per-rule author samples for opaque combinatorial requests', () => {
+    const opaque: DecisionTable = {
+      tableId: 'opaque-policy',
+      hitPolicy: 'unique',
+      columns: [{ name: 'score', type: 'integer', authorSamples: [701] }],
+      rules: [{ id: 'opaque', conditions: { score: 'risk(score)' }, output: 'review' }],
+    };
+    const options = { mode: 'combinatorial' as const, cap: 1 };
+    const first = enumerateDecisionTableScenarios(opaque, options);
+    const second = enumerateDecisionTableScenarios(opaque, options);
+
+    expect(first).toEqual(second);
+    expect(first.scenarios).toHaveLength(1);
+    expect(first.scenarios[0]?.given.input).toEqual({ score: 701 });
+    expect(first.scenarios[0]?.tags).toContain('rule:opaque');
+    expect(first.metadata.exhaustive).toBe(false);
+    expect(first.metadata.diagnostics).toHaveLength(1);
+    expect(first.metadata.diagnostics[0]).toEqual(expect.stringContaining('per-rule'));
+    expect(first.metadata.diagnostics[0]).toEqual(expect.stringContaining('author samples'));
+    expect(first.metadata.diagnostics[0]).toEqual(expect.stringContaining('not exhaustive'));
+    expect(evalDecisionTable(opaque, { score: 701 }).status).toBe('OPAQUE');
+  });
+
   it('maps graph input paths and keeps plan/dispatch outputs structured and non-executable', () => {
     const result = enumerateDecisionTableScenarios({ ...table, outputKind: 'plan', rules: [{ id: 'plan', conditions: { score: 'score >= 720' }, output: { action: 'approve', steps: [{ id: 'notify' }], reason: 'eligible' } }] }, { mode: 'per-rule', cap: 4, colToInputPath: { score: 'request.score' }, target: { kind: 'GRAPH', id: 'g', revision: 1, fingerprint: 'sha256:g' } });
     expect(result.scenarios[0]?.given.input).toMatchObject({ request: { score: 720 }, segment: expect.any(String) });
