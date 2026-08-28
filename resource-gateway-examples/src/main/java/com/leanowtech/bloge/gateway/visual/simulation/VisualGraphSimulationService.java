@@ -281,7 +281,8 @@ public class VisualGraphSimulationService {
                 } else {
                     syntheticDefinitions.put(simulationRef,
                             syntheticNativeDefinition(simulationRef, operator.get()));
-                    simulationNodes.add(rewriteToSimulation(node, simulationRef));
+                    simulationNodes.add(rewriteToSimulation(node, simulationRef,
+                            effectiveFixtures.get(node.id())));
                 }
             }
         }
@@ -559,13 +560,24 @@ public class VisualGraphSimulationService {
         );
     }
 
-    private static GraphDraft.DraftNode rewriteToSimulation(GraphDraft.DraftNode node, String simulationRef) {
+    /**
+     * Rewrites an output-level fixture to a native Return stand-in.
+     *
+     * <p>The stand-in receives its output through {@link VisualSimulationPlan.Standin}; visual
+     * authoring configuration must therefore not become native operator configuration. When an
+     * expected input is explicitly requested, its original bindings remain so the runner can
+     * observe and assert the real input path. Governed protocol/transport fixtures never use this
+     * rewrite and retain their descriptor-backed lowering.</p>
+     */
+    private static GraphDraft.DraftNode rewriteToSimulation(GraphDraft.DraftNode node,
+                                                              String simulationRef,
+                                                              NodeFixture fixture) {
         return new GraphDraft.DraftNode(
                 node.id(),
                 simulationRef,
                 node.label(),
-                node.inputs(),
-                node.config(),
+                fixture != null && fixture.expectedInput() != null ? node.inputs() : Map.of(),
+                Map.of(),
                 node.position()
         );
     }

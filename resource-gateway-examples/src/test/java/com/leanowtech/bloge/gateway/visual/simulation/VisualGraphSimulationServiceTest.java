@@ -114,6 +114,32 @@ class VisualGraphSimulationServiceTest {
     }
 
     @Test
+    void syntheticStandInDoesNotCompileVisualInputsOrDecisionConfig() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+        GraphDraft draft = new GraphDraft(
+                "", "", 0, "decisionFixture", "", "", "", "", null,
+                List.of(new GraphDraft.DraftNode(
+                        "eligibility", "risk:eligibility", "",
+                        Map.of("score", GraphDraft.Binding.contextPath("inputs.score"),
+                                "amount", GraphDraft.Binding.contextPath("inputs.amount")),
+                        Map.of("conditionColumns", List.of(Map.of("key", "score")),
+                                "otherwise", Map.of("decision", "decline")), null)),
+                List.of(), Map.of(), new GraphDraft.OutputSelection("eligibility", ""));
+
+        VisualGraphSimulationResponse response = service.simulate(
+                draft, Map.of(), "", Map.of("eligibility", new NodeFixture(Map.of(
+                        "eligible", true, "ruleId", "RETURN"))));
+
+        assertThat(response.validated()).isTrue();
+        assertThat(response.compiled()).isTrue();
+        assertThat(response.success()).isTrue();
+        assertThat(response.mockedNodeIds()).containsExactly("eligibility");
+        assertThat(response.output()).isEqualTo(Map.of("eligible", true, "ruleId", "RETURN"));
+    }
+
+    @Test
     void fixtureShapeMakesResourcePayloadPathsCompilerVisible() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLoanApplicantResource();
         VisualGraphSimulationService service = simulationService(catalog);
