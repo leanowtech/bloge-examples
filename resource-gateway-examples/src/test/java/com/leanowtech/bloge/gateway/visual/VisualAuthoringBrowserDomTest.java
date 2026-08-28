@@ -5572,8 +5572,7 @@ class VisualAuthoringBrowserDomTest {
         // viewport under a loaded browser session. The visible navigator settles that node
         // before the user opens its details.
         selectCanvasNodeFromNavigator(wait, resourceRef, secondResourceNodeId);
-        new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
-                By.cssSelector("[data-testid='canvas-node:" + secondResourceNodeId + "']")))).perform();
+        doubleClickSettledCanvasNode(wait, secondResourceNodeId);
         WebElement reloadedDialog = wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='operator-detail-dialog']")));
         click(wait, By.cssSelector("[data-testid='operator-editor-tab:config']"));
@@ -7117,6 +7116,43 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='canvas-node:" + nodeId + "']"),
                 "class",
                 "selected"));
+    }
+
+    /**
+     * Double-clicks a navigator-selected React Flow node after its focus animation is hit-testable.
+     *
+     * <p>The navigator calls {@code fitView} with a short animation.  A selected node can therefore
+     * still move beneath the pointer between Selenium's element lookup and the native double-click,
+     * especially after a deep-link reload.  Waiting for the visible node's centre to resolve back
+     * to that node preserves the real pointer path while removing this timing race.</p>
+     *
+     * @param wait browser wait used to observe the settled node
+     * @param nodeId exact graph node identifier
+     */
+    private void doubleClickSettledCanvasNode(WebDriverWait wait, String nodeId) {
+        By nodeLocator = By.cssSelector("[data-testid='canvas-node:" + nodeId + "']");
+        wait.until(ignored -> {
+            try {
+                WebElement node = driver.findElement(nodeLocator);
+                if (!node.isDisplayed() || !node.isEnabled()) {
+                    return false;
+                }
+                scrollIntoView(node);
+                return Boolean.TRUE.equals(((JavascriptExecutor) driver).executeScript("""
+                        const node = arguments[0];
+                        const rect = node.getBoundingClientRect();
+                        if (rect.width <= 0 || rect.height <= 0) return false;
+                        const target = document.elementFromPoint(
+                          rect.left + rect.width / 2,
+                          rect.top + rect.height / 2
+                        );
+                        return Boolean(target && (target === node || node.contains(target)));
+                        """, node));
+            } catch (NoSuchElementException | StaleElementReferenceException ignoredException) {
+                return false;
+            }
+        });
+        new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(nodeLocator))).perform();
     }
 
     private void openDataInspector(WebDriverWait wait) {
