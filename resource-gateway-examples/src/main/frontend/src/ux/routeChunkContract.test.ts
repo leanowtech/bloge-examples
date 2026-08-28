@@ -10,6 +10,7 @@ const budgetSource = readFileSync(
   new URL('../../scripts/check-route-chunk-budget.mjs', import.meta.url),
   'utf8',
 );
+const authorSource = readFileSync(new URL('../AuthorCanvas.tsx', import.meta.url), 'utf8');
 
 describe('Route chunk contract', () => {
   it('loads each heavyweight workspace through a route boundary', () => {
@@ -36,6 +37,12 @@ describe('Route chunk contract', () => {
   });
 
   it('keeps stable author domain code in its own named cache unit', () => {
+    expect(authorSource).not.toMatch(/^import AuthorContextInspector/m);
+    expect(authorSource).not.toMatch(/^import TopologyContextRail/m);
+    expect(authorSource).not.toMatch(/^import ProductionCommandDialog/m);
+    expect(authorSource).toContain("lazy(() => import('./author/shell/AuthorContextInspector'))");
+    expect(authorSource).toContain("lazy(() => import('./author/shell/TopologyContextRail'))");
+    expect(authorSource).toContain("lazy(() => import('./author/task/ProductionCommandDialog'))");
     expect(viteSource).toContain('manifest: true');
     expect(viteSource).toContain("return 'author-domain'");
     expect(viteSource).toContain("id.endsWith('/src/draftModel.ts')");

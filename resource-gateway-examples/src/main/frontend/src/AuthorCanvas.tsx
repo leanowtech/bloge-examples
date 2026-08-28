@@ -195,10 +195,10 @@ import {
 import AuthorCommandBar from './author/shell/AuthorCommandBar';
 import { useI18n } from './i18n/I18nProvider';
 import type { MessageDescriptor } from './i18n/messageCatalog';
-import AuthorContextInspector from './author/shell/AuthorContextInspector';
 import AuthorSurfaceRouter from './author/shell/AuthorSurfaceRouter';
-import TopologyContextRail from './author/shell/TopologyContextRail';
 import type { StartImportSection } from './author/shell/StartImportDialog';
+const AuthorContextInspector = lazy(() => import('./author/shell/AuthorContextInspector'));
+const TopologyContextRail = lazy(() => import('./author/shell/TopologyContextRail'));
 const StartImportDialog = lazy(() => import('./author/shell/StartImportDialog'));
 import type { AuthorMode } from './author/shell/authorWorkspaceState';
 import {
@@ -206,7 +206,7 @@ import {
   type AuthorCommandAvailability,
 } from './author/task/taskStateProjection';
 import { evaluateTaskCommandAuthority } from './author/task/commandAuthority';
-import ProductionCommandDialog from './author/task/ProductionCommandDialog';
+const ProductionCommandDialog = lazy(() => import('./author/task/ProductionCommandDialog'));
 import {
   parseTaskCoordinate,
   parseTaskReturnCoordinate,
@@ -12999,6 +12999,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
           </>
         )}
         {isTaskWorkspace && authorMode === 'compose' && (
+          <Suspense fallback={<div role="status">{t('Loading context inspector…')}</div>}>
           <AuthorContextInspector
             mode={authorMode}
             selectedNode={selectedNode ? {
@@ -13159,8 +13160,10 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setContractWorkspaceOpen(true);
             }}
           />
+          </Suspense>
         )}
         {isTaskWorkspace && authorMode !== 'compose' && (
+          <Suspense fallback={<div role="status">{t('Loading context rail…')}</div>}>
           <TopologyContextRail
             mode={authorMode}
             graphName={graphName}
@@ -13182,6 +13185,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
               setFormalContextRailOpen(false);
             }}
           />
+          </Suspense>
         )}
         <h2>{t('Checklist')}</h2>
         <ol className="checklist">
@@ -13781,6 +13785,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         </Suspense>
       )}
       {pendingProductionCommand && (
+        <Suspense fallback={<div role="status">{t('Loading production command…')}</div>}>
         <ProductionCommandDialog
           open
           commandLabel={pendingProductionCommand.commandLabel}
@@ -13792,6 +13797,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
             command.execute();
           }}
         />
+        </Suspense>
       )}
       {mutationNotice && (
         <MutationNotice

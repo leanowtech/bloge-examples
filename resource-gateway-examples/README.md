@@ -658,8 +658,9 @@ verification record are in
 Top-level workspaces are route-lazy and are prefetched only after pointer or keyboard navigation
 intent. The production build enforces a `180 KiB` application-shell budget and a `350 KiB` maximum
 for every application chunk, plus a `350 KiB` gzip budget for each route's complete static JS/CSS
-startup closure. The current shell is `151.74 KiB`, the largest Author interaction chunk is
-`313.30 KiB`, and the complete Author startup closure is `326.45 KiB` gzip. In a VS Code WebView,
+startup closure. The current shell is `21.17 KiB` (`7.61 KiB` gzip), the largest Author interaction
+chunk is `308.05 KiB` (`91.27 KiB` gzip), and the complete Author startup closure is `348.02 KiB`
+gzip. In a VS Code WebView,
 a versioned bridge replaces fetch and browser recovery
 with correlated host requests and a `HOST_ENCRYPTED` store. The extension host requests disposal,
 waits for every authoring surface to flush, and destroys the panel only after a ready receipt.
