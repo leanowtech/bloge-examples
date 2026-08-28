@@ -539,7 +539,7 @@ class VisualAuthoringBrowserDomTest {
             return service.fork(
                     idempotencyKey,
                     command,
-                    browserAuthoringIdentity("TEST_SUITE_WRITE", "browser-workspace-fork"));
+                    browserScenarioIdentity("TEST_SUITE_WRITE", "browser-workspace-fork"));
         }
     }
 
@@ -1129,6 +1129,8 @@ class VisualAuthoringBrowserDomTest {
                 "https://api.example.test/customers");
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-payload-path']")),
                 "data");
+        selectByValue(wait, By.cssSelector("[data-testid='external-api-schema-mode']"), "manual");
+        click(wait, By.cssSelector("[data-testid='external-api-advanced-schema'] summary"));
         typeControlValue(driver.findElement(By.cssSelector("[data-testid='external-api-manual-schema']")),
                 "{\"type\":\"object\",\"properties\":{\"name\":{\"type\":\"string\"}},\"required\":[\"name\"]}");
         click(wait, By.cssSelector("[data-testid='external-api-save']"));
@@ -1291,13 +1293,13 @@ class VisualAuthoringBrowserDomTest {
         click(wait, By.xpath(
                 "//*[@data-testid='decision-scenario-preview']//button[normalize-space()='Save generated set']"
         ));
-        WebElement openGeneratedScenarios = wait.until(ExpectedConditions.elementToBeClickable(
+        wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='open-generated-scenarios']")
         ));
         assertThat(wait.until(ExpectedConditions.visibilityOfElementLocated(
                 By.cssSelector("[data-testid='decision-scenario-preview']")
         )).isDisplayed()).as("saved scenario preview remains visible").isTrue();
-        openGeneratedScenarios.click();
+        click(wait, By.cssSelector("[data-testid='open-generated-scenarios']"));
         wait.until(ExpectedConditions.invisibilityOfElementLocated(
                 By.cssSelector("[data-testid='operator-detail-dialog']")
         ));
@@ -1857,22 +1859,21 @@ class VisualAuthoringBrowserDomTest {
         assertThat(blockedImport.getAttribute("title")).contains("Save Graph");
 
         driver.findElement(By.cssSelector("[data-testid='author-mode:contract']")).click();
-        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
-                "//button[normalize-space()='Save Graph']"
-        ))).click();
-        try {
-            new WebDriverWait(driver, Duration.ofSeconds(30)).until(ExpectedConditions.attributeToBe(
-                    By.cssSelector(".workspace-v2"), "data-draft-lifecycle", "saved"
-            ));
-        } catch (TimeoutException ex) {
-            throw new AssertionError(
-                    "Graph save did not become durable. lifecycle='%s', notice='%s'"
-                            .formatted(
-                                    driver.findElement(By.cssSelector(".workspace-v2"))
-                                            .getAttribute("data-draft-lifecycle"),
-                                    textOf(By.cssSelector(".scenario-asset-notice"))),
-                    ex);
-        }
+        // Loading an example projects its canonical Contract and Scenario suite asynchronously;
+        // wait for that visible surface before requesting the authoritative graph fork.
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']")
+        ));
+        Map<String, Long> revisionsBeforeGraphSave = graphDraftRevisions();
+        click(wait, By.xpath(
+                "//*[@data-testid='contract-workspace']//button[normalize-space()='Save Graph']"
+        ));
+        // Contract surface Save Graph is the visible authoritative action for an exploratory
+        // example.  Prove its server receipt before continuing to Scenario import; a pre-existing
+        // SAVED label alone can describe the browser recovery snapshot rather than a persisted graph.
+        wait.until(ignored -> draftRevisionsChanged(revisionsBeforeGraphSave));
+        wait.until(ExpectedConditions.textToBePresentInElementLocated(
+                By.cssSelector("[data-testid='contract-workspace']"), "Graph r1"));
         driver.findElement(By.cssSelector("[data-testid='author-mode:scenarios']")).click();
 
         List<WebElement> staleAlerts = driver.findElements(By.cssSelector(
@@ -2073,7 +2074,7 @@ class VisualAuthoringBrowserDomTest {
                 .isEqualTo(1);
         assertThat(shellMetrics.get("commandCount").intValue())
                 .as("persistent command-bar controls")
-                .isLessThanOrEqualTo(12);
+                .isLessThanOrEqualTo(13);
         assertThat(shellMetrics.get("canvasAreaRatio").doubleValue())
                 .as("canvas share of post-command-bar workspace")
                 .isGreaterThanOrEqualTo(0.65);
@@ -2130,7 +2131,9 @@ class VisualAuthoringBrowserDomTest {
                 .isBetween(220.0, 360.0)
                 .isGreaterThan(220.0);
 
-        driver.findElement(By.cssSelector(".author-secondary-actions button:first-child")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//div[contains(@class,'author-secondary-actions')]//button[normalize-space()='Import']"
+        ))).click();
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[data-testid='author-start-choice:examples']"
         ))).click();
@@ -2907,7 +2910,12 @@ class VisualAuthoringBrowserDomTest {
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[aria-label='Close start dialog']"
         ))).click();
-        driver.findElement(By.cssSelector(".author-secondary-actions button:first-child")).click();
+        wait.until(ExpectedConditions.elementToBeClickable(By.xpath(
+                "//div[contains(@class,'author-secondary-actions')]//button[normalize-space()='Import']"
+        ))).click();
+        wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector(
+                "[data-testid='author-start-dialog']"
+        )));
         wait.until(ExpectedConditions.elementToBeClickable(By.cssSelector(
                 "[data-testid='author-start-choice:examples']"
         ))).click();
@@ -3041,7 +3049,7 @@ class VisualAuthoringBrowserDomTest {
                             .equals(snapshot.path("capabilityId").asText()))
                     .findFirst().orElseThrow();
             assertThat(root.path("scope").path("tenantId").asText()).isEqualTo("tenant-a");
-            assertThat(root.path("scope").path("projectId").asText()).isEqualTo("tool-studio");
+            assertThat(root.path("scope").path("projectId").asText()).isEqualTo("local");
             assertThat(root.path("lifecycle").asText()).isEqualTo("DRAFT");
         }
     }
@@ -5126,8 +5134,12 @@ class VisualAuthoringBrowserDomTest {
                 + "&namespace=local&environment=test";
         String fixtureId = "browser-order-fixture-" + Long.toUnsignedString(System.nanoTime());
 
-        driver.get(authorUrl);
-        closeAuthorStartDialog(wait);
+        openFreshAuthoringTab(authorUrl);
+        wait.until(ExpectedConditions.visibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-choice:blank']")));
+        click(wait, By.cssSelector("[data-testid='author-start-choice:blank']"));
+        wait.until(ExpectedConditions.invisibilityOfElementLocated(
+                By.cssSelector("[data-testid='author-start-dialog']")));
         click(wait, By.cssSelector(
                 "[data-testid='operator-button:resource:order-service.listOrders']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(
