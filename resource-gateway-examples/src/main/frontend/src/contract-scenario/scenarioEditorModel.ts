@@ -5,6 +5,7 @@ import type {
   ContractDraft,
   DependencyBehaviorDraft,
   DependencyBehaviorKind,
+  ContractTargetKind,
   ScenarioDraft,
   ScenarioDraftSet,
 } from './domain';
@@ -201,6 +202,7 @@ export function dependencyNeedsAttention(dependency: DependencyBehaviorDraft): b
 export function upsertExpectedReturnDependency(
   scenario: ScenarioDraft,
   nodes: ScenarioNodeOption[],
+  targetKind: ContractTargetKind,
 ): ScenarioDraft | null {
   const executableNodes = nodes.filter((node) => Boolean(node.id && node.operatorRef));
   const assertion = scenario.then.assertions.find((candidate) => (
@@ -210,7 +212,11 @@ export function upsertExpectedReturnDependency(
 
   const node = executableNodes[0];
   if (!node) return null;
-  const existing = scenario.dependencies.find((dependency) => dependency.selector.nodeId === node.id);
+  const operatorTarget = targetKind === 'OPERATOR';
+  const matchesTarget = (dependency: DependencyBehaviorDraft) => operatorTarget
+    ? dependency.selector.operatorRef === node.operatorRef && !dependency.selector.nodeId
+    : dependency.selector.nodeId === node.id;
+  const existing = scenario.dependencies.find(matchesTarget);
   const dependency: DependencyBehaviorDraft = {
     ...(existing ?? {
       dependencyId: `expected-return-${node.id}`,
@@ -248,8 +254,8 @@ export function upsertExpectedReturnDependency(
         pathEquals: {},
       }),
       graphPath: '',
-      nodeId: node.id,
-      operatorRef: '',
+      nodeId: operatorTarget ? '' : node.id,
+      operatorRef: operatorTarget ? node.operatorRef : '',
       resourceRef: '',
       functionRef: '',
     },
@@ -260,7 +266,7 @@ export function upsertExpectedReturnDependency(
     },
   };
   const withoutTargetDuplicates = scenario.dependencies.filter((candidate) => (
-    candidate.selector.nodeId !== node.id
+    !matchesTarget(candidate)
   ));
   return {
     ...scenario,

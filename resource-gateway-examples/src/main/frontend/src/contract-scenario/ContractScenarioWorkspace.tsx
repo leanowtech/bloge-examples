@@ -2132,10 +2132,10 @@ function ScenarioTab({
                   type="button"
                   className="secondary compact"
                   data-testid="scenario-use-expected-return-fixture"
-                  disabled={upsertExpectedReturnDependency(selectedScenario, nodes) === null}
+                  disabled={upsertExpectedReturnDependency(selectedScenario, nodes, contract.target.kind) === null}
                   title={t('Creates a saved Return fixture from the whole expected output; it does not execute the Scenario.')}
                   onClick={() => {
-                    const next = upsertExpectedReturnDependency(selectedScenario, nodes);
+                    const next = upsertExpectedReturnDependency(selectedScenario, nodes, contract.target.kind);
                     if (next) onUpdateScenario(() => next);
                   }}
                 >

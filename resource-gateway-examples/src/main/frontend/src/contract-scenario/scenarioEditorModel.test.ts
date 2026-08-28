@@ -197,7 +197,7 @@ describe('Scenario graphical editor model', () => {
     const expected = { action: 'decline', steps: [], reason: 'bounded' };
     const source = { ...scenario, then: { assertions: [{ ...scenario.then.assertions[0], expected }] } };
 
-    const first = upsertExpectedReturnDependency(source, nodes().slice(0, 1));
+    const first = upsertExpectedReturnDependency(source, nodes().slice(0, 1), 'GRAPH');
     expect(first?.dependencies).toHaveLength(1);
     expect(first?.dependencies[0]).toMatchObject({
       dependencyId: 'expected-return-score',
@@ -210,6 +210,7 @@ describe('Scenario graphical editor model', () => {
     const second = upsertExpectedReturnDependency(
       { ...first!, then: { assertions: [{ ...source.then.assertions[0], expected: changed }] } },
       nodes().slice(0, 1),
+      'GRAPH',
     );
     expect(second?.dependencies).toHaveLength(1);
     expect(second?.dependencies[0]?.dependencyId).toBe('expected-return-score');
@@ -225,11 +226,41 @@ describe('Scenario graphical editor model', () => {
       [],
     ).scenarios[0];
 
-    expect(upsertExpectedReturnDependency(scenario, nodes())).toBeNull();
+    expect(upsertExpectedReturnDependency(scenario, nodes(), 'GRAPH')).toBeNull();
     expect(upsertExpectedReturnDependency({
       ...scenario,
       then: { assertions: [{ ...scenario.then.assertions[0], path: 'decision' }] },
-    }, nodes().slice(0, 1))).toBeNull();
+    }, nodes().slice(0, 1), 'GRAPH')).toBeNull();
+  });
+
+  it('uses the operator selector for an operator-target Contract and updates it idempotently', () => {
+    const scenario = scenarioDraftSetFromCanvas(
+      contractDraftFromGraphDraft(graphDraft(), fingerprint('a')).target,
+      fingerprint('b'),
+      graphDraft(),
+      nodes().slice(0, 1),
+      [],
+    ).scenarios[0];
+    const source = {
+      ...scenario,
+      then: {
+        assertions: [{
+          ...scenario.then.assertions[0],
+          expected: { action: 'review', steps: [], reason: 'operator target' },
+        }],
+      },
+    };
+
+    const first = upsertExpectedReturnDependency(source, nodes().slice(0, 1), 'OPERATOR');
+    expect(first?.dependencies[0]).toMatchObject({
+      dependencyId: 'expected-return-score',
+      selector: { nodeId: '', operatorRef: 'risk:score' },
+      behavior: { kind: 'RETURN', boundary: 'NODE' },
+    });
+    const second = upsertExpectedReturnDependency(first!, nodes().slice(0, 1), 'OPERATOR');
+    expect(second?.dependencies).toHaveLength(1);
+    expect(second?.dependencies[0]?.selector.nodeId).toBe('');
+    expect(second?.dependencies[0]?.selector.operatorRef).toBe('risk:score');
   });
 });
 
