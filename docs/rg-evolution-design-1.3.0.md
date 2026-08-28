@@ -238,10 +238,11 @@ enumerate(dt, mode, cap, colToInputPath):
 ```
 出口：决策表 config 增 `outputKind∈{scalar,object,plan,dispatch}`（默认 object，向后兼容，plan 对 DSL 生成仍是结构化对象无需改生成器）。本期实现 `plan`（`{action,steps[],reason}` 类方案对象，可枚举可 simulate）；`dispatch`（output 带 targetRef 指向已发布 publication/子场景，下游补 branch/dynamicSubGraph，simulate 可 mock）设计写全、后段实施。
 组件树：`DecisionTableRuleEditor + OutputKindSelect`；`GenerateScenariosButton→ScenarioEnumerationDialog(mode,cap)→写 ScenarioDraftSet(既有端点)`；`ScenarioStalenessNotice`（决策表指纹变→STALE+一键重枚举）。
+生成场景保持 `dependencies=[]`；“Use expected output as Return fixture”是用户显式 authored override：保存前只更新 draft，NODE boundary fixture 在 OPERATOR 契约用 canonical `operatorRef`、GRAPH 契约用 `nodeId` 定位，expected 值深拷贝且不带凭据或治理材料。
 测试：单元 `parsePredicate`(4 文法+opaque)/`representativeValues`/`pickCombo`(hitPolicy)/`boundedCartesian`(cap)/`evalDecisionTable`/`enumerate`(决定性、canonical、去重)；组件 4 规则 per-rule→4+1 且与规则一致、combinatorial+cap=10→≤10 决定性、opaque 触发作者样例；E2 一键生成场景→进 Scenarios→simulate(R5)。
 
 ### 8.5 端到端验收链与门禁
-**链**：定义外部 API→组合成图→Publish 成工具（签名=冻结契约、可被组合）→simulate→捕获 fixture→晋级治理→跨图复用(usageCount+1)→决策表枚举生成场景（出口 plan）→决策表被 fixture 模拟→四维诚实结论。全程 1280px 真实浏览器、不离主线、happy path 不手写 JSON。
+**链**：定义外部 API→组合成图→Publish 成工具（签名=冻结契约、可被组合）→simulate→捕获 fixture→晋级治理→跨图复用(usageCount+1)→决策表枚举生成场景（出口 plan）→显式把 expected 保存为 Return fixture→决策表被 fixture 模拟→四维诚实结论。全程 1280px 真实浏览器、不离主线、happy path 不手写 JSON。
 **门禁**：四维不退化；无新增巨型弹层；`?spine=v1` 一属性回滚且关闭时像素级同今天；每层测试（纯函数/组件/真实浏览器几何断言）绿；新端点契约测试覆盖 409/422/404 与派生正确性。
 
 ---
