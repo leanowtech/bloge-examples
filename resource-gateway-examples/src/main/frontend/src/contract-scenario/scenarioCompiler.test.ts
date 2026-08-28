@@ -232,6 +232,36 @@ describe('Scenario transient compiler', () => {
     expect(result.request?.context).toEqual({ applicantId: 'A-1' });
   });
 
+  it('lowers an Operator-target Return dependency to the exact transient node fixture', () => {
+    const graph: GraphDraft = {
+      ...graphDraft(),
+      draftId: undefined,
+      revision: undefined,
+      graphName: 'operator-risk-score',
+      nodes: [{ id: 'operator', operatorRef: 'risk:score', label: 'Risk score' }],
+      edges: [],
+      output: { nodeId: 'operator' },
+      nodeFixtures: {},
+    };
+    const dependency = returnDependency();
+    dependency.selector.nodeId = '';
+    dependency.selector.operatorRef = 'risk:score';
+    const scenarios: ScenarioDraftSet = {
+      ...draftSet([dependency]),
+      target: { kind: 'OPERATOR', id: 'risk:score', revision: 7, fingerprint: TARGET_FINGERPRINT },
+    };
+
+    const result = compileScenarioForSimulation(
+      graph, scenarios, 'fallback', TARGET_FINGERPRINT, CONTRACT_FINGERPRINT,
+    );
+
+    expect(result.compiled).toBe(true);
+    expect(result.request?.fixtures).toEqual({
+      operator: { output: { score: 720 }, expectedInput: { applicantId: 'A-1' } },
+    });
+    expect(result.diagnostics).toEqual([]);
+  });
+
   it('rejects an Operator projection for a different catalog coordinate', () => {
     const scenarios: ScenarioDraftSet = {
       ...draftSet([]),

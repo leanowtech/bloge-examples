@@ -146,20 +146,15 @@ export function compileScenarioForSimulation(
   const controlledNodes = new Set<string>();
   for (const [index, dependency] of selected.dependencies.entries()) {
     const target = `/scenarios/${scenarioId}/dependencies/${index}`;
-    if (!losslesslyRepresentable(dependency)) {
+    const nodeId = resolveDependencyNodeId(dependency, graphDraft);
+    const resolvedDependency = nodeId && dependency.selector.nodeId !== nodeId
+      ? { ...dependency, selector: { ...dependency.selector, nodeId, operatorRef: '' } }
+      : dependency;
+    if (!nodeId || !losslesslyRepresentable(resolvedDependency)) {
       diagnostics.push(error(
         'visual.scenario.compile.governedBehaviorRequired',
         `Dependency behavior '${dependency.behavior.kind}' requires governed Scenario execution.`,
         target,
-      ));
-      continue;
-    }
-    const nodeId = dependency.selector.nodeId;
-    if (!graphDraft.nodes.some((node) => node.id === nodeId)) {
-      diagnostics.push(error(
-        'visual.scenario.dependency.nodeUnknown',
-        `Dependency node '${nodeId}' does not exist in the GraphDraft.`,
-        `${target}/selector/nodeId`,
       ));
       continue;
     }
@@ -172,13 +167,13 @@ export function compileScenarioForSimulation(
       continue;
     }
     controlledNodes.add(nodeId);
-    if (dependency.behavior.kind === 'REAL') {
+    if (resolvedDependency.behavior.kind === 'REAL') {
       delete persistedFixtures[nodeId];
     } else {
       fixtures[nodeId] = {
-        output: dependency.behavior.output ?? null,
-        ...(dependency.behavior.expectedInput !== undefined
-          ? { expectedInput: dependency.behavior.expectedInput }
+        output: resolvedDependency.behavior.output ?? null,
+        ...(resolvedDependency.behavior.expectedInput !== undefined
+          ? { expectedInput: resolvedDependency.behavior.expectedInput }
           : {}),
       };
     }
@@ -206,6 +201,19 @@ export function compileScenarioForSimulation(
     assertions: selected.then.assertions.map((assertion) => ({ ...assertion })),
     diagnostics,
   };
+}
+
+/** Resolves one operator coordinate to one graph node before creating a transient fixture. */
+function resolveDependencyNodeId(
+  dependency: DependencyBehaviorDraft,
+  graphDraft: GraphDraft,
+): string | null {
+  if (dependency.selector.nodeId && graphDraft.nodes.some((node) => node.id === dependency.selector.nodeId)) {
+    return dependency.selector.nodeId;
+  }
+  if (!dependency.selector.operatorRef) return null;
+  const matches = graphDraft.nodes.filter((node) => node.operatorRef === dependency.selector.operatorRef);
+  return matches.length === 1 ? matches[0]?.id ?? null : null;
 }
 
 function validateExactInputs(
