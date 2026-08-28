@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.fixture;
+package com.leanowtech.bloge.gateway.visualadapter.fixture;
 
 import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationProblem;

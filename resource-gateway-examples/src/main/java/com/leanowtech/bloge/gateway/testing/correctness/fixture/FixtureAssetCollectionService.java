@@ -9,7 +9,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAsset
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
-import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
 
 import java.util.List;
 import java.util.Objects;

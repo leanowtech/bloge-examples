@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.fixture;
+package com.leanowtech.bloge.gateway.visualadapter.fixture;
 
 /**
  * Typed failure for deterministic HTTP mapping of graph-node Fixture promotion.

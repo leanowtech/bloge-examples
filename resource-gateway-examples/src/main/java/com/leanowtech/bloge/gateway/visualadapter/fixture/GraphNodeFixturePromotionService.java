@@ -1,4 +1,4 @@
-package com.leanowtech.bloge.gateway.visual.fixture;
+package com.leanowtech.bloge.gateway.visualadapter.fixture;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.integration.IntegrationRequestContext;

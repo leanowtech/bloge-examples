@@ -303,14 +303,14 @@ public class CorrectnessAuthoringCommandRuntimeConfiguration {
     @ConditionalOnBean({GraphDraftRepository.class, VisualOperatorCatalog.class,
             FixtureCatalogService.class, FixtureMaterialService.class})
     @ConditionalOnMissingBean
-    com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService
+    com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService
             graphNodeFixturePromotionService(
                     GraphDraftRepository drafts,
                     VisualOperatorCatalog operators,
                     FixtureCatalogService fixtures,
                     FixtureMaterialService materials,
                     ObjectMapper mapper) {
-        return new com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService(
+        return new com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService(
                 drafts,
                 operators,
                 fixtures,

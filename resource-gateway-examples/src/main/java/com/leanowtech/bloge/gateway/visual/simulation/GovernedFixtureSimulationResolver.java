@@ -12,7 +12,7 @@ import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtur
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.VisualOperatorCatalog;
 import com.leanowtech.bloge.gateway.visual.draft.GraphDraft;
-import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
 import com.leanowtech.bloge.gateway.visual.validation.VisualSchemaValidator;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.fasterxml.jackson.databind.ObjectMapper;

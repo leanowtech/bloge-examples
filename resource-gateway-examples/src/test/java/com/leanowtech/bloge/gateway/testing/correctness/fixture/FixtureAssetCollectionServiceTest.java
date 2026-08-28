@@ -76,7 +76,7 @@ class FixtureAssetCollectionServiceTest {
         ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
         EnterpriseScope scope = new EnterpriseScope("t", "o", "p", "test", "sg");
         OperatorDefinition operator = operator();
-        String fingerprint = com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService
+        String fingerprint = com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService
                 .exactOutputSchemaRef(operator, mapper).fingerprint();
         StoredFixtureAsset stored = StoredFixtureAsset.verified(mapper,
                 descriptor(scope, new ExactSchemaRef("profile", 1, fingerprint)));

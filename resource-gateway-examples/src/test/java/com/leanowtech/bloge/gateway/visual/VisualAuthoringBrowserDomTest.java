@@ -43,8 +43,8 @@ import com.leanowtech.bloge.gateway.testing.correctness.fixture.DatabaseProtecte
 import com.leanowtech.bloge.gateway.testing.authoring.fixture.AuthoringFixturePayloadProtector;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.FixtureAssetRepository;
 import com.leanowtech.bloge.gateway.testing.correctness.persistence.StoredFixtureAsset;
-import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionController;
-import com.leanowtech.bloge.gateway.visual.fixture.GraphNodeFixturePromotionService;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionController;
+import com.leanowtech.bloge.gateway.visualadapter.fixture.GraphNodeFixturePromotionService;
 import com.leanowtech.bloge.gateway.visual.simulation.GovernedFixtureSimulationResolver;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorDefinition;
 import com.leanowtech.bloge.gateway.visual.catalog.OperatorLibrary;
