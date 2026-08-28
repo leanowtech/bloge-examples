@@ -342,7 +342,23 @@ function scenarioFrom(table: DecisionTable, sourceFingerprint: string, input: Re
 }
 
 function normalizeOutput(output: unknown, kind: DecisionOutputKind): unknown {
-  if (kind === 'plan') return isRecord(output) && Array.isArray(output.steps) ? { ...output } : { action: 'return', steps: [], reason: String(output ?? '') };
+  if (kind === 'plan') {
+    if (isRecord(output) && typeof output.action === 'string' && Array.isArray(output.steps) && 'reason' in output) {
+      return { ...output };
+    }
+    const source = isRecord(output) ? output : {};
+    const action = typeof source.action === 'string'
+      ? source.action
+      : typeof source.decision === 'string' ? source.decision : 'return';
+    const reason = source.reason === undefined
+      ? isRecord(output) ? canonicalJson(output) : String(output ?? '')
+      : typeof source.reason === 'string' ? source.reason : canonicalJson(source.reason);
+    return {
+      action,
+      steps: Array.isArray(source.steps) ? source.steps : [],
+      reason,
+    };
+  }
   if (kind === 'dispatch') return isRecord(output) ? { ...output, dispatchMode: 'MODELED_ONLY' } : { targetRef: output, dispatchMode: 'MODELED_ONLY' };
   return output;
 }

@@ -67,6 +67,7 @@ import {
   behaviorForKind,
   captureScenarioEditorSnapshot,
   dependencyNeedsAttention,
+  upsertExpectedReturnDependency,
 } from './scenarioEditorModel';
 import SchemaFieldTree from './SchemaFieldTree';
 import SchemaValueForm from './SchemaValueForm';
@@ -2127,7 +2128,23 @@ function ScenarioTab({
                 >
                   {t('+ Dependency')}
                 </button>
+                <button
+                  type="button"
+                  className="secondary compact"
+                  data-testid="scenario-use-expected-return-fixture"
+                  disabled={upsertExpectedReturnDependency(selectedScenario, nodes) === null}
+                  title={t('Creates a saved Return fixture from the whole expected output; it does not execute the Scenario.')}
+                  onClick={() => {
+                    const next = upsertExpectedReturnDependency(selectedScenario, nodes);
+                    if (next) onUpdateScenario(() => next);
+                  }}
+                >
+                  {t('Use expected output as Return fixture')}
+                </button>
               </div>
+              <p className="scenario-stage-hint">
+                {t('This is an authored Scenario override. Save Scenario to persist it; it does not execute the Scenario.')}
+              </p>
               <div className="scenario-dependencies">
                 {selectedScenario.dependencies.map((dependency, index) => {
                   return (

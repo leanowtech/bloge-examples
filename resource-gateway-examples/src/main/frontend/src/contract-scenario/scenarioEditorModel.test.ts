@@ -9,6 +9,7 @@ import {
   dependencyNeedsAttention,
   durationFromMilliseconds,
   selectDependencyTarget,
+  upsertExpectedReturnDependency,
 } from './scenarioEditorModel';
 import { scenarioDraftSetFromCanvas } from './scenarioAuthoring';
 import { graphDraft, nodes } from './testFixtures';
@@ -183,6 +184,52 @@ describe('Scenario graphical editor model', () => {
     expect(snapshot.contract.inputSchema).toEqual(contract.inputSchema);
     expect(snapshot.nodeSchemas.score.outputSchema).toEqual(nodes()[0].outputSchema);
     expect(Object.isFrozen(snapshot)).toBe(true);
+  });
+
+  it('adds one explicit expected-output Return fixture and updates it idempotently', () => {
+    const scenario = scenarioDraftSetFromCanvas(
+      contractDraftFromGraphDraft(graphDraft(), fingerprint('a')).target,
+      fingerprint('b'),
+      graphDraft(),
+      nodes().slice(0, 1),
+      [],
+    ).scenarios[0];
+    const expected = { action: 'decline', steps: [], reason: 'bounded' };
+    const source = { ...scenario, then: { assertions: [{ ...scenario.then.assertions[0], expected }] } };
+
+    const first = upsertExpectedReturnDependency(source, nodes().slice(0, 1));
+    expect(first?.dependencies).toHaveLength(1);
+    expect(first?.dependencies[0]).toMatchObject({
+      dependencyId: 'expected-return-score',
+      selector: { nodeId: 'score', operatorRef: '', resourceRef: '', functionRef: '' },
+      behavior: { kind: 'RETURN', boundary: 'NODE', output: expected },
+    });
+    expect(first?.dependencies[0]?.behavior.output).not.toBe(expected);
+
+    const changed = { action: 'approve', steps: [], reason: 'reviewed' };
+    const second = upsertExpectedReturnDependency(
+      { ...first!, then: { assertions: [{ ...source.then.assertions[0], expected: changed }] } },
+      nodes().slice(0, 1),
+    );
+    expect(second?.dependencies).toHaveLength(1);
+    expect(second?.dependencies[0]?.dependencyId).toBe('expected-return-score');
+    expect(second?.dependencies[0]?.behavior.output).toEqual(changed);
+  });
+
+  it('does not offer an expected Return fixture without one executable node and whole output', () => {
+    const scenario = scenarioDraftSetFromCanvas(
+      contractDraftFromGraphDraft(graphDraft(), fingerprint('a')).target,
+      fingerprint('b'),
+      graphDraft(),
+      nodes(),
+      [],
+    ).scenarios[0];
+
+    expect(upsertExpectedReturnDependency(scenario, nodes())).toBeNull();
+    expect(upsertExpectedReturnDependency({
+      ...scenario,
+      then: { assertions: [{ ...scenario.then.assertions[0], path: 'decision' }] },
+    }, nodes().slice(0, 1))).toBeNull();
   });
 });
 

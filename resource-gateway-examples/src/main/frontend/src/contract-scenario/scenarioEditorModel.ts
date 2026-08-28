@@ -190,6 +190,84 @@ export function dependencyNeedsAttention(dependency: DependencyBehaviorDraft): b
     && dependency.consumption.maxUses < dependency.consumption.minUses;
 }
 
+/**
+ * Creates the explicit, user-authored Return override for a whole-output case.
+ *
+ * Generated decision scenarios deliberately keep {@code dependencies} empty. This
+ * helper is the separate authoring action that turns one expected result into a
+ * NODE fixture. Only the immutable coordinate and expected value cross this seam;
+ * credentials and governed material remain server-owned.
+ */
+export function upsertExpectedReturnDependency(
+  scenario: ScenarioDraft,
+  nodes: ScenarioNodeOption[],
+): ScenarioDraft | null {
+  const executableNodes = nodes.filter((node) => Boolean(node.id && node.operatorRef));
+  const assertion = scenario.then.assertions.find((candidate) => (
+    candidate.scope === 'OUTPUT_PATH' && candidate.path === ''
+  ));
+  if (executableNodes.length !== 1 || !assertion || assertion.expected === undefined) return null;
+
+  const node = executableNodes[0];
+  if (!node) return null;
+  const existing = scenario.dependencies.find((dependency) => dependency.selector.nodeId === node.id);
+  const dependency: DependencyBehaviorDraft = {
+    ...(existing ?? {
+      dependencyId: `expected-return-${node.id}`,
+      selector: {
+        graphPath: '',
+        nodeId: '',
+        operatorRef: '',
+        resourceRef: '',
+        functionRef: '',
+        attempts: [],
+        occurrences: [],
+        correlationKey: '',
+        pathEquals: {},
+      },
+      consumption: {
+        required: true,
+        minUses: 1,
+        maxUses: 1,
+        onExhausted: 'FAIL' as const,
+        onUnmatched: 'FAIL' as const,
+      },
+      schemaCheck: { mode: 'STRICT' as const, waiverReason: '' },
+      origin: 'AUTHORED',
+    }),
+    selector: {
+      ...(existing?.selector ?? {
+        graphPath: '',
+        nodeId: '',
+        operatorRef: '',
+        resourceRef: '',
+        functionRef: '',
+        attempts: [],
+        occurrences: [],
+        correlationKey: '',
+        pathEquals: {},
+      }),
+      graphPath: '',
+      nodeId: node.id,
+      operatorRef: '',
+      resourceRef: '',
+      functionRef: '',
+    },
+    behavior: {
+      kind: 'RETURN',
+      boundary: 'NODE',
+      output: cloneJson(assertion.expected),
+    },
+  };
+  const withoutTargetDuplicates = scenario.dependencies.filter((candidate) => (
+    candidate.selector.nodeId !== node.id
+  ));
+  return {
+    ...scenario,
+    dependencies: [...withoutTargetDuplicates, dependency],
+  };
+}
+
 /** Reinitializes scope-specific assertion coordinates and operators to valid governed defaults. */
 export function assertionForScope(
   assertion: AssertionDraft,

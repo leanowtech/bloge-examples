@@ -80,6 +80,26 @@ describe('decision scenario enumeration', () => {
     expect(dispatch.scenarios[0]?.then.assertions[0]?.expected).toMatchObject({ targetRef: 'publication:child', dispatchMode: 'MODELED_ONLY' });
   });
 
+  it('maps ordinary plan objects deterministically without stringifying them as [object Object]', () => {
+    const result = enumerateDecisionTableScenarios({
+      ...table,
+      outputKind: 'plan',
+      rules: [{
+        id: 'decline',
+        otherwise: true,
+        output: { decision: 'decline', tier: 'risk', reason: { code: 'LIMIT' } },
+      }],
+    }, { mode: 'per-rule', cap: 4 });
+
+    expect(result.scenarios[0]?.then.assertions[0]?.expected).toEqual({
+      action: 'decline',
+      steps: [],
+      reason: '{"code":"LIMIT"}',
+    });
+    expect(JSON.stringify(result.scenarios[0])).not.toContain('[object Object]');
+    expect(result.scenarios[0]?.dependencies).toEqual([]);
+  });
+
   it('refuses to fabricate an opaque domain without author samples', () => {
     expect(() => enumerateDecisionTableScenarios({ ...table, columns: [{ name: 'score', type: 'integer' }], rules: [{ id: 'opaque', conditions: { score: 'risk(score)' }, output: 'review' }] }, { mode: 'combinatorial', cap: 4 })).toThrowError(/author samples/);
   });

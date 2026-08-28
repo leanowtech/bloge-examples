@@ -387,6 +387,52 @@ describe('ContractScenarioWorkspace', () => {
     expect(cards.every((card) => !card.open)).toBe(true);
   });
 
+  it('offers an explicit expected-output Return fixture and persists it only on Save Scenario', async () => {
+    let savedBody: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).startsWith('/api/visual/scenario-draft-sets/') && init?.method === 'PUT') {
+        savedBody = JSON.parse(String(init.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({
+          schemaVersion: 'bloge.storedScenarioDraftSet.v1',
+          scenarioDraftSetId: savedBody.scenarioDraftSetId,
+          revision: 1,
+          fingerprint: fingerprint('saved'),
+          draftSet: { ...savedBody, revision: 1 },
+          savedAt: '2026-08-28T00:00:00Z',
+          savedBy: 'author-a',
+        }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      return new Response(JSON.stringify({ code: 'RG.SCENARIO.NOT_FOUND' }), {
+        status: 404,
+        statusText: 'Not Found',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }));
+
+    await renderControlledWorkspace(vi.fn(), nodes().slice(0, 1));
+    await clickTab('Scenarios 1');
+
+    const useExpected = document.querySelector<HTMLButtonElement>(
+      '[data-testid="scenario-use-expected-return-fixture"]',
+    );
+    expect(useExpected?.disabled).toBe(false);
+    expect(useExpected?.title).toContain('does not execute');
+    await act(async () => useExpected?.click());
+
+    expect(button('Save Scenario').disabled).toBe(false);
+
+    await act(async () => button('Save Scenario').click());
+    await settleAsyncWork();
+    expect(savedBody).toMatchObject({
+      scenarios: [{
+        dependencies: [{
+          selector: { nodeId: 'score', operatorRef: '', resourceRef: '', functionRef: '' },
+          behavior: { kind: 'RETURN', boundary: 'NODE', output: successfulResponse().output },
+        }],
+      }],
+    });
+  });
+
   it('can open directly on Run Evidence for a result-review task', async () => {
     await renderWorkspace({
       initialTab: 'evidence',
@@ -1186,6 +1232,7 @@ describe('ContractScenarioWorkspace', () => {
     presentation?: 'dialog' | 'surface';
     withoutAssertions?: boolean;
     realFallback?: boolean;
+    nodes?: ReturnType<typeof nodes>;
   } = {}) {
     const draft = options.unsaved
       ? { ...graphDraft(), draftId: '', revision: 0 }
@@ -1193,11 +1240,12 @@ describe('ContractScenarioWorkspace', () => {
     const targetFingerprint = fingerprint('a');
     const contractFingerprint = fingerprint('b');
     const contract = contractDraftFromGraphDraft(draft, targetFingerprint);
+    const scenarioNodes = options.nodes ?? nodes();
     const projectedDraftSet = scenarioDraftSetFromCanvas(
       options.stale ? { ...contract.target, fingerprint: fingerprint('c') } : contract.target,
       contractFingerprint,
       draft,
-      nodes(),
+      scenarioNodes,
       [{
         id: 'approved',
         name: 'Approved applicant',
@@ -1238,7 +1286,7 @@ describe('ContractScenarioWorkspace', () => {
           contract={contract}
           contractFingerprint={contractFingerprint}
           scenarioDraftSet={draftSet}
-          nodes={nodes()}
+          nodes={options.nodes ?? nodes()}
           lastRun={options.lastRun ?? null}
           lastRunScenarioId={options.lastRunScenarioId}
           lastComparison={options.lastComparison}
@@ -1260,7 +1308,10 @@ describe('ContractScenarioWorkspace', () => {
     });
   }
 
-  async function renderControlledWorkspace(onRun = vi.fn().mockResolvedValue(successfulResponse())) {
+  async function renderControlledWorkspace(
+    onRun = vi.fn().mockResolvedValue(successfulResponse()),
+    scenarioNodes = nodes(),
+  ) {
     const draft = graphDraft();
     const targetFingerprint = fingerprint('a');
     const contractFingerprint = fingerprint('b');
@@ -1269,7 +1320,7 @@ describe('ContractScenarioWorkspace', () => {
       contract.target,
       contractFingerprint,
       draft,
-      nodes(),
+      scenarioNodes,
       [{
         id: 'approved',
         name: 'Approved applicant',
@@ -1291,7 +1342,7 @@ describe('ContractScenarioWorkspace', () => {
           contract={contract}
           contractFingerprint={contractFingerprint}
           scenarioDraftSet={draftSet}
-          nodes={nodes()}
+          nodes={scenarioNodes}
           lastRun={null}
           onScenarioDraftSetChange={setDraftSet}
           onContractChange={vi.fn()}
