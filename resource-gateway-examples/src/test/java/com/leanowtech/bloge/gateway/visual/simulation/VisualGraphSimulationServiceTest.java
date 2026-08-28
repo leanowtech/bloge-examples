@@ -313,6 +313,25 @@ class VisualGraphSimulationServiceTest {
     }
 
     @Test
+    void persistedGovernedFidelityIsNotDowngradedToLegacyOutputLevel() {
+        DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
+                VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));
+        VisualGraphSimulationService service = simulationService(catalog);
+        GraphDraft draft = eligibilityDraft().withNodeFixtures(Map.of("eligibility",
+                new GraphDraft.NodeFixture(Map.of("eligible", true, "ruleId", "PIN"), null,
+                        new GraphDraft.GovernedFixtureRef("fixture", 1,
+                                "sha256:" + "a".repeat(64)),
+                        GraphDraft.NodeFixture.ResourceFidelity.PROTOCOL_DERIVED)));
+
+        VisualGraphSimulationResponse response = service.simulate(draft, Map.of(), "");
+
+        assertThat(response.success()).isFalse();
+        assertThat(response.diagnostics())
+                .anySatisfy(diagnostic -> assertThat(diagnostic.code())
+                        .isEqualTo("visual.simulate.resourceFidelity.nonResource"));
+    }
+
+    @Test
     void simulationTimeoutReturnsDiagnosticInsteadOfHanging() {
         DefaultVisualOperatorCatalog catalog = VisualCatalogTestSupport.catalogWithLibrary(
                 VisualCatalogTestSupport.designOnlyEligibilityLibrary("integer"));

@@ -145,6 +145,81 @@ class VisualGraphSimulationControllerTest {
     }
 
     @Test
+    void storedOnlyGovernedFixtureIsAuthenticatedResolvedAndRecordedAgainstEffectiveReference() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
+        @SuppressWarnings("unchecked") ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(resolver);
+        IntegrationRequestContext identity = new IntegrationRequestContext(
+                "tenant", "org", "project", "test", "sg", "USER", "author", "",
+                "CORRECTNESS_FIXTURE_MATERIAL_READ", "corr");
+        when(authenticator.authenticate(any(HttpHeaders.class), eq(IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ)))
+                .thenReturn(identity);
+        GovernedFixtureRef ref = new GovernedFixtureRef("stored-fixture", 3,
+                "sha256:" + "b".repeat(64));
+        when(resolver.resolve(any(), eq(ref), eq(identity), any(), eq("eligibility")))
+                .thenReturn(new NodeFixture(Map.of("eligible", true, "ruleId", "STORED")));
+        VisualGraphSimulationResponse expected = new VisualGraphSimulationResponse(
+                true, true, true, "graph", "eligibility", Map.of("eligible", true),
+                Map.of(), Map.of(), 1, Map.of(), List.of("eligibility"), List.of(), true,
+                List.of(), List.of(), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(expected);
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+        GraphDraft draft = eligibilityDraft().withNodeFixtures(Map.of("eligibility",
+                new GraphDraft.NodeFixture(null, null,
+                        new GraphDraft.GovernedFixtureRef("stored-fixture", 3,
+                                "sha256:" + "b".repeat(64)),
+                        GraphDraft.NodeFixture.ResourceFidelity.PROTOCOL_DERIVED)));
+        VisualGraphSimulationRequest request = new VisualGraphSimulationRequest(draft, Map.of(), "");
+
+        assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(expected);
+        @SuppressWarnings("unchecked") ArgumentCaptor<Map<String, NodeFixture>> forwarded =
+                ArgumentCaptor.forClass(Map.class);
+        verify(simulation).simulate(eq(draft), eq(Map.of()), eq(""), forwarded.capture());
+        NodeFixture forwardedFixture = forwarded.getValue().get("eligibility");
+        assertThat(forwardedFixture.output()).isEqualTo(Map.of("eligible", true, "ruleId", "STORED"));
+        assertThat(forwardedFixture.governedRef()).isEqualTo(ref);
+        assertThat(forwardedFixture.resourceFidelity()).isEqualTo(NodeFixture.ResourceFidelity.PROTOCOL_DERIVED);
+        verify(authenticator).authenticate(any(HttpHeaders.class), eq(
+                IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ));
+        verify(resolver).resolve(any(), eq(ref), eq(identity), eq(draft), eq("eligibility"));
+        @SuppressWarnings("unchecked") ArgumentCaptor<List<GovernedFixtureRef>> refs =
+                ArgumentCaptor.forClass(List.class);
+        verify(resolver).recordReuse(any(), eq(draft), refs.capture());
+        assertThat(refs.getValue()).containsExactly(ref);
+        assertThat(request.draft().nodeFixtures().get("eligibility").output()).isNull();
+    }
+
+    @Test
+    void requestFixtureOverridesStoredGovernedFixtureBeforeAuthentication() {
+        VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
+        IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);
+        GovernedFixtureSimulationResolver resolver = mock(GovernedFixtureSimulationResolver.class);
+        @SuppressWarnings("unchecked") ObjectProvider<GovernedFixtureSimulationResolver> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(resolver);
+        VisualGraphSimulationResponse expected = new VisualGraphSimulationResponse(
+                true, true, true, "graph", "eligibility", Map.of("eligible", false),
+                Map.of(), Map.of(), 1, Map.of(), List.of("eligibility"), List.of(), true,
+                List.of(), List.of(), "");
+        when(simulation.simulate(any(), any(), any(), any())).thenReturn(expected);
+        VisualGraphSimulationController controller = new VisualGraphSimulationController(
+                simulation, authenticator, provider);
+        GraphDraft draft = eligibilityDraft().withNodeFixtures(Map.of("eligibility",
+                new GraphDraft.NodeFixture(null, null,
+                        new GraphDraft.GovernedFixtureRef("stored-fixture", 3,
+                                "sha256:" + "b".repeat(64)), null)));
+        NodeFixture requestFixture = new NodeFixture(Map.of("eligible", false, "ruleId", "REQUEST"));
+        VisualGraphSimulationRequest request = new VisualGraphSimulationRequest(
+                draft, Map.of(), "", Map.of("eligibility", requestFixture));
+
+        assertThat(controller.simulate(request, new HttpHeaders())).isSameAs(expected);
+        verifyNoInteractions(authenticator, resolver);
+        verify(simulation).simulate(eq(draft), eq(Map.of()), eq(""), eq(request.fixtures()));
+    }
+
+    @Test
     void governedFixtureWithoutAuthenticationFailsBeforeResolution() {
         VisualGraphSimulationService simulation = mock(VisualGraphSimulationService.class);
         IntegrationRequestAuthenticator authenticator = mock(IntegrationRequestAuthenticator.class);

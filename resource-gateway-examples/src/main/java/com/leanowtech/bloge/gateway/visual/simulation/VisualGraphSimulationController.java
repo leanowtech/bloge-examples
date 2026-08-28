@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -82,10 +83,10 @@ public class VisualGraphSimulationController {
             @RequestBody VisualGraphSimulationRequest request,
             @org.springframework.web.bind.annotation.RequestHeader(required = false) HttpHeaders headers) {
         VisualGraphSimulationRequest incoming = request;
-        final VisualGraphSimulationRequest requestForCheck = incoming;
+        Map<String, NodeFixture> effectiveOriginalFixtures = effectiveFixtures(request);
         IntegrationRequestContext governedIdentity = null;
         EnterpriseScope governedScope = null;
-        if (requestForCheck != null && requestForCheck.fixtures().values().stream()
+        if (effectiveOriginalFixtures.values().stream()
                 .anyMatch(fixture -> fixture != null && fixture.governedRef() != null)) {
             if (authenticator == null || governedFixtures == null) {
                 throw new GovernedFixtureResolutionException(503,
@@ -97,16 +98,16 @@ public class VisualGraphSimulationController {
                     governedIdentity.projectId(), governedIdentity.environmentId(), governedIdentity.region());
             final IntegrationRequestContext resolvedIdentity = governedIdentity;
             final EnterpriseScope resolvedScope = governedScope;
-            VisualGraphSimulationRequest requestForResolution = incoming;
+            final var requestDraft = incoming.draft();
             Map<String, NodeFixture> resolved = new LinkedHashMap<>();
-            requestForResolution.fixtures().forEach((nodeId, fixture) -> {
+            effectiveOriginalFixtures.forEach((nodeId, fixture) -> {
                 if (fixture == null || fixture.governedRef() == null) {
                     resolved.put(nodeId, fixture);
                     return;
                 }
                 NodeFixture materialized = governedFixtures.resolve(
                         resolvedScope, fixture.governedRef(), resolvedIdentity,
-                        requestForResolution.draft(), nodeId);
+                        requestDraft, nodeId);
                 // The resolver intentionally returns only protected output. The caller-selected
                 // evidence boundary, input assertion, and exact coordinate remain request facts;
                 // dropping them here silently downgraded protocol/transport simulations to output
@@ -116,20 +117,68 @@ public class VisualGraphSimulationController {
                         fixture.resourceFidelity()));
             });
             incoming = new VisualGraphSimulationRequest(
-                    requestForResolution.draft(), requestForResolution.context(),
-                    requestForResolution.outputNode(), resolved);
+                    incoming.draft(), incoming.context(), incoming.outputNode(), resolved);
         }
         VisualGraphSimulationResponse response = simulationService.simulate(
                 incoming.draft(), incoming.context(), incoming.outputNode(), incoming.fixtures());
         if (response.success() && request != null && governedFixtures != null) {
-            java.util.List<GovernedFixtureRef> refs = request.fixtures().values().stream()
-                    .filter(fixture -> fixture != null && fixture.governedRef() != null)
-                    .map(NodeFixture::governedRef).toList();
+            List<GovernedFixtureRef> refs = effectiveOriginalFixtures.entrySet().stream()
+                    .filter(entry -> entry.getValue() != null && entry.getValue().governedRef() != null)
+                    .filter(entry -> request.draft() != null && request.draft().nodes().stream()
+                            .anyMatch(node -> node.id().equals(entry.getKey())))
+                    .map(entry -> entry.getValue().governedRef()).toList();
             if (!refs.isEmpty() && governedIdentity != null && governedScope != null) {
                 governedFixtures.recordReuse(governedScope, request.draft(), refs);
             }
         }
         return response;
+    }
+
+    /**
+     * Builds the same request-over-persisted fixture view used by the simulation service.
+     * Persisted DTOs are converted at this boundary so governed metadata cannot be dropped.
+     */
+    private static Map<String, NodeFixture> effectiveFixtures(VisualGraphSimulationRequest request) {
+        if (request == null) {
+            return Map.of();
+        }
+        Map<String, NodeFixture> effective = new LinkedHashMap<>();
+        if (request.draft() != null) {
+            request.draft().nodeFixtures().forEach((nodeId, fixture) ->
+                    effective.put(nodeId, toSimulationFixture(fixture)));
+        }
+        request.fixtures().forEach((nodeId, fixture) -> {
+            if (nodeId != null && !nodeId.isBlank() && fixture != null) {
+                effective.put(nodeId, fixture);
+            }
+        });
+        return effective;
+    }
+
+    private static NodeFixture toSimulationFixture(com.leanowtech.bloge.gateway.visual.draft.GraphDraft.NodeFixture fixture) {
+        if (fixture == null) {
+            return null;
+        }
+        return new NodeFixture(fixture.output(), fixture.expectedInput(),
+                toSimulationRef(fixture.governedRef()), toSimulationFidelity(fixture.resourceFidelity()));
+    }
+
+    private static GovernedFixtureRef toSimulationRef(
+            com.leanowtech.bloge.gateway.visual.draft.GraphDraft.GovernedFixtureRef ref) {
+        return ref == null ? null : new GovernedFixtureRef(
+                ref.fixtureAssetId(), ref.revision(), ref.schemaFingerprint());
+    }
+
+    private static NodeFixture.ResourceFidelity toSimulationFidelity(
+            com.leanowtech.bloge.gateway.visual.draft.GraphDraft.NodeFixture.ResourceFidelity fidelity) {
+        if (fidelity == null) {
+            return NodeFixture.ResourceFidelity.OUTPUT_LEVEL;
+        }
+        return switch (fidelity) {
+            case OUTPUT_LEVEL -> NodeFixture.ResourceFidelity.OUTPUT_LEVEL;
+            case PROTOCOL_DERIVED -> NodeFixture.ResourceFidelity.PROTOCOL_DERIVED;
+            case TRANSPORT_LEVEL -> NodeFixture.ResourceFidelity.TRANSPORT_LEVEL;
+        };
     }
 
     /** Maps fail-closed governed Fixture resolution failures to a payload-free problem response. */

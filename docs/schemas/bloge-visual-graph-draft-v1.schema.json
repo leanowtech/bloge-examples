@@ -120,8 +120,26 @@
     "nodeFixture": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["output", "expectedInput"],
-      "properties": { "output": true, "expectedInput": true }
+      "required": ["output"],
+      "properties": {
+        "output": true,
+        "expectedInput": true,
+        "governedRef": { "$ref": "#/$defs/governedFixtureRef" },
+        "resourceFidelity": {
+          "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"],
+          "default": "OUTPUT_LEVEL"
+        }
+      }
+    },
+    "governedFixtureRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fixtureAssetId", "revision", "schemaFingerprint"],
+      "properties": {
+        "fixtureAssetId": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "revision": { "type": "integer", "minimum": 1 },
+        "schemaFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
     },
     "output": {
       "type": "object",

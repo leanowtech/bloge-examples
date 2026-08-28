@@ -33,6 +33,25 @@ class GraphDraftSaveProtocolSchemaTest {
         assertThat(draft.at("/properties/revision/minimum").asLong()).isZero();
     }
 
+    @Test
+    void nodeFixtureKeepsOutputRequiredAndMetadataOptionalWithSafeDefaults() throws Exception {
+        JsonNode fixture = schema("bloge-visual-graph-draft-v1.schema.json").at("/$defs/nodeFixture");
+
+        assertThat(iterable(fixture.path("required")))
+                .containsExactly("output");
+        assertThat(fixture.at("/properties/resourceFidelity/default").asText())
+                .isEqualTo("OUTPUT_LEVEL");
+        assertThat(iterable(fixture.at("/properties/resourceFidelity/enum")))
+                .containsExactlyInAnyOrder("OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL");
+        assertThat(fixture.at("/properties/governedRef/$ref").asText())
+                .isEqualTo("#/$defs/governedFixtureRef");
+
+        JsonNode governed = schema("bloge-visual-graph-draft-v1.schema.json").at("/$defs/governedFixtureRef");
+        assertThat(governed.path("additionalProperties").asBoolean()).isFalse();
+        assertThat(iterable(governed.path("required")))
+                .containsExactlyInAnyOrder("fixtureAssetId", "revision", "schemaFingerprint");
+    }
+
     private void assertRecordFields(JsonNode schema, Class<?> recordType) {
         assertThat(schema.path("additionalProperties").asBoolean(true)).isFalse();
         Set<String> schemaFields = new LinkedHashSet<>();

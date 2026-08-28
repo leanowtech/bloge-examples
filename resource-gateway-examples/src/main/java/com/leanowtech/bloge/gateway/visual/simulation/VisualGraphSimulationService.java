@@ -597,7 +597,7 @@ public class VisualGraphSimulationService {
                                                               Map<String, NodeFixture> requestFixtures) {
         Map<String, NodeFixture> effective = new LinkedHashMap<>();
         draft.nodeFixtures().forEach((nodeId, fixture) ->
-                effective.put(nodeId, new NodeFixture(fixture.output(), fixture.expectedInput())));
+                effective.put(nodeId, toSimulationFixture(fixture)));
         if (requestFixtures != null) {
             requestFixtures.forEach((nodeId, fixture) -> {
                 if (nodeId != null && !nodeId.isBlank() && fixture != null) {
@@ -606,6 +606,32 @@ public class VisualGraphSimulationService {
             });
         }
         return effective;
+    }
+
+    /** Converts persisted fixture metadata without losing governed identity or evidence fidelity. */
+    private static NodeFixture toSimulationFixture(GraphDraft.NodeFixture fixture) {
+        if (fixture == null) {
+            return null;
+        }
+        return new NodeFixture(fixture.output(), fixture.expectedInput(),
+                toSimulationRef(fixture.governedRef()), toSimulationFidelity(fixture.resourceFidelity()));
+    }
+
+    private static GovernedFixtureRef toSimulationRef(GraphDraft.GovernedFixtureRef ref) {
+        return ref == null ? null : new GovernedFixtureRef(
+                ref.fixtureAssetId(), ref.revision(), ref.schemaFingerprint());
+    }
+
+    private static NodeFixture.ResourceFidelity toSimulationFidelity(
+            GraphDraft.NodeFixture.ResourceFidelity fidelity) {
+        if (fidelity == null) {
+            return NodeFixture.ResourceFidelity.OUTPUT_LEVEL;
+        }
+        return switch (fidelity) {
+            case OUTPUT_LEVEL -> NodeFixture.ResourceFidelity.OUTPUT_LEVEL;
+            case PROTOCOL_DERIVED -> NodeFixture.ResourceFidelity.PROTOCOL_DERIVED;
+            case TRANSPORT_LEVEL -> NodeFixture.ResourceFidelity.TRANSPORT_LEVEL;
+        };
     }
 
     private static List<VisualDiagnostic> inputAssertionDiagnostics(
