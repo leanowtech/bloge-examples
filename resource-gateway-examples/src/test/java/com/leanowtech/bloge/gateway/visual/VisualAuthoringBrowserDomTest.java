@@ -922,6 +922,9 @@ class VisualAuthoringBrowserDomTest {
     @Autowired
     private FixtureAssetRepository fixtureAssetRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @LocalServerPort
     private int port;
 
@@ -933,6 +936,7 @@ class VisualAuthoringBrowserDomTest {
 
     @BeforeEach
     void seedDemoDescriptorsForRandomPort() {
+        clearScenarioPersistenceForClassIsolation();
         graphDraftRepository.all().stream()
                 .map(draft -> draft.draftId())
                 .toList()
@@ -955,6 +959,31 @@ class VisualAuthoringBrowserDomTest {
         properties.setSeedDescriptors(true);
         new ResourceDescriptorBootstrap(resourceRegistry, properties).seedDescriptors();
         new ResourceDesignContractBootstrap(resourceDesignContractRegistry).seedContracts();
+    }
+
+    /**
+     * Clears server-owned save journals and Scenario revisions before each browser method.
+     *
+     * <p>The browser class intentionally reuses one application context. Graph saves use durable
+     * idempotency receipts, so their receipt/lock rows must be removed before the referenced Graph
+     * drafts; otherwise a later method can replay a deleted draft instead of executing its visible
+     * save mutation. Operator Scenario ids are also deterministic, so child/index/history rows are
+     * removed before current rows. This is test isolation only; it does not alter the visible
+     * authoring protocol or bypass any UI action.</p>
+     */
+    private void clearScenarioPersistenceForClassIsolation() {
+        List.of(
+                "visual_graph_draft_save_receipts",
+                "visual_graph_draft_save_locks",
+                "visual_scenario_draft_set_cases",
+                "visual_scenario_draft_set_case_index_heads",
+                "visual_scenario_contract_baselines",
+                "visual_scenario_draft_set_revisions",
+                "visual_scenario_draft_sets",
+                "visual_scenario_import_receipts",
+                "visual_scenario_publication_history",
+                "visual_scenario_publications")
+                .forEach(table -> jdbcTemplate.update("DELETE FROM " + table));
     }
 
     @AfterEach
@@ -5379,10 +5408,15 @@ class VisualAuthoringBrowserDomTest {
                 By.cssSelector("[data-testid='author-start-dialog']")));
         click(wait, By.cssSelector("[data-testid='operator-button:resource:order-service.listOrders']"));
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
-        Set<String> before = graphDraftIds();
+        Set<String> firstGraphDraftIdsBeforeSave = graphDraftIds();
         saveAuthorWorkspace(wait);
-        String firstDraftId = graphDraftIds().stream().filter(candidate -> !before.contains(candidate)).findFirst()
-                .orElseThrow(() -> new AssertionError("First chain graph save did not create a draft"));
+        Set<String> firstGraphDraftIdsAfterSave = graphDraftIds();
+        String firstDraftId = firstGraphDraftIdsAfterSave.stream()
+                .filter(candidate -> !firstGraphDraftIdsBeforeSave.contains(candidate))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "First chain graph save did not create a draft: before="
+                                + firstGraphDraftIdsBeforeSave + ", after=" + firstGraphDraftIdsAfterSave));
         click(wait, By.cssSelector("[data-testid='inspector-tab:advanced']"));
         click(wait, By.cssSelector("[data-testid='context-extras-panel'] summary"));
         click(wait, By.xpath("//button[normalize-space()='Add Context Extra']"));
@@ -5461,6 +5495,10 @@ class VisualAuthoringBrowserDomTest {
         saveAuthorWorkspace(wait);
         driver.get(secondUrl + "&draftId=" + secondDraftId + "&nodeId=n1");
         wait.until(ExpectedConditions.visibilityOfElementLocated(By.cssSelector("[data-testid='canvas-node:n1']")));
+        // Deep-link selection can leave a restored React Flow node outside the hit-tested
+        // viewport under a loaded browser session. The visible navigator settles that node
+        // before the user opens its details.
+        selectCanvasNodeFromNavigator(wait, "resource:order-service.listOrders", "n1");
         new Actions(driver).doubleClick(wait.until(ExpectedConditions.elementToBeClickable(
                 By.cssSelector("[data-testid='canvas-node:n1']")))).perform();
         WebElement reloadedDialog = wait.until(ExpectedConditions.visibilityOfElementLocated(
