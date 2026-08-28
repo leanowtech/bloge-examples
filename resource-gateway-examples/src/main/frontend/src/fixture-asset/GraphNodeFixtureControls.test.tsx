@@ -24,7 +24,7 @@ const promoted = {
 
 const expectedRequest: GraphNodeFixturePromoteRequest = {
   schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-  fixtureAssetId: 'profile.v1',
+  fixtureId: 'profile.v1',
   classification: 'RESTRICTED',
   retentionDays: 7,
   redactionPaths: ['/email', '/phone'],

@@ -28,7 +28,7 @@ describe('fixture asset transport', () => {
       }));
       expect(JSON.parse(String(init?.body))).toEqual({
         schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-        fixtureAssetId: 'profile.v1',
+        fixtureId: 'profile.v1',
         classification: 'INTERNAL',
         retentionDays: 7,
         redactionPaths: ['/email'],
@@ -45,7 +45,7 @@ describe('fixture asset transport', () => {
 
     await expect(promoteGraphNodeFixture('draft/1', 'node/1', {
       schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-      fixtureAssetId: 'profile.v1',
+      fixtureId: 'profile.v1',
       classification: 'INTERNAL',
       retentionDays: 7,
       redactionPaths: ['/email'],
@@ -59,14 +59,14 @@ describe('fixture asset transport', () => {
     ));
     await expect(promoteGraphNodeFixture('draft', 'node', {
       schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-      fixtureAssetId: 'profile.v1',
+      fixtureId: 'profile.v1',
       classification: 'PUBLIC',
       retentionDays: 1,
       redactionPaths: [],
     })).rejects.toThrow('409');
     await expect(promoteGraphNodeFixture('draft', 'node', {
       schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-      fixtureAssetId: 'profile.v1',
+      fixtureId: 'profile.v1',
       classification: 'PUBLIC',
       retentionDays: 1,
       redactionPaths: [],

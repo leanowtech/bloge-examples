@@ -18,7 +18,7 @@ describe('promoteRequestFrom', () => {
     });
     expect(actual).toEqual({
       schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-      fixtureAssetId: 'loan.profile',
+      fixtureId: 'loan.profile',
       classification: 'RESTRICTED',
       retentionDays: 30,
       redactionPaths: ['/email', '/phone'],

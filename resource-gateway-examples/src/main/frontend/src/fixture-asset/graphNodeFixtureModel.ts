@@ -37,10 +37,10 @@ export interface GraphNodeFixtureState extends NodeFixture {
   pinned?: boolean;
 }
 
-/** Payload-free request sent to the only new Phase C backend endpoint. */
+/** Payload-free request sent to the Phase C endpoint using its canonical fixtureId wire field. */
 export interface GraphNodeFixturePromoteRequest {
   schemaVersion: 'bloge.graphNodeFixturePromote.v1';
-  fixtureAssetId: string;
+  fixtureId: string;
   classification: GraphNodeFixtureClassification;
   retentionDays: number;
   redactionPaths: string[];
@@ -115,7 +115,7 @@ export function promoteRequestFrom(
 
   return {
     schemaVersion: 'bloge.graphNodeFixturePromote.v1',
-    fixtureAssetId,
+    fixtureId: fixtureAssetId,
     classification: classification as GraphNodeFixtureClassification,
     retentionDays: input.retentionDays,
     redactionPaths,
