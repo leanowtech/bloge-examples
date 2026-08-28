@@ -1214,6 +1214,91 @@ class GraphDraftDslGeneratorTest {
     }
 
     @Test
+    void expandsWrappedDecisionInputsFromContextObjectIntoDslFields() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "wrappedDecisionInputs",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "decision",
+                        "bloge:decisionTable",
+                        "",
+                        Map.of("inputs", GraphDraft.Binding.contextPath("inputs", "inputs", "")),
+                        Map.of(
+                                "conditionColumns", List.of("score", "income"),
+                                "rules", List.of(Map.of(
+                                        "conditions", Map.of("score", "score >= 700"),
+                                        "output", Map.of("decision", "approve")
+                                ))
+                        ),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("decision", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl())
+                .contains("score = ctx.inputs.score")
+                .contains("income = ctx.inputs.income");
+        assertThat(result.diagnostics())
+                .noneMatch(diagnostic -> diagnostic.code().equals("visual.codegen.decisionTableInputKey.invalid"));
+    }
+
+    @Test
+    void preservesExplicitDecisionLeafBindingsWhenInputIsNotWrapped() {
+        GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
+                VisualCatalogTestSupport.catalogWithLibrary(
+                        VisualCatalogTestSupport.eligibilityLibrary("integer")));
+        GraphDraft draft = new GraphDraft(
+                "",
+                "",
+                0,
+                "explicitDecisionLeaf",
+                "",
+                "",
+                "",
+                "",
+                null,
+                List.of(new GraphDraft.DraftNode(
+                        "decision",
+                        "bloge:decisionTable",
+                        "",
+                        Map.of("score", GraphDraft.Binding.contextPath("score", "inputs", "score")),
+                        Map.of(
+                                "conditionColumns", List.of("score"),
+                                "rules", List.of(Map.of(
+                                        "conditions", Map.of("score", "score >= 700"),
+                                        "output", Map.of("decision", "approve")
+                                ))
+                        ),
+                        null
+                )),
+                List.of(),
+                Map.of(),
+                new GraphDraft.OutputSelection("decision", "")
+        );
+
+        DslGenerationResult result = generator.generate(draft);
+
+        assertThat(result.generated()).isTrue();
+        assertThat(result.dsl()).contains("score = ctx.score");
+        assertThat(result.diagnostics()).isEmpty();
+    }
+
+    @Test
     void rejectsDuplicateNativeInputLeafPathsDuringCodegen() {
         GraphDraftDslGenerator generator = new GraphDraftDslGenerator(
                 VisualCatalogTestSupport.catalogWithLibrary(nativeNestedPolicyLibrary()));

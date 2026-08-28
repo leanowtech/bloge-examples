@@ -437,9 +437,20 @@ public class GraphDraftDslGenerator {
         Map<String, Object> inputConfig = objectMap(node.config().get("inputs"));
         Map<String, String> inputs = new LinkedHashMap<>();
         if (inputConfig.isEmpty()) {
-            node.inputs().forEach((key, binding) -> inputs.put(targetInputName(key, binding),
-                    bindingToExpression(binding, nodesById,
-                            "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
+            Optional<List<String>> wrappedColumns = wrappedDecisionInputColumns(node);
+            if (wrappedColumns.isPresent()) {
+                // Operator-contract scenarios carry one context object at the wrapped `inputs`
+                // port. Decision-table fields are the declared condition columns, so lower each
+                // leaf explicitly; emitting the wrapper itself would produce an empty DSL name.
+                wrappedColumns.get().forEach(column -> inputs.put(column,
+                        pathExpression("ctx", "inputs." + column,
+                                "/nodes/" + node.id() + "/inputs/inputs/" + column,
+                                diagnostics)));
+            } else {
+                node.inputs().forEach((key, binding) -> inputs.put(targetInputName(key, binding),
+                        bindingToExpression(binding, nodesById,
+                                "/nodes/" + node.id() + "/inputs/" + key, diagnostics)));
+            }
         } else {
             inputConfig.forEach((key, value) -> inputs.put(key, expressionFromObject(value, nodesById,
                     "/nodes/" + node.id() + "/config/inputs/" + key, diagnostics)));
@@ -480,6 +491,41 @@ public class GraphDraftDslGenerator {
         }
         block.append("  }");
         return block.toString();
+    }
+
+    /**
+     * Returns condition columns for the one wrapped operator-contract input shape.
+     *
+     * <p>This narrow expansion is only valid when the node has exactly the canonical
+     * {@code inputs -> ctx.inputs} binding and every declared condition column is a legal DSL
+     * identifier. Any other shape returns empty so the ordinary binding path (and its existing
+     * fail-closed diagnostics) remains authoritative.</p>
+     */
+    private static Optional<List<String>> wrappedDecisionInputColumns(GraphDraft.DraftNode node) {
+        if (node.inputs().size() != 1 || !node.inputs().containsKey("inputs")) {
+            return Optional.empty();
+        }
+        GraphDraft.Binding binding = node.inputs().get("inputs");
+        if (!"contextPath".equals(binding.kind())
+                || !"inputs".equals(binding.path())
+                || !"inputs".equals(binding.targetPort())
+                || !binding.targetPath().isBlank()) {
+            return Optional.empty();
+        }
+        List<Object> rawColumns = objectList(node.config().get("conditionColumns"));
+        if (rawColumns.isEmpty()) {
+            return Optional.empty();
+        }
+        Set<String> columns = new LinkedHashSet<>();
+        for (Object rawColumn : rawColumns) {
+            if (!(rawColumn instanceof String column)
+                    || column.isBlank()
+                    || !isDslFieldName(column)
+                    || !columns.add(column)) {
+                return Optional.empty();
+            }
+        }
+        return Optional.of(List.copyOf(columns));
     }
 
     private String transformToDsl(GraphDraft.DraftNode node,
