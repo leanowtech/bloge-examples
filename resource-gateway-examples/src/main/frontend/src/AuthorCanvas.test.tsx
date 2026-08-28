@@ -3754,6 +3754,31 @@ describe('AuthorCanvas connection guide', () => {
     await click(betaDialog.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-beta-fixture"]')!);
     await setControlValue(betaDialog.querySelector<HTMLSelectElement>('[data-testid="resource-fidelity-select"]')!, 'TRANSPORT_LEVEL');
     await click(betaDialog.querySelector<HTMLButtonElement>('[data-testid="operator-detail-apply"]')!);
+    const exportedBeforeSimulation = authorDraftExport(
+      query<HTMLAnchorElement>('[data-testid="author-draft-export"]'),
+    );
+    expect(exportedBeforeSimulation.nodeFixtures).toEqual({
+      n1: {
+        output: null,
+        governedRef: {
+          fixtureAssetId: 'alpha-fixture',
+          revision: 1,
+          schemaFingerprint: 'alpha-schema',
+        },
+        resourceFidelity: 'PROTOCOL_DERIVED',
+      },
+      n2: {
+        output: null,
+        governedRef: {
+          fixtureAssetId: 'beta-fixture',
+          revision: 1,
+          schemaFingerprint: 'beta-schema',
+        },
+        resourceFidelity: 'TRANSPORT_LEVEL',
+      },
+    });
+    expect(JSON.stringify(exportedBeforeSimulation)).not.toContain('protectedMaterial');
+    expect(JSON.stringify(exportedBeforeSimulation)).not.toContain('credential');
     const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button.primary'))
       .find((button) => button.textContent?.includes('Simulate'))!;
     await click(simulateButton);
@@ -3768,6 +3793,90 @@ describe('AuthorCanvas connection guide', () => {
     expect(document.querySelector('[data-testid="server-fidelity:n1"]')).toBeNull();
     expect(document.querySelector('[data-testid="server-fidelity:n2"]')).toBeNull();
     expect(document.body.textContent).not.toContain('Server fidelity');
+  });
+
+  it('restores governed fixture coordinates and fidelity when reopening a stored draft', async () => {
+    const storedDraft = {
+      schemaVersion: 'bloge.visualGraphDraft.v1',
+      draftId: 'stored-governed-draft',
+      revision: 4,
+      graphName: 'storedGovernedGraph',
+      nodes: [{
+        id: 'n1',
+        operatorRef: 'resource:alpha',
+        label: 'Alpha',
+        inputs: {},
+        config: {},
+        position: { x: 120, y: 100 },
+      }],
+      edges: [],
+      output: { nodeId: 'n1', path: '' },
+      nodeFixtures: {
+        n1: {
+          output: null,
+          governedRef: {
+            fixtureAssetId: 'alpha-fixture',
+            revision: 1,
+            schemaFingerprint: 'alpha-schema',
+          },
+          resourceFidelity: 'PROTOCOL_DERIVED',
+        },
+      },
+    };
+    let simulateBody: any = null;
+    window.history.replaceState(
+      {},
+      '',
+      '/author/?spine=v1&draftId=stored-governed-draft&nodeId=n1',
+    );
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/visual/operators') {
+        return jsonResponse({ operators: [
+          resourceOperator('resource:alpha', 'Alpha', [], { ok: { type: 'boolean' } }),
+        ] });
+      }
+      if (url === '/api/visual/drafts/stored-governed-draft') {
+        return jsonResponse(storedDraft);
+      }
+      if (url.startsWith('/api/visual/fixture-assets')) {
+        return jsonResponse({ data: [
+          { fixtureAssetId: 'alpha-fixture', revision: 1, name: 'Alpha fixture', lifecycle: 'ACTIVE',
+            schemaRef: { fingerprint: 'alpha-schema' }, usageCount: 2, compatibleWithOperatorRef: true },
+        ] });
+      }
+      if (url === '/api/visual/graphs/simulate') {
+        simulateBody = JSON.parse(String(init?.body));
+        return jsonResponse({ validated: true, compiled: true, success: true, graphName: 'storedGovernedGraph',
+          outputNode: 'n1', output: null, results: { n1: null }, statusMap: { n1: 'mocked' }, mockedNodeIds: ['n1'],
+          realNodeIds: [], terminalOutputConforms: true, diagnostics: [], errors: [], generatedDsl: '',
+          nodeFidelity: { n1: 'PROTOCOL_DERIVED' } });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    await act(async () => {
+      root = createRoot(host);
+      root.render(<AuthorCanvas />);
+    });
+    await waitFor(() => expect(query('[data-testid="canvas-node:n1"]')).toBeDefined());
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const dialog = query('[data-testid="operator-detail-dialog"]');
+    await waitFor(() => expect(dialog.querySelector('[data-testid="graph-node-fixture-picker"]')).not.toBeNull());
+    expect(dialog.querySelector<HTMLSelectElement>('[data-testid="resource-fidelity-select"]')?.value)
+      .toBe('PROTOCOL_DERIVED');
+    expect(dialog.querySelector('[data-testid="governed-fixture-bound"]')?.textContent)
+      .toContain('alpha-fixture');
+    expect(dialog.querySelector('[data-testid="reuse-fixture-alpha-fixture"]')).not.toBeNull();
+
+    const exported = authorDraftExport(query<HTMLAnchorElement>('[data-testid="author-draft-export"]'));
+    expect(exported.nodeFixtures).toEqual(storedDraft.nodeFixtures);
+    await click(dialog.querySelector<HTMLButtonElement>('[data-testid="operator-detail-apply"]')!);
+    const simulateButton = Array.from(document.querySelectorAll<HTMLButtonElement>('button.primary'))
+      .find((button) => button.textContent?.includes('Simulate'))!;
+    await click(simulateButton);
+    await waitFor(() => expect(simulateBody).not.toBeNull());
+    expect(simulateBody.fixtures).toEqual(storedDraft.nodeFixtures);
   });
 
   it('shows managed and blocked external-write protocols in the main authoring surface', async () => {
@@ -4161,7 +4270,10 @@ describe('AuthorCanvas simulation summary', () => {
         ));
       }
       if (url === '/api/visual/fixture-assets' || url.startsWith('/api/visual/fixture-assets?')) {
-        return jsonResponse({ items: [] });
+        return jsonResponse({ items: [{
+          fixtureAssetId: 'alpha-fixture', revision: 1, name: 'Alpha fixture', lifecycle: 'ACTIVE',
+          schemaRef: { fingerprint: 'alpha-schema' }, usageCount: 1, compatibleWithOperatorRef: true,
+        }] });
       }
       if (url === '/api/visual/graphs/simulate') {
         const body = JSON.parse(String(init?.body));
@@ -4198,6 +4310,15 @@ describe('AuthorCanvas simulation summary', () => {
       expect(query('[data-testid="operator-button:resource:order-service.listOrders"]')).toBeDefined(),
     );
     await click(query<HTMLButtonElement>('[data-testid="operator-button:resource:order-service.listOrders"]'));
+    await doubleClick(query<HTMLElement>('[data-testid="node-wrapper:n1"]'));
+    const resourceDialog = query('[data-testid="operator-detail-dialog"]');
+    await waitFor(() => expect(resourceDialog.querySelector('[data-testid="graph-node-fixture-picker"]')).not.toBeNull());
+    await click(resourceDialog.querySelector<HTMLButtonElement>('[data-testid="reuse-fixture-alpha-fixture"]')!);
+    await setControlValue(
+      resourceDialog.querySelector<HTMLSelectElement>('[data-testid="resource-fidelity-select"]')!,
+      'PROTOCOL_DERIVED',
+    );
+    await click(resourceDialog.querySelector<HTMLButtonElement>('[data-testid="operator-detail-apply"]')!);
     await click(query<HTMLButtonElement>('[data-testid="author-save-workspace"]'));
     await waitFor(() => expect(query('[data-testid="author-continuity-status"]').textContent).toBe('SAVED'));
 
@@ -4222,6 +4343,17 @@ describe('AuthorCanvas simulation summary', () => {
         path: 'params.userId',
         targetPort: 'params',
         targetPath: 'userId',
+      },
+    });
+    expect(JSON.parse(String(graphUpdates[0]?.[1]?.body)).nodeFixtures).toEqual({
+      n1: {
+        output: null,
+        governedRef: {
+          fixtureAssetId: 'alpha-fixture',
+          revision: 1,
+          schemaFingerprint: 'alpha-schema',
+        },
+        resourceFidelity: 'PROTOCOL_DERIVED',
       },
     });
 

@@ -6400,6 +6400,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setFixtureDrafts((current) => omitRecordKeys(current, nodeIds));
     setFixtureInputDrafts((current) => omitRecordKeys(current, nodeIds));
     setGovernedFixtureRefs((current) => omitRecordKeys(current, nodeIds));
+    setResourceFidelityByNode((current) => omitRecordKeys(current, nodeIds));
     setFixturePinnedNodeIds((current) => {
       const next = new Set(current);
       nodeIds.forEach((nodeId) => next.delete(nodeId));
@@ -7311,6 +7312,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
+    setGovernedFixtureRefs({});
+    setResourceFidelityByNode({});
     setOperatorTestSuites(nextOperatorTestSuites);
     setOperatorTestResults({});
     setOperatorTestPublications({});
@@ -7478,8 +7481,18 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       ...(durable ?? { output: result?.results[nodeId] }),
       ...(fixturePinnedNodeIds.has(nodeId) ? { pinned: true } : {}),
       ...(governedFixtureRefs[nodeId] ? { governedRef: governedFixtureRefs[nodeId] } : {}),
+      ...(resourceFidelityByNode[nodeId]
+        ? { resourceFidelity: resourceFidelityByNode[nodeId] }
+        : {}),
     };
-  }, [fixtureCompilation.fixtures, fixturePinnedNodeIds, governedFixtureRefs, result]);
+  }, [fixtureCompilation.fixtures, fixturePinnedNodeIds, governedFixtureRefs,
+    resourceFidelityByNode, result]);
+  /**
+   * Builds the durable fixture projection shared by export, graph save, and simulation.
+   * For governed fixtures, only the immutable coordinate and requested evidence fidelity cross
+   * this seam; protected material, credentials, and server receipts remain server-owned. Ordinary
+   * local fixture input/output keeps its existing GraphDraft persistence semantics.
+   */
   const simulationFixtures = useMemo(() => Object.fromEntries(
     [...new Set([
       ...Object.keys(fixtureCompilation.fixtures),
@@ -7554,6 +7567,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       delete next[selectedNode.id];
       return next;
     });
+    setResourceFidelityByNode((current) => omitRecordKeys(current, [selectedNode.id]));
   }, [selectedNode]);
   const runSummary = useMemo(
     () => simulationRunSummary(canvasSummary, fixtureRows, result),
@@ -7567,7 +7581,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
         canvasNodes,
         canvasEdges,
         outputNodeId,
-        fixtureCompilation.fixtures,
+        simulationFixtures,
         graphInputSchema,
         {
           draftId: graphDraftId,
@@ -7591,7 +7605,6 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       canvasEdges,
       canvasNodes,
       effectiveGraphOutputSchema,
-      fixtureCompilation.fixtures,
       graphDraftId,
       graphDraftRevision,
       graphEnvironment,
@@ -7604,6 +7617,7 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       graphTenantId,
       graphVisualLayout,
       outputNodeId,
+      simulationFixtures,
     ],
   );
   const draftExportJson = useMemo(
@@ -8528,6 +8542,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     const nextOperatorTestSuites: Record<string, OperatorTestSuiteDraftRow[]> = {};
     const nextFixtureDrafts: Record<string, string> = {};
     const nextFixtureInputDrafts: Record<string, string> = {};
+    const nextGovernedFixtureRefs: Record<string, GovernedGraphNodeFixtureRef> = {};
+    const nextResourceFidelityByNode: Record<string, ResourceFidelity> = {};
 
     for (const importedNode of imported.nodes) {
       const operator = operatorByRef.get(importedNode.operatorRef)
@@ -8549,6 +8565,12 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
       const testRows = defaultOperatorTestSuiteRows(nextNode, operator);
       const fixture = imported.nodeFixtures[importedNode.id];
       if (fixture) {
+        if (fixture.governedRef) {
+          nextGovernedFixtureRefs[importedNode.id] = fixture.governedRef;
+        }
+        if (fixture.resourceFidelity) {
+          nextResourceFidelityByNode[importedNode.id] = fixture.resourceFidelity;
+        }
         if (hasOwnValue(fixture, 'expectedInput')) {
           nextFixtureInputDrafts[importedNode.id] = JSON.stringify(fixture.expectedInput, null, 2);
           testRows[0] = {
@@ -8625,6 +8647,8 @@ export default function AuthorCanvas({ workspaceVersion = 'v1' }: AuthorCanvasPr
     setEdges(nextEdges);
     setFixtureDrafts(nextFixtureDrafts);
     setFixtureInputDrafts(nextFixtureInputDrafts);
+    setGovernedFixtureRefs(nextGovernedFixtureRefs);
+    setResourceFidelityByNode(nextResourceFidelityByNode);
     setOperatorTestSuites(nextOperatorTestSuites);
     setOperatorTestResults({});
     setOperatorTestPublications({});
