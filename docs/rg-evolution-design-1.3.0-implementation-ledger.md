@@ -42,7 +42,7 @@ follow-up that does not block the 1.3.0 acceptance chain.
 | --- | --- | --- |
 | Simulation request preserves persisted draft identity and scope | Accepted | `toGraphDraft`/`toSimulationRequest` regression tests prove `draftId`, `revision`, `tenantId`, `namespace`, and `environment` are sent for a saved draft, while an unsaved draft keeps the legacy omission behavior. The final browser chain executes the saved-draft simulation path. |
 | Graph-node fixture promotion with server-derived provenance | Accepted | `GraphNodeFixturePromotionService`, controller, transaction/service/controller tests, and the browser chain's visible promote flow. Promotion wire canonicalizes request `fixtureId` while retaining response/asset `fixtureAssetId`. |
-| Payload-free governed catalog, exact scope, and usage accounting | Accepted | Fixture collection/controller/repository/service tests and the visible reviewer/approval/activation chain. The browser asserts usage `0→1→1`, including replay idempotency. Promotion now requires complete tenant/environment identity and rejects scope mismatches before draft lookup; production, staging, test, and Java defaults allow the governed fixture purposes explicitly. |
+| Payload-free governed catalog, exact scope, and usage accounting | Accepted | Fixture collection/controller/repository/service tests and the visible reviewer/approval/activation chain. The browser asserts usage `0→1→1`, including replay idempotency. Promotion now requires complete tenant/environment identity and rejects scope mismatches before draft lookup; production, staging, test, and Java fallback identities explicitly authorize all governed fixture purposes: `CORRECTNESS_READ`, `CORRECTNESS_WRITE`, `CORRECTNESS_REVIEW`, `CORRECTNESS_FIXTURE_MATERIAL_READ`, and `CORRECTNESS_FIXTURE_MATERIAL_WRITE`. |
 | Governed fixture resolution and schema/staleness checks | Accepted | Resolver, visual simulation, repository/accounting tests and the second-graph reuse leg in the browser chain. |
 | Output/protocol/transport fidelity through the bounded kernel adapter | Accepted | Focused compiler/runtime/adapter tests and the browser chain's three visible server-projected fidelities: `OUTPUT_LEVEL`, `PROTOCOL_DERIVED`, and `TRANSPORT_LEVEL`. The browser never treats the selected value as proof; it checks server `nodeFidelity`. |
 | Persisted fixture reuse in a second graph | Accepted | One 1280 px WebDriver session creates a fresh second draft, binds the active governed fixture, verifies the bound fidelity, and replays all three fidelity values with usage remaining idempotent. |
@@ -81,7 +81,7 @@ browser test class `50/50`.
 
 | Gate | Result |
 | --- | --- |
-| `mvn -f resource-gateway-examples/pom.xml clean verify -Pfrontend` | `7,649` tests; failures `0`, errors `0`, skips `0`; `BUILD SUCCESS` at `2026-08-28 21:27 +08` (20:35). |
+| `mvn -f resource-gateway-examples/pom.xml clean verify -Pfrontend` | `7,649` tests; failures `0`, errors `0`, skips `0`; `BUILD SUCCESS` at `2026-08-28 21:59 +08` (20:31). |
 | Frontend i18n gate | `39` checks passed. |
 | Frontend UX gate | `51` checks passed. |
 | Frontend host gate | `21` checks passed. |
@@ -107,7 +107,7 @@ The current acceptance evidence includes these follow-up commits:
 | `1f044abf8` | Keep the 1.3 acceptance on one business chain. |
 | `b11773c2a` | Stabilize governed chain node selection. |
 | `9d3b49d6d` | Close fixture promotion identity and scope checks. |
-| `976c0eab2` | Authorize governed fixture purposes in runtime defaults. |
+| `89da4e476` | Authorize fixture lifecycle purposes in production, staging, test, and Java fallback defaults. |
 | `69480e56e` | Keep Phase D on the second business graph coordinate and verify both rollback paths. |
 
 Existing expected Return selector/compiler commits remain part of the trace:
