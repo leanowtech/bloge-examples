@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.config;
 
+import com.leanowtech.bloge.gateway.integration.IntegrationOperation;
 import com.leanowtech.bloge.gateway.integration.IntegrationWorkloadIdentity;
 import org.junit.jupiter.api.Test;
 
@@ -9,6 +10,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,8 +22,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 class GatewayIntegrationPurposeDefaultsTest {
     private static final Set<String> GOVERNED_FIXTURE_PURPOSES = Set.of(
             "CORRECTNESS_READ",
+            "CORRECTNESS_WRITE",
+            "CORRECTNESS_REVIEW",
             "CORRECTNESS_FIXTURE_MATERIAL_READ",
             "CORRECTNESS_FIXTURE_MATERIAL_WRITE");
+    private static final Map<IntegrationOperation, Set<String>> GOVERNED_FIXTURE_OPERATION_PURPOSES = Map.of(
+            IntegrationOperation.CORRECTNESS_WORKSPACE_READ, Set.of("CORRECTNESS_READ"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_REVIEW_READY, Set.of("CORRECTNESS_WRITE"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_APPROVE, Set.of("CORRECTNESS_REVIEW"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_ACTIVATE, Set.of("CORRECTNESS_REVIEW"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_REVOKE, Set.of("CORRECTNESS_REVIEW"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_READ,
+            Set.of("CORRECTNESS_FIXTURE_MATERIAL_READ"),
+            IntegrationOperation.CORRECTNESS_FIXTURE_MATERIAL_WRITE,
+            Set.of("CORRECTNESS_FIXTURE_MATERIAL_WRITE"));
     private static final Pattern PROFILE_DEFAULT_PURPOSES = Pattern.compile(
             "allowed-purposes:\\s*\\$\\{[^:}]+:([^}\\n]+)}");
     private static final Pattern JAVA_FALLBACK_PURPOSES = Pattern.compile(
@@ -29,6 +43,9 @@ class GatewayIntegrationPurposeDefaultsTest {
 
     @Test
     void allProfileDefaultsAndJavaFallbackAuthorizeGovernedFixtureUi() throws IOException {
+        GOVERNED_FIXTURE_OPERATION_PURPOSES.forEach((operation, requiredPurposes) -> assertThat(operation.acceptedPurposes())
+                .as("accepted purposes for %s", operation)
+                .containsAll(requiredPurposes));
         List<Path> profiles = List.of(
                 moduleFile("src/main/resources/application.yml"),
                 moduleFile("src/main/resources/application-test.yml"),

@@ -501,7 +501,7 @@ public class GatewayConfiguration {
             @Value("${gateway.integration.identity.actor-id:aneke-sync}") String actorId,
             @Value("${gateway.integration.identity.groups:}") String groups,
             @Value("${gateway.integration.identity.clearance:PUBLIC}") String clearance,
-            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE}") String allowedPurposes) {
+            @Value("${gateway.integration.identity.allowed-purposes:GOVERNANCE_EVIDENCE_INGESTION,PAYLOAD_REPLAY,PAYLOAD_RETENTION_ADMIN,LEGAL_HOLD,GOVERNANCE_GATE_FEEDBACK,CHANGE_SYNC,SIDE_EFFECT_RECONCILIATION,CAPABILITY_PROJECTION,CAPABILITY_GOVERNANCE,MIRROR_REHEARSAL,BUSINESS_MIRROR_AUTHORING,BUSINESS_MIRROR_MAINTENANCE,CORRECTNESS_READ,CORRECTNESS_WRITE,CORRECTNESS_REVIEW,CORRECTNESS_FIXTURE_MATERIAL_READ,CORRECTNESS_FIXTURE_MATERIAL_WRITE}") String allowedPurposes) {
         if (jwtEnabled) {
             IntegrationJwtTrustStore trustStore = trustStoreProvider.getIfAvailable();
             if (trustStore == null) {
