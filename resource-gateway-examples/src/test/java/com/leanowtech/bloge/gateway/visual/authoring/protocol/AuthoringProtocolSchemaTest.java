@@ -97,6 +97,35 @@ class AuthoringProtocolSchemaTest {
         assertThat(summary.toString()).doesNotContain("input", "material", "fixtureAssetId", "replayId", "credential");
     }
 
+    @Test
+    void secretReferencesAndSensitiveHeadersAreValidatedCaseInsensitively() throws Exception {
+        Path commonPath = SCHEMA_ROOT.resolve("common-v1.schema.json");
+        JsonNode common = read(commonPath);
+        JsonNode headers = common.at("/$defs/safeHeaderMap");
+        assertThat(validationErrors(headers, MAPPER.createObjectNode().put("Accept", "application/json"), commonPath))
+                .as("ordinary headers remain legal").isEmpty();
+        for (String name : List.of("Authorization", "authorization", "COOKIE", "proxy-authorization", "set-cookie")) {
+            assertThat(validationErrors(headers, MAPPER.createObjectNode().put(name, "blocked"), commonPath))
+                    .as("sensitive header %s is blocked", name).isNotEmpty();
+        }
+
+        JsonNode secretRef = common.at("/$defs/secretRef");
+        for (String value : List.of("vault://team/orders/key", "vault://tenant_1/api-key")) {
+            assertThat(validationErrors(secretRef, MAPPER.valueToTree(value), commonPath))
+                    .as("secret ref %s", value).isEmpty();
+        }
+        for (String value : List.of("", "   ", "orders-key")) {
+            assertThat(validationErrors(secretRef, MAPPER.valueToTree(value), commonPath))
+                    .as("unsafe secret ref %s", value).isNotEmpty();
+        }
+    }
+
+    private static List<String> validationErrors(JsonNode schema, JsonNode value, Path owner) throws IOException {
+        List<String> errors = new ArrayList<>();
+        validate(schema, value, owner, "", errors);
+        return errors;
+    }
+
     private static void assertStrictObjects(JsonNode node, String location) {
         if (node.isObject()) {
             if (node.path("type").asText().equals("object") && node.has("properties")) {
@@ -179,6 +208,11 @@ class AuthoringProtocolSchemaTest {
             if (!match) errors.add(path + " anyOf did not match");
             return;
         }
+        if (schema.has("not")) {
+            List<String> prohibitedErrors = new ArrayList<>();
+            validate(schema.get("not"), value, owner, path, prohibitedErrors);
+            if (prohibitedErrors.isEmpty()) errors.add(path + " not");
+        }
         if (schema.has("const") && !schema.get("const").equals(value)) errors.add(path + " const");
         if (schema.has("enum") && !contains(schema.get("enum"), value)) errors.add(path + " enum");
         String type = schema.path("type").asText("");
@@ -194,6 +228,13 @@ class AuthoringProtocolSchemaTest {
             errors.add(path + " minimum");
         if (value.isObject()) {
             for (String required : names(schema.get("required"))) if (!value.has(required)) errors.add(path + "/" + required + " required");
+            if (schema.has("propertyNames")) {
+                Iterator<String> names = value.fieldNames();
+                while (names.hasNext()) {
+                    String name = names.next();
+                    validate(schema.get("propertyNames"), MAPPER.valueToTree(name), owner, path + "/" + name, errors);
+                }
+            }
             JsonNode properties = schema.path("properties");
             Iterator<Map.Entry<String, JsonNode>> fields = value.fields();
             while (fields.hasNext()) {

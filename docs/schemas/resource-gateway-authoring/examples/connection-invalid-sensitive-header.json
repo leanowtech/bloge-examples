@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.apiConnectionCommand.v1","displayName":"Unsafe headers","baseUrl":"https://api.example.com","auth":{"kind":"NONE"},"defaults":{"headers":{"authorization":"Bearer leaked"}}}

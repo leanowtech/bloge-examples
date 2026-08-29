@@ -6,6 +6,7 @@
     "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
     "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
     "revision": { "type": "integer", "minimum": 1 },
+    "secretRef": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^vault://[A-Za-z0-9][A-Za-z0-9._:/~-]*$" },
     "schemaEnvelope": {
       "type": "object",
       "properties": {
@@ -69,7 +70,7 @@
           "required": ["mode", "value"], "additionalProperties": false
         },
         {
-          "type": "object", "properties": { "mode": { "const": "SECRET_REF" }, "ref": { "$ref": "#/$defs/identifier" } },
+          "type": "object", "properties": { "mode": { "const": "SECRET_REF" }, "ref": { "$ref": "#/$defs/secretRef" } },
           "required": ["mode", "ref"], "additionalProperties": false
         },
         {
@@ -81,7 +82,12 @@
     "safeHeaderMap": {
       "type": "object",
       "patternProperties": { "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$": { "type": "string", "maxLength": 2048 } },
-      "propertyNames": { "not": { "enum": ["Authorization", "Cookie", "Proxy-Authorization", "Set-Cookie"] } },
+      "propertyNames": { "not": { "anyOf": [
+        { "pattern": "^[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
+        { "pattern": "^[Cc][Oo][Oo][Kk][Ii][Ee]$" },
+        { "pattern": "^[Pp][Rr][Oo][Xx][Yy]-[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]$" },
+        { "pattern": "^[Ss][Ee][Tt]-[Cc][Oo][Oo][Kk][Ii][Ee]$" }
+      ] } },
       "additionalProperties": false
     }
   }
