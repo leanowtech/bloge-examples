@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/fixture-set-command-v1.schema.json",
+  "$defs": {
+    "material": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "INLINE" }, "value": {} }, "required": ["kind", "value"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "FIXTURE_ASSET" }, "fixtureAssetId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }, "schemaFingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" } }, "required": ["kind", "fixtureAssetId", "revision", "schemaFingerprint"], "additionalProperties": false }
+      ]
+    },
+    "behavior": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "REAL" } }, "required": ["kind"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "RETURN" }, "material": { "$ref": "#/$defs/material" } }, "required": ["kind", "material"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "APPLY_CASE" }, "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }, "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["kind", "fixtureSetId", "revision", "caseId"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "ERROR" }, "code": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "message": { "type": "string", "minLength": 1, "maxLength": 1000 } }, "required": ["kind", "code", "message"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "TIMEOUT" }, "afterMs": { "type": "integer", "minimum": 1, "maximum": 120000 } }, "required": ["kind", "afterMs"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "REPLAY" }, "replayId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" } }, "required": ["kind", "replayId", "fingerprint"], "additionalProperties": false }
+      ]
+    },
+    "case": {
+      "type": "object",
+      "properties": { "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "name": { "$ref": "common-v1.schema.json#/$defs/displayName" }, "input": {}, "controls": { "type": "array", "items": { "$ref": "#/$defs/control" } }, "expect": { "type": "object", "properties": { "output": {} }, "required": ["output"], "additionalProperties": false } },
+      "required": ["caseId", "name", "input", "controls"], "additionalProperties": false
+    },
+    "control": {
+      "type": "object",
+      "properties": { "target": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "SUBJECT" } }, "required": ["kind"], "additionalProperties": false }, { "type": "object", "properties": { "kind": { "const": "NODE" }, "nodeId": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["kind", "nodeId"], "additionalProperties": false } ] }, "behavior": { "$ref": "#/$defs/behavior" }, "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] } },
+      "required": ["target", "behavior"], "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": { "schemaVersion": { "const": "bloge.fixtureSetCommand.v1" }, "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" }, "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRef" }, "cases": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/case" } } },
+  "required": ["schemaVersion", "displayName", "subject", "cases"], "additionalProperties": false
+}

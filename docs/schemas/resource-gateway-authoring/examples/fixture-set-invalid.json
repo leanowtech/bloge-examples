@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.fixtureSetCommand.v1","displayName":"Bad fixture","subject":{"kind":"API_RESOURCE","resourceId":"customer.get-profile","revision":0,"fingerprint":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"cases":[{"caseId":"bad","name":"Bad","input":{},"controls":[{"target":{"kind":"SUBJECT"},"behavior":{"kind":"RETURN"}}]}]}

@@ -1,0 +1,5 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/openapi-preview-command-v1.schema.json",
+  "$ref": "openapi-preview-v1.schema.json"
+}

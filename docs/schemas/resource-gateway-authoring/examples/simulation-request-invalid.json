@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.simulationRequest.v1","source":{"kind":"FIXTURE_CASE","fixtureSetId":"fixture-1","revision":1,"caseId":"happy"},"executionPolicy":{"externalReads":{"kind":"DENY"},"externalWrites":{"kind":"ALLOW"}}}

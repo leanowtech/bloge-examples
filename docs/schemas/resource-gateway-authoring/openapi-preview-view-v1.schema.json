@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/openapi-preview-view-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.openApiPreview.v1" },
+    "discoveryId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "operations": { "type": "array", "items": { "$ref": "openapi-preview-v1.schema.json#/$defs/operation" } }
+  },
+  "required": ["schemaVersion", "discoveryId", "operations"],
+  "additionalProperties": false
+}

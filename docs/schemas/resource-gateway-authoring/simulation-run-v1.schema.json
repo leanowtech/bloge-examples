@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/simulation-run-v1.schema.json",
+  "$defs": {
+    "node": {
+      "type": "object",
+      "properties": { "nodeId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "status": { "enum": ["COMPLETED", "FAILED", "BLOCKED", "SKIPPED"] }, "execution": { "enum": ["REAL", "MOCKED"] }, "fixtureSource": { "enum": ["NONE", "INLINE", "FIXTURE_ASSET", "REPLAY", "APPLY_CASE"] }, "fidelity": { "enum": ["OUTPUT_LEVEL", "PROTOCOL_DERIVED", "TRANSPORT_LEVEL"] }, "egress": { "type": "object", "properties": { "decision": { "enum": ["FIXTURE", "ALLOWED_READ", "DENIED", "NOT_ATTEMPTED", "NOT_APPLICABLE"] } }, "required": ["decision"], "additionalProperties": false } },
+      "required": ["nodeId", "status", "execution", "fixtureSource", "egress"], "additionalProperties": false
+    },
+    "verdicts": {
+      "type": "object",
+      "properties": { "execution": { "enum": ["PASSED_REAL", "PASSED_WITH_MOCKS", "SIMULATED_ONLY", "FAILED", "BLOCKED"] }, "contract": { "enum": ["PASSED", "FAILED", "NOT_CHECKED"] }, "assertions": { "enum": ["PASSED", "FAILED", "NOT_CHECKED"] }, "governance": { "enum": ["PASSED", "FAILED", "NOT_CHECKED"] } },
+      "required": ["execution", "contract", "assertions", "governance"], "additionalProperties": false
+    },
+    "diagnostic": { "type": "object", "properties": { "code": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "message": { "type": "string", "minLength": 1 } }, "required": ["code", "message"], "additionalProperties": false }
+  },
+  "type": "object",
+  "properties": { "schemaVersion": { "const": "bloge.simulationRun.v1" }, "runId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "status": { "enum": ["RUNNING", "SUCCEEDED", "FAILED", "BLOCKED"] }, "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRef" }, "fixtureCase": { "type": "object", "properties": { "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }, "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["fixtureSetId", "revision", "caseId"], "additionalProperties": false }, "output": {}, "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } }, "verdicts": { "$ref": "#/$defs/verdicts" }, "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }, "startedAt": { "type": "string", "format": "date-time" }, "endedAt": { "type": "string", "format": "date-time" } },
+  "required": ["schemaVersion", "runId", "status", "subject", "nodes", "verdicts", "diagnostics", "startedAt"], "additionalProperties": false
+}

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/simulation-request-v1.schema.json",
+  "$defs": {
+    "policy": {
+      "type": "object",
+      "properties": {
+        "externalReads": { "oneOf": [ { "type": "object", "properties": { "kind": { "const": "DENY" } }, "required": ["kind"], "additionalProperties": false }, { "type": "object", "properties": { "kind": { "const": "ALLOW_EXACT" }, "resources": { "type": "array", "minItems": 1, "items": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" } }, "justification": { "type": "string", "minLength": 1, "maxLength": 2000 } }, "required": ["kind", "resources", "justification"], "additionalProperties": false } ] },
+        "externalWrites": { "type": "object", "properties": { "kind": { "const": "DENY" } }, "required": ["kind"], "additionalProperties": false }
+      },
+      "required": ["externalReads", "externalWrites"], "additionalProperties": false
+    },
+    "fixtureSource": { "type": "object", "properties": { "kind": { "const": "FIXTURE_CASE" }, "fixtureSetId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }, "caseId": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["kind", "fixtureSetId", "revision", "caseId"], "additionalProperties": false },
+    "adhocSource": { "type": "object", "properties": { "kind": { "const": "AD_HOC" }, "subject": { "$ref": "common-v1.schema.json#/$defs/exactSubjectRef" }, "input": {} }, "required": ["kind", "subject", "input"], "additionalProperties": false }
+  },
+  "type": "object",
+  "properties": { "schemaVersion": { "const": "bloge.simulationRequest.v1" }, "source": { "oneOf": [ { "$ref": "#/$defs/fixtureSource" }, { "$ref": "#/$defs/adhocSource" } ] }, "executionPolicy": { "$ref": "#/$defs/policy", "default": { "externalReads": { "kind": "DENY" }, "externalWrites": { "kind": "DENY" } } } },
+  "required": ["schemaVersion", "source"], "additionalProperties": false
+}

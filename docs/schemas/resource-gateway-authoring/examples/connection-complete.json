@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.apiConnectionCommand.v1","displayName":"Customer Service","baseUrl":"https://customer.example.com","auth":{"kind":"BEARER","token":{"mode":"VALUE","value":"write-only-token"}},"defaults":{"timeoutMs":5000,"headers":{"Accept":"application/json"}}}

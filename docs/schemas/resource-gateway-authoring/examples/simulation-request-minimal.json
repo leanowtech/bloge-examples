@@ -1,0 +1,1 @@
+{"schemaVersion":"bloge.simulationRequest.v1","source":{"kind":"AD_HOC","subject":{"kind":"API_RESOURCE","resourceId":"customer.get-profile","revision":1,"fingerprint":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"input":{"customerId":"customer-1001"}}}

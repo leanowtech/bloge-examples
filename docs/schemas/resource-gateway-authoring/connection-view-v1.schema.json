@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/connection-view-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schemaVersion": { "const": "bloge.apiConnectionView.v1" },
+    "connectionId": { "$ref": "common-v1.schema.json#/$defs/identifier" },
+    "revision": { "$ref": "common-v1.schema.json#/$defs/revision" },
+    "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" },
+    "baseUrl": { "type": "string", "pattern": "^https://[^\\s]+$", "maxLength": 2048 },
+    "auth": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "NONE" }, "configured": { "const": false } }, "required": ["kind", "configured"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "enum": ["BEARER", "BASIC", "API_KEY"] }, "configured": { "const": true } }, "required": ["kind", "configured"], "additionalProperties": false }
+      ]
+    },
+    "defaults": {
+      "type": "object",
+      "properties": { "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 120000 }, "headers": { "$ref": "common-v1.schema.json#/$defs/safeHeaderMap" } },
+      "additionalProperties": false
+    }
+  },
+  "required": ["schemaVersion", "connectionId", "revision", "displayName", "baseUrl", "auth"],
+  "additionalProperties": false
+}

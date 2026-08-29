@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/api-resource-command-v1.schema.json",
+  "type": "object",
+  "$defs": {
+    "resourceCommand": {
+      "type": "object",
+      "properties": {
+        "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" },
+        "description": { "type": "string", "maxLength": 2000 },
+        "operation": { "$ref": "#/$defs/operation" },
+        "contract": { "$ref": "#/$defs/contract" },
+        "response": { "$ref": "#/$defs/response" },
+        "effect": { "$ref": "#/$defs/effect" },
+        "examples": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/example" } }
+      },
+      "required": ["displayName", "operation", "contract", "response", "effect", "examples"],
+      "additionalProperties": false
+    },
+    "operation": {
+      "type": "object",
+      "properties": {
+        "method": { "enum": ["GET", "POST", "PUT", "DELETE"] },
+        "path": { "type": "string", "pattern": "^/[A-Za-z0-9._~:/{}-]*$", "maxLength": 2048 },
+        "bindings": { "type": "array", "items": { "$ref": "#/$defs/binding" } }
+      },
+      "required": ["method", "path", "bindings"],
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "properties": { "from": { "type": "string", "pattern": "^\\$" }, "to": { "$ref": "#/$defs/location" } },
+      "required": ["from", "to"], "additionalProperties": false
+    },
+    "location": {
+      "type": "object",
+      "properties": { "location": { "enum": ["PATH", "QUERY", "HEADER", "BODY"] }, "name": { "type": "string", "pattern": "^[A-Za-z0-9._~-]+$" } },
+      "required": ["location", "name"], "additionalProperties": false
+    },
+    "contract": {
+      "type": "object",
+      "properties": { "input": { "$ref": "common-v1.schema.json#/$defs/schemaEnvelope" }, "output": { "$ref": "common-v1.schema.json#/$defs/schemaEnvelope" } },
+      "required": ["input", "output"], "additionalProperties": false
+    },
+    "response": {
+      "type": "object",
+      "properties": {
+        "success": {
+          "oneOf": [
+            { "type": "object", "properties": { "kind": { "const": "HTTP_STATUS" }, "codes": { "type": "array", "minItems": 1, "items": { "type": "integer", "minimum": 100, "maximum": 599 } } }, "required": ["kind", "codes"], "additionalProperties": false },
+            { "type": "object", "properties": { "kind": { "const": "BODY_MATCH" }, "path": { "type": "string", "pattern": "^\\$" }, "values": { "type": "array", "minItems": 1, "items": {} } }, "required": ["kind", "path", "values"], "additionalProperties": false }
+          ]
+        },
+        "outputPath": { "type": "string", "pattern": "^\\$" }
+      },
+      "required": ["success"], "additionalProperties": false
+    },
+    "effect": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "READ_ONLY" } }, "required": ["kind"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "FIXTURE_ONLY_WRITE" } }, "required": ["kind"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "MANAGED_WRITE" }, "idempotencyHeader": { "type": "string", "minLength": 1 }, "receipt": { "type": "object", "properties": { "idPath": { "type": "string", "pattern": "^\\$" }, "statusPath": { "type": "string", "pattern": "^\\$" }, "succeededValues": { "type": "array", "minItems": 1, "items": {} }, "failedValues": { "type": "array", "minItems": 1, "items": {} } }, "required": ["idPath", "statusPath", "succeededValues", "failedValues"], "additionalProperties": false }, "reconciliation": { "type": "object", "properties": { "resource": { "$ref": "common-v1.schema.json#/$defs/apiResourceRef" }, "receiptIdInputPath": { "type": "string", "pattern": "^\\$" } }, "required": ["resource", "receiptIdInputPath"], "additionalProperties": false } }, "required": ["kind", "idempotencyHeader", "receipt"], "additionalProperties": false }
+      ]
+    },
+    "example": {
+      "type": "object",
+      "properties": { "name": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "input": {}, "output": {} },
+      "required": ["name", "input", "output"], "additionalProperties": false
+    },
+    "connection": {
+      "oneOf": [
+        { "type": "object", "properties": { "mode": { "const": "EXISTING" }, "connectionId": { "$ref": "common-v1.schema.json#/$defs/identifier" } }, "required": ["mode", "connectionId"], "additionalProperties": false },
+        { "type": "object", "properties": { "mode": { "const": "CREATE" }, "command": { "$ref": "connection-command-v1.schema.json" } }, "required": ["mode", "command"], "additionalProperties": false }
+      ]
+    },
+    "defaultFixture": {
+      "oneOf": [
+        { "type": "object", "properties": { "kind": { "const": "NONE" } }, "required": ["kind"], "additionalProperties": false },
+        { "type": "object", "properties": { "kind": { "const": "FROM_EXAMPLES" }, "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" }, "exampleNames": { "type": "array", "minItems": 1, "items": { "$ref": "common-v1.schema.json#/$defs/identifier" } } }, "required": ["kind", "displayName", "exampleNames"], "additionalProperties": false }
+      ]
+    }
+  },
+  "properties": { "schemaVersion": { "const": "bloge.apiResourceSaveCommand.v1" }, "connection": { "$ref": "#/$defs/connection" }, "resource": { "$ref": "#/$defs/resourceCommand" }, "defaultFixture": { "$ref": "#/$defs/defaultFixture" } },
+  "required": ["schemaVersion", "connection", "resource", "defaultFixture"],
+  "additionalProperties": false
+}

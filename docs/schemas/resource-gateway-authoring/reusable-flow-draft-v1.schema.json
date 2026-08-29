@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/reusable-flow-draft-v1.schema.json",
+  "type": "object",
+  "properties": { "schemaVersion": { "const": "bloge.reusableFlowDraft.v1" }, "flowId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "draftId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "revision": { "$ref": "common-v1.schema.json#/$defs/revision" }, "fingerprint": { "$ref": "common-v1.schema.json#/$defs/fingerprint" }, "displayName": { "$ref": "common-v1.schema.json#/$defs/displayName" }, "kind": { "enum": ["TOOL", "SOLUTION"] }, "description": { "type": "string", "maxLength": 2000 }, "contract": { "$ref": "reusable-flow-command-v1.schema.json#/$defs/contract" }, "graph": { "$ref": "reusable-flow-command-v1.schema.json#/$defs/graph" }, "layout": { "$ref": "reusable-flow-command-v1.schema.json#/$defs/layout" }, "status": { "const": "DRAFT" } },
+  "required": ["schemaVersion", "flowId", "draftId", "revision", "fingerprint", "displayName", "kind", "description", "contract", "graph", "layout", "status"], "additionalProperties": false
+}

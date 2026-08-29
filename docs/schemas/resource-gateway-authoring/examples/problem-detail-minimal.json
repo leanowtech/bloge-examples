@@ -1,0 +1,1 @@
+{"type":"urn:bloge:problem:authoring-validation","title":"Invalid request","status":422,"detail":"Fix the highlighted field.","code":"RG.AUTHORING.INVALID","correlationId":"corr-1","fieldErrors":[],"recoveryActions":[]}

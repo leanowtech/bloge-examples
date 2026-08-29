@@ -1,0 +1,253 @@
+package com.leanowtech.bloge.gateway.visual.authoring.protocol;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
+
+/** Contract tests for the Slice 0 authoring wire schemas and golden examples. */
+class AuthoringProtocolSchemaTest {
+
+    private static final Path SCHEMA_ROOT = Path.of("..", "docs", "schemas", "resource-gateway-authoring");
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private static final Map<String, String> FAMILIES = Map.of(
+            "connection", "connection-command-v1.schema.json",
+            "api-resource", "api-resource-command-v1.schema.json",
+            "openapi", "openapi-preview-v1.schema.json",
+            "reusable-flow", "reusable-flow-command-v1.schema.json",
+            "fixture-set", "fixture-set-command-v1.schema.json",
+            "fixture-summary", "fixture-set-summary-v1.schema.json",
+            "simulation-request", "simulation-request-v1.schema.json",
+            "simulation-run", "simulation-run-v1.schema.json",
+            "problem-detail", "problem-detail-v1.schema.json");
+
+    @Test
+    void allAuthoringSchemasAreDraft202012StrictAndReferencesResolve() throws Exception {
+        List<Path> schemas = Files.list(SCHEMA_ROOT)
+                .filter(path -> path.getFileName().toString().endsWith(".schema.json"))
+                .sorted()
+                .toList();
+        assertThat(schemas).isNotEmpty();
+        for (Path schemaPath : schemas) {
+            JsonNode schema = read(schemaPath);
+            assertThat(schema.path("$schema").asText()).isEqualTo("https://json-schema.org/draft/2020-12/schema");
+            assertThat(schema.path("$id").asText()).isNotBlank();
+            assertStrictObjects(schema, schemaPath + " root");
+            assertReferencesResolve(schema, schemaPath);
+        }
+    }
+
+    @Test
+    void goldenExamplesCoverMinimalCompleteAndKeyInvalidSemantics() throws Exception {
+        for (Map.Entry<String, String> family : FAMILIES.entrySet()) {
+            Path schemaPath = SCHEMA_ROOT.resolve(family.getValue());
+            JsonNode schema = read(schemaPath);
+            Path examples = SCHEMA_ROOT.resolve("examples");
+            List<Path> familyExamples = Files.list(examples)
+                    .filter(path -> path.getFileName().toString().startsWith(family.getKey() + "-"))
+                    .sorted()
+                    .toList();
+            assertThat(familyExamples).as("goldens for %s", family.getKey()).hasSizeGreaterThanOrEqualTo(3);
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("minimal"))).isTrue();
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("complete"))).isTrue();
+            assertThat(familyExamples.stream().anyMatch(path -> path.getFileName().toString().contains("invalid"))).isTrue();
+            for (Path examplePath : familyExamples) {
+                boolean expectedValid = !examplePath.getFileName().toString().contains("invalid");
+                List<String> errors = new ArrayList<>();
+                validate(schema, read(examplePath), schemaPath, "", errors);
+                if (expectedValid) {
+                    assertThat(errors).as(examplePath.toString()).isEmpty();
+                } else {
+                    assertThat(errors).as(examplePath.toString()).isNotEmpty();
+                }
+            }
+        }
+    }
+
+    @Test
+    void exactCoordinatesAndSecurityBoundariesAreEncoded() throws Exception {
+        JsonNode common = read(SCHEMA_ROOT.resolve("common-v1.schema.json"));
+        assertThat(common.at("/$defs/fingerprint/pattern").asText()).isEqualTo("^sha256:[0-9a-f]{64}$");
+        assertThat(common.at("/$defs/revision/minimum").asInt()).isEqualTo(1);
+
+        JsonNode connectionView = read(SCHEMA_ROOT.resolve("connection-view-v1.schema.json"));
+        assertThat(connectionView.at("/$defs/secretWrite").isMissingNode()).isTrue();
+        assertThat(connectionView.at("/properties/auth").toString())
+                .doesNotContain("token", "password", "value", "ref", "headerName");
+        JsonNode simulation = read(SCHEMA_ROOT.resolve("simulation-request-v1.schema.json"));
+        assertThat(simulation.at("/properties/source/oneOf").size()).isEqualTo(2);
+        assertThat(simulation.at("/$defs/policy/properties/externalWrites/properties/kind/const").asText())
+                .isEqualTo("DENY");
+        JsonNode summary = read(SCHEMA_ROOT.resolve("fixture-set-summary-v1.schema.json"));
+        assertThat(summary.at("/properties/subject/$ref").asText())
+                .isEqualTo("common-v1.schema.json#/$defs/exactSubjectRef");
+        assertThat(summary.toString()).doesNotContain("input", "material", "fixtureAssetId", "replayId", "credential");
+    }
+
+    private static void assertStrictObjects(JsonNode node, String location) {
+        if (node.isObject()) {
+            if (node.path("type").asText().equals("object") && node.has("properties")) {
+                assertThat(node.path("additionalProperties").isBoolean() && !node.path("additionalProperties").asBoolean())
+                        .as(location).isTrue();
+            }
+            node.fields().forEachRemaining(entry -> assertStrictObjects(entry.getValue(), location + "/" + entry.getKey()));
+        } else if (node.isArray()) {
+            node.forEach(child -> assertStrictObjects(child, location));
+        }
+    }
+
+    private static void assertReferencesResolve(JsonNode node, Path owner) throws Exception {
+        if (node.isObject()) {
+            if (node.has("$ref")) {
+                String ref = node.get("$ref").asText();
+                if (!ref.startsWith("#")) {
+                    String file = ref.split("#", 2)[0];
+                    Path target = owner.getParent().resolve(file).normalize();
+                    assertThat(Files.exists(target)).as("%s from %s", ref, owner).isTrue();
+                    if (ref.contains("#")) {
+                        JsonNode targetSchema = read(target);
+                        pointer(targetSchema, ref.substring(ref.indexOf('#')));
+                    }
+                } else {
+                    pointer(read(owner), ref);
+                }
+            }
+            node.fields().forEachRemaining(entry -> {
+                try {
+                    assertReferencesResolve(entry.getValue(), owner);
+                } catch (Exception exception) {
+                    throw new IllegalStateException(exception);
+                }
+            });
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                assertReferencesResolve(child, owner);
+            }
+        }
+    }
+
+    private static JsonNode pointer(JsonNode root, String fragment) {
+        JsonNode selected = root.at(fragment.startsWith("#") ? fragment.substring(1) : fragment);
+        assertThat(selected.isMissingNode()).as("unresolved JSON pointer %s", fragment).isFalse();
+        return selected;
+    }
+
+    private static void validate(JsonNode schema, JsonNode value, Path owner, String path, List<String> errors)
+            throws IOException {
+        if (schema.has("$ref")) {
+            String ref = schema.get("$ref").asText();
+            Path target = owner;
+            String fragment = ref;
+            if (!ref.startsWith("#")) {
+                String[] parts = ref.split("#", 2);
+                target = owner.getParent().resolve(parts[0]).normalize();
+                fragment = parts.length == 2 ? "#" + parts[1] : "";
+            }
+            validate(fragment.isEmpty() ? read(target) : pointer(read(target), fragment), value, target, path, errors);
+            return;
+        }
+        if (schema.has("oneOf")) {
+            int matches = 0;
+            for (JsonNode branch : schema.get("oneOf")) {
+                List<String> branchErrors = new ArrayList<>();
+                validate(branch, value, owner, path, branchErrors);
+                if (branchErrors.isEmpty()) matches++;
+            }
+            if (matches != 1) errors.add(path + " oneOf matched " + matches);
+            return;
+        }
+        if (schema.has("anyOf")) {
+            boolean match = false;
+            for (JsonNode branch : schema.get("anyOf")) {
+                List<String> branchErrors = new ArrayList<>();
+                validate(branch, value, owner, path, branchErrors);
+                match |= branchErrors.isEmpty();
+            }
+            if (!match) errors.add(path + " anyOf did not match");
+            return;
+        }
+        if (schema.has("const") && !schema.get("const").equals(value)) errors.add(path + " const");
+        if (schema.has("enum") && !contains(schema.get("enum"), value)) errors.add(path + " enum");
+        String type = schema.path("type").asText("");
+        if (!type.isEmpty() && !matchesType(type, value)) {
+            errors.add(path + " type " + type);
+            return;
+        }
+        if (schema.has("minLength") && value.isTextual() && value.textValue().length() < schema.get("minLength").asInt())
+            errors.add(path + " minLength");
+        if (schema.has("pattern") && value.isTextual() && !Pattern.compile(schema.get("pattern").asText()).matcher(value.textValue()).find())
+            errors.add(path + " pattern");
+        if (schema.has("minimum") && value.isNumber() && value.asDouble() < schema.get("minimum").asDouble())
+            errors.add(path + " minimum");
+        if (value.isObject()) {
+            for (String required : names(schema.get("required"))) if (!value.has(required)) errors.add(path + "/" + required + " required");
+            JsonNode properties = schema.path("properties");
+            Iterator<Map.Entry<String, JsonNode>> fields = value.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> field = fields.next();
+                JsonNode property = properties.get(field.getKey());
+                if (property != null) validate(property, field.getValue(), owner, path + "/" + field.getKey(), errors);
+                else {
+                    JsonNode patternProperties = schema.path("patternProperties");
+                    boolean matched = false;
+                    if (patternProperties.isObject()) {
+                        Iterator<Map.Entry<String, JsonNode>> patterns = patternProperties.fields();
+                        while (patterns.hasNext()) {
+                            Map.Entry<String, JsonNode> pattern = patterns.next();
+                            if (field.getKey().matches(pattern.getKey())) {
+                                matched = true;
+                                validate(pattern.getValue(), field.getValue(), owner, path + "/" + field.getKey(), errors);
+                            }
+                        }
+                    }
+                    if (!matched && schema.path("additionalProperties").isBoolean() && !schema.path("additionalProperties").asBoolean())
+                        errors.add(path + "/" + field.getKey() + " additionalProperties");
+                }
+            }
+        }
+        if (value.isArray() && schema.has("items")) {
+            for (int i = 0; i < value.size(); i++) validate(schema.get("items"), value.get(i), owner, path + "/" + i, errors);
+        }
+    }
+
+    private static boolean matchesType(String type, JsonNode value) {
+        return switch (type) {
+            case "object" -> value.isObject();
+            case "array" -> value.isArray();
+            case "string" -> value.isTextual();
+            case "integer" -> value.isIntegralNumber();
+            case "number" -> value.isNumber();
+            case "boolean" -> value.isBoolean();
+            case "null" -> value.isNull();
+            default -> true;
+        };
+    }
+
+    private static Set<String> names(JsonNode node) {
+        Set<String> names = new java.util.LinkedHashSet<>();
+        if (node != null && node.isArray()) node.forEach(value -> names.add(value.asText()));
+        return names;
+    }
+
+    private static boolean contains(JsonNode values, JsonNode expected) {
+        for (JsonNode value : values) if (value.equals(expected)) return true;
+        return false;
+    }
+
+    private static JsonNode read(Path path) throws IOException {
+        return MAPPER.readTree(Files.readString(path));
+    }
+}

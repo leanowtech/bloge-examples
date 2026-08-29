@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/problem-detail-v1.schema.json",
+  "$defs": {
+    "fieldError": { "type": "object", "properties": { "path": { "type": "string", "minLength": 1 }, "code": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "message": { "type": "string", "minLength": 1 } }, "required": ["path", "code", "message"], "additionalProperties": false },
+    "recoveryAction": { "type": "object", "properties": { "kind": { "enum": ["OPEN_FIELD", "RELOAD", "RETRY", "OPEN_LIST"] }, "path": { "type": "string", "minLength": 1 } }, "required": ["kind"], "additionalProperties": false }
+  },
+  "type": "object",
+  "properties": { "type": { "type": "string", "pattern": "^urn:bloge:problem:[a-z0-9-]+$" }, "title": { "type": "string", "minLength": 1, "maxLength": 200 }, "status": { "type": "integer", "enum": [400, 401, 403, 404, 409, 412, 422, 424, 428, 429] }, "detail": { "type": "string", "minLength": 1, "maxLength": 4000 }, "code": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "correlationId": { "$ref": "common-v1.schema.json#/$defs/identifier" }, "fieldErrors": { "type": "array", "items": { "$ref": "#/$defs/fieldError" } }, "recoveryActions": { "type": "array", "items": { "$ref": "#/$defs/recoveryAction" } } },
+  "required": ["type", "title", "status", "detail", "code", "correlationId", "fieldErrors", "recoveryActions"], "additionalProperties": false
+}

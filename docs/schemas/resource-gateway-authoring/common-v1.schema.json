@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanowtech.com/schemas/resource-gateway-authoring/common-v1.schema.json",
+  "$defs": {
+    "identifier": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "displayName": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "fingerprint": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "schemaEnvelope": {
+      "type": "object",
+      "properties": {
+        "format": { "const": "json-schema" },
+        "version": { "const": "2020-12" },
+        "schema": {}
+      },
+      "required": ["format", "version", "schema"],
+      "additionalProperties": false
+    },
+    "apiResourceRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "API_RESOURCE" },
+        "resourceId": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "required": ["kind", "resourceId", "revision", "fingerprint"],
+      "additionalProperties": false
+    },
+    "flowDraftRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "FLOW_DRAFT" },
+        "draftId": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "required": ["kind", "draftId", "revision", "fingerprint"],
+      "additionalProperties": false
+    },
+    "flowVersionRef": {
+      "type": "object",
+      "properties": {
+        "kind": { "const": "FLOW_VERSION" },
+        "publicationId": { "$ref": "#/$defs/identifier" },
+        "revision": { "$ref": "#/$defs/revision" },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+      },
+      "required": ["kind", "publicationId", "revision", "fingerprint"],
+      "additionalProperties": false
+    },
+    "exactSubjectRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/apiResourceRef" },
+        { "$ref": "#/$defs/flowDraftRef" },
+        { "$ref": "#/$defs/flowVersionRef" }
+      ]
+    },
+    "composableRef": {
+      "oneOf": [
+        { "$ref": "#/$defs/apiResourceRef" },
+        { "$ref": "#/$defs/flowVersionRef" }
+      ]
+    },
+    "secretWrite": {
+      "oneOf": [
+        {
+          "type": "object", "properties": { "mode": { "const": "VALUE" }, "value": { "type": "string", "minLength": 1 } },
+          "required": ["mode", "value"], "additionalProperties": false
+        },
+        {
+          "type": "object", "properties": { "mode": { "const": "SECRET_REF" }, "ref": { "$ref": "#/$defs/identifier" } },
+          "required": ["mode", "ref"], "additionalProperties": false
+        },
+        {
+          "type": "object", "properties": { "mode": { "const": "KEEP_EXISTING" } },
+          "required": ["mode"], "additionalProperties": false
+        }
+      ]
+    },
+    "safeHeaderMap": {
+      "type": "object",
+      "patternProperties": { "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$": { "type": "string", "maxLength": 2048 } },
+      "propertyNames": { "not": { "enum": ["Authorization", "Cookie", "Proxy-Authorization", "Set-Cookie"] } },
+      "additionalProperties": false
+    }
+  }
+}
