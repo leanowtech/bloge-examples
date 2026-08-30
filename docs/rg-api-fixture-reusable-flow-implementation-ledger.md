@@ -249,15 +249,60 @@ BUILD SUCCESS
 下一步 J2 在同一 Store 内完成 stage、原子 commit、fenced fail 和 production readiness wiring，并让 JDBC
 实现通过与内存参考相同的 contract。真实 PostgreSQL certification 仍是独立门禁，不能由 H2 mode 替代。
 
-## 7. 未关闭风险
+## 7. Iteration 6 — JDBC Stage/Commit/Fail 与 Runtime Wiring
+
+日期：2026-08-30。
+
+### 已完成
+
+- `02d3262d6`：新增 V20260830_002 并发 staging migration。revision、projection 和 head 通过
+  `command_id` 建立复合键及精确外键；既有 projection/head 数据先回填 command provenance，再收紧为
+  `NOT NULL`，避免两个 command 暂存同一逻辑 revision 时互相覆盖。
+- `416e70915`：完成 JDBC stage/commit/fail 协议，保留不可见 STAGED revision、精确 attempt/token
+  fencing、事务内三投影闭包和 committed read/replay 语义。
+- `fbb341d69`：补强 staged closure、receipt/指纹和 CAS 失配的 fail-closed 校验；失败路径清理 staged
+  数据并写入 bounded failure journal。
+- `122eaa383`：接入 opt-in production runtime configuration。默认关闭；启用时缺少 V001/V002 schema
+  或 compiler/readiness 条件会 fail startup，不会静默回退到内存 store。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiResourceAuthoringSchemaReadinessTest,ApiResourceAuthoringRuntimeConfigurationTest,JdbcApiResourceCommitStoreMutationTest,JdbcApiResourceCommitStoreClaimTest,ApiResourceCommitStoreContractTest test
+Tests run: 66, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+验证覆盖：同一逻辑 revision 的双 command staging、双连接单 winner、DB 时间驱动的 lease、stage/commit/fail
+及 restart/history replay、tamper fail-closed，以及默认关闭的 production wiring。该命令仍是 H2
+PostgreSQL-mode 与本地 runtime 的聚焦证据，不是 PostgreSQL certification 或全量构建证据。
+
+### 当前差距评估
+
+| 目标能力 | 已证明 |
+| --- | ---: |
+| Wire Schema family | 10 / 10 |
+| API Resource 后端权威、复合保存与投影闭包 | 15 / 18（JDBC stage/commit/fail 与 runtime wiring；未含 Facade/HTTP） |
+| 文档与全量门禁 | 5 / 7（聚焦 66/66；真实 PostgreSQL 与 full clean verify 未完成） |
+| 其余运行与 UI 能力 | 0 / 65 |
+| **当前完成度** | **30%** |
+| **当前差距** | **70%** |
+
+下一步进入 J3：实现 `AuthoringFacade` 与 Connection/Secret/Default Fixture 复合保存，再接 API Resource
+对象页和首次模拟。必须继续保留 Exact Subject、强 ETag/Idempotency、secret-free Problem Detail 与
+投影闭包边界；不能把当前 Store 的聚焦证据写成 HTTP 或 UI 已完成。
+
+## 8. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
-- V1 staging/commit 必须适配当前存储现实；若无法保证不可见 staging，不得用异步投影冒充成功 Receipt。
+- 生产部署仍需在 PostgreSQL lane 重放 V001/V002 migration，并证明不可见 staging；不得用异步投影冒充
+  成功 Receipt。
 - API Resource 页面重载必须通过 Exact Subject Fixture summary 查询恢复，不能保存 material 到 Resource View
   或 Local Storage。
-- production adapter 尚未证明跨实例 CAS、失败恢复、Secret staging/activation、不可见 staging 或三投影
-  同 generation；在这些合同测试通过前，不能接标准对象页。
+- 真实 PostgreSQL 尚未完成 migration、跨实例 CAS、失败恢复、Secret staging/activation 和三投影同
+  generation certification；H2 PostgreSQL mode 不能替代该门禁。
 - `AuthoringFacade` 还没有复合保存、幂等重放和注入故障测试；HTTP 的强 ETag、428/412、完整 Scope 与
   secret-free Problem Detail 也仍未实现。
 - 共享工作树中的 `GraphNodeFixtureControls.tsx` 修改不属于本目标提交，必须继续隔离。

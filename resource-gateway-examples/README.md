@@ -49,6 +49,27 @@ integration something the business flow can see, reason about, test, and change.
 | Workbook and gate evidence loop | Deterministic sanitized workbook seeds, exact suite/run evidence refs, versioned gate decision basis, stale detection, and transactional gate events |
 | Operational controls | Cache, tenant rate limit, circuit breaker, run history, golden cases, and publication history |
 
+### API Resource authoring persistence (J2)
+
+The JDBC authoring store is opt-in and is not an HTTP/Facade API yet. Apply the migrations in order:
+
+```text
+db/postgresql/V20260830_001__api_resource_authoring.sql
+db/postgresql/V20260830_002__api_resource_concurrent_staging.sql
+```
+
+Then enable the production wiring explicitly:
+
+```bash
+RG_API_RESOURCE_AUTHORING_ENABLED=true
+# Optional: RG_API_RESOURCE_AUTHORING_LEASE_SECONDS=60
+```
+
+When enabled, missing migrations or compiler/readiness prerequisites fail startup; the runtime does not
+silently fall back to the in-memory store. J2 covers scoped claim, committed reads, concurrent staging,
+transactional stage/commit/fail, lease fencing, restart-safe history, and tamper rejection. Real PostgreSQL
+certification, the `AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than

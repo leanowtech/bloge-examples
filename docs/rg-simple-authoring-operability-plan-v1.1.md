@@ -1,6 +1,6 @@
 # Resource Gateway 简化创作可操作性方案 v1.1
 
-状态：Proposed，待架构与产品评审。
+状态：Approved for implementation；J2 已完成，J3 待实施。
 
 日期：2026-08-30。
 
@@ -15,14 +15,16 @@
 | 能力组 | 已证明状态 |
 | --- | ---: |
 | Wire Schema family | 10 / 10 |
-| API Resource 后端权威、复合保存与投影闭包 | 10 / 18 |
-| 文档与聚焦门禁 | 4 / 7 |
+| API Resource 后端权威、复合保存与投影闭包 | 15 / 18 |
+| 文档与聚焦门禁 | 5 / 7 |
 | 其余运行与 UI 能力 | 0 / 65 |
-| 当前完成度 | 24% |
+| 当前完成度 | 30% |
 
-`ApiResourceCommitStore` 已有 claim 与 committed read 证据；`stage`、`commit`、`fail`、production wiring、`AuthoringFacade`、新对象页和模拟运行还没有验收。因此 v1.1 的重点不是重开领域模型，而是先把 J2 完成后能直接支撑的用户主线固化下来。
+`ApiResourceCommitStore` 已完成 claim、committed read、stage、commit、fail 与 opt-in production wiring 的
+聚焦证据；`AuthoringFacade`、新对象页和模拟运行还没有验收。因此 v1.1 的重点不是重开领域模型，而是
+在已完成 J2 的持久化边界上继续固化用户主线。
 
-共享工作树中当前存在的 `GraphNodeFixtureControls.tsx`、`JdbcApiResourceCommitStore.java` 和 `JdbcApiResourceCommitStoreMutationTest.java` 未提交修改，必须先确认归属，不得混入本方案的实施提交。
+共享工作树中当前存在的 `GraphNodeFixtureControls.tsx` 未提交修改，不属于本方案实施，必须保持隔离。
 
 ## 2. 目标状态
 
@@ -396,7 +398,7 @@ Run 不可变。前端只能按 runId 读取，不能在结果页修改 verdict�
 
 ## 9. 实施切片
 
-### Slice J2：完成 JDBC stage/commit/fail
+### Slice J2：完成 JDBC stage/commit/fail（已完成）
 
 目标：让现有 `ApiResourceCommitStore` contract 在 JDBC adapter 上达到与内存参考一致。
 
@@ -407,14 +409,19 @@ Run 不可变。前端只能按 runId 读取，不能在结果页修改 verdict�
 3. 补双连接竞争、崩溃恢复、CAS 失配、projection failure 和 journal replay 测试。
 4. 完成 production readiness wiring，但暂不暴露 HTTP。
 
-验收：
+验收记录：
 
 ```bash
 mvn -f resource-gateway-examples/pom.xml \
-  -Dtest='ApiResourceCommitStoreContractTest,JdbcApiResourceCommitStoreMutationTest' test
+  -Dtest=ApiResourceAuthoringSchemaReadinessTest,ApiResourceAuthoringRuntimeConfigurationTest,JdbcApiResourceCommitStoreMutationTest,JdbcApiResourceCommitStoreClaimTest,ApiResourceCommitStoreContractTest test
+Tests run: 66, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
 ```
 
-完成判据：聚焦测试全绿，真实双连接竞争只有一个 winner，staged revision 在 commit 前不可被 head read，失败后不产生成功 Receipt。
+完成判据已满足：V002 `command_id` 闭包允许并发 staging；真实双连接竞争只有一个 winner；DB 时间 lease、
+staged invisibility、原子 commit、fenced fail、restart/history replay 和 tamper fail-closed 均有回归。生产
+配置默认关闭，缺 migration/compiler/readiness 时启用即 fail startup；真实 PostgreSQL、full clean verify
+仍未完成。
 
 ### Slice J3：AuthoringFacade 与复合保存
 
@@ -524,4 +531,5 @@ mvn -f resource-gateway-examples/pom.xml \
 | R4：先保存再模拟，用 Exact Subject 替代 transient GraphDraft | 接受 |
 | R5：第一阶段标准模式只支持数据流 DAG | 接受；复杂语义留在 Advanced/Legacy |
 
-评审通过后，第一批工作不改 UI，直接进入 Slice J2：完成 `JdbcApiResourceCommitStore` 的 stage/commit/fail 与 production readiness，再进入 J3 和 U1。
+J2 已按批准方案完成。下一步进入 Slice J3：实现 `AuthoringFacade` 与 Connection/Secret/Default Fixture
+复合保存，再进入 U1 API Resource 标准页；J2 的 H2 聚焦证据不替代真实 PostgreSQL 与 HTTP/UI 验收。
