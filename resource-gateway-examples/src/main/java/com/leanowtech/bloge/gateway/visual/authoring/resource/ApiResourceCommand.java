@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -25,7 +26,7 @@ import java.util.Map;
  */
 public record ApiResourceCommand(
         String displayName,
-        String description,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String description,
         Operation operation,
         Contract contract,
         Response response,
@@ -96,7 +97,7 @@ public record ApiResourceCommand(
      * @param success response success matcher
      * @param outputPath optional response output path
      */
-    public record Response(Success success, String outputPath) {
+    public record Response(Success success, @JsonInclude(JsonInclude.Include.NON_NULL) String outputPath) {
         public Response {
             success = copySuccess(success);
         }
@@ -188,7 +189,8 @@ public record ApiResourceCommand(
          * @param receipt required response receipt contract
          * @param reconciliation optional exact reconciliation target
          */
-        record ManagedWrite(String idempotencyHeader, Receipt receipt, Reconciliation reconciliation)
+        record ManagedWrite(String idempotencyHeader, Receipt receipt,
+                            @JsonInclude(JsonInclude.Include.NON_NULL) Reconciliation reconciliation)
                 implements Effect {
             public ManagedWrite {
                 receipt = copyReceipt(receipt);

@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.resource;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import java.util.List;
 
 /**
@@ -26,7 +28,7 @@ public record ApiResourceSpec(
         int revision,
         String fingerprint,
         String displayName,
-        String description,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String description,
         String connectionId,
         ApiResourceCommand.Operation operation,
         ApiResourceCommand.Contract contract,

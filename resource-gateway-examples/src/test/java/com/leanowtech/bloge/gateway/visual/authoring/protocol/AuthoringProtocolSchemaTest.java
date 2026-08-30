@@ -189,6 +189,41 @@ class AuthoringProtocolSchemaTest {
         }
     }
 
+    @Test
+    void absentOptionalApiResourceFieldsAreOmittedAndSpecsRoundTripAgainstSchemas() throws Exception {
+        Path commandPath = SCHEMA_ROOT.resolve("api-resource-command-v1.schema.json");
+        Path specPath = SCHEMA_ROOT.resolve("api-resource-spec-v1.schema.json");
+        JsonNode commandSchema = read(commandPath).at("/$defs/resourceCommand");
+        JsonNode specSchema = read(specPath);
+
+        ApiResourceCommand minimalCommand = minimalCommand();
+        JsonNode minimalWire = MAPPER.valueToTree(minimalCommand);
+        assertThat(minimalWire.has("description")).isFalse();
+        assertThat(minimalWire.at("/response").has("outputPath")).isFalse();
+        assertThat(validationErrors(commandSchema, minimalWire, commandPath)).isEmpty();
+        assertThat(MAPPER.treeToValue(minimalWire, ApiResourceCommand.class)).isEqualTo(minimalCommand);
+
+        ApiResourceCommand completeCommand = command("POST",
+                new ApiResourceCommand.BodyMatch("$.status", List.of(MAPPER.valueToTree("CREATED"))),
+                new ApiResourceCommand.Effect.ManagedWrite("X-Request-Id",
+                        new ApiResourceCommand.Effect.Receipt("$.id", "$.status",
+                                List.of(MAPPER.valueToTree("SUCCEEDED")), List.of(MAPPER.valueToTree("FAILED"))),
+                        new ApiResourceCommand.Effect.Reconciliation(
+                                new ApiResourceSpec.ResourceRef("API_RESOURCE", "orders.lookup", 3,
+                                        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                                "$.receiptId")));
+        ApiResourceSpec minimalSpec = spec("customer.get-profile", minimalCommand);
+        ApiResourceSpec completeSpec = spec("orders.create", completeCommand);
+        assertThat(MAPPER.valueToTree(minimalSpec).has("description")).isFalse();
+        for (ApiResourceSpec spec : List.of(minimalSpec, completeSpec)) {
+            JsonNode wire = MAPPER.valueToTree(spec);
+            assertThat(validationErrors(specSchema, wire, specPath)).as(wire.toString()).isEmpty();
+            assertThat(MAPPER.treeToValue(wire, ApiResourceSpec.class)).isEqualTo(spec);
+        }
+        assertThat(MAPPER.valueToTree(completeSpec).at("/effect/reconciliation/resource/kind").asText())
+                .isEqualTo("API_RESOURCE");
+    }
+
     private static ApiResourceCommand command(String method, ApiResourceCommand.Success success,
                                               ApiResourceCommand.Effect effect) {
         Map<String, Object> schema = SchemaEnvelope.object(Map.of("id", Map.of("type", "string")), List.of("id")).schema();
@@ -199,6 +234,26 @@ class AuthoringProtocolSchemaTest {
                 new ApiResourceCommand.Response(success, "$.data"), effect,
                 List.of(new ApiResourceCommand.Example("happy", MAPPER.createObjectNode().put("id", "o-1"),
                         MAPPER.createObjectNode().put("id", "o-1"))));
+    }
+
+    private static ApiResourceCommand minimalCommand() {
+        Map<String, Object> schema = SchemaEnvelope.object(Map.of(), List.of()).schema();
+        return new ApiResourceCommand("Orders", null,
+                new ApiResourceCommand.Operation("POST", "/orders", List.of()),
+                new ApiResourceCommand.Contract(new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                        new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema)),
+                new ApiResourceCommand.Response(new ApiResourceCommand.HttpStatus(List.of(200)), null),
+                new ApiResourceCommand.Effect.ManagedWrite("X-Request-Id",
+                        new ApiResourceCommand.Effect.Receipt("$.id", "$.status",
+                                List.of(MAPPER.valueToTree("SUCCEEDED")), List.of(MAPPER.valueToTree("FAILED"))), null),
+                List.of(new ApiResourceCommand.Example("happy", MAPPER.createObjectNode(), MAPPER.createObjectNode())));
+    }
+
+    private static ApiResourceSpec spec(String resourceId, ApiResourceCommand command) {
+        return new ApiResourceSpec(ApiResourceSpec.SCHEMA_VERSION, resourceId, 1,
+                "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                command.displayName(), command.description(), "orders-connection", command.operation(),
+                command.contract(), command.response(), command.effect(), command.examples(), ApiResourceSpec.DRAFT);
     }
 
     private static String effectKind(ApiResourceCommand.Effect effect) {
