@@ -109,8 +109,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         this.leaseDuration = leaseDuration;
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
-        if (!(transactions.getTransactionManager() instanceof DataSourceTransactionManager manager)
-                || jdbc.getDataSource() != manager.getDataSource()) {
+        DataSource jdbcDataSource = jdbc.getDataSource();
+        DataSource transactionDataSource = transactions.getTransactionManager() instanceof DataSourceTransactionManager manager
+                ? manager.getDataSource() : null;
+        if (jdbcDataSource == null || transactionDataSource == null || jdbcDataSource != transactionDataSource) {
             throw new IllegalArgumentException("jdbc and transaction manager must share the same DataSource");
         }
     }

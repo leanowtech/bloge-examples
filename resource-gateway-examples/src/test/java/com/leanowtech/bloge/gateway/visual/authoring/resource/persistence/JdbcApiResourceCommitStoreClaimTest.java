@@ -123,6 +123,10 @@ class JdbcApiResourceCommitStoreClaimTest {
                 new TransactionTemplate(new DataSourceTransactionManager(other)), JSON, clock,
                 Duration.ofSeconds(1), new ApiResourceDecisions(), (scope, resource) -> null))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new JdbcApiResourceCommitStore(new JdbcTemplate(),
+                new TransactionTemplate(new DataSourceTransactionManager()), JSON, clock,
+                Duration.ofSeconds(1), new ApiResourceDecisions(), (scope, resource) -> null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test
@@ -198,6 +202,19 @@ class JdbcApiResourceCommitStoreClaimTest {
         assertThatThrownBy(() -> store().findHead(SCOPE, "profile"))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        jdbc.update("UPDATE rg_api_resource_revisions SET spec_json=? WHERE resource_id='profile'", JSON.writeValueAsString(spec).replace("\"status\":\"DRAFT\"", "\"status\":\"ACTIVE\""));
+        assertThatThrownBy(() -> store().findHead(SCOPE, "profile"))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void journalCoordinateTamperingCannotCrossReadScope() throws Exception {
+        ApiResourceSpec spec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        insertCommitted(spec, JSON.createObjectNode().put("kind", "DESCRIPTOR"), JSON.createObjectNode().put("kind", "DESIGN_CONTRACT"), JSON.createObjectNode().put("kind", "OPERATOR"));
+        jdbc.update("UPDATE rg_authoring_command_journal SET target_id='other-profile' WHERE command_id='cmd-read'");
+        assertThat(store().findHead(SCOPE, "profile")).isEmpty();
+        assertThat(store().findRevision(SCOPE, "profile", 1)).isEmpty();
     }
 
     private JdbcApiResourceCommitStore store() {
