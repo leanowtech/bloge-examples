@@ -23,6 +23,11 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +62,8 @@ class JdbcApiResourceCommitStoreClaimTest {
         JdbcApiResourceCommitStore store = store();
         ClaimResult.Acquired first = (ClaimResult.Acquired) store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
         assertThat(first.resumed()).isFalse();
+        ApiResourceSpec stagedSpec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        insertStaged(first.lease(), stagedSpec);
         assertThat(store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()))
                 .isInstanceOf(ClaimResult.Busy.class);
         assertThat(store.claim(KEY, FP2, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()))
@@ -68,6 +75,7 @@ class JdbcApiResourceCommitStoreClaimTest {
         assertThat(takeover.lease().commandId()).isEqualTo(first.lease().commandId());
         assertThat(takeover.lease().attemptNo()).isEqualTo(2);
         assertThat(takeover.lease().attemptToken()).isNotEqualTo(first.lease().attemptToken());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=? AND state='STAGED'", Integer.class, first.lease().commandId())).isZero();
 
         String terminalBody = "{}";
         jdbc.update("UPDATE rg_authoring_command_journal SET request_fingerprint=?, status='COMMITTED', receipt_schema='r', receipt_json=?, receipt_fingerprint=?, receipt_etag='\"etag\"' WHERE command_id=?",
@@ -108,9 +116,79 @@ class JdbcApiResourceCommitStoreClaimTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void concurrentFirstClaimsProduceOneAcquiredAndOneBusy() throws Exception {
+        String url = dataSource.getConnection().getMetaData().getURL();
+        DataSource sharedLeft = new DriverManagerDataSource(url, "sa", "");
+        DataSource sharedRight = new DriverManagerDataSource(url, "sa", "");
+        JdbcApiResourceCommitStore left = store(new JdbcTemplate(sharedLeft),
+                new TransactionTemplate(new DataSourceTransactionManager(sharedLeft)));
+        JdbcApiResourceCommitStore right = store(new JdbcTemplate(sharedRight),
+                new TransactionTemplate(new DataSourceTransactionManager(sharedRight)));
+        CyclicBarrier barrier = new CyclicBarrier(2);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Callable<ClaimResult> claim = () -> { barrier.await(); return left.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()); };
+            Future<ClaimResult> a = pool.submit(claim);
+            Future<ClaimResult> b = pool.submit(() -> { barrier.await(); return right.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()); });
+            List<ClaimResult> results = List.of(a.get(), b.get());
+            assertThat(results).anyMatch(result -> result instanceof ClaimResult.Acquired);
+            assertThat(results).anyMatch(result -> result instanceof ClaimResult.Busy);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_authoring_command_journal", Integer.class)).isEqualTo(1);
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test
+    void readsAreScopedAndStoredTamperingFailsClosed() throws Exception {
+        ApiResourceSpec spec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        insertCommitted(spec, JSON.createObjectNode().put("kind", "DESCRIPTOR"), JSON.createObjectNode().put("kind", "DESIGN_CONTRACT"), JSON.createObjectNode().put("kind", "OPERATOR"));
+        assertThat(store().findHead(new AuthoringScope("other", "project", "dev"), "profile")).isEmpty();
+        assertThat(store().findRevision(SCOPE, "profile", 1)).isPresent();
+        jdbc.update("DELETE FROM rg_api_resource_heads WHERE resource_id='profile'");
+        assertThat(store().findRevision(SCOPE, "profile", 1)).isPresent();
+        jdbc.update("UPDATE rg_api_resource_revisions SET spec_fingerprint=? WHERE resource_id='profile'", FP2);
+        assertThatThrownBy(() -> store().findRevision(SCOPE, "profile", 1))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void receiptEtagTamperingFailsClosed() throws Exception {
+        ApiResourceSpec spec = new ApiResourceDecisions().next(java.util.Optional.empty(), "profile", "connection", command(), com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        insertCommitted(spec, JSON.createObjectNode().put("kind", "DESCRIPTOR"), JSON.createObjectNode().put("kind", "DESIGN_CONTRACT"), JSON.createObjectNode().put("kind", "OPERATOR"));
+        jdbc.update("UPDATE rg_authoring_command_journal SET receipt_etag='\"tampered\"' WHERE command_id='cmd-read'");
+        assertThatThrownBy(() -> store().findHead(SCOPE, "profile"))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+    }
+
     private JdbcApiResourceCommitStore store() {
-        return new JdbcApiResourceCommitStore(jdbc, transactions, JSON, clock, Duration.ofSeconds(1),
+        return store(jdbc, transactions);
+    }
+
+    private JdbcApiResourceCommitStore store(JdbcTemplate template, TransactionTemplate tx) {
+        return new JdbcApiResourceCommitStore(template, tx, JSON, clock, Duration.ofSeconds(1),
                 new ApiResourceDecisions(), (scope, resource) -> null);
+    }
+
+    private void insertStaged(CommandLease lease, ApiResourceSpec spec) throws Exception {
+        String json = JSON.writeValueAsString(spec);
+        jdbc.update("""
+                INSERT INTO rg_api_resource_revisions
+                    (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json,
+                     spec_fingerprint, connection_id, strong_etag, command_id, attempt_no, attempt_token)
+                VALUES ('tenant','project','dev','profile',1,'STAGED',?,?,?,?,?,?,?)
+                """, json, spec.fingerprint(), "connection", "\"staged\"", lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        String empty = "{}";
+        jdbc.update("""
+                INSERT INTO rg_api_resource_projection_revisions
+                    (tenant_id, project_id, environment_id, resource_id, revision,
+                     descriptor_json, descriptor_fingerprint, descriptor_state,
+                     design_contract_json, design_contract_fingerprint, design_contract_state,
+                     operator_json, operator_fingerprint, operator_state, set_fingerprint)
+                VALUES ('tenant','project','dev','profile',1,?,?, 'READY',?,?, 'READY',?,?, 'READY',?)
+                """, empty, AuthoringFingerprints.of(JSON.readTree(empty)), empty, AuthoringFingerprints.of(JSON.readTree(empty)),
+                empty, AuthoringFingerprints.of(JSON.readTree(empty)), FP);
     }
 
     private void insertCommitted(ApiResourceSpec spec, JsonNode descriptor, JsonNode design, JsonNode operator) throws Exception {

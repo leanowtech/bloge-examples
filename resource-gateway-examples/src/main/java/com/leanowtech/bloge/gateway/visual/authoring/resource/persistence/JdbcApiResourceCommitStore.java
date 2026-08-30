@@ -82,7 +82,6 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private final ObjectMapper mapper;
     private final Clock clock;
     private final Duration leaseDuration;
-    @SuppressWarnings("unused")
     private final ApiResourceDecisions decisions;
     @SuppressWarnings("unused")
     private final ApiResourceProjectionCompiler compiler;
@@ -114,7 +113,13 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             return transactions.execute(status -> claimInTransaction(key, requestFingerprint, expectedRevision));
         } catch (DuplicateKeyException duplicate) {
             // A concurrent first insert is the only race not covered by FOR UPDATE on a missing row.
-            return transactions.execute(status -> claimInTransaction(key, requestFingerprint, expectedRevision));
+            try {
+                return transactions.execute(status -> claimInTransaction(key, requestFingerprint, expectedRevision));
+            } catch (ApiResourceCommitStoreException ex) {
+                throw ex;
+            } catch (DataAccessException ex) {
+                throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "claim persistence failed");
+            }
         } catch (ApiResourceCommitStoreException ex) {
             throw ex;
         } catch (DataAccessException ex) {
@@ -214,6 +219,12 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private StoredApiResource stored(StoredRow row) {
         try {
             ApiResourceSpec resource = mapper.readValue(row.specJson(), ApiResourceSpec.class);
+            if (!row.resourceId().equals(resource.resourceId()) || row.revision() != resource.revision()
+                    || !row.specFingerprint().equals(resource.fingerprint())
+                    || !row.specFingerprint().equals(specFingerprint(resource))
+                    || !row.connectionId().equals(resource.connectionId())) {
+                throw new IllegalArgumentException("stored spec integrity drift");
+            }
             ProjectionDocument descriptor = projection(ProjectionDocument.Kind.DESCRIPTOR, resource,
                     row.descriptorJson(), row.descriptorFingerprint());
             ProjectionDocument design = projection(ProjectionDocument.Kind.DESIGN_CONTRACT, resource,
@@ -222,6 +233,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     row.operatorJson(), row.operatorFingerprint());
             ReadyApiResourceProjections projections = new ReadyApiResourceProjections(descriptor, design, operator);
             JsonNode body = mapper.readTree(row.receiptJson());
+            if (!row.strongEtag().equals(row.receiptEtag())) throw new IllegalArgumentException("receipt etag drift");
             return new StoredApiResource(new AuthoringScope(row.tenantId(), row.projectId(), row.environmentId()),
                     resource, projections, new CommandReceipt(row.receiptSchema(), body,
                     row.receiptFingerprint(), row.receiptEtag()));
@@ -232,8 +244,20 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     private ProjectionDocument projection(ProjectionDocument.Kind kind, ApiResourceSpec resource,
                                           String json, String fingerprint) throws Exception {
-        return new ProjectionDocument(kind, resource.ref(), mapper.readTree(json), fingerprint,
-                ProjectionDocument.State.READY);
+        JsonNode body = mapper.readTree(json);
+        if (!fingerprint.equals(AuthoringFingerprints.of(body))) throw new IllegalArgumentException("projection fingerprint drift");
+        return new ProjectionDocument(kind, resource.ref(), body, fingerprint, ProjectionDocument.State.READY);
+    }
+
+    private String specFingerprint(ApiResourceSpec resource) {
+        try {
+            ApiResourceCommand command = new ApiResourceCommand(resource.displayName(), resource.description(),
+                    resource.operation(), resource.contract(), resource.response(), resource.effect(), resource.examples());
+            return decisions.next(Optional.empty(), resource.resourceId(), resource.connectionId(), command,
+                    ExpectedRevision.create()).fingerprint();
+        } catch (RuntimeException ex) {
+            throw new IllegalArgumentException("stored spec fingerprint cannot be verified", ex);
+        }
     }
 
     private CommandReceipt receipt(JournalRow row) {
