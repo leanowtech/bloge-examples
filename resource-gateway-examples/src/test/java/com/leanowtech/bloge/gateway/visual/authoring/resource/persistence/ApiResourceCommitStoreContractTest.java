@@ -59,6 +59,15 @@ class ApiResourceCommitStoreContractTest {
     }
 
     @Test
+    void sameCoordinateAndFingerprintWithChangedExpectedRevisionIsConflict() {
+        InMemoryApiResourceCommitStore store = store();
+
+        assertThat(store.claim(KEY, R1, ExpectedRevision.create())).isInstanceOf(ClaimResult.Acquired.class);
+        assertThat(store.claim(KEY, R1, ExpectedRevision.match(1)))
+                .isInstanceOf(ClaimResult.Conflict.class);
+    }
+
+    @Test
     void liveLeaseBusyAndExpiredLeaseTakesOverWithStaleAttemptFenced() {
         MutableClock clock = new MutableClock();
         InMemoryApiResourceCommitStore store = store(clock);

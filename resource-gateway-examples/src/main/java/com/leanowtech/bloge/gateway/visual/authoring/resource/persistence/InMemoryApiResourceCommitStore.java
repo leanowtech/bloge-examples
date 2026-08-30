@@ -69,9 +69,12 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
         synchronized (state.monitor) {
             Journal prior = state.journals.get(key);
             Instant now = clock.instant();
-            if (prior != null && (prior.status == Status.COMMITTED || prior.status == Status.PREPARING)
-                    && !prior.fingerprint.equals(requestFingerprint)) return new ClaimResult.Conflict("idempotency fingerprint conflict");
-            if (prior != null && prior.status == Status.FAILED && !prior.fingerprint.equals(requestFingerprint)) return new ClaimResult.Conflict("idempotency fingerprint conflict");
+            if (prior != null && !prior.fingerprint.equals(requestFingerprint)) {
+                return new ClaimResult.Conflict("idempotency fingerprint conflict");
+            }
+            if (prior != null && !prior.expectedRevision.equals(expectedRevision)) {
+                return new ClaimResult.Conflict("expected revision conflict");
+            }
             if (prior != null && prior.status == Status.COMMITTED) return new ClaimResult.Replay(prior.receipt);
             if (prior != null && prior.status == Status.PREPARING && prior.lease.leaseUntil().isAfter(now)) return new ClaimResult.Busy(prior.lease.leaseUntil());
             boolean resumed = prior != null;
@@ -80,7 +83,8 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
             String commandId = prior == null ? UUID.randomUUID().toString() : prior.lease.commandId();
             CommandLease lease = new CommandLease(commandId, attempt, UUID.randomUUID().toString(), key,
                     requestFingerprint, now.plus(leaseDuration), expectedRevision);
-            state.journals.put(key, new Journal(Status.PREPARING, requestFingerprint, lease, null, null));
+            state.journals.put(key, new Journal(Status.PREPARING, requestFingerprint, expectedRevision,
+                    lease, null, null));
             return new ClaimResult.Acquired(lease, resumed);
         }
     }
@@ -151,7 +155,8 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
             state.heads.put(key, stored);
             state.revisions.put(new ResourceRevisionKey(key, staged.resource().revision()), stored);
             state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
-            state.journals.put(lease.key(), new Journal(Status.COMMITTED, lease.requestFingerprint(), lease, finalReceipt, null));
+            state.journals.put(lease.key(), new Journal(Status.COMMITTED, lease.requestFingerprint(),
+                    lease.expectedRevision(), lease, finalReceipt, null));
             return finalReceipt;
         }
     }
@@ -165,7 +170,8 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
             if (journal.status == Status.COMMITTED) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "committed command cannot fail");
             requireActive(lease);
             state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
-            state.journals.put(lease.key(), new Journal(Status.FAILED, journal.fingerprint, lease, null, failureCode));
+            state.journals.put(lease.key(), new Journal(Status.FAILED, journal.fingerprint,
+                    journal.expectedRevision, lease, null, failureCode));
         }
     }
 
@@ -234,7 +240,8 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
         return new ApiResourceCommitStoreException(code, message);
     }
     private enum Status { PREPARING, FAILED, COMMITTED }
-    private record Journal(Status status, String fingerprint, CommandLease lease, CommandReceipt receipt, CommandFailureCode failureCode) { }
+    private record Journal(Status status, String fingerprint, ExpectedRevision expectedRevision,
+                           CommandLease lease, CommandReceipt receipt, CommandFailureCode failureCode) { }
     private record ResourceKey(AuthoringScope scope, String resourceId) { }
     private record ResourceRevisionKey(ResourceKey resource, long revision) { }
     private record StageKey(String commandId, String attemptToken) { }

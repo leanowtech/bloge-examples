@@ -10,9 +10,7 @@ import java.util.Optional;
  * values including lease fencing/expiry, missing stage, CAS mismatch,
  * projection/receipt invalidity and integrity failure.
  */
-public interface ApiResourceCommitStore {
-    /** Claims an idempotency coordinate; returns Acquired, Replay, Busy or Conflict. */
-    ClaimResult claim(CommandKey key, String requestFingerprint, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision expectedRevision);
+public interface ApiResourceCommitStore extends AuthoringCommandClaimStore {
     /** Stages an invisible revision; may report validation or typed CAS/projection failures. */
     StagedApiResource stage(CommandLease lease, String connectionId, ApiResourceCommand command);
     /** Atomically promotes a stage; may report STAGE_MISSING, CAS_MISMATCH, projection or receipt failures. */
