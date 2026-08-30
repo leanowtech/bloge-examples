@@ -15,7 +15,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.Clock;
 import java.time.Duration;
 
 /**
@@ -76,7 +75,6 @@ public class ApiResourceAuthoringRuntimeConfiguration {
                 jdbc,
                 new TransactionTemplate(transactionManager),
                 mapper,
-                Clock.systemUTC(),
                 Duration.ofSeconds(leaseSeconds),
                 decisions,
                 compiler);

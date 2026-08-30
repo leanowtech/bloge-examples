@@ -19,9 +19,9 @@ import java.util.List;
 
 /**
  * Fail-closed startup gate for the API Resource authoring persistence schema.
- * Construction performs read-only checks and never applies DDL. A later
- * production runtime configuration is responsible for instantiating this gate;
- * this class is not itself wired into the application context.
+ * Construction performs read-only checks and never applies DDL. The opt-in
+ * production runtime configuration directly wires this gate when authoring is
+ * enabled; the disabled feature leaves it absent from the application context.
  */
 public final class ApiResourceAuthoringSchemaReadiness {
     private static final String MIGRATION = "V20260830_002";

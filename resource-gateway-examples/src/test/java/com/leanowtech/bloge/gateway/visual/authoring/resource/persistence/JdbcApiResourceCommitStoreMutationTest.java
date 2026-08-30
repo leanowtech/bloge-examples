@@ -18,7 +18,6 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
-import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -369,13 +368,13 @@ class JdbcApiResourceCommitStoreMutationTest {
     private JdbcApiResourceCommitStore store(ApiResourceProjectionCompiler compiler) {
         return new JdbcApiResourceCommitStore(jdbc,
                 new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
-                Clock.systemUTC(), Duration.ofSeconds(1), new ApiResourceDecisions(), compiler);
+                Duration.ofSeconds(1), new ApiResourceDecisions(), compiler);
     }
 
     private JdbcApiResourceCommitStore store(JdbcTemplate template, DataSource dataSource) {
         return new JdbcApiResourceCommitStore(template,
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)), JSON,
-                Clock.systemUTC(), Duration.ofSeconds(1), new ApiResourceDecisions(),
+                Duration.ofSeconds(1), new ApiResourceDecisions(),
                 JdbcApiResourceCommitStoreMutationTest::compile);
     }
 

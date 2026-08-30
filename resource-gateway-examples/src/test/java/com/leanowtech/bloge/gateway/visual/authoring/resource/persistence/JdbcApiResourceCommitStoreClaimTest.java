@@ -17,10 +17,7 @@ import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
-import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -41,7 +38,8 @@ class JdbcApiResourceCommitStoreClaimTest {
     private DataSource dataSource;
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
-    private MutableClock clock;
+    private static final String COMMITTED_PROJECTION_SET_FINGERPRINT =
+            "sha256:de16d95d1d3ed0de22c35909f622769db684e4c470f0acfdeb30b967969f9d4a";
 
     @BeforeEach
     void setUp() {
@@ -53,7 +51,6 @@ class JdbcApiResourceCommitStoreClaimTest {
                 .execute(dataSource);
         new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/V20260830_002__api_resource_concurrent_staging.sql"))
                 .execute(dataSource);
-        clock = new MutableClock();
     }
 
     @AfterEach
@@ -113,7 +110,7 @@ class JdbcApiResourceCommitStoreClaimTest {
 
     @Test
     void constructorRejectsNonPositiveLease() {
-        assertThatThrownBy(() -> new JdbcApiResourceCommitStore(jdbc, transactions, JSON, clock,
+        assertThatThrownBy(() -> new JdbcApiResourceCommitStore(jdbc, transactions, JSON,
                 Duration.ZERO, new ApiResourceDecisions(), (scope, resource) -> null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -122,11 +119,11 @@ class JdbcApiResourceCommitStoreClaimTest {
     void constructorRejectsMismatchedDataSources() {
         DataSource other = new DriverManagerDataSource(dataSourceUrl(), "sa", "");
         assertThatThrownBy(() -> new JdbcApiResourceCommitStore(jdbc,
-                new TransactionTemplate(new DataSourceTransactionManager(other)), JSON, clock,
+                new TransactionTemplate(new DataSourceTransactionManager(other)), JSON,
                 Duration.ofSeconds(1), new ApiResourceDecisions(), (scope, resource) -> null))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new JdbcApiResourceCommitStore(new JdbcTemplate(),
-                new TransactionTemplate(new DataSourceTransactionManager()), JSON, clock,
+                new TransactionTemplate(new DataSourceTransactionManager()), JSON,
                 Duration.ofSeconds(1), new ApiResourceDecisions(), (scope, resource) -> null))
                 .isInstanceOf(IllegalArgumentException.class);
     }
@@ -224,7 +221,7 @@ class JdbcApiResourceCommitStoreClaimTest {
     }
 
     private JdbcApiResourceCommitStore store(JdbcTemplate template, TransactionTemplate tx) {
-        return new JdbcApiResourceCommitStore(template, tx, JSON, clock, Duration.ofSeconds(1),
+        return new JdbcApiResourceCommitStore(template, tx, JSON, Duration.ofSeconds(1),
                 new ApiResourceDecisions(), (scope, resource) -> null);
     }
 
@@ -275,7 +272,7 @@ class JdbcApiResourceCommitStoreClaimTest {
                 """, "cmd-read", JSON.writeValueAsString(descriptor), AuthoringFingerprints.of(descriptor),
                 JSON.writeValueAsString(design), AuthoringFingerprints.of(design),
                 JSON.writeValueAsString(operator), AuthoringFingerprints.of(operator),
-                projectionSetFingerprint(spec, descriptor, design, operator));
+                COMMITTED_PROJECTION_SET_FINGERPRINT);
         jdbc.update("""
                 INSERT INTO rg_api_resource_heads
                     (tenant_id, project_id, environment_id, resource_id, revision, command_id, strong_etag, revision_state)
@@ -288,20 +285,6 @@ class JdbcApiResourceCommitStoreClaimTest {
                 lease.commandId());
     }
 
-    private static String projectionSetFingerprint(ApiResourceSpec resource, JsonNode descriptor,
-                                                   JsonNode design, JsonNode operator) {
-        JsonNode root = JSON.createObjectNode();
-        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("DESCRIPTOR", projectionFingerprintItem("DESCRIPTOR", resource, descriptor));
-        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("DESIGN_CONTRACT", projectionFingerprintItem("DESIGN_CONTRACT", resource, design));
-        ((com.fasterxml.jackson.databind.node.ObjectNode) root).set("OPERATOR", projectionFingerprintItem("OPERATOR", resource, operator));
-        return AuthoringFingerprints.of(root);
-    }
-
-    private static JsonNode projectionFingerprintItem(String kind, ApiResourceSpec resource, JsonNode body) {
-        return JSON.createObjectNode().put("kind", kind).put("subject", resource.ref().toString())
-                .put("bodyFingerprint", AuthoringFingerprints.of(body));
-    }
-
     private static ApiResourceCommand command() {
         Map<String, Object> schema = SchemaEnvelope.object(Map.of("id", Map.of("type", "string")), List.of("id")).schema();
         SchemaEnvelope envelope = new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema);
@@ -311,11 +294,4 @@ class JdbcApiResourceCommitStoreClaimTest {
                 ApiResourceCommand.Effect.READ_ONLY, List.of(new ApiResourceCommand.Example("one", value, value)));
     }
 
-    private static final class MutableClock extends Clock {
-        private Instant now = Instant.parse("2026-01-01T00:00:00Z");
-        void advance(Duration duration) { now = now.plus(duration); }
-        @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
-        @Override public Clock withZone(java.time.ZoneId zone) { return this; }
-        @Override public Instant instant() { return now; }
-    }
 }

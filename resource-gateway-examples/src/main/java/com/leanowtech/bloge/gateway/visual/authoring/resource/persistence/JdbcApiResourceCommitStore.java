@@ -23,7 +23,6 @@ import java.sql.SQLException;
 import javax.sql.DataSource;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -101,13 +100,12 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     /** Creates the seam with all collaborators needed by the complete store. */
     public JdbcApiResourceCommitStore(JdbcTemplate jdbc, TransactionTemplate transactions,
-                                      ObjectMapper mapper, Clock clock, Duration leaseDuration,
+                                      ObjectMapper mapper, Duration leaseDuration,
                                       ApiResourceDecisions decisions,
                                       ApiResourceProjectionCompiler compiler) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
-        Objects.requireNonNull(clock, "clock");
         if (leaseDuration == null || leaseDuration.isZero() || leaseDuration.isNegative()) {
             throw new IllegalArgumentException("leaseDuration must be positive");
         }
@@ -123,11 +121,11 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     }
 
     /** Creates a store whose JDBC and transaction collaborators share one DataSource. */
-    public JdbcApiResourceCommitStore(DataSource dataSource, ObjectMapper mapper, Clock clock,
+    public JdbcApiResourceCommitStore(DataSource dataSource, ObjectMapper mapper,
                                       Duration leaseDuration, ApiResourceDecisions decisions,
                                       ApiResourceProjectionCompiler compiler) {
         this(new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource")),
-                new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mapper, clock,
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)), mapper,
                 leaseDuration, decisions, compiler);
     }
 
@@ -202,7 +200,9 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     private boolean databaseLeaseIsLive(String commandId) {
         try {
-            Instant expiry = jdbc.queryForObject("SELECT lease_until FROM rg_authoring_command_journal WHERE command_id=?", (rs, n) -> timestamp(rs, "lease_until"), commandId);
+            Instant expiry = jdbc.queryForObject(
+                    "SELECT lease_until FROM rg_authoring_command_journal WHERE command_id = ?",
+                    (rs, n) -> timestamp(rs, "lease_until"), commandId);
             return expiry != null && expiry.isAfter(databaseNow());
         } catch (EmptyResultDataAccessException ex) {
             return false;
@@ -363,21 +363,26 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     }
 
     private static RowMapper<JournalRow> journalRowMapper() {
-        return (rs, rowNum) -> new JournalRow(rs.getString("command_id"), rs.getString("request_fingerprint"),
-                rs.getString("status"), rs.getInt("attempt_no"), rs.getString("attempt_token"),
-                timestamp(rs, "lease_until"), rs.getString("receipt_schema"), rs.getString("receipt_json"),
+        return (rs, rowNum) -> new JournalRow(
+                rs.getString("command_id"), rs.getString("request_fingerprint"),
+                rs.getString("status"), rs.getInt("attempt_no"),
+                rs.getString("attempt_token"), timestamp(rs, "lease_until"),
+                rs.getString("receipt_schema"), rs.getString("receipt_json"),
                 rs.getString("receipt_fingerprint"), rs.getString("receipt_etag"));
     }
 
     private static RowMapper<StoredRow> storedRowMapper() {
-        return (rs, rowNum) -> new StoredRow(rs.getString("tenant_id"), rs.getString("project_id"),
-                rs.getString("environment_id"), rs.getString("resource_id"), rs.getLong("revision"),
-                rs.getString("strong_etag"), rs.getString("spec_json"), rs.getString("spec_fingerprint"),
-                rs.getString("connection_id"), rs.getString("command_id"), rs.getString("descriptor_json"),
-                rs.getString("descriptor_fingerprint"), rs.getString("descriptor_state"),
-                rs.getString("design_contract_json"), rs.getString("design_contract_fingerprint"),
-                rs.getString("design_contract_state"), rs.getString("operator_json"),
-                rs.getString("operator_fingerprint"), rs.getString("operator_state"), rs.getString("set_fingerprint"),
+        return (rs, rowNum) -> new StoredRow(
+                rs.getString("tenant_id"), rs.getString("project_id"),
+                rs.getString("environment_id"), rs.getString("resource_id"),
+                rs.getLong("revision"), rs.getString("strong_etag"),
+                rs.getString("spec_json"), rs.getString("spec_fingerprint"),
+                rs.getString("connection_id"), rs.getString("command_id"),
+                rs.getString("descriptor_json"), rs.getString("descriptor_fingerprint"),
+                rs.getString("descriptor_state"), rs.getString("design_contract_json"),
+                rs.getString("design_contract_fingerprint"), rs.getString("design_contract_state"),
+                rs.getString("operator_json"), rs.getString("operator_fingerprint"),
+                rs.getString("operator_state"), rs.getString("set_fingerprint"),
                 rs.getString("receipt_schema"), rs.getString("receipt_json"),
                 rs.getString("receipt_fingerprint"), rs.getString("receipt_etag"));
     }
@@ -422,10 +427,16 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     @Override
     public StagedApiResource stage(CommandLease lease, String connectionId, ApiResourceCommand command) {
         Objects.requireNonNull(command, "command");
-        if (connectionId == null || connectionId.isBlank()) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "connection id is required");
-        try { return transactions.execute(status -> stageInTransaction(lease, connectionId, command)); }
-        catch (ApiResourceCommitStoreException ex) { throw ex; }
-        catch (DataAccessException ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage persistence failed"); }
+        if (connectionId == null || connectionId.isBlank()) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "connection id is required");
+        }
+        try {
+            return transactions.execute(status -> stageInTransaction(lease, connectionId, command));
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        } catch (DataAccessException ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage persistence failed");
+        }
     }
 
     private StagedApiResource stageInTransaction(CommandLease lease, String connectionId, ApiResourceCommand command) {
@@ -433,8 +444,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         StagedRow existing = staged(lease);
         ApiResourceSpec head = committedSpec(lease.key().scope(), lease.key().targetId());
         ApiResourceSpec next;
-        try { next = decisions.next(Optional.ofNullable(head), lease.key().targetId(), connectionId, command, lease.expectedRevision()); }
-        catch (ApiResourceAuthoringException ex) {
+        try {
+            next = decisions.next(Optional.ofNullable(head), lease.key().targetId(), connectionId, command,
+                    lease.expectedRevision());
+        } catch (ApiResourceAuthoringException ex) {
             if (ex.code() == ApiResourceAuthoringException.Code.ALREADY_EXISTS
                     || ex.code() == ApiResourceAuthoringException.Code.NOT_FOUND
                     || ex.code() == ApiResourceAuthoringException.Code.CAS_MISMATCH) {
@@ -447,9 +460,15 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
             return stagedValue(lease, existing);
         }
         ReadyApiResourceProjections projections;
-        try { projections = compiler.compile(lease.key().scope(), next); verifyProjections(next, projections); }
-        catch (ApiResourceCommitStoreException ex) { throw ex; }
-        catch (RuntimeException ex) { throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection compilation failed"); }
+        try {
+            projections = compiler.compile(lease.key().scope(), next);
+            verifyProjections(next, projections);
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        } catch (RuntimeException ex) {
+            throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID,
+                    "projection compilation failed");
+        }
         try {
             String etag = opaqueEtag(), specJson = mapper.writeValueAsString(next);
             if (jdbc.update("""
@@ -457,38 +476,53 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     (tenant_id, project_id, environment_id, resource_id, revision, state, spec_json, spec_fingerprint,
                      connection_id, strong_etag, command_id, attempt_no, attempt_token)
                     VALUES (?, ?, ?, ?, ?, 'STAGED', ?, ?, ?, ?, ?, ?, ?)""",
-                    lease.key().scope().tenantId(), lease.key().scope().projectId(), lease.key().scope().environmentId(),
-                    lease.key().targetId(), next.revision(), specJson, next.fingerprint(), connectionId, etag,
+                    lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                    lease.key().scope().environmentId(), lease.key().targetId(), next.revision(),
+                    specJson, next.fingerprint(), connectionId, etag,
                     lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
                 throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage insert failed");
             }
             insertProjection(lease, next, projections);
             return new StagedApiResource(lease, next, projections, etag);
-        } catch (ApiResourceCommitStoreException ex) { throw ex; }
-        catch (Exception ex) { throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage serialization failed"); }
+        } catch (ApiResourceCommitStoreException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage serialization failed");
+        }
     }
 
-    private void insertProjection(CommandLease lease, ApiResourceSpec resource, ReadyApiResourceProjections p) throws Exception {
+    private void insertProjection(CommandLease lease, ApiResourceSpec resource,
+                                  ReadyApiResourceProjections projections) throws Exception {
         if (jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
-                (tenant_id, project_id, environment_id, resource_id, revision, command_id, descriptor_json, descriptor_fingerprint, descriptor_state,
-                 design_contract_json, design_contract_fingerprint, design_contract_state, operator_json, operator_fingerprint, operator_state, set_fingerprint)
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id,
+                     descriptor_json, descriptor_fingerprint, descriptor_state,
+                     design_contract_json, design_contract_fingerprint, design_contract_state,
+                     operator_json, operator_fingerprint, operator_state, set_fingerprint)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'READY', ?, ?, 'READY', ?, ?, 'READY', ?)""",
-                lease.key().scope().tenantId(), lease.key().scope().projectId(), lease.key().scope().environmentId(), lease.key().targetId(), resource.revision(), lease.commandId(),
-                mapper.writeValueAsString(p.descriptor().body()), p.descriptor().fingerprint(), mapper.writeValueAsString(p.designContract().body()), p.designContract().fingerprint(),
-                mapper.writeValueAsString(p.operator().body()), p.operator().fingerprint(), projectionSetFingerprint(resource, p)) != 1) {
+                lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().targetId(), resource.revision(),
+                lease.commandId(), mapper.writeValueAsString(projections.descriptor().body()),
+                projections.descriptor().fingerprint(),
+                mapper.writeValueAsString(projections.designContract().body()),
+                projections.designContract().fingerprint(),
+                mapper.writeValueAsString(projections.operator().body()),
+                projections.operator().fingerprint(),
+                projectionSetFingerprint(resource, projections)) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "projection insert failed");
         }
     }
 
-    private String projectionSetFingerprint(ApiResourceSpec resource, ReadyApiResourceProjections p) {
+    private String projectionSetFingerprint(ApiResourceSpec resource,
+                                            ReadyApiResourceProjections projections) {
         var root = mapper.createObjectNode();
-        for (ProjectionDocument d : new ProjectionDocument[]{p.descriptor(), p.designContract(), p.operator()}) {
-            var item = mapper.createObjectNode();
-            item.put("kind", d.kind().name());
-            item.put("subject", d.subject().toString());
-            item.put("bodyFingerprint", d.fingerprint());
-            root.set(d.kind().name(), item);
+        for (ProjectionDocument document : new ProjectionDocument[]{
+                projections.descriptor(), projections.designContract(), projections.operator()}) {
+            var fingerprint = mapper.createObjectNode();
+            fingerprint.put("kind", document.kind().name());
+            fingerprint.put("subject", document.subject().toString());
+            fingerprint.put("bodyFingerprint", document.fingerprint());
+            root.set(document.kind().name(), fingerprint);
         }
         return AuthoringFingerprints.of(root);
     }
@@ -693,15 +727,18 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
 
     /** Maps database lock/unique races to CAS while retaining other failures as integrity errors. */
     private static boolean isCommitRace(DataAccessException failure) {
-        if (failure instanceof ConcurrencyFailureException || failure instanceof DuplicateKeyException) return true;
+        if (failure instanceof ConcurrencyFailureException || failure instanceof DuplicateKeyException) {
+            return true;
+        }
         Throwable cause = failure;
         while (cause != null) {
             if (cause instanceof java.sql.SQLException sql
-                    && ("40001".equals(sql.getSQLState()) || "HYT00".equals(sql.getSQLState()))) return true;
+                    && ("40001".equals(sql.getSQLState()) || "HYT00".equals(sql.getSQLState()))) {
+                return true;
+            }
             cause = cause.getCause();
         }
-        String message = String.valueOf(failure.getMessage()).toLowerCase(java.util.Locale.ROOT);
-        return message.contains("lock") || message.contains("deadlock") || message.contains("serialization");
+        return false;
     }
 
     /** Replays the decision seam for a stored command without using CREATE fingerprinting. */
@@ -762,18 +799,30 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 staged.revision(), staged.commandId()) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage state changed");
         }
-        if (jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?, updated_at=CURRENT_TIMESTAMP WHERE command_id=? AND status='PREPARING' AND attempt_no=? AND attempt_token=?",
+        if (jdbc.update("""
+                UPDATE rg_authoring_command_journal
+                   SET status = 'COMMITTED', receipt_schema = ?, receipt_json = ?,
+                       receipt_fingerprint = ?, receipt_etag = ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE command_id = ? AND status = 'PREPARING'
+                   AND attempt_no = ? AND attempt_token = ?""",
                 receipt.schemaVersion(), json(receipt.body()), receipt.bodyFingerprint(), receipt.strongEtag(),
                 lease.commandId(), lease.attemptNo(), lease.attemptToken()) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "command journal state changed");
         }
         if (heads.isEmpty()) {
-            if (jdbc.update("INSERT INTO rg_api_resource_heads (tenant_id,project_id,environment_id,resource_id,revision,command_id,strong_etag) VALUES (?,?,?,?,?,?,?)",
+            if (jdbc.update("""
+                    INSERT INTO rg_api_resource_heads
+                        (tenant_id, project_id, environment_id, resource_id, revision, command_id, strong_etag)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                     staged.tenantId(), staged.projectId(), staged.environmentId(), staged.resourceId(),
                     staged.revision(), staged.commandId(), staged.etag()) != 1) {
                 throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "head insert failed");
             }
-        } else if (jdbc.update("UPDATE rg_api_resource_heads SET revision=?, command_id=?, strong_etag=?, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? AND revision=? AND revision_state='COMMITTED'",
+        } else if (jdbc.update("""
+                UPDATE rg_api_resource_heads
+                   SET revision = ?, command_id = ?, strong_etag = ?, updated_at = CURRENT_TIMESTAMP
+                 WHERE tenant_id = ? AND project_id = ? AND environment_id = ? AND resource_id = ?
+                   AND revision = ? AND revision_state = 'COMMITTED'""",
                 staged.revision(), staged.commandId(), staged.etag(), staged.tenantId(), staged.projectId(),
                 staged.environmentId(), staged.resourceId(), heads.getFirst().revision()) != 1) {
             throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "head update failed");
