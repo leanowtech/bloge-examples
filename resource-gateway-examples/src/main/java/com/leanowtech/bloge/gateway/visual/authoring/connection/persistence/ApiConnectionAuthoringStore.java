@@ -1,7 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -22,9 +22,9 @@ import java.util.Optional;
  * accidentally with a different in-memory journal.</p>
  */
 public interface ApiConnectionAuthoringStore extends AuthoringCommandClaimStore {
-    /** Stages the exact Connection command under its outer claim. */
+    /** Stages an Auth.None Connection command under its outer claim. */
     StagedApiConnection stage(CommandLease lease, String connectionId, ExpectedRevision connectionExpected,
-                              ApiConnectionCommand command, PreparedSecretBinding... prepared);
+                              ApiConnectionCommand command);
 
     /** Commits the exact live Connection stage. */
     StoredApiConnection commit(CommandLease lease);
@@ -35,7 +35,19 @@ public interface ApiConnectionAuthoringStore extends AuthoringCommandClaimStore 
     /** Reads the current committed head in the exact authoring scope. */
     Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId);
 
+    /** Reads one committed historical revision in the exact authoring scope. */
+    Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision);
+
     /** Reads one committed historical revision by exact persisted strong ETag. */
     Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                             String strongEtag);
+
+    /**
+     * Resolves a committed replay receipt using the mapper owned by this
+     * lifecycle store. The implementation must validate exact schema, body
+     * fingerprint, ETag, scope, target, and committed attempt closure; any
+     * unverifiable receipt fails closed with the store's integrity error.
+     */
+    StoredApiConnection resolveReplay(AuthoringScope scope, String connectionId,
+                                      CommandReceipt receipt);
 }

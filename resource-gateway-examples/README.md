@@ -90,10 +90,12 @@ the same `DataSource`; the in-memory reference store keeps claim and Connection 
 validates the pure command before ETag lookup, fingerprinting, or claim, currently accepts only `Auth.None`,
 uses exact historical strong ETags for replay/CAS, and returns only `ApiConnectionView` plus its strong ETag.
 The focused command
-`mvn -f resource-gateway-examples/pom.xml -Dtest=ApiConnectionCommitStoreContractTest,InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest test -DfailIfNoTests=false`
-is **89/89 green** (Failures: 0, Errors: 0, Skipped: 0), including a real H2 `MODE=PostgreSQL` same-database
-claim/replay integration and lifecycle-failure cleanup coverage. The subsequent serial resource-gateway
-`mvn -f resource-gateway-examples/pom.xml clean verify` completed with `Tests run: 7,960; Failures: 0;
+`mvn -f resource-gateway-examples/pom.xml -Dtest=InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,ApiConnectionAuthorityTest test -DfailIfNoTests=false`
+is **108/108 green** (InMemory Connection 28, JDBC Connection 50, facade 14, JDBC facade 1, authority 15;
+Failures: 0, Errors: 0, Skipped: 0). It includes a real H2 `MODE=PostgreSQL` same-database claim/replay
+integration, exact journal/immutable-attempt receipt closure, custom-mapper replay, lease-loss/retry
+classification, and lifecycle-failure cleanup coverage. The subsequent serial resource-gateway
+`mvn -f resource-gateway-examples/pom.xml clean verify` completed with `Tests run: 7,965; Failures: 0;
 Errors: 0; Skipped: 33` and `BUILD SUCCESS`. Credential write capabilities, HTTP/controller transport, real
 PostgreSQL certification, and UI acceptance remain outside this tracer.
 

@@ -1,24 +1,19 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 /**
- * Shared validator for the persisted strong-validator safe subset.
+ * Shared validator for the application's persisted strong-validator subset.
  *
- * <p>The V003/V010 database closure accepts one quoted ASCII validator and
- * rejects weak, list, control, and oversized values. Keeping this check at
- * the metadata seam prevents the in-memory model, JDBC adapter, and returned
- * value objects from drifting apart.</p>
+ * <p>This application subset is intentionally stricter than the V003 database
+ * closure: it accepts one quoted printable ASCII value and rejects list and
+ * control forms. Quoted content beginning with {@code "W/} is reserved and
+ * excluded by this application rule; that wording does not classify it as an
+ * HTTP weak validator. An actual HTTP weak value such as {@code W/"etag"} is
+ * rejected by the surrounding quoted-value shape as well.</p>
  */
 public final class StrongEtag {
     private StrongEtag() { }
 
-    /**
-     * Returns whether the value is one quoted, ASCII, non-list strong
-     * validator accepted by the V003/V010 database closure. The database
-     * safe subset intentionally rejects every weak/list/control form.
-     *
-     * @param value candidate persisted validator
-     * @return whether the candidate is valid
-     */
+    /** @param value candidate persisted validator @return whether it is valid */
     public static boolean isValid(String value) {
         if (value == null || value.length() < 3 || value.length() > 256
                 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'

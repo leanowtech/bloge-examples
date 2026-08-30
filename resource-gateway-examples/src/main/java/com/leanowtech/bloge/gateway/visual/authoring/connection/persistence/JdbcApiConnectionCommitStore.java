@@ -938,6 +938,44 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         return readByStrongEtag(requireScope(scope), requireConnectionId(connectionId), strongEtag);
     }
 
+    /**
+     * Resolves a Connection receipt with this adapter's canonical mapper.
+     * The receipt must belong to one committed API_CONNECTION_SAVE attempt;
+     * Resource child receipts are intentionally not accepted here.
+     */
+    public StoredApiConnection resolveReplay(AuthoringScope scope, String connectionId,
+                                              CommandReceipt receipt) {
+        if (scope == null || connectionId == null || connectionId.isBlank() || receipt == null
+                || !ApiConnectionView.SCHEMA_VERSION.equals(receipt.schemaVersion())
+                || !StrongEtag.isValid(receipt.strongEtag())) fail(Code.INTEGRITY);
+        StoredApiConnection stored = findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag())
+                .orElse(null);
+        if (stored == null || !scope.equals(stored.scope())
+                || !connectionId.equals(stored.view().connectionId())) fail(Code.INTEGRITY);
+        Long exact = jdbc.queryForObject("""
+                        SELECT COUNT(*)
+                          FROM rg_api_connection_revisions r
+                          JOIN rg_authoring_command_journal j
+                            ON j.command_id=r.command_id AND j.attempt_no=r.attempt_no
+                           AND j.attempt_token=r.attempt_token
+                          JOIN rg_authoring_command_attempts a
+                            ON a.command_id=r.command_id AND a.attempt_no=r.attempt_no
+                           AND a.attempt_token=r.attempt_token
+                         WHERE r.tenant_id=? AND r.project_id=? AND r.environment_id=?
+                           AND r.connection_id=? AND r.command_id=? AND r.strong_etag=?
+                           AND r.state='COMMITTED' AND j.status='COMMITTED' AND a.status='COMMITTED'
+                           AND j.endpoint='API_CONNECTION_SAVE' AND j.target_id=?
+                           AND j.receipt_schema=? AND j.receipt_etag=?
+                        """, Long.class, scope.tenantId(), scope.projectId(), scope.environmentId(),
+                connectionId, stored.commandId(), receipt.strongEtag(), connectionId,
+                ApiConnectionView.SCHEMA_VERSION, receipt.strongEtag());
+        if (exact == null || exact != 1) fail(Code.INTEGRITY);
+        JsonNode canonical = mapper.valueToTree(stored.view());
+        if (!canonical.equals(receipt.body())
+                || !AuthoringFingerprints.of(canonical).equals(receipt.bodyFingerprint())) fail(Code.INTEGRITY);
+        return stored;
+    }
+
     private Optional<StoredApiConnection> read(AuthoringScope scope, String connectionId, Long revision) {
         String sql = "SELECT " + REVISION_COLUMNS + """
                   FROM rg_api_connection_revisions r

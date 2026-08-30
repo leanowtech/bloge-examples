@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
@@ -11,6 +12,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBi
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
@@ -80,9 +82,8 @@ public final class InMemoryApiConnectionCommitStore
 
     /**
      * Creates a shared claim/lifecycle model with an explicit receipt mapper.
-     * The facade must use the same mapper configuration when it validates a
-     * replay body; otherwise a naming strategy or registered module could
-     * make an otherwise valid receipt appear tampered.
+     * Replay validation is performed inside this store with that mapper; the
+     * application facade does not accept an independent mapper.
      */
     public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions,
                                             Duration leaseDuration, ObjectMapper mapper) {
@@ -101,7 +102,7 @@ public final class InMemoryApiConnectionCommitStore
             CommandKey key, String requestFingerprint, ExpectedRevision expectedRevision) {
         if (key == null || key.endpoint() != AuthoringEndpoint.API_CONNECTION_SAVE
                 || expectedRevision == null || !validFingerprint(requestFingerprint)) {
-            fail(Code.INTEGRITY);
+            throw new AuthoringCommandClaimStoreException(AuthoringCommandClaimStoreException.Code.INTEGRITY);
         }
         Journal prior = journals.get(key);
         if (prior != null && !prior.requestFingerprint().equals(requestFingerprint)) {
@@ -133,6 +134,14 @@ public final class InMemoryApiConnectionCommitStore
         journals.put(key, new Journal(JournalStatus.PREPARING, requestFingerprint, expectedRevision, lease, null));
         return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(
                 lease, prior != null);
+    }
+
+    /** Stages the Auth.None application-facade path without secret bindings. */
+    @Override
+    public synchronized StagedApiConnection stage(CommandLease lease, String connectionId,
+                                                   ExpectedRevision connectionExpected,
+                                                   ApiConnectionCommand command) {
+        return stage(lease, connectionId, connectionExpected, command, new PreparedSecretBinding[0]);
     }
 
     /** {@inheritDoc} */
@@ -377,7 +386,7 @@ public final class InMemoryApiConnectionCommitStore
         // request incorrectly observes BUSY forever. Exact journal equality
         // fences an old cleanup call after takeover and leaves another attempt
         // untouched.
-        if (journal == null || journal.status() != JournalStatus.PREPARING
+        if (journal.status() != JournalStatus.PREPARING
                 || !journal.lease().equals(lease)
                 || !lease.leaseUntil().isAfter(clock.instant())) return;
         if (current != null && !current.equals(lease)) return;
@@ -416,6 +425,35 @@ public final class InMemoryApiConnectionCommitStore
             }
         }
         return Optional.ofNullable(match);
+    }
+
+    /**
+     * Resolves a replay with this store's receipt mapper; callers cannot
+     * supply a second mapper that could disagree about canonical JSON.
+     */
+    @Override
+    public synchronized StoredApiConnection resolveReplay(AuthoringScope scope, String connectionId,
+                                                            CommandReceipt receipt) {
+        if (scope == null || connectionId == null || connectionId.isBlank() || receipt == null
+                || !ApiConnectionView.SCHEMA_VERSION.equals(receipt.schemaVersion())
+                || !StrongEtag.isValid(receipt.strongEtag())) fail(Code.INTEGRITY);
+        StoredApiConnection stored = findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag())
+                .orElse(null);
+        if (stored == null || !scope.equals(stored.scope())
+                || !connectionId.equals(stored.view().connectionId())) fail(Code.INTEGRITY);
+        JsonNode canonical = mapper.valueToTree(stored.view());
+        if (!canonical.equals(receipt.body())
+                || !AuthoringFingerprints.of(canonical).equals(receipt.bodyFingerprint())) fail(Code.INTEGRITY);
+        long journalMatches = journals.entrySet().stream()
+                .filter(entry -> entry.getKey().endpoint() == AuthoringEndpoint.API_CONNECTION_SAVE
+                        && scope.equals(entry.getKey().scope())
+                        && connectionId.equals(entry.getKey().targetId()))
+                .filter(entry -> entry.getValue().status() == JournalStatus.COMMITTED
+                        && entry.getValue().lease().commandId().equals(stored.commandId())
+                        && receipt.equals(entry.getValue().receipt()))
+                .count();
+        if (journalMatches != 1) fail(Code.INTEGRITY);
+        return stored;
     }
 
     private static String slotFor(String kind) {

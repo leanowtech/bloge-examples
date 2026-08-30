@@ -68,15 +68,19 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
         } catch (DuplicateKeyException duplicate) {
             try {
                 return transactions.execute(status -> claimInTransaction(key, requestFingerprint, expectedRevision));
-            } catch (ApiResourceCommitStoreException ex) {
+            } catch (AuthoringCommandClaimStoreException ex) {
                 throw ex;
             } catch (DataAccessException ex) {
-                throw error("claim persistence failed");
+                throw error(AuthoringCommandClaimStoreException.Code.PERSISTENCE);
+            } catch (RuntimeException ex) {
+                throw error(AuthoringCommandClaimStoreException.Code.PERSISTENCE);
             }
-        } catch (ApiResourceCommitStoreException ex) {
+        } catch (AuthoringCommandClaimStoreException ex) {
             throw ex;
         } catch (DataAccessException ex) {
-            throw error("claim persistence failed");
+            throw error(AuthoringCommandClaimStoreException.Code.PERSISTENCE);
+        } catch (RuntimeException ex) {
+            throw error(AuthoringCommandClaimStoreException.Code.PERSISTENCE);
         }
     }
 
@@ -148,7 +152,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
                 lease.key().targetId(), lease.key().idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
                 lease.attemptNo(), lease.attemptToken(), timestamp(lease.leaseUntil()), expectedMode(lease.expectedRevision()),
                 expectedRevision(lease.expectedRevision()), timestamp(now), timestamp(now)) != 1) {
-            throw error("command attempt insert failed");
+            throw error(AuthoringCommandClaimStoreException.Code.INTEGRITY);
         }
     }
 
@@ -157,7 +161,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
         if (jdbc.update("UPDATE rg_authoring_command_attempts SET status='SUPERSEDED', updated_at=CURRENT_TIMESTAMP "
                         + "WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'",
                 prior.commandId(), prior.attemptNo(), prior.attemptToken()) != 1) {
-            throw error("command attempt state changed");
+            throw error(AuthoringCommandClaimStoreException.Code.LEASE_FENCED);
         }
     }
 
@@ -187,7 +191,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
                         + "AND target_id=? AND idempotency_key=? FOR UPDATE", journalRowMapper(),
                 key.scope().tenantId(), key.scope().projectId(), key.scope().environmentId(), key.actorId(),
                 key.endpoint().name(), key.targetId(), key.idempotencyKey());
-        if (rows.size() > 1) throw error("authoring coordinate has ambiguous journal provenance");
+        if (rows.size() > 1) throw error(AuthoringCommandClaimStoreException.Code.INTEGRITY);
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
@@ -196,7 +200,7 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
             return new CommandReceipt(row.receiptSchema(), mapper.readTree(row.receiptJson()),
                     row.receiptFingerprint(), row.receiptEtag());
         } catch (Exception ex) {
-            throw error("stored receipt is invalid");
+            throw error(AuthoringCommandClaimStoreException.Code.INTEGRITY);
         }
     }
 
@@ -239,13 +243,15 @@ public final class JdbcAuthoringCommandClaimStore implements AuthoringCommandCla
     }
 
     private static void requireFingerprint(String value) {
-        if (value == null || !value.matches("sha256:[0-9a-f]{64}")) throw error("fingerprint is invalid");
+        if (value == null || !value.matches("sha256:[0-9a-f]{64}")) {
+            throw error(AuthoringCommandClaimStoreException.Code.INTEGRITY);
+        }
     }
 
     private static boolean positive(Long value) { return value != null && value > 0; }
 
-    private static ApiResourceCommitStoreException error(String message) {
-        return new ApiResourceCommitStoreException(ApiResourceCommitStoreException.Code.INTEGRITY, message);
+    private static AuthoringCommandClaimStoreException error(AuthoringCommandClaimStoreException.Code code) {
+        return new AuthoringCommandClaimStoreException(code);
     }
 
     private record JournalRow(String commandId, String requestFingerprint, String status, int attemptNo,

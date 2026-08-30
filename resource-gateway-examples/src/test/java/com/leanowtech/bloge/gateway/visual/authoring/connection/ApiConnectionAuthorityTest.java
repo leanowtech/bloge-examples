@@ -245,6 +245,15 @@ class ApiConnectionAuthorityTest {
     }
 
     @Test
+    void requestFingerprintIsExplicitlyNoneOnly() {
+        ApiConnectionDecisions decisions = new ApiConnectionDecisions();
+        assertThatThrownBy(() -> decisions.requestFingerprint(SCOPE, "customer", command(
+                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("not-fingerprinted")))))
+                .isInstanceOf(ApiConnectionAuthoringException.class)
+                .extracting("code").isEqualTo(ApiConnectionAuthoringException.Code.VALIDATION);
+    }
+
+    @Test
     void fingerprintsIgnoreSecretReferencesButIncludeEveryAuthoritySlotAndMetadataField() {
         ApiConnectionDecisions decisions = new ApiConnectionDecisions();
         ApiConnectionSpec first = decisions.next(SCOPE, Optional.empty(), "fingerprinted-refs", command(

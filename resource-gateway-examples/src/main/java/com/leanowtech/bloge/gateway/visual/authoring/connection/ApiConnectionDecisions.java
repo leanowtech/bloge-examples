@@ -75,13 +75,6 @@ public final class ApiConnectionDecisions {
                 next.apiKeyHeader(), next.defaults(), next.secretSlots());
     }
 
-    /** Alias with current value first, matching other authoring decisions. */
-    public ApiConnectionSpec next(Optional<ApiConnectionSpec> currentValue, String connectionId,
-                                  ApiConnectionCommand command, ExpectedRevision expected,
-                                  AuthoringScope scope, PreparedSecretBinding... prepared) {
-        return next(scope, currentValue, connectionId, command, expected, prepared);
-    }
-
     /** Convenience overload for commands without prepared bindings. */
     public ApiConnectionSpec next(AuthoringScope scope, Optional<ApiConnectionSpec> currentValue,
                                   String connectionId, ApiConnectionCommand command,
@@ -102,11 +95,11 @@ public final class ApiConnectionDecisions {
     }
 
     /**
-     * Builds the deterministic idempotency fingerprint from explicit,
-     * non-secret authority fields only. Credential values and opaque secret
-     * references are represented by their slot and write mode, never by their
-     * contents. Expected revisions are deliberately outside this fingerprint
-     * and are compared by the claim store as a separate authority field.
+     * Builds the deterministic idempotency fingerprint from the explicit
+     * non-secret fields of an {@link ApiConnectionCommand.Auth.None} command.
+     * Credential-bearing commands are rejected before any fingerprint body is
+     * built. Expected revisions are deliberately outside this fingerprint and
+     * are compared by the claim store as a separate authority field.
      *
      * @param scope trusted authoring scope
      * @param connectionId path target
@@ -130,20 +123,7 @@ public final class ApiConnectionDecisions {
         body.put("displayName", command.displayName());
         body.put("baseUrl", command.baseUrl());
         ObjectNode auth = body.putObject("auth");
-        ApiConnectionCommand.Auth value = command.auth();
-        auth.put("kind", value.kind());
-        if (value instanceof ApiConnectionCommand.Auth.Basic basic) {
-            auth.put("username", basic.username());
-            auth.put("secretSlot", "password");
-            auth.put("secretWriteMode", secretWriteMode(basic.password()));
-        } else if (value instanceof ApiConnectionCommand.Auth.Bearer bearer) {
-            auth.put("secretSlot", "token");
-            auth.put("secretWriteMode", secretWriteMode(bearer.token()));
-        } else if (value instanceof ApiConnectionCommand.Auth.ApiKey apiKey) {
-            auth.put("headerName", apiKey.headerName());
-            auth.put("secretSlot", "value");
-            auth.put("secretWriteMode", secretWriteMode(apiKey.value()));
-        }
+        auth.put("kind", "NONE");
         ApiConnectionCommand.Defaults defaults = effectiveDefaults(command.defaults());
         body.set("defaults", mapper.valueToTree(defaults));
         return AuthoringFingerprints.of(body);
@@ -284,12 +264,6 @@ public final class ApiConnectionDecisions {
 
     private static void requireSecretWrite(ApiConnectionCommand.SecretWrite write) {
         if (write == null) invalid("secret write is required");
-    }
-
-    private static String secretWriteMode(ApiConnectionCommand.SecretWrite write) {
-        return write instanceof ApiConnectionCommand.SecretWrite.Value ? "VALUE"
-                : write instanceof ApiConnectionCommand.SecretWrite.SecretRef ? "SECRET_REF"
-                : write instanceof ApiConnectionCommand.SecretWrite.KeepExisting ? "KEEP_EXISTING" : "UNKNOWN";
     }
 
     private static void validateBaseUrl(String value) {

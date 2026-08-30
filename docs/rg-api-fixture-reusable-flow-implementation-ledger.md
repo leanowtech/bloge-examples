@@ -682,3 +682,48 @@ BUILD SUCCESS
 `Tests run 7,960; Failures: 0; Errors: 0; Skipped: 33`，并以 `BUILD SUCCESS` 结束。两项证据均不接受
 credential provider、API Resource 默认 Fixture、HTTP/controller transport、Facade/UI 全链路或 UI；后续
 transport 仍需单独验证。
+
+## 20. Iteration 19 — C1 application review-fix closure
+
+日期：2026-08-31。
+
+### 已完成
+
+- Facade 不再接收或持有外部 `ObjectMapper`；公开构造只有生命周期完整的
+  `ApiConnectionAuthoringStore`。Replay closure 由 InMemory/JDBC store 使用各自的 canonical mapper 完成，
+  并精确连接 `command_id + attempt_no + attempt_token`、endpoint、target、schema、body、fingerprint 和
+  strong ETag。这样不能用不匹配的 facade mapper 伪造 replay，且历史 committed revision 的 exact read
+  仍与当前 head 解耦。
+- Claim failure 已收敛为不暴露 Resource-specific exception 的通用类型；`LEASE_FENCED` 映射为
+  `LEASE_LOST`，`LEASE_EXPIRED` 映射为带权威 `retryAt` 的 retryable busy，实际 CAS mismatch 保留为
+  `CAS_MISMATCH`。Auth.None 之外的 capability 在 fingerprint/claim 前拒绝；fingerprint 只覆盖显式、非敏感
+  authority 字段。
+- Acquired 之后的 cleanup failure 不再静默吞掉：原始失败仍保持 payload-free，cleanup 异常映射为 typed
+  persistence/integrity failure。Strong ETag 使用单一 application-safe subset validator；`W/"etag"` 等
+  实际 weak/list/unquoted 形状继续 fail closed。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,\
+ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest,ApiConnectionAuthorityTest \
+  test -DfailIfNoTests=false
+
+InMemoryApiConnectionCommitStoreTest: 28/28
+JdbcApiConnectionCommitStoreTest: 50/50
+ApiConnectionAuthoringFacadeTest: 14/14
+JdbcApiConnectionAuthoringFacadeTest: 1/1
+ApiConnectionAuthorityTest: 15/15
+Tests run: 108, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+
+mvn -f resource-gateway-examples/pom.xml clean verify
+Tests run: 7,965, Failures: 0, Errors: 0, Skipped: 33
+BUILD SUCCESS
+```
+
+聚焦证据来自 H2 `MODE=PostgreSQL`，其中 JDBC facade 使用同一 `DataSource` 与 V001–V010 schema；full
+verify 仍是本地资源网关构建证据，不替代真实 PostgreSQL lock/isolation certification。Facade 目前只覆盖
+Auth.None 的 Connection create/update/replay tracer；credential provider、Default Fixture、HTTP/controller、
+UI 和生产 side-effect 尚未验收。受保护的 frontend 文件与两份 reusable-flow 计划/评审文档不属于本轮提交。

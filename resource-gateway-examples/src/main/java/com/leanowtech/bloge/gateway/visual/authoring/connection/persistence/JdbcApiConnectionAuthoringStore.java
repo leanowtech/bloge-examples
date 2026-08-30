@@ -3,8 +3,6 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -31,9 +29,9 @@ import java.util.Optional;
  * this Connection-only facade.</p>
  */
 public final class JdbcApiConnectionAuthoringStore
-        implements ApiConnectionAuthoringStore, ApiConnectionCommitStore {
+        implements ApiConnectionAuthoringStore {
     private final AuthoringCommandClaimStore claims;
-    private final ApiConnectionCommitStore connections;
+    private final JdbcApiConnectionCommitStore connections;
 
     /**
      * Creates a lifecycle-complete adapter over one database source.
@@ -65,25 +63,14 @@ public final class JdbcApiConnectionAuthoringStore
         return claims.claim(key, requestFingerprint, expectedRevision);
     }
 
+    /** Stages the Auth.None application-facade path without secret bindings. */
     @Override public StagedApiConnection stage(CommandLease lease, String connectionId,
                                                ExpectedRevision connectionExpected,
-                                               ApiConnectionCommand command,
-                                               PreparedSecretBinding... prepared) {
-        return connections.stage(lease, connectionId, connectionExpected, command, prepared);
+                                               ApiConnectionCommand command) {
+        return connections.stage(lease, connectionId, connectionExpected, command);
     }
 
     @Override public StoredApiConnection commit(CommandLease lease) { return connections.commit(lease); }
-    @Override public StoredApiConnection commit(CommandLease lease, FinalizedSecretSlots finalized) {
-        return connections.commit(lease, finalized);
-    }
-    @Override public StoredApiConnection commitChild(CommandLease lease) { return connections.commitChild(lease); }
-    @Override public StoredApiConnection commitChild(CommandLease lease, FinalizedSecretSlots finalized) {
-        return connections.commitChild(lease, finalized);
-    }
-    @Override public StoredApiConnection publishChild(CommandLease lease, CommandReceipt outerReceipt) {
-        return connections.publishChild(lease, outerReceipt);
-    }
-    @Override public void failChild(CommandLease lease) { connections.failChild(lease); }
     @Override public void fail(CommandLease lease) { connections.fail(lease); }
     @Override public Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return connections.findHead(scope, connectionId);
@@ -94,5 +81,10 @@ public final class JdbcApiConnectionAuthoringStore
     @Override public Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
                                                                                String strongEtag) {
         return connections.findRevisionByStrongEtag(scope, connectionId, strongEtag);
+    }
+
+    @Override public StoredApiConnection resolveReplay(AuthoringScope scope, String connectionId,
+                                                        CommandReceipt receipt) {
+        return connections.resolveReplay(scope, connectionId, receipt);
     }
 }

@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.JdbcApiConnectionAuthoringStore;
@@ -46,10 +47,10 @@ class JdbcApiConnectionAuthoringFacadeTest {
             new ResourceDatabasePopulator(new ClassPathResource(migration)).execute(dataSource);
         }
         ApiConnectionDecisions decisions = new ApiConnectionDecisions();
-        ObjectMapper mapper = new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper().setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
         var store = new JdbcApiConnectionAuthoringStore(dataSource, mapper, Duration.ofSeconds(30),
                 decisions, Clock.systemUTC());
-        var facade = new ApiConnectionAuthoringFacade(store, decisions, mapper);
+        var facade = new ApiConnectionAuthoringFacade(store, decisions);
         var request = new ApiConnectionAuthoringRequest(SCOPE, "actor", "customer", "jdbc-key",
                 ApiConnectionAuthoringPrecondition.create(),
                 new ApiConnectionCommand("Customer API", "https://customer.example.com",

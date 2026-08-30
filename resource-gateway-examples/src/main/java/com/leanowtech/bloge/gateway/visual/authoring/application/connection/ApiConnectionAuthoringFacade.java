@@ -1,7 +1,5 @@
 package com.leanowtech.bloge.gateway.visual.authoring.application.connection;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
@@ -10,9 +8,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiC
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StrongEtag;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceCommitStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
-import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringCommandClaimStoreException;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
@@ -22,6 +19,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Comman
 import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import java.time.Instant;
 
 /**
  * Standalone Connection application tracer for the API_CONNECTION_SAVE
@@ -44,19 +42,16 @@ public final class ApiConnectionAuthoringFacade {
 
     private final ApiConnectionAuthoringStore store;
     private final ApiConnectionDecisions decisions;
-    private final ObjectMapper mapper;
 
     /**
-     * Creates a facade with explicitly shared pure collaborators. The mapper
-     * must be the same configured mapper used by the lifecycle store when it
-     * serializes receipt bodies; replay validation is intentionally exact.
+     * Creates a facade with one lifecycle-complete store and pure decisions.
+     * Receipt canonicalization remains private to the store so callers cannot
+     * pair this facade with a mapper that disagrees with persisted JSON.
      */
     public ApiConnectionAuthoringFacade(ApiConnectionAuthoringStore store,
-                                       ApiConnectionDecisions decisions,
-                                       ObjectMapper mapper) {
+                                       ApiConnectionDecisions decisions) {
         this.store = Objects.requireNonNull(store, "store");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
-        this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
     }
 
     /**
@@ -82,7 +77,9 @@ public final class ApiConnectionAuthoringFacade {
         if (claim instanceof ClaimResult.Replay replay) {
             return replay(preflight, replay.receipt());
         }
-        if (claim instanceof ClaimResult.Busy) throw failure(ApiConnectionAuthoringFailure.Code.BUSY);
+        if (claim instanceof ClaimResult.Busy busy) {
+            throw failure(ApiConnectionAuthoringFailure.Code.BUSY, busy.retryAt());
+        }
         if (claim instanceof ClaimResult.Conflict) throw failure(ApiConnectionAuthoringFailure.Code.CONFLICT);
         if (!(claim instanceof ClaimResult.Acquired acquired)) {
             throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
@@ -94,7 +91,8 @@ public final class ApiConnectionAuthoringFacade {
             var committed = store.commit(lease);
             return new ApiConnectionAuthoringResult(committed.view(), committed.strongEtag(), false);
         } catch (RuntimeException ex) {
-            safeFail(lease);
+            ApiConnectionAuthoringFailure cleanupFailure = safeFail(lease);
+            if (cleanupFailure != null) throw cleanupFailure;
             throw mapFailure(ex);
         }
     }
@@ -164,10 +162,6 @@ public final class ApiConnectionAuthoringFacade {
     }
 
     private ApiConnectionAuthoringResult replay(Preflight preflight, CommandReceipt receipt) {
-        if (receipt == null || !ApiConnectionView.SCHEMA_VERSION.equals(receipt.schemaVersion())
-                || !StrongEtag.isValid(receipt.strongEtag())) {
-            throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
-        }
         var scope = preflight.scope();
         var connectionId = preflight.connectionId();
         var requestedRevision = preflight.historical() == null ? null : preflight.historical().view().revision();
@@ -177,33 +171,26 @@ public final class ApiConnectionAuthoringFacade {
         // current head advances. Create replay follows the same exact lookup.
         com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.StoredApiConnection historical;
         try {
-            historical = store.findRevisionByStrongEtag(scope, connectionId, receipt.strongEtag()).orElse(null);
+            historical = store.resolveReplay(scope, connectionId, receipt);
         } catch (RuntimeException ex) {
             throw mapFailure(ex);
         }
         if (historical == null) throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
-        if (!scope.equals(historical.scope())
-                || !connectionId.equals(historical.view().connectionId())) {
-            throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
-        }
         if (requestedRevision != null && historical.view().revision() != requestedRevision + 1
                 || requestedRevision == null && historical.view().revision() != 1) {
-            throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
-        }
-        JsonNode expectedBody = mapper.valueToTree(historical.view());
-        if (!expectedBody.equals(receipt.body())
-                || !AuthoringFingerprints.of(expectedBody).equals(receipt.bodyFingerprint())) {
             throw failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
         }
         return new ApiConnectionAuthoringResult(historical.view(), historical.strongEtag(), true);
     }
 
-    private void safeFail(CommandLease lease) {
+    private ApiConnectionAuthoringFailure safeFail(CommandLease lease) {
         try {
             store.fail(lease);
+            return null;
         } catch (RuntimeException ignored) {
-            // Preserve the original stage/commit failure. The store's exact
-            // lease fence remains the cleanup authority.
+            // Never expose or silently discard a cleanup failure. The closed
+            // application code deliberately omits the original exception.
+            return failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
         }
     }
 
@@ -223,17 +210,18 @@ public final class ApiConnectionAuthoringFacade {
         }
         if (ex instanceof ApiConnectionCommitStoreException failure) {
             return switch (failure.code()) {
-                case LEASE_FENCED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_FENCED -> failure(ApiConnectionAuthoringFailure.Code.LEASE_LOST);
+                case CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
                 case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
                 case STAGE_MISSING -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
                 case INTEGRITY -> failure(ApiConnectionAuthoringFailure.Code.INTEGRITY);
             };
         }
-        if (ex instanceof ApiResourceCommitStoreException failure) {
+        if (ex instanceof AuthoringCommandClaimStoreException failure) {
             return switch (failure.code()) {
-                case LEASE_FENCED, CAS_MISMATCH -> failure(ApiConnectionAuthoringFailure.Code.CAS_MISMATCH);
+                case LEASE_FENCED -> failure(ApiConnectionAuthoringFailure.Code.LEASE_LOST);
                 case LEASE_EXPIRED -> failure(ApiConnectionAuthoringFailure.Code.BUSY);
-                default -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
+                case INTEGRITY, PERSISTENCE -> failure(ApiConnectionAuthoringFailure.Code.PERSISTENCE);
             };
         }
         if (ex instanceof IllegalArgumentException) return failure(ApiConnectionAuthoringFailure.Code.VALIDATION);
@@ -242,6 +230,10 @@ public final class ApiConnectionAuthoringFacade {
 
     private static ApiConnectionAuthoringFailure failure(ApiConnectionAuthoringFailure.Code code) {
         return new ApiConnectionAuthoringFailure(code);
+    }
+
+    private static ApiConnectionAuthoringFailure failure(ApiConnectionAuthoringFailure.Code code, Instant retryAt) {
+        return new ApiConnectionAuthoringFailure(code, retryAt);
     }
 
     private record Preflight(

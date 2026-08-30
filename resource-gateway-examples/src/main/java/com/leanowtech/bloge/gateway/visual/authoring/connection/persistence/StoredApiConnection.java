@@ -58,11 +58,7 @@ public final class StoredApiConnection {
         return value;
     }
     private static String requireEtag(String value) {
-        if (!isStrongHttpEtag(value)) throw new IllegalArgumentException("strongEtag is invalid");
+        if (!StrongEtag.isValid(value)) throw new IllegalArgumentException("strongEtag is invalid");
         return value;
-    }
-    /** Stricter HTTP-safe closure, even if an older database check is wider. */
-    private static boolean isStrongHttpEtag(String value) {
-        return StrongEtag.isValid(value);
     }
 }
