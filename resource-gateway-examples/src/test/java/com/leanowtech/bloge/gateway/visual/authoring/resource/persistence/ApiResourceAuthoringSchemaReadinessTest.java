@@ -46,7 +46,7 @@ class ApiResourceAuthoringSchemaReadinessTest {
     void emptyDatabaseFailsClosedWithMigrationHint() {
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_001");
+                .hasMessageContaining("V20260830_002");
     }
 
     @Test
@@ -55,14 +55,15 @@ class ApiResourceAuthoringSchemaReadinessTest {
         jdbc.execute("DROP TABLE rg_api_resource_heads");
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_001");
+                .hasMessageContaining("V20260830_002");
 
+        jdbc.execute("DROP ALL OBJECTS");
         applyMigration();
         jdbc.execute("DROP INDEX rg_api_resource_revisions_connection_visibility_idx");
         jdbc.execute("ALTER TABLE rg_api_resource_revisions DROP COLUMN connection_id");
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_001");
+                .hasMessageContaining("V20260830_002");
     }
 
     @Test
@@ -103,8 +104,8 @@ class ApiResourceAuthoringSchemaReadinessTest {
         applyMigration();
         jdbc.execute("ALTER TABLE rg_api_resource_heads DROP CONSTRAINT rg_api_resource_heads_projection_fk");
         jdbc.execute("ALTER TABLE rg_api_resource_heads ADD CONSTRAINT rg_api_resource_heads_projection_fk "
-                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision) "
-                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision)");
+                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision, command_id) "
+                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision, command_id)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -115,8 +116,8 @@ class ApiResourceAuthoringSchemaReadinessTest {
         applyMigration();
         jdbc.execute("ALTER TABLE rg_api_resource_heads DROP CONSTRAINT rg_api_resource_heads_revision_fk");
         jdbc.execute("ALTER TABLE rg_api_resource_heads ADD CONSTRAINT rg_api_resource_heads_revision_fk "
-                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision, strong_etag) "
-                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision, strong_etag)");
+                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision, command_id) "
+                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision, command_id)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -276,9 +277,39 @@ class ApiResourceAuthoringSchemaReadinessTest {
                 .isEqualTo(1);
     }
 
+    /**
+     * Proves the migration does not serialize staging on the logical resource/revision alone.
+     * Two commands may stage revision one, while the head foreign keys accept only the exact
+     * command whose revision has reached COMMITTED and has a READY projection.
+     */
+    @Test
+    void concurrentCommandsMayStageSameRevisionButHeadRequiresExactCommittedReadyCommand() {
+        applyMigration();
+        insertJournalFor("cmd-1", "k1");
+        insertJournalFor("cmd-2", "k2");
+        insertRevisionFor("STAGED", "cmd-1");
+        insertRevisionFor("STAGED", "cmd-2");
+        insertProjectionFor("cmd-1");
+        insertProjectionFor("cmd-2");
+
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM rg_api_resource_revisions WHERE revision = 1", Integer.class))
+                .isEqualTo(2);
+        jdbc.update("UPDATE rg_api_resource_revisions SET state = 'COMMITTED' WHERE command_id = 'cmd-2'");
+        insertHeadFor("cmd-2");
+        assertThat(jdbc.queryForObject(
+                "SELECT command_id FROM rg_api_resource_heads WHERE resource_id = 'r'", String.class))
+                .isEqualTo("cmd-2");
+
+        assertThatThrownBy(() -> insertHeadFor("cmd-1"))
+                .isInstanceOf(RuntimeException.class);
+    }
+
     private void applyMigration() {
         new ResourceDatabasePopulator(new ClassPathResource(
                 "db/postgresql/V20260830_001__api_resource_authoring.sql")).execute(dataSource);
+        new ResourceDatabasePopulator(new ClassPathResource(
+                "db/postgresql/V20260830_002__api_resource_concurrent_staging.sql")).execute(dataSource);
     }
 
     private void insertJournal(String status, String receiptSchema, String receiptJson, String failureCode) {
@@ -315,6 +346,15 @@ class ApiResourceAuthoringSchemaReadinessTest {
 
     private void insertRevision(String state, String commandId, int attemptNo,
                                 String attemptToken, String specFingerprint) {
+        insertRevisionFor(state, commandId, attemptNo, attemptToken, specFingerprint);
+    }
+
+    private void insertRevisionFor(String state, String commandId) {
+        insertRevisionFor(state, commandId, 1, "token-1", FP_C);
+    }
+
+    private void insertRevisionFor(String state, String commandId, int attemptNo,
+                                   String attemptToken, String specFingerprint) {
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state,
@@ -330,22 +370,47 @@ class ApiResourceAuthoringSchemaReadinessTest {
     }
 
     private void insertProjection(String state, String descriptorFingerprint) {
+        insertProjectionFor("cmd-1", state, descriptorFingerprint);
+    }
+
+    private void insertProjectionFor(String commandId) {
+        insertProjectionFor(commandId, "READY", FP_A);
+    }
+
+    private void insertProjectionFor(String commandId, String state, String descriptorFingerprint) {
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
-                    (tenant_id, project_id, environment_id, resource_id, revision,
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id,
                      descriptor_json, descriptor_fingerprint, descriptor_state,
                      design_contract_json, design_contract_fingerprint, design_contract_state,
                      operator_json, operator_fingerprint, operator_state, set_fingerprint)
-                VALUES ('t', 'p', 'e', 'r', 1, '{}', ?, ?, '{}', ?, ?, '{}', ?, ?, ?)
-                """, descriptorFingerprint, state, FP_B, state, FP_C, state, FP_D);
+                VALUES ('t', 'p', 'e', 'r', 1, ?, '{}', ?, ?, '{}', ?, ?, '{}', ?, ?, ?)
+                """, commandId, descriptorFingerprint, state, FP_B, state, FP_C, state, FP_D);
     }
 
     private void insertHead() {
+        insertHeadFor("cmd-1");
+    }
+
+    private void insertHeadFor(String commandId) {
         jdbc.update("""
                 INSERT INTO rg_api_resource_heads
-                    (tenant_id, project_id, environment_id, resource_id, revision,
+                    (tenant_id, project_id, environment_id, resource_id, revision, command_id,
                      strong_etag, revision_state, updated_at)
-                VALUES ('t', 'p', 'e', 'r', 1, '"etag"', 'COMMITTED', CURRENT_TIMESTAMP)
-                """);
+                VALUES ('t', 'p', 'e', 'r', 1, ?, '"etag"', 'COMMITTED', CURRENT_TIMESTAMP)
+                """, commandId);
+    }
+
+    private void insertJournalFor(String commandId, String idempotencyKey) {
+        jdbc.update("""
+                INSERT INTO rg_authoring_command_journal
+                    (tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
+                     idempotency_key, command_id, request_fingerprint, status, attempt_no,
+                     attempt_token, lease_until, expected_mode, expected_revision,
+                     created_at, updated_at)
+                VALUES ('t', 'p', 'e', 'a', 'API_RESOURCE_SAVE', 'r', ?, ?, ?,
+                        'PREPARING', 1, ?, CURRENT_TIMESTAMP, 'CREATE', NULL,
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, idempotencyKey, commandId, FP_A, "token-1");
     }
 }

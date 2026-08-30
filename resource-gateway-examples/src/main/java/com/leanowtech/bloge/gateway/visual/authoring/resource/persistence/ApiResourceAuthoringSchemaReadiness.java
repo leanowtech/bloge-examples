@@ -24,7 +24,7 @@ import java.util.List;
  * this class is not itself wired into the application context.
  */
 public final class ApiResourceAuthoringSchemaReadiness {
-    private static final String MIGRATION = "V20260830_001";
+    private static final String MIGRATION = "V20260830_002";
     private static final String[] REQUIRED_QUERIES = {
             "SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id, "
                     + "idempotency_key, command_id, request_fingerprint, status, attempt_no, "
@@ -35,16 +35,16 @@ public final class ApiResourceAuthoringSchemaReadiness {
                     + "spec_fingerprint, connection_id, strong_etag, command_id, attempt_no, attempt_token, "
                     + "created_at, updated_at "
                     + "FROM rg_api_resource_revisions WHERE 1 = 0",
-            "SELECT tenant_id, project_id, environment_id, resource_id, revision, descriptor_json, "
+            "SELECT tenant_id, project_id, environment_id, resource_id, revision, command_id, descriptor_json, "
                     + "descriptor_fingerprint, descriptor_state, design_contract_json, "
                     + "design_contract_fingerprint, design_contract_state, operator_json, "
                     + "operator_fingerprint, operator_state, set_fingerprint "
                     + "FROM rg_api_resource_projection_revisions WHERE 1 = 0",
-            "SELECT tenant_id, project_id, environment_id, resource_id, revision, strong_etag, revision_state, updated_at "
+            "SELECT tenant_id, project_id, environment_id, resource_id, revision, command_id, strong_etag, revision_state, updated_at "
                     + "FROM rg_api_resource_heads WHERE 1 = 0"
     };
     private static final String COMMITTED_PROJECTION_JOIN = """
-            SELECT h.tenant_id, h.project_id, h.environment_id, h.resource_id, h.revision,
+            SELECT h.tenant_id, h.project_id, h.environment_id, h.resource_id, h.revision, h.command_id,
                    h.strong_etag, h.revision_state, r.state, r.spec_json, r.spec_fingerprint, r.connection_id,
                    p.descriptor_json, p.descriptor_fingerprint, p.descriptor_state,
                    p.design_contract_json, p.design_contract_fingerprint, p.design_contract_state,
@@ -56,6 +56,7 @@ public final class ApiResourceAuthoringSchemaReadiness {
                AND r.environment_id = h.environment_id
                AND r.resource_id = h.resource_id
                AND r.revision = h.revision
+               AND r.command_id = h.command_id
                AND r.strong_etag = h.strong_etag
                AND r.state = h.revision_state
                AND r.state = 'COMMITTED'
@@ -65,6 +66,7 @@ public final class ApiResourceAuthoringSchemaReadiness {
                AND p.environment_id = r.environment_id
                AND p.resource_id = r.resource_id
                AND p.revision = r.revision
+               AND p.command_id = r.command_id
                AND p.descriptor_state = 'READY'
                AND p.design_contract_state = 'READY'
                AND p.operator_state = 'READY'
@@ -114,9 +116,9 @@ public final class ApiResourceAuthoringSchemaReadiness {
             requirePrimaryKey(metadata, "rg_authoring_command_journal", "rg_authoring_command_journal_pk",
                     List.of("command_id"));
             requirePrimaryKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_pk",
-                    scopeResourceColumns("revision"));
+                    scopeResourceColumns("revision", "command_id"));
             requirePrimaryKey(metadata, "rg_api_resource_projection_revisions",
-                    "rg_api_resource_projection_revisions_pk", scopeResourceColumns("revision"));
+                    "rg_api_resource_projection_revisions_pk", scopeResourceColumns("revision", "command_id"));
             requirePrimaryKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_pk",
                     scopeResourceColumns());
             requireUniqueColumns(metadata, "rg_authoring_command_journal", "coordinate unique",
@@ -130,15 +132,16 @@ public final class ApiResourceAuthoringSchemaReadiness {
                             pair("attempt_token", "attempt_token")));
             requireForeignKey(metadata, "rg_api_resource_projection_revisions",
                     "rg_api_resource_projection_revisions_revision_fk", "rg_api_resource_revisions",
-                    scopeResourcePairs("revision"));
+                    scopeResourcePairs("revision", "command_id"));
             requireForeignKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_revision_fk",
                     "rg_api_resource_revisions", List.of(
                             pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
                             pair("environment_id", "environment_id"), pair("resource_id", "resource_id"),
-                            pair("revision", "revision"), pair("strong_etag", "strong_etag"),
+                            pair("revision", "revision"), pair("command_id", "command_id"),
+                            pair("strong_etag", "strong_etag"),
                             pair("revision_state", "state")));
             requireForeignKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_projection_fk",
-                    "rg_api_resource_projection_revisions", scopeResourcePairs("revision"));
+                    "rg_api_resource_projection_revisions", scopeResourcePairs("revision", "command_id"));
             requireIndexColumns(metadata, "rg_authoring_command_journal",
                     "rg_authoring_command_journal_lease_recovery_idx",
                     List.of("status", "lease_until", "updated_at"));
@@ -274,10 +277,14 @@ public final class ApiResourceAuthoringSchemaReadiness {
         return columns;
     }
 
-    private static List<ColumnPair> scopeResourcePairs(String tail) {
-        return List.of(pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
-                pair("environment_id", "environment_id"), pair("resource_id", "resource_id"),
-                pair(tail, tail));
+    private static List<ColumnPair> scopeResourcePairs(String... tail) {
+        List<ColumnPair> pairs = new ArrayList<>(List.of(pair("tenant_id", "tenant_id"),
+                pair("project_id", "project_id"), pair("environment_id", "environment_id"),
+                pair("resource_id", "resource_id")));
+        for (String column : tail) {
+            pairs.add(pair(column, column));
+        }
+        return pairs;
     }
 
     private static ColumnPair pair(String foreign, String primary) {
