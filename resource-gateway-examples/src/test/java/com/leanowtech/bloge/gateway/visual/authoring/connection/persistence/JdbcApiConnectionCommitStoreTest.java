@@ -27,7 +27,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -63,6 +65,23 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         migrate("db/postgresql/V20260830_004__connection_metadata_authority.sql");
         return new JdbcApiConnectionCommitStore(dataSource, new ObjectMapper(),
                 new ApiConnectionDecisions(), clock);
+    }
+
+    @Override
+    protected void prepareChildStage(ApiConnectionCommitStore store, CommandLease lease) {
+        seedOuterJournal(lease);
+    }
+
+    @Override
+    protected void prepareOuterReceipt(ApiConnectionCommitStore store, CommandLease lease,
+                                       CommandReceipt receipt, StoredApiConnection child) {
+        jdbc.update("""
+                UPDATE rg_authoring_command_journal
+                   SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
+                 WHERE command_id=? AND status='PREPARING'
+                """, receipt.schemaVersion(), receipt.body().toString(),
+                receipt.bodyFingerprint(), receipt.strongEtag(), lease.commandId());
+        insertCommittedResourceAuthority(lease, lease.key().targetId(), 1, "sha256:" + "b".repeat(64));
     }
 
     @Override
@@ -122,6 +141,10 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
                         "key-child-outside-tx"), "sha256:" + "a".repeat(64), databaseNow().plusSeconds(30),
                 ExpectedRevision.match(7));
+        assertThatThrownBy(() -> store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        seedOuterJournal(resourceLease);
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
 
         assertThatThrownBy(() -> store.commitChild(resourceLease))
@@ -197,6 +220,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-jdbc"),
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
+        seedOuterJournal(resourceLease);
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
         StoredApiConnection committed = commitChild(store, resourceLease);
 
@@ -219,6 +243,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-receipt"),
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
+        seedOuterJournal(resourceLease);
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
         StoredApiConnection child = commitChild(store, resourceLease);
         ObjectMapper mapper = new ObjectMapper();
@@ -251,6 +276,22 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         insertCommittedResourceAuthority(resourceLease, "profile", 1, "sha256:" + "b".repeat(64));
         CommandReceipt validReceipt = new CommandReceipt("bloge.apiResourceSaveReceipt.v1", body,
                 AuthoringFingerprints.of(body), "\"outer-resource-etag\"");
+
+        jdbc.update("""
+                MERGE INTO rg_api_connection_identities AS target
+                USING (VALUES (?, ?, ?, ?)) AS source(tenant_id, project_id, environment_id, connection_id)
+                  ON target.tenant_id=source.tenant_id AND target.project_id=source.project_id
+                 AND target.environment_id=source.environment_id AND target.connection_id=source.connection_id
+                WHEN NOT MATCHED THEN INSERT (tenant_id, project_id, environment_id, connection_id)
+                VALUES (source.tenant_id, source.project_id, source.environment_id, source.connection_id)
+                """, SCOPE.tenantId(), SCOPE.projectId(), SCOPE.environmentId(), "other");
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_id=? WHERE command_id=?", "other",
+                resourceLease.commandId());
+        assertThatThrownBy(() -> store.publishChild(resourceLease, validReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_id=? WHERE command_id=?", "customer",
+                resourceLease.commandId());
 
         ObjectNode alteredRevision = body.deepCopy();
         alteredRevision.with("resource").put("revision", 2);
@@ -289,6 +330,13 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
 
         assertThat(store.findHead(SCOPE, "customer")).contains(new StoredApiConnection(
                 SCOPE, child.view(), child.metadataFingerprint(), child.strongEtag(), child.commandId()));
+
+        jdbc.update("UPDATE rg_api_resource_revisions SET connection_id=? WHERE command_id=?", "other",
+                resourceLease.commandId());
+        assertReadIntegrityFailure(store);
+        jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id=?", resourceLease.commandId());
+        assertReadIntegrityFailure(store);
+
         assertThat(child.strongEtag()).isNotEqualTo("\"outer-resource-etag\"");
     }
 
@@ -300,6 +348,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-rollback"),
                 "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
 
+        seedOuterJournal(resourceLease);
         outer.executeWithoutResult(status -> {
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
         commitChild(store, resourceLease);
@@ -318,6 +367,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile",
                         "key-nested-fail-child"), "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30),
                 ExpectedRevision.match(7));
+        seedOuterJournal(lease);
         store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
         commitChild(store, lease);
         CommandLease altered = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(),
@@ -590,6 +640,21 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
                 lease.key().scope().environmentId(), resourceId, revision, "{}", specFingerprint,
                 "customer", "\"resource-etag\"", lease.commandId(), lease.attemptNo(), lease.attemptToken());
+    }
+
+    private void seedOuterJournal(CommandLease lease) {
+        jdbc.update("""
+                INSERT INTO rg_authoring_command_journal
+                    (tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key,
+                     command_id, request_fingerprint, status, attempt_no, attempt_token, lease_until,
+                     expected_mode, expected_revision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARING', ?, ?, ?, ?, ?)
+                """, lease.key().scope().tenantId(), lease.key().scope().projectId(),
+                lease.key().scope().environmentId(), lease.key().actorId(), lease.key().endpoint().name(),
+                lease.key().targetId(), lease.key().idempotencyKey(), lease.commandId(), lease.requestFingerprint(),
+                lease.attemptNo(), lease.attemptToken(), OffsetDateTime.ofInstant(lease.leaseUntil(), ZoneOffset.UTC),
+                lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
+                lease.expectedRevision() instanceof ExpectedRevision.Match match ? match.revision() : null);
     }
 
     private int revisionCount() {

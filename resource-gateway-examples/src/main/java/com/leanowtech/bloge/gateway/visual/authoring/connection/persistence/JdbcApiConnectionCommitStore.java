@@ -114,7 +114,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                                                    ExpectedRevision connectionExpected,
                                                    ApiConnectionCommand command,
                                                    PreparedSecretBinding[] prepared) {
-        ensureJournal(lease);
+        if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+            // The outer Resource store owns this journal; a child must never create or recover it.
+            requireLiveJournal(lease, false);
+        } else {
+            ensureJournal(lease);
+        }
         RevisionRow existing = stagedRevision(lease);
         if (existing != null) {
             ApiConnectionSpec base = connectionExpected instanceof ExpectedRevision.Match match
@@ -518,19 +523,21 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                                                  String connectionId, long connectionRevision) {
         ApiResourceSaveReceiptClosure.require(receipt, resourceId, connectionId, connectionRevision);
         List<ResourceAuthorityRow> rows = jdbc.query("""
-                        SELECT resource_id, revision, spec_fingerprint
+                        SELECT resource_id, revision, spec_fingerprint, connection_id
                           FROM rg_api_resource_revisions
                          WHERE tenant_id=? AND project_id=? AND environment_id=?
                            AND command_id=? AND state='COMMITTED'
                         """, (row, ignored) -> new ResourceAuthorityRow(row.getString(1), row.getLong(2),
-                        row.getString(3)), scope.tenantId(), scope.projectId(), scope.environmentId(), commandId);
+                        row.getString(3), row.getString(4)), scope.tenantId(), scope.projectId(),
+                scope.environmentId(), commandId);
         if (rows.size() != 1) fail(Code.INTEGRITY);
         ResourceAuthorityRow authority = rows.getFirst();
         JsonNode resource = receipt.body().get("resource");
         if (!authority.resourceId().equals(resourceId)
                 || !authority.resourceId().equals(resource.path("resourceId").asText(null))
                 || authority.revision() != resource.path("revision").asLong()
-                || !authority.specFingerprint().equals(resource.path("fingerprint").asText(null))) {
+                || !authority.specFingerprint().equals(resource.path("fingerprint").asText(null))
+                || !authority.connectionId().equals(connectionId)) {
             fail(Code.INTEGRITY);
         }
     }
@@ -925,7 +932,8 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
 
     private record CommittedOuterReceipt(String schema, JsonNode body, String fingerprint, String etag) { }
 
-    private record ResourceAuthorityRow(String resourceId, long revision, String specFingerprint) { }
+    private record ResourceAuthorityRow(String resourceId, long revision, String specFingerprint,
+                                        String connectionId) { }
 
     private static RowMapper<JournalRow> journalRowMapper() {
         return (row, ignored) -> new JournalRow(row.getString(1), row.getString(2), row.getString(3),

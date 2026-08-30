@@ -1,6 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
@@ -389,6 +390,39 @@ abstract class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void childPublicationBindsFirstReplayAndFailureToTheExactOuterAuthority() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease resourceLease = leaseWithTarget("child-publication", 1, "child-publication-token", SCOPE,
+                "profile", AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(7));
+        stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection child = commitChild(store, resourceLease);
+        CommandReceipt receipt = resourceReceipt("profile", "customer", child.view().revision());
+        prepareOuterReceipt(store, resourceLease, receipt, child);
+
+        assertThat(store.publishChild(resourceLease, receipt)).isEqualTo(child);
+        assertThat(store.publishChild(resourceLease, receipt)).isEqualTo(child);
+
+        ObjectNode alteredBody = (ObjectNode) receipt.body();
+        alteredBody.with("projections").put("operator", "PENDING");
+        CommandReceipt alteredReceipt = new CommandReceipt(receipt.schemaVersion(), alteredBody,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(alteredBody),
+                receipt.strongEtag());
+        assertThatThrownBy(() -> store.publishChild(resourceLease, alteredReceipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        CommandLease alteredLease = new CommandLease(resourceLease.commandId(), resourceLease.attemptNo(),
+                resourceLease.attemptToken(), resourceLease.key(), resourceLease.requestFingerprint(),
+                resourceLease.leaseUntil().plusSeconds(1), resourceLease.expectedRevision());
+        assertThatThrownBy(() -> store.publishChild(alteredLease, receipt))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+
+        store.failChild(resourceLease);
+        assertThat(store.findHead(SCOPE, "customer")).contains(child);
+    }
+
+    @Test
     void higherAttemptCannotTakeOverWithAChangedRequestFingerprint() {
         MutableClock clock = new MutableClock(TEST_NOW);
         ApiConnectionCommitStore store = newStore(clock);
@@ -527,11 +561,35 @@ abstract class ApiConnectionCommitStoreContractTest {
                 new ApiConnectionCommand.Defaults(5000, Map.of()));
     }
 
-    private static StagedApiConnection stage(ApiConnectionCommitStore store, CommandLease lease,
-                                             String connectionId, ExpectedRevision expected,
-                                             ApiConnectionCommand command, PreparedSecretBinding... prepared) {
+    private static CommandReceipt resourceReceipt(String resourceId, String connectionId, long connectionRevision) {
+        ObjectMapper mapper = new ObjectMapper();
+        var body = mapper.createObjectNode().put("schemaVersion", ApiResourceSaveReceiptClosure.SCHEMA_VERSION);
+        body.putObject("connection").put("connectionId", connectionId)
+                .put("revision", Math.toIntExact(connectionRevision));
+        body.putObject("resource").put("kind", "API_RESOURCE").put("resourceId", resourceId)
+                .put("revision", 1).put("fingerprint", "sha256:" + "b".repeat(64));
+        body.putObject("projections").put("descriptor", "READY")
+                .put("designContract", "READY").put("operator", "READY");
+        return new CommandReceipt(ApiResourceSaveReceiptClosure.SCHEMA_VERSION, body,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints.of(body),
+                "\"outer\"");
+    }
+
+    private StagedApiConnection stage(ApiConnectionCommitStore store, CommandLease lease,
+                                      String connectionId, ExpectedRevision expected,
+                                      ApiConnectionCommand command, PreparedSecretBinding... prepared) {
+        if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+            prepareChildStage(store, lease);
+        }
         return store.stage(lease, connectionId, expected, command, prepared);
     }
+
+    /** Seeds the outer journal only for adapters that require an external resource authority. */
+    protected void prepareChildStage(ApiConnectionCommitStore store, CommandLease lease) { }
+
+    /** Records the committed outer receipt only for adapters with a shared resource journal. */
+    protected void prepareOuterReceipt(ApiConnectionCommitStore store, CommandLease lease,
+                                       CommandReceipt receipt, StoredApiConnection child) { }
 
     /** JDBC children must be invoked by the outer transaction; in-memory needs no wrapper. */
     protected StoredApiConnection commitChild(ApiConnectionCommitStore store, CommandLease lease) {
