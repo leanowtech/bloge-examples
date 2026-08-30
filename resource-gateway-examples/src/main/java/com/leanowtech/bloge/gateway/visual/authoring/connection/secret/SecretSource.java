@@ -5,6 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 
 /** Input to preparation. Providers must authorize references within the operation scope. */
 public sealed interface SecretSource permits SecretSource.Value, SecretSource.Reference {
+    /** Caller-owned plaintext value, visible only during provider preparation. */
     record Value(DestroyableSecret secret) implements SecretSource {
         public Value { if (secret == null) throw new NullPointerException("secret"); }
         /** Secret material is caller-owned and is never a wire property. */
@@ -13,6 +14,7 @@ public sealed interface SecretSource permits SecretSource.Value, SecretSource.Re
         @Override public String toString() { return "Value[REDACTED]"; }
     }
 
+    /** Existing scope-bound opaque reference. */
     record Reference(SecretReference reference) implements SecretSource {
         public Reference { if (reference == null) throw new NullPointerException("reference"); }
         /** Scope-bound opaque handle; providers must compare its scope to the context exactly. */

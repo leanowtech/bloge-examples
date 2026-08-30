@@ -13,6 +13,10 @@ import java.util.function.Consumer;
 public final class DestroyableSecret implements AutoCloseable {
     private char[] value;
 
+    /**
+     * Copies caller material into an owned buffer.
+     * @param value caller-owned characters; this constructor cannot erase the original array
+     */
     public DestroyableSecret(char[] value) {
         Objects.requireNonNull(value, "value");
         if (value.length == 0 || value.length > 16_384) throw new IllegalArgumentException("secret value length is invalid");
@@ -34,8 +38,10 @@ public final class DestroyableSecret implements AutoCloseable {
         }
     }
 
+    /** @return whether this holder has erased its owned buffer */
     public synchronized boolean isClosed() { return value == null; }
 
+    /** Erases this holder's owned buffer; repeated calls are safe. */
     @Override public synchronized void close() {
         if (value != null) { Arrays.fill(value, '\0'); value = null; }
     }

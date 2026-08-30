@@ -19,13 +19,26 @@ public interface ExternalSecretProvider {
 
     /**
      * Stages a value or scope-authorized reference for this exact attempt.
+     * This template performs the mandatory scope preflight before dispatching
+     * to the provider SPI method {@link #doPrepare(SecretOperationContext, SecretSource)}.
      * A VALUE caller retains ownership and must close its {@link DestroyableSecret}
      * in a finally block around this call.
      * @param context exact scoped attempt coordinates
      * @param source caller-owned value or existing scope-bound reference
      * @return provider lease and opaque recovery locator, possibly expired during recovery
      */
-    PreparedExternalSecret prepare(SecretOperationContext context, SecretSource source);
+    default PreparedExternalSecret prepare(SecretOperationContext context, SecretSource source) {
+        requireSourceScope(context, source);
+        return doPrepare(context, source);
+    }
+
+    /**
+     * Provider SPI called only after {@link #prepare} has validated source scope.
+     * @param context exact scoped attempt coordinates
+     * @param source source already checked by the template wrapper
+     * @return provider lease and opaque recovery locator
+     */
+    PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source);
 
     /**
      * Activates the prepared lease for this exact attempt.

@@ -10,12 +10,11 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
     }
 
     private static final class FakeProvider implements ExternalSecretProvider {
-        private static final Instant UNTIL = Instant.now().plusSeconds(60);
+        private static final Instant UNTIL = Instant.parse("2030-01-01T00:00:00Z");
 
         @Override public String providerId() { return "fake"; }
 
-        @Override public PreparedExternalSecret prepare(SecretOperationContext context, SecretSource source) {
-            ExternalSecretProvider.requireSourceScope(context, source);
+        @Override public PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source) {
             if (source instanceof SecretSource.Value value) {
                 value.secret().borrow(chars -> { });
             }

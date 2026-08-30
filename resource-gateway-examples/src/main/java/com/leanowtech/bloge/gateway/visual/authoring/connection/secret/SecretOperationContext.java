@@ -3,7 +3,18 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.secret;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 
-/** Immutable, non-secret context passed to provider calls outside the database transaction. */
+/**
+ * Immutable, non-secret context passed to provider calls outside the database transaction.
+ * @param scope exact tenant/project/environment authoring boundary
+ * @param actorId authenticated actor identifier
+ * @param purpose stable operation purpose
+ * @param connectionId connection identity
+ * @param revision one-based connection revision
+ * @param commandId exact authoring command identity
+ * @param attemptNo one-based provider attempt number
+ * @param attemptToken persistence attempt fence, never serialized
+ * @param slot one of token, password, or value
+ */
 public record SecretOperationContext(AuthoringScope scope, String actorId, String purpose, String connectionId,
                                      long revision, String commandId, int attemptNo, String attemptToken, String slot) {
     public SecretOperationContext {

@@ -16,7 +16,7 @@ import java.util.Objects;
 public record PreparedExternalSecret(String providerId, String leaseId, String opaqueLocator, Instant leaseUntil) {
     public PreparedExternalSecret {
         SecretValidation.identifier(providerId, "providerId");
-        SecretValidation.text(leaseId, "leaseId", 512);
+        SecretValidation.text(leaseId, "leaseId", 256);
         SecretValidation.text(opaqueLocator, "opaqueLocator", 2048);
         Objects.requireNonNull(leaseUntil, "leaseUntil");
     }
