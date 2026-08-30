@@ -1,9 +1,22 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.PreparedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.SecretOperationContext;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ConnectionRevisionCoordinate;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.JdbcPendingSecretStore;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretBatch;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretLease;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretOperation;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.SecretSourceMode;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
@@ -30,6 +43,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -84,16 +98,46 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         jdbc.update("""
                 UPDATE rg_authoring_command_journal
                    SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
-                 WHERE command_id=? AND status='PREPARING'
+                 WHERE command_id=? AND attempt_no=? AND attempt_token=?
                 """, receipt.schemaVersion(), receipt.body().toString(),
-                receipt.bodyFingerprint(), receipt.strongEtag(), lease.commandId());
+                receipt.bodyFingerprint(), receipt.strongEtag(), lease.commandId(), lease.attemptNo(),
+                lease.attemptToken());
         insertCommittedResourceAuthority(lease, lease.key().targetId(), 1, "sha256:" + "b".repeat(64));
     }
 
     @Override
     protected StoredApiConnection commitChild(ApiConnectionCommitStore store, CommandLease lease) {
         return new TransactionTemplate(new DataSourceTransactionManager(dataSource))
-                .execute(status -> store.commitChild(lease));
+                .execute(status -> {
+                    StoredApiConnection child = store.commitChild(lease);
+                    markOuterCommitted(lease, child);
+                    return child;
+                });
+    }
+
+    @Override
+    protected boolean childIsVisibleAfterOuterCommit() {
+        return true;
+    }
+
+    private void markOuterCommitted(CommandLease lease, StoredApiConnection child) {
+        String viewJson = jdbc.queryForObject("SELECT view_json FROM rg_api_connection_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                String.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            JsonNode view = mapper.readTree(viewJson);
+            jdbc.update("UPDATE rg_authoring_command_attempts SET status='COMMITTED'"
+                            + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                    lease.commandId(), lease.attemptNo(), lease.attemptToken());
+            jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema=?"
+                            + ", receipt_json=?, receipt_fingerprint=?, receipt_etag=?"
+                            + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                    "bloge.apiConnectionView.v1", viewJson, AuthoringFingerprints.of(view), child.strongEtag(),
+                    lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     @Test
@@ -235,7 +279,57 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
-    void nestedChildPromotesConnectionHeadWithoutClosingOuterJournal() {
+    void replacementCommitUpdatesOnlyItsAttemptWhenRecoveryRetainsTheOldStage() {
+        Clock clock = Clock.fixed(TEST_NOW, ZoneId.of("UTC"));
+        JdbcApiConnectionCommitStore store = (JdbcApiConnectionCommitStore) createStore(clock);
+        JdbcPendingSecretStore pending = new JdbcPendingSecretStore(dataSource, clock);
+        ApiConnectionCommand command = new ApiConnectionCommand("Secret API", BASE_URL,
+                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                new ApiConnectionCommand.Defaults(5_000, Map.of()));
+        PreparedSecretBinding oldPrepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/customer-token"));
+        CommandLease old = lease("retained-stage", 1, "old-token", "customer", ExpectedRevision.create(),
+                TEST_NOW.plusSeconds(30));
+        StagedApiConnection oldStage = store.stage(old, "customer", ExpectedRevision.create(), command, oldPrepared);
+        PendingSecretBatch oldBatch = pendingBatch(old, "old-provider-lease", "old-opaque");
+        pending.stage(oldBatch);
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                        + " WHERE command_id=?", old.commandId());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                old.commandId(), old.attemptNo(), old.attemptToken());
+        Instant replacementUntil = databaseNow().plusSeconds(30);
+        CommandLease replacement = lease("retained-stage", 2, "new-token", "customer", ExpectedRevision.create(),
+                replacementUntil);
+        PreparedSecretBinding replacementPrepared = new PreparedSecretBinding("token",
+                new SecretReference(SCOPE, "vault://team/customer-token"));
+        StagedApiConnection replacementStage = store.stage(replacement, "customer", ExpectedRevision.create(),
+                command, replacementPrepared);
+        PendingSecretBatch replacementBatch = pendingBatch(replacement, "new-provider-lease", "new-opaque");
+        pending.stage(replacementBatch);
+        var proof = pending.prepareFinalization(replacementBatch, List.of(new ActivatedSecretSlot("token",
+                new ActivatedExternalSecret("provider:test", "new-provider-lease", "new-active"))));
+
+        StoredApiConnection committed = store.commit(replacement, proof);
+
+        assertThat(committed.strongEtag()).isEqualTo(replacementStage.strongEtag());
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_connection_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", String.class,
+                old.commandId(), old.attemptNo(), old.attemptToken())).isEqualTo("STAGED");
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_connection_revisions"
+                        + " WHERE command_id=? AND attempt_no=? AND attempt_token=?", String.class,
+                replacement.commandId(), replacement.attemptNo(), replacement.attemptToken())).isEqualTo("COMMITTED");
+        assertThat(oldStage.strongEtag()).isNotEqualTo(committed.strongEtag());
+
+        // Both attempts own logical revision 1.  The committed read must join
+        // the exact current attempt, rather than finding the first committed
+        // journal row for this command and accidentally exposing old history.
+        assertThat(store.findRevision(SCOPE, "customer", 1)).contains(committed);
+    }
+
+    @Test
+    void childOnlyAmbientTransactionRollsBackBeforeOuterCommit() {
         JdbcApiConnectionCommitStore store = jdbcStore();
         CommandLease resourceLease = new CommandLease("nested-jdbc", 1, "nested-jdbc-token",
                 new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-jdbc"),
@@ -243,13 +337,14 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
 
         seedOuterJournal(resourceLease);
         store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
-        StoredApiConnection committed = commitChild(store, resourceLease);
-
-        assertThat(committed.view().revision()).isEqualTo(1);
+        assertThatThrownBy(() -> new TransactionTemplate(new DataSourceTransactionManager(dataSource))
+                .execute(status -> store.commitChild(resourceLease)))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
         assertThat(jdbc.queryForObject("SELECT state FROM rg_api_connection_revisions WHERE command_id=?",
-                String.class, resourceLease.commandId())).isEqualTo("COMMITTED");
-        assertThat(jdbc.queryForObject("SELECT revision FROM rg_api_connection_heads WHERE connection_id=?",
-                Long.class, "customer")).isEqualTo(1L);
+                String.class, resourceLease.commandId())).isEqualTo("STAGED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_heads WHERE connection_id=?",
+                Integer.class, "customer")).isZero();
         assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
                 String.class, resourceLease.commandId())).isEqualTo("PREPARING");
         assertThat(jdbc.queryForObject("SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
@@ -390,7 +485,6 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 ExpectedRevision.match(7));
         seedOuterJournal(lease);
         store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
-        commitChild(store, lease);
         CommandLease altered = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(),
                 lease.key(), "sha256:" + "b".repeat(64), lease.leaseUntil(), lease.expectedRevision());
         assertThatThrownBy(() -> store.failChild(altered)).isInstanceOf(ApiConnectionCommitStoreException.class)
@@ -617,6 +711,25 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint.API_CONNECTION_SAVE,
                 connectionId, "key-" + commandId), "sha256:" + "a".repeat(64),
                 TEST_NOW.plusSeconds(30), expected);
+    }
+
+    private static CommandLease lease(String commandId, int attemptNo, String token, String connectionId,
+                                      ExpectedRevision expected, Instant until) {
+        return new CommandLease(commandId, attemptNo, token, new CommandKey(SCOPE, "actor",
+                AuthoringEndpoint.API_CONNECTION_SAVE, connectionId, "key-" + commandId),
+                "sha256:" + "a".repeat(64), until, expected);
+    }
+
+    private static PendingSecretBatch pendingBatch(CommandLease lease, String providerLeaseId,
+                                                    String opaqueLocator) {
+        ConnectionRevisionCoordinate coordinate = new ConnectionRevisionCoordinate(SCOPE, "customer", 1);
+        PendingSecretLease pendingLease = new PendingSecretLease(lease, coordinate, ExpectedRevision.create());
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "connection-save",
+                "customer", 1, lease.commandId(), lease.attemptNo(), lease.attemptToken(), "token");
+        PreparedExternalSecret prepared = new PreparedExternalSecret("provider:test", providerLeaseId,
+                opaqueLocator, lease.leaseUntil(), context);
+        return new PendingSecretBatch(pendingLease, List.of(new PendingSecretOperation.Prepared("token",
+                SecretSourceMode.VALUE, prepared)));
     }
 
     private Instant databaseNow() {

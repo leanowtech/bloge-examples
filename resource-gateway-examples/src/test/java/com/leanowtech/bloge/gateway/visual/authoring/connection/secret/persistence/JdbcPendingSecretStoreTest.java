@@ -21,7 +21,9 @@ import javax.sql.DataSource;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -29,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -398,6 +401,78 @@ class JdbcPendingSecretStoreTest {
     }
 
     @Test
+    void recoveryRetrySkipsAClaimedFirstBatchAfterBothWorkersSelectIt() throws Exception {
+        CyclicBarrier selectedFirst = new CyclicBarrier(2);
+        AtomicBoolean firstObserved = new AtomicBoolean();
+        AtomicBoolean secondObserved = new AtomicBoolean();
+        List<String> firstSelections = new CopyOnWriteArrayList<>();
+        List<String> secondSelections = new CopyOnWriteArrayList<>();
+        JdbcPendingSecretStore firstStore = storeOn(newConnection(), commandId -> {
+            firstSelections.add(commandId);
+            if (firstObserved.compareAndSet(false, true)) await(selectedFirst);
+        });
+        JdbcPendingSecretStore secondStore = storeOn(newConnection(), commandId -> {
+            secondSelections.add(commandId);
+            if (secondObserved.compareAndSet(false, true)) await(selectedFirst);
+        });
+        PendingSecretBatch first = batch(lease("recovery-observer-a", 1,
+                "recovery-observer-a-token", NOW.plusSeconds(60)), "token");
+        PendingSecretBatch second = batch(lease("recovery-observer-b", 1,
+                "recovery-observer-b-token", NOW.plusSeconds(60)), "token");
+        seed(first);
+        seed(second);
+        firstStore.stage(first);
+        secondStore.stage(second);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id IN (?, ?)", first.lease().commandLease().commandId(),
+                second.lease().commandLease().commandId());
+
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<SecretAbortCandidate> firstResult = workers.submit(() -> firstStore.claimRecoveryDue(1).getFirst());
+            Future<SecretAbortCandidate> secondResult = workers.submit(() -> secondStore.claimRecoveryDue(1).getFirst());
+            List<String> claimed = List.of(
+                    firstResult.get(10, TimeUnit.SECONDS).batch().lease().commandLease().commandId(),
+                    secondResult.get(10, TimeUnit.SECONDS).batch().lease().commandLease().commandId());
+            assertThat(claimed).containsExactlyInAnyOrder("recovery-observer-a", "recovery-observer-b");
+            assertThat(firstSelections).first().isEqualTo("recovery-observer-a");
+            assertThat(secondSelections).first().isEqualTo("recovery-observer-a");
+            assertThat(firstSelections).doesNotHaveDuplicates();
+            assertThat(secondSelections).doesNotHaveDuplicates();
+            List<String> observations = new ArrayList<>(firstSelections);
+            observations.addAll(secondSelections);
+            assertThat(observations).containsExactlyInAnyOrder("recovery-observer-a",
+                    "recovery-observer-a", "recovery-observer-b");
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    @Test
+    void recoveryCandidateObserverFailureRollsBackTheClaim() {
+        PendingSecretBatch batch = batch(lease("recovery-observer-failure", 1,
+                "recovery-observer-failure-token", NOW.plusSeconds(60)), "token");
+        seed(batch);
+        store().stage(batch);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases"
+                + " SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND WHERE command_id=?",
+                batch.lease().commandLease().commandId());
+
+        JdbcPendingSecretStore failing = storeOn(newConnection(), ignored -> {
+            throw new IllegalStateException("observer failure");
+        });
+        assertThatThrownBy(() -> failing.claimRecoveryDue(1))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
+        assertThat(jdbc.queryForObject("SELECT recovery_claim_token"
+                        + " FROM rg_api_connection_pending_secret_leases WHERE command_id=?",
+                String.class, batch.lease().commandLease().commandId())).isNull();
+
+        SecretAbortCandidate retry = store().claimRecoveryDue(1).getFirst();
+        assertThat(retry.batch()).isEqualTo(batch);
+    }
+
+    @Test
     void recoveryClaimIsExclusiveAndReclaimFencesStaleWorker() {
         JdbcPendingSecretStore firstStore = store();
         JdbcPendingSecretStore secondStore = store();
@@ -724,6 +799,10 @@ class JdbcPendingSecretStoreTest {
 
     private JdbcPendingSecretStore storeOn(DataSource source) {
         return new JdbcPendingSecretStore(source, fixedClock());
+    }
+
+    private JdbcPendingSecretStore storeOn(DataSource source, java.util.function.Consumer<String> observer) {
+        return new JdbcPendingSecretStore(source, fixedClock(), observer);
     }
 
     private DataSource newConnection() {

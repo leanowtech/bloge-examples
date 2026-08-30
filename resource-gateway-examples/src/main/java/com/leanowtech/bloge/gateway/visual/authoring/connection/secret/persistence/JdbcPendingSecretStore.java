@@ -32,6 +32,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 /**
@@ -54,12 +55,27 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final String recoveryClaimOwner = UUID.randomUUID().toString();
+    /** Package-private test seam; production construction uses a no-op observer. */
+    private final Consumer<String> recoveryCandidateObserver;
 
     /** Creates a store whose JDBC template and transaction manager share one data source. */
     public JdbcPendingSecretStore(JdbcTemplate jdbc, TransactionTemplate transactions, Clock clock) {
+        this(jdbc, transactions, clock, ignored -> { });
+    }
+
+    /**
+     * Test-only constructor for deterministic recovery race evidence. The
+     * observer runs after a candidate window is selected and before that key's
+     * journal/attempt claim begins; it is deliberately package-private so it
+     * cannot become part of the application protocol.
+     */
+    JdbcPendingSecretStore(JdbcTemplate jdbc, TransactionTemplate transactions, Clock clock,
+                           Consumer<String> recoveryCandidateObserver) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.recoveryCandidateObserver = Objects.requireNonNull(recoveryCandidateObserver,
+                "recoveryCandidateObserver");
         DataSource source = jdbc.getDataSource();
         DataSource transactionSource = transactions.getTransactionManager() instanceof DataSourceTransactionManager manager
                 ? manager.getDataSource() : null;
@@ -72,6 +88,13 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     public JdbcPendingSecretStore(DataSource dataSource, Clock clock) {
         this(new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource")),
                 new TransactionTemplate(new DataSourceTransactionManager(dataSource)), clock);
+    }
+
+    /** Package-private recovery-observer constructor used only by JDBC race tests. */
+    JdbcPendingSecretStore(DataSource dataSource, Clock clock, Consumer<String> recoveryCandidateObserver) {
+        this(new JdbcTemplate(Objects.requireNonNull(dataSource, "dataSource")),
+                new TransactionTemplate(new DataSourceTransactionManager(dataSource)), clock,
+                recoveryCandidateObserver);
     }
 
     /** {@inheritDoc} */
@@ -155,8 +178,11 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 if ("ABORTED".equals(done.outcome())) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
                 fail(PendingSecretStoreException.Code.INTEGRITY);
             }
-            validateAndProof(batch, outputs, true);
+            Journal journal = journal(batch.lease(), true);
+            lockBindingParent(batch);
             requireBindingOwnership(batch);
+            List<Row> rows = rows(batch.lease(), true);
+            validateAndProof(batch, outputs, journal, rows);
             Map<String, ActiveSecretBinding> retained = retained(batch);
             for (PendingSecretOperation operation : batch.operations()) {
                 ActiveSecretBinding binding = operation instanceof PendingSecretOperation.Retained
@@ -217,6 +243,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 for (BatchKey key : keys) {
                     if (!inspected.add(key)) continue;
                     sawNew = true;
+                    recoveryCandidateObserver.accept(key.commandId());
                     Journal journal = journal(key, true);
                     journal.requirePreparing();
                     List<Row> rows = rows(key, true);
@@ -295,6 +322,8 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         }
         Journal journal = journal(lease, true);
         journal.requirePreparing();
+        lockBindingParent(candidate.batch());
+        lockBindingRows(candidate.batch());
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
         PendingSecretBatch stored = restore(rows);
@@ -332,7 +361,15 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 lease.commandLease().attemptToken()) != 1) {
             fail(PendingSecretStoreException.Code.RECOVERY_STATE);
         }
+        // Drop the lease rows before the child revision: V009's exact
+        // revision FK intentionally keeps the child provenance coherent until
+        // compensation has completed.  The revision is only removed for this
+        // historical attempt, never for a replacement attempt.
         deleteRows(lease);
+        jdbc.update("DELETE FROM rg_api_connection_revisions WHERE command_id=? AND attempt_no=?"
+                        + " AND attempt_token=? AND state='STAGED'",
+                lease.commandLease().commandId(), lease.commandLease().attemptNo(),
+                lease.commandLease().attemptToken());
     }
 
     /** {@inheritDoc} */
@@ -358,6 +395,13 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                     : PendingSecretStoreException.Code.INTEGRITY);
         }
         Journal journal = journal(batch.lease(), requirePending);
+        List<Row> rows = rows(batch.lease(), requirePending);
+        return validateAndProof(batch, outputs, journal, rows);
+    }
+
+    /** Validates a batch after the caller has established the global lock order. */
+    private FinalizedSecretSlots validateAndProof(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs,
+                                                   Journal journal, List<Row> rows) {
         if (!journal.exact(batch.lease())) {
             if (journal.sameAuthority(batch.lease(), coordinate(batch))) {
                 fail(PendingSecretStoreException.Code.LEASE_FENCED);
@@ -365,9 +409,8 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             fail(PendingSecretStoreException.Code.INTEGRITY);
         }
         journal.requireCurrentPreparing();
-        List<Row> rows = rows(batch.lease(), requirePending);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
-        PendingSecretBatch stored = restore(rows);
+        PendingSecretBatch stored = restoreWithLease(journal.lease(rows.getFirst()), rows);
         if (!stored.equals(batch)) fail(PendingSecretStoreException.Code.INTEGRITY);
         if (!stored.lease().equals(batch.lease())) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (rows.stream().anyMatch(row -> !"PENDING".equals(row.status()))) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
@@ -406,7 +449,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
 
     /** Fences a competing command before any active binding can be overwritten. */
     private void requireBindingOwnership(PendingSecretBatch batch) {
-        lockBindingParent(batch);
+        lockBindingRows(batch);
         String commandId = batch.lease().commandLease().commandId();
         for (PendingSecretOperation operation : batch.operations()) {
             List<String> owners = jdbc.query("SELECT command_id FROM rg_api_connection_secret_bindings"
@@ -417,6 +460,17 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             if (!owners.isEmpty() && !commandId.equals(owners.getFirst())) {
                 fail(PendingSecretStoreException.Code.LEASE_FENCED);
             }
+        }
+    }
+
+    /** Takes the binding rows after the identity/revision reservation is held. */
+    private void lockBindingRows(PendingSecretBatch batch) {
+        for (PendingSecretOperation operation : batch.operations()) {
+            jdbc.query("SELECT command_id FROM rg_api_connection_secret_bindings"
+                            + " WHERE tenant_id=? AND project_id=? AND environment_id=? AND connection_id=?"
+                            + " AND revision=? AND slot=? FOR UPDATE", (row, ignored) -> row.getString(1),
+                    scope(batch).tenantId(), scope(batch).projectId(), scope(batch).environmentId(),
+                    coordinate(batch).connectionId(), coordinate(batch).revision(), operation.slot());
         }
     }
 
@@ -548,6 +602,13 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
 
     /** Loads immutable attempt authority and, separately, the mutable current pointer. */
     private Journal journal(BatchKey key, boolean lock) {
+        // Every writer that needs both rows takes the mutable journal pointer
+        // first, then the immutable attempt authority.  Resource, Connection,
+        // and Pending stores therefore share one deadlock-free global order.
+        CurrentPointer current = jdbc.query("SELECT attempt_no, attempt_token, status FROM "
+                        + "rg_authoring_command_journal WHERE command_id=?" + (lock ? " FOR UPDATE" : ""),
+                (row, ignored) -> new CurrentPointer(row.getInt(1), row.getString(2), row.getString(3)),
+                key.commandId()).stream().findFirst().orElse(null);
         AttemptAuthority attempt = jdbc.query("""
                         SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
                                idempotency_key, command_id, request_fingerprint, status, attempt_no,
@@ -560,10 +621,6 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 row.getInt(11), row.getString(12), row.getTimestamp(13).toInstant(), row.getString(14),
                 row.getObject(15, Long.class)), key.commandId(), key.attemptNo(), key.attemptToken())
                 .stream().findFirst().orElseThrow(() -> failure(PendingSecretStoreException.Code.LEASE_FENCED));
-        CurrentPointer current = jdbc.query("SELECT attempt_no, attempt_token, status FROM "
-                        + "rg_authoring_command_journal WHERE command_id=?" + (lock ? " FOR UPDATE" : ""),
-                (row, ignored) -> new CurrentPointer(row.getInt(1), row.getString(2), row.getString(3)),
-                key.commandId()).stream().findFirst().orElse(null);
         return new Journal(attempt, current);
     }
 

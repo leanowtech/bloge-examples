@@ -32,6 +32,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 /**
  * JDBC-backed, transactionally fenced API Resource authoring store.
@@ -63,8 +64,12 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                AND p.environment_id = r.environment_id AND p.resource_id = r.resource_id
                AND p.revision = r.revision AND p.command_id = r.command_id AND p.descriptor_state = 'READY'
                AND p.design_contract_state = 'READY' AND p.operator_state = 'READY'
+              JOIN rg_authoring_command_attempts a
+                ON a.command_id = r.command_id AND a.attempt_no = r.attempt_no
+               AND a.attempt_token = r.attempt_token AND a.status = 'COMMITTED'
               JOIN rg_authoring_command_journal j
-                ON j.command_id = r.command_id AND j.status = 'COMMITTED'
+                ON j.command_id = r.command_id AND j.attempt_no = r.attempt_no
+               AND j.attempt_token = r.attempt_token AND j.status = 'COMMITTED'
                AND j.tenant_id = r.tenant_id AND j.project_id = r.project_id
                AND j.environment_id = r.environment_id AND j.target_id = r.resource_id
                AND j.endpoint = 'API_RESOURCE_SAVE'
@@ -83,8 +88,12 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                AND p.environment_id = r.environment_id AND p.resource_id = r.resource_id
                AND p.revision = r.revision AND p.command_id = r.command_id AND p.descriptor_state = 'READY'
                AND p.design_contract_state = 'READY' AND p.operator_state = 'READY'
+              JOIN rg_authoring_command_attempts a
+                ON a.command_id = r.command_id AND a.attempt_no = r.attempt_no
+               AND a.attempt_token = r.attempt_token AND a.status = 'COMMITTED'
               JOIN rg_authoring_command_journal j
-                ON j.command_id = r.command_id AND j.status = 'COMMITTED'
+                ON j.command_id = r.command_id AND j.attempt_no = r.attempt_no
+               AND j.attempt_token = r.attempt_token AND j.status = 'COMMITTED'
                AND j.tenant_id = r.tenant_id AND j.project_id = r.project_id
                AND j.environment_id = r.environment_id AND j.target_id = r.resource_id
                AND j.endpoint = 'API_RESOURCE_SAVE'
@@ -97,12 +106,28 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     private final Duration leaseDuration;
     private final ApiResourceDecisions decisions;
     private final ApiResourceProjectionCompiler compiler;
+    /** Package-private test seam; production construction uses a no-op observer. */
+    private final Consumer<String> failAfterJournalLockObserver;
 
     /** Creates the seam with all collaborators needed by the complete store. */
     public JdbcApiResourceCommitStore(JdbcTemplate jdbc, TransactionTemplate transactions,
                                       ObjectMapper mapper, Duration leaseDuration,
                                       ApiResourceDecisions decisions,
                                       ApiResourceProjectionCompiler compiler) {
+        this(jdbc, transactions, mapper, leaseDuration, decisions, compiler, ignored -> { });
+    }
+
+    /**
+     * Package-private constructor for deterministic lock-order tests.  The
+     * observer runs after the journal and immutable attempt have been locked,
+     * before pending-secret inspection; it is never part of the public
+     * persistence protocol.
+     */
+    JdbcApiResourceCommitStore(JdbcTemplate jdbc, TransactionTemplate transactions,
+                               ObjectMapper mapper, Duration leaseDuration,
+                               ApiResourceDecisions decisions,
+                               ApiResourceProjectionCompiler compiler,
+                               Consumer<String> failAfterJournalLockObserver) {
         this.jdbc = Objects.requireNonNull(jdbc, "jdbc");
         this.transactions = Objects.requireNonNull(transactions, "transactions");
         this.mapper = Objects.requireNonNull(mapper, "mapper").copy();
@@ -112,6 +137,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         this.leaseDuration = leaseDuration;
         this.decisions = Objects.requireNonNull(decisions, "decisions");
         this.compiler = Objects.requireNonNull(compiler, "compiler");
+        this.failAfterJournalLockObserver = Objects.requireNonNull(failAfterJournalLockObserver,
+                "failAfterJournalLockObserver");
         DataSource jdbcDataSource = jdbc.getDataSource();
         DataSource transactionDataSource = transactions.getTransactionManager() instanceof DataSourceTransactionManager manager
                 ? manager.getDataSource() : null;
@@ -877,9 +904,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         if (jdbc.update(
                 "UPDATE rg_api_resource_revisions SET state='COMMITTED' "
                         + "WHERE tenant_id=? AND project_id=? AND environment_id=? AND resource_id=? "
-                        + "AND revision=? AND command_id=? AND state='STAGED'",
+                        + "AND revision=? AND command_id=? AND attempt_no=? AND attempt_token=? "
+                        + "AND state='STAGED'",
                 staged.tenantId(), staged.projectId(), staged.environmentId(), staged.resourceId(),
-                staged.revision(), staged.commandId()) != 1) {
+                staged.revision(), staged.commandId(), staged.attemptNo(), staged.attemptToken()) != 1) {
                 throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "stage state changed");
         }
         if (jdbc.update("""
@@ -946,7 +974,30 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
                             "committed command cannot fail");
                 }
+                if ("FAILED".equals(journal.status())) {
+                    // Pending-secret compensation may have terminalized this
+                    // exact attempt first.  Remove only its staged resource
+                    // row; never reopen or rewrite a newer journal attempt.
+                    int removed = jdbc.update("DELETE FROM rg_api_resource_revisions "
+                                    + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "
+                                    + "AND state='STAGED'",
+                            lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                    if (removed == 0) {
+                        throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED,
+                                "failed command has no pending staged resource");
+                    }
+                    return;
+                }
                 requireActive(lease);
+                failAfterJournalLockObserver.accept(lease.commandId());
+                Long pending = jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases "
+                                + "WHERE command_id=? AND attempt_no=? AND attempt_token=?",
+                        Long.class, lease.commandId(), lease.attemptNo(), lease.attemptToken());
+                if (pending != null && pending > 0) {
+                    throw error(ApiResourceCommitStoreException.Code.INTEGRITY,
+                            "pending secret compensation is required");
+                }
                 jdbc.update(
                         "DELETE FROM rg_api_resource_revisions "
                                 + "WHERE command_id=? AND attempt_no=? AND attempt_token=? "

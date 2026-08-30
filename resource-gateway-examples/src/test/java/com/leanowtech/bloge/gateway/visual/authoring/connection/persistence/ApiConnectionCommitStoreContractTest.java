@@ -354,7 +354,11 @@ abstract class ApiConnectionCommitStoreContractTest {
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
         StoredApiConnection child = commitChild(store, resourceLease);
         assertThat(child.view().revision()).isEqualTo(1);
-        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+        if (childIsVisibleAfterOuterCommit()) {
+            assertThat(store.findHead(SCOPE, "customer")).contains(child);
+        } else {
+            assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+        }
     }
 
     @Test
@@ -364,7 +368,15 @@ abstract class ApiConnectionCommitStoreContractTest {
                 "profile", AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(7));
         stage(store, childLease, "customer", ExpectedRevision.create(), noneCommand());
         StoredApiConnection child = commitChild(store, childLease);
-        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+        if (childIsVisibleAfterOuterCommit()) {
+            assertThat(store.findHead(SCOPE, "customer")).contains(child);
+            assertThatThrownBy(() -> stage(store, lease("nested-reservation-competing", 1,
+                    "nested-reservation-competing-token", SCOPE, "customer", ExpectedRevision.create()),
+                    "customer", ExpectedRevision.create(), renamedCommand("Competing")))
+                    .isInstanceOf(ApiConnectionCommitStoreException.class)
+                    .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.CAS_MISMATCH);
+            return;
+        }
 
         CommandLease competing = lease("nested-reservation-competing", 1, "nested-reservation-competing-token",
                 SCOPE, "customer", ExpectedRevision.create());
@@ -594,6 +606,11 @@ abstract class ApiConnectionCommitStoreContractTest {
     /** JDBC children must be invoked by the outer transaction; in-memory needs no wrapper. */
     protected StoredApiConnection commitChild(ApiConnectionCommitStore store, CommandLease lease) {
         return store.commitChild(lease);
+    }
+
+    /** JDBC child commits are visible only after the test harness closes the outer journal. */
+    protected boolean childIsVisibleAfterOuterCommit() {
+        return false;
     }
 
 

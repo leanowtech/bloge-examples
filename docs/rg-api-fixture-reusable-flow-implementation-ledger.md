@@ -532,3 +532,36 @@ PostgreSQL、Facade、HTTP、UI 或 broader 3% gap 已完成。
 - `AuthoringFacade` 还没有复合保存、幂等重放和注入故障测试；HTTP 的强 ETag、428/412、完整 Scope 与
   secret-free Problem Detail 也仍未实现。
 - 共享工作树中的 `GraphNodeFixtureControls.tsx` 修改不属于本目标提交，必须继续隔离。
+
+## 16. Iteration 15 — Durable child publication and cross-store recovery closure
+
+日期：2026-08-31。
+
+### 已完成
+
+- JDBC Connection 的 STAGED→COMMITTED、head/binding exact revision 操作和 committed historical reads
+  均闭合 `command_id + attempt_no + attempt_token`；同一逻辑 revision 的旧 retained STAGED child 与新
+  attempt 可并存，读取只暴露 exact committed attempt，补偿仍能删除 exact historical STAGED child。
+- `commitChild` 只在 ambient coordinator transaction 中产生 provisional child state，并注册 before-commit
+  fence 验证 exact outer journal/attempt authority；child-only transaction 会回滚。Resource `fail` 在
+  exact pending-secret rows 存在时保持零变更，补偿 terminalize 后仅清理 exact FAILED Resource stage，
+  不复活或改写 journal。
+- Resource 与 Pending 当前/恢复路径遵守 journal → immutable attempt → connection identity/revision/head /
+  binding → pending 的统一锁序。包级测试 observer 只用于在候选选择与 claim 间建立确定性屏障，并证明
+  claimed-first retry、observer 异常 rollback 以及跨 store 同 command interleaving；生产默认是 no-op。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=JdbcApiConnectionCommitStoreTest,JdbcPendingSecretStoreTest,\
+JdbcApiResourceCommitStoreClaimTest,JdbcApiResourceCommitStoreMutationTest \
+  test -DfailIfNoTests=false
+
+Tests run: 104, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+该聚焦证据来自 H2 `MODE=PostgreSQL`、独立 JDBC connections 和测试时钟；它证明不了真实 PostgreSQL
+锁/隔离级别、生产 Secret Provider、Facade、HTTP、UI 或 full `clean verify`。这些边界仍保持未验收，且
+`GraphNodeFixtureControls.tsx` 与两份 reusable-flow 评审/计划文档的并行修改不属于本切片。

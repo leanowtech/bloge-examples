@@ -7,6 +7,20 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.JdbcApiConnectionCommitStore;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.PreparedExternalSecret;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.SecretOperationContext;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ConnectionRevisionCoordinate;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.JdbcPendingSecretStore;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretBatch;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretLease;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.PendingSecretOperation;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.SecretAbortCandidate;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.SecretSourceMode;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,12 +33,15 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Duration;
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -246,6 +263,110 @@ class JdbcApiResourceCommitStoreMutationTest {
     }
 
     @Test
+    void failRefusesToDeleteResourceStageUntilPendingSecretCompensationCompletes() {
+        Clock clock = Clock.systemUTC();
+        JdbcApiResourceCommitStore resource = store();
+        JdbcApiConnectionCommitStore connection = new JdbcApiConnectionCommitStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                new ApiConnectionDecisions(), clock);
+        JdbcPendingSecretStore pending = new JdbcPendingSecretStore(jdbc.getDataSource(), clock);
+        CommandLease lease = acquire(resource, KEY, ExpectedRevision.create(), FP1);
+        resource.stage(lease, "connection", command("one"));
+        connection.stage(lease, "connection", ExpectedRevision.create(), secretCommand(),
+                new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://team/token")));
+        PendingSecretBatch batch = pendingBatch(lease);
+        pending.stage(batch);
+
+        assertThatThrownBy(() -> resource.fail(lease, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("PREPARING");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=?",
+                Integer.class, lease.commandId())).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases"
+                        + " WHERE command_id=?", Integer.class, lease.commandId())).isEqualTo(1);
+
+        pending.markAbortRequired(batch.lease());
+        pending.completeAbort(pending.claimRecoveryDue(1).getFirst());
+        resource.fail(lease, CommandFailureCode.INTERNAL);
+
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("FAILED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=?",
+                Integer.class, lease.commandId())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions WHERE command_id=?",
+                Integer.class, lease.commandId())).isZero();
+    }
+
+    @Test
+    void resourceFailAndPendingRecoveryUseOneCrossStoreJournalFirstOrder() throws Exception {
+        JdbcApiResourceCommitStore resource = store();
+        JdbcApiConnectionCommitStore connection = new JdbcApiConnectionCommitStore(
+                jdbc, new TransactionTemplate(new DataSourceTransactionManager(jdbc.getDataSource())), JSON,
+                new ApiConnectionDecisions(), Clock.systemUTC());
+        JdbcPendingSecretStore pending = new JdbcPendingSecretStore(jdbc.getDataSource(), Clock.systemUTC());
+        CommandLease lease = acquire(resource, KEY, ExpectedRevision.create(), FP1);
+        resource.stage(lease, "connection", command("one"));
+        connection.stage(lease, "connection", ExpectedRevision.create(), secretCommand(),
+                new PreparedSecretBinding("token", new SecretReference(SCOPE, "vault://team/token")));
+        PendingSecretBatch batch = pendingBatch(lease);
+        pending.stage(batch);
+        pending.markAbortRequired(batch.lease());
+
+        DataSource recoveryDataSource = new DriverManagerDataSource(url, "sa", "");
+        JdbcPendingSecretStore recovery = new JdbcPendingSecretStore(recoveryDataSource, Clock.systemUTC());
+        CountDownLatch resourceJournalLocked = new CountDownLatch(1);
+        CountDownLatch pendingStarted = new CountDownLatch(1);
+        JdbcApiResourceCommitStore contendingResource = new JdbcApiResourceCommitStore(
+                new JdbcTemplate(recoveryDataSource),
+                new TransactionTemplate(new DataSourceTransactionManager(recoveryDataSource)), JSON,
+                Duration.ofSeconds(1), new ApiResourceDecisions(), JdbcApiResourceCommitStoreMutationTest::compile,
+                ignored -> {
+                    resourceJournalLocked.countDown();
+                    try {
+                        if (!pendingStarted.await(10, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("pending worker did not start");
+                        }
+                    } catch (InterruptedException ex) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException("pending worker interrupted", ex);
+                    }
+                });
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            Future<ApiResourceCommitStoreException.Code> failed = executor.submit(() -> {
+                try {
+                    contendingResource.fail(lease, CommandFailureCode.INTERNAL);
+                    return null;
+                } catch (ApiResourceCommitStoreException ex) {
+                    return ex.code();
+                }
+            });
+            assertThat(resourceJournalLocked.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<SecretAbortCandidate> recovered = executor.submit(() -> {
+                pendingStarted.countDown();
+                return recovery.claimRecoveryDue(1).getFirst();
+            });
+            assertThat(failed.get(10, TimeUnit.SECONDS))
+                    .isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+            SecretAbortCandidate candidate = recovered.get(10, TimeUnit.SECONDS);
+            recovery.completeAbort(candidate);
+        } finally {
+            executor.shutdownNow();
+        }
+
+        // Recovery owns the pending attempt's terminal transition.  The
+        // resource stage remains until the resource store performs its exact
+        // FAILED cleanup below.
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("FAILED");
+        resource.fail(lease, CommandFailureCode.INTERNAL);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("FAILED");
+    }
+
+    @Test
     void committedCommandReplaysReceiptAfterStoreReopen() {
         JdbcApiResourceCommitStore first = store();
         CommandLease lease = acquire(first, KEY, ExpectedRevision.create(), FP1);
@@ -427,5 +548,22 @@ class JdbcApiResourceCommitStoreMutationTest {
                 new ApiResourceCommand.Response(new ApiResourceCommand.HttpStatus(List.of(200)), null),
                 ApiResourceCommand.Effect.READ_ONLY,
                 List.of(new ApiResourceCommand.Example("one", value, value)));
+    }
+
+    private static ApiConnectionCommand secretCommand() {
+        return new ApiConnectionCommand("Connection", "https://customer.example.com",
+                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
+                new ApiConnectionCommand.Defaults(5_000, Map.of()));
+    }
+
+    private static PendingSecretBatch pendingBatch(CommandLease lease) {
+        ConnectionRevisionCoordinate coordinate = new ConnectionRevisionCoordinate(SCOPE, "connection", 1);
+        PendingSecretLease pendingLease = new PendingSecretLease(lease, coordinate, ExpectedRevision.create());
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "connection-save",
+                "connection", 1, lease.commandId(), lease.attemptNo(), lease.attemptToken(), "token");
+        PreparedExternalSecret prepared = new PreparedExternalSecret("provider:test", "provider-lease",
+                "opaque-locator", lease.leaseUntil(), context);
+        return new PendingSecretBatch(pendingLease, List.of(new PendingSecretOperation.Prepared("token",
+                SecretSourceMode.VALUE, prepared)));
     }
 }

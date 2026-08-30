@@ -40,24 +40,26 @@ public interface ApiConnectionCommitStore {
 
     /**
      * Promotes a Connection child of an outer resource save without closing
-     * the shared command journal or creating a Connection receipt. The outer
-     * facade owns that composite finalization boundary.
+     * the shared command journal or creating a Connection receipt. The child
+     * update is provisional: implementations must require the same ambient
+     * coordinator transaction to commit the outer resource journal, and must
+     * reject/roll back a child-only transaction at its commit boundary. The
+     * outer facade owns that composite finalization boundary.
      *
      * @param lease exact live {@code API_RESOURCE_SAVE} lease
      * @return the locally committed child view, not a published receipt
      */
     StoredApiConnection commitChild(CommandLease lease);
 
-    /** Promotes a nested Connection child with a locator-free finalized-slot proof. */
+    /** Promotes a nested Connection child with a locator-free finalized-slot proof in the same coordinator transaction. */
     StoredApiConnection commitChild(CommandLease lease, FinalizedSecretSlots finalized);
 
     /**
      * Publishes a previously committed nested child after the outer resource
      * receipt has been durably committed. The receipt is the visibility fence;
      * a child must never become readable from a partially committed resource.
-     * Implementations without a shared resource journal treat the supplied
-     * receipt as already authorized by the outer resource store and validate
-     * its complete canonical closure; they do not attempt to prove durability.
+     * Implementations validate the supplied receipt's complete canonical
+     * closure and exact persisted outer authority before exposing the child.
      */
     StoredApiConnection publishChild(CommandLease lease, CommandReceipt outerReceipt);
 
