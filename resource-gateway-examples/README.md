@@ -91,9 +91,11 @@ validates the pure command before ETag lookup, fingerprinting, or claim, current
 uses exact historical strong ETags for replay/CAS, and returns only `ApiConnectionView` plus its strong ETag.
 The focused command
 `mvn -f resource-gateway-examples/pom.xml -Dtest=ApiConnectionCommitStoreContractTest,InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest test -DfailIfNoTests=false`
-is **85/85 green** (Failures: 0, Errors: 0, Skipped: 0), including a real H2 `MODE=PostgreSQL` same-database
-claim/replay integration. Credential write capabilities, HTTP/controller transport, real PostgreSQL
-certification, and UI acceptance remain outside this tracer.
+is **89/89 green** (Failures: 0, Errors: 0, Skipped: 0), including a real H2 `MODE=PostgreSQL` same-database
+claim/replay integration and lifecycle-failure cleanup coverage. The subsequent serial resource-gateway
+`mvn -f resource-gateway-examples/pom.xml clean verify` completed with `Tests run: 7,960; Failures: 0;
+Errors: 0; Skipped: 33` and `BUILD SUCCESS`. Credential write capabilities, HTTP/controller transport, real
+PostgreSQL certification, and UI acceptance remain outside this tracer.
 
 J3-B1a adds the Connection persistence foundation: V003 defines five scoped identity, revision, head, pending
 lease, and binding tables with secret-free metadata, exact command/attempt provenance, staged/committed head
