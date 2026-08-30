@@ -263,10 +263,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
 
     private void insertIdentity(AuthoringScope scope, String connectionId) {
         jdbc.update("""
-                        MERGE INTO rg_api_connection_identities
-                            (tenant_id, project_id, environment_id, connection_id)
-                        KEY (tenant_id, project_id, environment_id, connection_id)
-                        VALUES (?, ?, ?, ?)
+                        MERGE INTO rg_api_connection_identities AS target
+                        USING (VALUES (?, ?, ?, ?)) AS source(tenant_id, project_id, environment_id, connection_id)
+                          ON target.tenant_id=source.tenant_id AND target.project_id=source.project_id
+                         AND target.environment_id=source.environment_id AND target.connection_id=source.connection_id
+                        WHEN NOT MATCHED THEN INSERT (tenant_id, project_id, environment_id, connection_id)
+                        VALUES (source.tenant_id, source.project_id, source.environment_id, source.connection_id)
                         """, scope.tenantId(), scope.projectId(), scope.environmentId(), connectionId);
     }
 
@@ -473,11 +475,18 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             fail(Code.INTEGRITY);
         }
         if (jdbc.update("""
-                        MERGE INTO rg_api_connection_heads
-                            (tenant_id, project_id, environment_id, connection_id, revision, command_id,
-                             strong_etag, revision_state)
-                        KEY (tenant_id, project_id, environment_id, connection_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, 'COMMITTED')
+                        MERGE INTO rg_api_connection_heads AS target
+                        USING (VALUES (?, ?, ?, ?, ?, ?, ?)) AS source
+                               (tenant_id, project_id, environment_id, connection_id, revision, command_id, strong_etag)
+                          ON target.tenant_id=source.tenant_id AND target.project_id=source.project_id
+                         AND target.environment_id=source.environment_id AND target.connection_id=source.connection_id
+                        WHEN MATCHED THEN UPDATE SET revision=source.revision, command_id=source.command_id,
+                             strong_etag=source.strong_etag, revision_state='COMMITTED', updated_at=CURRENT_TIMESTAMP
+                        WHEN NOT MATCHED THEN INSERT
+                             (tenant_id, project_id, environment_id, connection_id, revision, command_id,
+                              strong_etag, revision_state)
+                        VALUES (source.tenant_id, source.project_id, source.environment_id, source.connection_id,
+                                source.revision, source.command_id, source.strong_etag, 'COMMITTED')
                         """, staged.tenantId(), staged.projectId(), staged.environmentId(),
                 staged.connectionId(), staged.revision(), lease.commandId(), staged.strongEtag()) != 1) {
             fail(Code.INTEGRITY);
@@ -501,6 +510,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private void failInTransaction(CommandLease lease) {
+        String status = jdbc.query("SELECT status FROM rg_authoring_command_journal WHERE command_id=? FOR UPDATE",
+                (row, ignored) -> row.getString(1), lease.commandId()).stream().findFirst().orElse(null);
+        if ("COMMITTED".equals(status) || "FAILED".equals(status)) return;
         requireLiveJournal(lease, false);
         if (jdbc.update("DELETE FROM rg_api_connection_pending_secret_leases "
                 + "WHERE command_id=? AND attempt_no=? AND attempt_token=?", lease.commandId(),

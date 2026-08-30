@@ -497,9 +497,9 @@ mvn -f resource-gateway-examples/pom.xml \
   test -DfailIfNoTests=false
 
 InMemoryApiConnectionCommitStoreTest: 19/19
-JdbcApiConnectionCommitStoreTest: 24/24
+JdbcApiConnectionCommitStoreTest: 25/25
 ApiConnectionSchemaReadinessTest: 21/21
-Results: Tests run: 64, Failures: 0, Errors: 0, Skipped: 0
+Results: Tests run: 65, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 

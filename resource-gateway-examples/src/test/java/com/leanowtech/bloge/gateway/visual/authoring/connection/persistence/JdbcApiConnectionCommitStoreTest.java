@@ -194,6 +194,21 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
 
+    @Test
+    void lateFailureAfterCommitIsAStaleNoOp() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("late-failure", "late-failure-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(lease);
+
+        store.fail(lease);
+
+        assertThat(store.findHead(SCOPE, "customer")).isPresent();
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("COMMITTED");
+    }
+
     private JdbcApiConnectionCommitStore jdbcStore() {
         return (JdbcApiConnectionCommitStore) createStore(Clock.fixed(TEST_NOW, ZoneId.of("UTC")));
     }
