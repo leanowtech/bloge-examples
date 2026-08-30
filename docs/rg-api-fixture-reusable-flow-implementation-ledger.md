@@ -352,11 +352,51 @@ Vault lease/activate、`AuthoringFacade` 或 controller。
 下一步仍是 JDBC/head、Vault lease/activate、`AuthoringFacade` 与 controller 的复合保存和 API 暴露，
 随后才进入 API Resource 对象页和首次模拟。
 
-## 10. 未关闭风险
+## 10. Iteration 10 — J3-B1a Connection schema/readiness
+
+日期：2026-08-30。
+
+### 已完成
+
+- `c2a25a63c`、`99fa6f806`、`955c1ef18`、`294331ddc`：J3-B1a 的 Spec 与 Standards 评审均为
+  **Accepted**。V003 新增五张 scoped Connection 持久化表：identity、revision、head、pending secret
+  lease 和 active binding；保存 payload-free view 与 metadata，使用 exact `command_id`、`attempt_no`、
+  `attempt_token` provenance，数据库约束 staged/committed 可见性和精确 head 选择。
+- schema readiness 逐表验证全部 required columns，并核对关键 primary/unique/foreign key、索引以及
+  Resource revision 到 Connection identity 的 `ON DELETE RESTRICT` 绑定。迁移同时为既有 Resource revision
+  回填 Connection identity；pending lease 不持有明文或序列化 credential/ref 数据。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiConnectionSchemaReadinessTest test -DfailIfNoTests=false
+ApiConnectionSchemaReadinessTest: 11 tests
+Tests run: 11, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+上述证据仅来自 H2 `MODE=PostgreSQL`。真实 PostgreSQL migration/certification 和 full `clean verify` 本轮均未运行，
+不能将 H2 结果扩写为 PostgreSQL 或全量构建证据。
+
+### 当前差距评估
+
+本轮关闭 Connection 的 migration/schema/readiness 约束层；按本台账既有 broader goal 口径，完成度由 **32%**
+调整为 **33%**，当前差距为 **67%**。该数字不代表 JDBC Connection store、外部 Vault、Facade 或 HTTP 已完成，
+也不意味着 broader goal gap 接近 3%。
+
+### 未实现边界
+
+- JDBC Connection store、跨实例运行时提交与真实 Connection head 读写尚未实现。
+- 外部 Vault 的 lease/activate、清理、恢复和 provider 集成尚未实现。
+- `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 以及 UI 尚未接入。
+- 真实 PostgreSQL lane 与 full `clean verify` 未运行；当前仅有 H2 PostgreSQL-mode focused evidence。
+
+## 11. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
-- 生产部署仍需在 PostgreSQL lane 重放 V001/V002 migration，并证明不可见 staging；不得用异步投影冒充
+- 生产部署仍需在 PostgreSQL lane 重放 V001/V002/V003 migration，并证明不可见 staging；不得用异步投影冒充
   成功 Receipt。
 - API Resource 页面重载必须通过 Exact Subject Fixture summary 查询恢复，不能保存 material 到 Resource View
   或 Local Storage。

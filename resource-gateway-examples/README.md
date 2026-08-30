@@ -56,6 +56,7 @@ The JDBC authoring store is opt-in and is not an HTTP/Facade API yet. Apply the 
 ```text
 db/postgresql/V20260830_001__api_resource_authoring.sql
 db/postgresql/V20260830_002__api_resource_concurrent_staging.sql
+db/postgresql/V20260830_003__api_connection_secret_staging.sql
 ```
 
 Then enable the production wiring explicitly:
@@ -76,6 +77,15 @@ include JDBC/head, Vault lease/activate, the `AuthoringFacade`, or controllers. 
 fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
 real writes until the lossless runtime side-effect contract exists. Real PostgreSQL certification, the
 `AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+
+J3-B1a adds the Connection persistence foundation: V003 defines five scoped identity, revision, head, pending
+lease, and binding tables with secret-free metadata, exact command/attempt provenance, staged/committed head
+fencing, and database checks, foreign keys, unique constraints, and recovery indexes. Its read-only
+`ApiConnectionSchemaReadiness` probe verifies the required columns and constraint/index closure. Commits
+`c2a25a63c`, `99fa6f806`, `955c1ef18`, and `294331ddc` passed Spec and Standards review; the focused readiness
+suite is 11/11 green on H2 PostgreSQL mode. This slice does not implement the JDBC Connection store, external
+Vault lease/activation, `AuthoringFacade`, or HTTP endpoints. Real PostgreSQL certification and full `clean verify`
+were not run.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
