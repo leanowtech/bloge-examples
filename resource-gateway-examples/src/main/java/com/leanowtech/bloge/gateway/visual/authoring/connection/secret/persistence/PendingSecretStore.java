@@ -21,11 +21,11 @@ public interface PendingSecretStore {
     Optional<PendingSecretBatch> findExact(PendingSecretLease lease);
 
     /** Commits all activation outputs atomically and clears the pending batch. */
-    void commitBindings(PendingSecretBatch batch, List<ActivatedSecretSlot> activated);
+    FinalizedSecretSlots commitBindings(PendingSecretBatch batch, List<ActivatedSecretSlot> activated);
 
     /** Alias emphasizing that this is the local activation finalization boundary. */
-    default void finalizeActivation(PendingSecretBatch batch, List<ActivatedSecretSlot> activated) {
-        commitBindings(batch, activated);
+    default FinalizedSecretSlots finalizeActivation(PendingSecretBatch batch, List<ActivatedSecretSlot> activated) {
+        return commitBindings(batch, activated);
     }
 
     /** Marks an exact staged or activated batch for provider compensation. */

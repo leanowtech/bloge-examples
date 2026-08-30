@@ -17,6 +17,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -65,6 +66,22 @@ public abstract class PendingSecretStoreContractTest {
         assertThat(store.findExact(batch.lease())).contains(batch);
     }
 
+    @Test void finalizeReturnsExactCoordinateAndSortedSlotsAfterBindingsAreWritten() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandLease lease = lease("proof", 1, "proof-token", NOW.plusSeconds(60));
+        PendingSecretBatch batch = batch(lease, "token", "password");
+        store.stage(batch);
+
+        FinalizedSecretSlots proof = store.finalizeActivation(batch, List.of(
+                activation("token", "proof-token", "active-token"),
+                activation("password", "proof-token", "active-password")));
+
+        assertThat(proof.coordinate()).isEqualTo(batch.lease().coordinate());
+        assertThat(proof.slots()).containsExactly("password", "token");
+        assertThat(store.findActive(batch.lease().coordinate(), "token")).isPresent();
+        assertThat(store.findExact(batch.lease())).isEmpty();
+    }
+
     @Test void wrongProviderOrLeaseActivationIsRejected() {
         PendingSecretStore store = newStore(fixedClock());
         CommandLease lease = lease("provider", 1, "p-token", NOW.plusSeconds(60));
@@ -96,8 +113,11 @@ public abstract class PendingSecretStoreContractTest {
         PendingSecretBatch batch = batch(lease, "token");
         List<ActivatedSecretSlot> outputs = List.of(activation("token", "replay-token", "active"));
         store.stage(batch);
-        store.commitBindings(batch, outputs);
-        store.commitBindings(batch, outputs);
+        FinalizedSecretSlots first = store.commitBindings(batch, outputs);
+        FinalizedSecretSlots replay = store.commitBindings(batch, outputs);
+        assertThat(replay).isEqualTo(first);
+        assertThat(replay.coordinate()).isEqualTo(batch.lease().coordinate());
+        assertThat(replay.slots()).containsExactly("token");
         assertThatThrownBy(() -> store.commitBindings(batch,
                 List.of(activation("token", "replay-token", "different"))))
                 .isInstanceOf(PendingSecretStoreException.class)
@@ -114,7 +134,9 @@ public abstract class PendingSecretStoreContractTest {
         PendingSecretBatch batch = new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3), lease.expectedRevision()),
                 List.of(new PendingSecretOperation.Retained("token", coordinate(lease, 2))));
         store.stage(batch);
-        store.commitBindings(batch, List.of());
+        FinalizedSecretSlots proof = store.finalizeActivation(batch, List.of());
+        assertThat(proof.coordinate()).isEqualTo(batch.lease().coordinate());
+        assertThat(proof.slots()).containsExactly("token");
         assertThat(store.findActive(batch.lease().coordinate(), "token")).contains(
                 new ActiveSecretBinding("provider:one", "old-active", "keep"));
     }
@@ -347,6 +369,23 @@ public abstract class PendingSecretStoreContractTest {
         String json = new ObjectMapper().writeValueAsString(batch);
         assertThat(json).doesNotContain("secret-attempt", "lease-id", "opaque-locator");
         assertThat(batch.toString()).doesNotContain("secret-attempt", "lease-id", "opaque-locator");
+
+        FinalizedSecretSlots proof = new FinalizedSecretSlots(batch.lease().coordinate(),
+                Set.of("token"));
+        String proofJson = new ObjectMapper().writeValueAsString(proof);
+        assertThat(proofJson).contains("connection", "token")
+                .doesNotContain("secret-attempt", "lease-id", "opaque-locator", "provider:one");
+        assertThat(proof.toString()).doesNotContain("secret-attempt", "lease-id", "opaque-locator", "provider:one");
+    }
+
+    @Test void finalizedProofRejectsUnknownSlotsAndDefensivelySortsInput() {
+        Set<String> slots = new java.util.HashSet<>(Set.of("token", "password"));
+        FinalizedSecretSlots proof = new FinalizedSecretSlots(coordinate(lease("proof-shape", 1,
+                "proof-shape-token", NOW.plusSeconds(60)), 3), slots);
+        slots.clear();
+        assertThat(proof.slots()).containsExactly("password", "token");
+        assertThatThrownBy(() -> new FinalizedSecretSlots(proof.coordinate(), Set.of("unknown")))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test void malformedRecoveryLimitIsStableIntegrity() {

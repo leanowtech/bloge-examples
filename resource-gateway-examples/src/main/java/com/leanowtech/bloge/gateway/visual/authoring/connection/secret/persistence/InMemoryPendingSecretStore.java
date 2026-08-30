@@ -76,15 +76,15 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         return entry == null || !entry.batch.lease().equals(lease) ? Optional.empty() : Optional.of(entry.batch);
     }
 
-    @Override public synchronized void commitBindings(PendingSecretBatch batch,
-                                                       List<ActivatedSecretSlot> activated) {
+    @Override public synchronized FinalizedSecretSlots commitBindings(PendingSecretBatch batch,
+                                                                       List<ActivatedSecretSlot> activated) {
         requireBatch(batch);
         List<ActivatedSecretSlot> outputs = canonical(activated);
         AttemptKey key = key(batch.lease());
         Completion done = completed.get(key);
         if (done != null) {
             if (done.outcome == TerminalOutcome.COMMITTED && done.batch.equals(batch)
-                    && done.outputs.equals(outputs)) return;
+                    && done.outputs.equals(outputs)) return done.proof;
             if (done.outcome == TerminalOutcome.ABORTED) throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
@@ -112,7 +112,10 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         active.putAll(writes);
         for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, key);
         entries.remove(key);
-        completed.put(key, new Completion(batch, outputs, TerminalOutcome.COMMITTED));
+        FinalizedSecretSlots proof = new FinalizedSecretSlots(batch.lease().coordinate(), writes.keySet().stream()
+                .map(BindingKey::slot).collect(java.util.stream.Collectors.toUnmodifiableSet()));
+        completed.put(key, new Completion(batch, outputs, proof, TerminalOutcome.COMMITTED));
+        return proof;
     }
 
     @Override public synchronized void markAbortRequired(PendingSecretLease lease) {
@@ -170,7 +173,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         }
         removeBindings(entry, key);
         entries.remove(key);
-        completed.put(key, new Completion(entry.batch, List.of(), TerminalOutcome.ABORTED));
+        completed.put(key, new Completion(entry.batch, List.of(), null, TerminalOutcome.ABORTED));
     }
 
     @Override public synchronized Optional<ActiveSecretBinding> findActive(ConnectionRevisionCoordinate coordinate,
@@ -343,5 +346,6 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     private record Entry(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained, State state,
                          Instant effectiveDeadline, Instant updatedAt) { }
     private record Completion(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs,
+                              FinalizedSecretSlots proof,
                               TerminalOutcome outcome) { }
 }
