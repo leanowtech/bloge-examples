@@ -6,10 +6,12 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -288,8 +290,14 @@ class ApiConnectionAuthorityTest {
         assertThat(spec.toString()).doesNotContain("vault", "provider-token");
         assertThat(spec.view().toString()).doesNotContain("vault", "provider-token");
         assertThat(JSON.valueToTree(spec).toString()).doesNotContain("vault", "provider-token");
-        assertThat(spec.secretBindings().get("token").ref()).isNotEqualTo("vault://private/provider-token");
         assertThat(JSON.valueToTree(spec.view()).toString()).doesNotContain("vault", "provider-token");
+        assertThat(Arrays.stream(ApiConnectionSpec.class.getDeclaredMethods())
+                .map(Method::getName))
+                .doesNotContain("secretBindings", "secretBindingMap");
+        assertThat(Arrays.stream(ApiConnectionSpec.class.getDeclaredMethods())
+                .map(Method::toGenericString)
+                .filter(signature -> signature.contains("SecretReference")))
+                .isEmpty();
     }
 
     @Test

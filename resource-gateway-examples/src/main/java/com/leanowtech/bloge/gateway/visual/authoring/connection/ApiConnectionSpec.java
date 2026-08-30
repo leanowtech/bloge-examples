@@ -1,16 +1,13 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 
 import java.util.Collections;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
-import java.util.stream.Collectors;
 
 /**
  * Internal immutable Connection authority. It retains only non-secret auth
@@ -76,22 +73,6 @@ public final class ApiConnectionSpec {
                 baseUrl, authKind, username, apiKeyHeader, defaults, secretSlots);
     }
 
-    /**
-     * Transitional restore overload for adapters migrating from reference-backed
-     * authority. References are deliberately discarded; only their slot names
-     * remain authoritative.
-     */
-    @Deprecated(forRemoval = true)
-    public static ApiConnectionSpec restore(String schemaVersion, AuthoringScope scope, String connectionId,
-                                            int revision, String fingerprint, String displayName, String baseUrl,
-                                            String authKind, String username, String apiKeyHeader,
-                                            ApiConnectionCommand.Defaults defaults,
-                                            Map<String, SecretReference> secretBindings) {
-        return restore(schemaVersion, scope, connectionId, revision, fingerprint, displayName, baseUrl,
-                authKind, username, apiKeyHeader, defaults,
-                secretBindings == null ? Set.of() : secretBindings.keySet());
-    }
-
     /** @return authority schema version */
     public String schemaVersion() { return schemaVersion; }
     /** @return authenticated scope */
@@ -118,20 +99,6 @@ public final class ApiConnectionSpec {
     }
     /** @return stable sorted configured secret slots */
     public SortedSet<String> secretSlots() { return Collections.unmodifiableSortedSet(new TreeSet<>(secretSlots)); }
-
-    /**
-     * Transitional read-only bridge for adapters that still compile against the
-     * old API. Values are slot markers, never source references or locators.
-     *
-     * @return slot-marker map for the legacy adapter seam
-     * @deprecated migrate adapters to {@link #secretSlots()}
-     */
-    @Deprecated(forRemoval = true)
-    @JsonIgnore
-    public Map<String, SecretReference> secretBindings() {
-        return secretSlots.stream().collect(Collectors.toUnmodifiableMap(
-                slot -> slot, slot -> new SecretReference(scope, "vault://slot-marker/" + slot)));
-    }
 
     /** @return exact payload-free client projection */
     public ApiConnectionView view() {

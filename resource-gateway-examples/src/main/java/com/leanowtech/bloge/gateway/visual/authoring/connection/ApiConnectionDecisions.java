@@ -69,7 +69,7 @@ public final class ApiConnectionDecisions {
         ApiConnectionSpec next = new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId,
                 current == null ? 1 : current.revision() + 1, "", command.displayName(), command.baseUrl(),
                 resolved.kind(), resolved.username(), resolved.apiKeyHeader(), defaults, resolved.secretSlots());
-        String metadataFingerprint = canonicalFingerprint(next);
+        String metadataFingerprint = fingerprint(next);
         return new ApiConnectionSpec(ApiConnectionSpec.SCHEMA_VERSION, scope, connectionId, next.revision(),
                 metadataFingerprint, next.displayName(), next.baseUrl(), next.authKind(), next.username(),
                 next.apiKeyHeader(), next.defaults(), next.secretSlots());
@@ -92,16 +92,7 @@ public final class ApiConnectionDecisions {
     /** @param spec authority snapshot @return deterministic persisted metadata fingerprint */
     public String fingerprint(ApiConnectionSpec spec) {
         if (spec == null) invalid("connection spec is required");
-        ObjectNode body = mapper.createObjectNode();
-        body.put("connectionId", spec.connectionId());
-        body.put("displayName", spec.displayName());
-        body.put("baseUrl", spec.baseUrl());
-        body.put("authKind", spec.authKind());
-        if (spec.username() != null) body.put("username", spec.username());
-        if (spec.apiKeyHeader() != null) body.put("apiKeyHeader", spec.apiKeyHeader());
-        body.set("defaults", mapper.valueToTree(spec.defaults()));
-        body.set("secretSlots", mapper.valueToTree(spec.secretSlots()));
-        return AuthoringFingerprints.of(body);
+        return AuthoringFingerprints.of(canonicalAuthorityBody(spec));
     }
 
     private void validateCommand(ApiConnectionCommand command) {
@@ -191,7 +182,16 @@ public final class ApiConnectionDecisions {
         return result;
     }
 
-    private String canonicalFingerprint(ApiConnectionSpec spec) {
+    /**
+     * Builds the sole canonical, payload-free authority representation used for
+     * both new-revision fingerprints and persisted-fingerprint verification.
+     * Secret references and secret values are intentionally represented only by
+     * their validated slot names.
+     *
+     * @param spec immutable authority snapshot to canonicalize
+     * @return canonical authority metadata object
+     */
+    private ObjectNode canonicalAuthorityBody(ApiConnectionSpec spec) {
         ObjectNode body = mapper.createObjectNode();
         body.put("connectionId", spec.connectionId());
         body.put("displayName", spec.displayName());
@@ -201,7 +201,7 @@ public final class ApiConnectionDecisions {
         if (spec.apiKeyHeader() != null) body.put("apiKeyHeader", spec.apiKeyHeader());
         body.set("defaults", mapper.valueToTree(spec.defaults()));
         body.set("secretSlots", mapper.valueToTree(spec.secretSlots()));
-        return AuthoringFingerprints.of(body);
+        return body;
     }
 
     private static ApiConnectionCommand.Defaults effectiveDefaults(ApiConnectionCommand.Defaults defaults) {
