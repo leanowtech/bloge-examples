@@ -74,4 +74,15 @@ public interface ApiConnectionCommitStore {
 
     /** Reads one committed historical revision in the exact authoring scope. */
     Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision);
+
+    /**
+     * Reads one committed historical revision by its exact strong ETag.
+     *
+     * <p>The lookup is independent of the current head, so an old ETag remains
+     * usable as a replay precondition after a later revision is committed. A
+     * scope or connection mismatch is an empty result; malformed ETags and
+     * ambiguous committed provenance fail closed with {@code INTEGRITY}.</p>
+     */
+    Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
+                                                            String strongEtag);
 }

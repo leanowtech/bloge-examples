@@ -733,6 +733,44 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void strongEtagReadRejectsMatchingButWrongJournalAndAttemptTarget() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("etag-target-authority", "etag-target-authority-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection committed = store.commit(lease);
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET target_id=? WHERE command_id=?",
+                "other-connection", lease.commandId());
+        jdbc.update("UPDATE rg_authoring_command_attempts SET target_id=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", "other-connection", lease.commandId(),
+                lease.attemptNo(), lease.attemptToken());
+
+        assertThatThrownBy(() -> store.findRevisionByStrongEtag(SCOPE, "customer", committed.strongEtag()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
+    void strongEtagReadRejectsDuplicateCommittedProvenance() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease create = lease("etag-duplicate", "etag-duplicate-create", "customer",
+                ExpectedRevision.create());
+        store.stage(create, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection first = store.commit(create);
+        CommandLease update = lease("etag-duplicate-update", "etag-duplicate-update-token", "customer",
+                ExpectedRevision.match(1));
+        store.stage(update, "customer", ExpectedRevision.match(1), renamedCommand("Customer v2"));
+        jdbc.update("UPDATE rg_api_connection_revisions SET strong_etag=?"
+                        + " WHERE command_id=? AND state='STAGED'", first.strongEtag(), update.commandId());
+        store.commit(update);
+
+        assertThatThrownBy(() -> store.findRevisionByStrongEtag(SCOPE, "customer", first.strongEtag()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
     void concurrentCommitsSerializeTheHeadCas() throws Exception {
         ApiConnectionCommitStore store = jdbcStore();
         CommandLease first = lease("race-a", "race-a-token", "customer", ExpectedRevision.create());

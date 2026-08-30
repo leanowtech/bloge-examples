@@ -287,6 +287,24 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         return Optional.ofNullable(history.get(new RevisionKey(new ConnectionKey(scope, connectionId), revision)));
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public synchronized Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope,
+                                                                                 String connectionId,
+                                                                                 String strongEtag) {
+        if (!StrongEtag.isValid(strongEtag)) fail(Code.INTEGRITY);
+        StoredApiConnection match = null;
+        for (Map.Entry<RevisionKey, StoredApiConnection> entry : history.entrySet()) {
+            RevisionKey key = entry.getKey();
+            if (key.key().scope().equals(scope) && key.key().connectionId().equals(connectionId)
+                    && entry.getValue().strongEtag().equals(strongEtag)) {
+                if (match != null) fail(Code.INTEGRITY);
+                match = entry.getValue();
+            }
+        }
+        return Optional.ofNullable(match);
+    }
+
     private static String slotFor(String kind) {
         return switch (kind) {
             case "BEARER" -> "token";
@@ -322,6 +340,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
 
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
     private static void fail(Code code) { throw new ApiConnectionCommitStoreException(code); }
+
     private record StageKey(String commandId, String attemptToken) { }
     private record ConnectionKey(AuthoringScope scope, String connectionId) { }
     private record RevisionKey(ConnectionKey key, long revision) { }

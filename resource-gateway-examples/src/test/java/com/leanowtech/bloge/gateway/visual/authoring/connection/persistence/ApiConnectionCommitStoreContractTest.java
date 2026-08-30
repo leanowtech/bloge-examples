@@ -100,6 +100,47 @@ abstract class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void oldStrongEtagResolvesAfterTheHeadAdvances() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease create = lease("etag-history", 1, "etag-history-create", SCOPE, "customer",
+                ExpectedRevision.create());
+        StagedApiConnection staged = stage(store, create, "customer", ExpectedRevision.create(), noneCommand());
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "customer", staged.strongEtag())).isEmpty();
+        StoredApiConnection first = store.commit(create);
+
+        CommandLease update = lease("etag-history-update", 1, "etag-history-update-token", SCOPE,
+                "customer", ExpectedRevision.match(1));
+        stage(store, update, "customer", ExpectedRevision.match(1), renamedCommand("Customer v2"));
+        StoredApiConnection second = store.commit(update);
+
+        assertThat(second.view().revision()).isEqualTo(2);
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "customer", first.strongEtag()))
+                .contains(first);
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "customer", second.strongEtag()))
+                .contains(second);
+        assertThat(store.findRevisionByStrongEtag(OTHER_SCOPE, "customer", first.strongEtag()))
+                .isEmpty();
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "other", first.strongEtag())).isEmpty();
+        assertThat(store.findRevisionByStrongEtag(SCOPE, "customer", "\"unknown\"")).isEmpty();
+
+        CommandLease stale = lease("etag-history-stale", 1, "etag-history-stale-token", SCOPE,
+                "customer", ExpectedRevision.match(1));
+        assertThatThrownBy(() -> stage(store, stale, "customer", ExpectedRevision.match(1),
+                renamedCommand("Stale writer"))).isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.CAS_MISMATCH);
+    }
+
+    @Test
+    void strongEtagLookupRejectsWeakAndListValidators() {
+        ApiConnectionCommitStore store = newStore();
+        for (String invalid : new String[]{"W/\"etag\"", "\"W/etag\"", "\"etag\", \"other\"", "etag"}) {
+            assertThatThrownBy(() -> store.findRevisionByStrongEtag(SCOPE, "customer", invalid))
+                    .isInstanceOf(ApiConnectionCommitStoreException.class)
+                    .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+        }
+    }
+
+    @Test
     void sameAttemptReentryReturnsTheSameStageWithoutDuplicatingIt() {
         ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("reentry", 1, "reentry-token", SCOPE, "customer", ExpectedRevision.create());

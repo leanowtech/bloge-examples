@@ -930,6 +930,14 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         return read(requireScope(scope), requireConnectionId(connectionId), revision);
     }
 
+    /** {@inheritDoc} */
+    @Override
+    public Optional<StoredApiConnection> findRevisionByStrongEtag(AuthoringScope scope, String connectionId,
+                                                                   String strongEtag) {
+        if (!StrongEtag.isValid(strongEtag)) fail(Code.INTEGRITY);
+        return readByStrongEtag(requireScope(scope), requireConnectionId(connectionId), strongEtag);
+    }
+
     private Optional<StoredApiConnection> read(AuthoringScope scope, String connectionId, Long revision) {
         String sql = "SELECT " + REVISION_COLUMNS + """
                   FROM rg_api_connection_revisions r
@@ -958,6 +966,24 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         if (revision != null) args.add(revision);
         if (revision != null) sql += " AND r.revision=?";
         List<RevisionRow> rows = jdbc.query(sql, revisionRowMapper(), args.toArray());
+        if (rows.isEmpty()) return Optional.empty();
+        if (rows.size() != 1) fail(Code.INTEGRITY);
+        return Optional.of(stored(rows.getFirst()));
+    }
+
+    private Optional<StoredApiConnection> readByStrongEtag(AuthoringScope scope, String connectionId,
+                                                           String strongEtag) {
+        String sql = "SELECT " + REVISION_COLUMNS + " FROM rg_api_connection_revisions r"
+                + " JOIN rg_authoring_command_attempts a"
+                + " ON a.command_id=r.command_id AND a.attempt_no=r.attempt_no"
+                + " AND a.attempt_token=r.attempt_token AND a.status='COMMITTED'"
+                + " JOIN rg_authoring_command_journal j"
+                + " ON j.command_id=r.command_id AND j.attempt_no=r.attempt_no"
+                + " AND j.attempt_token=r.attempt_token AND j.status='COMMITTED'"
+                + " WHERE r.tenant_id=? AND r.project_id=? AND r.environment_id=?"
+                + " AND r.connection_id=? AND r.strong_etag=? AND r.state='COMMITTED'";
+        List<RevisionRow> rows = jdbc.query(sql, revisionRowMapper(), scope.tenantId(), scope.projectId(),
+                scope.environmentId(), connectionId, strongEtag);
         if (rows.isEmpty()) return Optional.empty();
         if (rows.size() != 1) fail(Code.INTEGRITY);
         return Optional.of(stored(rows.getFirst()));
@@ -1137,6 +1163,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     private static String opaqueEtag() {
         return "\"" + UUID.randomUUID() + "\"";
     }
+
 
     private static OffsetDateTime timestamp(Instant value) {
         return OffsetDateTime.ofInstant(value, ZoneOffset.UTC);

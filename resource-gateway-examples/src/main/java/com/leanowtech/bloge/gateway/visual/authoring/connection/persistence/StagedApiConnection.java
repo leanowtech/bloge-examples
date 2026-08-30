@@ -50,14 +50,7 @@ public final class StagedApiConnection {
 
     /** Stricter HTTP-safe closure, even if an older database check is wider. */
     private static boolean isStrongHttpEtag(String value) {
-        if (value == null || value.length() < 3 || value.length() > 256
-                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"') return false;
-        for (int i = 1; i < value.length() - 1; i++) {
-            char c = value.charAt(i);
-            if (c != '!' && (c < '#' || c > '~')) return false;
-        }
-        if (value.startsWith("\"W/")) return false;
-        return true;
+        return StrongEtag.isValid(value);
     }
 
     private static boolean connectionExpectedRevisionMismatch(ExpectedRevision expected, int revision) {
