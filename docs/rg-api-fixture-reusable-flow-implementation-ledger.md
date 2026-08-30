@@ -424,7 +424,30 @@ Facade、HTTP 或生产 PostgreSQL 能力已完成，更不意味着 broader goa
 - `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 与 UI 尚未接入。
 - 真实 PostgreSQL lane 与 full `clean verify` 未运行；当前仅有内存 contract 和前一切片的 H2 focused evidence。
 
-## 12. 未关闭风险
+## 12. Iteration 12 — J3-B1b-2 External Secret Provider pure seam
+
+日期：2026-08-30。
+
+### 已完成
+
+- `73c6592fc`、`59370a17f`、`fcefffdee`、`ff0338842`、`6582730ad`、`f6198b75b`、`c8ae04113`：External Secret Provider 纯 seam 的 Spec 与 Standards 评审均为 **Accepted**，P0/P1/P2 均为 0。
+- seam 只接受外部 provider：明文 `VALUE` 由调用方持有且负责销毁；`SECRET_REF` 必须绑定到请求 Scope。最终 template 同时闭合 Scope、provider 和 exact attempt，避免跨作用域、错 provider 或错 command/attempt 的解析。
+- `prepare`、`activate`、`abort`、`resolve` 均定义幂等与补偿语义；解析结果和异常路径保持 secret-free，Jackson 序列化、`toString` 和 code-only 错误边界不泄露 secret。当前没有本地 AES/JDBC provider。
+
+### 最新验证
+
+`FakeExternalSecretProviderContractTest` 共 **13/13 green**，`Failures: 0, Errors: 0, Skipped: 0`。这是外部 provider 纯 seam 的聚焦 contract 证据；本轮没有运行 full `clean verify` 或真实 PostgreSQL lane。
+
+### 当前差距评估
+
+本轮只关闭 External Secret Provider 的纯 seam 与行为合同；按本台账同一 broader goal 口径，完成度由 **34%** 保守调整为 **35%**，当前差距为 **65%**。该调整不代表 Secret 持久化、生产 provider、Facade、HTTP、UI、真实 PostgreSQL 或 full `clean verify` 已完成。
+
+### 未实现边界
+
+- `PendingSecretStore`、JDBC Secret store 和生产 Vault/provider 集成尚未实现；当前没有本地 AES/JDBC provider。
+- `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 与 UI 尚未接入；full `clean verify` 与真实 PostgreSQL lane 未运行。
+
+## 13. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

@@ -95,6 +95,14 @@ handling without exposing credentials or business payloads. Commits `4589c51de`,
 adapter: the JDBC Connection store, external Vault/pending-secret integration, `AuthoringFacade`, HTTP endpoints,
 and full `clean verify` are not implemented or certified.
 
+J3-B1b-2 adds the pure External Secret Provider seam. It accepts only an external provider: a caller-owned,
+destroyable `VALUE`, or a scope-bound `SECRET_REF`; the final template closes the exact scope, provider, and
+attempt. `prepare`, `activate`, `abort`, and `resolve` define idempotency and compensation behavior, while
+Jackson serialization, `toString`, and code-only errors remain secret-free. `FakeExternalSecretProviderContractTest`
+is 13/13 green, and Spec plus Standards review is Accepted with P0/P1/P2 all at zero. This is only the provider
+seam: `PendingSecretStore`, JDBC/production Vault providers, `AuthoringFacade`, HTTP endpoints, UI, full
+`clean verify`, and real PostgreSQL are not implemented; there is no local AES/JDBC provider.
+
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than
