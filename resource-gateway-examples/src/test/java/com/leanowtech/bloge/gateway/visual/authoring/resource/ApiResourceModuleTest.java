@@ -69,6 +69,9 @@ class ApiResourceModuleTest {
                 ExpectedRevision.exact(1)))
                 .isInstanceOf(ApiResourceAuthoringException.class)
                 .extracting("code").isEqualTo(ApiResourceAuthoringException.Code.NOT_FOUND);
+        assertThatThrownBy(() -> module.get("bad id"))
+                .isInstanceOf(ApiResourceAuthoringException.class)
+                .extracting("code").isEqualTo(ApiResourceAuthoringException.Code.VALIDATION);
     }
 
     @Test

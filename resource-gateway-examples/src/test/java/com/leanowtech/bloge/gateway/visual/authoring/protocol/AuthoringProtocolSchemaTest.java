@@ -3,6 +3,9 @@ package com.leanowtech.bloge.gateway.visual.authoring.protocol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceCommand;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceSpec;
+import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -151,6 +154,59 @@ class AuthoringProtocolSchemaTest {
             assertThat(validationErrors(secretRef, MAPPER.valueToTree(value), commonPath))
                     .as("unsafe secret ref %s", value).isNotEmpty();
         }
+    }
+
+    @Test
+    void apiResourcePolymorphicKindsRoundTripAndValidateAgainstWireSchema() throws Exception {
+        Path schemaPath = SCHEMA_ROOT.resolve("api-resource-command-v1.schema.json");
+        JsonNode resourceSchema = read(schemaPath).at("/$defs/resourceCommand");
+        List<ApiResourceCommand.Success> successes = List.of(
+                new ApiResourceCommand.HttpStatus(List.of(200)),
+                new ApiResourceCommand.BodyMatch("$.status", List.of(MAPPER.valueToTree("CREATED"))));
+        List<ApiResourceCommand.Effect> effects = List.of(
+                ApiResourceCommand.Effect.readOnly(),
+                ApiResourceCommand.Effect.fixtureOnlyWrite(),
+                new ApiResourceCommand.Effect.ManagedWrite("X-Request-Id",
+                        new ApiResourceCommand.Effect.Receipt("$.id", "$.status",
+                                List.of(MAPPER.valueToTree("SUCCEEDED")), List.of(MAPPER.valueToTree("FAILED"))),
+                        new ApiResourceCommand.Effect.Reconciliation(
+                                new ApiResourceSpec.ResourceRef("API_RESOURCE", "orders.lookup", 3,
+                                        "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                                "$.receiptId")));
+        for (ApiResourceCommand.Success success : successes) {
+            for (ApiResourceCommand.Effect effect : effects) {
+                String method = effect instanceof ApiResourceCommand.Effect.ReadOnly ? "GET" : "POST";
+                ApiResourceCommand command = command(method, success, effect);
+                JsonNode wire = MAPPER.valueToTree(command);
+                assertThat(wire.at("/response/success/kind").asText()).isEqualTo(
+                        success instanceof ApiResourceCommand.HttpStatus ? "HTTP_STATUS" : "BODY_MATCH");
+                assertThat(wire.at("/effect/kind").asText()).isEqualTo(effectKind(effect));
+                assertThat(validationErrors(resourceSchema, wire, schemaPath)).as(wire.toString()).isEmpty();
+                ApiResourceCommand roundTrip = MAPPER.treeToValue(wire, ApiResourceCommand.class);
+                assertThat(roundTrip.response().success()).isEqualTo(success);
+                assertThat(roundTrip.effect()).isEqualTo(effect);
+            }
+        }
+    }
+
+    private static ApiResourceCommand command(String method, ApiResourceCommand.Success success,
+                                              ApiResourceCommand.Effect effect) {
+        Map<String, Object> schema = SchemaEnvelope.object(Map.of("id", Map.of("type", "string")), List.of("id")).schema();
+        return new ApiResourceCommand("Orders", "Wire round trip",
+                new ApiResourceCommand.Operation(method, "/orders", List.of()),
+                new ApiResourceCommand.Contract(new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema),
+                        new SchemaEnvelope(SchemaEnvelope.JSON_SCHEMA, "2020-12", schema)),
+                new ApiResourceCommand.Response(success, "$.data"), effect,
+                List.of(new ApiResourceCommand.Example("happy", MAPPER.createObjectNode().put("id", "o-1"),
+                        MAPPER.createObjectNode().put("id", "o-1"))));
+    }
+
+    private static String effectKind(ApiResourceCommand.Effect effect) {
+        return switch (effect) {
+            case ApiResourceCommand.Effect.ReadOnly ignored -> "READ_ONLY";
+            case ApiResourceCommand.Effect.FixtureOnlyWrite ignored -> "FIXTURE_ONLY_WRITE";
+            case ApiResourceCommand.Effect.ManagedWrite ignored -> "MANAGED_WRITE";
+        };
     }
 
     @Test

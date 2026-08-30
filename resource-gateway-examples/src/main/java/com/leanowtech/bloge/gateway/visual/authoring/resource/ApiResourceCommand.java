@@ -2,6 +2,8 @@ package com.leanowtech.bloge.gateway.visual.authoring.resource;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.leanowtech.bloge.gateway.visual.model.SchemaEnvelope;
+import com.fasterxml.jackson.annotation.JsonSubTypes;
+import com.fasterxml.jackson.annotation.JsonTypeInfo;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -105,7 +107,12 @@ public record ApiResourceCommand(
         }
     }
 
-    /** Supported response-success forms. */
+    /** Supported response-success forms, discriminated on the wire by {@code kind}. */
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "kind")
+    @JsonSubTypes({
+            @JsonSubTypes.Type(value = HttpStatus.class, name = "HTTP_STATUS"),
+            @JsonSubTypes.Type(value = BodyMatch.class, name = "BODY_MATCH")
+    })
     public sealed interface Success permits HttpStatus, BodyMatch {
     }
 
@@ -135,7 +142,13 @@ public record ApiResourceCommand(
         }
     }
 
-    /** Side-effect policy permitted for this resource. */
+    /** Side-effect policy permitted for this resource, discriminated on the wire by {@code kind}. */
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "kind")
+    @JsonSubTypes({
+            @JsonSubTypes.Type(value = Effect.ReadOnly.class, name = "READ_ONLY"),
+            @JsonSubTypes.Type(value = Effect.FixtureOnlyWrite.class, name = "FIXTURE_ONLY_WRITE"),
+            @JsonSubTypes.Type(value = Effect.ManagedWrite.class, name = "MANAGED_WRITE")
+    })
     public sealed interface Effect permits Effect.ReadOnly, Effect.FixtureOnlyWrite, Effect.ManagedWrite {
         /** Compatibility constants for callers that only need marker effects. */
         Effect READ_ONLY = new ReadOnly();

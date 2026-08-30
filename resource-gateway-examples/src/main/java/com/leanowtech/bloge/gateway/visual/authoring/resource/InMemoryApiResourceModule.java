@@ -90,7 +90,7 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
 
     @Override
     public synchronized Optional<ApiResourceSpec> get(String resourceId) {
-        requireText(resourceId, "resourceId");
+        requireIdentifier(resourceId, "resourceId");
         return Optional.ofNullable(resources.get(resourceId)).map(this::copy);
     }
 
