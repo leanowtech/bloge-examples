@@ -7,6 +7,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.init.ScriptStatementFailedException;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 
 import javax.sql.DataSource;
@@ -218,7 +219,7 @@ class ApiConnectionSchemaReadinessTest {
         insertRevisionWithoutAuthorityColumns("legacy-connection", "legacy-command");
 
         assertThatThrownBy(() -> applyMigration("V20260830_004__connection_metadata_authority.sql"))
-                .isInstanceOf(DataIntegrityViolationException.class);
+                .isInstanceOf(ScriptStatementFailedException.class);
     }
 
     @Test
