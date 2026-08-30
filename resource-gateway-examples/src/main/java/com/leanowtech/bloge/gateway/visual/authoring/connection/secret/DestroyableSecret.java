@@ -2,8 +2,14 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.secret;
 
 import java.util.Arrays;
 import java.util.Objects;
+import java.util.function.Consumer;
 
-/** A one-owner secret material holder. Its backing characters are erased on close. */
+/**
+ * A caller-owned secret material holder. The supplied array is cloned, so closing
+ * this object cannot erase the caller's original immutable-in-practice input array.
+ * Use {@link #borrow(Consumer)} for a bounded temporary copy that is erased in a
+ * {@code finally} block; there is deliberately no uncontrolled value-copy accessor.
+ */
 public final class DestroyableSecret implements AutoCloseable {
     private char[] value;
 
@@ -13,10 +19,19 @@ public final class DestroyableSecret implements AutoCloseable {
         this.value = value.clone();
     }
 
-    /** Returns a defensive copy; throws after close so erased material cannot be read. */
-    public synchronized char[] value() {
-        if (value == null) throw new IllegalStateException("secret is closed");
-        return value.clone();
+    /** Supplies a temporary copy to a provider callback and erases it afterwards. */
+    public void borrow(Consumer<char[]> consumer) {
+        Objects.requireNonNull(consumer, "consumer");
+        final char[] borrowed;
+        synchronized (this) {
+            if (value == null) throw new IllegalStateException("secret is closed");
+            borrowed = value.clone();
+        }
+        try {
+            consumer.accept(borrowed);
+        } finally {
+            Arrays.fill(borrowed, '\0');
+        }
     }
 
     public synchronized boolean isClosed() { return value == null; }

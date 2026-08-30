@@ -1,5 +1,7 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.secret;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import java.util.Objects;
 
 /** Resolved material. Closing this object erases the returned secret. */
@@ -11,7 +13,8 @@ public final class ResolvedExternalSecret implements AutoCloseable {
         this.material = Objects.requireNonNull(material, "material");
     }
     public String providerId() { return providerId; }
-    public DestroyableSecret material() { return material; }
+    /** Caller-owned resolved material; close this result after the provider call. */
+    @JsonIgnore public DestroyableSecret material() { return material; }
     @Override public void close() { material.close(); }
     @Override public String toString() { return "ResolvedExternalSecret[providerId=" + providerId + ", redacted=true]"; }
 }
