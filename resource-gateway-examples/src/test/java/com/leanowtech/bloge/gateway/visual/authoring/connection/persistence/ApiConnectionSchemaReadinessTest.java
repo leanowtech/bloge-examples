@@ -72,6 +72,20 @@ class ApiConnectionSchemaReadinessTest {
     }
 
     @Test
+    void bindingRevisionStateColumnIsPartOfTheReadinessProbe() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
+                + "rg_api_connection_secret_bindings_revision_fk");
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
+                + "rg_api_connection_secret_bindings_state_ck");
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP COLUMN revision_state");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
     void resourceConnectionForeignKeyIsRequired() {
         applyMigrations();
         jdbc.execute("ALTER TABLE rg_api_resource_revisions DROP CONSTRAINT rg_api_resource_revisions_connection_fk");
@@ -130,10 +144,12 @@ class ApiConnectionSchemaReadinessTest {
         assertThat(sql).contains("rg_api_connection_identities", "rg_api_connection_revisions",
                 "rg_api_connection_heads", "rg_api_connection_pending_secret_leases",
                 "rg_api_connection_secret_bindings", "staged", "committed", "pending",
-                "activated", "abort_required", "value", "secret_ref", "keep_existing",
+                "abort_required", "value", "secret_ref", "keep_existing",
                 "rg_api_connection_revisions_command_uq", "rg_api_connection_revisions_revision_attempt_uq",
                 "rg_api_connection_revisions_etag_uq", "rg_api_connection_revisions_state_etag_uq",
+                "rg_api_connection_revisions_revision_state_uq", "revision_state",
                 "rg_api_resource_revisions_connection_fk", "on delete restrict");
+        assertThat(sql).doesNotContain("activated");
         assertThat(sql).doesNotContain("secret_value", "secret_plaintext", "secret_ciphertext",
                 "secret_ref_json", "credential_json", "password_value", "token_value");
     }
@@ -206,6 +222,113 @@ class ApiConnectionSchemaReadinessTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
     }
 
+    @Test
+    void secretBindingRequiresCommittedRevisionAtDatabaseBoundary() {
+        applyMigrations();
+        insertJournalFor("binding-command", "binding-key", "binding-connection", 1, "binding-attempt");
+        insertIdentity("binding-connection");
+        insertRevision("binding-connection", "binding-command", 1, "binding-attempt", "STAGED",
+                "\"binding-etag\"", "https://example.com/binding");
+
+        assertThatThrownBy(() -> insertBinding("binding-connection", "binding-command", "COMMITTED"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+
+        jdbc.update("UPDATE rg_api_connection_revisions SET state = 'COMMITTED' WHERE command_id = 'binding-command'");
+        insertBinding("binding-connection", "binding-command", "COMMITTED");
+        assertThat(jdbc.queryForObject("SELECT revision_state FROM rg_api_connection_secret_bindings "
+                        + "WHERE connection_id = 'binding-connection'", String.class))
+                .isEqualTo("COMMITTED");
+    }
+
+    @Test
+    void pendingLeaseRejectsActivatedStatusAtDatabaseBoundary() {
+        applyMigrations();
+        insertJournalFor("activated-command", "activated-key", "activated-connection", 1, "activated-attempt");
+        insertIdentity("activated-connection");
+        insertRevision("activated-connection", "activated-command", 1, "activated-attempt", "STAGED",
+                "\"activated-etag\"", "https://example.com/activated");
+
+        assertThatThrownBy(() -> jdbc.update("""
+                INSERT INTO rg_api_connection_pending_secret_leases
+                    (tenant_id, project_id, environment_id, connection_id, revision, command_id,
+                     attempt_no, attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle,
+                     status, lease_until)
+                VALUES ('t', 'p', 'e', 'activated-connection', 1, 'activated-command', 1, 'activated-attempt',
+                        'token', 'VALUE', 'provider', 'lease', 'opaque', 'ACTIVATED', CURRENT_TIMESTAMP)
+                """))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void readinessFailsWhenConnectionRevisionStateUniqueIsTampered() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
+                + "rg_api_connection_secret_bindings_revision_fk");
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP CONSTRAINT rg_api_connection_revisions_revision_state_uq");
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions ADD CONSTRAINT rg_api_connection_revisions_revision_state_uq "
+                + "UNIQUE (tenant_id, project_id, environment_id, connection_id, revision, state, command_id)");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
+    void readinessFailsWhenBindingRevisionForeignKeyOmitsState() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
+                + "rg_api_connection_secret_bindings_revision_fk");
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings ADD CONSTRAINT "
+                + "rg_api_connection_secret_bindings_revision_fk FOREIGN KEY "
+                + "(tenant_id, project_id, environment_id, connection_id, revision, command_id) "
+                + "REFERENCES rg_api_connection_revisions "
+                + "(tenant_id, project_id, environment_id, connection_id, revision, command_id)");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
+    void readinessFailsWhenBindingStateCheckIsTampered() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
+                + "rg_api_connection_secret_bindings_state_ck");
+        jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings ADD CONSTRAINT "
+                + "rg_api_connection_secret_bindings_state_ck CHECK (revision_state IN ('COMMITTED', 'STAGED'))");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
+    void readinessFailsWhenPendingStatusCheckIsTampered() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_pending_secret_leases DROP CONSTRAINT "
+                + "rg_api_connection_pending_secret_leases_status_ck");
+        jdbc.execute("ALTER TABLE rg_api_connection_pending_secret_leases ADD CONSTRAINT "
+                + "rg_api_connection_pending_secret_leases_status_ck CHECK "
+                + "(status IN ('PENDING', 'ACTIVATED', 'ABORT_REQUIRED'))");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
+    void readinessFailsWhenRecoveryIndexOrderIsTampered() {
+        applyMigrations();
+        jdbc.execute("DROP INDEX rg_api_connection_pending_secret_leases_recovery_idx");
+        jdbc.execute("CREATE INDEX rg_api_connection_pending_secret_leases_recovery_idx ON "
+                + "rg_api_connection_pending_secret_leases "
+                + "(status, lease_until, updated_at, command_id, attempt_no, slot, attempt_token)");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
     private void insertRevision(String connectionId) {
         insertRevision(connectionId, "cmd-1", 1, "attempt-1", "STAGED", "\"etag\"", "https://example.com");
     }
@@ -229,6 +352,15 @@ class ApiConnectionSchemaReadinessTest {
                      strong_etag, revision_state)
                 VALUES ('t', 'p', 'e', ?, ?, ?, ?, ?)
                 """, connectionId, revision, commandId, etag, state);
+    }
+
+    private void insertBinding(String connectionId, String commandId, String revisionState) {
+        jdbc.update("""
+                INSERT INTO rg_api_connection_secret_bindings
+                    (tenant_id, project_id, environment_id, connection_id, revision, revision_state,
+                     slot, provider_id, active_locator, command_id)
+                VALUES ('t', 'p', 'e', ?, 1, ?, 'token', 'provider', 'active-locator', ?)
+                """, connectionId, revisionState, commandId);
     }
 
     private void insertJournalFor(String commandId, String idempotencyKey, String targetId,

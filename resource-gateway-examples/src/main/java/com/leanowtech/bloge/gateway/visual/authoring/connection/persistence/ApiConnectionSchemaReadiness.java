@@ -20,7 +20,9 @@ import java.util.Set;
 /**
  * Fail-closed, read-only startup probe for the API Connection staging schema.
  * The probe checks every table and column used by the persistence contract and
- * the keys that keep staged revisions and opaque leases scope-bound.
+ * the keys and checks that keep staged revisions and opaque leases scope-bound.
+ * Active secret bindings must point at a committed revision and expose only the
+ * provider locator and command metadata needed for runtime hydration.
  */
 public final class ApiConnectionSchemaReadiness {
     private static final String MIGRATION = "V20260830_003";
@@ -37,7 +39,7 @@ public final class ApiConnectionSchemaReadiness {
                     + "attempt_token, slot, source_mode, provider_id, lease_id, opaque_handle, status, "
                     + "lease_until, created_at, updated_at FROM rg_api_connection_pending_secret_leases WHERE 1 = 0",
             "SELECT tenant_id, project_id, environment_id, connection_id, revision, slot, provider_id, "
-                    + "active_locator, command_id, created_at, updated_at "
+                    + "revision_state, active_locator, command_id, created_at, updated_at "
                     + "FROM rg_api_connection_secret_bindings WHERE 1 = 0"
     };
 
@@ -84,8 +86,14 @@ public final class ApiConnectionSchemaReadiness {
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag"));
         requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_state_etag_uq",
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "strong_etag", "state"));
-            requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_state_uq",
+                List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "state"));
+        requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "attempt_no", "attempt_token"));
+        requireCheck(jdbc, "rg_api_connection_pending_secret_leases",
+                "rg_api_connection_pending_secret_leases_status_ck", "status IN ('PENDING', 'ABORT_REQUIRED')");
+        requireCheck(jdbc, "rg_api_connection_secret_bindings", "rg_api_connection_secret_bindings_state_ck",
+                "revision_state = 'COMMITTED'");
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
             requirePrimaryKey(metadata, "rg_api_connection_identities", "rg_api_connection_identities_pk",
@@ -136,12 +144,13 @@ public final class ApiConnectionSchemaReadiness {
                     "rg_api_connection_secret_bindings_revision_fk", "rg_api_connection_revisions", List.of(
                             pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
                             pair("environment_id", "environment_id"), pair("connection_id", "connection_id"),
-                            pair("revision", "revision"), pair("command_id", "command_id")));
+                            pair("revision", "revision"), pair("command_id", "command_id"),
+                            pair("revision_state", "state")));
             requireIndex(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_visibility_idx",
                     List.of("tenant_id", "project_id", "environment_id", "connection_id", "state", "revision"));
             requireIndex(metadata, "rg_api_connection_pending_secret_leases",
                     "rg_api_connection_pending_secret_leases_recovery_idx",
-                    List.of("status", "lease_until", "updated_at"));
+                    List.of("status", "lease_until", "updated_at", "command_id", "attempt_no", "attempt_token", "slot"));
             requireIndex(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_staging_cleanup_idx",
                     List.of("state", "updated_at"));
             requireIndex(metadata, "rg_api_connection_secret_bindings",
@@ -200,6 +209,29 @@ public final class ApiConnectionSchemaReadiness {
         if (!actual.equals(normalized(columns))) {
             throw new IllegalStateException("missing or misordered unique constraint " + expected);
         }
+    }
+
+    private static void requireCheck(JdbcTemplate jdbc, String table, String expected,
+                                     String expression) {
+        List<String> clauses = jdbc.query("""
+                SELECT cc.check_clause
+                  FROM information_schema.check_constraints cc
+                  JOIN information_schema.table_constraints tc
+                    ON tc.constraint_schema = cc.constraint_schema
+                   AND tc.constraint_name = cc.constraint_name
+                 WHERE UPPER(tc.table_name) = UPPER(?)
+                   AND UPPER(tc.constraint_name) = UPPER(?)
+                """, (rs, row) -> normalizeCheck(rs.getString("check_clause")), table, expected);
+        if (clauses.size() != 1 || !clauses.getFirst().equals(normalizeCheck(expression))) {
+            throw new IllegalStateException("missing or altered check constraint " + expected);
+        }
+    }
+
+    private static String normalizeCheck(String value) {
+        return normalize(value).replace("\"", "").replace(" ", "").replace("\t", "")
+                .replace("\r", "").replace("\n", "").replace("::charactervarying", "")
+                .replace("::varchar", "").replace("::text", "").replace("::character varying", "")
+                .replace("(", "").replace(")", "");
     }
 
     private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,

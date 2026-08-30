@@ -73,6 +73,8 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
         (tenant_id, project_id, environment_id, connection_id, revision, command_id, strong_etag),
     CONSTRAINT rg_api_connection_revisions_state_etag_uq UNIQUE
         (tenant_id, project_id, environment_id, connection_id, revision, command_id, strong_etag, state),
+    CONSTRAINT rg_api_connection_revisions_revision_state_uq UNIQUE
+        (tenant_id, project_id, environment_id, connection_id, revision, command_id, state),
     CONSTRAINT rg_api_connection_revisions_state_ck CHECK (state IN ('STAGED', 'COMMITTED')),
     CONSTRAINT rg_api_connection_revisions_revision_ck CHECK (revision > 0),
     CONSTRAINT rg_api_connection_revisions_attempt_ck CHECK (attempt_no > 0),
@@ -165,13 +167,14 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_pending_secret_leases (
     CONSTRAINT rg_api_connection_pending_secret_leases_source_ck CHECK
         (source_mode IN ('VALUE', 'SECRET_REF', 'KEEP_EXISTING')),
     CONSTRAINT rg_api_connection_pending_secret_leases_status_ck CHECK
-        (status IN ('PENDING', 'ACTIVATED', 'ABORT_REQUIRED')),
+        (status IN ('PENDING', 'ABORT_REQUIRED')),
     CONSTRAINT rg_api_connection_pending_secret_leases_attempt_ck CHECK (attempt_no > 0),
     CONSTRAINT rg_api_connection_pending_secret_leases_revision_ck CHECK (revision > 0)
 );
 
 CREATE INDEX IF NOT EXISTS rg_api_connection_pending_secret_leases_recovery_idx
-    ON rg_api_connection_pending_secret_leases (status, lease_until, updated_at);
+    ON rg_api_connection_pending_secret_leases
+       (status, lease_until, updated_at, command_id, attempt_no, attempt_token, slot);
 
 CREATE TABLE IF NOT EXISTS rg_api_connection_secret_bindings (
     tenant_id VARCHAR(128) NOT NULL,
@@ -179,6 +182,7 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_secret_bindings (
     environment_id VARCHAR(128) NOT NULL,
     connection_id VARCHAR(128) NOT NULL,
     revision BIGINT NOT NULL,
+    revision_state VARCHAR(16) NOT NULL DEFAULT 'COMMITTED',
     slot VARCHAR(32) NOT NULL,
     provider_id VARCHAR(128) NOT NULL,
     active_locator VARCHAR(2048) NOT NULL,
@@ -188,11 +192,12 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_secret_bindings (
     CONSTRAINT rg_api_connection_secret_bindings_pk PRIMARY KEY
         (tenant_id, project_id, environment_id, connection_id, revision, slot),
     CONSTRAINT rg_api_connection_secret_bindings_revision_fk FOREIGN KEY
-        (tenant_id, project_id, environment_id, connection_id, revision, command_id)
+        (tenant_id, project_id, environment_id, connection_id, revision, command_id, revision_state)
         REFERENCES rg_api_connection_revisions
-            (tenant_id, project_id, environment_id, connection_id, revision, command_id),
+            (tenant_id, project_id, environment_id, connection_id, revision, command_id, state),
     CONSTRAINT rg_api_connection_secret_bindings_command_fk FOREIGN KEY
         (command_id) REFERENCES rg_authoring_command_journal (command_id),
+    CONSTRAINT rg_api_connection_secret_bindings_state_ck CHECK (revision_state = 'COMMITTED'),
     CONSTRAINT rg_api_connection_secret_bindings_slot_ck CHECK (slot IN ('token', 'password', 'value'))
 );
 
