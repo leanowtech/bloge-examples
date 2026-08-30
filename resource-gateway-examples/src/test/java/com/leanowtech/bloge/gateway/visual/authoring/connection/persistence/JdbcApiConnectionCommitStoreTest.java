@@ -134,6 +134,29 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void standaloneCommitClosesJournalAndWritesConnectionReceipt() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("standalone-receipt", "standalone-receipt-token", "customer",
+                ExpectedRevision.create());
+
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection committed = store.commit(lease);
+
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("COMMITTED");
+        assertThat(jdbc.queryForObject(
+                "SELECT receipt_schema FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo("bloge.apiConnectionView.v1");
+        assertThat(jdbc.queryForObject(
+                "SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).contains("Customer API");
+        assertThat(jdbc.queryForObject(
+                "SELECT receipt_etag FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, lease.commandId())).isEqualTo(committed.strongEtag());
+        assertThat(store.findHead(SCOPE, "customer")).contains(committed);
+    }
+
+    @Test
     void concurrentCommitsSerializeTheHeadCas() throws Exception {
         ApiConnectionCommitStore store = jdbcStore();
         CommandLease first = lease("race-a", "race-a-token", "customer", ExpectedRevision.create());
