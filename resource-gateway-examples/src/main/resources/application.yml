@@ -38,6 +38,11 @@ spring.bloge:
 
 # ── Gateway layer ────────────────────────────────────────────────────────
 gateway:
+  authoring:
+    api-resource:
+      # Durable API Resource authoring is opt-in; the versioned schema must be installed first.
+      enabled: ${RG_API_RESOURCE_AUTHORING_ENABLED:false}
+      lease-seconds: ${RG_API_RESOURCE_AUTHORING_LEASE_SECONDS:30}
   # Base URL for seeded resource descriptors.
   # By default the example points at its own built-in demo upstream controller so the
   # documented curl examples work without any extra services.
