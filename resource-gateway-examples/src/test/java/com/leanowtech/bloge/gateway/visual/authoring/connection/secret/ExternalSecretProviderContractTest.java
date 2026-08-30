@@ -69,7 +69,7 @@ abstract class ExternalSecretProviderContractTest {
         SecretSource source = new SecretSource.Reference(reference);
         DestroyableSecret value = new DestroyableSecret("plain-secret".toCharArray());
         SecretSource valueSource = new SecretSource.Value(value);
-        PreparedExternalSecret prepared = new PreparedExternalSecret("fake", MAX_LEASE, "opaque-locator", UNTIL);
+        PreparedExternalSecret prepared = new PreparedExternalSecret("fake", MAX_LEASE, "opaque-locator", UNTIL, context());
         ActivatedExternalSecret activated = new ActivatedExternalSecret("fake", MAX_LEASE, "active-locator");
         ActiveSecretBinding binding = new ActiveSecretBinding("fake", "active-locator", context().commandId());
         ResolvedExternalSecret resolved = new ResolvedExternalSecret("fake", value);
@@ -77,6 +77,7 @@ abstract class ExternalSecretProviderContractTest {
                 .writeValueAsString(Arrays.asList(context(), source, valueSource, prepared, activated, binding, resolved));
         resolved.close();
         assertThat(json).doesNotContain("attemptToken", "leaseId", "opaqueLocator", "activeLocator", "reference", "plain-secret");
+        assertThat(json).doesNotContain("context");
         assertThat(source + " " + valueSource + " " + prepared + " " + activated + " " + binding + " " + resolved)
                 .doesNotContain("vault://opaque-ref", "opaque-locator", "active-locator", MAX_LEASE, "plain-secret");
     }
@@ -87,17 +88,17 @@ abstract class ExternalSecretProviderContractTest {
         assertThatIllegalArgumentException().isThrownBy(() -> new SecretOperationContext(SCOPE, "actor", "p", "c", 0, "cmd", 1, "t", "token"));
         assertThatIllegalArgumentException().isThrownBy(() -> new SecretOperationContext(SCOPE, "actor", "p", "c", 1, "cmd", 1, "t", "bad"));
         assertThatIllegalArgumentException().isThrownBy(() -> new SecretOperationContext(SCOPE, "actor", "p", "c", 1, "cmd", 1, "t".repeat(129), "token"));
-        assertThat(new PreparedExternalSecret("fake", MAX_LEASE, "locator", UNTIL).leaseId()).hasSize(256);
+        assertThat(new PreparedExternalSecret("fake", MAX_LEASE, "locator", UNTIL, context()).leaseId()).hasSize(256);
         assertThat(new ActivatedExternalSecret("fake", MAX_LEASE, "locator").leaseId()).hasSize(256);
-        assertThatIllegalArgumentException().isThrownBy(() -> new PreparedExternalSecret("fake", MAX_LEASE + "x", "locator", UNTIL));
+        assertThatIllegalArgumentException().isThrownBy(() -> new PreparedExternalSecret("fake", MAX_LEASE + "x", "locator", UNTIL, context()));
         assertThatIllegalArgumentException().isThrownBy(() -> new ActivatedExternalSecret("fake", MAX_LEASE + "x", "locator"));
-        assertThatIllegalArgumentException().isThrownBy(() -> new PreparedExternalSecret("fake", "lease", "x".repeat(2049), UNTIL));
+        assertThatIllegalArgumentException().isThrownBy(() -> new PreparedExternalSecret("fake", "lease", "x".repeat(2049), UNTIL, context()));
         assertThatIllegalArgumentException().isThrownBy(() -> new ActiveSecretBinding("fake", "x".repeat(2049), "cmd"));
     }
 
     @Test
     void expiredPreparedLeaseCanBeHydratedForAbortRecovery() {
-        PreparedExternalSecret prepared = new PreparedExternalSecret("fake", "lease", "opaque", UNTIL);
+        PreparedExternalSecret prepared = new PreparedExternalSecret("fake", "lease", "opaque", UNTIL, context());
         assertThat(prepared.leaseUntil()).isEqualTo(UNTIL);
     }
 
@@ -121,6 +122,11 @@ abstract class ExternalSecretProviderContractTest {
                 .isInstanceOf(ExternalSecretProviderException.class)
                 .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
 
+        assertThatThrownBy(() -> new WrongContextProvider().prepare(context(),
+                new SecretSource.Reference(new SecretReference(SCOPE, "vault://wrong-context"))))
+                .isInstanceOf(ExternalSecretProviderException.class)
+                .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
+
         WrongResultProvider wrongLease = new WrongResultProvider(true);
         PreparedExternalSecret prepared = wrongLease.prepare(context(), new SecretSource.Reference(
                 new SecretReference(SCOPE, "vault://wrong-lease")));
@@ -132,7 +138,7 @@ abstract class ExternalSecretProviderContractTest {
         PreparedExternalSecret valid = provider.prepare(context(), new SecretSource.Reference(
                 new SecretReference(SCOPE, "vault://closure")));
         assertThatThrownBy(() -> provider.abort(context(), new PreparedExternalSecret(
-                "other", valid.leaseId(), valid.opaqueLocator(), valid.leaseUntil())))
+                "other", valid.leaseId(), valid.opaqueLocator(), valid.leaseUntil(), valid.context())))
                 .isInstanceOf(ExternalSecretProviderException.class)
                 .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
         assertThatThrownBy(() -> provider.resolve(context(), new ActiveSecretBinding(
@@ -172,6 +178,7 @@ abstract class ExternalSecretProviderContractTest {
         PreparedExternalSecret first = provider.prepare(context(), new SecretSource.Reference(reference));
         PreparedExternalSecret retry = provider.prepare(context(), new SecretSource.Reference(reference));
         assertThat(retry).isEqualTo(first);
+        assertThat(first.context()).isEqualTo(context());
         assertThat(retry.providerId()).isEqualTo(first.providerId());
         assertThat(retry.leaseId()).isEqualTo(first.leaseId());
         ActivatedExternalSecret activated = provider.activate(context(), first);
@@ -192,7 +199,7 @@ abstract class ExternalSecretProviderContractTest {
         provider.abort(context(), prepared);
 
         PreparedExternalSecret expired = new PreparedExternalSecret(
-                provider.providerId(), "expired", "expired-locator", UNTIL);
+                provider.providerId(), "expired", "expired-locator", UNTIL, context());
         provider.abort(context(), expired);
         provider.abort(context(), expired);
     }
@@ -216,9 +223,10 @@ abstract class ExternalSecretProviderContractTest {
 
     @Test
     void abortIsExactAttemptScopedAndDoesNotInvalidateAnotherAttempt() {
-        ExternalSecretProvider provider = provider();
-        SecretOperationContext contextA = context("command-a", 1, "attempt-a");
-        SecretOperationContext contextB = context("command-b", 1, "attempt-b");
+        var fake = (FakeExternalSecretProviderContractTest.FakeProvider) provider();
+        ExternalSecretProvider provider = fake;
+        SecretOperationContext contextA = context("command-shared", 1, "attempt-a");
+        SecretOperationContext contextB = context("command-shared", 2, "attempt-b");
         PreparedExternalSecret preparedA = provider.prepare(contextA, new SecretSource.Reference(
                 new SecretReference(SCOPE, "vault://attempt-a")));
         PreparedExternalSecret preparedB = provider.prepare(contextB, new SecretSource.Reference(
@@ -228,6 +236,16 @@ abstract class ExternalSecretProviderContractTest {
         assertThat(preparedA.leaseId()).isNotEqualTo(preparedB.leaseId());
         assertThat(activeA.activeLocator()).isNotEqualTo(activeB.activeLocator());
 
+        int activateCalls = fake.activateCalls;
+        int abortCalls = fake.abortCalls;
+        assertThatThrownBy(() -> provider.activate(contextB, preparedA))
+                .isInstanceOf(ExternalSecretProviderException.class)
+                .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
+        assertThatThrownBy(() -> provider.abort(contextB, preparedA))
+                .isInstanceOf(ExternalSecretProviderException.class)
+                .extracting("code").isEqualTo(ExternalSecretProviderException.Code.INVALID_REQUEST);
+        assertThat(fake.activateCalls).isEqualTo(activateCalls);
+        assertThat(fake.abortCalls).isEqualTo(abortCalls);
         provider.abort(contextA, preparedA);
         assertThatThrownBy(() -> provider.resolve(contextA, new ActiveSecretBinding(
                 provider.providerId(), activeA.activeLocator(), contextA.commandId())))
@@ -260,7 +278,7 @@ abstract class ExternalSecretProviderContractTest {
         }
 
         @Override protected PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source) {
-            return new PreparedExternalSecret(wrongLease ? "fake" : "other", "lease", "opaque", UNTIL);
+            return new PreparedExternalSecret(wrongLease ? "fake" : "other", "lease", "opaque", UNTIL, context());
         }
 
         @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context, PreparedExternalSecret prepared) {
@@ -273,6 +291,25 @@ abstract class ExternalSecretProviderContractTest {
             resolveCalls++;
             resolvedMaterial = new DestroyableSecret("material".toCharArray());
             return new ResolvedExternalSecret("other", resolvedMaterial);
+        }
+    }
+
+    private static final class WrongContextProvider extends ExternalSecretProvider {
+        private WrongContextProvider() { super("fake"); }
+
+        @Override protected PreparedExternalSecret doPrepare(SecretOperationContext context, SecretSource source) {
+            return new PreparedExternalSecret("fake", "lease", "opaque", UNTIL,
+                    ExternalSecretProviderContractTest.context("different-command", 1, "different-token"));
+        }
+
+        @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context, PreparedExternalSecret prepared) {
+            return new ActivatedExternalSecret("fake", prepared.leaseId(), "active");
+        }
+
+        @Override protected void doAbort(SecretOperationContext context, PreparedExternalSecret prepared) { }
+
+        @Override protected ResolvedExternalSecret doResolve(SecretOperationContext context, ActiveSecretBinding binding) {
+            return new ResolvedExternalSecret("fake", new DestroyableSecret("material".toCharArray()));
         }
     }
 }

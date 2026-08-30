@@ -12,16 +12,20 @@ import java.util.Objects;
  * @param leaseId provider lease identity, never serialized
  * @param opaqueLocator provider preparation locator, never serialized
  * @param leaseUntil provider-reported expiry used by recovery policy
+ * @param context exact operation context that created this preparation
  */
-public record PreparedExternalSecret(String providerId, String leaseId, String opaqueLocator, Instant leaseUntil) {
+public record PreparedExternalSecret(String providerId, String leaseId, String opaqueLocator,
+                                     Instant leaseUntil, SecretOperationContext context) {
     public PreparedExternalSecret {
         SecretValidation.identifier(providerId, "providerId");
         SecretValidation.text(leaseId, "leaseId", 256);
         SecretValidation.text(opaqueLocator, "opaqueLocator", 2048);
         Objects.requireNonNull(leaseUntil, "leaseUntil");
+        Objects.requireNonNull(context, "context");
     }
 
     @JsonIgnore @Override public String leaseId() { return leaseId; }
     @JsonIgnore @Override public String opaqueLocator() { return opaqueLocator; }
+    @JsonIgnore @Override public SecretOperationContext context() { return context; }
     @Override public String toString() { return "PreparedExternalSecret[providerId=" + providerId + ", redacted=true]"; }
 }

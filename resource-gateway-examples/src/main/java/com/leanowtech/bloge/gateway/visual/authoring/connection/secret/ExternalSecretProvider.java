@@ -40,6 +40,7 @@ public abstract class ExternalSecretProvider {
         requireSourceScope(context, source);
         PreparedExternalSecret result = require(doPrepare(context, source));
         requireProvider(result.providerId());
+        requireExactContext(context, result);
         return result;
     }
 
@@ -61,6 +62,7 @@ public abstract class ExternalSecretProvider {
                                                    PreparedExternalSecret prepared) {
         requireContext(context);
         requirePrepared(prepared);
+        requireExactContext(context, prepared);
         ActivatedExternalSecret result = require(doActivate(context, prepared));
         requireProvider(result.providerId());
         if (!prepared.leaseId().equals(result.leaseId())) invalid();
@@ -85,6 +87,7 @@ public abstract class ExternalSecretProvider {
     public final void abort(SecretOperationContext context, PreparedExternalSecret prepared) {
         requireContext(context);
         requirePrepared(prepared);
+        requireExactContext(context, prepared);
         doAbort(context, prepared);
     }
 
@@ -175,6 +178,10 @@ public abstract class ExternalSecretProvider {
     private void requirePrepared(PreparedExternalSecret prepared) {
         if (prepared == null) invalid();
         requireProvider(prepared.providerId());
+    }
+
+    private static void requireExactContext(SecretOperationContext context, PreparedExternalSecret prepared) {
+        if (!context.equals(prepared.context())) invalid();
     }
 
     private static void requireContext(SecretOperationContext context) {

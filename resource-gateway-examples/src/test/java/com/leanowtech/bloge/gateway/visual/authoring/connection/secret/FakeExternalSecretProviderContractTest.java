@@ -13,12 +13,14 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
         return new FakeProvider();
     }
 
-    private static final class FakeProvider extends ExternalSecretProvider {
+    static final class FakeProvider extends ExternalSecretProvider {
         private static final Instant UNTIL = Instant.parse("2030-01-01T00:00:00Z");
         private final Map<String, PreparedExternalSecret> prepared = new HashMap<>();
         private final Map<String, ActivatedExternalSecret> activatedByLease = new HashMap<>();
         private final Map<String, String> materialByLocator = new HashMap<>();
         private final Set<String> abortedLocators = new HashSet<>();
+        int activateCalls;
+        int abortCalls;
 
         private FakeProvider() { super("fake"); }
 
@@ -31,12 +33,13 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
             if (existing != null) return existing;
             String suffix = context.commandId() + "-" + context.attemptNo();
             PreparedExternalSecret result = new PreparedExternalSecret(providerId(), "lease-" + suffix,
-                    "opaque-" + suffix, UNTIL);
+                    "opaque-" + suffix, UNTIL, context);
             prepared.put(key, result);
             return result;
         }
 
         @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context, PreparedExternalSecret prepared) {
+            activateCalls++;
             ActivatedExternalSecret existing = activatedByLease.get(prepared.leaseId());
             if (existing != null) return existing;
             if (!this.prepared.containsValue(prepared)) {
@@ -50,6 +53,7 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
         }
 
         @Override protected void doAbort(SecretOperationContext context, PreparedExternalSecret prepared) {
+            abortCalls++;
             abortedLocators.add(prepared.opaqueLocator());
             ActivatedExternalSecret activation = activatedByLease.get(prepared.leaseId());
             if (activation != null) abortedLocators.add(activation.activeLocator());
