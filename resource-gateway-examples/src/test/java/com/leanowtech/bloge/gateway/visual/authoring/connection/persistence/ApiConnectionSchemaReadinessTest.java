@@ -59,6 +59,30 @@ class ApiConnectionSchemaReadinessTest {
     }
 
     @Test
+    void revisionDisplayNameAndSecretSlotColumnsRequireExactShape() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP COLUMN display_name");
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+
+        jdbc.execute("DROP ALL OBJECTS");
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP COLUMN display_name");
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions ADD display_name VARCHAR(201) NOT NULL");
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+
+        jdbc.execute("DROP ALL OBJECTS");
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions ALTER COLUMN secret_slot SET NOT NULL");
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
     void eachLeaseAndBindingTableIsPartOfTheReadinessProbe() {
         applyMigrations();
         jdbc.execute("DROP TABLE rg_api_connection_pending_secret_leases");
@@ -80,6 +104,18 @@ class ApiConnectionSchemaReadinessTest {
         jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP CONSTRAINT "
                 + "rg_api_connection_secret_bindings_state_ck");
         jdbc.execute("ALTER TABLE rg_api_connection_secret_bindings DROP COLUMN revision_state");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_003");
+    }
+
+    @Test
+    void readinessFailsWhenAuthClosureCheckIsTampered() {
+        applyMigrations();
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP CONSTRAINT rg_api_connection_revisions_auth_ck");
+        jdbc.execute("ALTER TABLE rg_api_connection_revisions ADD CONSTRAINT rg_api_connection_revisions_auth_ck "
+                + "CHECK (auth_kind IN ('NONE', 'BEARER', 'BASIC', 'API_KEY'))");
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
@@ -149,6 +185,7 @@ class ApiConnectionSchemaReadinessTest {
                 "rg_api_connection_revisions_command_uq", "rg_api_connection_revisions_revision_attempt_uq",
                 "rg_api_connection_revisions_etag_uq", "rg_api_connection_revisions_state_etag_uq",
                 "rg_api_connection_revisions_revision_state_uq", "revision_state",
+                "display_name varchar(200) not null", "secret_slot varchar(32)",
                 "rg_api_resource_revisions_connection_fk", "on delete restrict");
         assertThat(sql).doesNotContain("activated");
         assertThat(sql).doesNotContain("secret_value", "secret_plaintext", "secret_ciphertext",
@@ -209,6 +246,68 @@ class ApiConnectionSchemaReadinessTest {
         assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
                 "status::numeric IN ('PENDING', 'ABORT_REQUIRED')", "status",
                 Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+    }
+
+    @Test
+    void authClosureSemanticVerifierAcceptsH2AndPostgreSqlRepresentations() {
+        assertThat(ApiConnectionSchemaReadiness.equivalentAuthClosureClause("""
+                (auth_kind = 'NONE' AND basic_username IS NULL AND api_key_header IS NULL AND secret_slot IS NULL)
+                OR (auth_kind = 'BEARER' AND basic_username IS NULL AND api_key_header IS NULL
+                    AND secret_slot IS NOT NULL AND secret_slot = 'token')
+                OR (auth_kind = 'BASIC' AND basic_username IS NOT NULL AND CHAR_LENGTH(TRIM(basic_username)) > 0
+                    AND api_key_header IS NULL AND secret_slot IS NOT NULL AND secret_slot = 'password')
+                OR (auth_kind = 'API_KEY' AND basic_username IS NULL AND api_key_header IS NOT NULL
+                    AND CHAR_LENGTH(TRIM(api_key_header)) > 0 AND secret_slot IS NOT NULL AND secret_slot = 'value')
+                """)).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentAuthClosureClause("""
+                (((auth_kind)::text = 'NONE'::text) AND (basic_username IS NULL) AND (api_key_header IS NULL)
+                    AND (secret_slot IS NULL))
+                OR (((auth_kind)::text = 'BEARER'::text) AND (basic_username IS NULL)
+                    AND (api_key_header IS NULL) AND (secret_slot IS NOT NULL)
+                    AND ((secret_slot)::text = 'token'::text))
+                OR (((auth_kind)::text = 'BASIC'::text) AND (basic_username IS NOT NULL)
+                    AND (CHAR_LENGTH(TRIM(basic_username)) > 0) AND (api_key_header IS NULL)
+                    AND (secret_slot IS NOT NULL)
+                    AND ((secret_slot)::text = 'password'::text))
+                OR (((auth_kind)::text = 'API_KEY'::text) AND (basic_username IS NULL)
+                    AND (api_key_header IS NOT NULL) AND (CHAR_LENGTH(TRIM(api_key_header)) > 0)
+                    AND (secret_slot IS NOT NULL)
+                    AND ((secret_slot)::text = 'value'::text))
+                """)).isTrue();
+    }
+
+    @Test
+    void authClosureSemanticVerifierRejectsMissingOrExtraBranches() {
+        assertThat(ApiConnectionSchemaReadiness.equivalentAuthClosureClause(
+                "auth_kind = 'NONE' AND secret_slot IS NULL")).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentAuthClosureClause("""
+                (auth_kind = 'NONE' AND basic_username IS NULL AND api_key_header IS NULL AND secret_slot IS NULL)
+                OR (auth_kind = 'BEARER' AND basic_username IS NULL AND api_key_header IS NULL
+                    AND secret_slot IS NOT NULL AND secret_slot = 'token')
+                OR (auth_kind = 'BASIC' AND basic_username IS NOT NULL AND CHAR_LENGTH(TRIM(basic_username)) > 0
+                    AND api_key_header IS NULL AND secret_slot IS NOT NULL AND secret_slot = 'password')
+                OR (auth_kind = 'API_KEY' AND basic_username IS NULL AND api_key_header IS NOT NULL
+                    AND CHAR_LENGTH(TRIM(api_key_header)) > 0 AND secret_slot IS NOT NULL
+                    AND secret_slot IN ('value', 'token'))
+                """)).isFalse();
+    }
+
+    @Test
+    void authClosureRejectsNullAndWrongSecretSlotsAtDatabaseBoundary() {
+        applyMigrations();
+        insertJournalFor("auth-command", "auth-key", "auth-connection", 1, "auth-attempt");
+        insertIdentity("auth-connection");
+        insertRevision("auth-connection", "auth-command", 1, "auth-attempt", "STAGED",
+                "\"auth-etag\"", "https://example.com/auth");
+
+        assertThatThrownBy(() -> jdbc.update("UPDATE rg_api_connection_revisions SET auth_kind = 'BEARER' "
+                + "WHERE command_id = 'auth-command'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
+        jdbc.update("UPDATE rg_api_connection_revisions SET auth_kind = 'BEARER', secret_slot = 'token' "
+                + "WHERE command_id = 'auth-command'");
+        assertThatThrownBy(() -> jdbc.update("UPDATE rg_api_connection_revisions SET secret_slot = 'password' "
+                + "WHERE command_id = 'auth-command'"))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -396,8 +495,10 @@ class ApiConnectionSchemaReadinessTest {
                 INSERT INTO rg_api_connection_revisions
                     (tenant_id, project_id, environment_id, connection_id, revision, command_id, state,
                      attempt_no, attempt_token, view_json, metadata_fingerprint, base_url,
-                     defaults_headers_json, timeout_ms, auth_kind, strong_etag)
-                VALUES ('t', 'p', 'e', ?, 1, ?, ?, ?, ?, '{}', ?, ?, '{}', 30000, 'NONE', ?)
+                     defaults_headers_json, timeout_ms, auth_kind, basic_username, api_key_header,
+                     display_name, secret_slot, strong_etag)
+                VALUES ('t', 'p', 'e', ?, 1, ?, ?, ?, ?, '{}', ?, ?, '{}', 30000,
+                        'NONE', NULL, NULL, 'Example connection', NULL, ?)
                 """, connectionId, commandId, state, attemptNo, attemptToken,
                 "sha256:" + "b".repeat(64), baseUrl, etag);
     }

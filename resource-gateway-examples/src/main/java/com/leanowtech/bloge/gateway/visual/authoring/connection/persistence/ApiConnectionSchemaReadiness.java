@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -34,7 +35,8 @@ public final class ApiConnectionSchemaReadiness {
             "SELECT tenant_id, project_id, environment_id, connection_id, revision, command_id, state, "
                     + "attempt_no, attempt_token, view_json, metadata_fingerprint, base_url, "
                     + "defaults_headers_json, timeout_ms, auth_kind, basic_username, api_key_header, "
-                    + "strong_etag, created_at, updated_at FROM rg_api_connection_revisions WHERE 1 = 0",
+                    + "display_name, secret_slot, strong_etag, created_at, updated_at "
+                    + "FROM rg_api_connection_revisions WHERE 1 = 0",
             "SELECT tenant_id, project_id, environment_id, connection_id, revision, command_id, strong_etag, "
                     + "revision_state, updated_at FROM rg_api_connection_heads WHERE 1 = 0",
             "SELECT tenant_id, project_id, environment_id, connection_id, revision, command_id, attempt_no, "
@@ -97,8 +99,11 @@ public final class ApiConnectionSchemaReadiness {
                 Set.of("PENDING", "ABORT_REQUIRED"));
         requireCheck(jdbc, "rg_api_connection_secret_bindings", "rg_api_connection_secret_bindings_state_ck",
                 "revision_state", Set.of("COMMITTED"));
+        requireAuthClosure(jdbc);
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
+            requireColumn(metadata, "rg_api_connection_revisions", "display_name", 200, false);
+            requireColumn(metadata, "rg_api_connection_revisions", "secret_slot", 32, true);
             requirePrimaryKey(metadata, "rg_api_connection_identities", "rg_api_connection_identities_pk",
                     List.of("tenant_id", "project_id", "environment_id", "connection_id"));
             requirePrimaryKey(metadata, "rg_api_connection_revisions", "rg_api_connection_revisions_pk",
@@ -230,6 +235,41 @@ public final class ApiConnectionSchemaReadiness {
         }
     }
 
+    private static void requireAuthClosure(JdbcTemplate jdbc) {
+        List<String> clauses = jdbc.query("""
+                SELECT cc.check_clause
+                  FROM information_schema.check_constraints cc
+                  JOIN information_schema.table_constraints tc
+                    ON tc.constraint_schema = cc.constraint_schema
+                   AND tc.constraint_name = cc.constraint_name
+                 WHERE UPPER(tc.table_name) = UPPER(?)
+                   AND UPPER(tc.constraint_name) = UPPER(?)
+                """, (rs, row) -> rs.getString("check_clause"),
+                "rg_api_connection_revisions", "rg_api_connection_revisions_auth_ck");
+        if (clauses.size() != 1 || !equivalentAuthClosureClause(clauses.getFirst())) {
+            throw new IllegalStateException("missing or altered check constraint rg_api_connection_revisions_auth_ck");
+        }
+    }
+
+    private static void requireColumn(DatabaseMetaData metadata, String table, String column,
+                                      int expectedSize, boolean nullable) throws SQLException {
+        for (String candidate : tableCandidates(table)) {
+            try (ResultSet rows = metadata.getColumns(null, null, candidate, null)) {
+                while (rows.next()) {
+                    if (!normalize(column).equals(normalize(rows.getString("COLUMN_NAME")))) continue;
+                    String typeName = normalize(rows.getString("TYPE_NAME")).replace(" ", "");
+                    boolean shapeMatches = rows.getInt("DATA_TYPE") == Types.VARCHAR
+                            && (typeName.equals("varchar") || typeName.equals("charactervarying"))
+                            && rows.getInt("COLUMN_SIZE") == expectedSize
+                            && rows.getInt("NULLABLE") == (nullable
+                            ? DatabaseMetaData.columnNullable : DatabaseMetaData.columnNoNulls);
+                    if (shapeMatches) return;
+                }
+            }
+        }
+        throw new IllegalStateException("missing or mis-shaped column " + table + "." + column);
+    }
+
     /**
      * Matches the database metadata representation contract for status checks.
      * H2 commonly reports {@code IN}, while PostgreSQL can report equivalent
@@ -260,6 +300,72 @@ public final class ApiConnectionSchemaReadiness {
         Matcher equality = Pattern.compile("(?i)^(" + column + ")=(" + literal + ")$").matcher(clause);
         return equality.matches() && allowedLiterals.size() == 1
                 && allowedLiterals.contains(equality.group(3));
+    }
+
+    /**
+     * Matches the exact auth-to-secret-slot closure, allowing only the H2 and
+     * PostgreSQL metadata spelling differences for identifier/literal casts.
+     */
+    static boolean equivalentAuthClosureClause(String checkClause) {
+        if (checkClause == null) return false;
+        String clause = stripOuterParens(checkClause.replaceAll("\\s+", ""));
+        List<String> branches = splitTopLevel(clause, "OR");
+        if (branches.size() != 4) return false;
+
+        Set<Set<String>> actual = new HashSet<>();
+        for (String branch : branches) {
+            List<String> atoms = splitTopLevel(stripOuterParens(branch), "AND");
+            if (atoms.isEmpty()) return false;
+            Set<String> canonical = new HashSet<>();
+            for (String atom : atoms) canonical.add(canonicalAuthAtom(atom));
+            if (canonical.size() != atoms.size()) return false;
+            actual.add(canonical);
+        }
+        return actual.equals(Set.of(
+                Set.of("auth_kind='none'", "basic_usernameisnull", "api_key_headerisnull", "secret_slotisnull"),
+                Set.of("auth_kind='bearer'", "basic_usernameisnull", "api_key_headerisnull",
+                        "secret_slotisnotnull", "secret_slot='token'"),
+                Set.of("auth_kind='basic'", "basic_usernameisnotnull", "char_lengthtrimbasic_username>0",
+                        "api_key_headerisnull", "secret_slotisnotnull", "secret_slot='password'"),
+                Set.of("auth_kind='api_key'", "basic_usernameisnull", "api_key_headerisnotnull",
+                        "char_lengthtrimapi_key_header>0", "secret_slotisnotnull", "secret_slot='value'")));
+    }
+
+    private static String canonicalAuthAtom(String atom) {
+        String canonical = stripOuterParens(atom.replaceAll("\\s+", ""))
+                .replace("\"", "")
+                .replaceAll("(?i)::(?:text|varchar|charactervarying)(?:\\[\\])?", "")
+                .replaceAll("(?i)bothfrom", "")
+                .replace("(", "")
+                .replace(")", "")
+                .toLowerCase(Locale.ROOT);
+        return canonical;
+    }
+
+    private static List<String> splitTopLevel(String expression, String operator) {
+        List<String> parts = new ArrayList<>();
+        int depth = 0;
+        boolean quoted = false;
+        int start = 0;
+        for (int i = 0; i < expression.length(); i++) {
+            char current = expression.charAt(i);
+            if (current == '\'' && (i + 1 >= expression.length() || expression.charAt(i + 1) != '\'')) {
+                quoted = !quoted;
+            } else if (current == '\'' && quoted) {
+                i++;
+            } else if (!quoted && current == '(') {
+                depth++;
+            } else if (!quoted && current == ')') {
+                if (--depth < 0) return List.of();
+            } else if (!quoted && depth == 0 && expression.regionMatches(true, i, operator, 0, operator.length())) {
+                parts.add(expression.substring(start, i));
+                i += operator.length() - 1;
+                start = i + 1;
+            }
+        }
+        if (quoted || depth != 0) return List.of();
+        parts.add(expression.substring(start));
+        return parts.stream().allMatch(part -> !part.isEmpty()) ? parts : List.of();
     }
 
     private static String stripOuterParens(String clause) {
