@@ -58,7 +58,9 @@ public final class StoredApiConnection {
         return value;
     }
     private static String requireEtag(String value) {
-        if (value == null || !value.matches("\"[A-Za-z0-9._:-]{8,128}\"")) throw new IllegalArgumentException("strongEtag is invalid");
+        if (value == null || value.length() < 3 || value.length() > 256
+                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'
+                || value.startsWith("W/")) throw new IllegalArgumentException("strongEtag is invalid");
         return value;
     }
 }

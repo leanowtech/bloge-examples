@@ -21,7 +21,8 @@ public final class StagedApiConnection {
         this.connectionExpected = Objects.requireNonNull(connectionExpected, "connectionExpected");
         if (!lease.key().scope().equals(spec.scope()) || !ApiConnectionSpec.SCHEMA_VERSION.equals(spec.schemaVersion())
                 || spec.connectionId() == null || spec.connectionId().isBlank() || spec.revision() < 1
-                || spec.fingerprint() == null || !spec.fingerprint().matches("sha256:[0-9a-f]{64}")) {
+                || spec.fingerprint() == null || !spec.fingerprint().matches("sha256:[0-9a-f]{64}")
+                || connectionExpectedRevisionMismatch(connectionExpected, spec.revision())) {
             throw new IllegalArgumentException("staged spec is inconsistent");
         }
         this.strongEtag = requireEtag(strongEtag);
@@ -40,10 +41,17 @@ public final class StagedApiConnection {
     ApiConnectionSpec spec() { return spec; }
 
     private static String requireEtag(String value) {
-        if (value == null || !value.matches("\"[A-Za-z0-9._:-]{8,128}\"")) {
+        if (value == null || value.length() < 3 || value.length() > 256
+                || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'
+                || value.startsWith("W/")) {
             throw new IllegalArgumentException("strongEtag is invalid");
         }
         return value;
+    }
+
+    private static boolean connectionExpectedRevisionMismatch(ExpectedRevision expected, int revision) {
+        return expected instanceof ExpectedRevision.Create ? revision != 1
+                : expected instanceof ExpectedRevision.Match match && match.revision() != revision - 1L;
     }
 
     @Override public String toString() {

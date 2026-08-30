@@ -2,7 +2,6 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
@@ -12,11 +11,10 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Comman
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneId;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,15 +26,19 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * boundary. It uses the in-memory implementation as a deterministic model for
  * the later JDBC implementation; it is not a database certification.</p>
  */
-class ApiConnectionCommitStoreContractTest {
+abstract class ApiConnectionCommitStoreContractTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
     private static final AuthoringScope OTHER_SCOPE = new AuthoringScope("other", "project", "dev");
     private static final String BASE_URL = "https://customer.example.com";
     private static final String REQUEST_FINGERPRINT = "sha256:" + "a".repeat(64);
+    private static final Instant TEST_NOW = Instant.parse("2026-08-30T00:00:00Z");
+
+    /** Factory seam for exercising this matrix against a future JDBC adapter. */
+    protected abstract ApiConnectionCommitStore createStore(Clock clock);
 
     @Test
     void stageIsInvisibleUntilCommitAndCommittedReadIsDefensive() throws Exception {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("create-1", 1, "attempt-1", SCOPE, "customer", ExpectedRevision.create());
 
         StagedApiConnection staged = stage(store, lease, "customer", ExpectedRevision.create(), noneCommand());
@@ -61,7 +63,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void createUpdateAndHistoryUseTheAuthorityCas() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease create = lease("create-2", 1, "a-2", SCOPE, "customer", ExpectedRevision.create());
         stage(store, create, "customer", ExpectedRevision.create(), noneCommand());
         store.commit(create);
@@ -81,7 +83,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void sameAttemptReentryReturnsTheSameStageWithoutDuplicatingIt() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("reentry", 1, "reentry-token", SCOPE, "customer", ExpectedRevision.create());
 
         StagedApiConnection first = stage(store, lease, "customer", ExpectedRevision.create(), noneCommand());
@@ -92,8 +94,18 @@ class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void sameAttemptReentryWithDifferentConnectionCasIsIntegrityFailure() {
+        ApiConnectionCommitStore store = newStore();
+        CommandLease lease = lease("reentry-cas", 1, "reentry-cas-token", SCOPE, "customer", ExpectedRevision.create());
+        stage(store, lease, "customer", ExpectedRevision.create(), noneCommand());
+        assertThatThrownBy(() -> stage(store, lease, "customer", ExpectedRevision.match(1), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    @Test
     void twoCommandsMayStageOneLogicalRevisionButOnlyOneCanCommit() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease firstLease = lease("winner-a", 1, "winner-a-token", SCOPE, "customer", ExpectedRevision.create());
         CommandLease secondLease = lease("winner-b", 1, "winner-b-token", SCOPE, "customer", ExpectedRevision.create());
 
@@ -109,7 +121,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void updateCommandsAreCheckedAgainstTheHeadAgainAtCommit() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease base = lease("base", 1, "base-token", SCOPE, "customer", ExpectedRevision.create());
         stage(store, base, "customer", ExpectedRevision.create(), noneCommand());
         store.commit(base);
@@ -129,7 +141,7 @@ class ApiConnectionCommitStoreContractTest {
     @Test
     void expiredLeaseCannotStageOrCommitAndFailIsAStaleNoOp() {
         MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
-        InMemoryApiConnectionCommitStore store = newStore(clock);
+        ApiConnectionCommitStore store = newStore(clock);
         CommandLease live = leaseAt(clock, "expiry", 1, "expiry-token", SCOPE, "customer", ExpectedRevision.create(), 1);
         stage(store, live, "customer", ExpectedRevision.create(), noneCommand());
         clock.advanceSeconds(2);
@@ -141,7 +153,7 @@ class ApiConnectionCommitStoreContractTest {
     @Test
     void newerAttemptTakesOverOldStageAndFencesOldLease() {
         MutableClock clock = new MutableClock(Instant.parse("2026-08-30T00:00:00Z"));
-        InMemoryApiConnectionCommitStore store = newStore(clock);
+        ApiConnectionCommitStore store = newStore(clock);
         CommandLease old = leaseAt(clock, "takeover", 1, "old-token", SCOPE, "customer", ExpectedRevision.create(), 1);
         CommandLease current = leaseAt(clock, "takeover", 2, "new-token", SCOPE, "customer", ExpectedRevision.create(), 30);
         stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
@@ -160,8 +172,28 @@ class ApiConnectionCommitStoreContractTest {
     }
 
     @Test
+    void expiredLeaseRejectsSameOrLowerAttemptAndDifferentCommandTakeover() {
+        MutableClock clock = new MutableClock(TEST_NOW);
+        ApiConnectionCommitStore store = newStore(clock);
+        CommandLease old = leaseAt(clock, "takeover-negative", 2, "old-token", SCOPE, "customer",
+                ExpectedRevision.create(), 1);
+        stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
+        clock.advanceSeconds(2);
+        CommandLease lower = leaseWithTarget("takeover-negative", 1, "lower-token", SCOPE, "customer",
+                AuthoringEndpoint.API_CONNECTION_SAVE, ExpectedRevision.create());
+        CommandLease different = leaseWithTargetAndKey("different-command", 3, "different-token", SCOPE,
+                "customer", AuthoringEndpoint.API_CONNECTION_SAVE, ExpectedRevision.create(), "key-takeover-negative");
+        assertThatThrownBy(() -> stage(store, lower, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class).extracting("code")
+                .isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+        assertThatThrownBy(() -> stage(store, different, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class).extracting("code")
+                .isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
+    }
+
+    @Test
     void failRemovesOnlyTheExactLiveStage() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease first = lease("fail-1", 1, "fail-1-token", SCOPE, "customer", ExpectedRevision.create());
         CommandLease second = lease("fail-2", 1, "fail-2-token", SCOPE, "customer", ExpectedRevision.create());
         stage(store, first, "customer", ExpectedRevision.create(), noneCommand());
@@ -176,7 +208,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void keepExistingUsesTheOpaqueBindingButNeverReturnsItInTheView() throws Exception {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         PreparedSecretBinding prepared = new PreparedSecretBinding("token",
                 new SecretReference(SCOPE, "vault://team/customer-token"));
         ApiConnectionCommand bearer = new ApiConnectionCommand("Customer API", BASE_URL,
@@ -199,7 +231,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void readsAreScopeExactAndMissingRevisionIsEmpty() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease scopeLease = lease("scope", 1, "scope-token", SCOPE, "customer", ExpectedRevision.create());
         stage(store, scopeLease, "customer", ExpectedRevision.create(), noneCommand());
         store.commit(scopeLease);
@@ -211,7 +243,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void errorsAndStringFormsDoNotLeakEndpointOrSecretData() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("redaction", 1, "redaction-token", SCOPE, "customer", ExpectedRevision.create());
         StagedApiConnection staged = stage(store, lease, "customer", ExpectedRevision.create(), new ApiConnectionCommand("Customer API",
                 BASE_URL, ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("secret-value")),
@@ -227,24 +259,39 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void stageRejectsACommandThatDoesNotMatchTheLeaseTarget() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
-        CommandLease lease = lease("target", 1, "target-token", SCOPE, "customer", ExpectedRevision.create());
+        ApiConnectionCommitStore store = newStore();
+        CommandLease lease = leaseWithTarget("target", 1, "target-token", SCOPE, "other",
+                AuthoringEndpoint.API_CONNECTION_SAVE, ExpectedRevision.create());
 
-        assertThat(stage(store, lease, "customer", ExpectedRevision.create(), noneCommand())).isNotNull();
+        assertThatThrownBy(() -> stage(store, lease, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        CommandLease expectedMismatch = lease("target-mismatch", 1, "target-mismatch-token", SCOPE,
+                "customer", ExpectedRevision.match(1));
+        assertThatThrownBy(() -> stage(store, expectedMismatch, "customer", ExpectedRevision.create(), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+
+        CommandLease resourceLease = leaseWithTarget("resource-cas", 1, "resource-cas-token", SCOPE, "profile",
+                AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(1));
+        assertThatThrownBy(() -> stage(store, resourceLease, "customer", ExpectedRevision.match(1), noneCommand()))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
 
     @Test
     void connectionCasIsIndependentFromCompositeLeaseExpectation() {
-        InMemoryApiConnectionCommitStore store = newStore(Clock.systemUTC());
-        CommandLease resourceLease = lease("composite", 1, "composite-token", SCOPE, "customer",
-                ExpectedRevision.match(999));
+        ApiConnectionCommitStore store = newStore();
+        CommandLease resourceLease = leaseWithTarget("composite", 1, "composite-token", SCOPE, "profile",
+                AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(999));
         stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
         assertThat(store.commit(resourceLease).view().revision()).isEqualTo(1);
     }
 
     @Test
     void alteredLeaseFieldsAreFencedEvenWhenTokenCoordinatesMatch() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("exact", 1, "exact-token", SCOPE, "customer", ExpectedRevision.create());
         stage(store, lease, "customer", ExpectedRevision.create(), noneCommand());
         CommandLease altered = new CommandLease(lease.commandId(), lease.attemptNo(), lease.attemptToken(),
@@ -256,7 +303,7 @@ class ApiConnectionCommitStoreContractTest {
 
     @Test
     void exactFailedLeaseCannotStageAgain() {
-        InMemoryApiConnectionCommitStore store = new InMemoryApiConnectionCommitStore();
+        ApiConnectionCommitStore store = newStore();
         CommandLease lease = lease("failed", 1, "failed-token", SCOPE, "customer", ExpectedRevision.create());
         stage(store, lease, "customer", ExpectedRevision.create(), noneCommand());
         store.fail(lease);
@@ -283,14 +330,18 @@ class ApiConnectionCommitStoreContractTest {
                 new ApiConnectionCommand.Defaults(5000, Map.of()));
     }
 
-    private static StagedApiConnection stage(InMemoryApiConnectionCommitStore store, CommandLease lease,
+    private static StagedApiConnection stage(ApiConnectionCommitStore store, CommandLease lease,
                                              String connectionId, ExpectedRevision expected,
                                              ApiConnectionCommand command, PreparedSecretBinding... prepared) {
         return store.stage(lease, connectionId, expected, command, prepared);
     }
 
-    private static InMemoryApiConnectionCommitStore newStore(Clock clock) {
-        return new InMemoryApiConnectionCommitStore(clock, new ApiConnectionDecisions());
+    private ApiConnectionCommitStore newStore(Clock clock) {
+        return createStore(clock);
+    }
+
+    private ApiConnectionCommitStore newStore() {
+        return newStore(Clock.fixed(TEST_NOW, ZoneId.of("UTC")));
     }
 
     private static CommandLease leaseAt(Clock clock, String commandId, int attemptNo, String attemptToken,
@@ -298,7 +349,7 @@ class ApiConnectionCommitStoreContractTest {
                                         long seconds) {
         return new CommandLease(commandId, attemptNo, attemptToken,
                 new CommandKey(scope, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
-                        "resource-" + connectionId, "key-" + commandId), REQUEST_FINGERPRINT,
+                        connectionId, "key-" + commandId), REQUEST_FINGERPRINT,
                 clock.instant().plusSeconds(seconds), expected);
     }
 
@@ -315,7 +366,23 @@ class ApiConnectionCommitStoreContractTest {
                                       AuthoringScope scope, String connectionId, ExpectedRevision expected) {
         return new CommandLease(commandId, attemptNo, attemptToken,
                 new CommandKey(scope, "actor", AuthoringEndpoint.API_CONNECTION_SAVE,
-                        "resource-" + connectionId, "key-" + commandId), REQUEST_FINGERPRINT,
-                Instant.now().plusSeconds(30), expected);
+                        connectionId, "key-" + commandId), REQUEST_FINGERPRINT,
+                TEST_NOW.plusSeconds(30), expected);
+    }
+
+    private static CommandLease leaseWithTarget(String commandId, int attemptNo, String attemptToken,
+                                                AuthoringScope scope, String target,
+                                                AuthoringEndpoint endpoint, ExpectedRevision expected) {
+        return leaseWithTargetAndKey(commandId, attemptNo, attemptToken, scope, target, endpoint, expected,
+                "key-" + commandId);
+    }
+
+    private static CommandLease leaseWithTargetAndKey(String commandId, int attemptNo, String attemptToken,
+                                                      AuthoringScope scope, String target,
+                                                      AuthoringEndpoint endpoint, ExpectedRevision expected,
+                                                      String idempotencyKey) {
+        return new CommandLease(commandId, attemptNo, attemptToken,
+                new CommandKey(scope, "actor", endpoint, target, idempotencyKey), REQUEST_FINGERPRINT,
+                TEST_NOW.plusSeconds(30), expected);
     }
 }

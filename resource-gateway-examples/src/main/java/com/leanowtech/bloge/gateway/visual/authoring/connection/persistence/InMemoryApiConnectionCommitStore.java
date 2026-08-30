@@ -5,19 +5,20 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCom
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.time.Clock;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-
-import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
 
 /** Deterministic in-memory contract adapter; it is not a production store. */
 public final class InMemoryApiConnectionCommitStore implements ApiConnectionCommitStore {
@@ -29,7 +30,12 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private final Map<CommandKey, CommandLease> active = new HashMap<>();
     private final Map<StageKey, StagedApiConnection> stages = new HashMap<>();
     private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
-    private final Map<CommandKey, CommandLease> failed = new HashMap<>();
+    /** Bounded lifecycle tombstones; a future durable adapter owns cleanup policy. */
+    private final Map<CommandKey, CommandLease> failed = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(Map.Entry<CommandKey, CommandLease> eldest) {
+            return size() > 1024;
+        }
+    };
 
     /** Creates a store using UTC wall-clock time and default decisions. */
     public InMemoryApiConnectionCommitStore() { this(Clock.systemUTC(), new ApiConnectionDecisions()); }
@@ -41,12 +47,21 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     }
 
     @Override
+    /** {@inheritDoc} */
     public synchronized StagedApiConnection stage(CommandLease lease, String connectionId,
                                                    ExpectedRevision connectionExpected,
                                                    ApiConnectionCommand command,
                                                    PreparedSecretBinding... prepared) {
         requireLease(lease);
         if (connectionId == null || connectionId.isBlank() || connectionExpected == null) fail(Code.INTEGRITY);
+        if (lease.key().endpoint() == AuthoringEndpoint.API_CONNECTION_SAVE) {
+            if (!connectionId.equals(lease.key().targetId())
+                    || !lease.expectedRevision().equals(connectionExpected)) fail(Code.INTEGRITY);
+        } else if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+            if (!(connectionExpected instanceof ExpectedRevision.Create)) fail(Code.INTEGRITY);
+        } else {
+            fail(Code.INTEGRITY);
+        }
         CommandKey commandKey = lease.key();
         CommandLease currentLease = active.get(commandKey);
         if (currentLease != null) {
@@ -55,13 +70,16 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
             } else if (currentLease.leaseUntil().isAfter(clock.instant())) {
                 fail(Code.LEASE_FENCED);
             } else {
+                if (!currentLease.commandId().equals(lease.commandId())
+                        || lease.attemptNo() <= currentLease.attemptNo()) fail(Code.LEASE_FENCED);
                 removeStage(currentLease);
                 active.remove(commandKey);
             }
         }
         CommandLease failedLease = failed.get(commandKey);
         if (failedLease != null) {
-            if (failedLease.equals(lease) || lease.attemptNo() <= failedLease.attemptNo()) fail(Code.LEASE_FENCED);
+            if (!lease.commandId().equals(failedLease.commandId())
+                    || lease.attemptNo() <= failedLease.attemptNo()) fail(Code.LEASE_FENCED);
             failed.remove(commandKey);
         }
         if (currentLease == null || !currentLease.equals(lease)) requireIncomingLeaseLive(lease);
@@ -70,8 +88,9 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         StagedApiConnection prior = stages.get(stageKey);
         if (prior != null) {
             if (!prior.lease().equals(lease)) fail(Code.LEASE_FENCED);
+            if (!prior.connectionExpected().equals(connectionExpected)) fail(Code.INTEGRITY);
             ApiConnectionSpec candidate = decisions.next(lease.key().scope(), Optional.ofNullable(stageBases.get(stageKey)),
-                    connectionId, command, prior.connectionExpected(), prepared);
+                    connectionId, command, connectionExpected, prepared);
             if (!candidate.fingerprint().equals(prior.metadataFingerprint())) fail(Code.INTEGRITY);
             return prior;
         }
@@ -99,6 +118,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     }
 
     @Override
+    /** {@inheritDoc} */
     public synchronized StoredApiConnection commit(CommandLease lease) {
         requireLease(lease);
         CommandLease currentLease = active.get(lease.key());
@@ -126,6 +146,7 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     }
 
     @Override
+    /** {@inheritDoc} */
     public synchronized void fail(CommandLease lease) {
         if (lease == null) return;
         CommandLease current = active.get(lease.key());
@@ -137,11 +158,13 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     }
 
     @Override
+    /** {@inheritDoc} */
     public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return Optional.ofNullable(heads.get(new ConnectionKey(scope, connectionId)));
     }
 
     @Override
+    /** {@inheritDoc} */
     public synchronized Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,
                                                                     long revision) {
         return Optional.ofNullable(history.get(new RevisionKey(new ConnectionKey(scope, connectionId), revision)));
