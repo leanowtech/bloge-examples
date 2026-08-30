@@ -69,6 +69,8 @@ class ApiResourceAuthoringSchemaReadinessTest {
     void readinessFailsWhenCoordinateUniqueIsDropped() {
         applyMigration();
         jdbc.execute("ALTER TABLE rg_authoring_command_journal DROP CONSTRAINT rg_authoring_command_journal_coordinate_uq");
+        jdbc.execute("ALTER TABLE rg_authoring_command_journal ADD CONSTRAINT rg_authoring_command_journal_coordinate_uq "
+                + "UNIQUE (tenant_id, project_id)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -78,6 +80,8 @@ class ApiResourceAuthoringSchemaReadinessTest {
     void readinessFailsWhenLeaseRecoveryIndexIsDropped() {
         applyMigration();
         jdbc.execute("DROP INDEX rg_authoring_command_journal_lease_recovery_idx");
+        jdbc.execute("CREATE INDEX rg_authoring_command_journal_lease_recovery_idx "
+                + "ON rg_authoring_command_journal (status, updated_at, lease_until)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -87,6 +91,8 @@ class ApiResourceAuthoringSchemaReadinessTest {
     void readinessFailsWhenRequiredForeignKeyIsDropped() {
         applyMigration();
         jdbc.execute("ALTER TABLE rg_api_resource_revisions DROP CONSTRAINT rg_api_resource_revisions_command_fk");
+        jdbc.execute("ALTER TABLE rg_api_resource_revisions ADD CONSTRAINT rg_api_resource_revisions_command_fk "
+                + "FOREIGN KEY (command_id) REFERENCES rg_authoring_command_journal (command_id)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -96,6 +102,21 @@ class ApiResourceAuthoringSchemaReadinessTest {
     void readinessFailsWhenHeadProjectionForeignKeyIsDropped() {
         applyMigration();
         jdbc.execute("ALTER TABLE rg_api_resource_heads DROP CONSTRAINT rg_api_resource_heads_projection_fk");
+        jdbc.execute("ALTER TABLE rg_api_resource_heads ADD CONSTRAINT rg_api_resource_heads_projection_fk "
+                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision) "
+                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision)");
+
+        assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void readinessFailsWhenHeadRevisionForeignKeyOmitsState() {
+        applyMigration();
+        jdbc.execute("ALTER TABLE rg_api_resource_heads DROP CONSTRAINT rg_api_resource_heads_revision_fk");
+        jdbc.execute("ALTER TABLE rg_api_resource_heads ADD CONSTRAINT rg_api_resource_heads_revision_fk "
+                + "FOREIGN KEY (tenant_id, project_id, environment_id, resource_id, revision, strong_etag) "
+                + "REFERENCES rg_api_resource_revisions (tenant_id, project_id, environment_id, resource_id, revision, strong_etag)");
 
         assertThatThrownBy(() -> new ApiResourceAuthoringSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class);
@@ -118,6 +139,72 @@ class ApiResourceAuthoringSchemaReadinessTest {
                         'PREPARING', 1, 'token-1', CURRENT_TIMESTAMP, 'CREATE', NULL,
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """, FP_A))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void attemptFencingForeignKeyRejectsWrongAttemptAndToken() {
+        applyMigration();
+        insertJournal("PREPARING", null, null, null);
+
+        assertThatThrownBy(() -> insertRevision("STAGED", "cmd-1", 2, "token-1", FP_C))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> insertRevision("STAGED", "cmd-1", 1, "token-2", FP_C))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void takeoverCannotUpdateJournalWhileOldStagedAttemptRemains() {
+        applyMigration();
+        insertJournal("PREPARING", null, null, null);
+        insertRevision("STAGED", "cmd-1");
+
+        assertThatThrownBy(() -> jdbc.update("""
+                UPDATE rg_authoring_command_journal
+                   SET attempt_no = 2, attempt_token = 'token-2', updated_at = CURRENT_TIMESTAMP
+                 WHERE command_id = 'cmd-1'
+                """))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void fingerprintsRejectInvalidHexAndUppercaseDigest() {
+        applyMigration();
+        assertThatThrownBy(() -> insertJournalWithFingerprints(
+                "sha256:" + "g".repeat(64), null))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> insertJournalWithFingerprints(
+                "sha256:" + "A".repeat(64), null))
+                .isInstanceOf(RuntimeException.class);
+
+        insertJournal("PREPARING", null, null, null);
+        assertThatThrownBy(() -> insertRevision("STAGED", "cmd-1", 1, "token-1",
+                "sha256:" + "G".repeat(64)))
+                .isInstanceOf(RuntimeException.class);
+        insertRevision("STAGED", "cmd-1");
+        assertThatThrownBy(() -> insertProjection("READY", "sha256:" + "G".repeat(64)))
+                .isInstanceOf(RuntimeException.class);
+
+        jdbc.execute("DELETE FROM rg_api_resource_revisions");
+        jdbc.execute("DELETE FROM rg_authoring_command_journal");
+        assertThatThrownBy(() -> insertJournalWithFingerprints(
+                FP_A, "COMMITTED", "bloge.receipt.v1", "{}", null,
+                "sha256:" + "G".repeat(64)))
+                .isInstanceOf(RuntimeException.class);
+    }
+
+    @Test
+    void failureCodeMatchesCommandFailureCodeAndRejectsInvalidValues() {
+        applyMigration();
+        insertJournal("FAILED", null, null, CommandFailureCode.INTERNAL.value());
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_authoring_command_journal", Integer.class))
+                .isEqualTo(1);
+
+        jdbc.execute("DELETE FROM rg_authoring_command_journal");
+        assertThatThrownBy(() -> insertJournal("FAILED", null, null, "internal"))
+                .isInstanceOf(RuntimeException.class);
+        jdbc.execute("DELETE FROM rg_authoring_command_journal");
+        assertThatThrownBy(() -> insertJournal("FAILED", null, null, "INTERNAL/NOPE"))
                 .isInstanceOf(RuntimeException.class);
     }
 
@@ -189,6 +276,18 @@ class ApiResourceAuthoringSchemaReadinessTest {
     }
 
     private void insertJournal(String status, String receiptSchema, String receiptJson, String failureCode) {
+        insertJournalWithFingerprints(FP_A, status, receiptSchema, receiptJson, failureCode,
+                receiptSchema == null ? null : FP_B);
+    }
+
+    private void insertJournalWithFingerprints(String requestFingerprint, String receiptFingerprint) {
+        insertJournalWithFingerprints(requestFingerprint, "PREPARING", null, null, null, null);
+    }
+
+    private void insertJournalWithFingerprints(String requestFingerprint, String status,
+                                               String receiptSchema,
+                                               String receiptJson, String failureCode,
+                                               String receiptFingerprint) {
         jdbc.update("""
                 INSERT INTO rg_authoring_command_journal
                     (tenant_id, project_id, environment_id, actor_id, endpoint, target_id,
@@ -199,23 +298,32 @@ class ApiResourceAuthoringSchemaReadinessTest {
                 VALUES ('t', 'p', 'e', 'a', 'API_RESOURCE_SAVE', 'r', 'k1', 'cmd-1', ?,
                         ?, 1, 'token-1', CURRENT_TIMESTAMP, 'CREATE', NULL, ?, ?, ?, ?, ?,
                         CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, FP_A, status, receiptSchema, receiptJson,
-                receiptSchema == null ? null : FP_B,
+                """, requestFingerprint, status, receiptSchema, receiptJson,
+                receiptFingerprint,
                 receiptSchema == null ? null : "\"receipt-etag\"", failureCode);
     }
 
     private void insertRevision(String state, String commandId) {
+        insertRevision(state, commandId, 1, "token-1", FP_C);
+    }
+
+    private void insertRevision(String state, String commandId, int attemptNo,
+                                String attemptToken, String specFingerprint) {
         jdbc.update("""
                 INSERT INTO rg_api_resource_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision, state,
                      spec_json, spec_fingerprint, connection_id, strong_etag, command_id,
                      attempt_no, attempt_token, created_at, updated_at)
                 VALUES ('t', 'p', 'e', 'r', 1, ?, '{}', ?, 'connection', '"etag"', ?,
-                        1, 'token-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-                """, state, FP_C, commandId);
+                        ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """, state, specFingerprint, commandId, attemptNo, attemptToken);
     }
 
     private void insertProjection(String state) {
+        insertProjection(state, FP_A);
+    }
+
+    private void insertProjection(String state, String descriptorFingerprint) {
         jdbc.update("""
                 INSERT INTO rg_api_resource_projection_revisions
                     (tenant_id, project_id, environment_id, resource_id, revision,
@@ -223,7 +331,7 @@ class ApiResourceAuthoringSchemaReadinessTest {
                      design_contract_json, design_contract_fingerprint, design_contract_state,
                      operator_json, operator_fingerprint, operator_state, set_fingerprint)
                 VALUES ('t', 'p', 'e', 'r', 1, '{}', ?, ?, '{}', ?, ?, '{}', ?, ?, ?)
-                """, FP_A, state, FP_B, state, FP_C, state, FP_D);
+                """, descriptorFingerprint, state, FP_B, state, FP_C, state, FP_D);
     }
 
     private void insertHead() {

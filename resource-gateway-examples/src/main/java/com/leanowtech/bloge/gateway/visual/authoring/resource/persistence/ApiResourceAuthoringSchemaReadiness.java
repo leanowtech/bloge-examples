@@ -7,12 +7,15 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.sql.DatabaseMetaData;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.List;
 
 /**
  * Fail-closed startup gate for the API Resource authoring persistence schema.
@@ -108,96 +111,129 @@ public final class ApiResourceAuthoringSchemaReadiness {
     private static void verifyMetadata(JdbcTemplate jdbc) {
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
-            requirePrimaryKey(metadata, "rg_authoring_command_journal", "rg_authoring_command_journal_pk");
-            requirePrimaryKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_pk");
-            requirePrimaryKey(metadata, "rg_api_resource_projection_revisions", "rg_api_resource_projection_revisions_pk");
-            requirePrimaryKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_pk");
-            requireUniqueColumns(metadata, "rg_authoring_command_journal",
-                    Set.of("tenant_id", "project_id", "environment_id", "actor_id", "endpoint",
+            requirePrimaryKey(metadata, "rg_authoring_command_journal", "rg_authoring_command_journal_pk",
+                    List.of("command_id"));
+            requirePrimaryKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_pk",
+                    scopeResourceColumns("revision"));
+            requirePrimaryKey(metadata, "rg_api_resource_projection_revisions",
+                    "rg_api_resource_projection_revisions_pk", scopeResourceColumns("revision"));
+            requirePrimaryKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_pk",
+                    scopeResourceColumns());
+            requireUniqueColumns(metadata, "rg_authoring_command_journal", "coordinate unique",
+                    List.of("tenant_id", "project_id", "environment_id", "actor_id", "endpoint",
                             "target_id", "idempotency_key"));
+            requireUniqueColumns(metadata, "rg_authoring_command_journal", "attempt unique",
+                    List.of("command_id", "attempt_no", "attempt_token"));
             requireForeignKey(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_command_fk",
-                    "rg_authoring_command_journal");
+                    "rg_authoring_command_journal", List.of(
+                            pair("command_id", "command_id"), pair("attempt_no", "attempt_no"),
+                            pair("attempt_token", "attempt_token")));
             requireForeignKey(metadata, "rg_api_resource_projection_revisions",
-                    "rg_api_resource_projection_revisions_revision_fk", "rg_api_resource_revisions");
+                    "rg_api_resource_projection_revisions_revision_fk", "rg_api_resource_revisions",
+                    scopeResourcePairs("revision"));
             requireForeignKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_revision_fk",
-                    "rg_api_resource_revisions");
+                    "rg_api_resource_revisions", List.of(
+                            pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
+                            pair("environment_id", "environment_id"), pair("resource_id", "resource_id"),
+                            pair("revision", "revision"), pair("strong_etag", "strong_etag"),
+                            pair("revision_state", "state")));
             requireForeignKey(metadata, "rg_api_resource_heads", "rg_api_resource_heads_projection_fk",
-                    "rg_api_resource_projection_revisions");
-            requireIndex(metadata, "rg_authoring_command_journal", "rg_authoring_command_journal_lease_recovery_idx");
-            requireIndex(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_connection_visibility_idx");
-            requireIndex(metadata, "rg_api_resource_revisions", "rg_api_resource_revisions_staging_cleanup_idx");
+                    "rg_api_resource_projection_revisions", scopeResourcePairs("revision"));
+            requireIndexColumns(metadata, "rg_authoring_command_journal",
+                    "rg_authoring_command_journal_lease_recovery_idx",
+                    List.of("status", "lease_until", "updated_at"));
+            requireIndexColumns(metadata, "rg_api_resource_revisions",
+                    "rg_api_resource_revisions_connection_visibility_idx",
+                    List.of("tenant_id", "project_id", "environment_id", "connection_id", "state", "resource_id"));
+            requireIndexColumns(metadata, "rg_api_resource_revisions",
+                    "rg_api_resource_revisions_staging_cleanup_idx", List.of("state", "updated_at"));
             return null;
         });
     }
 
-    private static void requirePrimaryKey(DatabaseMetaData metadata, String table, String expected)
-            throws SQLException {
-        if (!metadataNames(metadata, table, true, false).contains(normalize(expected))) {
-            throw new IllegalStateException("missing primary key " + expected);
+    private static void requirePrimaryKey(DatabaseMetaData metadata, String table, String expected,
+                                          List<String> columns) throws SQLException {
+        for (String candidate : tableCandidates(table)) {
+            Map<Short, String> actual = new HashMap<>();
+            String primaryKeyName = null;
+            try (ResultSet rows = metadata.getPrimaryKeys(null, null, candidate)) {
+                while (rows.next()) {
+                    primaryKeyName = rows.getString("PK_NAME");
+                    actual.put(rows.getShort("KEY_SEQ"), normalize(rows.getString("COLUMN_NAME")));
+                }
+            }
+            if (normalize(expected).equals(normalize(primaryKeyName))
+                    && ordered(actual).equals(normalized(columns))) {
+                return;
+            }
         }
+        throw new IllegalStateException("missing or misordered primary key " + expected);
     }
 
-    private static void requireIndex(DatabaseMetaData metadata, String table, String expected) throws SQLException {
-        if (!metadataNames(metadata, table, false, false).contains(normalize(expected))) {
-            throw new IllegalStateException("missing index " + expected);
+    private static void requireIndexColumns(DatabaseMetaData metadata, String table, String expected,
+                                            List<String> columns) throws SQLException {
+        for (String candidate : tableCandidates(table)) {
+            Map<String, Map<Short, String>> indexes = indexColumns(metadata, candidate, false);
+            Map<Short, String> actual = indexes.get(normalize(expected));
+            if (actual != null && ordered(actual).equals(normalized(columns))) {
+                return;
+            }
         }
+        throw new IllegalStateException("missing or misordered index " + expected);
     }
 
     private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,
-                                           String targetTable) throws SQLException {
+                                           String targetTable, List<ColumnPair> columns) throws SQLException {
         for (String candidate : tableCandidates(table)) {
+            Map<String, Map<Short, ColumnPair>> actualByName = new HashMap<>();
+            Map<String, String> targetByName = new HashMap<>();
             try (ResultSet rows = metadata.getImportedKeys(null, null, candidate)) {
                 while (rows.next()) {
-                    if (normalize(expected).equals(normalize(rows.getString("FK_NAME")))
-                            && normalize(targetTable).equals(normalize(rows.getString("PKTABLE_NAME")))) {
-                        return;
-                    }
+                    String foreignKeyName = normalize(rows.getString("FK_NAME"));
+                    targetByName.put(foreignKeyName, normalize(rows.getString("PKTABLE_NAME")));
+                    actualByName.computeIfAbsent(foreignKeyName, ignored -> new HashMap<>())
+                            .put(rows.getShort("KEY_SEQ"), pair(rows.getString("FKCOLUMN_NAME"),
+                                    rows.getString("PKCOLUMN_NAME")));
                 }
             }
+            String expectedName = normalize(expected);
+            Map<Short, ColumnPair> actual = actualByName.get(expectedName);
+            if (normalize(targetTable).equals(targetByName.get(expectedName))
+                    && actual != null && orderedPairs(actual).equals(normalizedPairs(columns))) {
+                return;
+            }
         }
-        throw new IllegalStateException("missing foreign key " + expected);
+        throw new IllegalStateException("missing or misordered foreign key " + expected);
     }
 
     private static void requireUniqueColumns(DatabaseMetaData metadata, String table,
-                                              Set<String> expectedColumns) throws SQLException {
-        Map<String, Set<String>> uniqueIndexes = new HashMap<>();
+                                              String description, List<String> expectedColumns)
+            throws SQLException {
         for (String candidate : tableCandidates(table)) {
-            try (ResultSet rows = metadata.getIndexInfo(null, null, candidate, true, false)) {
-                while (rows.next()) {
-                    String index = rows.getString("INDEX_NAME");
-                    String column = rows.getString("COLUMN_NAME");
-                    if (index != null && column != null) {
-                        uniqueIndexes.computeIfAbsent(normalize(index), ignored -> new HashSet<>())
-                                .add(normalize(column));
-                    }
+            Map<String, Map<Short, String>> indexes = indexColumns(metadata, candidate, true);
+            for (Map<Short, String> actual : indexes.values()) {
+                if (ordered(actual).equals(normalized(expectedColumns))) {
+                    return;
                 }
             }
         }
-        Set<String> normalizedExpected = expectedColumns.stream().map(ApiResourceAuthoringSchemaReadiness::normalize).collect(java.util.stream.Collectors.toSet());
-        if (!uniqueIndexes.values().stream().anyMatch(normalizedExpected::equals)) {
-            throw new IllegalStateException("missing unique authoring command coordinate");
-        }
+        throw new IllegalStateException("missing or misordered " + description);
     }
 
-    private static Set<String> metadataNames(DatabaseMetaData metadata, String table, boolean primaryKey,
-                                               boolean uniqueOnly) throws SQLException {
-        Set<String> names = new HashSet<>();
-        for (String candidate : tableCandidates(table)) {
-            if (primaryKey) {
-                try (ResultSet rows = metadata.getPrimaryKeys(null, null, candidate)) {
-                    while (rows.next()) {
-                        if (rows.getString("PK_NAME") != null) names.add(normalize(rows.getString("PK_NAME")));
-                    }
-                }
-            } else {
-                try (ResultSet rows = metadata.getIndexInfo(null, null, candidate, uniqueOnly, false)) {
-                    while (rows.next()) {
-                        if (rows.getString("INDEX_NAME") != null) names.add(normalize(rows.getString("INDEX_NAME")));
-                    }
+    private static Map<String, Map<Short, String>> indexColumns(DatabaseMetaData metadata, String table,
+                                                                 boolean uniqueOnly) throws SQLException {
+        Map<String, Map<Short, String>> indexes = new HashMap<>();
+        try (ResultSet rows = metadata.getIndexInfo(null, null, table, uniqueOnly, false)) {
+            while (rows.next()) {
+                String index = rows.getString("INDEX_NAME");
+                String column = rows.getString("COLUMN_NAME");
+                if (index != null && column != null) {
+                    indexes.computeIfAbsent(normalize(index), ignored -> new HashMap<>())
+                            .put(rows.getShort("ORDINAL_POSITION"), normalize(column));
                 }
             }
         }
-        return names;
+        return indexes;
     }
 
     private static Set<String> tableCandidates(String table) {
@@ -211,6 +247,44 @@ public final class ApiResourceAuthoringSchemaReadiness {
     private static String normalize(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
+
+    private static List<String> ordered(Map<Short, String> columns) {
+        List<Map.Entry<Short, String>> entries = new ArrayList<>(columns.entrySet());
+        entries.sort(Comparator.comparingInt(entry -> entry.getKey()));
+        return entries.stream().map(Map.Entry::getValue).toList();
+    }
+
+    private static List<ColumnPair> orderedPairs(Map<Short, ColumnPair> columns) {
+        List<Map.Entry<Short, ColumnPair>> entries = new ArrayList<>(columns.entrySet());
+        entries.sort(Comparator.comparingInt(entry -> entry.getKey()));
+        return entries.stream().map(Map.Entry::getValue).toList();
+    }
+
+    private static List<String> normalized(List<String> values) {
+        return values.stream().map(ApiResourceAuthoringSchemaReadiness::normalize).toList();
+    }
+
+    private static List<ColumnPair> normalizedPairs(List<ColumnPair> values) {
+        return values.stream().map(pair -> pair(pair.foreign(), pair.primary())).toList();
+    }
+
+    private static List<String> scopeResourceColumns(String... tail) {
+        List<String> columns = new ArrayList<>(List.of("tenant_id", "project_id", "environment_id", "resource_id"));
+        columns.addAll(List.of(tail));
+        return columns;
+    }
+
+    private static List<ColumnPair> scopeResourcePairs(String tail) {
+        return List.of(pair("tenant_id", "tenant_id"), pair("project_id", "project_id"),
+                pair("environment_id", "environment_id"), pair("resource_id", "resource_id"),
+                pair(tail, tail));
+    }
+
+    private static ColumnPair pair(String foreign, String primary) {
+        return new ColumnPair(normalize(foreign), normalize(primary));
+    }
+
+    private record ColumnPair(String foreign, String primary) { }
 
     private static IllegalStateException notReady(Throwable cause) {
         return new IllegalStateException("API Resource authoring schema is not ready; apply "

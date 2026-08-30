@@ -12,7 +12,9 @@ CREATE TABLE IF NOT EXISTS rg_authoring_command_journal (
     idempotency_key VARCHAR(256) NOT NULL,
     command_id VARCHAR(128) NOT NULL,
     request_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(request_fingerprint) = 71 AND request_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(request_fingerprint) = 71 AND request_fingerprint LIKE 'sha256:%'
+            AND LOWER(request_fingerprint) = request_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(request_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     status VARCHAR(32) NOT NULL,
     attempt_no INTEGER NOT NULL,
     attempt_token VARCHAR(128) NOT NULL,
@@ -38,15 +40,20 @@ CREATE TABLE IF NOT EXISTS rg_authoring_command_journal (
          OR (expected_mode = 'MATCH' AND expected_revision > 0)),
     CONSTRAINT rg_authoring_command_journal_receipt_fp_ck CHECK
         (receipt_fingerprint IS NULL OR
-            (CHAR_LENGTH(receipt_fingerprint) = 71 AND receipt_fingerprint LIKE 'sha256:%')),
+            (CHAR_LENGTH(receipt_fingerprint) = 71 AND receipt_fingerprint LIKE 'sha256:%'
+             AND LOWER(receipt_fingerprint) = receipt_fingerprint
+             AND TRIM(TRANSLATE(SUBSTRING(receipt_fingerprint, 8, 64), '0123456789abcdef', '                ')) = '')),
     CONSTRAINT rg_authoring_command_journal_receipt_etag_ck CHECK
         (receipt_etag IS NULL OR
             (CHAR_LENGTH(receipt_etag) >= 3 AND receipt_etag LIKE '"%"' AND receipt_etag NOT LIKE '"W/%')),
     CONSTRAINT rg_authoring_command_journal_failure_ck CHECK
         (failure_code IS NULL OR
             (CHAR_LENGTH(failure_code) BETWEEN 1 AND 128
+             AND SUBSTRING(failure_code, 1, 1) BETWEEN 'A' AND 'Z'
              AND failure_code = UPPER(failure_code)
-             AND failure_code NOT LIKE '% %')),
+             AND failure_code NOT LIKE '% %'
+             AND TRIM(TRANSLATE(failure_code, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-',
+                    '                                       ')) = '')),
     CONSTRAINT rg_authoring_command_journal_receipt_ck CHECK
         ((status = 'PREPARING' AND receipt_schema IS NULL AND receipt_json IS NULL
              AND receipt_fingerprint IS NULL AND receipt_etag IS NULL AND failure_code IS NULL)
@@ -68,7 +75,9 @@ CREATE TABLE IF NOT EXISTS rg_api_resource_revisions (
     state VARCHAR(16) NOT NULL,
     spec_json TEXT NOT NULL,
     spec_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(spec_fingerprint) = 71 AND spec_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(spec_fingerprint) = 71 AND spec_fingerprint LIKE 'sha256:%'
+            AND LOWER(spec_fingerprint) = spec_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(spec_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     connection_id VARCHAR(128) NOT NULL,
     strong_etag VARCHAR(256) NOT NULL,
     command_id VARCHAR(128) NOT NULL,
@@ -107,18 +116,26 @@ CREATE TABLE IF NOT EXISTS rg_api_resource_projection_revisions (
     revision BIGINT NOT NULL,
     descriptor_json TEXT NOT NULL,
     descriptor_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(descriptor_fingerprint) = 71 AND descriptor_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(descriptor_fingerprint) = 71 AND descriptor_fingerprint LIKE 'sha256:%'
+            AND LOWER(descriptor_fingerprint) = descriptor_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(descriptor_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     descriptor_state VARCHAR(16) NOT NULL,
     design_contract_json TEXT NOT NULL,
     design_contract_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(design_contract_fingerprint) = 71 AND design_contract_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(design_contract_fingerprint) = 71 AND design_contract_fingerprint LIKE 'sha256:%'
+            AND LOWER(design_contract_fingerprint) = design_contract_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(design_contract_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     design_contract_state VARCHAR(16) NOT NULL,
     operator_json TEXT NOT NULL,
     operator_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(operator_fingerprint) = 71 AND operator_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(operator_fingerprint) = 71 AND operator_fingerprint LIKE 'sha256:%'
+            AND LOWER(operator_fingerprint) = operator_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(operator_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     operator_state VARCHAR(16) NOT NULL,
     set_fingerprint VARCHAR(128) NOT NULL
-        CHECK (CHAR_LENGTH(set_fingerprint) = 71 AND set_fingerprint LIKE 'sha256:%'),
+        CHECK (CHAR_LENGTH(set_fingerprint) = 71 AND set_fingerprint LIKE 'sha256:%'
+            AND LOWER(set_fingerprint) = set_fingerprint
+            AND TRIM(TRANSLATE(SUBSTRING(set_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
     CONSTRAINT rg_api_resource_projection_revisions_pk PRIMARY KEY
         (tenant_id, project_id, environment_id, resource_id, revision),
     CONSTRAINT rg_api_resource_projection_revisions_revision_fk FOREIGN KEY
