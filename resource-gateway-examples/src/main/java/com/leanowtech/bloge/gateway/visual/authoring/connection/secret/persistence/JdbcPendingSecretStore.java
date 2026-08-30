@@ -85,11 +85,14 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             if (journal.sameAuthority(lease, coordinate(batch))) fail(PendingSecretStoreException.Code.LEASE_FENCED);
             fail(PendingSecretStoreException.Code.INTEGRITY);
         }
+        journal.requirePreparing();
         Instant databaseNow = databaseNow();
         if (!journal.live(databaseNow)) fail(PendingSecretStoreException.Code.LEASE_EXPIRED);
         List<Row> existing = rows(lease, true);
         if (!existing.isEmpty()) {
-            if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
+            if (existing.stream().anyMatch(row -> !"PENDING".equals(row.status()))) {
+                fail(PendingSecretStoreException.Code.RECOVERY_STATE);
+            }
             PendingSecretBatch stored = restore(existing);
             if (stored.equals(batch)) return;
             fail(PendingSecretStoreException.Code.INTEGRITY);
@@ -149,6 +152,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             }
             validateAndProof(batch, outputs, true);
             Map<String, ActiveSecretBinding> retained = retained(batch);
+            requireBindingOwnership(batch);
             for (PendingSecretOperation operation : batch.operations()) {
                 ActiveSecretBinding binding = operation instanceof PendingSecretOperation.Retained
                         ? Objects.requireNonNull(retained.get(operation.slot()))
@@ -200,6 +204,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             fail(PendingSecretStoreException.Code.RECOVERY_STATE);
         }
         Journal journal = journal(lease, true);
+        journal.requirePreparing();
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
         if (!journal.exact(lease)) fail(PendingSecretStoreException.Code.LEASE_FENCED);
@@ -217,17 +222,24 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         return execute(() -> {
             Instant now = databaseNow();
             List<BatchKey> keys = jdbc.query("""
-                    SELECT command_id, attempt_no, attempt_token
-                      FROM rg_api_connection_pending_secret_leases
-                     GROUP BY command_id, attempt_no, attempt_token
-                     HAVING MIN(lease_until) <= ? OR SUM(CASE WHEN status='ABORT_REQUIRED' THEN 1 ELSE 0 END) = COUNT(*)
-                    ORDER BY MIN(CASE WHEN status='ABORT_REQUIRED' THEN 0 ELSE 1 END),
-                              MIN(lease_until), command_id, attempt_no, attempt_token, MIN(updated_at)
+                    SELECT p.command_id, p.attempt_no, p.attempt_token
+                      FROM rg_api_connection_pending_secret_leases p
+                     WHERE EXISTS (SELECT 1 FROM rg_authoring_command_journal j
+                                     WHERE j.command_id=p.command_id
+                                       AND j.attempt_no=p.attempt_no
+                                       AND j.attempt_token=p.attempt_token
+                                       AND j.status='PREPARING')
+                     GROUP BY p.command_id, p.attempt_no, p.attempt_token
+                     HAVING MIN(p.lease_until) <= ? OR SUM(CASE WHEN p.status='ABORT_REQUIRED' THEN 1 ELSE 0 END) = COUNT(*)
+                    ORDER BY MIN(CASE WHEN p.status='ABORT_REQUIRED' THEN 0 ELSE 1 END),
+                              MIN(p.lease_until), p.command_id, p.attempt_no, p.attempt_token, MIN(p.updated_at)
+                     LIMIT ?
                     """, (row, ignored) -> new BatchKey(row.getString(1), row.getInt(2), row.getString(3)),
-                    timestamp(now));
+                    timestamp(now), attemptLimit);
             List<SecretAbortCandidate> result = new ArrayList<>();
             for (BatchKey key : keys) {
-                if (result.size() >= attemptLimit) break;
+                Journal journal = journal(key, true);
+                journal.requirePreparing();
                 List<Row> rows = rows(key, true);
                 if (rows.isEmpty()) continue;
                 if (rows.stream().anyMatch(row -> !sameClaim(rows, row))) {
@@ -271,6 +283,8 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         }
         List<Row> rows = rows(lease, true);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
+        Journal journal = journal(lease, true);
+        journal.requirePreparing();
         PendingSecretBatch stored = restore(rows);
         if (!stored.equals(candidate.batch())) fail(PendingSecretStoreException.Code.LEASE_FENCED);
         if (!rows.stream().allMatch(row -> "ABORT_REQUIRED".equals(row.status()))
@@ -312,6 +326,14 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             fail("ABORTED".equals(done.outcome()) ? PendingSecretStoreException.Code.RECOVERY_STATE
                     : PendingSecretStoreException.Code.INTEGRITY);
         }
+        Journal journal = journal(batch.lease(), requirePending);
+        if (!journal.exact(batch.lease())) {
+            if (journal.sameAuthority(batch.lease(), coordinate(batch))) {
+                fail(PendingSecretStoreException.Code.LEASE_FENCED);
+            }
+            fail(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        journal.requirePreparing();
         List<Row> rows = rows(batch.lease(), requirePending);
         if (rows.isEmpty()) fail(PendingSecretStoreException.Code.STAGE_MISSING);
         PendingSecretBatch stored = restore(rows);
@@ -349,6 +371,21 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             result.put(operation.slot(), binding);
         }
         return result;
+    }
+
+    /** Fences a competing command before any active binding can be overwritten. */
+    private void requireBindingOwnership(PendingSecretBatch batch) {
+        String commandId = batch.lease().commandLease().commandId();
+        for (PendingSecretOperation operation : batch.operations()) {
+            List<String> owners = jdbc.query("SELECT command_id FROM rg_api_connection_secret_bindings"
+                            + " WHERE tenant_id=? AND project_id=? AND environment_id=? AND connection_id=?"
+                            + " AND revision=? AND slot=? FOR UPDATE", (row, ignored) -> row.getString(1),
+                    scope(batch).tenantId(), scope(batch).projectId(), scope(batch).environmentId(),
+                    coordinate(batch).connectionId(), coordinate(batch).revision(), operation.slot());
+            if (!owners.isEmpty() && !commandId.equals(owners.getFirst())) {
+                fail(PendingSecretStoreException.Code.LEASE_FENCED);
+            }
+        }
     }
 
     private void insertRow(PendingSecretBatch batch, PendingSecretOperation operation, ActiveSecretBinding retained) {
@@ -394,6 +431,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                         + " context_tenant_id, context_project_id, context_environment_id, context_actor_id, context_purpose,"
                         + " context_connection_id, context_revision, context_command_id, context_attempt_no, context_attempt_token"
                         + " FROM " + TABLE + " WHERE command_id=? AND attempt_no=? AND attempt_token=?"
+                        + " ORDER BY slot"
                         + (lock ? " FOR UPDATE" : ""), this::row, key.commandId(), key.attemptNo(), key.attemptToken());
     }
 
@@ -427,7 +465,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private Journal journal(PendingSecretLease lease, boolean lock) {
         return jdbc.query("SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,"
                         + " idempotency_key, request_fingerprint, lease_until, expected_mode, expected_revision,"
-                        + " command_id, attempt_no, attempt_token FROM rg_authoring_command_journal WHERE command_id=?"
+                        + " command_id, attempt_no, attempt_token, status FROM rg_authoring_command_journal WHERE command_id=?"
                         + (lock ? " FOR UPDATE" : ""), (row, ignored) -> new Journal(row), lease.commandLease().commandId())
                 .stream().findFirst().orElseThrow(() -> failure(PendingSecretStoreException.Code.STAGE_MISSING));
     }
@@ -435,7 +473,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private Journal journal(BatchKey key, boolean lock) {
         return jdbc.query("SELECT tenant_id, project_id, environment_id, actor_id, endpoint, target_id,"
                         + " idempotency_key, request_fingerprint, lease_until, expected_mode, expected_revision,"
-                        + " command_id, attempt_no, attempt_token FROM rg_authoring_command_journal WHERE command_id=?"
+                        + " command_id, attempt_no, attempt_token, status FROM rg_authoring_command_journal WHERE command_id=?"
                         + (lock ? " FOR UPDATE" : ""), (row, ignored) -> new Journal(row), key.commandId())
                 .stream().findFirst().orElseThrow(() -> failure(PendingSecretStoreException.Code.STAGE_MISSING));
     }
@@ -636,11 +674,12 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
     private final class Journal {
         private final String tenant, project, environment, actorId, endpoint, targetId, idempotency, requestFingerprint;
         private final Instant leaseUntil; private final String expectedMode; private final Long expectedRevision;
-        private final String commandId, attemptToken; private final int attemptNo;
+        private final String commandId, attemptToken, status; private final int attemptNo;
         Journal(ResultSet rs) throws java.sql.SQLException { tenant=rs.getString(1); project=rs.getString(2); environment=rs.getString(3);
             actorId=rs.getString(4); endpoint=rs.getString(5); targetId=rs.getString(6); idempotency=rs.getString(7);
             requestFingerprint=rs.getString(8); leaseUntil=rs.getTimestamp(9).toInstant(); expectedMode=rs.getString(10);
-            expectedRevision=rs.getObject(11, Long.class); commandId=rs.getString(12); attemptNo=rs.getInt(13); attemptToken=rs.getString(14); }
+            expectedRevision=rs.getObject(11, Long.class); commandId=rs.getString(12); attemptNo=rs.getInt(13);
+            attemptToken=rs.getString(14); status=rs.getString(15); }
         boolean exact(PendingSecretLease lease) { CommandLease c=lease.commandLease(); CommandKey k=c.key();
             return tenant.equals(k.scope().tenantId())&&project.equals(k.scope().projectId())&&environment.equals(k.scope().environmentId())
                     &&actorId.equals(k.actorId())&&endpoint.equals(k.endpoint().name())&&targetId.equals(k.targetId())
@@ -659,13 +698,28 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                     && (endpoint.equals(AuthoringEndpoint.API_RESOURCE_SAVE.name()) || targetId.equals(coordinate.connectionId()));
         }
         boolean live(Instant now) { return leaseUntil.isAfter(now); }
+        /** Keeps all pending mutations behind the journal's single live state. */
+        void requirePreparing() {
+            if (!"PREPARING".equals(status)) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
+        }
+        /**
+         * Reconstructs the outer command lease from journal authority and the
+         * child CAS from the row.  Resource saves intentionally use different
+         * values for those two fences.
+         */
         PendingSecretLease lease(Row row) { AuthoringScope s = new AuthoringScope(tenant, project, environment);
             CommandKey key = new CommandKey(s, actorId, AuthoringEndpoint.valueOf(endpoint), targetId, idempotency);
-            if (row.childExpectedMode() == null) fail(PendingSecretStoreException.Code.INTEGRITY);
-            ExpectedRevision expected = "CREATE".equals(row.childExpectedMode()) ? ExpectedRevision.create()
-                    : ExpectedRevision.match(row.childExpectedRevision());
-            return new PendingSecretLease(new CommandLease(commandId, attemptNo, attemptToken, key, requestFingerprint, leaseUntil, expected),
-                    new ConnectionRevisionCoordinate(s, row.connectionId(), row.revision()), expected); }
+            ExpectedRevision outerExpected = expected(expectedMode, expectedRevision);
+            ExpectedRevision childExpected = expected(row.childExpectedMode(), row.childExpectedRevision());
+            return new PendingSecretLease(new CommandLease(commandId, attemptNo, attemptToken, key,
+                    requestFingerprint, leaseUntil, outerExpected),
+                    new ConnectionRevisionCoordinate(s, row.connectionId(), row.revision()), childExpected); }
+    }
+    private static ExpectedRevision expected(String mode, Long revision) {
+        if ("CREATE".equals(mode) && revision == null) return ExpectedRevision.create();
+        if ("MATCH".equals(mode) && revision != null && revision > 0) return ExpectedRevision.match(revision);
+        fail(PendingSecretStoreException.Code.INTEGRITY);
+        return null;
     }
     private static String mode(ExpectedRevision e) { return e instanceof ExpectedRevision.Create ? "CREATE" : "MATCH"; }
     private static Long revision(ExpectedRevision e) { return e instanceof ExpectedRevision.Match m ? (long)m.revision() : null; }

@@ -47,6 +47,7 @@ class JdbcPendingSecretStoreTest {
         migrate("db/postgresql/V20260830_004__connection_metadata_authority.sql");
         migrate("db/postgresql/V20260830_005__pending_secret_store_protocol.sql");
         migrate("db/postgresql/V20260830_006__pending_secret_store_hardening.sql");
+        migrate("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql");
     }
 
     @AfterEach
@@ -97,6 +98,40 @@ class JdbcPendingSecretStoreTest {
     }
 
     @Test
+    void nestedResourceLeaseUsesOuterJournalCasAndChildCreateCasAcrossRecovery() {
+        JdbcPendingSecretStore store = store();
+        CommandKey outerKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE,
+                "resource", "idempotency-nested-jdbc");
+        CommandLease outer = new CommandLease("nested-jdbc", 1, "nested-jdbc-token", outerKey,
+                "sha256:" + "a".repeat(64), NOW.plusSeconds(60), ExpectedRevision.match(7));
+        PendingSecretBatch batch = nestedBatch(outer, "connection", 1, ExpectedRevision.create());
+        seed(batch);
+        store.stage(batch);
+
+        assertThat(store.findExact(batch.lease())).contains(batch);
+        assertThat(store.prepareFinalization(batch,
+                List.of(activation("token", "nested-jdbc-token", "nested-jdbc-active"))))
+                .isNotNull();
+        transactions.executeWithoutResult(status -> store.commitBindings(batch,
+                List.of(activation("token", "nested-jdbc-token", "nested-jdbc-active"))));
+        assertThat(store.findActive(batch.lease().coordinate(), "token")).isPresent();
+
+        CommandKey recoveryKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE,
+                "resource-recovery", "idempotency-nested-recovery-jdbc");
+        PendingSecretBatch recoveryBatch = nestedBatch(new CommandLease("nested-recovery", 1,
+                "nested-recovery-token", recoveryKey, "sha256:" + "b".repeat(64), NOW.plusSeconds(60),
+                ExpectedRevision.match(8)), "connection-recovery", 1, ExpectedRevision.create());
+        seed(recoveryBatch);
+        store.stage(recoveryBatch);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id=?", "nested-recovery");
+        SecretAbortCandidate candidate = store.claimRecoveryDue(1).getFirst();
+        assertThat(candidate.batch()).isEqualTo(recoveryBatch);
+        store.completeAbort(candidate);
+        assertThat(store.findExact(recoveryBatch.lease())).isEmpty();
+    }
+
+    @Test
     void recoveryClaimsWholeBatchAndTerminalAbortReplayIsExact() {
         JdbcPendingSecretStore store = store();
         PendingSecretBatch batch = batch(lease("recover", 1, "recover-token", NOW.plusSeconds(60)), "token", "password");
@@ -109,6 +144,45 @@ class JdbcPendingSecretStoreTest {
         store.completeAbort(candidate);
         assertThat(store.findExact(batch.lease())).isEmpty();
         assertThat(store.claimRecoveryDue(1)).isEmpty();
+    }
+
+    @Test
+    void recoveryLimitSelectsCompleteBatchesInStableOrderBeforeLoadingSlots() {
+        JdbcPendingSecretStore store = store();
+        for (String id : List.of("batch-b", "batch-a", "batch-c")) {
+            PendingSecretBatch batch = batch(lease(id, 1, id + "-token", NOW.plusSeconds(60)), "password", "token");
+            seed(batch);
+            store.stage(batch);
+            jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=? WHERE command_id=?",
+                    java.sql.Timestamp.from(NOW.minusSeconds(60)), id);
+        }
+
+        List<SecretAbortCandidate> candidates = store.claimRecoveryDue(2);
+
+        assertThat(candidates).extracting(candidate -> candidate.batch().lease().commandLease().commandId())
+                .containsExactly("batch-a", "batch-b");
+        assertThat(candidates).allSatisfy(candidate -> assertThat(candidate.batch().operations()).hasSize(2));
+    }
+
+    @Test
+    void competingCommandCannotOverwriteAnAlreadyCommittedBinding() {
+        JdbcPendingSecretStore store = store();
+        PendingSecretBatch first = batch(lease("binding-winner", 1, "binding-winner-token", NOW.plusSeconds(60)), "token");
+        PendingSecretBatch competing = batch(lease("binding-competing", 1, "binding-competing-token", NOW.plusSeconds(60)), "token");
+        seed(first);
+        seed(competing);
+        store.stage(first);
+        store.stage(competing);
+        transactions.executeWithoutResult(status -> store.commitBindings(first,
+                List.of(activation("token", "binding-winner-token", "binding-winner-active"))));
+
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> store.commitBindings(competing,
+                List.of(activation("token", "binding-competing-token", "binding-competing-active")))))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_FENCED);
+        assertThat(store.findActive(first.lease().coordinate(), "token")).contains(
+                new com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActiveSecretBinding(
+                        "provider:one", "binding-winner-active", "binding-winner"));
     }
 
     @Test
@@ -162,6 +236,38 @@ class JdbcPendingSecretStoreTest {
     }
 
     @Test
+    void terminalJournalStatusFencesEveryPendingMutation() {
+        JdbcPendingSecretStore store = store();
+        PendingSecretBatch failed = batch(lease("terminal-failed", 1, "terminal-failed-token", NOW.plusSeconds(60)), "token");
+        seed(failed);
+        store.stage(failed);
+        jdbc.update("UPDATE rg_authoring_command_journal SET status='FAILED', failure_code='INTERNAL'"
+                + " WHERE command_id=?", failed.lease().commandLease().commandId());
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id=?", failed.lease().commandLease().commandId());
+
+        assertThatThrownBy(() -> store.stage(failed)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+        assertThatThrownBy(() -> store.markAbortRequired(failed.lease())).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+        assertThatThrownBy(() -> transactions.executeWithoutResult(status -> store.commitBindings(failed,
+                List.of(activation("token", "terminal-failed-token", "terminal-failed-active")))))
+                .isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+        assertThat(store.claimRecoveryDue(1)).isEmpty();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases"
+                + " WHERE command_id=?", Long.class, "terminal-failed")).isEqualTo(1L);
+
+        PendingSecretBatch committed = batch(lease("terminal-committed", 1, "terminal-committed-token", NOW.plusSeconds(60)), "token");
+        seed(committed);
+        jdbc.update("UPDATE rg_authoring_command_journal SET status='COMMITTED', receipt_schema='test-v1',"
+                + " receipt_json='{}', receipt_fingerprint=?, receipt_etag='\"terminal-etag\"', failure_code=NULL"
+                + " WHERE command_id=?", "sha256:" + "d".repeat(64), "terminal-committed");
+        assertThatThrownBy(() -> store.stage(committed)).isInstanceOf(PendingSecretStoreException.class)
+                .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
+    }
+
+    @Test
     void rowDeadlineIsEarlierOfCommandAndProviderExpiryWhileReceiptRoundTrips() {
         JdbcPendingSecretStore store = store();
         CommandLease lease = lease("deadline", 1, "deadline-token", NOW.plusSeconds(5));
@@ -201,7 +307,7 @@ class JdbcPendingSecretStoreTest {
                 + " target_id, idempotency_key, command_id, request_fingerprint, status, attempt_no, attempt_token,"
                 + " lease_until, expected_mode, expected_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PREPARING', ?, ?, ?, ?, ?)",
                 SCOPE.tenantId(), SCOPE.projectId(), SCOPE.environmentId(), key.actorId(), key.endpoint().name(), key.targetId(),
-                key.idempotencyKey(), lease.commandId(), "sha256:" + "a".repeat(64), lease.attemptNo(), lease.attemptToken(),
+                key.idempotencyKey(), lease.commandId(), lease.requestFingerprint(), lease.attemptNo(), lease.attemptToken(),
                 java.sql.Timestamp.from(lease.leaseUntil()), lease.expectedRevision() instanceof ExpectedRevision.Create ? "CREATE" : "MATCH",
                 lease.expectedRevision() instanceof ExpectedRevision.Match match ? (long) match.revision() : null);
         jdbc.update("MERGE INTO rg_api_connection_identities (tenant_id, project_id, environment_id, connection_id) KEY (tenant_id, project_id, environment_id, connection_id) VALUES (?, ?, ?, ?)",
@@ -231,6 +337,17 @@ class JdbcPendingSecretStoreTest {
         String connectionId = lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE ? "connection" : lease.key().targetId();
         return new PendingSecretBatch(new PendingSecretLease(lease,
                 new ConnectionRevisionCoordinate(SCOPE, connectionId, revision), lease.expectedRevision()), operations);
+    }
+
+    private PendingSecretBatch nestedBatch(CommandLease outer, String connectionId, long revision,
+                                           ExpectedRevision childExpected) {
+        SecretOperationContext context = new SecretOperationContext(SCOPE, "actor", "resource-save-child",
+                connectionId, revision, outer.commandId(), outer.attemptNo(), outer.attemptToken(), "token");
+        PreparedExternalSecret prepared = new PreparedExternalSecret("provider:one", outer.attemptToken(),
+                "opaque-locator-token", outer.leaseUntil(), context);
+        return new PendingSecretBatch(new PendingSecretLease(outer,
+                new ConnectionRevisionCoordinate(SCOPE, connectionId, revision), childExpected),
+                List.of(new PendingSecretOperation.Prepared("token", SecretSourceMode.VALUE, prepared)));
     }
 
     private CommandLease lease(String id, int attempt, String token, Instant until) {

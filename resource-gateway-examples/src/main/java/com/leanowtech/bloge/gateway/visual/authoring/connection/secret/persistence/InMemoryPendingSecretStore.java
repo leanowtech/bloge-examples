@@ -36,6 +36,8 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     private final Map<AttemptKey, Completion> completed = new HashMap<>();
     private final Map<CommandAttemptKey, AttemptKey> attemptOwners = new HashMap<>();
     private final Map<String, CommandAuthority> commandOwners = new HashMap<>();
+    /** Highest attempt observed for each exact command authority; retained as a historical fence. */
+    private final Map<CommandAuthority, AttemptKey> latestAttempts = new HashMap<>();
     private final Map<BindingKey, ActiveSecretBinding> active = new HashMap<>();
     private final Map<BindingKey, AttemptKey> activeOwners = new HashMap<>();
 
@@ -76,6 +78,11 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         if (commandOwner != null && !commandOwner.equals(authority)) {
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
+        AttemptKey latest = latestAttempts.get(authority);
+        if (latest != null && !latest.equals(key)
+                && !isLaterAttempt(batch.lease(), latest)) {
+            throw failure(PendingSecretStoreException.Code.LEASE_FENCED);
+        }
         Map<String, ActiveSecretBinding> retained = snapshotRetained(batch);
         Instant now = clock.instant();
         Instant deadline = effectiveDeadline(batch);
@@ -83,6 +90,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         entries.put(key, new Entry(batch, retained, State.PENDING, deadline, now, null, null));
         attemptOwners.put(attempt, key);
         commandOwners.putIfAbsent(batch.lease().commandLease().commandId(), authority);
+        latestAttempts.put(authority, key);
     }
 
     @Override public synchronized Optional<PendingSecretBatch> findExact(PendingSecretLease lease) {
@@ -128,8 +136,14 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         }
         FinalizedSecretSlots proof = prepareFinalization(batch, outputs);
         Entry entry = requireEntry(batch.lease());
+        requireLatestAttempt(entry);
         Map<BindingKey, ActiveSecretBinding> writes = new HashMap<>();
         for (PendingSecretOperation operation : entry.batch.operations()) {
+            BindingKey bindingKey = new BindingKey(batch.lease().coordinate(), operation.slot());
+            AttemptKey activeOwner = activeOwners.get(bindingKey);
+            if (activeOwner != null && !activeOwner.commandId.equals(key.commandId)) {
+                throw failure(PendingSecretStoreException.Code.LEASE_FENCED);
+            }
             ActiveSecretBinding binding;
             if (operation instanceof PendingSecretOperation.Retained) {
                 ActiveSecretBinding old = entry.retained.get(operation.slot());
@@ -141,7 +155,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                 binding = new ActiveSecretBinding(result.providerId(), result.activeLocator(),
                         batch.lease().commandLease().commandId());
             }
-            writes.put(new BindingKey(batch.lease().coordinate(), operation.slot()), binding);
+            writes.put(bindingKey, binding);
         }
         active.putAll(writes);
         for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, key);
@@ -356,6 +370,21 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                 activeOwners.remove(bindingKey);
             }
         }
+    }
+
+    /** Rejects a commit from an attempt that has already been superseded for this authority. */
+    private void requireLatestAttempt(Entry entry) {
+        AttemptKey key = key(entry.batch.lease());
+        if (!key.equals(latestAttempts.get(authority(entry.batch.lease())))) {
+            throw failure(PendingSecretStoreException.Code.LEASE_FENCED);
+        }
+    }
+
+    /** Only a higher numbered retry of the same command may replace the latest attempt. */
+    private boolean isLaterAttempt(PendingSecretLease lease, AttemptKey prior) {
+        CommandLease command = lease.commandLease();
+        return command.commandId().equals(prior.commandId)
+                && command.attemptNo() > prior.attemptNo;
     }
 
     private static AttemptKey key(PendingSecretLease lease) {
