@@ -41,7 +41,6 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
     project_id VARCHAR(128) NOT NULL,
     environment_id VARCHAR(128) NOT NULL,
     connection_id VARCHAR(128) NOT NULL,
-    display_name VARCHAR(200) NOT NULL,
     revision BIGINT NOT NULL,
     command_id VARCHAR(128) NOT NULL,
     state VARCHAR(16) NOT NULL,
@@ -55,7 +54,6 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
     auth_kind VARCHAR(16) NOT NULL,
     basic_username VARCHAR(256),
     api_key_header VARCHAR(256),
-    secret_slot VARCHAR(32),
     strong_etag VARCHAR(256) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -101,13 +99,12 @@ CREATE TABLE IF NOT EXISTS rg_api_connection_revisions (
          AND base_url NOT LIKE '%?%' AND base_url NOT LIKE '%#%'),
     CONSTRAINT rg_api_connection_revisions_timeout_ck CHECK (timeout_ms BETWEEN 100 AND 120000),
     CONSTRAINT rg_api_connection_revisions_auth_ck CHECK
-        ((auth_kind = 'NONE' AND basic_username IS NULL AND api_key_header IS NULL AND secret_slot IS NULL)
-         OR (auth_kind = 'BEARER' AND basic_username IS NULL AND api_key_header IS NULL
-             AND secret_slot IS NOT NULL AND secret_slot = 'token')
+        ((auth_kind = 'NONE' AND basic_username IS NULL AND api_key_header IS NULL)
+         OR (auth_kind = 'BEARER' AND basic_username IS NULL AND api_key_header IS NULL)
          OR (auth_kind = 'BASIC' AND basic_username IS NOT NULL AND CHAR_LENGTH(TRIM(basic_username)) > 0
-             AND api_key_header IS NULL AND secret_slot IS NOT NULL AND secret_slot = 'password')
+             AND api_key_header IS NULL)
          OR (auth_kind = 'API_KEY' AND basic_username IS NULL AND api_key_header IS NOT NULL
-             AND CHAR_LENGTH(TRIM(api_key_header)) > 0 AND secret_slot IS NOT NULL AND secret_slot = 'value')),
+             AND CHAR_LENGTH(TRIM(api_key_header)) > 0)),
     CONSTRAINT rg_api_connection_revisions_etag_ck CHECK
         (CHAR_LENGTH(strong_etag) >= 3 AND strong_etag LIKE '"%"' AND strong_etag NOT LIKE '"W/%')
 );

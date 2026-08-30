@@ -48,14 +48,14 @@ class ApiConnectionSchemaReadinessTest {
         jdbc.execute("DROP TABLE rg_api_connection_heads");
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
 
         jdbc.execute("DROP ALL OBJECTS");
         applyMigrations();
         jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP COLUMN view_json");
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -64,7 +64,7 @@ class ApiConnectionSchemaReadinessTest {
         jdbc.execute("ALTER TABLE rg_api_connection_revisions DROP COLUMN display_name");
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
 
         jdbc.execute("DROP ALL OBJECTS");
         applyMigrations();
@@ -72,14 +72,14 @@ class ApiConnectionSchemaReadinessTest {
         jdbc.execute("ALTER TABLE rg_api_connection_revisions ADD display_name VARCHAR(201) NOT NULL");
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
 
         jdbc.execute("DROP ALL OBJECTS");
         applyMigrations();
         jdbc.execute("ALTER TABLE rg_api_connection_revisions ALTER COLUMN secret_slot SET NOT NULL");
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -107,7 +107,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -119,7 +119,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -129,7 +129,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -143,7 +143,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -167,6 +167,8 @@ class ApiConnectionSchemaReadinessTest {
                         '"etag"', 'resource-cmd', 1, 'attempt-1')
                 """, "sha256:" + "b".repeat(64));
         applyMigration("V20260830_003__api_connection_secret_staging.sql");
+        applyMigration("V20260830_004__connection_metadata_authority.sql");
+        new ApiConnectionSchemaReadiness(jdbc);
 
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_identities", Integer.class))
                 .isEqualTo(1);
@@ -185,11 +187,38 @@ class ApiConnectionSchemaReadinessTest {
                 "rg_api_connection_revisions_command_uq", "rg_api_connection_revisions_revision_attempt_uq",
                 "rg_api_connection_revisions_etag_uq", "rg_api_connection_revisions_state_etag_uq",
                 "rg_api_connection_revisions_revision_state_uq", "revision_state",
-                "display_name varchar(200) not null", "secret_slot varchar(32)",
                 "rg_api_resource_revisions_connection_fk", "on delete restrict");
         assertThat(sql).doesNotContain("activated");
         assertThat(sql).doesNotContain("secret_value", "secret_plaintext", "secret_ciphertext",
                 "secret_ref_json", "credential_json", "password_value", "token_value");
+
+        String authoritySql = Files.readString(Path.of("src/main/resources/db/postgresql/"
+                + "V20260830_004__connection_metadata_authority.sql")).toLowerCase();
+        assertThat(authoritySql).contains("add column display_name varchar(200) not null",
+                "add column secret_slot varchar(32)", "drop constraint rg_api_connection_revisions_auth_ck",
+                "secret_slot = 'token'", "secret_slot = 'password'", "secret_slot = 'value'");
+    }
+
+    @Test
+    void missingAuthorityMigrationFailsClosedAfterV003() {
+        applyMigrationsThroughSecond();
+        applyMigration("V20260830_003__api_connection_secret_staging.sql");
+
+        assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("V20260830_004");
+    }
+
+    @Test
+    void authorityMigrationFailsFastWhenExistingConnectionRevisionNeedsUnderivedDisplayName() {
+        applyMigrationsThroughSecond();
+        applyMigration("V20260830_003__api_connection_secret_staging.sql");
+        insertJournalFor("legacy-command", "legacy-key", "legacy-connection", 1, "legacy-attempt");
+        insertIdentity("legacy-connection");
+        insertRevisionWithoutAuthorityColumns("legacy-connection", "legacy-command");
+
+        assertThatThrownBy(() -> applyMigration("V20260830_004__connection_metadata_authority.sql"))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
@@ -426,7 +455,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -442,7 +471,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -455,7 +484,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -469,7 +498,7 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     @Test
@@ -482,11 +511,22 @@ class ApiConnectionSchemaReadinessTest {
 
         assertThatThrownBy(() -> new ApiConnectionSchemaReadiness(jdbc))
                 .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("V20260830_003");
+                .hasMessageContaining("V20260830_004");
     }
 
     private void insertRevision(String connectionId) {
         insertRevision(connectionId, "cmd-1", 1, "attempt-1", "STAGED", "\"etag\"", "https://example.com");
+    }
+
+    private void insertRevisionWithoutAuthorityColumns(String connectionId, String commandId) {
+        jdbc.update("""
+                INSERT INTO rg_api_connection_revisions
+                    (tenant_id, project_id, environment_id, connection_id, revision, command_id, state,
+                     attempt_no, attempt_token, view_json, metadata_fingerprint, base_url,
+                     defaults_headers_json, timeout_ms, auth_kind, basic_username, api_key_header, strong_etag)
+                VALUES ('t', 'p', 'e', ?, 1, ?, 'STAGED', 1, 'legacy-attempt', '{}', ?,
+                        'https://example.com/legacy', '{}', 30000, 'NONE', NULL, NULL, '"legacy-etag"')
+                """, connectionId, commandId, "sha256:" + "b".repeat(64));
     }
 
     private void insertRevision(String connectionId, String commandId, int attemptNo, String attemptToken,
@@ -542,6 +582,7 @@ class ApiConnectionSchemaReadinessTest {
     private void applyMigrations() {
         applyMigrationsThroughSecond();
         applyMigration("V20260830_003__api_connection_secret_staging.sql");
+        applyMigration("V20260830_004__connection_metadata_authority.sql");
     }
 
     private void applyMigrationsThroughSecond() {

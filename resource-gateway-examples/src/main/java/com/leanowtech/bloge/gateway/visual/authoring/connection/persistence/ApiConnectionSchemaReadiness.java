@@ -21,14 +21,15 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Fail-closed, read-only startup probe for the API Connection staging schema.
+ * Fail-closed, read-only startup probe for the API Connection staging schema
+ * after V20260830_003 and the additive V20260830_004 authority migration.
  * The probe checks every table and column used by the persistence contract and
  * the keys and checks that keep staged revisions and opaque leases scope-bound.
  * Active secret bindings must point at a committed revision and expose only the
  * provider locator and command metadata needed for runtime hydration.
  */
 public final class ApiConnectionSchemaReadiness {
-    private static final String MIGRATION = "V20260830_003";
+    private static final String MIGRATION = "V20260830_004";
     private static final String[] REQUIRED_QUERIES = {
             "SELECT tenant_id, project_id, environment_id, connection_id, created_at, updated_at "
                     + "FROM rg_api_connection_identities WHERE 1 = 0",
