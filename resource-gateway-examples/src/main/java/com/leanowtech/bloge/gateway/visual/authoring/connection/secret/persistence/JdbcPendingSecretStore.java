@@ -39,10 +39,12 @@ import java.util.stream.Collectors;
  *
  * <p>The store persists provider preparation metadata as opaque handles only.
  * Provider lifecycle calls are deliberately outside this class and outside the
- * JDBC transaction. {@link #commitBindings(PendingSecretBatch, List)} is the
- * one explicit composite boundary: it requires the caller's exact
- * {@link DataSource} transaction so connection metadata, bindings and the
- * outer resource receipt can commit or roll back together.</p>
+ * JDBC transaction. Stage, preparation, recovery selection, and abort
+ * compensation may each own a local store transaction. {@link
+ * #commitBindings(PendingSecretBatch, List)} is the one explicit composite
+ * boundary: it requires the caller's exact {@link DataSource} transaction so
+ * connection metadata, bindings, and the outer resource receipt can commit or
+ * roll back together.</p>
  */
 public final class JdbcPendingSecretStore implements PendingSecretStore {
     private static final String TABLE = "rg_api_connection_pending_secret_leases";
@@ -115,7 +117,10 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
             List<Row> rows = rows(lease, false);
             if (rows.isEmpty()) return Optional.empty();
             Journal journal = journal(lease, false);
-            if (!journal.exact(lease) || !journal.preparing()) return Optional.empty();
+            if (!journal.exact(lease) || !journal.recoverable()
+                    || (journal.isCurrent() && (journal.current == null || !"PREPARING".equals(journal.current.status())))) {
+                return Optional.empty();
+            }
             PendingSecretBatch stored = restore(rows);
             return stored.lease().equals(lease) ? Optional.of(stored) : Optional.empty();
         } catch (RuntimeException failure) {
@@ -249,7 +254,8 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                   FROM rg_api_connection_pending_secret_leases p
                   JOIN rg_authoring_command_attempts a
                     ON a.command_id=p.command_id AND a.attempt_no=p.attempt_no
-                   AND a.attempt_token=p.attempt_token AND a.status='PREPARING'
+                   AND a.attempt_token=p.attempt_token
+                   AND a.status IN ('PREPARING', 'SUPERSEDED')
                  WHERE NOT EXISTS (SELECT 1
                                      FROM rg_api_connection_pending_secret_leases claimed
                                     WHERE claimed.command_id=p.command_id
@@ -301,16 +307,19 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         String fingerprint = fingerprint(candidate.batch(), List.of());
         if (journal.isCurrent()) {
             jdbc.update("DELETE FROM rg_api_connection_secret_bindings WHERE tenant_id=? AND project_id=?"
-                            + " AND environment_id=? AND connection_id=? AND revision=? AND command_id=?",
+                            + " AND environment_id=? AND connection_id=? AND revision=? AND command_id=?"
+                            + " AND attempt_no=? AND attempt_token=?",
                     scope(candidate.batch()).tenantId(), scope(candidate.batch()).projectId(), scope(candidate.batch()).environmentId(),
-                    coordinate(candidate.batch()).connectionId(), coordinate(candidate.batch()).revision(), lease.commandLease().commandId());
+                    coordinate(candidate.batch()).connectionId(), coordinate(candidate.batch()).revision(), lease.commandLease().commandId(),
+                    lease.commandLease().attemptNo(), lease.commandLease().attemptToken());
         }
         jdbc.update("INSERT INTO " + OUTCOMES
                         + " (command_id, attempt_no, attempt_token, outcome, outcome_fingerprint, slots_csv, recovery_claim_token) VALUES (?, ?, ?, 'ABORTED', ?, ?, ?)",
                 lease.commandLease().commandId(), lease.commandLease().attemptNo(), lease.commandLease().attemptToken(),
                 fingerprint, slotsCsv(candidate.batch().operations()), candidate.recoveryClaimToken());
         if (jdbc.update("UPDATE rg_authoring_command_attempts SET status='FAILED', updated_at=CURRENT_TIMESTAMP"
-                + " WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='PREPARING'",
+                + " WHERE command_id=? AND attempt_no=? AND attempt_token=?"
+                + " AND status IN ('PREPARING', 'SUPERSEDED')",
                 lease.commandLease().commandId(), lease.commandLease().attemptNo(),
                 lease.commandLease().attemptToken()) != 1) {
             fail(PendingSecretStoreException.Code.RECOVERY_STATE);
@@ -425,9 +434,11 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         if (identities.isEmpty()) fail(PendingSecretStoreException.Code.INTEGRITY);
         jdbc.query("SELECT command_id FROM rg_api_connection_revisions"
                         + " WHERE tenant_id=? AND project_id=? AND environment_id=? AND connection_id=?"
-                        + " AND revision=? FOR UPDATE", (row, ignored) -> row.getString(1),
+                        + " AND revision=? AND command_id=? AND attempt_no=? AND attempt_token=? FOR UPDATE",
+                (row, ignored) -> row.getString(1),
                 scope(batch).tenantId(), scope(batch).projectId(), scope(batch).environmentId(),
-                target.connectionId(), target.revision());
+                target.connectionId(), target.revision(), batch.lease().commandLease().commandId(),
+                batch.lease().commandLease().attemptNo(), batch.lease().commandLease().attemptToken());
     }
 
     /** Writes only an owned binding; a competing command can never be overwritten by this update. */
@@ -437,15 +448,18 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
                 coordinate(batch).connectionId(), coordinate(batch).revision(), slot};
         int updated = jdbc.update("UPDATE rg_api_connection_secret_bindings SET provider_id=?, active_locator=?,"
                         + " updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND environment_id=?"
-                        + " AND connection_id=? AND revision=? AND slot=? AND command_id=?",
-                binding.providerId(), binding.activeLocator(), key[0], key[1], key[2], key[3], key[4], key[5], commandId);
+                        + " AND connection_id=? AND revision=? AND slot=? AND command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?",
+                binding.providerId(), binding.activeLocator(), key[0], key[1], key[2], key[3], key[4], key[5], commandId,
+                batch.lease().commandLease().attemptNo(), batch.lease().commandLease().attemptToken());
         if (updated == 1) return;
         try {
             if (jdbc.update("INSERT INTO rg_api_connection_secret_bindings"
                             + " (tenant_id, project_id, environment_id, connection_id, revision, revision_state,"
-                            + " slot, provider_id, active_locator, command_id) VALUES (?, ?, ?, ?, ?, 'COMMITTED', ?, ?, ?, ?)",
+                            + " slot, provider_id, active_locator, command_id, attempt_no, attempt_token)"
+                            + " VALUES (?, ?, ?, ?, ?, 'COMMITTED', ?, ?, ?, ?, ?, ?)",
                     key[0], key[1], key[2], key[3], key[4], key[5], binding.providerId(), binding.activeLocator(),
-                    commandId) != 1) {
+                    commandId, batch.lease().commandLease().attemptNo(), batch.lease().commandLease().attemptToken()) != 1) {
                 fail(PendingSecretStoreException.Code.INTEGRITY);
             }
         } catch (org.springframework.dao.DuplicateKeyException duplicate) {
@@ -790,15 +804,16 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         }
 
         boolean preparing() { return "PREPARING".equals(attempt.status()); }
+        boolean recoverable() { return preparing() || "SUPERSEDED".equals(attempt.status()); }
         boolean live(Instant now) { return attempt.leaseUntil().isAfter(now); }
         boolean isCurrent() {
             return current != null && current.attemptNo() == attempt.attemptNo()
                     && current.attemptToken().equals(attempt.attemptToken());
         }
 
-        /** Historical recovery only needs the exact immutable attempt to remain preparing. */
+        /** Historical recovery accepts an expired current attempt after takeover. */
         void requirePreparing() {
-            if (!preparing()) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
+            if (!recoverable()) fail(PendingSecretStoreException.Code.RECOVERY_STATE);
             if (isCurrent() && (current == null || !"PREPARING".equals(current.status()))) {
                 fail(PendingSecretStoreException.Code.RECOVERY_STATE);
             }
@@ -807,6 +822,7 @@ public final class JdbcPendingSecretStore implements PendingSecretStore {
         /** Normal stage/finalization mutations additionally require the current journal pointer. */
         void requireCurrentPreparing() {
             requirePreparing();
+            if (!preparing()) fail(PendingSecretStoreException.Code.LEASE_FENCED);
             if (!isCurrent()) fail(PendingSecretStoreException.Code.LEASE_FENCED);
             if (current == null || !"PREPARING".equals(current.status())) {
                 fail(PendingSecretStoreException.Code.RECOVERY_STATE);

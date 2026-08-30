@@ -101,11 +101,13 @@ public abstract class PendingSecretStoreContractTest {
     @Test void wrongProviderOrLeaseActivationIsRejected() {
         PendingSecretStore store = newStore(fixedClock());
         CommandLease lease = lease("provider", 1, "p-token", NOW.plusSeconds(60));
-        PendingSecretBatch batch = batch(lease, "token");
+        PendingSecretBatch batch = batch(lease, "token", "password");
         store.stage(batch);
-        ActivatedSecretSlot wrong = new ActivatedSecretSlot("token",
-                new ActivatedExternalSecret("other-provider", "p-token", "active"));
-        assertThatThrownBy(() -> store.commitBindings(batch, List.of(wrong)))
+        List<ActivatedSecretSlot> wrong = List.of(
+                new ActivatedSecretSlot("token",
+                        new ActivatedExternalSecret("other-provider", "p-token", "active")),
+                activation("password", "p-token", "password-active"));
+        assertThatThrownBy(() -> store.commitBindings(batch, wrong))
                 .isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.ACTIVATION_MISMATCH);
     }

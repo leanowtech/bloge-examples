@@ -18,9 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Readiness and fail-closed evidence for the forward-only pending-secret V007/V008
- * closure. The fixture deliberately starts at V006 so this test exercises the
- * upgrade boundary rather than only a clean current schema.
+ * Readiness and fail-closed evidence for the forward-only pending-secret
+ * V007–V010 closure. The fixture deliberately starts at V006 so this test
+ * exercises upgrade boundaries rather than only a clean current schema.
  */
 class PendingSecretStoreSchemaReadinessTest {
     private static final Instant JOURNAL_DEADLINE = Instant.parse("2026-01-01T00:00:10Z");
@@ -137,6 +137,48 @@ class PendingSecretStoreSchemaReadinessTest {
                 "RG_API_RESOURCE_REVISIONS_COMMAND_FK")).isEqualTo("RG_AUTH");
     }
 
+    @Test
+    void v010BackfillsExactHeadAndBindingAttemptAndAllowsReplacementProvenance() {
+        insertFixture("v010-authority", "MATCH", 2L, PROVIDER_DEADLINE);
+
+        applyV007();
+        applyV008();
+        applyV009();
+        jdbc.update("INSERT INTO rg_api_connection_heads"
+                + " (tenant_id, project_id, environment_id, connection_id, revision, command_id,"
+                + " strong_etag, revision_state) VALUES ('t', 'p', 'e', 'connection', 3,"
+                + " 'v010-authority', '\"etag-v010-authority\"', 'COMMITTED')");
+        jdbc.update("INSERT INTO rg_api_connection_secret_bindings"
+                + " (tenant_id, project_id, environment_id, connection_id, revision, revision_state,"
+                + " slot, provider_id, active_locator, command_id) VALUES ('t', 'p', 'e', 'connection', 3,"
+                + " 'COMMITTED', 'token', 'provider:one', 'active', 'v010-authority')");
+
+        applyV010();
+
+        assertThat(jdbc.queryForObject("SELECT attempt_no FROM rg_api_connection_heads"
+                        + " WHERE command_id='v010-authority'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT attempt_token FROM rg_api_connection_heads"
+                        + " WHERE command_id='v010-authority'", String.class)).isEqualTo("v010-authority-attempt");
+        assertThat(jdbc.queryForObject("SELECT attempt_no FROM rg_api_connection_secret_bindings"
+                        + " WHERE command_id='v010-authority'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT attempt_token FROM rg_api_connection_secret_bindings"
+                        + " WHERE command_id='v010-authority'", String.class)).isEqualTo("v010-authority-attempt");
+        assertThat(foreignKeyTarget("RG_API_CONNECTION_HEADS", "RG_API_CONNECTION_HEADS_REVISION_FK"))
+                .isEqualTo("RG_API_CONNECTION_REVISIONS");
+        assertThat(foreignKeyTarget("RG_API_CONNECTION_SECRET_BINDINGS",
+                "RG_API_CONNECTION_SECRET_BINDINGS_REVISION_FK")).isEqualTo("RG_API_CONNECTION_REVISIONS");
+        assertThat(foreignKeyColumns("RG_API_CONNECTION_HEADS_REVISION_FK"))
+                .contains("ATTEMPT_NO", "ATTEMPT_TOKEN");
+        assertThat(foreignKeyColumns("RG_API_CONNECTION_SECRET_BINDINGS_REVISION_FK"))
+                .contains("ATTEMPT_NO", "ATTEMPT_TOKEN");
+
+        jdbc.update("UPDATE rg_authoring_command_attempts SET status='SUPERSEDED'"
+                + " WHERE command_id='v010-authority' AND attempt_no=1");
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id='v010-authority' AND attempt_no=1", String.class)).isEqualTo("SUPERSEDED");
+        insertReplacementRevision();
+    }
+
     private String foreignKeyTarget(String table, String constraint) {
         String referenced = jdbc.query("SELECT tc.TABLE_NAME"
                         + " FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS rc"
@@ -167,6 +209,34 @@ class PendingSecretStoreSchemaReadinessTest {
 
     private void applyV009() {
         applyMigration("V20260831_009__authoring_command_attempt_authority.sql");
+    }
+
+    private void applyV010() {
+        applyMigration("V20260831_010__attempt_provenance_closure.sql");
+    }
+
+    private java.util.List<String> foreignKeyColumns(String constraint) {
+        return jdbc.query("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE"
+                        + " WHERE CONSTRAINT_SCHEMA=SCHEMA() AND CONSTRAINT_NAME=?"
+                        + " ORDER BY ORDINAL_POSITION", (row, ignored) -> row.getString(1), constraint);
+    }
+
+    private void insertReplacementRevision() {
+        String token = "v010-replacement-attempt";
+        jdbc.update("INSERT INTO rg_authoring_command_attempts"
+                + " (tenant_id, project_id, environment_id, actor_id, endpoint, target_id, idempotency_key,"
+                + " command_id, request_fingerprint, status, attempt_no, attempt_token, lease_until,"
+                + " expected_mode, expected_revision) VALUES ('t', 'p', 'e', 'actor', 'API_CONNECTION_SAVE',"
+                + " 'connection', 'idempotency-v010-authority', 'v010-authority', ?, 'PREPARING', 2, ?, ?,"
+                + " 'MATCH', 2)", "sha256:" + "a".repeat(64), token,
+                Timestamp.from(JOURNAL_DEADLINE.plusSeconds(30)));
+        jdbc.update("INSERT INTO rg_api_connection_revisions"
+                + " (tenant_id, project_id, environment_id, connection_id, revision, command_id, state,"
+                + " attempt_no, attempt_token, display_name, secret_slot, view_json, metadata_fingerprint, base_url,"
+                + " defaults_headers_json, timeout_ms, auth_kind, basic_username, api_key_header, strong_etag)"
+                + " VALUES ('t', 'p', 'e', 'connection', 3, 'v010-authority', 'STAGED', 2, ?, 'replacement',"
+                + " 'token', '{}', ?, 'https://example.com', '{}', 1000, 'BEARER', NULL, NULL, '\"replacement\"')",
+                token, "sha256:" + "c".repeat(64));
     }
 
     private void applyMigration(String name) {

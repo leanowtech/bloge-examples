@@ -37,7 +37,7 @@ import java.util.ArrayList;
  * JDBC-backed, transactionally fenced API Resource authoring store.
  *
  * <p>All mutations require the exact persisted PREPARING attempt.  V001 through
- * V009 migrations must be installed before this class is constructed; this
+ * V010 migrations must be installed before this class is constructed; this
  * repository intentionally never applies or falls back from migrations.</p>
  */
 public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore {
@@ -159,6 +159,10 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         if (prior != null && !fingerprint.equals(prior.requestFingerprint())) {
             return new ClaimResult.Conflict("idempotency fingerprint conflict");
         }
+        if (prior != null && (!prior.expectedMode().equals(expectedMode(expected))
+                || !Objects.equals(prior.expectedRevision(), expectedRevision(expected)))) {
+            return new ClaimResult.Conflict("expected revision conflict");
+        }
         if (prior != null && "COMMITTED".equals(prior.status())) {
             return new ClaimResult.Replay(receipt(prior));
         }
@@ -188,6 +192,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
         } else {
             // Keep the expired attempt immutable. Its pending-secret rows may
             // still need recovery after this current-journal pointer advances.
+            supersedeAttempt(prior);
             insertAttempt(incoming, now);
             jdbc.update("DELETE FROM rg_api_resource_revisions WHERE command_id = ? AND attempt_no = ? "
                     + "AND attempt_token = ? AND state = 'STAGED'", commandId, prior.attemptNo(), prior.attemptToken());
@@ -202,6 +207,17 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                     OffsetDateTime.ofInstant(now, ZoneOffset.UTC), commandId);
         }
         return new ClaimResult.Acquired(incoming, resumed);
+    }
+
+    /** Closes an expired current attempt before the mutable journal points at its replacement. */
+    private void supersedeAttempt(JournalRow prior) {
+        if (!"PREPARING".equals(prior.status())) return;
+        if (jdbc.update("UPDATE rg_authoring_command_attempts SET status='SUPERSEDED',"
+                        + " updated_at=CURRENT_TIMESTAMP WHERE command_id=? AND attempt_no=?"
+                        + " AND attempt_token=? AND status='PREPARING'", prior.commandId(), prior.attemptNo(),
+                prior.attemptToken()) != 1) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "command attempt state changed");
+        }
     }
 
     /** Inserts one immutable command-attempt authority row before moving the journal pointer. */
@@ -391,6 +407,7 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
                 rs.getString("command_id"), rs.getString("request_fingerprint"),
                 rs.getString("status"), rs.getInt("attempt_no"),
                 rs.getString("attempt_token"), timestamp(rs, "lease_until"),
+                rs.getString("expected_mode"), rs.getObject("expected_revision", Long.class),
                 rs.getString("receipt_schema"), rs.getString("receipt_json"),
                 rs.getString("receipt_fingerprint"), rs.getString("receipt_etag"));
     }
@@ -431,7 +448,8 @@ public final class JdbcApiResourceCommitStore implements ApiResourceCommitStore 
     }
 
     private record JournalRow(String commandId, String requestFingerprint, String status, int attemptNo,
-                              String attemptToken, Instant leaseUntil, String receiptSchema, String receiptJson,
+                              String attemptToken, Instant leaseUntil, String expectedMode, Long expectedRevision,
+                              String receiptSchema, String receiptJson,
                               String receiptFingerprint, String receiptEtag) { }
 
     private record AttemptAuthority(String tenantId, String projectId, String environmentId, String actorId,

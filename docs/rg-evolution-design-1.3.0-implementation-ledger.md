@@ -84,34 +84,46 @@ accepted Facade/UI chain above.
 
 The in-memory implementation remains the exact reference model for complete
 batch replay, latest-attempt and competing-command fences, staged invisibility,
-KEEP_EXISTING behavior, and recovery claims. The JDBC implementation now
-reconstructs the outer `CommandLease` expected revision from the command journal
-and the child connection expected revision from each row, loads journal status,
-and allows stage, abort, recovery, and finalization only while that journal is
-`PREPARING`. Stage and recovery may own local JDBC transactions; only the final
-binding commit requires the coordinator's ambient transaction.
+`KEEP_EXISTING` behavior, and recovery claims. The JDBC implementation
+reconstructs the outer `CommandLease` expected revision from immutable attempt
+authority and the child connection expected revision from each pending row.
+Every current stage, abort, prepare, and finalization mutation requires the
+exact current `PREPARING` attempt; recovery may reconstruct an exact historical
+`PREPARING` or `SUPERSEDED` attempt. Stage and recovery may own local JDBC
+transactions; only the final binding commit requires the coordinator's ambient
+transaction.
 
 Recovery selection is DB-bounded by complete batches, has stable ordering, and
-excludes batches with a still-live recovery claim before applying the limit. Lease
-decisions use the database clock. V007 remains an append-only historical
-migration: it clamps `lease_until` to the earlier provider/journal deadline while
-preserving `provider_lease_until`. V008 is forward-only and replaces the
-three-valued child-CAS check with an explicit non-null boolean closure; executable
-readiness tests prove both rejection of `MATCH` plus `NULL` and fail-closed
-upgrade behavior for legacy rows that cannot be proven safe.
+excludes batches with a still-live recovery claim before applying the limit. A
+CAS retry loop continues to later candidates after a concurrent worker claims an
+earlier batch. Lease decisions use the database clock. V007 remains an
+append-only historical migration: it clamps `lease_until` to the earlier
+provider/journal deadline while preserving `provider_lease_until`. V008 is
+forward-only and replaces the three-valued child-CAS check with an explicit
+non-null boolean closure; executable readiness tests prove both rejection of
+`MATCH` plus `NULL` and fail-closed upgrade behavior for legacy rows that cannot
+be proven safe.
 
-JDBC parity is exercised by a direct H2 PostgreSQL-mode harness with database
-seeding and ambient-transaction assertions: 26 JDBC tests cover the backend-
-applicable shared cases, including nested outer/child CAS, terminal status,
-takeover and recovery claims, KEEP_EXISTING, database-time expiry, rollback,
-replay, and binding ownership. The harness is intentionally not an inherited
-copy of the pure contract because the durable schema has one authoritative
-journal row per `command_id`, uses database time, and requires the final commit's
-ambient transaction; the pure value-object tests remain in the shared contract,
-and the simultaneous-attempt case is not representable by that schema.
-The focused persistence regression is 62/62 green: 26 JDBC, 30 in-memory, and
-6 migration-readiness tests. Real PostgreSQL, `AuthoringFacade`, HTTP endpoints,
-and UI acceptance remain outside this seam.
+V009 stores immutable command-attempt authority, and V010 adds the
+`SUPERSEDED` lifecycle, a command-to-journal parent foreign key, and exact
+attempt provenance to Connection heads and active bindings. Takeover closes the
+prior `PREPARING` attempt before advancing the mutable journal pointer. Binding
+commit locks the scoped Connection identity and exact parent revision in a
+consistent order, then updates only the same command/attempt; a competing owner
+is `LEASE_FENCED`, and a rolled-back transaction leaves the row available to a
+later winner. Historical pending rows remain recoverable after takeover and are
+closed as `FAILED` only by exact compensation.
+
+JDBC evidence is exercised by a direct H2 `MODE=PostgreSQL` harness with
+database seeding and ambient-transaction assertions. The current focused
+regression is 89/89 green: `JdbcApiConnectionCommitStoreTest` 40,
+`JdbcApiResourceCommitStoreClaimTest` 11, `JdbcPendingSecretStoreTest` 30,
+and `PendingSecretStoreSchemaReadinessTest` 8. The Pending suite includes
+separate JDBC connections and transaction latches for one binding winner,
+rollback-then-loser-wins, and distinct concurrent recovery claims; the
+readiness suite executes V010 backfill and replacement-provenance checks.
+This is H2-only evidence, not real PostgreSQL certification. `AuthoringFacade`,
+HTTP endpoints, and UI acceptance remain outside this seam.
 
 ## Final gate evidence
 

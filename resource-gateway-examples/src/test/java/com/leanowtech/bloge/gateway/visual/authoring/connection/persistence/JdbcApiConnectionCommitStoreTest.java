@@ -68,6 +68,7 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         migrate("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql");
         migrate("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql");
         migrate("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql");
+        migrate("db/postgresql/V20260831_010__attempt_provenance_closure.sql");
         return new JdbcApiConnectionCommitStore(dataSource, new ObjectMapper(),
                 new ApiConnectionDecisions(), clock);
     }
@@ -208,6 +209,11 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         CommandLease current = new CommandLease("takeover", 2, "new-token", old.key(), old.requestFingerprint(),
                 databaseNow.plusSeconds(30), ExpectedRevision.create());
         store.stage(old, "customer", ExpectedRevision.create(), noneCommand());
+        CommandLease driftedOuterCas = new CommandLease("takeover", 2, "drifted-token", old.key(),
+                old.requestFingerprint(), databaseNow.plusSeconds(30), ExpectedRevision.match(3));
+        assertThatThrownBy(() -> store.stage(driftedOuterCas, "customer", ExpectedRevision.match(3),
+                renamedCommand("Drifted"))).isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
         assertThatThrownBy(() -> store.stage(current, "customer", ExpectedRevision.create(),
                 renamedCommand("Current"))).isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
@@ -219,6 +225,9 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 old.commandId(), old.attemptNo(), old.attemptToken());
         StagedApiConnection replacement = store.stage(current, "customer", ExpectedRevision.create(),
                 renamedCommand("Current"));
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=1 AND attempt_token=?", String.class,
+                old.commandId(), old.attemptToken())).isEqualTo("SUPERSEDED");
         store.fail(withLeaseUntil(old, expiredUntil));
         assertThatThrownBy(() -> store.commit(old)).isInstanceOf(ApiConnectionCommitStoreException.class);
         assertThat(store.commit(current)).isEqualTo(new StoredApiConnection(SCOPE, replacement.view(),

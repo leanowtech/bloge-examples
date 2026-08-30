@@ -61,6 +61,7 @@ class JdbcApiResourceCommitStoreMutationTest {
         applyMigration("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql", dataSource);
         applyMigration("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql", dataSource);
         applyMigration("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql", dataSource);
+        applyMigration("db/postgresql/V20260831_010__attempt_provenance_closure.sql", dataSource);
         jdbc.update("INSERT INTO rg_api_connection_identities"
                 + " (tenant_id, project_id, environment_id, connection_id) VALUES ('tenant', 'project', 'dev', 'connection')");
         jdbc.update("INSERT INTO rg_api_connection_identities"

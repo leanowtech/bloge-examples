@@ -22,6 +22,13 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -35,19 +42,21 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * clock for lease decisions, and requires the coordinator's ambient transaction
  * for the final binding commit. The tests below port every store-level contract
  * case that is meaningful under those durable boundaries; the pure value-object
- * cases remain in the shared contract, while the in-memory-only simultaneous
- * command-attempt case is not representable by the single-journal schema.</p>
+ * cases remain in the shared contract. Additional JDBC cases exercise immutable
+ * attempt history, two-connection binding contention, rollback release, and
+ * concurrent recovery claims.</p>
  */
 class JdbcPendingSecretStoreTest {
     private static final AuthoringScope SCOPE = new AuthoringScope("tenant", "project", "dev");
     private static final Instant NOW = Instant.now();
     private DataSource dataSource;
+    private String databaseUrl;
     private JdbcTemplate jdbc;
     private TransactionTemplate transactions;
 
     @BeforeEach
     void setUp() {
-        String databaseUrl = "jdbc:h2:mem:pending-jdbc-" + System.nanoTime()
+        databaseUrl = "jdbc:h2:mem:pending-jdbc-" + System.nanoTime()
                 + ";MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         dataSource = new DriverManagerDataSource(databaseUrl, "sa", "");
         jdbc = new JdbcTemplate(dataSource);
@@ -61,6 +70,7 @@ class JdbcPendingSecretStoreTest {
         migrate("db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql");
         migrate("db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql");
         migrate("db/postgresql/V20260831_009__authoring_command_attempt_authority.sql");
+        migrate("db/postgresql/V20260831_010__attempt_provenance_closure.sql");
     }
 
     @AfterEach
@@ -270,6 +280,124 @@ class JdbcPendingSecretStoreTest {
     }
 
     @Test
+    void concurrentJdbcConnectionsHaveOneBindingWinnerWithoutOverwriting() throws Exception {
+        DataSource firstDataSource = newConnection();
+        DataSource secondDataSource = newConnection();
+        JdbcPendingSecretStore firstStore = storeOn(firstDataSource);
+        JdbcPendingSecretStore secondStore = storeOn(secondDataSource);
+        PendingSecretBatch first = batch(lease("binding-concurrent-a", 1,
+                "binding-concurrent-a-token", NOW.plusSeconds(60)), "token");
+        PendingSecretBatch second = batch(lease("binding-concurrent-b", 1,
+                "binding-concurrent-b-token", NOW.plusSeconds(60)), "token");
+        seed(first);
+        seed(second);
+        firstStore.stage(first);
+        secondStore.stage(second);
+
+        CyclicBarrier start = new CyclicBarrier(2);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<String> firstResult = workers.submit(() -> concurrentCommit(firstDataSource, firstStore, first, start));
+            Future<String> secondResult = workers.submit(() -> concurrentCommit(secondDataSource, secondStore, second, start));
+            List<String> results = List.of(firstResult.get(10, TimeUnit.SECONDS),
+                    secondResult.get(10, TimeUnit.SECONDS));
+
+            assertThat(results).containsExactlyInAnyOrder("COMMITTED", "LEASE_FENCED");
+            String owner = jdbc.queryForObject("SELECT command_id FROM rg_api_connection_secret_bindings"
+                    + " WHERE tenant_id=? AND project_id=? AND environment_id=? AND connection_id=?"
+                    + " AND revision=? AND slot=?", String.class, SCOPE.tenantId(), SCOPE.projectId(),
+                    SCOPE.environmentId(), "connection", 3L, "token");
+            assertThat(owner).isIn(first.lease().commandLease().commandId(), second.lease().commandLease().commandId());
+            String locator = jdbc.queryForObject("SELECT active_locator FROM rg_api_connection_secret_bindings"
+                    + " WHERE command_id=? AND slot='token'", String.class, owner);
+            assertThat(locator).isEqualTo(owner + "-active");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_secret_bindings"
+                    + " WHERE connection_id='connection' AND revision=3 AND slot='token'", Long.class)).isOne();
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    @Test
+    void rolledBackBindingWinnerReleasesParentForCompetingConnection() throws Exception {
+        DataSource firstDataSource = newConnection();
+        DataSource secondDataSource = newConnection();
+        JdbcPendingSecretStore firstStore = storeOn(firstDataSource);
+        JdbcPendingSecretStore secondStore = storeOn(secondDataSource);
+        PendingSecretBatch first = batch(lease("binding-rollback-a", 1,
+                "binding-rollback-a-token", NOW.plusSeconds(60)), "token");
+        PendingSecretBatch second = batch(lease("binding-rollback-b", 1,
+                "binding-rollback-b-token", NOW.plusSeconds(60)), "token");
+        seed(first);
+        seed(second);
+        firstStore.stage(first);
+        secondStore.stage(second);
+
+        CountDownLatch firstWrote = new CountDownLatch(1);
+        CountDownLatch secondAttempting = new CountDownLatch(1);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<?> rolledBack = workers.submit(() -> transactions(firstDataSource).executeWithoutResult(status -> {
+                firstStore.commitBindings(first,
+                        List.of(activation("token", "binding-rollback-a-token", "binding-rollback-a-active")));
+                firstWrote.countDown();
+                await(secondAttempting);
+                throw new IllegalStateException("intentional binding rollback");
+            }));
+            assertThat(firstWrote.await(10, TimeUnit.SECONDS)).isTrue();
+            Future<?> competing = workers.submit(() -> transactions(secondDataSource).executeWithoutResult(status -> {
+                secondAttempting.countDown();
+                secondStore.commitBindings(second,
+                        List.of(activation("token", "binding-rollback-b-token", "binding-rollback-b-active")));
+            }));
+
+            assertThatThrownBy(() -> rolledBack.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .hasRootCauseInstanceOf(IllegalStateException.class);
+            competing.get(10, TimeUnit.SECONDS);
+            assertThat(jdbc.queryForObject("SELECT command_id FROM rg_api_connection_secret_bindings"
+                    + " WHERE connection_id='connection' AND revision=3 AND slot='token'", String.class))
+                    .isEqualTo(second.lease().commandLease().commandId());
+            assertThat(firstStore.findExact(first.lease())).contains(first);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_pending_secret_outcomes"
+                    + " WHERE command_id=?", Long.class, first.lease().commandLease().commandId())).isZero();
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentRecoveryWorkersClaimDistinctCompleteBatches() throws Exception {
+        JdbcPendingSecretStore firstStore = storeOn(newConnection());
+        JdbcPendingSecretStore secondStore = storeOn(newConnection());
+        PendingSecretBatch first = batch(lease("recovery-concurrent-a", 1,
+                "recovery-concurrent-a-token", NOW.plusSeconds(60)), "token", "password");
+        PendingSecretBatch second = batch(lease("recovery-concurrent-b", 1,
+                "recovery-concurrent-b-token", NOW.plusSeconds(60)), "token", "password");
+        seed(first);
+        seed(second);
+        firstStore.stage(first);
+        secondStore.stage(second);
+        jdbc.update("UPDATE rg_api_connection_pending_secret_leases SET lease_until=CURRENT_TIMESTAMP - INTERVAL '1' SECOND"
+                + " WHERE command_id IN (?, ?)", first.lease().commandLease().commandId(),
+                second.lease().commandLease().commandId());
+
+        CyclicBarrier start = new CyclicBarrier(2);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<SecretAbortCandidate> firstResult = workers.submit(() -> concurrentRecovery(firstStore, start));
+            Future<SecretAbortCandidate> secondResult = workers.submit(() -> concurrentRecovery(secondStore, start));
+            List<SecretAbortCandidate> candidates = List.of(firstResult.get(10, TimeUnit.SECONDS),
+                    secondResult.get(10, TimeUnit.SECONDS));
+            assertThat(candidates).extracting(candidate -> candidate.batch().lease().commandLease().commandId())
+                    .containsExactlyInAnyOrder("recovery-concurrent-a", "recovery-concurrent-b");
+            assertThat(candidates).allSatisfy(candidate -> assertThat(candidate.batch().operations()).hasSize(2));
+        } finally {
+            workers.shutdownNow();
+        }
+    }
+
+    @Test
     void recoveryClaimIsExclusiveAndReclaimFencesStaleWorker() {
         JdbcPendingSecretStore firstStore = store();
         JdbcPendingSecretStore secondStore = store();
@@ -420,7 +548,8 @@ class JdbcPendingSecretStoreTest {
         assertThatThrownBy(() -> transactions.executeWithoutResult(status -> store.commitBindings(batch,
                 List.of(new ActivatedSecretSlot("token",
                         new com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret(
-                                "other-provider", "partial-jdbc-token", "active-token"))))))
+                                "other-provider", "partial-jdbc-token", "active-token")),
+                        activation("password", "partial-jdbc-token", "active-password")))))
                 .isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.ACTIVATION_MISMATCH);
         assertThat(store.findExact(batch.lease())).contains(batch);
@@ -591,7 +720,56 @@ class JdbcPendingSecretStoreTest {
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
     }
 
-    private JdbcPendingSecretStore store() { return new JdbcPendingSecretStore(dataSource, fixedClock()); }
+    private JdbcPendingSecretStore store() { return storeOn(dataSource); }
+
+    private JdbcPendingSecretStore storeOn(DataSource source) {
+        return new JdbcPendingSecretStore(source, fixedClock());
+    }
+
+    private DataSource newConnection() {
+        return new DriverManagerDataSource(databaseUrl, "sa", "");
+    }
+
+    private TransactionTemplate transactions(DataSource source) {
+        return new TransactionTemplate(new DataSourceTransactionManager(source));
+    }
+
+    private String concurrentCommit(DataSource source, JdbcPendingSecretStore store, PendingSecretBatch batch,
+                                    CyclicBarrier start) {
+        try {
+            transactions(source).executeWithoutResult(status -> {
+                await(start);
+                store.commitBindings(batch, List.of(activation("token",
+                        batch.lease().commandLease().attemptToken(),
+                        batch.lease().commandLease().commandId() + "-active")));
+            });
+            return "COMMITTED";
+        } catch (PendingSecretStoreException failure) {
+            return failure.code().name();
+        }
+    }
+
+    private SecretAbortCandidate concurrentRecovery(JdbcPendingSecretStore store, CyclicBarrier start) {
+        await(start);
+        return store.claimRecoveryDue(1).getFirst();
+    }
+
+    private static void await(CyclicBarrier barrier) {
+        try {
+            barrier.await(10, TimeUnit.SECONDS);
+        } catch (Exception failure) {
+            throw new IllegalStateException(failure);
+        }
+    }
+
+    private static void await(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) throw new IllegalStateException("latch timed out");
+        } catch (InterruptedException failure) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(failure);
+        }
+    }
 
     private Clock fixedClock() { return Clock.fixed(NOW, ZoneOffset.UTC); }
 

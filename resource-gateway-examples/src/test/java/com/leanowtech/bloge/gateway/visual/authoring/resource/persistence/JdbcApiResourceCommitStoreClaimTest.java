@@ -58,7 +58,8 @@ class JdbcApiResourceCommitStoreClaimTest {
                 "V20260830_006__pending_secret_store_hardening.sql",
                 "V20260831_007__pending_secret_store_protocol_closure.sql",
                 "V20260831_008__pending_secret_store_child_cas_closure.sql",
-                "V20260831_009__authoring_command_attempt_authority.sql")) {
+                "V20260831_009__authoring_command_attempt_authority.sql",
+                "V20260831_010__attempt_provenance_closure.sql")) {
             new ResourceDatabasePopulator(new ClassPathResource("db/postgresql/" + migration)).execute(dataSource);
         }
         jdbc.update("INSERT INTO rg_api_connection_identities"
@@ -82,11 +83,16 @@ class JdbcApiResourceCommitStoreClaimTest {
                 .isInstanceOf(ClaimResult.Conflict.class);
 
         expireLease(first.lease());
-        ClaimResult.Acquired takeover = (ClaimResult.Acquired) store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.match(3));
+        assertThat(store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.match(3)))
+                .isInstanceOf(ClaimResult.Conflict.class);
+        ClaimResult.Acquired takeover = (ClaimResult.Acquired) store.claim(KEY, FP, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
         assertThat(takeover.resumed()).isTrue();
         assertThat(takeover.lease().commandId()).isEqualTo(first.lease().commandId());
         assertThat(takeover.lease().attemptNo()).isEqualTo(2);
         assertThat(takeover.lease().attemptToken()).isNotEqualTo(first.lease().attemptToken());
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=1 AND attempt_token=?", String.class,
+                first.lease().commandId(), first.lease().attemptToken())).isEqualTo("SUPERSEDED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_resource_revisions WHERE command_id=? AND state='STAGED'", Integer.class, first.lease().commandId())).isZero();
 
         String terminalBody = "{}";
@@ -96,6 +102,25 @@ class JdbcApiResourceCommitStoreClaimTest {
                 .isInstanceOf(ClaimResult.Conflict.class);
         assertThat(store.claim(KEY, FP2, com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create()))
                 .isInstanceOf(ClaimResult.Replay.class);
+    }
+
+    @Test
+    void takeoverWithoutStagedRowsSupersedesPriorAttempt() {
+        JdbcApiResourceCommitStore store = store();
+        ClaimResult.Acquired first = (ClaimResult.Acquired) store.claim(KEY, FP,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+        expireLease(first.lease());
+
+        ClaimResult.Acquired replacement = (ClaimResult.Acquired) store.claim(KEY, FP,
+                com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision.create());
+
+        assertThat(replacement.lease().attemptNo()).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=1 AND attempt_token=?", String.class,
+                first.lease().commandId(), first.lease().attemptToken())).isEqualTo("SUPERSEDED");
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_attempts"
+                + " WHERE command_id=? AND attempt_no=2 AND attempt_token=?", String.class,
+                replacement.lease().commandId(), replacement.lease().attemptToken())).isEqualTo("PREPARING");
     }
 
     @Test

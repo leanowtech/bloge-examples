@@ -162,6 +162,10 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             requireAttempt(lease);
             return;
         }
+        if (!prior.expectedMode().equals(expectedMode(lease.expectedRevision()))
+                || !Objects.equals(prior.expectedRevision(), expectedRevision(lease.expectedRevision()))) {
+            fail(Code.LEASE_FENCED);
+        }
         boolean sameCommand = prior.commandId().equals(lease.commandId());
         boolean higherAttempt = lease.attemptNo() > prior.attemptNo();
         boolean takeoverAllowed = sameCommand && higherAttempt
@@ -169,6 +173,12 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 && !"COMMITTED".equals(prior.status())
                 && !prior.leaseUntil().isAfter(databaseNow());
         if (!takeoverAllowed) fail(Code.LEASE_FENCED);
+        if ("PREPARING".equals(prior.status()) && jdbc.update("UPDATE rg_authoring_command_attempts"
+                + " SET status='SUPERSEDED', updated_at=CURRENT_TIMESTAMP WHERE command_id=?"
+                + " AND attempt_no=? AND attempt_token=? AND status='PREPARING'", prior.commandId(),
+                prior.attemptNo(), prior.attemptToken()) != 1) {
+            fail(Code.LEASE_FENCED);
+        }
         insertAttempt(lease);
         deleteCommandStages(prior.commandId(), prior.attemptNo(), prior.attemptToken());
         replaceJournal(lease);
@@ -675,19 +685,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
         }
         if (jdbc.update("""
                         MERGE INTO rg_api_connection_heads AS target
-                        USING (VALUES (?, ?, ?, ?, ?, ?, ?)) AS source
-                               (tenant_id, project_id, environment_id, connection_id, revision, command_id, strong_etag)
+                        USING (VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)) AS source
+                               (tenant_id, project_id, environment_id, connection_id, revision, command_id,
+                                attempt_no, attempt_token, strong_etag)
                           ON target.tenant_id=source.tenant_id AND target.project_id=source.project_id
                          AND target.environment_id=source.environment_id AND target.connection_id=source.connection_id
                         WHEN MATCHED THEN UPDATE SET revision=source.revision, command_id=source.command_id,
+                             attempt_no=source.attempt_no, attempt_token=source.attempt_token,
                              strong_etag=source.strong_etag, revision_state='COMMITTED', updated_at=CURRENT_TIMESTAMP
                         WHEN NOT MATCHED THEN INSERT
-                             (tenant_id, project_id, environment_id, connection_id, revision, command_id,
-                              strong_etag, revision_state)
+                            (tenant_id, project_id, environment_id, connection_id, revision, command_id,
+                              attempt_no, attempt_token, strong_etag, revision_state)
                         VALUES (source.tenant_id, source.project_id, source.environment_id, source.connection_id,
-                                source.revision, source.command_id, source.strong_etag, 'COMMITTED')
+                                source.revision, source.command_id, source.attempt_no, source.attempt_token,
+                                source.strong_etag, 'COMMITTED')
                         """, staged.tenantId(), staged.projectId(), staged.environmentId(),
-                staged.connectionId(), staged.revision(), lease.commandId(), staged.strongEtag()) != 1) {
+                staged.connectionId(), staged.revision(), lease.commandId(), lease.attemptNo(), lease.attemptToken(),
+                staged.strongEtag()) != 1) {
             fail(Code.INTEGRITY);
         }
         return new StoredApiConnection(staged.scope(), canonicalView, authorityFingerprint,
@@ -840,6 +854,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                     ON h.tenant_id=r.tenant_id AND h.project_id=r.project_id
                    AND h.environment_id=r.environment_id AND h.connection_id=r.connection_id
                    AND h.revision=r.revision AND h.command_id=r.command_id
+                   AND h.attempt_no=r.attempt_no AND h.attempt_token=r.attempt_token
                    AND h.strong_etag=r.strong_etag AND h.revision_state=r.state
                 """;
         }
@@ -898,6 +913,7 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
                 + "ON r.tenant_id=h.tenant_id AND r.project_id=h.project_id "
                 + "AND r.environment_id=h.environment_id AND r.connection_id=h.connection_id "
                 + "AND r.revision=h.revision AND r.command_id=h.command_id "
+                + "AND r.attempt_no=h.attempt_no AND r.attempt_token=h.attempt_token "
                 + "AND r.strong_etag=h.strong_etag AND r.state='COMMITTED' "
                 + "WHERE h.tenant_id=? AND h.project_id=? AND h.environment_id=? AND h.connection_id=?";
         List<RevisionRow> rows = jdbc.query(sql, revisionRowMapper(), scope.tenantId(), scope.projectId(),

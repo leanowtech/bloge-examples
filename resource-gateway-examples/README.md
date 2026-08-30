@@ -57,6 +57,13 @@ The JDBC authoring store is opt-in and is not an HTTP/Facade API yet. Apply the 
 db/postgresql/V20260830_001__api_resource_authoring.sql
 db/postgresql/V20260830_002__api_resource_concurrent_staging.sql
 db/postgresql/V20260830_003__api_connection_secret_staging.sql
+db/postgresql/V20260830_004__connection_metadata_authority.sql
+db/postgresql/V20260830_005__pending_secret_store_protocol.sql
+db/postgresql/V20260830_006__pending_secret_store_hardening.sql
+db/postgresql/V20260831_007__pending_secret_store_protocol_closure.sql
+db/postgresql/V20260831_008__pending_secret_store_child_cas_closure.sql
+db/postgresql/V20260831_009__authoring_command_attempt_authority.sql
+db/postgresql/V20260831_010__attempt_provenance_closure.sql
 ```
 
 Then enable the production wiring explicitly:
@@ -135,6 +142,22 @@ unprovable legacy rows. The focused persistence regression is 62/62 green
 (26 JDBC, 30 in-memory, 6 migration-readiness tests) in H2 PostgreSQL mode.
 This does not accept or wire the `AuthoringFacade`, HTTP endpoints, UI, or real
 PostgreSQL certification.
+
+The follow-on V009/V010 attempt-provenance closure keeps every command attempt
+immutable. Takeover marks the prior `PREPARING` attempt `SUPERSEDED` before
+advancing the journal pointer; current stage/finalize/commit operations require
+the exact current `PREPARING` attempt, while recovery can reconstruct an exact
+historical `PREPARING` or `SUPERSEDED` attempt and close it as `FAILED`. V010
+retargets Connection head and active-binding foreign keys to the exact attempt,
+so a retained old staged revision cannot collide with a replacement attempt.
+Binding commit locks the scoped connection identity and exact parent revision in
+that order, then updates only the same command/attempt; a competing owner is
+`LEASE_FENCED`, and a rolled-back winner releases the row for a later winner.
+The current focused JDBC evidence is 89/89 green (40 Connection, 11 Resource
+claim, 30 PendingSecretStore, and 8 migration-readiness tests), including
+two real H2 JDBC connections for binding winner/rollback and concurrent recovery
+claims. This is H2 `MODE=PostgreSQL` evidence only; real PostgreSQL certification,
+the `AuthoringFacade`, HTTP endpoints, and the authoring UI remain unaccepted.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
