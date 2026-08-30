@@ -2,7 +2,7 @@
 
 > 目标方案：`rg-api-fixture-reusable-flow-authoring-proposal-v1.md`。
 >
-> 状态：Paused for architecture review。当前只冻结待评审契约，不继续运行时或 UI 实现。
+> 状态：Implementation in progress。架构决策已批准，按深模块和用户任务逐切片实现。
 >
 > 完成条件：所有目标切片有实现与对应范围的运行证据，最终差距严格小于 3%。
 
@@ -40,8 +40,8 @@
   Payload 或 Credential 放入列表响应。
 
 评审稿在原型之后又冻结了 Publish/Share Wire Contract、Example 到 Case 的回执映射、
-Fixture 状态可运行性、共享 Header Policy 和可审计 Egress Evidence。因此下述绿色测试只证明
-已提交原型的自一致性，不证明最新评审稿已完全转成 JSON Schema。
+Fixture 状态可运行性、共享 Header Policy 和可审计 Egress Evidence。这些差距已在 Iteration 2
+转成可执行 Schema；本节保留当时的历史证据，不代表当前状态。
 
 ### 最新验证
 
@@ -67,25 +67,63 @@ BUILD SUCCESS
 不能把现有 Descriptor、GraphDraft、Fixture Catalog 或 Simulation Kernel 直接计为新方案完成；它们目前只是
 待新深模块复用的 Adapter 候选。
 
-### 评审通过后的候选计划
+## 3. Iteration 2 — 可执行协议与 API Resource 权威领域
 
-1. 以 `ApiResourceModule` 和 `AuthoringFacade` 为公共 seam，先完成一个 API Resource 的复合保存行为测试。
-2. 复用现有 `WritableResourceRegistry`、`ResourceDesignContractRegistry` 和
-   `ResourceVirtualOperatorProjector`，但只允许 Facade 写入三份投影。
-3. 保存成功必须返回精确 Resource、Default Fixture 与全部 `READY` Projection Receipt；任一失败不得暴露
-   新 revision。
-4. Controller 实现标准 `If-None-Match` / 强 `If-Match`、Idempotency-Key、Problem Detail 与同 Scope 404。
-5. 聚焦服务/Controller 测试 GREEN 后独立提交，再实现前端对象页；不同时修改 `AuthorCanvas`。
+日期：2026-08-30。
 
-上述内容只用于评估实施可行性；在 R1-R5 和 Schema 对照完成评审前不启动。
+### 已完成
 
-## 3. 未关闭风险
+- `a12b3ff7b`：把 Publish、Share、具名 Default Fixture Case、统一 Fixture 状态和 Egress Evidence
+  Union 对齐到可执行 JSON Schema 与 goldens。
+- `91425b4fd`：新增纯 `ApiResourceModule` 与线程安全内存适配器，建立 create/update、精确 CAS、
+  canonical fingerprint 和精确 `API_RESOURCE` 引用。
+- `a26ed1205`：将 `ApiResourceSpec` 收敛为冻结的扁平权威形状；补齐 `MANAGED_WRITE` 幂等、Receipt、
+  Reconciliation 合同，关闭浅复制、ID/path、BODY 数量和 Header 约束缺口。
+- `b4bb58613`：为两种 Success 和三种 Effect 增加准确的 `kind` wire discriminator。
+- `2d3458e36`：省略可选空字段，并以最小/完整 Command 与 Spec 对冻结 Schema 做 round-trip 验证。
+
+本切片刻意不包含 HTTP、数据库、Projection、Default Fixture、Connection create 或 `AuthoringFacade`。
+内存适配器是公共领域 seam 的 contract reference，不是 production persistence 完成证据。
+
+### 最新验证
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=AuthoringProtocolSchemaTest,ApiResourceModuleTest test
+AuthoringProtocolSchemaTest: 9 tests
+ApiResourceModuleTest: 8 tests
+Tests run: 17, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+协调者在 `2d3458e36` 后独立串行复验。Standards review 与批准方案 Spec review 均为 Accepted；
+审查中发现的防御复制、Managed Write、Spec 形状、BODY、Header prefix、wire discriminator 和 null omission
+问题均已修复并重新验证。
+
+### 当前差距评估
+
+| 目标能力 | 已证明 |
+| --- | ---: |
+| Wire Schema family | 10 / 10 |
+| API Resource 后端权威、复合保存与投影闭包 | 3 / 18（纯领域权威与 CAS；未含 production adapter） |
+| 文档与当前聚焦门禁 | 4 / 7 |
+| 其余运行与 UI 能力 | 0 / 65 |
+| **当前完成度** | **17%** |
+| **当前差距** | **83%** |
+
+下一切片先实现 production storage foundation：权威 revision/head、Command Journal、pending Secret lease、
+私有 Default Fixture staging、三份持久化 `READY` Projection 和 readiness/migration。现有 Registry 以进程内
+cache 为权威且无 CAS，不能直接拼接进 `AuthoringFacade` 冒充原子提交。
+
+## 4. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。
 - V1 staging/commit 必须适配当前存储现实；若无法保证不可见 staging，不得用异步投影冒充成功 Receipt。
 - API Resource 页面重载必须通过 Exact Subject Fixture summary 查询恢复，不能保存 material 到 Resource View
   或 Local Storage。
-- 评审稿新增的 Publish/Share、Header Policy、Fixture 状态矩阵和 Egress Evidence 尚未对齐到可执行
-  JSON Schema；评审通过前不继续实现。
+- production adapter 尚未证明跨实例 CAS、失败恢复、Secret staging/activation、不可见 staging 或三投影
+  同 generation；在这些合同测试通过前，不能接标准对象页。
+- `AuthoringFacade` 还没有复合保存、幂等重放和注入故障测试；HTTP 的强 ETag、428/412、完整 Scope 与
+  secret-free Problem Detail 也仍未实现。
 - 共享工作树中的 `GraphNodeFixtureControls.tsx` 修改不属于本目标提交，必须继续隔离。
