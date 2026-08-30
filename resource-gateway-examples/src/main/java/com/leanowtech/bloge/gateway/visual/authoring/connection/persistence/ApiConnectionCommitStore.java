@@ -2,19 +2,18 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.util.Optional;
-import java.util.List;
 
 /**
  * Persistence boundary for staged and atomically committed Connection metadata.
- * A production adapter should join the outer transaction and persist pending
- * secret leases through a future {@code PendingSecretStore}; this contract
- * deliberately does not claim or resolve secrets itself.
+ * Secret values, provider locators and lease lifecycle belong to the separate
+ * secret coordinator; this contract accepts only a locator-free finalized-slot
+ * proof when a committed Connection needs secret-backed authentication.
  */
 public interface ApiConnectionCommitStore {
     /**
@@ -30,8 +29,13 @@ public interface ApiConnectionCommitStore {
     /** Promotes the exact live stage and returns its committed payload-free view. */
     StoredApiConnection commit(CommandLease lease);
 
-    /** Promotes a staged Connection after exact external-secret activation outputs are supplied. */
-    StoredApiConnection commitActivated(CommandLease lease, List<ActivatedSecretSlot> activated);
+    /**
+     * Promotes a staged Connection after an external secret coordinator has
+     * finalized every configured slot. The proof contains only the exact
+     * connection coordinate and slot set; provider locators never cross this
+     * metadata boundary.
+     */
+    StoredApiConnection commit(CommandLease lease, FinalizedSecretSlots finalized);
 
     /**
      * Promotes a Connection child of an outer resource save without closing
@@ -43,8 +47,8 @@ public interface ApiConnectionCommitStore {
      */
     StoredApiConnection commitChild(CommandLease lease);
 
-    /** Promotes a nested Connection child after exact external-secret activation outputs are supplied. */
-    StoredApiConnection commitChildActivated(CommandLease lease, List<ActivatedSecretSlot> activated);
+    /** Promotes a nested Connection child with a locator-free finalized-slot proof. */
+    StoredApiConnection commitChild(CommandLease lease, FinalizedSecretSlots finalized);
 
     /** Fenced failure removes only the exact live stage; stale failures are no-ops. */
     void fail(CommandLease lease);

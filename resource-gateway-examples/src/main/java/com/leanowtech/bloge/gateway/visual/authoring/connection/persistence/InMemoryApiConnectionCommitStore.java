@@ -5,10 +5,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCom
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActivatedExternalSecret;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.ActivatedSecretSlot;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -17,15 +14,19 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Comman
 
 import java.time.Clock;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
+import static com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
+
 /**
- * Deterministic short-lived test/reference adapter, never a production store.
- * Durable implementations retain fencing and cleanup in the JDBC command journal.
+ * Deterministic short-lived reference adapter for the Connection metadata
+ * authority. Secret preparation is accepted only while staging so that the
+ * pure decision engine can validate it; this store never retains or activates
+ * a provider reference.
  */
 public final class InMemoryApiConnectionCommitStore implements ApiConnectionCommitStore {
     private final Clock clock;
@@ -36,9 +37,6 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private final Map<CommandKey, CommandLease> active = new HashMap<>();
     private final Map<StageKey, StagedApiConnection> stages = new HashMap<>();
     private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
-    private final Map<StageKey, Map<String, PendingActivation>> stageSecrets = new HashMap<>();
-    private final Map<StageKey, Map<String, PendingActivation>> abortedSecrets = new HashMap<>();
-    /** Exact failed-lease tombstones; a durable adapter owns journal cleanup policy. */
     private final Map<CommandKey, CommandLease> failed = new HashMap<>();
 
     /** Creates a store using UTC wall-clock time and default decisions. */
@@ -58,22 +56,13 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
                                                    PreparedSecretBinding... prepared) {
         requireLease(lease);
         if (connectionId == null || connectionId.isBlank() || connectionExpected == null) fail(Code.INTEGRITY);
-        if (lease.key().endpoint() == AuthoringEndpoint.API_CONNECTION_SAVE) {
-            if (!connectionId.equals(lease.key().targetId())
-                    || !lease.expectedRevision().equals(connectionExpected)) fail(Code.INTEGRITY);
-        } else if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
-            if (!(connectionExpected instanceof ExpectedRevision.Create)) fail(Code.INTEGRITY);
-        } else {
-            fail(Code.INTEGRITY);
-        }
+        requireLeaseShape(lease, connectionId, connectionExpected);
         CommandKey commandKey = lease.key();
         CommandLease currentLease = active.get(commandKey);
         if (currentLease != null) {
-            if (currentLease.equals(lease)) {
-                requireStoredLeaseLive(currentLease);
-            } else if (currentLease.leaseUntil().isAfter(clock.instant())) {
-                fail(Code.LEASE_FENCED);
-            } else {
+            if (currentLease.equals(lease)) requireStoredLeaseLive(currentLease);
+            else if (currentLease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_FENCED);
+            else {
                 if (!currentLease.commandId().equals(lease.commandId())
                         || !currentLease.requestFingerprint().equals(lease.requestFingerprint())
                         || lease.attemptNo() <= currentLease.attemptNo()) fail(Code.LEASE_FENCED);
@@ -83,31 +72,20 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         }
         CommandLease failedLease = failed.get(commandKey);
         if (failedLease != null) {
-            if (!lease.commandId().equals(failedLease.commandId())
-                    || lease.attemptNo() <= failedLease.attemptNo()) fail(Code.LEASE_FENCED);
+            if (!lease.commandId().equals(failedLease.commandId()) || lease.attemptNo() <= failedLease.attemptNo()) {
+                fail(Code.LEASE_FENCED);
+            }
             failed.remove(commandKey);
         }
         if (currentLease == null || !currentLease.equals(lease)) requireIncomingLeaseLive(lease);
 
         StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
         StagedApiConnection prior = stages.get(stageKey);
-        if (prior != null) {
-            if (!prior.lease().equals(lease)) fail(Code.LEASE_FENCED);
-            if (!prior.connectionExpected().equals(connectionExpected)) fail(Code.INTEGRITY);
-            ApiConnectionSpec candidate = decisions.next(lease.key().scope(),
-                    Optional.ofNullable(stageBases.get(stageKey)), connectionId, command,
-                    connectionExpected, prepared);
-            if (!candidate.fingerprint().equals(prior.metadataFingerprint())) fail(Code.INTEGRITY);
-            return prior;
-        }
-
-        ConnectionKey key = new ConnectionKey(lease.key().scope(), connectionId);
-        StoredApiConnection head = heads.get(key);
-        ApiConnectionSpec current = head == null ? null
-                : committedSpecs.get(new RevisionKey(key, head.view().revision()));
+        ApiConnectionSpec base = prior == null ? currentSpec(lease.key().scope(), connectionId)
+                : stageBases.get(stageKey);
         ApiConnectionSpec next;
         try {
-            next = decisions.next(lease.key().scope(), Optional.ofNullable(current), connectionId, command,
+            next = decisions.next(lease.key().scope(), Optional.ofNullable(base), connectionId, command,
                     connectionExpected, prepared);
         } catch (ApiConnectionAuthoringException ex) {
             if (ex.code() == ApiConnectionAuthoringException.Code.ALREADY_EXISTS
@@ -115,175 +93,131 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
                     || ex.code() == ApiConnectionAuthoringException.Code.CAS_MISMATCH) fail(Code.CAS_MISMATCH);
             throw ex;
         }
+        if (prior != null) {
+            if (!prior.lease().equals(lease) || !prior.connectionExpected().equals(connectionExpected)
+                    || !prior.metadataFingerprint().equals(next.fingerprint())) fail(Code.INTEGRITY);
+            return prior;
+        }
         StagedApiConnection staged = new StagedApiConnection(lease, next, connectionExpected, opaqueEtag());
-        CommandLease previous = active.put(commandKey, lease);
-        if (previous != null) removeStage(previous);
+        active.put(commandKey, lease);
         stages.put(stageKey, staged);
-        stageBases.put(stageKey, current);
-        stageSecrets.put(stageKey, pendingActivations(next));
+        stageBases.put(stageKey, base);
         return staged;
     }
 
     /** {@inheritDoc} */
-    @Override
-    public synchronized StoredApiConnection commit(CommandLease lease) {
-        return commitActivated(lease, List.of());
+    @Override public synchronized StoredApiConnection commit(CommandLease lease) {
+        return commitInternal(lease, null, false);
     }
 
-    @Override
-    public synchronized StoredApiConnection commitActivated(CommandLease lease, List<ActivatedSecretSlot> activated) {
-        if (lease != null && lease.key() != null && lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
-            fail(Code.INTEGRITY);
-        }
-        return commitInternal(lease, activated);
+    /** {@inheritDoc} */
+    @Override public synchronized StoredApiConnection commit(CommandLease lease, FinalizedSecretSlots finalized) {
+        return commitInternal(lease, finalized, false);
     }
 
-    /**
-     * Commits only the Connection child of a composite resource command. The
-     * reference adapter has no outer journal; the child therefore publishes
-     * its local revision/head while the caller owns the composite receipt.
-     */
-    @Override
-    public synchronized StoredApiConnection commitChild(CommandLease lease) {
-        return commitChildActivated(lease, List.of());
+    /** {@inheritDoc} */
+    @Override public synchronized StoredApiConnection commitChild(CommandLease lease) {
+        return commitInternal(lease, null, true);
     }
 
-    @Override
-    public synchronized StoredApiConnection commitChildActivated(CommandLease lease,
-                                                                  List<ActivatedSecretSlot> activated) {
+    /** {@inheritDoc} */
+    @Override public synchronized StoredApiConnection commitChild(CommandLease lease, FinalizedSecretSlots finalized) {
+        return commitInternal(lease, finalized, true);
+    }
+
+    private StoredApiConnection commitInternal(CommandLease lease, FinalizedSecretSlots finalized, boolean child) {
         requireLease(lease);
-        if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
-        return commitInternal(lease, activated);
-    }
-
-    private StoredApiConnection commitInternal(CommandLease lease, List<ActivatedSecretSlot> activated) {
-        requireLease(lease);
+        if (child != (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE)) fail(Code.INTEGRITY);
         CommandLease currentLease = active.get(lease.key());
         if (currentLease == null) {
-            CommandLease failedLease = failed.get(lease.key());
-            if (failedLease != null && failedLease.equals(lease)) fail(Code.STAGE_MISSING);
+            if (lease.equals(failed.get(lease.key()))) fail(Code.STAGE_MISSING);
             fail(Code.LEASE_FENCED);
         }
         if (!currentLease.equals(lease)) fail(Code.LEASE_FENCED);
         requireStoredLeaseLive(currentLease);
-        StagedApiConnection staged = stages.get(new StageKey(lease.commandId(), lease.attemptToken()));
-        if (staged == null) fail(Code.STAGE_MISSING);
         StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
-        Map<String, PendingActivation> pending = stageSecrets.getOrDefault(stageKey, Map.of());
-        if (!pending.isEmpty() && (activated == null || activated.isEmpty())) {
-            abortedSecrets.put(stageKey, pending);
-            removeStage(lease);
-            active.remove(lease.key());
-            failed.put(lease.key(), lease);
-            fail(Code.INTEGRITY);
-        }
-        Map<String, SecretReference> committedBindings = activate(staged.spec().scope(), pending, activated);
-        ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.spec().connectionId());
+        StagedApiConnection staged = stages.get(stageKey);
+        if (staged == null) fail(Code.STAGE_MISSING);
+        validateFinalizedSlots(staged, finalized);
+        ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.view().connectionId());
         StoredApiConnection current = heads.get(key);
         checkExpected(current, staged.connectionExpected());
-        ApiConnectionSpec committedSpec = withBindings(staged.spec(), committedBindings);
-        StoredApiConnection stored = new StoredApiConnection(key.scope, committedSpec.view(),
-                decisions.fingerprint(committedSpec),
+        ApiConnectionSpec spec = staged.spec();
+        StoredApiConnection stored = new StoredApiConnection(key.scope, spec.view(), decisions.fingerprint(spec),
                 staged.strongEtag(), lease.commandId());
         heads.put(key, stored);
         RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
         history.put(revisionKey, stored);
-        committedSpecs.put(revisionKey, committedSpec);
-        stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
-        stageSecrets.remove(stageKey);
-        abortedSecrets.remove(stageKey);
+        committedSpecs.put(revisionKey, spec);
+        stages.remove(stageKey);
+        stageBases.remove(stageKey);
         active.remove(lease.key());
         return stored;
     }
 
-    private Map<String, PendingActivation> pendingActivations(ApiConnectionSpec spec) {
-        Map<String, PendingActivation> result = new HashMap<>();
-        spec.secretBindings().forEach((slot, reference) -> result.put(slot,
-                new PendingActivation(providerId(reference.ref()), reference.ref())));
-        return Map.copyOf(result);
+    private ApiConnectionSpec currentSpec(AuthoringScope scope, String connectionId) {
+        StoredApiConnection head = heads.get(new ConnectionKey(scope, connectionId));
+        return head == null ? null : committedSpecs.get(new RevisionKey(
+                new ConnectionKey(scope, connectionId), head.view().revision()));
     }
 
-    private Map<String, SecretReference> activate(AuthoringScope scope, Map<String, PendingActivation> pending,
-                                                   List<ActivatedSecretSlot> activated) {
-        if (pending.isEmpty()) {
-            if (activated != null && !activated.isEmpty()) fail(Code.INTEGRITY);
-            return Map.of();
-        }
-        if (activated == null || activated.size() != pending.size()) fail(Code.INTEGRITY);
-        Map<String, SecretReference> result = new HashMap<>();
-        for (ActivatedSecretSlot output : activated) {
-            if (output == null || result.containsKey(output.slot())) fail(Code.INTEGRITY);
-            PendingActivation expected = pending.get(output.slot());
-            if (expected == null) fail(Code.INTEGRITY);
-            ActivatedExternalSecret value = output.activated();
-            if (!expected.providerId().equals(value.providerId())
-                    || !expected.leaseId().equals(value.leaseId())
-                    || expected.leaseId().equals(value.activeLocator())) fail(Code.INTEGRITY);
-            try {
-                result.put(output.slot(), new SecretReference(scope, value.activeLocator()));
-            } catch (RuntimeException ex) {
-                fail(Code.INTEGRITY);
-            }
-        }
-        if (result.size() != pending.size()) fail(Code.INTEGRITY);
-        return Map.copyOf(result);
-    }
-
-    private ApiConnectionSpec withBindings(ApiConnectionSpec spec, Map<String, SecretReference> bindings) {
-        if (spec.secretBindings().isEmpty()) return spec;
-        ApiConnectionSpec candidate = ApiConnectionSpec.restore(ApiConnectionSpec.SCHEMA_VERSION, spec.scope(),
-                spec.connectionId(), spec.revision(), "sha256:" + "0".repeat(64), spec.displayName(),
-                spec.baseUrl(), spec.authKind(), spec.username(), spec.apiKeyHeader(), spec.defaults(), bindings);
-        return ApiConnectionSpec.restore(ApiConnectionSpec.SCHEMA_VERSION, spec.scope(), spec.connectionId(),
-                spec.revision(), decisions.fingerprint(candidate), spec.displayName(), spec.baseUrl(), spec.authKind(),
-                spec.username(), spec.apiKeyHeader(), spec.defaults(), bindings);
+    private static void validateFinalizedSlots(StagedApiConnection staged, FinalizedSecretSlots finalized) {
+        boolean secretStage = !staged.view().auth().kind().equals("NONE");
+        if (secretStage && finalized == null) fail(Code.INTEGRITY);
+        if (!secretStage && finalized != null) fail(Code.INTEGRITY);
+        if (finalized != null && (!finalized.coordinate().scope().equals(staged.lease().key().scope())
+                || !finalized.coordinate().connectionId().equals(staged.view().connectionId())
+                || finalized.coordinate().revision() != staged.view().revision()
+                || !finalized.slots().equals(Set.of(slotFor(staged.view().auth().kind()))))) fail(Code.INTEGRITY);
     }
 
     /** {@inheritDoc} */
-    @Override
-    public synchronized void fail(CommandLease lease) {
+    @Override public synchronized void fail(CommandLease lease) {
         if (lease == null) return;
         CommandLease current = active.get(lease.key());
         if (current == null || !current.equals(lease)) return;
-        StageKey key = new StageKey(current.commandId(), current.attemptToken());
-        Map<String, PendingActivation> pending = stageSecrets.get(key);
-        if ((pending == null || pending.isEmpty()) && !current.leaseUntil().isAfter(clock.instant())) return;
-        if (pending != null && !pending.isEmpty()) abortedSecrets.put(key, pending);
+        if (!current.leaseUntil().isAfter(clock.instant())) return;
         removeStage(current);
         active.remove(lease.key());
         failed.put(lease.key(), current);
     }
 
     /** {@inheritDoc} */
-    @Override
-    public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
+    @Override public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return Optional.ofNullable(heads.get(new ConnectionKey(scope, connectionId)));
     }
 
     /** {@inheritDoc} */
-    @Override
-    public synchronized Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,
-                                                                    long revision) {
+    @Override public synchronized Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,
+                                                                              long revision) {
         return Optional.ofNullable(history.get(new RevisionKey(new ConnectionKey(scope, connectionId), revision)));
     }
 
-    private void requireLease(CommandLease lease) {
-        if (lease == null || lease.key() == null) fail(Code.LEASE_FENCED);
+    private static String slotFor(String kind) {
+        return switch (kind) {
+            case "BEARER" -> "token";
+            case "BASIC" -> "password";
+            case "API_KEY" -> "value";
+            default -> "";
+        };
     }
 
-    private void requireIncomingLeaseLive(CommandLease lease) {
-        if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED);
-    }
+    private void requireLease(CommandLease lease) { if (lease == null || lease.key() == null) fail(Code.LEASE_FENCED); }
+    private void requireIncomingLeaseLive(CommandLease lease) { if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED); }
+    private void requireStoredLeaseLive(CommandLease lease) { if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED); }
 
-    private void requireStoredLeaseLive(CommandLease lease) {
-        if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED);
+    private static void requireLeaseShape(CommandLease lease, String connectionId, ExpectedRevision expected) {
+        if (lease.key().endpoint() == AuthoringEndpoint.API_CONNECTION_SAVE) {
+            if (!connectionId.equals(lease.key().targetId()) || !lease.expectedRevision().equals(expected)) fail(Code.INTEGRITY);
+        } else if (lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
+            if (!(expected instanceof ExpectedRevision.Create)) fail(Code.INTEGRITY);
+        } else fail(Code.INTEGRITY);
     }
 
     private void removeStage(CommandLease lease) {
         StageKey key = new StageKey(lease.commandId(), lease.attemptToken());
         stages.remove(key);
         stageBases.remove(key);
-        stageSecrets.remove(key);
     }
 
     private static void checkExpected(StoredApiConnection current, ExpectedRevision expected) {
@@ -293,15 +227,8 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     }
 
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
-    private static String providerId(String reference) {
-        String value = reference.substring("vault://".length());
-        int end = value.indexOf('/');
-        return end < 0 ? value : value.substring(0, end);
-    }
     private static void fail(Code code) { throw new ApiConnectionCommitStoreException(code); }
-
     private record StageKey(String commandId, String attemptToken) { }
     private record ConnectionKey(AuthoringScope scope, String connectionId) { }
     private record RevisionKey(ConnectionKey key, long revision) { }
-    private record PendingActivation(String providerId, String leaseId) { }
 }

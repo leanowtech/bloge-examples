@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
@@ -33,7 +31,6 @@ import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,44 +61,6 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         migrate("db/postgresql/V20260830_003__api_connection_secret_staging.sql");
         return new JdbcApiConnectionCommitStore(dataSource, new ObjectMapper(),
                 new ApiConnectionDecisions(), clock);
-    }
-
-    @Override
-    protected String activationLeaseId(PreparedSecretBinding prepared) {
-        return jdbc.queryForObject("SELECT lease_id FROM rg_api_connection_pending_secret_leases "
-                        + "WHERE opaque_handle=? AND status='PENDING'", String.class, prepared.reference().ref());
-    }
-
-    @Test
-    void pendingSecretLeaseIsInvisibleAndPreparedHandleIsNotPublishedAsBinding() throws Exception {
-        JdbcApiConnectionCommitStore store = jdbcStore();
-        PreparedSecretBinding prepared = new PreparedSecretBinding("token",
-                new SecretReference(SCOPE, "vault://team/customer-token"));
-        ApiConnectionCommand bearer = new ApiConnectionCommand("Secret API", BASE_URL,
-                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
-                new ApiConnectionCommand.Defaults(5_000, Map.of()));
-        CommandLease lease = lease("atomic-secret", "atomic-secret-token", "customer",
-                ExpectedRevision.create());
-
-        store.stage(lease, "customer", ExpectedRevision.create(), bearer, prepared);
-
-        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
-        assertThat(pendingCount()).isOne();
-        assertThat(bindingCount()).isZero();
-        assertThat(jdbc.queryForObject(
-                "SELECT view_json FROM rg_api_connection_revisions WHERE state='STAGED'", String.class))
-                .doesNotContain("vault://team/customer-token", "one-time-secret");
-        assertThat(jdbc.queryForObject(
-                "SELECT opaque_handle FROM rg_api_connection_pending_secret_leases", String.class))
-                .doesNotContain("one-time-secret");
-
-        assertThatThrownBy(() -> store.commit(lease))
-                .isInstanceOf(ApiConnectionCommitStoreException.class)
-                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
-        assertThat(bindingCount()).isZero();
-        assertThat(pendingCount()).isOne();
-        assertThat(jdbc.queryForObject("SELECT status FROM rg_api_connection_pending_secret_leases",
-                String.class)).isEqualTo("ABORT_REQUIRED");
     }
 
     @Test
@@ -166,44 +125,6 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
                 String.class, lease.commandId())).isEqualTo("PREPARING");
     }
 
-    @Test
-    void expiredTakeoverNeverDeletesAbortRequiredSecretRowsAndCleanupRemovesOnlyItsStage() {
-        JdbcApiConnectionCommitStore store = jdbcStore();
-        PreparedSecretBinding prepared = new PreparedSecretBinding("token",
-                new SecretReference(SCOPE, "vault://team/takeover-token"));
-        ApiConnectionCommand bearer = new ApiConnectionCommand("Secret API", BASE_URL,
-                ApiConnectionCommand.Auth.bearer(ApiConnectionCommand.SecretWrite.value("one-time-secret")),
-                new ApiConnectionCommand.Defaults(5_000, Map.of()));
-        CommandLease original = lease("abort-required-takeover", "abort-required-token", "customer",
-                ExpectedRevision.create());
-        store.stage(original, "customer", ExpectedRevision.create(), bearer, prepared);
-        jdbc.update("UPDATE rg_authoring_command_journal SET lease_until = CURRENT_TIMESTAMP - INTERVAL '1' SECOND "
-                + "WHERE command_id=?", original.commandId());
-        Instant expiredUntil = jdbc.queryForObject(
-                "SELECT lease_until FROM rg_authoring_command_journal WHERE command_id=?",
-                (row, ignored) -> row.getTimestamp(1).toInstant(), original.commandId());
-        CommandLease expired = new CommandLease(original.commandId(), original.attemptNo(), original.attemptToken(),
-                original.key(), original.requestFingerprint(), expiredUntil, original.expectedRevision());
-        CommandLease takeover = new CommandLease(original.commandId(), 2, "takeover-token", original.key(),
-                original.requestFingerprint(), TEST_NOW.plusSeconds(60), original.expectedRevision());
-
-        assertThatThrownBy(() -> store.stage(takeover, "customer", ExpectedRevision.create(), bearer, prepared))
-                .isInstanceOf(ApiConnectionCommitStoreException.class)
-                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
-        assertThat(pendingCount()).isOne();
-        store.failSecretLease(expired, "token");
-        assertThatThrownBy(() -> store.stage(takeover, "customer", ExpectedRevision.create(), bearer, prepared))
-                .isInstanceOf(ApiConnectionCommitStoreException.class)
-                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.LEASE_FENCED);
-        assertThat(jdbc.queryForObject("SELECT status FROM rg_api_connection_pending_secret_leases",
-                String.class)).isEqualTo("ABORT_REQUIRED");
-        store.cleanupSecretLease(expired, "token");
-
-        assertThat(pendingCount()).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM rg_api_connection_revisions "
-                + "WHERE command_id=? AND state='STAGED'", Integer.class, original.commandId())).isZero();
-    }
-
     /** Uses SQL to advance H2's observable clock; production expiry remains DB-clock-only. */
     @Test
     @Override
@@ -245,27 +166,6 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
-    void secretLeaseAbortAndCleanupTargetTheExactPendingRow() {
-        JdbcApiConnectionCommitStore store = jdbcStore();
-        PreparedSecretBinding prepared = new PreparedSecretBinding("password",
-                new SecretReference(SCOPE, "vault://team/customer-password"));
-        ApiConnectionCommand basic = new ApiConnectionCommand("Basic API", BASE_URL,
-                ApiConnectionCommand.Auth.basic("user", ApiConnectionCommand.SecretWrite.value("one-time-secret")),
-                new ApiConnectionCommand.Defaults(5_000, Map.of()));
-        CommandLease lease = lease("lease-cleanup", "lease-cleanup-token", "customer",
-                ExpectedRevision.create());
-        store.stage(lease, "customer", ExpectedRevision.create(), basic, prepared);
-
-        store.failSecretLease(lease, "password");
-        assertThat(jdbc.queryForObject(
-                "SELECT status FROM rg_api_connection_pending_secret_leases", String.class))
-                .isEqualTo("ABORT_REQUIRED");
-
-        store.cleanupSecretLease(lease, "password");
-        assertThat(pendingCount()).isZero();
-    }
-
-    @Test
     void nestedChildPromotesConnectionHeadWithoutClosingOuterJournal() {
         JdbcApiConnectionCommitStore store = jdbcStore();
         CommandLease resourceLease = new CommandLease("nested-jdbc", 1, "nested-jdbc-token",
@@ -285,6 +185,49 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
         assertThat(jdbc.queryForObject("SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
                 String.class, resourceLease.commandId())).isNull();
         assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+    }
+
+    @Test
+    void committedOuterResourceReceiptMakesChildReadableWithoutReusingOuterEtag() throws Exception {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease resourceLease = new CommandLease("nested-receipt", 1, "nested-receipt-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-receipt"),
+                "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
+
+        store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection child = store.commitChild(resourceLease);
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode body = mapper.createObjectNode().put("connectionId", "customer").put("revision", 1);
+        String receiptJson = mapper.writeValueAsString(body);
+        jdbc.update("""
+                UPDATE rg_authoring_command_journal
+                   SET status='COMMITTED', receipt_schema=?, receipt_json=?, receipt_fingerprint=?, receipt_etag=?
+                 WHERE command_id=? AND status='PREPARING'
+                """, "bloge.apiResourceSaveReceipt.v1", receiptJson,
+                AuthoringFingerprints.of(body), "\"outer-resource-etag\"", resourceLease.commandId());
+
+        assertThat(store.findHead(SCOPE, "customer")).contains(new StoredApiConnection(
+                SCOPE, child.view(), child.metadataFingerprint(), child.strongEtag(), child.commandId()));
+        assertThat(child.strongEtag()).isNotEqualTo("\"outer-resource-etag\"");
+    }
+
+    @Test
+    void childHeadAndRevisionRollbackWithTheOuterResourceTransaction() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        TransactionTemplate outer = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+        CommandLease resourceLease = new CommandLease("nested-rollback", 1, "nested-rollback-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-rollback"),
+                "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
+
+        outer.executeWithoutResult(status -> {
+            store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+            store.commitChild(resourceLease);
+            status.setRollbackOnly();
+        });
+
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
+        assertThat(store.findRevision(SCOPE, "customer", 1)).isEmpty();
+        assertThat(revisionCount()).isZero();
     }
 
     @Test
@@ -532,16 +475,6 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     private static ApiConnectionCommand noneCommand() {
         return new ApiConnectionCommand("Customer API", BASE_URL, ApiConnectionCommand.Auth.none(),
                 new ApiConnectionCommand.Defaults(5_000, Map.of("Accept", "application/json")));
-    }
-
-    private int pendingCount() {
-        return jdbc.queryForObject(
-                "SELECT COUNT(*) FROM rg_api_connection_pending_secret_leases", Integer.class);
-    }
-
-    private int bindingCount() {
-        return jdbc.queryForObject(
-                "SELECT COUNT(*) FROM rg_api_connection_secret_bindings", Integer.class);
     }
 
     private int revisionCount() {
