@@ -970,6 +970,10 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
             ApiConnectionView canonicalView = authority.view();
             JsonNode receipt = mapper.readTree(row.receiptJson());
             JournalReference journal = journalReference(row.commandId(), row.attemptNo(), row.attemptToken());
+            if (AuthoringEndpoint.API_CONNECTION_SAVE.name().equals(journal.endpoint())
+                    && !journal.targetId().equals(row.connectionId())) {
+                fail(Code.INTEGRITY);
+            }
             boolean connectionReceiptClosure = AuthoringEndpoint.API_CONNECTION_SAVE.name().equals(journal.endpoint())
                     && RECEIPT_SCHEMA.equals(row.receiptSchema())
                     && row.receiptEtag().equals(row.strongEtag())
@@ -1001,12 +1005,23 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     }
 
     private JournalReference journalReference(String commandId, int attemptNo, String attemptToken) {
-        List<JournalReference> rows = jdbc.query("SELECT endpoint, target_id FROM rg_authoring_command_journal "
-                        + "WHERE command_id=? AND attempt_no=? AND attempt_token=? AND status='COMMITTED'",
-                (row, ignored) -> new JournalReference(row.getString(1), row.getString(2)), commandId,
-                attemptNo, attemptToken);
+        List<JournalReferenceRow> rows = jdbc.query("""
+                        SELECT j.endpoint, j.target_id, a.endpoint, a.target_id
+                          FROM rg_authoring_command_journal j
+                          JOIN rg_authoring_command_attempts a
+                            ON a.command_id=j.command_id AND a.attempt_no=j.attempt_no
+                           AND a.attempt_token=j.attempt_token
+                         WHERE j.command_id=? AND j.attempt_no=? AND j.attempt_token=?
+                           AND j.status='COMMITTED' AND a.status='COMMITTED'
+                        """, (row, ignored) -> new JournalReferenceRow(row.getString(1), row.getString(2),
+                row.getString(3), row.getString(4)), commandId, attemptNo, attemptToken);
         if (rows.size() != 1) fail(Code.INTEGRITY);
-        return rows.getFirst();
+        JournalReferenceRow row = rows.getFirst();
+        if (!row.journalEndpoint().equals(row.authorityEndpoint())
+                || !row.journalTargetId().equals(row.authorityTargetId())) {
+            fail(Code.INTEGRITY);
+        }
+        return new JournalReference(row.authorityEndpoint(), row.authorityTargetId());
     }
 
     private ApiConnectionSpec committedSpec(AuthoringScope scope, String connectionId) {
@@ -1146,6 +1161,9 @@ public final class JdbcApiConnectionCommitStore implements ApiConnectionCommitSt
     private record CommittedOuterReceipt(String schema, JsonNode body, String fingerprint, String etag) { }
 
     private record JournalReference(String endpoint, String targetId) { }
+
+    private record JournalReferenceRow(String journalEndpoint, String journalTargetId,
+                                       String authorityEndpoint, String authorityTargetId) { }
 
     private record ResourceAuthorityRow(String resourceId, long revision, String specFingerprint,
                                         String connectionId) { }

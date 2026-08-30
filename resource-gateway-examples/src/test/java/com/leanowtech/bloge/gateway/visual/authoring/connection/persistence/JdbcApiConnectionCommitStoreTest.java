@@ -677,6 +677,45 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
     }
 
     @Test
+    void committedReadRequiresJournalAndImmutableAttemptAuthorityToAgree() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease lease = lease("read-authority", "read-authority-token", "customer",
+                ExpectedRevision.create());
+        store.stage(lease, "customer", ExpectedRevision.create(), noneCommand());
+        store.commit(lease);
+
+        assertThat(store.findHead(SCOPE, "customer")).isPresent();
+        assertThat(store.findRevision(SCOPE, "customer", 1)).isPresent();
+
+        jdbc.update("UPDATE rg_authoring_command_journal SET target_id=? WHERE command_id=?",
+                "other-connection", lease.commandId());
+        assertReadIntegrityFailureForHeadAndRevision(store);
+        jdbc.update("UPDATE rg_authoring_command_journal SET target_id=? WHERE command_id=?",
+                "customer", lease.commandId());
+        assertThat(store.findHead(SCOPE, "customer")).isPresent();
+
+        jdbc.update("UPDATE rg_authoring_command_attempts SET target_id=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", "other-connection", lease.commandId(),
+                lease.attemptNo(), lease.attemptToken());
+        assertReadIntegrityFailureForHeadAndRevision(store);
+        jdbc.update("UPDATE rg_authoring_command_attempts SET target_id=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", "customer", lease.commandId(),
+                lease.attemptNo(), lease.attemptToken());
+        assertThat(store.findHead(SCOPE, "customer")).isPresent();
+
+        jdbc.update("UPDATE rg_authoring_command_attempts SET endpoint=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", AuthoringEndpoint.API_RESOURCE_SAVE.name(),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+        assertReadIntegrityFailureForHeadAndRevision(store);
+        jdbc.update("UPDATE rg_authoring_command_attempts SET endpoint=? WHERE command_id=?"
+                        + " AND attempt_no=? AND attempt_token=?", AuthoringEndpoint.API_CONNECTION_SAVE.name(),
+                lease.commandId(), lease.attemptNo(), lease.attemptToken());
+
+        assertThat(store.findHead(SCOPE, "customer")).isPresent();
+        assertThat(store.findRevision(SCOPE, "customer", 1)).isPresent();
+    }
+
+    @Test
     void concurrentCommitsSerializeTheHeadCas() throws Exception {
         ApiConnectionCommitStore store = jdbcStore();
         CommandLease first = lease("race-a", "race-a-token", "customer", ExpectedRevision.create());
@@ -939,6 +978,13 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
 
     private void assertReadIntegrityFailure(JdbcApiConnectionCommitStore store) {
         assertThatThrownBy(() -> store.findHead(SCOPE, "customer"))
+                .isInstanceOf(ApiConnectionCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
+    }
+
+    private void assertReadIntegrityFailureForHeadAndRevision(JdbcApiConnectionCommitStore store) {
+        assertReadIntegrityFailure(store);
+        assertThatThrownBy(() -> store.findRevision(SCOPE, "customer", 1))
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
     }
