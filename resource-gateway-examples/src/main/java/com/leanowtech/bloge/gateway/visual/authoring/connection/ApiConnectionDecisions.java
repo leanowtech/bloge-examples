@@ -89,6 +89,60 @@ public final class ApiConnectionDecisions {
         return next(scope, currentValue, connectionId, command, expected, new PreparedSecretBinding[0]);
     }
 
+    /**
+     * Runs the command shape and transport-safety checks without resolving
+     * secrets, reading a current head, or consuming an idempotency claim.
+     * Application facades call this before constructing a fingerprint so a
+     * malformed request cannot reserve a command coordinate.
+     *
+     * @param command write-only command to validate
+     */
+    public void validateForAuthoring(ApiConnectionCommand command) {
+        validateCommand(command);
+    }
+
+    /**
+     * Builds the deterministic idempotency fingerprint from explicit,
+     * non-secret authority fields only. Credential values and opaque secret
+     * references are represented by their slot and write mode, never by their
+     * contents. Expected revisions are deliberately outside this fingerprint
+     * and are compared by the claim store as a separate authority field.
+     *
+     * @param scope trusted authoring scope
+     * @param connectionId path target
+     * @param command command whose non-secret authority is fingerprinted
+     * @return canonical {@code sha256:} fingerprint
+     */
+    public String requestFingerprint(AuthoringScope scope, String connectionId,
+                                     ApiConnectionCommand command) {
+        requireScope(scope);
+        requireIdentifier(connectionId, "connectionId");
+        validateCommand(command);
+        ObjectNode body = mapper.createObjectNode();
+        body.put("schemaVersion", ApiConnectionCommand.SCHEMA_VERSION);
+        body.put("connectionId", connectionId);
+        body.put("displayName", command.displayName());
+        body.put("baseUrl", command.baseUrl());
+        ObjectNode auth = body.putObject("auth");
+        ApiConnectionCommand.Auth value = command.auth();
+        auth.put("kind", value.kind());
+        if (value instanceof ApiConnectionCommand.Auth.Basic basic) {
+            auth.put("username", basic.username());
+            auth.put("secretSlot", "password");
+            auth.put("secretWriteMode", secretWriteMode(basic.password()));
+        } else if (value instanceof ApiConnectionCommand.Auth.Bearer bearer) {
+            auth.put("secretSlot", "token");
+            auth.put("secretWriteMode", secretWriteMode(bearer.token()));
+        } else if (value instanceof ApiConnectionCommand.Auth.ApiKey apiKey) {
+            auth.put("headerName", apiKey.headerName());
+            auth.put("secretSlot", "value");
+            auth.put("secretWriteMode", secretWriteMode(apiKey.value()));
+        }
+        ApiConnectionCommand.Defaults defaults = effectiveDefaults(command.defaults());
+        body.set("defaults", mapper.valueToTree(defaults));
+        return AuthoringFingerprints.of(body);
+    }
+
     /** @param spec authority snapshot @return deterministic persisted metadata fingerprint */
     public String fingerprint(ApiConnectionSpec spec) {
         if (spec == null) invalid("connection spec is required");
@@ -224,6 +278,12 @@ public final class ApiConnectionDecisions {
 
     private static void requireSecretWrite(ApiConnectionCommand.SecretWrite write) {
         if (write == null) invalid("secret write is required");
+    }
+
+    private static String secretWriteMode(ApiConnectionCommand.SecretWrite write) {
+        return write instanceof ApiConnectionCommand.SecretWrite.Value ? "VALUE"
+                : write instanceof ApiConnectionCommand.SecretWrite.SecretRef ? "SECRET_REF"
+                : write instanceof ApiConnectionCommand.SecretWrite.KeepExisting ? "KEEP_EXISTING" : "UNKNOWN";
     }
 
     private static void validateBaseUrl(String value) {

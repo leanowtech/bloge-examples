@@ -8,11 +8,17 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
  * the metadata seam prevents the in-memory model, JDBC adapter, and returned
  * value objects from drifting apart.</p>
  */
-final class StrongEtag {
+/** Shared conservative strong-validator shape used by persistence and application preconditions. */
+public final class StrongEtag {
     private StrongEtag() { }
 
     /** @return whether {@code value} is one valid persisted strong validator */
-    static boolean isValid(String value) {
+    /**
+     * Returns whether the value is one quoted, ASCII, non-list strong
+     * validator accepted by the V003/V010 database closure.  The database
+     * safe subset intentionally rejects every weak/list/control form.
+     */
+    public static boolean isValid(String value) {
         if (value == null || value.length() < 3 || value.length() > 256
                 || value.charAt(0) != '"' || value.charAt(value.length() - 1) != '"'
                 || value.startsWith("\"W/")) return false;

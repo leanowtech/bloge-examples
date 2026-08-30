@@ -1,13 +1,17 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionView;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence.FinalizedSecretSlots;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringFingerprints;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ApiResourceSaveReceiptClosure;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandReceipt;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
@@ -15,6 +19,8 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.Comman
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -30,9 +36,11 @@ import static com.leanowtech.bloge.gateway.visual.authoring.connection.persisten
  * pure decision engine can validate it; this store never retains or activates
  * a provider reference.
  */
-public final class InMemoryApiConnectionCommitStore implements ApiConnectionCommitStore {
+public final class InMemoryApiConnectionCommitStore implements ApiConnectionAuthoringStore {
     private final Clock clock;
     private final ApiConnectionDecisions decisions;
+    private final Duration leaseDuration;
+    private final ObjectMapper mapper = new ObjectMapper();
     private final Map<ConnectionKey, StoredApiConnection> heads = new HashMap<>();
     private final Map<RevisionKey, StoredApiConnection> history = new HashMap<>();
     private final Map<RevisionKey, ApiConnectionSpec> committedSpecs = new HashMap<>();
@@ -50,14 +58,68 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
     private final Map<CommandKey, CommandLease> failed = new HashMap<>();
     private final Map<StageKey, CommandLease> failedAttempts = new HashMap<>();
+    /** The same object is both the claim authority and Connection lifecycle state. */
+    private final Map<CommandKey, Journal> journals = new HashMap<>();
 
     /** Creates a store using UTC wall-clock time and default decisions. */
-    public InMemoryApiConnectionCommitStore() { this(Clock.systemUTC(), new ApiConnectionDecisions()); }
+    public InMemoryApiConnectionCommitStore() {
+        this(Clock.systemUTC(), new ApiConnectionDecisions(), Duration.ofSeconds(30));
+    }
 
     /** Creates a store with injectable time and pure authority decisions. */
     public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions) {
+        this(clock, decisions, Duration.ofSeconds(30));
+    }
+
+    /** Creates a shared claim/lifecycle model with an injectable lease duration. */
+    public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions,
+                                            Duration leaseDuration) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
+        if (leaseDuration == null || leaseDuration.isZero() || leaseDuration.isNegative()) {
+            throw new IllegalArgumentException("leaseDuration must be positive");
+        }
+        this.leaseDuration = leaseDuration;
+    }
+
+    /** Claims an API connection command in the same state holder used by stage and commit. */
+    @Override
+    public synchronized com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult claim(
+            CommandKey key, String requestFingerprint, ExpectedRevision expectedRevision) {
+        if (key == null || key.endpoint() != AuthoringEndpoint.API_CONNECTION_SAVE
+                || expectedRevision == null || !validFingerprint(requestFingerprint)) {
+            fail(Code.INTEGRITY);
+        }
+        Journal prior = journals.get(key);
+        if (prior != null && !prior.requestFingerprint().equals(requestFingerprint)) {
+            return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Conflict(
+                    "idempotency fingerprint conflict");
+        }
+        if (prior != null && !prior.expectedRevision().equals(expectedRevision)) {
+            return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Conflict(
+                    "expected revision conflict");
+        }
+        Instant now = clock.instant();
+        if (prior != null && prior.status() == JournalStatus.COMMITTED) {
+            return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Replay(
+                    prior.receipt());
+        }
+        if (prior != null && prior.status() == JournalStatus.PREPARING
+                && prior.lease().leaseUntil().isAfter(now)) {
+            return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Busy(
+                    prior.lease().leaseUntil());
+        }
+        if (prior != null) {
+            removeStage(prior.lease());
+            if (active.get(key) != null && active.get(key).equals(prior.lease())) active.remove(key);
+        }
+        String commandId = prior == null ? UUID.randomUUID().toString() : prior.lease().commandId();
+        int attemptNo = prior == null ? 1 : prior.lease().attemptNo() + 1;
+        CommandLease lease = new CommandLease(commandId, attemptNo, UUID.randomUUID().toString(), key,
+                requestFingerprint, now.plus(leaseDuration), expectedRevision);
+        journals.put(key, new Journal(JournalStatus.PREPARING, requestFingerprint, expectedRevision, lease, null));
+        return new com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.ClaimResult.Acquired(
+                lease, prior != null);
     }
 
     /** {@inheritDoc} */
@@ -70,6 +132,12 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         if (connectionId == null || connectionId.isBlank() || connectionExpected == null) fail(Code.INTEGRITY);
         requireLeaseShape(lease, connectionId, connectionExpected);
         CommandKey commandKey = lease.key();
+        Journal journal = journals.get(commandKey);
+        if (journal != null && (journal.status() != JournalStatus.PREPARING
+                || !journal.lease().equals(lease)
+                || !journal.expectedRevision().equals(lease.expectedRevision()))) {
+            fail(Code.LEASE_FENCED);
+        }
         StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
         if (failedAttempts.containsKey(stageKey)) fail(Code.LEASE_FENCED);
         CommandLease currentLease = active.get(commandKey);
@@ -235,6 +303,15 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         stages.remove(stageKey);
         stageBases.remove(stageKey);
         active.remove(lease.key());
+        Journal journal = journals.get(lease.key());
+        if (journal != null && journal.status() == JournalStatus.PREPARING
+                && journal.lease().equals(lease)) {
+            ObjectNode body = mapper.valueToTree(stored.view());
+            CommandReceipt receipt = new CommandReceipt(ApiConnectionView.SCHEMA_VERSION, body,
+                    AuthoringFingerprints.of(body), stored.strongEtag());
+            journals.put(lease.key(), new Journal(JournalStatus.COMMITTED, journal.requestFingerprint(),
+                    journal.expectedRevision(), lease, receipt));
+        }
         return stored;
     }
 
@@ -274,6 +351,12 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         active.remove(lease.key());
         failed.put(lease.key(), current);
         failedAttempts.put(new StageKey(lease.commandId(), lease.attemptToken()), current);
+        Journal journal = journals.get(lease.key());
+        if (journal != null && journal.status() == JournalStatus.PREPARING
+                && journal.lease().equals(lease)) {
+            journals.put(lease.key(), new Journal(JournalStatus.FAILED, journal.requestFingerprint(),
+                    journal.expectedRevision(), lease, null));
+        }
     }
 
     /** {@inheritDoc} */
@@ -341,7 +424,14 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
     private static void fail(Code code) { throw new ApiConnectionCommitStoreException(code); }
 
+    private static boolean validFingerprint(String value) {
+        return value != null && value.matches("sha256:[0-9a-f]{64}");
+    }
+
     private record StageKey(String commandId, String attemptToken) { }
     private record ConnectionKey(AuthoringScope scope, String connectionId) { }
     private record RevisionKey(ConnectionKey key, long revision) { }
+    private enum JournalStatus { PREPARING, COMMITTED, FAILED }
+    private record Journal(JournalStatus status, String requestFingerprint, ExpectedRevision expectedRevision,
+                           CommandLease lease, CommandReceipt receipt) { }
 }
