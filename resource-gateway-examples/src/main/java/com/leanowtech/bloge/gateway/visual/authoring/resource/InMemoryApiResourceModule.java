@@ -55,12 +55,26 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
     @Override
     public synchronized ApiResourceSpec save(String resourceId, String connectionId,
                                              ApiResourceCommand command, ExpectedRevision expected) {
+        ApiResourceSpec next = ApiResourceDecisions.next(Optional.ofNullable(resources.get(resourceId)),
+                resourceId, connectionId, command, expected);
+        resources.put(resourceId, next);
+        return copy(next);
+    }
+
+    static ApiResourceSpec decide(Optional<ApiResourceSpec> currentValue, String resourceId, String connectionId,
+                                  ApiResourceCommand command, ExpectedRevision expected) {
         requireIdentifier(resourceId, "resourceId");
         requireIdentifier(connectionId, "connectionId");
         if (expected == null) invalid("expected revision is required");
+        InMemoryApiResourceModule module = new InMemoryApiResourceModule();
+        return module.decideInternal(currentValue, resourceId, connectionId, command, expected);
+    }
+
+    private ApiResourceSpec decideInternal(Optional<ApiResourceSpec> currentValue, String resourceId, String connectionId,
+                                           ApiResourceCommand command, ExpectedRevision expected) {
         validate(command);
 
-        ApiResourceSpec current = resources.get(resourceId);
+        ApiResourceSpec current = currentValue.orElse(null);
         if (expected instanceof ExpectedRevision.Create) {
             if (current != null) {
                 throw failure(ApiResourceAuthoringException.Code.ALREADY_EXISTS,
@@ -84,8 +98,7 @@ public final class InMemoryApiResourceModule implements ApiResourceModule {
         ApiResourceSpec next = new ApiResourceSpec(ApiResourceSpec.SCHEMA_VERSION, resourceId, revision,
                 fingerprint, command.displayName(), command.description(), connectionId, command.operation(),
                 command.contract(), command.response(), command.effect(), command.examples(), ApiResourceSpec.DRAFT);
-        resources.put(resourceId, next);
-        return copy(next);
+        return next;
     }
 
     @Override
