@@ -16,6 +16,7 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
     private static final class FakeProvider extends ExternalSecretProvider {
         private static final Instant UNTIL = Instant.parse("2030-01-01T00:00:00Z");
         private final Map<String, PreparedExternalSecret> prepared = new HashMap<>();
+        private final Map<String, ActivatedExternalSecret> activatedByLease = new HashMap<>();
         private final Map<String, String> materialByLocator = new HashMap<>();
         private final Set<String> abortedLocators = new HashSet<>();
 
@@ -25,23 +26,33 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
             if (source instanceof SecretSource.Value value) {
                 value.secret().borrow(chars -> { });
             }
-            PreparedExternalSecret result = new PreparedExternalSecret(providerId(), "lease", "opaque", UNTIL);
-            prepared.put(result.leaseId(), result);
+            String key = attemptKey(context, source);
+            PreparedExternalSecret existing = prepared.get(key);
+            if (existing != null) return existing;
+            String suffix = context.commandId() + "-" + context.attemptNo();
+            PreparedExternalSecret result = new PreparedExternalSecret(providerId(), "lease-" + suffix,
+                    "opaque-" + suffix, UNTIL);
+            prepared.put(key, result);
             return result;
         }
 
         @Override protected ActivatedExternalSecret doActivate(SecretOperationContext context, PreparedExternalSecret prepared) {
-            if (!this.prepared.containsKey(prepared.leaseId())) {
+            ActivatedExternalSecret existing = activatedByLease.get(prepared.leaseId());
+            if (existing != null) return existing;
+            if (!this.prepared.containsValue(prepared)) {
                 throw new ExternalSecretProviderException(ExternalSecretProviderException.Code.NOT_FOUND);
             }
-            ActivatedExternalSecret result = new ActivatedExternalSecret(providerId(), prepared.leaseId(), "active");
+            ActivatedExternalSecret result = new ActivatedExternalSecret(providerId(), prepared.leaseId(),
+                    "active-" + prepared.leaseId().substring("lease-".length()));
+            activatedByLease.put(prepared.leaseId(), result);
             materialByLocator.put(result.activeLocator(), "material");
             return result;
         }
 
         @Override protected void doAbort(SecretOperationContext context, PreparedExternalSecret prepared) {
             abortedLocators.add(prepared.opaqueLocator());
-            abortedLocators.add("active");
+            ActivatedExternalSecret activation = activatedByLease.get(prepared.leaseId());
+            if (activation != null) abortedLocators.add(activation.activeLocator());
         }
 
         @Override protected ResolvedExternalSecret doResolve(SecretOperationContext context, ActiveSecretBinding binding) {
@@ -50,6 +61,13 @@ class FakeExternalSecretProviderContractTest extends ExternalSecretProviderContr
                 throw new ExternalSecretProviderException(ExternalSecretProviderException.Code.NOT_FOUND);
             }
             return new ResolvedExternalSecret(providerId(), new DestroyableSecret(material.toCharArray()));
+        }
+
+        private static String attemptKey(SecretOperationContext context, SecretSource source) {
+            String sourceKey = source instanceof SecretSource.Reference reference
+                    ? reference.reference().ref() : "value";
+            return context.commandId() + ":" + context.attemptNo() + ":"
+                    + context.attemptToken() + ":" + context.slot() + ":" + sourceKey;
         }
     }
 }

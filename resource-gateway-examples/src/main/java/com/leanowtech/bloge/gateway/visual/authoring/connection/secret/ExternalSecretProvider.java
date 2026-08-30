@@ -106,9 +106,15 @@ public abstract class ExternalSecretProvider {
         requireContext(context);
         if (binding == null) invalid();
         requireProvider(binding.providerId());
+        if (!context.commandId().equals(binding.commandId())) invalid();
         ResolvedExternalSecret result = require(doResolve(context, binding));
-        requireProvider(result.providerId());
-        return result;
+        try {
+            requireProvider(result.providerId());
+            return result;
+        } catch (RuntimeException failure) {
+            result.close();
+            throw failure;
+        }
     }
 
     /**
