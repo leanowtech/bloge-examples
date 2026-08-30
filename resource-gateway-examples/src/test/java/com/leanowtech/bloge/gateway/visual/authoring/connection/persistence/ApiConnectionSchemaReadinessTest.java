@@ -169,6 +169,13 @@ class ApiConnectionSchemaReadinessTest {
                         + "'ABORT_REQUIRED'::character varying]::character varying[])::text[]))", "status",
                 Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
         assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status::varchar IN ('PENDING'::varchar, 'ABORT_REQUIRED'::varchar)", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status::character varying IN ('PENDING'::character varying, "
+                        + "'ABORT_REQUIRED'::character varying)", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
                 "((revision_state)::text = 'COMMITTED'::text)", "revision_state",
                 Set.of("COMMITTED"))).isTrue();
     }
@@ -190,6 +197,18 @@ class ApiConnectionSchemaReadinessTest {
         assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
                 "revision_state = 'COMMITTED' OR revision_state = 'STAGED'", "revision_state",
                 Set.of("COMMITTED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status::char IN ('PENDING', 'ABORT_REQUIRED')", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status IN ('PENDING'::char, 'ABORT_REQUIRED')", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status = ANY (ARRAY['PENDING', 'ABORT_REQUIRED']::custom[])", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status::numeric IN ('PENDING', 'ABORT_REQUIRED')", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
     }
 
     @Test

@@ -244,13 +244,16 @@ public final class ApiConnectionSchemaReadiness {
         if ("revision_state".equalsIgnoreCase(targetColumn)
                 && !allowedLiterals.equals(Set.of("COMMITTED"))) return false;
         String clause = stripOuterParens(checkClause.replaceAll("\\s+", ""));
-        String column = "\\(*\\\"?" + Pattern.quote(targetColumn) + "\\\"?\\)*(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)*";
-        String literal = "'([^']*)'(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)*";
+        String stringCast = "(?:::(?:text|varchar|charactervarying))*";
+        String arrayStringCast = "(?:::(?:text|varchar|charactervarying)\\[\\])*";
+        String column = "\\(*\\\"?" + Pattern.quote(targetColumn) + "\\\"?\\)*" + stringCast;
+        String literal = "'([^']*)'" + stringCast;
 
         Matcher in = Pattern.compile("(?i)^(" + column + ")in\\((.*)\\)$").matcher(clause);
         if (in.matches() && exactLiterals(parseLiteralList(in.group(2), literal), allowedLiterals)) return true;
 
-        Matcher any = Pattern.compile("(?i)^(" + column + ")=any\\(*array\\[(.*?)\\](?:(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)|\\))*(?:\\))$")
+        Matcher any = Pattern.compile("(?i)^(" + column + ")=any\\(*array\\[(.*?)\\](?:(?:" + arrayStringCast
+                + ")|\\))*(?:\\))$")
                 .matcher(clause);
         if (any.matches() && exactLiterals(parseLiteralList(any.group(2), literal), allowedLiterals)) return true;
 
