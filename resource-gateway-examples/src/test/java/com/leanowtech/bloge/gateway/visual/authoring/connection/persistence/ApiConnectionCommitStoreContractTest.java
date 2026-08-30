@@ -313,9 +313,9 @@ abstract class ApiConnectionCommitStoreContractTest {
         MutableClock clock = new MutableClock(TEST_NOW);
         ApiConnectionCommitStore store = newStore(clock);
         CommandLease old = leaseAt(clock, "fingerprint-takeover", 1, "old-token", SCOPE, "customer",
-                ExpectedRevision.create(), 1);
+                ExpectedRevision.create(), 10);
         stage(store, old, "customer", ExpectedRevision.create(), noneCommand());
-        clock.advanceSeconds(2);
+        clock.advanceSeconds(20);
         CommandLease changed = new CommandLease("fingerprint-takeover", 2, "new-token",
                 old.key(), "sha256:" + "b".repeat(64), clock.instant().plusSeconds(30),
                 ExpectedRevision.create());
