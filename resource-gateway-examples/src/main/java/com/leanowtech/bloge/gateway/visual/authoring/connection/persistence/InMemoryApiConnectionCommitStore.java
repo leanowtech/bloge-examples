@@ -1,5 +1,6 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
+import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDecisions;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionSpec;
@@ -8,28 +9,32 @@ import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
 
 import java.time.Clock;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
-/** Small deterministic contract adapter; it is not a production persistence implementation. */
+import com.leanowtech.bloge.gateway.visual.authoring.connection.persistence.ApiConnectionCommitStoreException.Code;
+
+/** Deterministic in-memory contract adapter; it is not a production store. */
 public final class InMemoryApiConnectionCommitStore implements ApiConnectionCommitStore {
     private final Clock clock;
     private final ApiConnectionDecisions decisions;
     private final Map<ConnectionKey, StoredApiConnection> heads = new HashMap<>();
     private final Map<RevisionKey, StoredApiConnection> history = new HashMap<>();
     private final Map<RevisionKey, ApiConnectionSpec> committedSpecs = new HashMap<>();
-    private final Map<CommandKey, Active> active = new HashMap<>();
+    private final Map<CommandKey, CommandLease> active = new HashMap<>();
     private final Map<StageKey, StagedApiConnection> stages = new HashMap<>();
-    private final java.util.Set<StageKey> failed = new java.util.HashSet<>();
+    private final Map<StageKey, ApiConnectionSpec> stageBases = new HashMap<>();
+    private final Map<CommandKey, CommandLease> failed = new HashMap<>();
 
+    /** Creates a store using UTC wall-clock time and default decisions. */
     public InMemoryApiConnectionCommitStore() { this(Clock.systemUTC(), new ApiConnectionDecisions()); }
+
+    /** Creates a store with injectable time and pure authority decisions. */
     public InMemoryApiConnectionCommitStore(Clock clock, ApiConnectionDecisions decisions) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.decisions = Objects.requireNonNull(decisions, "decisions");
@@ -37,106 +42,138 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
 
     @Override
     public synchronized StagedApiConnection stage(CommandLease lease, String connectionId,
-                                                   ApiConnectionCommand command, PreparedSecretBinding... prepared) {
-        requireTarget(lease, connectionId);
-        requireLiveForStage(lease);
-        Active currentAttempt = active.get(lease.key());
-        if (currentAttempt != null && !sameLease(currentAttempt.lease, lease)
-                && currentAttempt.lease.attemptNo() >= lease.attemptNo()) {
-            fail(Code.LEASE_FENCED, "lease is fenced");
+                                                   ExpectedRevision connectionExpected,
+                                                   ApiConnectionCommand command,
+                                                   PreparedSecretBinding... prepared) {
+        requireLease(lease);
+        if (connectionId == null || connectionId.isBlank() || connectionExpected == null) fail(Code.INTEGRITY);
+        CommandKey commandKey = lease.key();
+        CommandLease currentLease = active.get(commandKey);
+        if (currentLease != null) {
+            if (currentLease.equals(lease)) {
+                requireStoredLeaseLive(currentLease);
+            } else if (currentLease.leaseUntil().isAfter(clock.instant())) {
+                fail(Code.LEASE_FENCED);
+            } else {
+                removeStage(currentLease);
+                active.remove(commandKey);
+            }
         }
+        CommandLease failedLease = failed.get(commandKey);
+        if (failedLease != null) {
+            if (failedLease.equals(lease) || lease.attemptNo() <= failedLease.attemptNo()) fail(Code.LEASE_FENCED);
+            failed.remove(commandKey);
+        }
+        if (currentLease == null || !currentLease.equals(lease)) requireIncomingLeaseLive(lease);
+
         StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
         StagedApiConnection prior = stages.get(stageKey);
         if (prior != null) {
-            ApiConnectionSpec candidate = decisions.next(lease.key().scope(), Optional.of(prior.spec()),
-                    connectionId, command, ExpectedRevision.match(prior.spec().revision()), prepared);
-            if (!candidate.fingerprint().equals(prior.metadataFingerprint())) fail(Code.INTEGRITY, "staged content changed");
+            if (!prior.lease().equals(lease)) fail(Code.LEASE_FENCED);
+            ApiConnectionSpec candidate = decisions.next(lease.key().scope(), Optional.ofNullable(stageBases.get(stageKey)),
+                    connectionId, command, prior.connectionExpected(), prepared);
+            if (!candidate.fingerprint().equals(prior.metadataFingerprint())) fail(Code.INTEGRITY);
             return prior;
         }
+
         ConnectionKey key = new ConnectionKey(lease.key().scope(), connectionId);
         StoredApiConnection head = heads.get(key);
+        ApiConnectionSpec current = head == null ? null
+                : committedSpecs.get(new RevisionKey(key, head.view().revision()));
         ApiConnectionSpec next;
         try {
-            next = decisions.next(lease.key().scope(), Optional.ofNullable(head == null ? null
-                            : committedSpecs.get(new RevisionKey(key, head.view().revision()))),
-                    connectionId, command, lease.expectedRevision(), prepared);
-        } catch (RuntimeException ex) {
-            if (ex instanceof com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException a
-                    && (a.code() == com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException.Code.ALREADY_EXISTS
-                    || a.code() == com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException.Code.NOT_FOUND
-                    || a.code() == com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionAuthoringException.Code.CAS_MISMATCH)) {
-                fail(Code.CAS_MISMATCH, "head revision changed");
-            }
+            next = decisions.next(lease.key().scope(), Optional.ofNullable(current), connectionId, command,
+                    connectionExpected, prepared);
+        } catch (ApiConnectionAuthoringException ex) {
+            if (ex.code() == ApiConnectionAuthoringException.Code.ALREADY_EXISTS
+                    || ex.code() == ApiConnectionAuthoringException.Code.NOT_FOUND
+                    || ex.code() == ApiConnectionAuthoringException.Code.CAS_MISMATCH) fail(Code.CAS_MISMATCH);
             throw ex;
         }
-        StagedApiConnection staged = new StagedApiConnection(lease, next, opaqueEtag());
-        Active previous = active.put(lease.key(), new Active(lease));
-        if (previous != null) stages.remove(new StageKey(previous.lease.commandId(), previous.lease.attemptToken()));
+        StagedApiConnection staged = new StagedApiConnection(lease, next, connectionExpected, opaqueEtag());
+        CommandLease previous = active.put(commandKey, lease);
+        if (previous != null) removeStage(previous);
         stages.put(stageKey, staged);
+        stageBases.put(stageKey, current);
         return staged;
     }
 
-    @Override public synchronized StoredApiConnection commit(CommandLease lease) {
-        if (lease != null && failed.contains(new StageKey(lease.commandId(), lease.attemptToken()))) {
-            fail(Code.STAGE_MISSING, "staged connection is missing");
+    @Override
+    public synchronized StoredApiConnection commit(CommandLease lease) {
+        requireLease(lease);
+        CommandLease currentLease = active.get(lease.key());
+        if (currentLease == null) {
+            CommandLease failedLease = failed.get(lease.key());
+            if (failedLease != null && failedLease.equals(lease)) fail(Code.STAGE_MISSING);
+            fail(Code.LEASE_FENCED);
         }
-        requireActive(lease);
+        if (!currentLease.equals(lease)) fail(Code.LEASE_FENCED);
+        requireStoredLeaseLive(currentLease);
         StagedApiConnection staged = stages.get(new StageKey(lease.commandId(), lease.attemptToken()));
-        if (staged == null) fail(Code.STAGE_MISSING, "staged connection is missing");
+        if (staged == null) fail(Code.STAGE_MISSING);
         ConnectionKey key = new ConnectionKey(lease.key().scope(), staged.spec().connectionId());
         StoredApiConnection current = heads.get(key);
-        checkExpected(current, lease.expectedRevision());
+        checkExpected(current, staged.connectionExpected());
         StoredApiConnection stored = new StoredApiConnection(key.scope, staged.view(), staged.metadataFingerprint(),
                 staged.strongEtag(), lease.commandId());
         heads.put(key, stored);
-        history.put(new RevisionKey(key, staged.view().revision()), stored);
-        committedSpecs.put(new RevisionKey(key, staged.view().revision()), staged.spec());
+        RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
+        history.put(revisionKey, stored);
+        committedSpecs.put(revisionKey, staged.spec());
         stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
         active.remove(lease.key());
         return stored;
     }
 
-    /** Convenience overload for callers holding the stage receipt itself. */
-    public StoredApiConnection commit(StagedApiConnection staged) {
-        return commit(staged == null ? null : staged.lease());
-    }
-
-    @Override public synchronized void fail(CommandLease lease) {
+    @Override
+    public synchronized void fail(CommandLease lease) {
         if (lease == null) return;
-        Active current = active.get(lease.key());
-        if (current == null || !sameLease(current.lease, lease)) return;
-        if (!lease.leaseUntil().isAfter(clock.instant())) return;
-        stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
-        failed.add(new StageKey(lease.commandId(), lease.attemptToken()));
+        CommandLease current = active.get(lease.key());
+        if (current == null || !current.equals(lease)) return;
+        if (!current.leaseUntil().isAfter(clock.instant())) return;
+        removeStage(current);
         active.remove(lease.key());
+        failed.put(lease.key(), current);
     }
 
-    @Override public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
+    @Override
+    public synchronized Optional<StoredApiConnection> findHead(AuthoringScope scope, String connectionId) {
         return Optional.ofNullable(heads.get(new ConnectionKey(scope, connectionId)));
     }
-    @Override public synchronized Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId, long revision) {
+
+    @Override
+    public synchronized Optional<StoredApiConnection> findRevision(AuthoringScope scope, String connectionId,
+                                                                    long revision) {
         return Optional.ofNullable(history.get(new RevisionKey(new ConnectionKey(scope, connectionId), revision)));
     }
 
-    private void requireLiveForStage(CommandLease lease) {
-        if (lease == null) fail(Code.LEASE_FENCED, "lease is fenced");
-        if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED, "lease expired");
+    private void requireLease(CommandLease lease) {
+        if (lease == null || lease.key() == null) fail(Code.LEASE_FENCED);
     }
-    private void requireActive(CommandLease lease) {
-        requireLiveForStage(lease);
-        Active current = active.get(lease.key());
-        if (current == null || !sameLease(current.lease, lease)) fail(Code.LEASE_FENCED, "lease is fenced");
+
+    private void requireIncomingLeaseLive(CommandLease lease) {
+        if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED);
     }
-    private static void requireTarget(CommandLease lease, String connectionId) {
-        if (lease == null || connectionId == null || !connectionId.equals(lease.key().targetId())) fail(Code.INTEGRITY, "connection target differs from lease");
+
+    private void requireStoredLeaseLive(CommandLease lease) {
+        if (!lease.leaseUntil().isAfter(clock.instant())) fail(Code.LEASE_EXPIRED);
     }
-    private static boolean sameLease(CommandLease a, CommandLease b) { return a.commandId().equals(b.commandId()) && a.attemptNo() == b.attemptNo() && a.attemptToken().equals(b.attemptToken()); }
+
+    private void removeStage(CommandLease lease) {
+        StageKey key = new StageKey(lease.commandId(), lease.attemptToken());
+        stages.remove(key);
+        stageBases.remove(key);
+    }
+
     private static void checkExpected(StoredApiConnection current, ExpectedRevision expected) {
-        if (expected instanceof ExpectedRevision.Create && current != null || expected instanceof ExpectedRevision.Match m && (current == null || current.view().revision() != m.revision())) fail(Code.CAS_MISMATCH, "head revision changed");
+        if (expected instanceof ExpectedRevision.Create && current != null
+                || expected instanceof ExpectedRevision.Match match
+                && (current == null || current.view().revision() != match.revision())) fail(Code.CAS_MISMATCH);
     }
+
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
-    private static void fail(Code code, String message) { throw new ApiConnectionCommitStoreException(code, message); }
-    private record Active(CommandLease lease) { }
+    private static void fail(Code code) { throw new ApiConnectionCommitStoreException(code); }
+
     private record StageKey(String commandId, String attemptToken) { }
     private record ConnectionKey(AuthoringScope scope, String connectionId) { }
     private record RevisionKey(ConnectionKey key, long revision) { }

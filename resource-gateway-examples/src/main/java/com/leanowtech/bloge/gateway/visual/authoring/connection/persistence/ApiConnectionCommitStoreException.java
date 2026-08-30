@@ -7,14 +7,24 @@ public final class ApiConnectionCommitStoreException extends RuntimeException {
 
     private final Code code;
 
-    /** Creates an error with a safe message; callers must not provide payload data. */
-    public ApiConnectionCommitStoreException(Code code, String message) {
-        super(message);
-        this.code = java.util.Objects.requireNonNull(code, "code");
+    /** Creates an error whose message is derived only from its stable code. */
+    public ApiConnectionCommitStoreException(Code code) {
+        super(safeMessage(java.util.Objects.requireNonNull(code, "code")));
+        this.code = code;
     }
 
     /** @return stable machine-readable code */
     public Code code() { return code; }
 
     @Override public String toString() { return getClass().getSimpleName() + "[code=" + code + "]"; }
+
+    private static String safeMessage(Code code) {
+        return switch (code) {
+            case LEASE_FENCED -> "connection command lease is fenced";
+            case LEASE_EXPIRED -> "connection command lease is expired";
+            case STAGE_MISSING -> "staged connection is missing";
+            case CAS_MISMATCH -> "connection revision does not match";
+            case INTEGRITY -> "connection commit integrity check failed";
+        };
+    }
 }

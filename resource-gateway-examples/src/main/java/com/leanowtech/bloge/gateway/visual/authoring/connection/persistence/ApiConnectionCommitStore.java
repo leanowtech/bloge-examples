@@ -2,6 +2,7 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.persistence;
 
 import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionCommand;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
@@ -15,7 +16,8 @@ import java.util.Optional;
  */
 public interface ApiConnectionCommitStore {
     /** Stages an invisible revision after applying pure authority decisions. */
-    StagedApiConnection stage(CommandLease lease, String connectionId, ApiConnectionCommand command,
+    StagedApiConnection stage(CommandLease lease, String connectionId, ExpectedRevision connectionExpected,
+                              ApiConnectionCommand command,
                               PreparedSecretBinding... prepared);
 
     /** Promotes the exact live stage and returns its committed payload-free view. */
