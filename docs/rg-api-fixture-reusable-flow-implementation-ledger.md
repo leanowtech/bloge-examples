@@ -392,7 +392,39 @@ BUILD SUCCESS
 - `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 以及 UI 尚未接入。
 - 真实 PostgreSQL lane 与 full `clean verify` 未运行；当前仅有 H2 PostgreSQL-mode focused evidence。
 
-## 11. 未关闭风险
+## 11. Iteration 11 — J3-B1b-1 Connection commit seam
+
+日期：2026-08-30。
+
+### 已完成
+
+- `4589c51de`、`7315c6490`、`112d00f17`、`076fa184b`、`6958bc2b4`：J3-B1b-1 的 Spec 与 Standards
+  评审均为 **Accepted**，P0/P1/P2 均为 0。新增纯 `ApiConnectionCommitStore` seam、不可变 staged/stored
+  records 和 `InMemoryApiConnectionCommitStore` reference adapter；contract 覆盖显式 child CAS、endpoint
+  绑定、attempt fencing、staged invisibility、committed history 与 safe strong ETag。
+- 提交路径保持 credential 与业务 payload 不出异常、历史或公开视图；该切片不把 in-memory reference adapter
+  写成生产持久化实现。
+
+### 最新验证
+
+`InMemoryApiConnectionCommitStoreTest`（实现 `ApiConnectionCommitStoreContractTest`）共 **19/19 green**，
+`Failures: 0, Errors: 0, Skipped: 0`。这是 pure commit seam/reference adapter 的聚焦证据；本轮没有运行
+full `clean verify`，也没有运行真实 PostgreSQL lane。
+
+### 当前差距评估
+
+本轮新增 Connection commit seam 与内存 reference adapter 的行为闭包；按本台账同一 broader goal 口径，完成度
+由 **33%** 小幅调整为 **34%**，当前差距为 **66%**。该调整不代表 JDBC Connection store、Vault/pending-secret、
+Facade、HTTP 或生产 PostgreSQL 能力已完成，更不意味着 broader goal gap 接近 3%。
+
+### 未实现边界
+
+- JDBC Connection store、数据库 head/revision 持久化与跨实例提交尚未实现。
+- 外部 Vault 与 pending-secret lease/activate、清理、恢复和 provider 集成尚未实现。
+- `AuthoringFacade`、HTTP controller、ETag/Idempotency transport 与 UI 尚未接入。
+- 真实 PostgreSQL lane 与 full `clean verify` 未运行；当前仅有内存 contract 和前一切片的 H2 focused evidence。
+
+## 12. 未关闭风险
 
 - JSON Schema 测试使用仓库内轻量语义校验器；运行时 DAG 环、Schema 路径兼容、Fixture Target 与
   `APPLY_CASE` 约束仍必须由 Java 模块测试证明。

@@ -87,6 +87,14 @@ suite is 11/11 green on H2 PostgreSQL mode. This slice does not implement the JD
 Vault lease/activation, `AuthoringFacade`, or HTTP endpoints. Real PostgreSQL certification and full `clean verify`
 were not run.
 
+J3-B1b-1 adds the pure API Connection commit seam and the in-memory reference adapter. It proves explicit child
+revision CAS, endpoint binding, attempt fencing, staged invisibility, committed history, and safe strong ETag
+handling without exposing credentials or business payloads. Commits `4589c51de`, `7315c6490`, `112d00f17`,
+`076fa184b`, and `6958bc2b4` passed Spec and Standards review with P0/P1/P2 findings all at zero; the concrete
+`InMemoryApiConnectionCommitStoreTest` contract suite is 19/19 green. This remains a pure commit seam/reference
+adapter: the JDBC Connection store, external Vault/pending-secret integration, `AuthoringFacade`, HTTP endpoints,
+and full `clean verify` are not implemented or certified.
+
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
 `DESCRIPTOR_TRANSPORT`, and `BINDING_REAL`; unsupported future modes remain closed rather than
