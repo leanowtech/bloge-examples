@@ -6,6 +6,7 @@ import com.leanowtech.bloge.gateway.visual.authoring.connection.ApiConnectionDec
 import com.leanowtech.bloge.gateway.visual.authoring.connection.PreparedSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.SecretReference;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.ExpectedRevision;
+import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringEndpoint;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.AuthoringScope;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandKey;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
@@ -108,6 +109,28 @@ class JdbcApiConnectionCommitStoreTest extends ApiConnectionCommitStoreContractT
 
         store.cleanupSecretLease(lease, "password");
         assertThat(pendingCount()).isZero();
+    }
+
+    @Test
+    void nestedChildPromotesConnectionHeadWithoutClosingOuterJournal() {
+        JdbcApiConnectionCommitStore store = jdbcStore();
+        CommandLease resourceLease = new CommandLease("nested-jdbc", 1, "nested-jdbc-token",
+                new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "key-nested-jdbc"),
+                "sha256:" + "a".repeat(64), TEST_NOW.plusSeconds(30), ExpectedRevision.match(7));
+
+        store.stage(resourceLease, "customer", ExpectedRevision.create(), noneCommand());
+        StoredApiConnection committed = store.commitChild(resourceLease);
+
+        assertThat(committed.view().revision()).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT state FROM rg_api_connection_revisions WHERE command_id=?",
+                String.class, resourceLease.commandId())).isEqualTo("COMMITTED");
+        assertThat(jdbc.queryForObject("SELECT revision FROM rg_api_connection_heads WHERE connection_id=?",
+                Long.class, "customer")).isEqualTo(1L);
+        assertThat(jdbc.queryForObject("SELECT status FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, resourceLease.commandId())).isEqualTo("PREPARING");
+        assertThat(jdbc.queryForObject("SELECT receipt_json FROM rg_authoring_command_journal WHERE command_id=?",
+                String.class, resourceLease.commandId())).isNull();
+        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
     }
 
     @Test

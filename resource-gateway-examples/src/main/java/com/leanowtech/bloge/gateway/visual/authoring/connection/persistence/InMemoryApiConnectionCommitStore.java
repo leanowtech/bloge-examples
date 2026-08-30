@@ -123,22 +123,22 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         if (lease != null && lease.key() != null && lease.key().endpoint() == AuthoringEndpoint.API_RESOURCE_SAVE) {
             fail(Code.INTEGRITY);
         }
-        return commitInternal(lease, true);
+        return commitInternal(lease);
     }
 
     /**
      * Commits only the Connection child of a composite resource command. The
-     * reference adapter has no outer journal, so the child is returned to the
-     * caller but is intentionally not published through the read-side head.
+     * reference adapter has no outer journal; the child therefore publishes
+     * its local revision/head while the caller owns the composite receipt.
      */
     @Override
     public synchronized StoredApiConnection commitChild(CommandLease lease) {
         requireLease(lease);
         if (lease.key().endpoint() != AuthoringEndpoint.API_RESOURCE_SAVE) fail(Code.INTEGRITY);
-        return commitInternal(lease, false);
+        return commitInternal(lease);
     }
 
-    private StoredApiConnection commitInternal(CommandLease lease, boolean publish) {
+    private StoredApiConnection commitInternal(CommandLease lease) {
         requireLease(lease);
         CommandLease currentLease = active.get(lease.key());
         if (currentLease == null) {
@@ -161,11 +161,6 @@ public final class InMemoryApiConnectionCommitStore implements ApiConnectionComm
         }
         StoredApiConnection stored = new StoredApiConnection(key.scope, staged.view(), staged.metadataFingerprint(),
                 staged.strongEtag(), lease.commandId());
-        if (!publish) {
-            stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
-            active.remove(lease.key());
-            return stored;
-        }
         heads.put(key, stored);
         RevisionKey revisionKey = new RevisionKey(key, staged.view().revision());
         history.put(revisionKey, stored);

@@ -293,7 +293,6 @@ abstract class ApiConnectionCommitStoreContractTest {
                 AuthoringEndpoint.API_RESOURCE_SAVE, ExpectedRevision.match(999));
         stage(store, resourceLease, "customer", ExpectedRevision.create(), noneCommand());
         assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
-        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
     }
 
     @Test
@@ -307,7 +306,6 @@ abstract class ApiConnectionCommitStoreContractTest {
                 .isInstanceOf(ApiConnectionCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiConnectionCommitStoreException.Code.INTEGRITY);
         assertThat(store.commitChild(resourceLease).view().revision()).isEqualTo(1);
-        assertThat(store.findHead(SCOPE, "customer")).isEmpty();
     }
 
     @Test
