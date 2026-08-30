@@ -3,7 +3,6 @@ package com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persiste
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.leanowtech.bloge.gateway.visual.authoring.resource.persistence.CommandLease;
 
-import java.time.Instant;
 import java.util.Objects;
 
 /** Exact command-attempt fence for a pending secret batch. */
@@ -16,9 +15,6 @@ public record PendingSecretLease(CommandLease commandLease, ConnectionRevisionCo
             throw new IllegalArgumentException("lease coordinate is invalid");
         }
     }
-
-    /** Provider/store expiry inherited from the command lease. */
-    public Instant leaseUntil() { return commandLease.leaseUntil(); }
 
     /** Attempt token is a persistence fence and never a JSON property. */
     @JsonIgnore @Override public CommandLease commandLease() { return commandLease; }

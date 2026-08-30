@@ -1,12 +1,9 @@
 package com.leanowtech.bloge.gateway.visual.authoring.connection.secret.persistence;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.ActiveSecretBinding;
 import com.leanowtech.bloge.gateway.visual.authoring.connection.secret.PreparedExternalSecret;
 
-import java.util.Objects;
-
-/** One slot in a staged batch, either newly prepared or retaining its old binding. */
+/** One slot in a staged batch, either newly prepared or retaining its old active locator. */
 public sealed interface PendingSecretOperation permits PendingSecretOperation.Prepared,
         PendingSecretOperation.Retained {
     /** Slot name, one of {@code token}, {@code password}, or {@code value}. */
@@ -35,18 +32,16 @@ public sealed interface PendingSecretOperation permits PendingSecretOperation.Pr
         }
     }
 
-    /** A slot that copies its previous active locator under the new command id. */
-    record Retained(String slot, ActiveSecretBinding oldBinding) implements PendingSecretOperation {
+    /** A slot whose prior active binding is resolved and snapshotted by the store. */
+    record Retained(String slot, ConnectionRevisionCoordinate source) implements PendingSecretOperation {
         public Retained {
             SlotRules.require(slot);
-            if (oldBinding == null) throw new IllegalArgumentException("old binding is required");
+            if (source == null) throw new IllegalArgumentException("source coordinate is required");
         }
 
-        /** Old provider locator is not a JSON field. */
-        @JsonIgnore @Override public ActiveSecretBinding oldBinding() { return oldBinding; }
         @Override public SecretSourceMode mode() { return SecretSourceMode.KEEP_EXISTING; }
         @Override public String toString() {
-            return "PendingSecretOperation.Retained[slot=" + slot + "]";
+            return "PendingSecretOperation.Retained[slot=" + slot + ", source=" + source + "]";
         }
     }
 

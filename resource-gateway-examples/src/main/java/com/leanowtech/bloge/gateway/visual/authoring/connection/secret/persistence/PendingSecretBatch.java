@@ -11,7 +11,9 @@ import java.util.stream.Collectors;
 public record PendingSecretBatch(PendingSecretLease lease, List<PendingSecretOperation> operations) {
     public PendingSecretBatch {
         Objects.requireNonNull(lease, "lease");
-        operations = List.copyOf(Objects.requireNonNull(operations, "operations"));
+        operations = Objects.requireNonNull(operations, "operations").stream()
+                .sorted(java.util.Comparator.comparing(PendingSecretOperation::slot))
+                .toList();
         if (operations.isEmpty()) throw new IllegalArgumentException("operations are required");
         Set<String> slots = operations.stream().map(PendingSecretOperation::slot).collect(Collectors.toUnmodifiableSet());
         if (slots.size() != operations.size()) throw new IllegalArgumentException("duplicate secret slot");

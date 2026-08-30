@@ -21,9 +21,10 @@ import java.util.Set;
  * It is useful for contract tests and local reasoning, not as a durable store.
  */
 public final class InMemoryPendingSecretStore implements PendingSecretStore {
-    private enum State { PENDING, ACTIVATED, ABORT_REQUIRED, ABORTED }
+    private enum State { PENDING, ABORT_REQUIRED }
     private final Clock clock;
     private final Map<AttemptKey, Entry> entries = new HashMap<>();
+    private final Map<AttemptKey, Completion> completed = new HashMap<>();
     private final Map<BindingKey, ActiveSecretBinding> active = new HashMap<>();
     private final Map<BindingKey, AttemptKey> activeOwners = new HashMap<>();
 
@@ -43,78 +44,92 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
             if (existing.batch.equals(batch)) return;
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
-        if (expired(batch.lease())) throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
-        entries.put(key, new Entry(batch, List.of(), State.PENDING));
+        Completion done = completed.get(key);
+        if (done != null) {
+            if (done.batch.equals(batch)) return;
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        Map<String, ActiveSecretBinding> retained = snapshotRetained(batch);
+        Instant now = clock.instant();
+        Instant deadline = effectiveDeadline(batch);
+        if (!deadline.isAfter(now)) throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
+        entries.put(key, new Entry(batch, retained, State.PENDING, deadline, now));
     }
 
     @Override public synchronized Optional<PendingSecretBatch> findExact(CommandLease lease,
                                                                            ConnectionRevisionCoordinate coordinate) {
-        if (lease == null || coordinate == null) return Optional.empty();
-        if (!coordinate.scope().equals(lease.key().scope())
-                || !coordinate.connectionId().equals(lease.key().targetId())) return Optional.empty();
+        if (lease == null || coordinate == null || !matches(lease, coordinate)) return Optional.empty();
         Entry entry = entries.get(key(new PendingSecretLease(lease, coordinate)));
-        return entry == null || (entry.state != State.PENDING && entry.state != State.ABORT_REQUIRED)
-                ? Optional.empty() : Optional.of(entry.batch);
+        return entry == null ? Optional.empty() : Optional.of(entry.batch);
     }
 
     @Override public synchronized void commitBindings(PendingSecretBatch batch,
                                                        List<ActivatedSecretSlot> activated) {
         requireBatch(batch);
-        List<ActivatedSecretSlot> outputs = List.copyOf(activated == null ? List.of() : activated);
-        Entry entry = requireEntry(batch.lease());
-        if (!entry.batch.equals(batch)) throw failure(PendingSecretStoreException.Code.INTEGRITY);
-        if (entry.state == State.ACTIVATED) {
-            if (entry.activated.equals(outputs)) return;
+        List<ActivatedSecretSlot> outputs = canonical(activated);
+        AttemptKey key = key(batch.lease());
+        Completion done = completed.get(key);
+        if (done != null) {
+            if (done.batch.equals(batch) && done.outputs.equals(outputs)) return;
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
+        Entry entry = requireEntry(batch.lease());
+        if (!entry.batch.equals(batch)) throw failure(PendingSecretStoreException.Code.INTEGRITY);
         if (entry.state != State.PENDING) throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
+        if (!entry.effectiveDeadline.isAfter(clock.instant())) {
+            throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
+        }
         validateActivation(entry.batch, outputs);
         Map<BindingKey, ActiveSecretBinding> writes = new HashMap<>();
         for (PendingSecretOperation operation : entry.batch.operations()) {
             ActiveSecretBinding binding;
-            if (operation instanceof PendingSecretOperation.Retained retained) {
-                ActiveSecretBinding old = retained.oldBinding();
-                binding = new ActiveSecretBinding(old.providerId(), old.activeLocator(), entry.batch.lease().commandLease().commandId());
+            if (operation instanceof PendingSecretOperation.Retained) {
+                ActiveSecretBinding old = entry.retained.get(operation.slot());
+                binding = new ActiveSecretBinding(old.providerId(), old.activeLocator(),
+                        batch.lease().commandLease().commandId());
             } else {
                 ActivatedExternalSecret result = findOutput(outputs, operation.slot());
                 binding = new ActiveSecretBinding(result.providerId(), result.activeLocator(),
-                        entry.batch.lease().commandLease().commandId());
+                        batch.lease().commandLease().commandId());
             }
-            writes.put(new BindingKey(entry.batch.lease().coordinate(), operation.slot()), binding);
+            writes.put(new BindingKey(batch.lease().coordinate(), operation.slot()), binding);
         }
         active.putAll(writes);
-        AttemptKey owner = key(entry.batch.lease());
-        for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, owner);
-        entries.put(key(entry.batch.lease()), new Entry(entry.batch, outputs, State.ACTIVATED));
+        for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, key);
+        entries.remove(key);
+        completed.put(key, new Completion(batch, outputs));
     }
 
     @Override public synchronized void markAbortRequired(PendingSecretLease lease) {
         if (lease == null) throw failure(PendingSecretStoreException.Code.LEASE_FENCED);
+        AttemptKey key = key(lease);
         Entry entry = requireEntry(lease);
-        if (entry.state == State.ABORTED) return;
         if (entry.state == State.ABORT_REQUIRED) return;
-        if (entry.state != State.PENDING && entry.state != State.ACTIVATED) {
-            throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
-        }
-        removeBindings(entry);
-        entries.put(key(lease), new Entry(entry.batch, entry.activated, State.ABORT_REQUIRED));
+        entries.put(key, new Entry(entry.batch, entry.retained, State.ABORT_REQUIRED,
+                entry.effectiveDeadline, clock.instant()));
     }
 
-    @Override public synchronized List<SecretAbortCandidate> findRecoveryDue(int commandLimit) {
-        if (commandLimit < 1) throw failure(PendingSecretStoreException.Code.INTEGRITY);
+    @Override public synchronized List<SecretAbortCandidate> claimRecoveryDue(int attemptLimit) {
+        if (attemptLimit < 1) throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        Instant now = clock.instant();
         List<Entry> due = entries.values().stream()
-                .filter(entry -> entry.state == State.ABORT_REQUIRED ||
-                        (entry.state == State.PENDING && expired(entry.batch.lease())))
-                .sorted(Comparator.comparing((Entry e) -> e.batch.lease().commandLease().commandId())
-                        .thenComparingInt(e -> e.batch.lease().commandLease().attemptNo()))
+                .filter(entry -> entry.state == State.ABORT_REQUIRED || !entry.effectiveDeadline.isAfter(now))
+                .sorted(Comparator.comparing((Entry e) -> e.state == State.ABORT_REQUIRED ? 0 : 1)
+                        .thenComparing(e -> e.effectiveDeadline)
+                        .thenComparing(e -> e.updatedAt)
+                        .thenComparing(e -> e.batch.lease().commandLease().commandId())
+                        .thenComparingInt(e -> e.batch.lease().commandLease().attemptNo())
+                        .thenComparing(e -> e.batch.lease().commandLease().attemptToken()))
+                .limit(attemptLimit)
                 .toList();
         List<SecretAbortCandidate> result = new ArrayList<>();
-        Set<String> commands = new HashSet<>();
         for (Entry entry : due) {
-            String command = entry.batch.lease().commandLease().commandId();
-            if (!commands.contains(command) && commands.size() == commandLimit) break;
-            commands.add(command);
-            result.add(new SecretAbortCandidate(entry.batch, entry.activated));
+            AttemptKey key = key(entry.batch.lease());
+            Entry claimed = entry.state == State.ABORT_REQUIRED ? entry
+                    : new Entry(entry.batch, entry.retained, State.ABORT_REQUIRED,
+                    entry.effectiveDeadline, now);
+            entries.put(key, claimed);
+            result.add(new SecretAbortCandidate(claimed.batch));
         }
         return List.copyOf(result);
     }
@@ -122,18 +137,19 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     @Override public synchronized void completeAbort(SecretAbortCandidate candidate) {
         if (candidate == null) throw failure(PendingSecretStoreException.Code.INTEGRITY);
         PendingSecretLease lease = candidate.batch().lease();
-        Entry entry = entries.get(key(lease));
-        if (entry == null) throw failure(PendingSecretStoreException.Code.STAGE_MISSING);
-        if (entry.state == State.ABORTED) {
-            if (entry.batch.equals(candidate.batch()) && entry.activated.equals(candidate.activated())) return;
+        AttemptKey key = key(lease);
+        Completion done = completed.get(key);
+        if (done != null) {
+            if (done.batch.equals(candidate.batch())) return;
             throw failure(PendingSecretStoreException.Code.INTEGRITY);
         }
-        if (entry.state != State.ABORT_REQUIRED || !entry.batch.equals(candidate.batch())
-                || !entry.activated.equals(candidate.activated())) {
+        Entry entry = requireEntry(lease);
+        if (entry.state != State.ABORT_REQUIRED || !entry.batch.equals(candidate.batch())) {
             throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
         }
-        removeBindings(entry);
-        entries.put(key(lease), new Entry(entry.batch, entry.activated, State.ABORTED));
+        removeBindings(entry, key);
+        entries.remove(key);
+        completed.put(key, new Completion(entry.batch, List.of()));
     }
 
     @Override public synchronized Optional<ActiveSecretBinding> findActive(ConnectionRevisionCoordinate coordinate,
@@ -141,6 +157,24 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         if (coordinate == null || slot == null) return Optional.empty();
         PendingSecretOperation.SlotRules.require(slot);
         return Optional.ofNullable(active.get(new BindingKey(coordinate, slot)));
+    }
+
+    private Map<String, ActiveSecretBinding> snapshotRetained(PendingSecretBatch batch) {
+        Map<String, ActiveSecretBinding> result = new HashMap<>();
+        for (PendingSecretOperation operation : batch.operations()) {
+            if (operation instanceof PendingSecretOperation.Retained retained) {
+                ConnectionRevisionCoordinate source = retained.source();
+                ConnectionRevisionCoordinate target = batch.lease().coordinate();
+                if (!source.scope().equals(target.scope()) || !source.connectionId().equals(target.connectionId())
+                        || source.revision() != target.revision() - 1) {
+                    throw failure(PendingSecretStoreException.Code.INTEGRITY);
+                }
+                ActiveSecretBinding binding = active.get(new BindingKey(source, operation.slot()));
+                if (binding == null) throw failure(PendingSecretStoreException.Code.STAGE_MISSING);
+                result.put(operation.slot(), binding);
+            }
+        }
+        return Map.copyOf(result);
     }
 
     private void requireBatch(PendingSecretBatch batch) {
@@ -157,15 +191,22 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
                         || !command.commandId().equals(context.commandId())
                         || command.attemptNo() != context.attemptNo()
                         || !command.attemptToken().equals(context.attemptToken())
-                        || !command.key().actorId().equals(context.actorId())
-                        || !value.leaseUntil().equals(command.leaseUntil())) {
+                        || !command.key().actorId().equals(context.actorId())) {
                     throw failure(PendingSecretStoreException.Code.INTEGRITY);
                 }
-            } else {
-                ActiveSecretBinding old = ((PendingSecretOperation.Retained) operation).oldBinding();
-                if (old.commandId().equals(command.commandId())) throw failure(PendingSecretStoreException.Code.INTEGRITY);
             }
         }
+    }
+
+    private Instant effectiveDeadline(PendingSecretBatch batch) {
+        Instant deadline = batch.lease().commandLease().leaseUntil();
+        for (PendingSecretOperation operation : batch.operations()) {
+            if (operation instanceof PendingSecretOperation.Prepared prepared) {
+                deadline = deadline.compareTo(prepared.prepared().leaseUntil()) <= 0
+                        ? deadline : prepared.prepared().leaseUntil();
+            }
+        }
+        return deadline;
     }
 
     private void validateActivation(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs) {
@@ -187,19 +228,21 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         if (!actual.equals(expected)) throw failure(PendingSecretStoreException.Code.ACTIVATION_MISMATCH);
     }
 
-    private ActivatedExternalSecret findOutput(List<ActivatedSecretSlot> outputs, String slot) {
-        ActivatedSecretSlot output = outputs.stream().filter(candidate -> candidate.slot().equals(slot)).findFirst().orElseThrow();
-        return output.activated();
+    private static List<ActivatedSecretSlot> canonical(List<ActivatedSecretSlot> outputs) {
+        if (outputs == null) return List.of();
+        return outputs.stream().sorted(Comparator.comparing(ActivatedSecretSlot::slot)).toList();
+    }
+
+    private static ActivatedExternalSecret findOutput(List<ActivatedSecretSlot> outputs, String slot) {
+        return outputs.stream().filter(candidate -> candidate.slot().equals(slot))
+                .map(ActivatedSecretSlot::activated).findFirst().orElseThrow();
     }
 
     private Entry requireEntry(PendingSecretLease lease) {
         Entry entry = entries.get(key(lease));
         if (entry == null) {
-            boolean fenced = entries.values().stream().anyMatch(candidate -> {
-                PendingSecretLease stored = candidate.batch.lease();
-                return stored.coordinate().equals(lease.coordinate())
-                        && stored.commandLease().commandId().equals(lease.commandLease().commandId());
-            });
+            boolean fenced = entries.keySet().stream().anyMatch(candidate -> candidate.coordinate.equals(lease.coordinate())
+                    && candidate.commandId.equals(lease.commandLease().commandId()));
             throw failure(fenced ? PendingSecretStoreException.Code.LEASE_FENCED
                     : PendingSecretStoreException.Code.STAGE_MISSING);
         }
@@ -207,17 +250,19 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         return entry;
     }
 
-    private boolean expired(PendingSecretLease lease) { return !lease.leaseUntil().isAfter(Instant.now(clock)); }
-
-    private void removeBindings(Entry entry) {
+    private void removeBindings(Entry entry, AttemptKey owner) {
         for (PendingSecretOperation operation : entry.batch.operations()) {
-            BindingKey key = new BindingKey(entry.batch.lease().coordinate(), operation.slot());
-            ActiveSecretBinding binding = active.get(key);
-            if (binding != null && key(entry.batch.lease()).equals(activeOwners.get(key))) {
-                active.remove(key);
-                activeOwners.remove(key);
+            BindingKey bindingKey = new BindingKey(entry.batch.lease().coordinate(), operation.slot());
+            if (owner.equals(activeOwners.get(bindingKey))) {
+                active.remove(bindingKey);
+                activeOwners.remove(bindingKey);
             }
         }
+    }
+
+    private static boolean matches(CommandLease lease, ConnectionRevisionCoordinate coordinate) {
+        return coordinate.scope().equals(lease.key().scope())
+                && coordinate.connectionId().equals(lease.key().targetId());
     }
 
     private static AttemptKey key(PendingSecretLease lease) {
@@ -232,5 +277,7 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
     private record AttemptKey(ConnectionRevisionCoordinate coordinate, String commandId, int attemptNo,
                               String attemptToken) { }
     private record BindingKey(ConnectionRevisionCoordinate coordinate, String slot) { }
-    private record Entry(PendingSecretBatch batch, List<ActivatedSecretSlot> activated, State state) { }
+    private record Entry(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained, State state,
+                         Instant effectiveDeadline, Instant updatedAt) { }
+    private record Completion(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs) { }
 }

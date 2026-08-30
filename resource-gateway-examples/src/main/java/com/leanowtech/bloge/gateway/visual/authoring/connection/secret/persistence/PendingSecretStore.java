@@ -32,8 +32,8 @@ public interface PendingSecretStore {
     /** Marks an exact staged or activated batch for provider compensation. */
     void markAbortRequired(PendingSecretLease lease);
 
-    /** Returns complete expired/abort-required batches in stable command-batch order. */
-    List<SecretAbortCandidate> findRecoveryDue(int commandLimit);
+    /** Claims complete expired batches and existing abort claims atomically, bounded by attempts. */
+    List<SecretAbortCandidate> claimRecoveryDue(int attemptLimit);
 
     /** Completes one exact abort candidate; repeated completion is idempotent. */
     void completeAbort(SecretAbortCandidate candidate);

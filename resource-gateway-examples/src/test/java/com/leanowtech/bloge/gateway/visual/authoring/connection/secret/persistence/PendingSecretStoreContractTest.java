@@ -43,11 +43,11 @@ public abstract class PendingSecretStoreContractTest {
 
     @Test void exactReentryIsIdempotentButDriftIsIntegrity() {
         PendingSecretStore store = newStore(fixedClock());
-        PendingSecretBatch batch = batch(lease("reentry", 1, "r-token", NOW.plusSeconds(60)), "token");
+        PendingSecretBatch batch = batch(lease("reentry", 1, "r-token", NOW.plusSeconds(60)), "password", "token");
         store.stage(batch);
-        store.stage(batch);
-        PendingSecretBatch drift = batchWithLocator(lease("reentry", 1, "r-token", NOW.plusSeconds(60)),
-                "token", "different-locator");
+        PendingSecretBatch reordered = batch(lease("reentry", 1, "r-token", NOW.plusSeconds(60)), "token", "password");
+        store.stage(reordered);
+        PendingSecretBatch drift = batchWithLocator(lease("reentry", 1, "r-token", NOW.plusSeconds(60)), "token", "different-locator");
         assertThatThrownBy(() -> store.stage(drift)).isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
     }
@@ -107,13 +107,16 @@ public abstract class PendingSecretStoreContractTest {
     @Test void keepExistingCopiesLocatorAndBindsNewCommand() {
         PendingSecretStore store = newStore(fixedClock());
         CommandLease lease = lease("keep", 1, "keep-token", NOW.plusSeconds(60));
+        CommandLease oldLease = lease("old-command", 1, "old-token", NOW.plusSeconds(60));
+        PendingSecretBatch old = batchForRevision(oldLease, 2, "token");
+        store.stage(old);
+        store.commitBindings(old, List.of(activation("token", "old-token", "old-active")));
         PendingSecretBatch batch = new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3)),
-                List.of(new PendingSecretOperation.Retained("token",
-                        new ActiveSecretBinding("provider:old", "old-active", "old-command"))));
+                List.of(new PendingSecretOperation.Retained("token", coordinate(lease, 2))));
         store.stage(batch);
         store.commitBindings(batch, List.of());
         assertThat(store.findActive(batch.lease().coordinate(), "token")).contains(
-                new ActiveSecretBinding("provider:old", "old-active", "keep"));
+                new ActiveSecretBinding("provider:one", "old-active", "keep"));
     }
 
     @Test void staleLeaseCannotReadOrMutateExactAttempt() {
@@ -129,16 +132,16 @@ public abstract class PendingSecretStoreContractTest {
     }
 
     @Test void expiredLeaseIsRecoverableButLivePendingIsNotDue() {
-        PendingSecretStore store = newStore(fixedClock());
-        PendingSecretBatch live = batch(lease("live", 1, "live-token", NOW.plusSeconds(1)), "token");
-        PendingSecretBatch expired = batch(lease("expired", 1, "expired-token", NOW.minusSeconds(1)), "token");
+        MutableClock clock = new MutableClock(NOW);
+        PendingSecretStore store = newStore(clock);
+        PendingSecretBatch live = batch(lease("live", 1, "live-token", NOW.plusSeconds(10)), "token");
         store.stage(live);
-        assertThatThrownBy(() -> store.stage(expired)).isInstanceOf(PendingSecretStoreException.class)
-                .extracting("code").isEqualTo(PendingSecretStoreException.Code.LEASE_EXPIRED);
-        // An expired provider receipt may still be hydrated for abort recovery.
-        PendingSecretBatch recoverable = batch(lease("expired", 1, "expired-token", NOW.plusSeconds(1)), "token");
-        store.stage(recoverable);
-        assertThat(store.findRecoveryDue(10)).isEmpty();
+        assertThat(store.claimRecoveryDue(10)).isEmpty();
+        clock.advanceSeconds(11);
+        SecretAbortCandidate candidate = store.claimRecoveryDue(10).getFirst();
+        store.completeAbort(candidate);
+        store.completeAbort(candidate);
+        assertThat(store.findExact(live.lease().commandLease(), live.lease().coordinate())).isEmpty();
     }
 
     @Test void explicitAbortMayFenceAnExpiredExactLeaseAndIsIdempotent() {
@@ -151,17 +154,29 @@ public abstract class PendingSecretStoreContractTest {
         store.stage(batch);
         store.markAbortRequired(batch.lease());
         store.markAbortRequired(batch.lease());
-        SecretAbortCandidate candidate = store.findRecoveryDue(1).getFirst();
+        SecretAbortCandidate candidate = store.claimRecoveryDue(1).getFirst();
         store.completeAbort(candidate);
         store.completeAbort(candidate);
         assertThat(store.findActive(batch.lease().coordinate(), "token")).isEmpty();
+    }
+
+    @Test void providerExpiryIsIndependentAndEffectiveDeadlineIsTheEarlierExpiry() {
+        MutableClock clock = new MutableClock(NOW);
+        PendingSecretStore store = newStore(clock);
+        CommandLease lease = lease("provider-expiry", 1, "provider-token", NOW.plusSeconds(60));
+        PendingSecretBatch batch = batchWithProviderExpiry(lease, NOW.plusSeconds(5));
+        store.stage(batch);
+        clock.advanceSeconds(6);
+        SecretAbortCandidate candidate = store.claimRecoveryDue(1).getFirst();
+        store.completeAbort(candidate);
+        assertThat(store.findExact(lease, batch.lease().coordinate())).isEmpty();
     }
 
     @Test void abortCandidateMustBeExactAndOnlyAbortRequired() {
         PendingSecretStore store = newStore(fixedClock());
         PendingSecretBatch batch = batch(lease("candidate", 1, "candidate-token", NOW.plusSeconds(60)), "token");
         store.stage(batch);
-        SecretAbortCandidate notMarked = new SecretAbortCandidate(batch, List.of());
+        SecretAbortCandidate notMarked = new SecretAbortCandidate(batch);
         assertThatThrownBy(() -> store.completeAbort(notMarked)).isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.RECOVERY_STATE);
     }
@@ -173,7 +188,7 @@ public abstract class PendingSecretStoreContractTest {
             store.stage(batch);
             store.markAbortRequired(batch.lease());
         }
-        assertThat(store.findRecoveryDue(2)).extracting(candidate -> candidate.batch().lease().commandLease().commandId())
+        assertThat(store.claimRecoveryDue(2)).extracting(candidate -> candidate.batch().lease().commandLease().commandId())
                 .containsExactly("a", "b");
     }
 
@@ -185,10 +200,9 @@ public abstract class PendingSecretStoreContractTest {
         PendingSecretBatch secondBatch = batch(second, "token");
         store.stage(firstBatch);
         store.stage(secondBatch);
-        store.commitBindings(firstBatch, List.of(activation("token", "first", "first-active")));
-        store.commitBindings(secondBatch, List.of(activation("token", "second", "second-active")));
         store.markAbortRequired(firstBatch.lease());
-        store.completeAbort(store.findRecoveryDue(10).getFirst());
+        store.completeAbort(store.claimRecoveryDue(10).getFirst());
+        store.commitBindings(secondBatch, List.of(activation("token", "second", "second-active")));
         // The durable coordinate has one current binding; the newer exact attempt remains the winner.
         assertThat(store.findActive(firstBatch.lease().coordinate(), "token")).contains(
                 new ActiveSecretBinding("provider:one", "second-active", "same-command"));
@@ -216,30 +230,51 @@ public abstract class PendingSecretStoreContractTest {
 
     @Test void malformedRecoveryLimitIsStableIntegrity() {
         PendingSecretStore store = newStore(fixedClock());
-        assertThatThrownBy(() -> store.findRecoveryDue(0)).isInstanceOf(PendingSecretStoreException.class)
+        assertThatThrownBy(() -> store.claimRecoveryDue(0)).isInstanceOf(PendingSecretStoreException.class)
                 .extracting("code").isEqualTo(PendingSecretStoreException.Code.INTEGRITY);
     }
 
     protected Clock fixedClock() { return Clock.fixed(NOW, ZoneOffset.UTC); }
 
+    private static final class MutableClock extends Clock {
+        private Instant current;
+        private MutableClock(Instant current) { this.current = current; }
+        private void advanceSeconds(long seconds) { current = current.plusSeconds(seconds); }
+        @Override public java.time.ZoneId getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public Instant instant() { return current; }
+    }
+
     protected PendingSecretBatch batch(CommandLease lease, String... slots) {
+        return batchForRevision(lease, 3, slots);
+    }
+
+    protected PendingSecretBatch batchForRevision(CommandLease lease, long revision, String... slots) {
         List<PendingSecretOperation> operations = java.util.Arrays.stream(slots)
                 .map(slot -> new PendingSecretOperation.Prepared(slot, SecretSourceMode.VALUE,
-                        prepared(lease, slot))).map(operation -> (PendingSecretOperation) operation).toList();
-        return new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3)), operations);
+                        prepared(lease, slot, revision))).map(operation -> (PendingSecretOperation) operation).toList();
+        return new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, revision)), operations);
     }
 
     protected PendingSecretBatch batchWithLocator(CommandLease lease, String slot, String locator) {
-        PreparedExternalSecret value = prepared(lease, slot);
+        PreparedExternalSecret value = prepared(lease, slot, 3);
         value = new PreparedExternalSecret(value.providerId(), value.leaseId(), locator,
                 value.leaseUntil(), value.context());
         return new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3)),
                 List.of(new PendingSecretOperation.Prepared(slot, SecretSourceMode.VALUE, value)));
     }
 
-    protected PreparedExternalSecret prepared(CommandLease lease, String slot) {
+    protected PendingSecretBatch batchWithProviderExpiry(CommandLease lease, Instant providerExpiry) {
+        PreparedExternalSecret value = prepared(lease, "token", 3);
+        value = new PreparedExternalSecret(value.providerId(), value.leaseId(), value.opaqueLocator(),
+                providerExpiry, value.context());
+        return new PendingSecretBatch(new PendingSecretLease(lease, coordinate(lease, 3)),
+                List.of(new PendingSecretOperation.Prepared("token", SecretSourceMode.VALUE, value)));
+    }
+
+    protected PreparedExternalSecret prepared(CommandLease lease, String slot, long revision) {
         SecretOperationContext context = new SecretOperationContext(lease.key().scope(), lease.key().actorId(),
-                "connection-save", lease.key().targetId(), 3, lease.commandId(), lease.attemptNo(),
+                "connection-save", lease.key().targetId(), revision, lease.commandId(), lease.attemptNo(),
                 lease.attemptToken(), slot);
         return new PreparedExternalSecret("provider:one", lease.attemptToken(), "opaque-locator-" + slot,
                 lease.leaseUntil(), context);
