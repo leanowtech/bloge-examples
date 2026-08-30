@@ -639,3 +639,43 @@ BUILD SUCCESS
 该聚焦证据来自 H2 `MODE=PostgreSQL`、独立 JDBC connections 和测试时钟；它证明不了真实 PostgreSQL
 锁/隔离级别、生产 Secret Provider、Facade、HTTP、UI 或 full `clean verify`。这些边界仍保持未验收，且
 `GraphNodeFixtureControls.tsx` 与两份 reusable-flow 评审/计划文档的并行修改不属于本切片。
+
+## 19. Iteration 18 — J3-C1 standalone Connection application tracer
+
+日期：2026-08-31。
+
+### 已完成
+
+- `9f367f52d` 抽出只负责 claim 的 `AuthoringCommandClaimStore`，并让 Resource store 复用该 seam；同一
+  idempotency 坐标的 request fingerprint 与 outer expected revision 均必须精确一致。
+- `3a2f6a908` 增加 JDBC/InMemory 一致的 `findRevisionByStrongEtag`：staged revision 不可见，旧 tag 可在
+  head 前进后解析，Scope/Connection 不匹配返回 empty，非法或重复 committed provenance fail closed。强
+  validator 复用单一安全子集校验。
+- `753037e2b` 增加 `ApiConnectionAuthoringStore` 生命周期完整 seam；其 JDBC adapter 在构造时由一个
+  `DataSource` 同时建立 claim 与 Connection delegate，避免 facade 注入两个可能 split-brain 的独立 store；
+  InMemory Connection adapter 的 claim journal 与 stage/commit 共用同一状态。
+- `c66bbb702` 增加 `ApiConnectionAuthoringFacade` 及最小 request/result/failure/precondition 类型。纯
+  decision validation 在 ETag lookup、fingerprint 和 claim 之前执行；当前只接受 `Auth.None`，拒绝 credential
+  capability 时不访问 claim/store，fingerprint 只包含显式非敏感 authority 字段。Replay 先按 receipt 自身
+  strong ETag 精确读取历史 Connection，再校验 view/schema/target/revision closure；Acquired 发生 stage 或
+  commit 失败时按 exact lease cleanup。
+
+### 最新验证与证据边界
+
+```text
+mvn -f resource-gateway-examples/pom.xml \
+  -Dtest=ApiConnectionCommitStoreContractTest,InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,\
+ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest test -DfailIfNoTests=false
+
+InMemoryApiConnectionCommitStoreTest: 28/28
+JdbcApiConnectionCommitStoreTest: 50/50
+ApiConnectionAuthoringFacadeTest: 6/6
+JdbcApiConnectionAuthoringFacadeTest: 1/1
+Tests run: 85, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS
+```
+
+其中 `JdbcApiConnectionAuthoringFacadeTest` 使用 V001–V010 的 H2 `MODE=PostgreSQL` schema 和同一
+`DataSource` claim/Connection adapter，证明 create 与 same-key exact replay；该证据不等价于真实 PostgreSQL
+锁/隔离级别 certification。此切片不接受 credential provider、API Resource 默认 Fixture、HTTP/controller
+transport、Facade/UI 全链路或 UI；后续 transport 仍需单独验证。

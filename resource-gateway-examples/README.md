@@ -79,11 +79,21 @@ transactional stage/commit/fail, lease fencing, restart-safe history, and tamper
 resolver/wiring now creates three `READY` exact-subject projections through the server-side `Connection` resolver,
 shared Header/API-key policy, strict URI and JSONPath-to-runtime-dot-path mapping, with an explicit `visualadapter`
 boundary. J3-A also accepts the pure Connection authority boundary: wire auth/secret variants, same-scope authorized
-opaque references, CAS/fingerprint, secret-free views/errors, and HTTPS/header/timeout policy. This does not yet
-include JDBC/head, Vault lease/activate, the `AuthoringFacade`, or controllers. Missing resolver/readiness prerequisites
-fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
+opaque references, CAS/fingerprint, secret-free views/errors, and HTTPS/header/timeout policy. Missing
+resolver/readiness prerequisites fail closed; `FIXTURE_ONLY` and `MANAGED_WRITE` do not perform
 real writes until the lossless runtime side-effect contract exists. Real PostgreSQL certification, the
-`AuthoringFacade`, HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+HTTP endpoints, and the authoring UI remain subsequent J3/U1 work.
+
+J3-C1 adds the standalone Connection application tracer. `ApiConnectionAuthoringFacade` accepts one
+lifecycle-complete `ApiConnectionAuthoringStore`, so JDBC claim and Connection persistence are constructed over
+the same `DataSource`; the in-memory reference store keeps claim and Connection state together. The tracer
+validates the pure command before ETag lookup, fingerprinting, or claim, currently accepts only `Auth.None`,
+uses exact historical strong ETags for replay/CAS, and returns only `ApiConnectionView` plus its strong ETag.
+The focused command
+`mvn -f resource-gateway-examples/pom.xml -Dtest=ApiConnectionCommitStoreContractTest,InMemoryApiConnectionCommitStoreTest,JdbcApiConnectionCommitStoreTest,ApiConnectionAuthoringFacadeTest,JdbcApiConnectionAuthoringFacadeTest test -DfailIfNoTests=false`
+is **85/85 green** (Failures: 0, Errors: 0, Skipped: 0), including a real H2 `MODE=PostgreSQL` same-database
+claim/replay integration. Credential write capabilities, HTTP/controller transport, real PostgreSQL
+certification, and UI acceptance remain outside this tracer.
 
 J3-B1a adds the Connection persistence foundation: V003 defines five scoped identity, revision, head, pending
 lease, and binding tables with secret-free metadata, exact command/attempt provenance, staged/committed head
