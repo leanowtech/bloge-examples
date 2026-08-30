@@ -61,10 +61,14 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
         this(clock, leaseDuration, new ApiResourceDecisions(), compiler, state);
     }
 
-    @Override public ClaimResult claim(CommandKey key, String requestFingerprint, ExpectedRevision expectedRevision) {
-        Objects.requireNonNull(key, "key"); requireFingerprint(requestFingerprint); Objects.requireNonNull(expectedRevision, "expectedRevision");
+    @Override
+    public ClaimResult claim(CommandKey key, String requestFingerprint, ExpectedRevision expectedRevision) {
+        Objects.requireNonNull(key, "key");
+        requireFingerprint(requestFingerprint);
+        Objects.requireNonNull(expectedRevision, "expectedRevision");
         synchronized (state.monitor) {
-            Journal prior = state.journals.get(key); Instant now = clock.instant();
+            Journal prior = state.journals.get(key);
+            Instant now = clock.instant();
             if (prior != null && (prior.status == Status.COMMITTED || prior.status == Status.PREPARING)
                     && !prior.fingerprint.equals(requestFingerprint)) return new ClaimResult.Conflict("idempotency fingerprint conflict");
             if (prior != null && prior.status == Status.FAILED && !prior.fingerprint.equals(requestFingerprint)) return new ClaimResult.Conflict("idempotency fingerprint conflict");
@@ -74,23 +78,49 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
             int attempt = prior == null ? 1 : prior.lease.attemptNo() + 1;
             if (prior != null) state.stages.remove(new StageKey(prior.lease.commandId(), prior.lease.attemptToken()));
             String commandId = prior == null ? UUID.randomUUID().toString() : prior.lease.commandId();
-            CommandLease lease = new CommandLease(commandId, attempt, UUID.randomUUID().toString(), key, requestFingerprint, now.plus(leaseDuration), expectedRevision);
+            CommandLease lease = new CommandLease(commandId, attempt, UUID.randomUUID().toString(), key,
+                    requestFingerprint, now.plus(leaseDuration), expectedRevision);
             state.journals.put(key, new Journal(Status.PREPARING, requestFingerprint, lease, null, null));
             return new ClaimResult.Acquired(lease, resumed);
         }
     }
 
-    @Override public StagedApiResource stage(CommandLease lease, String connectionId, ApiResourceCommand command) {
+    @Override
+    public StagedApiResource stage(CommandLease lease, String connectionId, ApiResourceCommand command) {
         synchronized (state.monitor) {
             requireActive(lease);
-            StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken()); StagedApiResource existing = state.stages.get(stageKey);
-            ResourceKey resourceKey = new ResourceKey(lease.key().scope(), lease.key().targetId()); StoredApiResource head = state.heads.get(resourceKey);
-            ApiResourceSpec next = decisions.next(Optional.ofNullable(head == null ? null : head.resource()), lease.key().targetId(), connectionId, command, lease.expectedRevision());
-            if (existing != null) { if (!existing.resource().fingerprint().equals(next.fingerprint())) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged content changed"); return existing; }
+            StageKey stageKey = new StageKey(lease.commandId(), lease.attemptToken());
+            StagedApiResource existing = state.stages.get(stageKey);
+            ResourceKey resourceKey = new ResourceKey(lease.key().scope(), lease.key().targetId());
+            StoredApiResource head = state.heads.get(resourceKey);
+            ApiResourceSpec next;
+            try {
+                next = decisions.next(Optional.ofNullable(head == null ? null : head.resource()),
+                        lease.key().targetId(), connectionId, command, lease.expectedRevision());
+            } catch (com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException ex) {
+                if (ex.code() == com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException.Code.ALREADY_EXISTS
+                        || ex.code() == com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException.Code.NOT_FOUND
+                        || ex.code() == com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException.Code.CAS_MISMATCH) {
+                    throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH, "head revision changed");
+                }
+                throw ex;
+            }
+            if (existing != null) {
+                if (!existing.resource().fingerprint().equals(next.fingerprint())) {
+                    throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "staged content changed");
+                }
+                return existing;
+            }
             ReadyApiResourceProjections projections;
-            try { projections = compiler.compile(lease.key().scope(), next); } catch (RuntimeException ex) { throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection compilation failed"); }
+            try {
+                projections = compiler.compile(lease.key().scope(), next);
+            } catch (RuntimeException ex) {
+                throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection compilation failed");
+            }
             verifyProjections(next, projections);
-            StagedApiResource staged = new StagedApiResource(lease, next, projections, opaqueEtag()); state.stages.put(stageKey, staged); return staged;
+            StagedApiResource staged = new StagedApiResource(lease, next, projections, opaqueEtag());
+            state.stages.put(stageKey, staged);
+            return staged;
         }
     }
 
@@ -100,42 +130,111 @@ public final class InMemoryApiResourceCommitStore implements ApiResourceCommitSt
         return stage(lease, connectionId, command);
     }
 
-    @Override public CommandReceipt commit(CommandLease lease, CommandReceipt finalReceipt) {
+    @Override
+    public CommandReceipt commit(CommandLease lease, CommandReceipt finalReceipt) {
         synchronized (state.monitor) {
-            requireActive(lease); StagedApiResource staged = state.stages.get(new StageKey(lease.commandId(), lease.attemptToken()));
+            requireActive(lease);
+            StagedApiResource staged = state.stages.get(new StageKey(lease.commandId(), lease.attemptToken()));
             if (staged == null) throw error(ApiResourceCommitStoreException.Code.STAGE_MISSING, "staged resource is missing");
-            try { validateReceipt(finalReceipt, staged.strongEtag()); } catch (ApiResourceCommitStoreException ex) { throw ex; } catch (RuntimeException ex) { throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID, "receipt is invalid"); }
-            ResourceKey key = new ResourceKey(lease.key().scope(), lease.key().targetId()); StoredApiResource current = state.heads.get(key); checkExpected(current, lease.expectedRevision()); verifyProjections(staged.resource(), staged.projections());
+            try {
+                validateReceipt(finalReceipt, staged.strongEtag());
+            } catch (ApiResourceCommitStoreException ex) {
+                throw ex;
+            } catch (RuntimeException ex) {
+                throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID, "receipt is invalid");
+            }
+            ResourceKey key = new ResourceKey(lease.key().scope(), lease.key().targetId());
+            StoredApiResource current = state.heads.get(key);
+            checkExpected(current, lease.expectedRevision());
+            verifyProjections(staged.resource(), staged.projections());
             StoredApiResource stored = new StoredApiResource(lease.key().scope(), staged.resource(), staged.projections(), finalReceipt);
-            state.heads.put(key, stored); state.revisions.put(new ResourceRevisionKey(key, staged.resource().revision()), stored); state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken())); state.journals.put(lease.key(), new Journal(Status.COMMITTED, lease.requestFingerprint(), lease, finalReceipt, null)); return finalReceipt;
+            state.heads.put(key, stored);
+            state.revisions.put(new ResourceRevisionKey(key, staged.resource().revision()), stored);
+            state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
+            state.journals.put(lease.key(), new Journal(Status.COMMITTED, lease.requestFingerprint(), lease, finalReceipt, null));
+            return finalReceipt;
         }
     }
 
-    @Override public void fail(CommandLease lease, String failureCode) {
+    @Override public void fail(CommandLease lease, CommandFailureCode failureCode) {
         synchronized (state.monitor) {
-            Journal journal = state.journals.get(lease == null ? null : lease.key()); if (journal == null || !sameLease(journal.lease, lease)) return;
+            if (lease == null) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+            if (failureCode == null) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "failure code is required");
+            Journal journal = state.journals.get(lease.key());
+            if (journal == null || !sameLease(journal.lease, lease)) return;
             if (journal.status == Status.COMMITTED) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "committed command cannot fail");
-            requireActive(lease); state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken())); state.journals.put(lease.key(), new Journal(Status.FAILED, journal.fingerprint, lease, null, failureCode));
+            requireActive(lease);
+            state.stages.remove(new StageKey(lease.commandId(), lease.attemptToken()));
+            state.journals.put(lease.key(), new Journal(Status.FAILED, journal.fingerprint, lease, null, failureCode));
         }
     }
 
-    @Override public Optional<StoredApiResource> findHead(AuthoringScope scope, String resourceId) { synchronized (state.monitor) { return Optional.ofNullable(state.heads.get(new ResourceKey(scope, resourceId))); } }
-    @Override public Optional<StoredApiResource> findRevision(AuthoringScope scope, String resourceId, long revision) { synchronized (state.monitor) { return Optional.ofNullable(state.revisions.get(new ResourceRevisionKey(new ResourceKey(scope, resourceId), revision))); } }
+    @Override
+    public Optional<StoredApiResource> findHead(AuthoringScope scope, String resourceId) {
+        synchronized (state.monitor) {
+            return Optional.ofNullable(state.heads.get(new ResourceKey(scope, resourceId)));
+        }
+    }
+
+    @Override
+    public Optional<StoredApiResource> findRevision(AuthoringScope scope, String resourceId, long revision) {
+        synchronized (state.monitor) {
+            return Optional.ofNullable(state.revisions.get(new ResourceRevisionKey(new ResourceKey(scope, resourceId), revision)));
+        }
+    }
 
     private void requireActive(CommandLease lease) {
-        if (lease == null) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced"); Journal journal = state.journals.get(lease.key());
-        if (journal == null || journal.status != Status.PREPARING || !sameLease(journal.lease, lease)) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        if (lease == null) throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        Journal journal = state.journals.get(lease.key());
+        if (journal == null || journal.status != Status.PREPARING || !sameLease(journal.lease, lease)) {
+            throw error(ApiResourceCommitStoreException.Code.LEASE_FENCED, "lease is fenced");
+        }
         if (!lease.leaseUntil().isAfter(clock.instant())) throw error(ApiResourceCommitStoreException.Code.LEASE_EXPIRED, "lease expired");
     }
-    private static boolean sameLease(CommandLease a, CommandLease b) { return a != null && b != null && a.commandId().equals(b.commandId()) && a.attemptNo() == b.attemptNo() && a.attemptToken().equals(b.attemptToken()); }
-    private static void checkExpected(StoredApiResource current, ExpectedRevision expected) { if (expected instanceof ExpectedRevision.Create && current != null || expected instanceof ExpectedRevision.Match m && (current == null || current.resource().revision() != m.revision())) throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH, "head revision changed"); }
-    private static void verifyProjections(ApiResourceSpec resource, ReadyApiResourceProjections projections) { if (projections == null || !resource.ref().equals(projections.subject())) throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift"); for (ProjectionDocument document : new ProjectionDocument[]{projections.descriptor(), projections.designContract(), projections.operator()}) if (document.state() != ProjectionDocument.State.READY || !AuthoringFingerprints.of(document.body()).equals(document.fingerprint())) throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection integrity drift"); }
-    private static void validateReceipt(CommandReceipt receipt, String expectedEtag) { if (receipt == null || !expectedEtag.equals(receipt.strongEtag()) || !AuthoringFingerprints.of(receipt.body()).equals(receipt.bodyFingerprint())) throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID, "receipt integrity drift"); }
+    private static boolean sameLease(CommandLease a, CommandLease b) {
+        return a != null && b != null && a.commandId().equals(b.commandId())
+                && a.attemptNo() == b.attemptNo() && a.attemptToken().equals(b.attemptToken());
+    }
+
+    private static void checkExpected(StoredApiResource current, ExpectedRevision expected) {
+        boolean mismatch = expected instanceof ExpectedRevision.Create && current != null
+                || expected instanceof ExpectedRevision.Match m
+                && (current == null || current.resource().revision() != m.revision());
+        if (mismatch) throw error(ApiResourceCommitStoreException.Code.CAS_MISMATCH, "head revision changed");
+    }
+
+    private static void verifyProjections(ApiResourceSpec resource, ReadyApiResourceProjections projections) {
+        if (projections == null || !resource.ref().equals(projections.subject())) {
+            throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection subject drift");
+        }
+        for (ProjectionDocument document : new ProjectionDocument[]{projections.descriptor(), projections.designContract(), projections.operator()}) {
+            if (document.state() != ProjectionDocument.State.READY
+                    || !AuthoringFingerprints.of(document.body()).equals(document.fingerprint())) {
+                throw error(ApiResourceCommitStoreException.Code.PROJECTION_INVALID, "projection integrity drift");
+            }
+        }
+    }
+
+    private static void validateReceipt(CommandReceipt receipt, String expectedEtag) {
+        if (receipt == null || !expectedEtag.equals(receipt.strongEtag())
+                || !AuthoringFingerprints.of(receipt.body()).equals(receipt.bodyFingerprint())) {
+            throw error(ApiResourceCommitStoreException.Code.RECEIPT_INVALID, "receipt integrity drift");
+        }
+    }
+
     private static String opaqueEtag() { return "\"" + UUID.randomUUID() + "\""; }
-    private static void requireFingerprint(String value) { if (value == null || !value.matches("sha256:[0-9a-f]{64}")) throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "fingerprint is invalid"); }
-    private static ApiResourceCommitStoreException error(ApiResourceCommitStoreException.Code code, String message) { return new ApiResourceCommitStoreException(code, message); }
+
+    private static void requireFingerprint(String value) {
+        if (value == null || !value.matches("sha256:[0-9a-f]{64}")) {
+            throw error(ApiResourceCommitStoreException.Code.INTEGRITY, "fingerprint is invalid");
+        }
+    }
+
+    private static ApiResourceCommitStoreException error(ApiResourceCommitStoreException.Code code, String message) {
+        return new ApiResourceCommitStoreException(code, message);
+    }
     private enum Status { PREPARING, FAILED, COMMITTED }
-    private record Journal(Status status, String fingerprint, CommandLease lease, CommandReceipt receipt, String failureCode) { }
+    private record Journal(Status status, String fingerprint, CommandLease lease, CommandReceipt receipt, CommandFailureCode failureCode) { }
     private record ResourceKey(AuthoringScope scope, String resourceId) { }
     private record ResourceRevisionKey(ResourceKey resource, long revision) { }
     private record StageKey(String commandId, String attemptToken) { }

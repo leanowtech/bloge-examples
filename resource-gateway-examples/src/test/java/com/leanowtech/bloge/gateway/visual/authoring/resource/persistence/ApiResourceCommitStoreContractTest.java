@@ -34,8 +34,11 @@ class ApiResourceCommitStoreContractTest {
     @Test
     void stagedIsInvisibleAndCommitPublishesHeadAndRevision() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), "sha256:req1");
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
         StagedApiResource staged = store.stage(lease, "connection", command("one"));
+        assertThat(staged.projections().descriptor().fingerprint())
+                .isNotEqualTo(staged.projections().designContract().fingerprint())
+                .isNotEqualTo(staged.projections().operator().fingerprint());
         assertThat(store.findHead(SCOPE, "profile")).isEmpty();
         CommandReceipt receipt = store.commit(lease, receipt(staged));
         assertThat(receipt.strongEtag()).isNotEqualTo("\"1-" + staged.resource().fingerprint() + "\"");
@@ -45,7 +48,7 @@ class ApiResourceCommitStoreContractTest {
     @Test
     void scopeAndIdempotencyCoordinatesAreIsolated() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), "sha256:req1");
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
         StagedApiResource staged = store.stage(lease, "connection", command("one"));
         store.commit(lease, receipt(staged));
         AuthoringScope other = new AuthoringScope("other", "project", "dev");
@@ -59,7 +62,7 @@ class ApiResourceCommitStoreContractTest {
     void liveLeaseBusyAndExpiredLeaseTakesOverWithStaleAttemptFenced() {
         MutableClock clock = new MutableClock();
         InMemoryApiResourceCommitStore store = store(clock);
-        CommandLease first = acquired(store, KEY, ExpectedRevision.create(), "sha256:req1");
+        CommandLease first = acquired(store, KEY, ExpectedRevision.create(), R1);
         assertThat(store.claim(KEY, R1, ExpectedRevision.create())).isInstanceOf(ClaimResult.Busy.class);
         clock.advance(Duration.ofSeconds(2));
         ClaimResult.Acquired second = (ClaimResult.Acquired) store.claim(KEY, R1, ExpectedRevision.create());
@@ -74,23 +77,51 @@ class ApiResourceCommitStoreContractTest {
     void failedCoordinateCannotBeRetakenWithDifferentFingerprint() {
         MutableClock clock = new MutableClock();
         InMemoryApiResourceCommitStore store = store(clock);
-        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), "sha256:req1");
-        store.fail(lease, "INTEGRITY");
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
+        store.fail(lease, CommandFailureCode.INTERNAL);
         assertThat(store.claim(KEY, R2, ExpectedRevision.create())).isInstanceOf(ClaimResult.Conflict.class);
         assertThat(store.claim(KEY, R1, ExpectedRevision.create())).isInstanceOf(ClaimResult.Acquired.class);
     }
 
     @Test
+    void invalidFingerprintsAndFailureCodesAreRejected() {
+        InMemoryApiResourceCommitStore store = store();
+        assertThatThrownBy(() -> store.claim(KEY, "sha256:bad", ExpectedRevision.create()))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
+        assertThatThrownBy(() -> store.fail(null, CommandFailureCode.INTERNAL))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.LEASE_FENCED);
+        assertThatThrownBy(() -> store.fail(lease, null))
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.INTEGRITY);
+        for (String invalid : List.of("", "lowercase", "HAS SPACE", "A".repeat(129))) {
+            assertThatThrownBy(() -> new CommandFailureCode(invalid)).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
+    void everyProjectionKindRejectsBodyFingerprintMismatch() {
+        for (ProjectionDocument.Kind kind : ProjectionDocument.Kind.values()) {
+            JsonNode body = JSON.createObjectNode().put("kind", kind.name());
+            assertThatThrownBy(() -> new ProjectionDocument(kind,
+                    new ApiResourceSpec.ResourceRef("API_RESOURCE", "profile", 1, R1), body, R2,
+                    ProjectionDocument.State.READY)).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void failRemovesStageAndLeavesPreviousHeadVisible() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease first = acquired(store, KEY, ExpectedRevision.create(), "sha256:req1");
+        CommandLease first = acquired(store, KEY, ExpectedRevision.create(), R1);
         store.stage(first, "connection", command("one"));
         StagedApiResource staged = store.stage(first, "connection", command("one"));
         store.commit(first, receipt(staged));
         CommandKey update = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k2");
-        CommandLease second = acquired(store, update, ExpectedRevision.match(1), "sha256:req2");
+        CommandLease second = acquired(store, update, ExpectedRevision.match(1), R2);
         store.stage(second, "connection", command("two"));
-        store.fail(second, "PROJECTION_INVALID");
+        store.fail(second, CommandFailureCode.PROJECTION_INVALID);
         assertThat(store.findHead(SCOPE, "profile")).isPresent().get().extracting(v -> v.resource().revision()).isEqualTo(1);
         assertThatThrownBy(() -> store.commit(second, receipt(staged)))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
@@ -100,31 +131,32 @@ class ApiResourceCommitStoreContractTest {
     @Test
     void updateUsesExactCasAndStaleRevisionIsRejected() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease create = acquired(store, KEY, ExpectedRevision.create(), "sha256:r1");
+        CommandLease create = acquired(store, KEY, ExpectedRevision.create(), R1);
         store.stage(create, "connection", command("one"));
         StagedApiResource stagedCreate = store.stage(create, "connection", command("one"));
         store.commit(create, receipt(stagedCreate));
         CommandKey updateKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k2");
-        CommandLease update = acquired(store, updateKey, ExpectedRevision.match(1), "sha256:r2");
+        CommandLease update = acquired(store, updateKey, ExpectedRevision.match(1), R2);
         store.stage(update, "connection", command("two"));
         StagedApiResource stagedUpdate = store.stage(update, "connection", command("two"));
         assertThat(store.commit(update, receipt(stagedUpdate)).body().get("result").asText()).isEqualTo("profile");
         CommandKey staleKey = new CommandKey(SCOPE, "actor", AuthoringEndpoint.API_RESOURCE_SAVE, "profile", "k3");
-        CommandLease stale = acquired(store, staleKey, ExpectedRevision.match(1), "sha256:r3");
+        CommandLease stale = acquired(store, staleKey, ExpectedRevision.match(1), R3);
         assertThatThrownBy(() -> store.stage(stale, "connection", command("three")))
-                .isInstanceOf(com.leanowtech.bloge.gateway.visual.authoring.resource.ApiResourceAuthoringException.class);
+                .isInstanceOf(ApiResourceCommitStoreException.class)
+                .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.CAS_MISMATCH);
     }
 
     @Test
     void commitRechecksCasAfterAnotherCommandAdvancesHead() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease create = acquired(store, KEY, ExpectedRevision.create(), "sha256:r1");
+        CommandLease create = acquired(store, KEY, ExpectedRevision.create(), R1);
         store.stage(create, "connection", command("one"));
         StagedApiResource stagedCreate = store.stage(create, "connection", command("one"));
         store.commit(create, receipt(stagedCreate));
-        CommandLease first = acquired(store, key("k2"), ExpectedRevision.match(1), "sha256:r2");
+        CommandLease first = acquired(store, key("k2"), ExpectedRevision.match(1), R2);
         StagedApiResource stagedFirst = store.stage(first, "connection", command("two"));
-        CommandLease second = acquired(store, key("k3"), ExpectedRevision.match(1), "sha256:r3");
+        CommandLease second = acquired(store, key("k3"), ExpectedRevision.match(1), R3);
         store.stage(second, "connection", command("three"));
         StagedApiResource stagedSecond = store.stage(second, "connection", command("three"));
         store.commit(second, receipt(stagedSecond));
@@ -141,7 +173,7 @@ class ApiResourceCommitStoreContractTest {
                         doc(ProjectionDocument.Kind.DESCRIPTOR, resource),
                         new ProjectionDocument(ProjectionDocument.Kind.DESIGN_CONTRACT, new ApiResourceSpec.ResourceRef("API_RESOURCE", "other", resource.revision(), resource.fingerprint()), JSON.createObjectNode(), AuthoringFingerprints.of(JSON.createObjectNode()), ProjectionDocument.State.READY),
                         doc(ProjectionDocument.Kind.OPERATOR, resource)));
-        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), "sha256:r1");
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
         assertThatThrownBy(() -> store.stage(lease, "connection", command("one")))
                 .isInstanceOf(ApiResourceCommitStoreException.class)
                 .extracting("code").isEqualTo(ApiResourceCommitStoreException.Code.PROJECTION_INVALID);
@@ -151,7 +183,7 @@ class ApiResourceCommitStoreContractTest {
     @Test
     void returnedJsonBodiesAreDefensiveCopies() {
         InMemoryApiResourceCommitStore store = store();
-        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), "sha256:r1");
+        CommandLease lease = acquired(store, KEY, ExpectedRevision.create(), R1);
         store.stage(lease, "connection", command("one"));
         StagedApiResource staged = store.stage(lease, "connection", command("one"));
         CommandReceipt receipt = store.commit(lease, receipt(staged));
@@ -192,7 +224,7 @@ class ApiResourceCommitStoreContractTest {
     void restartReusesStateAndReplaysCommittedReceipt() {
         InMemoryApiResourceCommitStore.State state = new InMemoryApiResourceCommitStore.State();
         InMemoryApiResourceCommitStore first = store(Clock.systemUTC(), state);
-        CommandLease lease = acquired(first, KEY, ExpectedRevision.create(), "sha256:req1");
+        CommandLease lease = acquired(first, KEY, ExpectedRevision.create(), R1);
         StagedApiResource staged = first.stage(lease, "connection", command("one"));
         CommandReceipt receipt = first.commit(lease, receipt(staged));
         InMemoryApiResourceCommitStore restarted = store(Clock.systemUTC(), state);
@@ -203,8 +235,7 @@ class ApiResourceCommitStoreContractTest {
 
     private static CommandLease acquired(InMemoryApiResourceCommitStore store, CommandKey key,
                                          ExpectedRevision expected, String fingerprint) {
-        String valid = fingerprint.matches("sha256:[0-9a-f]{64}") ? fingerprint : R1;
-        return ((ClaimResult.Acquired) store.claim(key, valid, expected)).lease();
+        return ((ClaimResult.Acquired) store.claim(key, fingerprint, expected)).lease();
     }
 
     private static CommandKey key(String idempotencyKey) {
