@@ -176,6 +176,12 @@ class ApiResourceAuthoringSchemaReadinessTest {
         assertThatThrownBy(() -> insertJournalWithFingerprints(
                 "sha256:" + "A".repeat(64), null))
                 .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> insertJournalWithFingerprints(
+                "sha256:" + " ".repeat(64), null))
+                .isInstanceOf(RuntimeException.class);
+        assertThatThrownBy(() -> insertJournalWithFingerprints(
+                "sha256:a" + " ".repeat(63), null))
+                .isInstanceOf(RuntimeException.class);
 
         insertJournal("PREPARING", null, null, null);
         assertThatThrownBy(() -> insertRevision("STAGED", "cmd-1", 1, "token-1",

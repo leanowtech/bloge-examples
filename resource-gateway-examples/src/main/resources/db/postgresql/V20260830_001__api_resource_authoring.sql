@@ -14,7 +14,11 @@ CREATE TABLE IF NOT EXISTS rg_authoring_command_journal (
     request_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(request_fingerprint) = 71 AND request_fingerprint LIKE 'sha256:%'
             AND LOWER(request_fingerprint) = request_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(request_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(request_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     status VARCHAR(32) NOT NULL,
     attempt_no INTEGER NOT NULL,
     attempt_token VARCHAR(128) NOT NULL,
@@ -42,7 +46,11 @@ CREATE TABLE IF NOT EXISTS rg_authoring_command_journal (
         (receipt_fingerprint IS NULL OR
             (CHAR_LENGTH(receipt_fingerprint) = 71 AND receipt_fingerprint LIKE 'sha256:%'
              AND LOWER(receipt_fingerprint) = receipt_fingerprint
-             AND TRIM(TRANSLATE(SUBSTRING(receipt_fingerprint, 8, 64), '0123456789abcdef', '                ')) = '')),
+             AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(receipt_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = '')),
     CONSTRAINT rg_authoring_command_journal_receipt_etag_ck CHECK
         (receipt_etag IS NULL OR
             (CHAR_LENGTH(receipt_etag) >= 3 AND receipt_etag LIKE '"%"' AND receipt_etag NOT LIKE '"W/%')),
@@ -77,7 +85,11 @@ CREATE TABLE IF NOT EXISTS rg_api_resource_revisions (
     spec_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(spec_fingerprint) = 71 AND spec_fingerprint LIKE 'sha256:%'
             AND LOWER(spec_fingerprint) = spec_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(spec_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(spec_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     connection_id VARCHAR(128) NOT NULL,
     strong_etag VARCHAR(256) NOT NULL,
     command_id VARCHAR(128) NOT NULL,
@@ -118,24 +130,40 @@ CREATE TABLE IF NOT EXISTS rg_api_resource_projection_revisions (
     descriptor_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(descriptor_fingerprint) = 71 AND descriptor_fingerprint LIKE 'sha256:%'
             AND LOWER(descriptor_fingerprint) = descriptor_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(descriptor_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(descriptor_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     descriptor_state VARCHAR(16) NOT NULL,
     design_contract_json TEXT NOT NULL,
     design_contract_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(design_contract_fingerprint) = 71 AND design_contract_fingerprint LIKE 'sha256:%'
             AND LOWER(design_contract_fingerprint) = design_contract_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(design_contract_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(design_contract_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     design_contract_state VARCHAR(16) NOT NULL,
     operator_json TEXT NOT NULL,
     operator_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(operator_fingerprint) = 71 AND operator_fingerprint LIKE 'sha256:%'
             AND LOWER(operator_fingerprint) = operator_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(operator_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(operator_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     operator_state VARCHAR(16) NOT NULL,
     set_fingerprint VARCHAR(128) NOT NULL
         CHECK (CHAR_LENGTH(set_fingerprint) = 71 AND set_fingerprint LIKE 'sha256:%'
             AND LOWER(set_fingerprint) = set_fingerprint
-            AND TRIM(TRANSLATE(SUBSTRING(set_fingerprint, 8, 64), '0123456789abcdef', '                ')) = ''),
+            AND REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    SUBSTRING(set_fingerprint, 8, 64), '0', ''), '1', ''), '2', ''), '3', ''),
+                    '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', ''),
+                    'a', ''), 'b', ''), 'c', ''), 'd', ''), 'e', ''), 'f', '') = ''),
     CONSTRAINT rg_api_resource_projection_revisions_pk PRIMARY KEY
         (tenant_id, project_id, environment_id, resource_id, revision),
     CONSTRAINT rg_api_resource_projection_revisions_revision_fk FOREIGN KEY
