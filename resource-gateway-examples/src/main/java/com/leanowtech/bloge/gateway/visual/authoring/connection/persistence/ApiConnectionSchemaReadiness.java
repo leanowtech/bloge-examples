@@ -16,6 +16,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Fail-closed, read-only startup probe for the API Connection staging schema.
@@ -91,9 +93,10 @@ public final class ApiConnectionSchemaReadiness {
         requireUnique(jdbc, "rg_api_connection_revisions", "rg_api_connection_revisions_revision_attempt_uq",
                 List.of("tenant_id", "project_id", "environment_id", "connection_id", "revision", "command_id", "attempt_no", "attempt_token"));
         requireCheck(jdbc, "rg_api_connection_pending_secret_leases",
-                "rg_api_connection_pending_secret_leases_status_ck", "status IN ('PENDING', 'ABORT_REQUIRED')");
+                "rg_api_connection_pending_secret_leases_status_ck", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"));
         requireCheck(jdbc, "rg_api_connection_secret_bindings", "rg_api_connection_secret_bindings_state_ck",
-                "revision_state = 'COMMITTED'");
+                "revision_state", Set.of("COMMITTED"));
         jdbc.execute((ConnectionCallback<Void>) connection -> {
             DatabaseMetaData metadata = connection.getMetaData();
             requirePrimaryKey(metadata, "rg_api_connection_identities", "rg_api_connection_identities_pk",
@@ -212,7 +215,7 @@ public final class ApiConnectionSchemaReadiness {
     }
 
     private static void requireCheck(JdbcTemplate jdbc, String table, String expected,
-                                     String expression) {
+                                     String column, Set<String> allowedLiterals) {
         List<String> clauses = jdbc.query("""
                 SELECT cc.check_clause
                   FROM information_schema.check_constraints cc
@@ -221,17 +224,79 @@ public final class ApiConnectionSchemaReadiness {
                    AND tc.constraint_name = cc.constraint_name
                  WHERE UPPER(tc.table_name) = UPPER(?)
                    AND UPPER(tc.constraint_name) = UPPER(?)
-                """, (rs, row) -> normalizeCheck(rs.getString("check_clause")), table, expected);
-        if (clauses.size() != 1 || !clauses.getFirst().equals(normalizeCheck(expression))) {
+                """, (rs, row) -> rs.getString("check_clause"), table, expected);
+        if (clauses.size() != 1 || !equivalentCheckClause(clauses.getFirst(), column, allowedLiterals)) {
             throw new IllegalStateException("missing or altered check constraint " + expected);
         }
     }
 
-    private static String normalizeCheck(String value) {
-        return normalize(value).replace("\"", "").replace(" ", "").replace("\t", "")
-                .replace("\r", "").replace("\n", "").replace("::charactervarying", "")
-                .replace("::varchar", "").replace("::text", "").replace("::character varying", "")
-                .replace("(", "").replace(")", "");
+    /**
+     * Matches the database metadata representation contract for status checks.
+     * H2 commonly reports {@code IN}, while PostgreSQL can report equivalent
+     * varchar checks as {@code = ANY (ARRAY[...])} with casts. This parser is
+     * deliberately bounded to those equivalent forms; it is not PostgreSQL
+     * certification or a general SQL parser.
+     */
+    static boolean equivalentCheckClause(String checkClause, String targetColumn,
+                                         Set<String> allowedLiterals) {
+        if (checkClause == null || targetColumn == null || allowedLiterals == null
+                || allowedLiterals.isEmpty()) return false;
+        if ("revision_state".equalsIgnoreCase(targetColumn)
+                && !allowedLiterals.equals(Set.of("COMMITTED"))) return false;
+        String clause = stripOuterParens(checkClause.replaceAll("\\s+", ""));
+        String column = "\\(*\\\"?" + Pattern.quote(targetColumn) + "\\\"?\\)*(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)*";
+        String literal = "'([^']*)'(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)*";
+
+        Matcher in = Pattern.compile("(?i)^(" + column + ")in\\((.*)\\)$").matcher(clause);
+        if (in.matches() && exactLiterals(parseLiteralList(in.group(2), literal), allowedLiterals)) return true;
+
+        Matcher any = Pattern.compile("(?i)^(" + column + ")=any\\(*array\\[(.*?)\\](?:(?:::[a-z_][a-z0-9_]*(?:\\[\\])?)|\\))*(?:\\))$")
+                .matcher(clause);
+        if (any.matches() && exactLiterals(parseLiteralList(any.group(2), literal), allowedLiterals)) return true;
+
+        Matcher equality = Pattern.compile("(?i)^(" + column + ")=(" + literal + ")$").matcher(clause);
+        return equality.matches() && allowedLiterals.size() == 1
+                && allowedLiterals.contains(equality.group(3));
+    }
+
+    private static String stripOuterParens(String clause) {
+        while (clause.startsWith("(") && clause.endsWith(")") && enclosesWholeClause(clause)) {
+            clause = clause.substring(1, clause.length() - 1);
+        }
+        return clause;
+    }
+
+    private static boolean enclosesWholeClause(String clause) {
+        int depth = 0;
+        for (int i = 0; i < clause.length(); i++) {
+            char current = clause.charAt(i);
+            if (current == '(') depth++;
+            if (current == ')' && --depth == 0 && i < clause.length() - 1) return false;
+            if (depth < 0) return false;
+        }
+        return depth == 0;
+    }
+
+    private static List<String> parseLiteralList(String body, String literalPattern) {
+        if (body.isEmpty()) return List.of();
+        Pattern pattern = Pattern.compile(literalPattern, Pattern.CASE_INSENSITIVE);
+        List<String> values = new ArrayList<>();
+        int offset = 0;
+        while (offset < body.length()) {
+            Matcher literal = pattern.matcher(body);
+            literal.region(offset, body.length());
+            if (!literal.lookingAt()) return List.of();
+            values.add(literal.group(1));
+            offset = literal.end();
+            if (offset == body.length()) break;
+            if (body.charAt(offset) != ',') return List.of();
+            offset++;
+        }
+        return values;
+    }
+
+    private static boolean exactLiterals(List<String> actual, Set<String> expected) {
+        return actual.size() == expected.size() && new HashSet<>(actual).equals(expected);
     }
 
     private static void requireForeignKey(DatabaseMetaData metadata, String table, String expected,

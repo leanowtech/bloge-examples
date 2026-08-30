@@ -13,6 +13,7 @@ import javax.sql.DataSource;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -152,6 +153,43 @@ class ApiConnectionSchemaReadinessTest {
         assertThat(sql).doesNotContain("activated");
         assertThat(sql).doesNotContain("secret_value", "secret_plaintext", "secret_ciphertext",
                 "secret_ref_json", "credential_json", "password_value", "token_value");
+    }
+
+    @Test
+    void checkClauseSemanticVerifierAcceptsH2AndPostgreSqlRepresentations() {
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "(\"STATUS\" IN ('PENDING', 'ABORT_REQUIRED'))", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "((status)::text = ANY ((ARRAY['PENDING'::character varying, "
+                        + "'ABORT_REQUIRED'::character varying])::text[]))", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "((status)::text = ANY ((ARRAY['PENDING'::character varying, "
+                        + "'ABORT_REQUIRED'::character varying]::character varying[])::text[]))", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isTrue();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "((revision_state)::text = 'COMMITTED'::text)", "revision_state",
+                Set.of("COMMITTED"))).isTrue();
+    }
+
+    @Test
+    void checkClauseSemanticVerifierRejectsTamperedRepresentations() {
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status IN ('PENDING', 'ABORT_REQUIRED', 'OTHER')", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "owner_status IN ('PENDING', 'ABORT_REQUIRED')", "status",
+                Set.of("PENDING", "ABORT_REQUIRED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "status <> 'PENDING'", "status", Set.of("PENDING"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "revision_state = 'STAGED'", "revision_state", Set.of("COMMITTED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "revision_state = 'STAGED'", "revision_state", Set.of("STAGED"))).isFalse();
+        assertThat(ApiConnectionSchemaReadiness.equivalentCheckClause(
+                "revision_state = 'COMMITTED' OR revision_state = 'STAGED'", "revision_state",
+                Set.of("COMMITTED"))).isFalse();
     }
 
     @Test
