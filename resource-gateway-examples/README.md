@@ -175,9 +175,10 @@ claim mutation has started. Connection receipt closure is endpoint-bound, and am
 historical provenance fails closed. Committed Connection reads now join the mutable journal
 to the immutable attempt on the exact command/attempt/token and require endpoint/target
 agreement (with `API_CONNECTION_SAVE` also matching the child connection). The latest focused
-closure evidence is 119/119 green (45 Connection, 11 Resource claim, 23 Resource mutation,
-32 PendingSecretStore, and 8 schema-readiness tests), still H2 `MODE=PostgreSQL` only; no claim
-of real PostgreSQL certification, Facade, HTTP, or UI acceptance is made.
+closure evidence is 120/120 green (46 Connection, 11 Resource claim, 23 Resource mutation,
+32 PendingSecretStore, and 8 schema-readiness tests), still H2 `MODE=PostgreSQL` only. The serial
+resource-gateway `clean verify` evidence reports `Tests run 7,942; failures 0; errors 0; skipped 33`;
+no claim of real PostgreSQL certification, Facade, HTTP, or UI acceptance is made.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
