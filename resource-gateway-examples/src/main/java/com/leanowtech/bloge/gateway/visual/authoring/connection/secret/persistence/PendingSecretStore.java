@@ -20,6 +20,12 @@ public interface PendingSecretStore {
     /** Finds one exact complete lease, including child CAS and coordinate, never a nearby retry. */
     Optional<PendingSecretBatch> findExact(PendingSecretLease lease);
 
+    /**
+     * Validates activation outputs for the exact current batch without changing
+     * pending or active state, and returns the proof commit will later return.
+     */
+    FinalizedSecretSlots prepareFinalization(PendingSecretBatch batch, List<ActivatedSecretSlot> activated);
+
     /** Commits all activation outputs atomically and clears the pending batch. */
     FinalizedSecretSlots commitBindings(PendingSecretBatch batch, List<ActivatedSecretSlot> activated);
 

@@ -18,6 +18,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.lang.reflect.Modifier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -80,6 +81,21 @@ public abstract class PendingSecretStoreContractTest {
         assertThat(proof.slots()).containsExactly("password", "token");
         assertThat(store.findActive(batch.lease().coordinate(), "token")).isPresent();
         assertThat(store.findExact(batch.lease())).isEmpty();
+    }
+
+    @Test void prepareIsReadOnlyAndCommitReturnsThePreparedProof() {
+        PendingSecretStore store = newStore(fixedClock());
+        CommandLease lease = lease("prepare", 1, "prepare-token", NOW.plusSeconds(60));
+        PendingSecretBatch batch = batch(lease, "token", "password");
+        List<ActivatedSecretSlot> outputs = List.of(activation("token", "prepare-token", "active-token"),
+                activation("password", "prepare-token", "active-password"));
+        store.stage(batch);
+
+        FinalizedSecretSlots prepared = store.prepareFinalization(batch, outputs);
+
+        assertThat(store.findExact(batch.lease())).contains(batch);
+        assertThat(store.findActive(batch.lease().coordinate(), "token")).isEmpty();
+        assertThat(store.commitBindings(batch, outputs)).isEqualTo(prepared);
     }
 
     @Test void wrongProviderOrLeaseActivationIsRejected() {
@@ -370,8 +386,7 @@ public abstract class PendingSecretStoreContractTest {
         assertThat(json).doesNotContain("secret-attempt", "lease-id", "opaque-locator");
         assertThat(batch.toString()).doesNotContain("secret-attempt", "lease-id", "opaque-locator");
 
-        FinalizedSecretSlots proof = new FinalizedSecretSlots(batch.lease().coordinate(),
-                Set.of("token"));
+        FinalizedSecretSlots proof = new FinalizedSecretSlots(batch.lease(), Set.of("token"));
         String proofJson = new ObjectMapper().writeValueAsString(proof);
         assertThat(proofJson).contains("connection", "token")
                 .doesNotContain("secret-attempt", "lease-id", "opaque-locator", "provider:one");
@@ -380,12 +395,29 @@ public abstract class PendingSecretStoreContractTest {
 
     @Test void finalizedProofRejectsUnknownSlotsAndDefensivelySortsInput() {
         Set<String> slots = new java.util.HashSet<>(Set.of("token", "password"));
-        FinalizedSecretSlots proof = new FinalizedSecretSlots(coordinate(lease("proof-shape", 1,
-                "proof-shape-token", NOW.plusSeconds(60)), 3), slots);
+        CommandLease lease = lease("proof-shape", 1, "proof-shape-token", NOW.plusSeconds(60));
+        FinalizedSecretSlots proof = new FinalizedSecretSlots(new PendingSecretLease(lease,
+                coordinate(lease, 3), lease.expectedRevision()), slots);
         slots.clear();
         assertThat(proof.slots()).containsExactly("password", "token");
-        assertThatThrownBy(() -> new FinalizedSecretSlots(proof.coordinate(), Set.of("unknown")))
+        assertThatThrownBy(() -> new FinalizedSecretSlots(proof.lease(), Set.of("unknown")))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test void proofIdentityIncludesTheFullAttemptLeaseAndCannotBeCreatedByJackson() throws Exception {
+        CommandLease first = lease("proof-identity", 1, "attempt-one", NOW.plusSeconds(60));
+        CommandLease second = lease("proof-identity", 2, "attempt-two", NOW.plusSeconds(60));
+        FinalizedSecretSlots firstProof = new FinalizedSecretSlots(new PendingSecretLease(first,
+                coordinate(first, 3), first.expectedRevision()), Set.of("token"));
+        FinalizedSecretSlots secondProof = new FinalizedSecretSlots(new PendingSecretLease(second,
+                coordinate(second, 3), second.expectedRevision()), Set.of("token"));
+        assertThat(secondProof).isNotEqualTo(firstProof);
+        assertThat(FinalizedSecretSlots.class.getDeclaredConstructors())
+                .allMatch(constructor -> !Modifier.isPublic(constructor.getModifiers()));
+        String json = new ObjectMapper().writeValueAsString(firstProof);
+        assertThat(json).doesNotContain("attempt-one", "attempt-two", "fingerprint");
+        assertThatThrownBy(() -> new ObjectMapper().readValue(json, FinalizedSecretSlots.class))
+                .isInstanceOf(Exception.class);
     }
 
     @Test void malformedRecoveryLimitIsStableIntegrity() {

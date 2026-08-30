@@ -76,12 +76,11 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         return entry == null || !entry.batch.lease().equals(lease) ? Optional.empty() : Optional.of(entry.batch);
     }
 
-    @Override public synchronized FinalizedSecretSlots commitBindings(PendingSecretBatch batch,
-                                                                       List<ActivatedSecretSlot> activated) {
+    @Override public synchronized FinalizedSecretSlots prepareFinalization(PendingSecretBatch batch,
+                                                                            List<ActivatedSecretSlot> activated) {
         requireBatch(batch);
         List<ActivatedSecretSlot> outputs = canonical(activated);
-        AttemptKey key = key(batch.lease());
-        Completion done = completed.get(key);
+        Completion done = completed.get(key(batch.lease()));
         if (done != null) {
             if (done.outcome == TerminalOutcome.COMMITTED && done.batch.equals(batch)
                     && done.outputs.equals(outputs)) return done.proof;
@@ -94,12 +93,32 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         if (!entry.effectiveDeadline.isAfter(clock.instant())) {
             throw failure(PendingSecretStoreException.Code.LEASE_EXPIRED);
         }
-        validateActivation(entry.batch, outputs);
+        validateActivation(entry.batch, entry.retained, outputs);
+        return FinalizedSecretSlots.from(batch.lease(), entry.batch.operations().stream()
+                .map(PendingSecretOperation::slot)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet()));
+    }
+
+    @Override public synchronized FinalizedSecretSlots commitBindings(PendingSecretBatch batch,
+                                                                       List<ActivatedSecretSlot> activated) {
+        requireBatch(batch);
+        List<ActivatedSecretSlot> outputs = canonical(activated);
+        AttemptKey key = key(batch.lease());
+        Completion done = completed.get(key);
+        if (done != null) {
+            if (done.outcome == TerminalOutcome.COMMITTED && done.batch.equals(batch)
+                    && done.outputs.equals(outputs)) return done.proof;
+            if (done.outcome == TerminalOutcome.ABORTED) throw failure(PendingSecretStoreException.Code.RECOVERY_STATE);
+            throw failure(PendingSecretStoreException.Code.INTEGRITY);
+        }
+        FinalizedSecretSlots proof = prepareFinalization(batch, outputs);
+        Entry entry = requireEntry(batch.lease());
         Map<BindingKey, ActiveSecretBinding> writes = new HashMap<>();
         for (PendingSecretOperation operation : entry.batch.operations()) {
             ActiveSecretBinding binding;
             if (operation instanceof PendingSecretOperation.Retained) {
                 ActiveSecretBinding old = entry.retained.get(operation.slot());
+                if (old == null) throw failure(PendingSecretStoreException.Code.STAGE_MISSING);
                 binding = new ActiveSecretBinding(old.providerId(), old.activeLocator(),
                         batch.lease().commandLease().commandId());
             } else {
@@ -112,8 +131,6 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         active.putAll(writes);
         for (BindingKey bindingKey : writes.keySet()) activeOwners.put(bindingKey, key);
         entries.remove(key);
-        FinalizedSecretSlots proof = new FinalizedSecretSlots(batch.lease().coordinate(), writes.keySet().stream()
-                .map(BindingKey::slot).collect(java.util.stream.Collectors.toUnmodifiableSet()));
         completed.put(key, new Completion(batch, outputs, proof, TerminalOutcome.COMMITTED));
         return proof;
     }
@@ -265,10 +282,14 @@ public final class InMemoryPendingSecretStore implements PendingSecretStore {
         return deadline;
     }
 
-    private void validateActivation(PendingSecretBatch batch, List<ActivatedSecretSlot> outputs) {
+    private void validateActivation(PendingSecretBatch batch, Map<String, ActiveSecretBinding> retained,
+                                    List<ActivatedSecretSlot> outputs) {
         Set<String> expected = new HashSet<>();
         for (PendingSecretOperation operation : batch.operations()) {
             if (operation instanceof PendingSecretOperation.Prepared) expected.add(operation.slot());
+            else if (!retained.containsKey(operation.slot())) {
+                throw failure(PendingSecretStoreException.Code.STAGE_MISSING);
+            }
         }
         Set<String> actual = new HashSet<>();
         for (ActivatedSecretSlot output : outputs) {
