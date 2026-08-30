@@ -170,7 +170,21 @@ interface SchemaEnvelope {
 }
 ```
 
-### 5.2 精确 Subject 引用
+### 5.2 共享 Header 安全策略
+
+Header 名在比较时统一转为 ASCII lowercase，发送时可保留原始大小写。以下名称或前缀是
+平台保留的 Transport / Credential 边界，不能由 Connection 默认 Header、API Resource 动态
+HEADER Binding 或 API Key Header 占用：
+
+- `authorization`、`proxy-authorization`、`proxy-authenticate`、`cookie`、`set-cookie`；
+- `host`、`content-length`、`connection`、`keep-alive`、`te`、`trailer`、`transfer-encoding`、`upgrade`；
+- `forwarded` 和 `x-forwarded-*`。
+
+API Key 只能选择不在保留集中的自定义 Header。一旦 Connection 声明 API Key Header，同一
+Connection 的 defaults 和所有 Resource HEADER Binding 都不得使用该名称。认证 Header 只能由
+Connection Auth Adapter 从 Secret Store 生成，不能来自 Example、Fixture 或 Simulation Input。
+
+### 5.3 精确 Subject 引用
 
 ```ts
 type ExactSubjectRef =
@@ -371,6 +385,25 @@ interface SimulationPanelModel {
 时，Case 自带的 Input 以只读方式展示；要修改它必须复制或编辑 Case，不能在运行请求里临时覆盖。
 节点证据和四维结论属于响应展示，不是请求配置。
 
+### 6.5 Editor Model 到 Wire Command 的唯一映射
+
+前端只在提交边界执行一次确定性映射；不得在表单、Transport 和画布分别维护三份转换逻辑。
+
+| Editor 来源 | Wire 目标 | 不变量 |
+| --- | --- | --- |
+| `ConnectionEditor.EXISTING` | `ApiResourceSaveCommand.connection.EXISTING` | 只传 `connectionId`，不回显 Credential |
+| `ConnectionEditor.NEW` | `ApiResourceSaveCommand.connection.CREATE.command` | `*Draft` 只转成一次性 `SecretWrite.VALUE`，提交后立即从前端状态清除 |
+| `inputs[]` | `resource.contract.input` + `resource.operation.bindings` | 字段名是默认唯一映射源；高级映射必须显式展开 |
+| `output` + `examples[].outputValue` | `resource.contract.output` + `resource.examples[].output` | `INFER_FROM_EXAMPLES` 使用全部具名样例，不只看第一个数组元素 |
+| `examples[].inputValues` | `resource.examples[].input` | 必须通过生成后的 Input Schema 校验 |
+| `defaultFixture.exampleNames` | `defaultFixture.FROM_EXAMPLES.exampleNames` | 只能引用同一命令内已存在的唯一样例名 |
+| `ReusableFlowEditorModel.nodes[].mappings` | `ReusableFlowCommand.graph.nodes[].inputs` | 一个 Mapping 同时是运行事实和可视连线的派生源 |
+| `FixtureSetEditorModel` | `FixtureSetCommand` | Editor 的 inline `output` 转为 `RETURN + INLINE material`，不在前端生成 Asset 引用 |
+| `SimulationPanelModel` | `SimulationRequest.source` | `AD_HOC` 和 `FIXTURE_CASE` 互斥；不把已保存 Case 的 Input/Control 复制进请求 |
+
+这个映射必须封装在一个纯函数模块中，前端保存、深链恢复和组件测试共用同一接口。
+服务端仍要独立校验全部不变量；前端映射不是信任边界。
+
 ## 7. 后端权威 Schema
 
 ### 7.1 API Connection Command 与只读视图
@@ -437,6 +470,7 @@ type ConnectionCheckCommand =
 `VALUE` 只能经 TLS 写入，Controller 在进入通用日志、事件或对象持久化前立即转存 Secret Store；
 `SECRET_REF` 仅对有权限的高级入口开放；`KEEP_EXISTING` 只允许更新已有 Connection。
 API Key 第一阶段只允许 Header，避免 Query Credential 进入 URL、代理日志和 Trace。
+API Key Header 必须通过 5.2 的共享 Header 安全策略；不能用 `Authorization` 或任何传输保留名。
 
 返回示例：
 
@@ -464,6 +498,7 @@ API Key 第一阶段只允许 Header，避免 Query Credential 进入 URL、代�
 `defaults.headers` 只允许非敏感静态 Header；必须拒绝 `Authorization`、`Cookie`、`Proxy-Authorization`、
 `Set-Cookie` 和与所选 API Key Header 重名的字段。`SECRET_REF` 必须属于认证身份的同一 tenant、project 和
 environment，Scope mismatch 统一返回 404；它不能成为跨 Scope 搬运凭证的后门。
+完整 denylist、大小写规范化和 API Key 冲突规则以 5.2 为唯一来源，不在各 Controller 重复实现。
 
 ### 7.2 `ApiResourceSpec`
 
@@ -501,7 +536,7 @@ interface ApiResourceSaveReceipt {
     fixtureSetId: string;
     revision: number;
     fingerprint: `sha256:${string}`;
-    caseIds: string[];
+    cases: Array<{ exampleName: string; caseId: string }>;
   };
   projections: {
     descriptor: 'READY';
@@ -527,7 +562,9 @@ V1 使用确定的可见性提交协议，而不是返回部分成功：
 `FROM_EXAMPLES` 将每个具名 Resource Example 转为一个 Fixture Case；未知、重复或空 `exampleNames` 返回 422。
 每个生成 Case 的 Input 来自同名 Example Input，Subject Control 为 `RETURN`，Material 来自同名 Example Output。
 Default Fixture 使用服务端生成的 `{resourceId}@r{resourceRevision}` 身份，每次 Resource 保存只创建一个新的
-不可变 Fixture Set，不更新旧 Set，因此不需要第二个客户端 CAS。Receipt 返回精确 Case 坐标，页面可直接发起模拟。
+不可变 Fixture Set，不更新旧 Set，因此不需要第二个客户端 CAS。Resource 中的
+`examples[].name` 在同一 revision 内必须唯一；Receipt 的 `cases` 顺序与请求 `exampleNames`
+一致，页面可按 `exampleName` 无歧义地选择精确 Case 发起模拟。
 
 OpenAPI 只负责发现，不直接写 Resource：
 
@@ -631,7 +668,8 @@ Preview 不持久化 Resource、Connection、Fixture 或 Catalog 投影。
 
 - `operation.path` 必须是相对路径，不能覆盖 Connection 的 scheme、host 或 credential。
 - `bindings[].from` 只能引用 `contract.input` 中存在的路径。
-- `BODY` 绑定最多一个根对象；Header 名称必须通过安全校验。
+- `BODY` 绑定最多一个根对象；Header 名称必须通过 5.2 的共享安全策略，并且不得与
+  Connection 的 API Key Header 重名。
 - 对 `POST`、`PUT`、`DELETE`，标准保存允许 `FIXTURE_ONLY_WRITE`，但只能创建、设置 Fixture 和模拟；
   真实执行必须是 `MANAGED_WRITE`，并提供现有 idempotency、receipt 和 reconciliation 所需信息。
 - `response.success` 对普通作者只提供两种模型：HTTP 状态或 Body 字段匹配。适配器负责映射到当前
@@ -662,7 +700,8 @@ interface ReusableFlowSaveReceipt {
 ```
 
 创建时服务端生成稳定 `draftId` 并返回 Receipt；更新时 URL `flowId` 必须解析到同一 Draft，Body 不能切换身份。
-每次 PUT 只产生一个新 revision，`If-Match` 比较上一个 Draft revision。
+每次 PUT 只产生一个新 revision。创建使用 `If-None-Match: *`；更新使用上一次响应的强
+`ETag` 作为 `If-Match`。
 
 以下同样是保存后的权威视图；`revision` 和 `fingerprint` 由服务端生成。
 
@@ -746,6 +785,23 @@ interface ReusableFlowSaveReceipt {
 ```
 
 发布命令返回并持久化以下不可变版本。它是 Catalog、父 Flow 依赖和 Whole-flow Fixture 的共同坐标：
+
+```ts
+interface ReusableFlowPublishCommand {
+  schemaVersion: 'bloge.reusableFlowPublishCommand.v1';
+  source: Extract<ExactSubjectRef, { kind: 'FLOW_DRAFT' }>;
+}
+
+interface ReusableFlowPublishReceipt {
+  schemaVersion: 'bloge.reusableFlowPublishReceipt.v1';
+  source: Extract<ExactSubjectRef, { kind: 'FLOW_DRAFT' }>;
+  version: Extract<ExactSubjectRef, { kind: 'FLOW_VERSION' }>;
+  catalog: 'AVAILABLE';
+}
+```
+
+URL 中的 `flowId` 必须解析到 `source.draftId`。Publish 只允许当前可读 Draft 的精确
+revision/fingerprint，不接受「最新版」或 Body 中的可变 Graph 快照。
 
 ```ts
 interface ReusableFlowVersion {
@@ -835,7 +891,21 @@ interface FixtureSetSaveReceipt {
   status: 'PRIVATE_DRAFT';
   statusRevision: number;
 }
+
+interface FixtureSetSummary {
+  fixtureSetId: string;
+  revision: number;
+  fingerprint: `sha256:${string}`;
+  displayName: string;
+  subject: ExactSubjectRef;
+  cases: Array<{ caseId: string; name: string }>;
+  status: 'PRIVATE_DRAFT' | 'SHARING_PENDING' | 'TEAM_AVAILABLE' | 'STALE' | 'REVOKED';
+  statusRevision: number;
+}
 ```
+
+`FixtureSetSummary` 只用于按 Exact Subject 恢复页面选择；它不包含 Case Input、Return material、Replay payload、
+受保护资产引用或 Credential。用户选择精确 Case 后，再按 Fixture Set ID + revision 读取有权限的完整 View。
 
 以下是保存后的权威视图。Fixture Set 内容 revision 不可变；更新会生成新 revision。
 
@@ -938,6 +1008,45 @@ Flow 和纯计算节点；一旦运行到外部 API，若没有 Fixture 且未�
 原私有 revision 永不改写。Share Receipt 同时返回 `derivedFromRevision`、新 revision 和审核请求坐标。
 浏览器不读取或回填受保护 material。
 
+共享是一个显式的派生命令，不是对原 revision 的原地改写：
+
+```ts
+interface FixtureShareCommand {
+  schemaVersion: 'bloge.fixtureShareCommand.v1';
+  source: {
+    fixtureSetId: string;
+    revision: number;
+    fingerprint: `sha256:${string}`;
+    statusRevision: number;
+  };
+  policy: {
+    classification: 'INTERNAL' | 'CONFIDENTIAL' | 'RESTRICTED';
+    retentionDays: number;
+    redaction: {
+      profileVersion: string;
+      paths: string[];
+    };
+  };
+}
+
+interface FixtureShareReceipt {
+  schemaVersion: 'bloge.fixtureShareReceipt.v1';
+  fixtureSetId: string;
+  derivedFromRevision: number;
+  revision: number;
+  fingerprint: `sha256:${string}`;
+  status: 'SHARING_PENDING';
+  statusRevision: number;
+  reviewRequestId: string;
+}
+```
+
+`retentionDays`、`profileVersion` 和 `paths` 必须满足服务端治理策略；客户端不能通过自定义值
+放宽保留期或跳过脱敏。Share 的强 `If-Match` 同时保护 `source.revision`/`fingerprint`
+和 `statusRevision`；任一值已变化都返回 412。
+URL 中的 `{fixtureSetId}` 必须等于 `source.fixtureSetId`，不一致返回 409。授权、CAS 和幂等
+Target 全部以这个一致身份计算，不允许 Controller 和 Module 各自选择不同身份源。
+
 ### 7.5 `SimulationRequest`
 
 ```ts
@@ -1026,14 +1135,14 @@ Fixture 中的 `REAL` 只表达「不要覆盖这个依赖」，不授予网络�
       "execution": "MOCKED",
       "fixtureSource": "INLINE",
       "fidelity": "OUTPUT_LEVEL",
-      "egress": { "decision": "FIXTURE" }
+      "egress": { "decision": "FIXTURE", "attempted": false }
     },
     {
       "nodeId": "decision",
       "status": "COMPLETED",
       "execution": "REAL",
       "fixtureSource": "NONE",
-      "egress": { "decision": "NOT_APPLICABLE" }
+      "egress": { "decision": "NOT_APPLICABLE", "attempted": false }
     }
   ],
   "verdicts": {
@@ -1050,8 +1159,37 @@ Fixture 中的 `REAL` 只表达「不要覆盖这个依赖」，不授予网络�
 
 结果首页可以显示「模拟成功」，但不得把 `governance: NOT_CHECKED` 改写为「可发布」或「全部通过」。
 节点明细必须明确 `REAL` / `MOCKED`、Fixture 来源和服务端确认的 Fidelity。
-对 API Resource 节点，`egress.decision` 必须是 `FIXTURE`、`ALLOWED_READ`、`DENIED` 或
-`NOT_ATTEMPTED`；本地计算节点使用 `NOT_APPLICABLE`。Run 不返回完整 URL、Credential 或敏感 Header。
+
+```ts
+type NodeEgressEvidence =
+  | { decision: 'FIXTURE' | 'NOT_APPLICABLE'; attempted: false }
+  | {
+      decision: 'ALLOWED_READ';
+      attempted: true;
+      resource: Extract<ExactSubjectRef, { kind: 'API_RESOURCE' }>;
+      connection: { connectionId: string; revision: number };
+      authorizationDecisionId: string;
+      outcome: 'SUCCEEDED' | 'FAILED';
+    }
+  | {
+      decision: 'DENIED';
+      attempted: false;
+      resource: Extract<ExactSubjectRef, { kind: 'API_RESOURCE' }>;
+      authorizationDecisionId: string;
+      reasonCode: string;
+    }
+  | {
+      decision: 'NOT_ATTEMPTED';
+      attempted: false;
+      resource?: Extract<ExactSubjectRef, { kind: 'API_RESOURCE' }>;
+      reasonCode: string;
+    };
+```
+
+`ALLOW_EXACT` 只是客户端的请求意图，不自行授予权限。服务端在运行前产生 payload-free
+Authorization Decision，绑定 Scope、actor、purpose、精确 Resource、Connection 和授权策略 revision。
+只有决策允许且网络实际发起时才返回 `ALLOWED_READ + attempted: true`。Run 保存
+`authorizationDecisionId` 以便审计，但不返回完整 URL、Credential、敏感 Header 或 Body。
 
 `verdicts.execution` 建议使用 `PASSED_REAL`、`PASSED_WITH_MOCKS`、`SIMULATED_ONLY`、`FAILED` 和
 `BLOCKED`，不使用无法区分证据边界的单一 `PASSED`。当 Subject 自身被 `RETURN` 或 `APPLY_CASE`
@@ -1151,7 +1289,7 @@ interface ReusableFlowModule {
     ReusableFlowView save(FlowId id, ReusableFlowCommand command, ExpectedRevision expected);
     ReusableFlowView get(FlowDraftId id);
     FlowValidation validate(FlowDraftId id, long revision);
-    FlowPublicationReceipt publish(FlowDraftId id, long revision, PublishOptions options);
+    ReusableFlowPublishReceipt publish(FlowId id, ReusableFlowPublishCommand command, ExpectedRevision expected);
 }
 ```
 
@@ -1166,7 +1304,7 @@ interface FixtureSetModule {
     FixtureSetView get(FixtureSetId id);
     CompiledFixtureCase compile(FixtureCaseRef ref);
     CompiledFixtureCase compileForTarget(FixtureCaseRef ref, ComposableRef expectedSubject);
-    FixtureSharingReceipt share(FixtureSetId id, long revision, SharingPolicy policy);
+    FixtureShareReceipt share(FixtureSetId id, FixtureShareCommand command, ExpectedRevision expected);
 }
 ```
 
@@ -1213,10 +1351,11 @@ interface SimulationModule {
 | `GET` | `/api/authoring/catalog?kind=API_RESOURCE|FLOW_VERSION` | 返回统一可组合目录 |
 | `GET` | `/api/authoring/flows/{flowId}?revision={revision}` | 读取最新或精确 Reusable Flow Draft |
 | `PUT` | `/api/authoring/flows/{flowId}` | CAS 保存 Reusable Flow Draft |
-| `POST` | `/api/authoring/flows/{flowId}:publish` | 发布不可变 Flow Version |
+| `POST` | `/api/authoring/flows/{flowId}:publish` | 接收 `ReusableFlowPublishCommand`，发布不可变 Flow Version |
+| `GET` | `/api/authoring/fixture-sets?subjectKind={kind}&subjectId={id}&subjectRevision={revision}&subjectFingerprint={fingerprint}` | 按 Exact Subject 返回 metadata-only Fixture Set summaries |
 | `GET` | `/api/authoring/fixture-sets/{fixtureSetId}?revision={revision}` | 读取最新或精确 Fixture Set revision |
 | `PUT` | `/api/authoring/fixture-sets/{fixtureSetId}` | CAS 保存 Fixture Set |
-| `POST` | `/api/authoring/fixture-sets/{fixtureSetId}:share` | 发起团队共享，不在作者页执行审批 |
+| `POST` | `/api/authoring/fixture-sets/{fixtureSetId}:share` | 接收 `FixtureShareCommand`，发起团队共享，不在作者页执行审批 |
 | `POST` | `/api/authoring/simulations` | 按 Fixture Case，或 Subject + Ad-hoc Input 模拟 |
 | `GET` | `/api/authoring/simulations/{runId}` | 读取不可变模拟结果 |
 
@@ -1225,9 +1364,14 @@ interface SimulationModule {
 ### 10.2 幂等与并发
 
 - 创建使用标准 `If-None-Match: *`；更新使用响应的强 `ETag` 作为 `If-Match`；缺失返回 428，失配返回 412。
-- Publish、Share、Simulation 以及包含新 Connection / Default Fixture 的 Resource PUT 必须携带
-  `Idempotency-Key`。
+- Flow 创建使用 `If-None-Match: *`，只有更新已存在 Draft 才使用 `If-Match`。
+- 所有 Authoring PUT 和会产生状态、网络或运行副作用的 Action POST（Connection Check、
+  Publish、Share、Simulation）必须携带 `Idempotency-Key`。该规则由统一 Authoring Transport
+  封装，不要求各页面自行判断。
 - 响应返回 `ETag` 和精确对象引用。
+- `ETag` 是服务端生成的不透明强验证器；客户端不得用 revision、fingerprint 或
+  `statusRevision` 自行拼接。Publish 的 Validator 保护精确 Draft；Share 的 Validator 保护
+  内容 revision/fingerprint 与 `statusRevision` 的组合表示。
 - Resource 复合命令的 `If-Match` 只保护 URL 指向的 Resource：`EXISTING` Connection 是只读引用；
   `CREATE` Connection 必须不存在；Default Fixture 使用新 Resource revision 派生的新身份，因此没有隐藏的第二 CAS。
 - 幂等记录按 Scope、Actor、Endpoint、Target 和 Key 隔离。重放相同 Key 且 Payload 指纹相同，在再次执行 CAS
@@ -1318,6 +1462,17 @@ API Resource 默认 Target 为 Subject。Flow 默认先显示所有外部依赖�
 Fixture Case、Subject 和 Material 引用属于不可变内容 revision；`status` 是独立生命周期投影，使用
 `statusRevision` 做 CAS，不参与内容 fingerprint。Share 创建新的受治理内容 revision；后续审核只推进该
 revision 的 `statusRevision`，不改写 Case Payload。
+
+| Fixture 状态 | 新的直接 Simulation | 新的 `APPLY_CASE` | 历史 Run |
+| --- | --- | --- | --- |
+| `PRIVATE_DRAFT` | 仅同 Scope 允许 | 仅同 Scope 允许 | 可读 |
+| `TEAM_AVAILABLE` | 有读权限时允许 | 有读权限时允许 | 可读 |
+| `SHARING_PENDING` | 拒绝新运行 | 拒绝新引用 | 可读 |
+| `STALE` | 拒绝新运行 | 拒绝新引用 | 可读并标记当时指纹 |
+| `REVOKED` | 拒绝新运行 | 拒绝新引用 | 可读并显示撤销原因 |
+
+Share 不会锁住原 `PRIVATE_DRAFT` revision；被拒绝的是新派生且处于 `SHARING_PENDING`
+的受治理 revision。作者页必须把 `REVOKED` 显示为只读终态，不能因不可选而隐藏。
 
 ### 12.4 Simulation Run
 
@@ -1432,8 +1587,8 @@ Projection Reconciliation：比较权威 revision/fingerprint 与各投影，发
 ### Slice 0：Schema 冻结与兼容盘点
 
 1. 将本文七类 Schema family 制作为版本化 JSON Schema：Connection command/view、API Resource
-   command/receipt/spec、OpenAPI preview、Reusable Flow command/receipt/draft/version、Fixture Set
-   command/receipt/view、Simulation request/run、Problem Detail。
+   command/receipt/spec、OpenAPI preview、Reusable Flow save/publish command/receipt/draft/version、Fixture Set
+   save/share command/receipt/view/summary、Simulation request/run、Problem Detail。
 2. 为现有 Descriptor + Contract、GraphDraft、Publication、NodeFixture 和 Fixture Asset 建立迁移样例。
 3. 决定 API Resource revision 的持久化位置；不允许用更新时间或 Catalog 顺序冒充 revision。
 4. 建立现有接口与新接口的 contract test。
@@ -1461,7 +1616,8 @@ Projection Reconciliation：比较权威 revision/fingerprint 与各投影，发
 ### Slice 3：团队 Fixture 共享与治理分离
 
 1. 实现 `FixtureSetModule.share`。
-2. 作者页只显示 `PRIVATE_DRAFT`、`SHARING_PENDING`、`TEAM_AVAILABLE`、`STALE`。
+2. 作者页显示 `PRIVATE_DRAFT`、`SHARING_PENDING`、`TEAM_AVAILABLE`、`STALE` 和只读
+   `REVOKED`。
 3. 评审动作移动到独立 Review Queue。
 4. 复用现有 Fixture Catalog、Material Store、CAS 和四眼审核。
 
@@ -1479,10 +1635,13 @@ Projection Reconciliation：比较权威 revision/fingerprint 与各投影，发
 
 - 每个 Wire Schema 提供最小合法、完整合法、未知字段、缺字段、非法枚举、超限和版本不支持样例。
 - `ApiResourceModule` 测试一次保存只产生一个权威 revision，并可重建三种现有投影。
-- `ReusableFlowModule` 测试环、未知节点、Schema 不兼容、精确版本、布局不影响指纹。
+- `ReusableFlowModule` 测试环、未知节点、Schema 不兼容、精确版本、布局不影响指纹，
+  以及 Publish 不能跨越 Draft revision/fingerprint。
 - `FixtureSetModule` 测试 Subject/Node Target、`APPLY_CASE` 精确匹配与非 Subject Return 拒绝、行为联合类型、
-  Fidelity 边界、Schema 漂移和 payload-free 共享。
-- `SimulationModule` 测试精确 Subject、Fixture Case、真实/模拟节点、四维结论和无外部写。
+  Fidelity 边界、五种状态的可运行性、Schema 漂移、Share 双重 CAS 和 payload-free 回执。
+- `SimulationModule` 测试精确 Subject、Fixture Case、真实/模拟节点、四维结论、无外部写，以及
+  `ALLOW_EXACT` 不能绕过服务端授权决策。
+- 共享 Header Policy 对 defaults、API Key 和动态 HEADER Binding 运行同一组大小写无关负例。
 
 ### 17.2 前端组件测试
 
@@ -1618,13 +1777,21 @@ Slice 1/2 上线前以至少 8 名不了解底层协议的目标用户做任务�
 **建议：接受。** route、dependency、expression 继续由 Legacy/Advanced 模式承载。只有真实用户案例证明需要后，
 才把受控条件语义加入新 Schema。
 
-## 21. 评审通过后的下一步
+## 21. 评审门禁与通过后的下一步
 
-如果 R1-R5 获得确认，下一步不是直接改 UI，而是先完成 Slice 0：
+当前文档和 `docs/schemas/resource-gateway-authoring/` 中的 JSON Schema 是**待评审契约基线**，
+不表示 R1-R5 已被接受，也不授权继续改造运行时或 UI。
 
-1. 把本文 Schema 拆为可执行 JSON Schema。
-2. 为现有对象准备兼容映射和负例。
-3. 定义 `ApiResourceModule`、`ReusableFlowModule`、`FixtureSetModule`、`SimulationModule` 的接口测试。
-4. 以「API Resource → Default Fixture → Simulation」作为第一个纵向实现切片。
+评审通过必须同时满足：
 
-在 Schema 和模块接口未冻结前，不建议继续向 `AuthorCanvas.tsx` 增加页面、按钮或治理操作。
+1. 确认 R1-R5，或在本文中记录替代决策及对 Schema 的影响。
+2. 确认四个用户概念、Exact Subject、Fixture 不变内容 revision 与独立 `statusRevision`
+   没有语义冲突。
+3. 确认 Resource 复合保存的 staging/commit、Secret 租约和幂等恢复在当前存储中可实现；
+   否则必须先改设计，不能用「最终一致」替换同步成功 Receipt。
+4. 对可执行 JSON Schema 做一次逐字段对照；原型 Schema 与评审稿不一致时，以评审后的文档为决策源，
+   通过新的 Schema commit 显式更新，不做隐式兼容。
+
+评审通过后，先完成 Schema 对照和现有对象兼容样例，再定义四个深模块的接口行为测试。
+第一个纵向实现切片仍然是「API Resource → Default Fixture → Simulation」。在评审通过前，
+不继续向 `AuthorCanvas.tsx` 或新对象页增加实现。
