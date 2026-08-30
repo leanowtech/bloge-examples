@@ -459,7 +459,13 @@ Facade、HTTP 或生产 PostgreSQL 能力已完成，更不意味着 broader goa
 
 ### 最新验证与证据边界
 
-`d4d57c5d6` 后的初始 `ApiConnectionSchemaReadinessTest` 为 **19/19 green**，发生在后续语义变更之前。`eb3c40540` 与 `19a5c8a1f` 的最新语义提交有独立 `javac`/helper 检查，Spec 评审为 **Accepted**，P0/P1/P2 均为 0；但最新 Maven 聚焦复跑因并发的未提交 Connection/JDBC 编译错误受阻。真实 PostgreSQL lane 仍未运行。
+在 detached clean HEAD `4893e29a3`（含 `19a5c8a1f`）上，独立运行
+`mvn -f resource-gateway-examples/pom.xml -Dtest=ApiConnectionSchemaReadinessTest test`，时间为
+2026-08-30 18:48 +08、耗时 40.712 秒，结果为 **21/21 green**（`Failures: 0, Errors: 0, Skipped: 0`，
+`BUILD SUCCESS`）。此前 `d4d57c5d6` 后的初始聚焦结果为 19/19，发生在后续语义变更之前；`eb3c40540` 与
+`19a5c8a1f` 另有独立 `javac`/helper 检查，Spec 评审为 **Accepted**，P0/P1/P2 均为 0。共享主工作树
+同时存在外部未提交 Connection/JDBC 编译错误，不能将其与上述隔离 HEAD 证据混同。真实 PostgreSQL lane
+仍未运行；PG metadata 语义仅由 contract test 覆盖。
 
 ### 当前差距评估
 

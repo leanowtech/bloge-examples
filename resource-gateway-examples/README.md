@@ -109,8 +109,14 @@ and fix a deterministic seven-column recovery index. Readiness semantically acce
 forms plus safe casts, while failing closed on extra, wrong, or semantic-changing casts. The initial focused
 `ApiConnectionSchemaReadinessTest` after `d4d57c5d6` was 19/19 green before the semantic changes; the latest
 semantic commits have independent `javac`/helper checks and static Spec review Accepted with P0/P1/P2 all at zero.
-The latest Maven focused rerun was blocked by unrelated concurrent uncommitted Connection/JDBC compile errors, and
-real PostgreSQL was not run. This hardening does not increase the broader completion estimate beyond 35%.
+On detached clean HEAD `4893e29a3` (including `19a5c8a1f`), the focused
+`mvn -f resource-gateway-examples/pom.xml -Dtest=ApiConnectionSchemaReadinessTest test` run completed at
+2026-08-30 18:48 +08 in 40.712 seconds: 21/21 green, with no failures, errors, or skips and `BUILD SUCCESS`.
+The earlier 19/19 result after `d4d57c5d6` preceded the semantic changes; the latest semantic commits also have
+independent `javac`/helper checks and static Spec review Accepted with P0/P1/P2 all at zero. The shared main
+worktree concurrently contains unrelated uncommitted Connection/JDBC compile errors; that state must not be
+confused with the isolated HEAD evidence. Real PostgreSQL was not run, and PG metadata semantics are covered only
+by contract tests. This hardening does not increase the broader completion estimate beyond 35%.
 
 The stage-zero implementation for the world-model evolution plan is intentionally additive. The
 current kernel explicitly compiles `SCHEMA_STANDIN`, `DESCRIPTOR_PROTOCOL`,
